@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMOR_ABSORB, ARMORS, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
+  ABILITY_COOLDOWN_MS, ARMORS, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
   type AbilityId, type ModeId, type PerkId, type Tier,
 } from './defs.ts';
 import type {
@@ -437,7 +437,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
   if (!src.piercing && life.armor > 0) {
-    const absorbed = Math.min(life.armor, amount * ARMOR_ABSORB);
+    const absorbed = Math.min(life.armor, amount * ARMORS[victim.loadout.armor].absorbFrac);
     life.armor -= absorbed;
     amount -= absorbed;
   }

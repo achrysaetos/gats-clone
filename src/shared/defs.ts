@@ -18,7 +18,7 @@ export type WeaponDef = {
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
   pistol: { name: 'Pistol', damage: 22, fireMs: 220, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1100, moveMul: 1.0, auto: false },
   smg: { name: 'SMG', damage: 13, fireMs: 75, pellets: 1, spread: 0.12, range: 550, bulletSpeed: 1400, mag: 30, reloadMs: 1300, moveMul: 0.97, auto: true },
-  shotgun: { name: 'Shotgun', damage: 15, fireMs: 750, pellets: 7, spread: 0.32, range: 420, bulletSpeed: 1300, mag: 6, reloadMs: 1800, moveMul: 0.93, auto: false },
+  shotgun: { name: 'Shotgun', damage: 15, fireMs: 750, pellets: 7, spread: 0.22, range: 420, bulletSpeed: 1300, mag: 6, reloadMs: 1800, moveMul: 0.93, auto: false },
   assault: { name: 'Assault', damage: 16, fireMs: 110, pellets: 1, spread: 0.07, range: 800, bulletSpeed: 1700, mag: 30, reloadMs: 1500, moveMul: 0.92, auto: true },
   sniper: { name: 'Bolt-action', damage: 100, fireMs: 1300, pellets: 1, spread: 0.01, range: 1400, bulletSpeed: 2600, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false },
   lmg: { name: 'LMG', damage: 14, fireMs: 90, pellets: 1, spread: 0.14, range: 750, bulletSpeed: 1600, mag: 75, reloadMs: 3200, moveMul: 0.82, auto: true },
@@ -26,13 +26,12 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 
 export const ARMOR_IDS = ['none', 'light', 'medium', 'heavy'] as const;
 export type ArmorId = (typeof ARMOR_IDS)[number];
-export const ARMORS: Record<ArmorId, { name: string; points: number; speedMul: number }> = {
-  none: { name: 'No armor', points: 0, speedMul: 1.0 },
-  light: { name: 'Light', points: 30, speedMul: 0.93 },
-  medium: { name: 'Medium', points: 60, speedMul: 0.86 },
-  heavy: { name: 'Heavy', points: 90, speedMul: 0.79 },
+export const ARMORS: Record<ArmorId, { name: string; points: number; absorbFrac: number; speedMul: number }> = {
+  none: { name: 'No armor', points: 0, absorbFrac: 0, speedMul: 1.0 },
+  light: { name: 'Light', points: 30, absorbFrac: 0.5, speedMul: 0.93 },
+  medium: { name: 'Medium', points: 60, absorbFrac: 0.6, speedMul: 0.86 },
+  heavy: { name: 'Heavy', points: 120, absorbFrac: 0.7, speedMul: 0.79 },
 };
-export const ARMOR_ABSORB = 0.6;
 
 export const COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
 export type ColorId = (typeof COLOR_IDS)[number];

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_ABSORB, WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
 import { step, type World } from '../src/shared/sim.ts';
 import { emptyWorld, press, spawnAt, TICK_MS } from './helpers.ts';
@@ -34,7 +34,7 @@ test('dmg amount counts armor absorbed as damage dealt', () => {
   const b = spawnAt(w, 700, 500, { loadout: { armor: 'medium' } });
   const [ev] = hits(fireAndCollect(w, a));
   assert.ok(ev?.e === 'dmg' && b.life.k === 'alive');
-  assert.equal(b.life.hp, WORLD.baseHp - PISTOL_DMG * (1 - ARMOR_ABSORB), 'armor took part of the hit');
+  assert.equal(b.life.hp, WORLD.baseHp - PISTOL_DMG * (1 - ARMORS.medium.absorbFrac), 'armor took part of the hit');
   assert.equal(ev.amount, PISTOL_DMG);
 });
 
