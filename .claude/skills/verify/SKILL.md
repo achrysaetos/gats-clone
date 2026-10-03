@@ -55,6 +55,14 @@ node .claude/skills/verify/scripts/duel.ts "$RUN"
 
 Two separate headless Chromes join FFA. The hunter walks toward the target and taps fire until both sockets agree on the hit. It checks that both browsers joined, that each had the other in its own snapshots, that the hunter's socket shows a `dmg` event naming the target, and that the target's socket shows the same hit. It writes `duel.log`, `duel-hunter-view.png` and `duel-target-view.png`. Like `drive.ts`, it targets a deployed site when the run directory has a `url` file.
 
+### Frame time
+
+```bash
+node .claude/skills/verify/scripts/frametime.ts "$RUN" [seconds] [width] [height]
+```
+
+One headless Chrome joins FFA at 1920x1080 through `?dev`, picks the SMG, and holds fire while it strafes toward the nearest player. After a 5s warmup it logs to `frametime.log` how busy the view was (players and bullets per snapshot) and three distributions: `frame cost` (the real frame's draw calls, from `skirmishDev.takeFrameCosts()`), `rastered frame cost` (the same frame redrawn back to back by `skirmishDev.benchFrames(n)`, each waiting for its pixels), and the `requestAnimationFrame` interval. The GPU canvas defers rasterizing, so compare `rastered frame cost` before and after any art change. Run it three times per side, since bot positions vary. `SOFTWARE=1` turns off the GPU canvas.
+
 ## Evidence
 
 The driver writes `$RUN/evidence/drive.log`, one `ok` or `FAIL` line per check with measured values (for example `x 736 -> 914`, `ammo 12 -> 11`), and a final `RESULT PASS` or `RESULT FAIL`. It saves a PNG per step to `$RUN/evidence/`. It exits non-zero on any failed check, page exception or `console.error`.

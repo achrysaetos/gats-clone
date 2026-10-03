@@ -55,7 +55,20 @@ const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
-if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf } });
+const FRAME_COST_CAP = 4000;
+const frameCosts: number[] = [];
+if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, takeFrameCosts: () => frameCosts.splice(0), benchFrames } });
+
+/** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
+function benchFrames(n: number): number[] {
+  const now = performance.now();
+  return Array.from({ length: n }, () => {
+    const start = performance.now();
+    drawFrame(now);
+    ctx.getImageData(0, 0, 1, 1);
+    return performance.now() - start;
+  });
+}
 
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
@@ -269,6 +282,12 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  const start = performance.now();
+  drawFrame(now);
+  if (frameCosts.length < FRAME_COST_CAP) frameCosts.push(performance.now() - start);
+}
+
+function drawFrame(now: number) {
   const s = sessionOf(state);
   const latest = s && newestSnap(s.snaps);
   const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
