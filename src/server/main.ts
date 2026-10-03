@@ -96,6 +96,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+  wss.on('error', (err) => console.error('websocket server error', err));
   http.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const room = url.pathname === '/ws' ? rooms.get(url.searchParams.get('room') ?? '') : undefined;

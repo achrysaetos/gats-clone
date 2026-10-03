@@ -122,6 +122,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         if (client) handle(client, msg);
       });
       ws.on('close', () => disconnect(ws));
+      // ws emits 'error' for protocol violations like oversized frames; unhandled, it kills the process.
+      ws.on('error', () => ws.terminate());
     },
     tick() {
       const events: GameEvent[] = [];
