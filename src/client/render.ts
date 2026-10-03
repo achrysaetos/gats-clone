@@ -337,9 +337,11 @@ const IMPACT = {
   player: { color: '#7a0b0b', count: 6, reach: 18, size: 3.5 },
 } as const;
 
+const stableAngle = (x: number, y: number) => (x * 12.9898 + y * 78.233) % TAU;
+
 function drawImpact(ctx: CanvasRenderingContext2D, surface: keyof typeof IMPACT, x: number, y: number, k: number) {
   const { color, count, reach, size } = IMPACT[surface];
-  const spin = (x * 12.9898 + y * 78.233) % TAU;
+  const spin = stableAngle(x, y);
   ctx.fillStyle = color;
   for (let i = 0; i < count; i++) {
     const a = spin + (i / count) * TAU;

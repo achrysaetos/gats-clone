@@ -81,7 +81,7 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   }));
 }
 
-export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): () => Account | null {
+export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null } {
   let account = loadAccount();
 
   const showSignedIn = (a: Account) => {
@@ -121,5 +121,5 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
 
   if (account) showSignedIn(account);
   else showSignedOut();
-  return () => account;
+  return { current: () => account };
 }

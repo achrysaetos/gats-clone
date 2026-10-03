@@ -95,7 +95,7 @@ function connect(room: string) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
   setState({ phase: 'menu', status: { kind: 'connecting', ws } });
-  ws.onopen = () => send(ws, { t: 'join', name, loadout, token: account()?.token });
+  ws.onopen = () => send(ws, { t: 'join', name, loadout, token: account.current()?.token });
   ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
     if (msg) onServerMsg(ws, msg);
@@ -378,7 +378,7 @@ const pickers = [
   mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout),
 ];
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; });
-nameInput.value = loadName() || account()?.name || '';
+nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
