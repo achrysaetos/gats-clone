@@ -81,7 +81,7 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   }));
 }
 
-export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null } {
+export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null; expire(message: string): void } {
   let account = loadAccount();
 
   const showSignedIn = (a: Account) => {
@@ -97,10 +97,10 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
     }).catch(() => stats.replaceChildren(el('dd', { className: 'muted' }, 'Stats unavailable.')));
   };
 
-  const showSignedOut = () => {
+  const showSignedOut = (notice = '') => {
     const name = el('input', { placeholder: 'Account name', autocomplete: 'username', maxLength: 16, required: true });
     const pass = el('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', required: true });
-    const msg = el('p', { className: 'status', role: 'status' });
+    const msg = el('p', { className: 'status', role: 'status' }, notice);
     const login = el('button', { type: 'submit' }, 'Log in');
     const register = el('button', { type: 'button', className: 'secondary' }, 'Register');
     const form = el('form', { className: 'auth' }, name, pass, el('div', { className: 'row' }, login, register), msg);
@@ -121,5 +121,13 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
 
   if (account) showSignedIn(account);
   else showSignedOut();
-  return { current: () => account };
+  return {
+    current: () => account,
+    expire(message) {
+      account = null;
+      saveAccount(null);
+      onChange(null);
+      showSignedOut(message);
+    },
+  };
 }

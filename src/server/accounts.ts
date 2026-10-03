@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -30,8 +30,24 @@ async function writeFileAtomic(file: string, data: string) {
 const SAVE_DELAY_MS = 2000;
 const UNKNOWN_ACCOUNT_SALT = randomBytes(16);
 
-export async function openAccounts(dataDir: string): Promise<Accounts> {
+async function loadSecret(file: string): Promise<Buffer> {
+  try {
+    return await readFile(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  try {
+    await writeFile(file, randomBytes(32), { mode: 0o600, flag: 'wx' });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+  }
+  return readFile(file);
+}
+
+export async function openAccounts(dataDir: string, sessionMs: number): Promise<Accounts> {
   await mkdir(dataDir, { recursive: true });
+  const secret = await loadSecret(join(dataDir, 'session-secret'));
+  const mac = (payload: string) => createHmac('sha256', secret).update(payload).digest();
   const file = join(dataDir, 'accounts.json');
   const byKey = new Map<string, Account>();
   try {
@@ -40,7 +56,6 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
-  const tokens = new Map<string, string>();
 
   let saveQueue = Promise.resolve();
   const save = () => {
@@ -54,10 +69,12 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
     pending ??= setTimeout(() => { pending = null; void save(); }, SAVE_DELAY_MS);
   };
 
+  /** Join messages truncate tokens to 128 characters. Base-36 seconds and a base64url MAC keep the longest name at 124. */
   const issue = (account: Account): Session => {
-    const token = randomBytes(24).toString('hex');
-    tokens.set(token, key(account.name));
-    return { token, name: account.name };
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const expiresAt = Math.floor((Date.now() + sessionMs) / 1000);
+    const payload = [Buffer.from(key(account.name)).toString('base64url'), issuedAt.toString(36), expiresAt.toString(36)].join('.');
+    return { token: `${payload}.${mac(payload).toString('base64url')}`, name: account.name };
   };
   const row = (a: Account): StatsRow => ({ name: a.name, ...a.stats });
 
@@ -81,8 +98,14 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
       return account && timingSafeEqual(hash, Buffer.from(account.hash, 'hex')) ? issue(account) : null;
     },
     nameForToken(token) {
-      const k = tokens.get(token);
-      return k ? byKey.get(k)?.name ?? null : null;
+      const parts = token.split('.');
+      if (parts.length !== 4) return null;
+      const [name, , expiresAt, signature] = parts as [string, string, string, string];
+      const given = Buffer.from(signature, 'base64url');
+      const expected = mac(parts.slice(0, 3).join('.'));
+      if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+      if (parseInt(expiresAt, 36) * 1000 <= Date.now()) return null;
+      return byKey.get(Buffer.from(name, 'base64url').toString())?.name ?? null;
     },
     stats(name) {
       const a = byKey.get(key(name));

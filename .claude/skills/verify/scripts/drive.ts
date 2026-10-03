@@ -1,8 +1,8 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch on request.
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, restart and expire on request.
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,7 +41,7 @@ const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
 type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; weapon: WeaponId }[] };
-const frames = { welcome: null as null | { id: number }, last: null as null | Snap, sent: 0, snapAt: [] as number[] };
+const frames = { welcome: null as null | { id: number; account: string | null }, last: null as null | Snap, sent: 0, snapAt: [] as number[] };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -67,6 +67,7 @@ const key = async (code: string, k: string, holdMs: number) => {
   await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k, windowsVirtualKeyCode: vk });
 };
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
+const welcomed = () => frames.welcome;
 const me = () => frames.last?.players.find((p) => p.id === frames.welcome?.id);
 const ensureAlive = async () => {
   if (me()?.alive) return;
@@ -81,13 +82,24 @@ const humansIn = async (room: string) => ((await (await fetch(`${BASE}/api/serve
 let humansBefore = 0;
 const observerChat: { from: string; text: string }[] = [];
 let observerBoard: string[] = [];
-const observer = new WebSocket(`ws://localhost:${PORT}/ws?room=ffa`);
-observer.on('open', () => observer.send(JSON.stringify({ t: 'join', name: 'Observer', loadout: { weapon: 'pistol', armor: 'none', color: 'green' } })));
-observer.on('message', (raw) => {
-  const m = JSON.parse(String(raw));
-  if (m.t === 'chat') observerChat.push(m);
-  if (m.t === 'snap' && m.leaderboard) observerBoard = m.leaderboard.map((r: { name: string }) => r.name);
-});
+const openObserver = () => {
+  const ws = new WebSocket(`ws://localhost:${PORT}/ws?room=ffa`);
+  ws.on('open', () => ws.send(JSON.stringify({ t: 'join', name: 'Observer', loadout: { weapon: 'pistol', armor: 'none', color: 'green' } })));
+  ws.on('message', (raw) => {
+    const m = JSON.parse(String(raw));
+    if (m.t === 'chat') observerChat.push(m);
+    if (m.t === 'snap' && m.leaderboard) observerBoard = m.leaderboard.map((r: { name: string }) => r.name);
+  });
+  return ws;
+};
+let observer = openObserver();
+const clickPlay = async () => {
+  await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${NAME}'`);
+  // A real press, like a player's: the page's first user gesture unlocks audio, which a synthetic .click() never triggers.
+  const [px, py] = await js(`(() => { const b = document.getElementById('play'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+  await mouse('mousePressed', px, py);
+  await mouse('mouseReleased', px, py);
+};
 
 await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
 await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
@@ -116,12 +128,11 @@ const STEPS: Record<string, () => Promise<void>> = {
   async join() {
     await until(() => observerBoard.includes('Observer'));
     humansBefore = (await humansIn('ffa')) ?? 0;
-    await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${NAME}'`);
-    // A real press, like a player's: the page's first user gesture unlocks audio, which a synthetic .click() never triggers.
-    const [px, py] = await js(`(() => { const b = document.getElementById('play'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
-    await mouse('mousePressed', px, py);
-    await mouse('mouseReleased', px, py);
+    frames.welcome = null;
+    const signedIn = await js(`localStorage.getItem('skirmish.account')`);
+    await clickPlay();
     expect('welcome frame received on the page socket', await until(() => frames.welcome !== null));
+    if (signedIn) expect('server accepts the stored session (welcome.account)', welcomed()?.account === signedIn, `account ${welcomed()?.account}`);
     expect('menu hidden and HUD shown', await until(async () => js(`document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
     expect('own player present in snapshots', await until(() => !!me()));
     expect('server human count in ffa rises by one', await until(async () => (await humansIn('ffa')) === humansBefore + 1), `baseline ${humansBefore} incl. observer`);
@@ -236,6 +247,36 @@ const STEPS: Record<string, () => Promise<void>> = {
     await cdp('Emulation.setTouchEmulationEnabled', { enabled: false });
     await cdp('Emulation.setEmulatedMedia', { features: [] });
     await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  },
+  async restart() {
+    const pidFile = join(RUN, 'pid');
+    const oldPid = Number(readFileSync(pidFile, 'utf8'));
+    process.kill(oldPid, 'SIGTERM');
+    await until(() => { try { process.kill(oldPid, 0); return false; } catch { return true; } }, 6000);
+    const out = openSync(join(RUN, 'server.log'), 'a');
+    const server = spawn('node', ['src/server/main.ts'], { cwd: join(import.meta.dirname, '../../../..'), env: { ...process.env, PORT, DATA_DIR: join(RUN, 'data') }, detached: true, stdio: ['ignore', out, out] });
+    server.unref();
+    writeFileSync(pidFile, String(server.pid));
+    expect('server restarts on the same port and data dir', await until(async () => { try { return (await fetch(`${BASE}/api/servers`)).ok; } catch { return false; } }, 6000), `pid ${oldPid} -> ${server.pid}`);
+    observer = openObserver();
+    await cdp('Page.reload', { ignoreCache: true });
+    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    expect('menu still shows signed in after the restart', (await js(`document.getElementById('account').textContent`)).includes(`Signed in as ${NAME}`));
+    await shot('account-after-restart');
+  },
+  async expire() {
+    await js(`localStorage.setItem('skirmish.token', 'forged.token'); localStorage.setItem('skirmish.account', '${NAME}')`);
+    await cdp('Page.reload', { ignoreCache: true });
+    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    frames.welcome = null;
+    await clickPlay();
+    expect('server joins a forged session as a guest (welcome.account null)', await until(() => frames.welcome !== null) && welcomed()?.account === null);
+    expect('client drops the stored token', await until(async () => (await js(`localStorage.getItem('skirmish.token')`)) === null));
+    expect('chat tells the player the session expired', await until(async () => (await js(`document.getElementById('chat-log').textContent`)).includes('Session expired')));
+    await shot('session-expired-chat');
+    await cdp('Page.reload', { ignoreCache: true });
+    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    expect('menu shows signed out after an expired session', (await js(`document.getElementById('account').textContent`)).includes('Log in to keep stats'));
   },
   async leave() {
     await cdp('Page.reload', { ignoreCache: true });

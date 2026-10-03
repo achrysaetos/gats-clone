@@ -80,7 +80,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, encode: makeSnapshotEncoder() });
       balanceBots();
-      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: WORLD.size, walls: wallViews(world) });
+      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: WORLD.size, walls: wallViews(world), account });
       return;
     }
     const id = client.playerId;

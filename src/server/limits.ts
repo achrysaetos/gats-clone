@@ -5,6 +5,7 @@ export const LIMITS = {
   messagesPerSec: 60,
   messageBurst: 120,
   authPerMin: 10,
+  sessionMs: 30 * 24 * 60 * 60 * 1000,
 };
 export type Limits = typeof LIMITS;
 

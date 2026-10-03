@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { openAccounts } from '../src/server/accounts.ts';
+import { LIMITS } from '../src/server/limits.ts';
 
 async function medianMs(times: number, fn: () => Promise<unknown>): Promise<number> {
   const samples: number[] = [];
@@ -18,7 +19,7 @@ async function medianMs(times: number, fn: () => Promise<unknown>): Promise<numb
 test('login takes as long for an unknown name as for a wrong password, so timing does not reveal accounts', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-timing-'));
   try {
-    const accounts = await openAccounts(dataDir);
+    const accounts = await openAccounts(dataDir, LIMITS.sessionMs);
     await accounts.register('Known', 'right-pass');
     const wrongPassword = await medianMs(5, () => accounts.login('Known', 'wrong-pass'));
     const unknownName = await medianMs(5, () => accounts.login('Stranger', 'wrong-pass'));

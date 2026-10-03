@@ -22,6 +22,7 @@ import { EFFECT_LIFE_MS, type ClientState, type Effect, type Session } from './s
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
+const SESSION_EXPIRED = 'Session expired, log in again.';
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
 const canvas = $<HTMLCanvasElement>('game');
@@ -94,11 +95,17 @@ function connect(room: string) {
   saveName(nameInput.value);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
+  const token = account.current()?.token;
   setState({ phase: 'menu', status: { kind: 'connecting', ws } });
-  ws.onopen = () => send(ws, { t: 'join', name, loadout, token: account.current()?.token });
+  ws.onopen = () => send(ws, { t: 'join', name, loadout, token });
   ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
-    if (msg) onServerMsg(ws, msg);
+    if (!msg) return;
+    onServerMsg(ws, msg);
+    if (msg.t === 'welcome' && token && msg.account === null) {
+      account.expire(SESSION_EXPIRED);
+      sessionOf(state)?.chat.push({ from: '', text: SESSION_EXPIRED, team: null, at: performance.now() });
+    }
   });
   ws.onclose = () => {
     const ours = sessionOf(state)?.ws === ws || (state.phase === 'menu' && state.status.kind === 'connecting' && state.status.ws === ws);

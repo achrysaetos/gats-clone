@@ -90,7 +90,8 @@ export type StickyKey = (typeof STICKY_KEYS)[number];
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
 
 export type ServerMsg =
-  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[] }
+  /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
+  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[]; account: string | null }
   | { t: 'walls'; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }

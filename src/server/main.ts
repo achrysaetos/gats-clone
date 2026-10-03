@@ -114,7 +114,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const limits: Limits = { ...LIMITS, ...opts.limits };
   const allowAuth = makeKeyedLimiter(limits.authPerMin / 60, limits.authPerMin);
   const socketsByIp = new Map<string, number>();
-  const accounts = await openAccounts(opts.dataDir);
+  const accounts = await openAccounts(opts.dataDir, limits.sessionMs);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const rooms = new Map<string, Room>(
     ROOM_MODES.map(([id, mode], i) => [id, createRoom(id, mode, 1000 + i, accounts, opts.stepsPerTick ?? 1, limits)]),
