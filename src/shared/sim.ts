@@ -429,7 +429,7 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
-  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, weapon: label });
+  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label });
   if (!killer) return;
   killer.kills++;
   killer.lifeKills++;
@@ -780,7 +780,7 @@ function leaderboard(w: World): LeaderRow[] {
   return [...w.players.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, 10)
-    .map((p) => ({ name: p.name, score: p.score, team: p.team }));
+    .map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team }));
 }
 
 function matchView(w: World): MatchView {

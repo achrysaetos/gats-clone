@@ -48,12 +48,12 @@ export type SelfView = {
 };
 
 export type GameEvent =
-  | { e: 'kill'; killer: string; victim: string; weapon: string }
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string }
   | { e: 'hit'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
   | { e: 'shot'; x: number; y: number; silenced: boolean; owner: number };
 
-export type LeaderRow = { name: string; score: number; team: Team };
+export type LeaderRow = { id: number; name: string; score: number; team: Team };
 export type MatchView = { mode: ModeId; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
 
 export type Snapshot = {
@@ -89,8 +89,10 @@ export function parseLoadout(v: unknown): Loadout | null {
   return { weapon: v.weapon, armor: v.armor, color: v.color };
 }
 
+export const NAME_MAX = 16;
+
 export function cleanName(v: unknown): string {
-  const s = typeof v === 'string' ? v.replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 16) : '';
+  const s = typeof v === 'string' ? v.replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, NAME_MAX) : '';
   return s || 'Unnamed';
 }
 

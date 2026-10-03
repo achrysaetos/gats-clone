@@ -126,7 +126,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         return;
       case 'chat': {
         const cmd = msg.text;
-        if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, weapon: 'Bolt-action' }); }
+        if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, killerId: 104, victimId: myId, weapon: 'Bolt-action' }); }
         else if (cmd === '/level') pendingTier = !perks[2] ? 2 : 3;
         else if (cmd === '/win') winnerUntil = Date.now() + WORLD.roundRestartMs;
         else if (cmd === '/walls') { w.walls.push({ x: me.x + 60, y: me.y - 60, w: 30, h: 120, built: true }); out({ t: 'walls', walls: w.walls }); }
@@ -186,7 +186,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         if (hit) {
           events.push({ e: 'hit', x: b.x, y: b.y });
           hit.hp -= weapon.damage;
-          if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, weapon: weapon.name }); }
+          if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, killerId: myId, victimId: hit.id, weapon: weapon.name }); }
           return false;
         }
       }
@@ -201,7 +201,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     });
     if (me.alive && me.hp < 100) me.hp = Math.min(100, me.hp + WORLD.regenPerSec * DT);
     if (w.tick % 90 === 0 && me.alive) { me.hp = Math.max(1, me.hp - 15); events.push({ e: 'hit', x: me.x, y: me.y }); }
-    if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', weapon: 'SMG' });
+    if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'SMG' });
 
     const selfView: PlayerView = {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,
@@ -222,7 +222,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       bullets: bullets.map(({ life, ...b }) => b),
       crates: w.crates, thrown, zones: w.zones,
       minimap: w.bots.filter((b) => b.id % 2).map((b) => ({ x: b.x, y: b.y, team: b.team })),
-      leaderboard: players.map((p) => ({ name: p.name, score: p.score, team: p.team })),
+      leaderboard: players.map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team })),
       match: { mode, teamScore: { red: 23, blue: 31 }, winner, restartIn: Math.max(0, winnerUntil - now) },
       events,
     });

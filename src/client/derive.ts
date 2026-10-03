@@ -19,10 +19,13 @@ export function armorTier(maxArmor: number): ArmorId {
   return best;
 }
 
-export function killerOf(events: readonly GameEvent[], victim: string): string | null {
-  for (const ev of events) if (ev.e === 'kill' && ev.victim === victim) return ev.killer;
+export function killerOf(events: readonly GameEvent[], victimId: number): string | null {
+  for (const ev of events) if (ev.e === 'kill' && ev.victimId === victimId) return ev.killer || null;
   return null;
 }
+
+export const feedMentions = (kill: { killerId: number | null; victimId: number }, myId: number): boolean =>
+  kill.killerId === myId || kill.victimId === myId;
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 

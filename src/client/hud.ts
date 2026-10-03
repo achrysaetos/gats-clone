@@ -1,7 +1,7 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
-import { levelProgress } from './derive.ts';
+import { feedMentions, levelProgress } from './derive.ts';
 import { PALETTE, TEAM_COLORS } from './render.ts';
 import type { Session } from './state.ts';
 
@@ -80,7 +80,7 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
     const tw = ctx.measureText(msg).width + ctx.measureText(`  ${f.weapon}`).width;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
     panel(ctx, 12, y - 11, tw + 20, 22);
-    const mine = f.killer === s.selfName || f.victim === s.selfName;
+    const mine = feedMentions(f, s.myId);
     text(ctx, msg, 22, y, 13, mine ? '#ffd34d' : INK);
     text(ctx, `  ${f.weapon}`, 22 + ctx.measureText(msg).width, y, 12, MUTED, 'left', 500);
     ctx.globalAlpha = 1;
@@ -107,7 +107,7 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
     y += 28;
   }
   rows.forEach((r, i) => {
-    const mine = r.name === s.selfName;
+    const mine = r.id === s.myId;
     if (r.team) {
       ctx.fillStyle = TEAM_COLORS[r.team];
       ctx.beginPath();

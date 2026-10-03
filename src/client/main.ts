@@ -85,7 +85,7 @@ function connect(room: string) {
   ws.onopen = () => send(ws, { t: 'join', name, loadout, token: account()?.token });
   ws.onmessage = (ev) => {
     const msg = parseServerMsg(ev.data);
-    if (msg) onServerMsg(ws, msg, name);
+    if (msg) onServerMsg(ws, msg);
   };
   ws.onclose = () => {
     const ours = sessionOf(state)?.ws === ws || (state.phase === 'menu' && state.status.kind === 'connecting' && state.status.ws === ws);
@@ -103,7 +103,7 @@ function parseServerMsg(data: unknown): ServerMsg | null {
   }
 }
 
-function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
+function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   const now = performance.now();
   if (state.phase === 'menu') {
     if (state.status.kind !== 'connecting' || state.status.ws !== ws) return;
@@ -115,7 +115,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
         phase: 'playing',
         s: {
           ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0,
-          selfName: name, lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
+          lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
           effects: [], feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
         },
       });
@@ -143,16 +143,14 @@ const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, sel
 function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = s.snaps.next?.snap ?? null;
   s.snaps = pushSnap(s.snaps, snap, now);
-  const me = snap.players.find((p) => p.id === s.myId);
-  if (me) s.selfName = me.name;
-  playCues(s, soundsFor(prev, snap, s.selfName), snap.self.viewRadius || WORLD.viewRadius);
+  playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   for (const ev of snap.events) {
     switch (ev.e) {
       case 'hit': s.effects.push({ kind: 'hit', x: ev.x, y: ev.y, born: now }); break;
       case 'boom': s.effects.push({ kind: 'boom', x: ev.x, y: ev.y, r: ev.r, born: now }); break;
       case 'shot': s.effects.push({ kind: 'flash', x: ev.x, y: ev.y, born: now }); break;
-      case 'kill': s.feed = [...s.feed.slice(-9), { killer: ev.killer, victim: ev.victim, weapon: ev.weapon, at: now }]; break;
+      case 'kill': s.feed = [...s.feed.slice(-9), { ...ev, at: now }]; break;
     }
   }
   if (!snap.self.reloading) s.reloadStartedAt = null;
@@ -160,8 +158,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
 
   const dead = isDead(snap);
-  if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.selfName) });
-  else if (dead && state.phase === 'dead' && !state.killer) state.killer = killerOf(snap.events, s.selfName);
+  if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.myId) });
+  else if (dead && state.phase === 'dead' && !state.killer) state.killer = killerOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
 

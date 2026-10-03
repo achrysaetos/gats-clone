@@ -39,7 +39,7 @@ export const SOUNDS: Record<SoundId, Recipe> = {
 /** `strength` (0..1) scales loudness, and for `hurt` it is the damage taken as a fraction of max hp. */
 export type SoundCue = { id: SoundId; x: number; y: number; self: boolean; strength: number };
 
-export function soundsFor(prev: Snapshot | null, next: Snapshot, myName: string): SoundCue[] {
+export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   const me = selfOf(next);
   const at = { x: me?.x ?? 0, y: me?.y ?? 0 };
   const cues: SoundCue[] = [];
@@ -53,7 +53,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot, myName: string)
       }
       case 'hit': cues.push({ id: 'hit', x: ev.x, y: ev.y, self: false, strength: 1 }); break;
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, strength: 1 }); break;
-      case 'kill': if (ev.killer === myName && ev.victim !== myName) mine('kill'); break;
+      case 'kill': if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine('kill'); break;
     }
   }
   if (!prev) return cues;

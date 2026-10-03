@@ -17,17 +17,19 @@ const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?:
   match: { mode: 'FFA', teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: o.events ?? [],
 });
 
-const ids = (prev: Snapshot | null, next: Snapshot) => soundsFor(prev, next, ME).map((c) => c.id);
+const ids = (prev: Snapshot | null, next: Snapshot) => soundsFor(prev, next).map((c) => c.id);
 
-test('kill-confirm plays only when you are the killer', () => {
-  const kill = (killer: string, victim: string): GameEvent => ({ e: 'kill', killer, victim, weapon: 'Pistol' });
-  assert.deepEqual(ids(snap(), snap({ events: [kill(ME, 'p2')] })), ['kill']);
-  assert.deepEqual(ids(snap(), snap({ events: [kill('p2', 'p3')] })), [], 'someone else scoring a kill is silent');
-  assert.deepEqual(ids(snap(), snap({ events: [kill(ME, ME)] })), [], 'killing yourself is not a kill-confirm');
+test('kill-confirm plays only when you are the killer, matched by id not name', () => {
+  const kill = (killerId: number, victimId: number, killer = `p${killerId}`): GameEvent =>
+    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol' });
+  assert.deepEqual(ids(snap(), snap({ events: [kill(1, 2)] })), ['kill']);
+  assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3)] })), [], 'someone else scoring a kill is silent');
+  assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3, ME)] })), [], 'another player sharing my name scoring a kill is silent');
+  assert.deepEqual(ids(snap(), snap({ events: [kill(1, 1)] })), [], 'killing yourself is not a kill-confirm');
 });
 
 test('hurt plays on damage, including armor-absorbed hits, and never on regen or respawn', () => {
-  const hurt = soundsFor(snap({ me: { hp: 100 } }), snap({ me: { hp: 70 } }), ME);
+  const hurt = soundsFor(snap({ me: { hp: 100 } }), snap({ me: { hp: 70 } }));
   assert.deepEqual(hurt.map((c) => [c.id, c.self, c.strength]), [['hurt', true, 0.3]], 'strength is damage over max hp');
   assert.deepEqual(ids(snap({ me: { hp: 90, armor: 50 } }), snap({ me: { hp: 85, armor: 30 } })), ['hurt']);
   assert.deepEqual(ids(snap({ me: { hp: 70 } }), snap({ me: { hp: 75 } })), [], 'regen is silent');
@@ -40,7 +42,7 @@ test('a shot sounds like the shooter\'s weapon and is flagged self only for your
     { e: 'shot', x: 200, y: 0, silenced: false, owner: 2 },
     { e: 'shot', x: 100, y: 0, silenced: false, owner: 1 },
     { e: 'shot', x: 200, y: 0, silenced: true, owner: 2 },
-  ] }), ME);
+  ] }));
   assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
 });
 

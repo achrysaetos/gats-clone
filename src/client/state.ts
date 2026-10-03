@@ -8,7 +8,7 @@ export type Effect =
 
 export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { hit: 260, boom: 550, flash: 90 };
 
-export type FeedLine = { killer: string; victim: string; weapon: string; at: number };
+export type FeedLine = { killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 export type TrailPoint = { x: number; y: number; at: number };
 
@@ -20,7 +20,6 @@ export type Session = {
   walls: WallView[];
   snaps: SnapPair;
   seq: number;
-  selfName: string;
   lastSelf: { x: number; y: number };
   effects: Effect[];
   feed: FeedLine[];
