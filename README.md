@@ -37,24 +37,6 @@ At 100, 250 and 450 points you pick an attachment, then a survival perk, then an
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
 - `src/client/` contains the browser client.
 
-### Fly.io
-
-`fly.toml` runs the Docker image on one always-on machine with a volume at `/data`, `TRUST_PROXY=1` (Fly's edge is the one proxy in front), and a `/healthz` check. Keep it to one machine: rooms live in memory and the accounts file is not shared between machines.
-
-```bash
-fly launch --no-deploy --copy-config --name <your-app-name>
-```
-
-```bash
-fly volumes create skirmish_data --size 1 --region iad
-```
-
-```bash
-fly deploy
-```
-
-Change `primary_region` and the volume region to the one nearest your players. A deploy restarts the machine and disconnects everyone, so deploy at quiet times.
-
 ## Verify
 
 ```bash
@@ -86,3 +68,21 @@ The server limits WebSocket connections and login attempts per IP address. Behin
 ```bash
 docker run -p 8080:8080 -e TRUST_PROXY=1 -v skirmish-data:/data skirmish
 ```
+
+### Fly.io
+
+`fly.toml` runs the Docker image on one always-on machine with a volume at `/data`, `TRUST_PROXY=1` (Fly's edge is the one proxy in front), and a `/healthz` check. Keep it to one machine: rooms live in memory and the accounts file is not shared between machines.
+
+```bash
+fly launch --no-deploy --copy-config --name <your-app-name>
+```
+
+```bash
+fly volumes create skirmish_data --size 1 --region iad
+```
+
+```bash
+fly deploy
+```
+
+Change `primary_region` and the volume region to the one nearest your players. A deploy restarts the machine and disconnects everyone, so deploy at quiet times.
