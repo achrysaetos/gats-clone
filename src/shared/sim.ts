@@ -564,15 +564,17 @@ function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
       id: newId(w), kind, owner: p.id, x: p.x, y: p.y,
       vx: Math.cos(p.angle) * speed, vy: Math.sin(p.angle) * speed, explodeAt: w.now + GRENADE_FUSE_MS,
     });
+    return true;
   };
 }
 
-export const ABILITIES: Record<AbilityId, (w: World, p: Player) => void> = {
+export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
   gasGrenade: throwGrenade('gasGrenade'),
   landMine: (w, p) => {
     w.thrown.push({ id: newId(w), kind: 'landMine', owner: p.id, x: p.x, y: p.y, armedAt: w.now + 600, expiresAt: w.now + 60000 });
+    return true;
   },
   knife: (w, p) => {
     Object.assign(p, resolveCircle(solidRects(w), p.x + Math.cos(p.angle) * 90, p.y + Math.sin(p.angle) * 90));
@@ -584,15 +586,23 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => void> = {
       if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - p.y, v.x - p.x), p.angle) > Math.PI / 3) continue;
       damagePlayer(w, v, 75, { attacker: p, label: 'Knife', piercing: true, fromX: p.x, fromY: p.y });
     }
+    return true;
   },
   engineer: (w, p) => {
     const cx = p.x + Math.cos(p.angle) * 80, cy = p.y + Math.sin(p.angle) * 80;
     const acrossX = Math.abs(Math.cos(p.angle)) < Math.abs(Math.sin(p.angle));
     const [ww, hh] = acrossX ? [140, 24] : [24, 140];
-    w.walls.push({ x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS });
+    const wall: Wall = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS };
+    const blocked = [...w.players.values()].some((o) => o.life.k === 'alive' && circleHitsRect(o.x, o.y, WORLD.playerRadius, wall));
+    if (blocked) return false;
+    w.walls.push(wall);
     w.wallsVersion++;
+    return true;
   },
-  dash: (w, p) => { if (p.life.k === 'alive') p.life.dashUntil = w.now + DASH_MS; },
+  dash: (w, p) => {
+    if (p.life.k === 'alive') p.life.dashUntil = w.now + DASH_MS;
+    return true;
+  },
 };
 
 function tickThrown(w: World, dt: number) {
@@ -697,9 +707,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const ability = abilityOf(p);
-  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt) {
+  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
-    ABILITIES[ability](w, p);
   }
 
   if (p.life.k === 'alive' && w.now - p.life.lastDamageAt >= WORLD.regenDelayMs) {
