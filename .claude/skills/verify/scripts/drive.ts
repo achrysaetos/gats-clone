@@ -119,7 +119,11 @@ const STEPS: Record<string, () => Promise<void>> = {
   async join() {
     await until(() => observerBoard.includes('Observer'));
     humansBefore = (await humansIn('ffa')) ?? 0;
-    await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${NAME}'; document.getElementById('play').click()`);
+    await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${NAME}'`);
+    // A real press, like a player's: the page's first user gesture unlocks audio, which a synthetic .click() never triggers.
+    const [px, py] = await js(`(() => { const b = document.getElementById('play'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+    await mouse('mousePressed', px, py);
+    await mouse('mouseReleased', px, py);
     expect('welcome frame received on the page socket', await until(() => frames.welcome !== null));
     expect('menu hidden and HUD shown', await until(async () => js(`document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
     expect('own player present in snapshots', await until(() => !!me()));
