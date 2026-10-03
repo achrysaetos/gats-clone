@@ -8,6 +8,7 @@ import {
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
 import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
 
@@ -29,7 +30,7 @@ export type Room = {
   close(): void;
 };
 
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator()): Room {
   const world = createWorld(mode, seed);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
@@ -75,7 +76,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       }
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
       const takenByAnotherAccount = (n: string) => registered(n) && n.toLowerCase() !== account?.toLowerCase();
-      const name = uniqueName(account ?? msg.name, names(), takenByAnotherAccount);
+      const name = uniqueName(account ?? (moderator.isClean(msg.name) ? msg.name : 'Player'), names(), takenByAnotherAccount);
       const p = addPlayer(world, name, msg.loadout);
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder() });
@@ -96,7 +97,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         client.lastChatAt = now;
         const p = world.players.get(id);
         if (!p) return;
-        for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text: msg.text, team: p.team });
+        const text = moderator.mask(msg.text);
+        for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text, team: p.team });
         return;
       }
     }

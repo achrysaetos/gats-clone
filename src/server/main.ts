@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
+import { loadModerator } from './moderation.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 
@@ -124,9 +125,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const allowAuth = makeKeyedLimiter(limits.authPerMin / 60, limits.authPerMin);
   const socketsByIp = new Map<string, number>();
   const accounts = await openAccounts(opts.dataDir, limits.sessionMs);
+  const moderator = await loadModerator(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const rooms = new Map<string, Room>(
-    ROOM_MODES.map(([id, mode], i) => [id, createRoom(id, mode, 1000 + i, accounts, opts.stepsPerTick ?? 1, limits)]),
+    ROOM_MODES.map(([id, mode], i) => [id, createRoom(id, mode, 1000 + i, accounts, opts.stepsPerTick ?? 1, limits, moderator)]),
   );
 
   const http = createServer((req, res) => {
