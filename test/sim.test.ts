@@ -136,6 +136,18 @@ test('TDM friendly fire does no damage but enemies still take hits', () => {
   assert.ok(hpOf(foe) < WORLD.baseHp, 'bullet passed the teammate and hit the enemy');
 });
 
+test('TDM grenades spare teammates', () => {
+  const w = emptyWorld('TDM');
+  const a = spawnAt(w, 500, 500, { team: 'red' });
+  const mate = spawnAt(w, 700, 480, { team: 'red' });
+  const foe = spawnAt(w, 700, 520, { team: 'blue' });
+  grantPerks(w, a, ['grip', 'thickSkin', 'grenade']);
+  press(w, a, { ability: true, angle: 0, aimDist: 200 });
+  run(w, 2000);
+  assert.equal(hpOf(mate), WORLD.baseHp);
+  assert.ok(hpOf(foe) < WORLD.baseHp);
+});
+
 test('TDM auto-balances teams', () => {
   const w = emptyWorld('TDM');
   const teams = Array.from({ length: 6 }, () => addPlayer(w, 'x', randomLoadout(Math.random)).team);
