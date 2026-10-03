@@ -31,7 +31,9 @@ Read-only. It checks the pid is alive, the port is owned by that pid, all three 
 node .claude/skills/verify/scripts/drive.ts "$RUN" [step ...]
 ```
 
-Steps run in order: `menu account join move fire chat leave`. No steps means all. `move`, `fire` and `chat` need `join` earlier in the same invocation. The driver launches headless Chrome (override the binary with `CHROME=`) on a free debug port and talks CDP directly. It proves behavior three independent ways:
+Steps run in order: `menu account join move fire latency chat touch leave`. No steps means all. `move`, `fire`, `latency` and `chat` need `join` earlier in the same invocation. `fire` also taps the mouse six times just past the weapon's fire cooldown and checks the server's ammo drops by exactly six. `latency` logs the median and p95 time from a real keydown to the first frame that draws the player moving, read from the page's `?dev` hook `skirmishDev.drawnSelf()`.
+
+To measure feel under latency on localhost, set `LAG=<one-way ms>` and `JITTER=<ms>`. The driver passes them to the client's dev-only `?lag=&jitter=` params, which delay the page's own socket in both directions while keeping message order. Chrome's network emulation does not reliably shape WebSockets, so this is the supported lever. The driver launches headless Chrome (override the binary with `CHROME=`) on a free debug port and talks CDP directly. It proves behavior three independent ways:
 
 - **DOM state** through stable ids: `#servers .server`, `#name`, `#play`, `#account`, `#menu`, `#hud`, `#chat-log`, `#perk-panel`, `#death`, `#death-title`, `#respawn`, `#banner`.
 - **The page's own WebSocket frames**, read with `Network.webSocketFrameReceived`. Position and ammo come from the server's snapshots, not from client state.

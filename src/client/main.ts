@@ -9,6 +9,7 @@ import { actionForKey, assembleInput, perkSlotForKey, type Action } from './inpu
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
+import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
@@ -42,10 +43,18 @@ const audio = createAudio();
 let trauma = 0;
 let lastFrameAt = 0;
 
+const params = new URLSearchParams(location.search);
+const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
+const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
+/** Where the local player was last drawn and the frame time it was drawn at; read by the verify driver under `?dev`. */
+let drawnSelf = { x: 0, y: 0, at: 0 };
+if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf } });
+
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
 function send(ws: WebSocket, msg: ClientMsg) {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  const data = JSON.stringify(msg);
+  delaySend(() => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
 }
 
 function setState(next: ClientState) {
@@ -83,10 +92,10 @@ function connect(room: string) {
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
   setState({ phase: 'menu', status: { kind: 'connecting', ws } });
   ws.onopen = () => send(ws, { t: 'join', name, loadout, token: account()?.token });
-  ws.onmessage = (ev) => {
+  ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
     if (msg) onServerMsg(ws, msg, name);
-  };
+  });
   ws.onclose = () => {
     const ours = sessionOf(state)?.ws === ws || (state.phase === 'menu' && state.status.kind === 'connecting' && state.status.ws === ws);
     if (ours) setState({ phase: 'menu', status: { kind: 'error', message: 'Disconnected from server.' } });
@@ -244,6 +253,7 @@ function frame(now: number) {
   }
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
+  drawnSelf = { ...s.lastSelf, at: now };
   camera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
