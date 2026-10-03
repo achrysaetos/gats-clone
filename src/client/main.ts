@@ -11,12 +11,14 @@ import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
+import { decayOffset, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
 
-const INPUT_HZ = 30;
+// One input per server tick, so each predicted step covers exactly the time the server moves the player by it.
+const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
@@ -47,8 +49,8 @@ let lastFrameAt = 0;
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
-/** Where the local player was last drawn and the frame time it was drawn at; read by the verify driver under `?dev`. */
-let drawnSelf = { x: 0, y: 0, at: 0 };
+/** Where the local player was last drawn, the frame time, and the misprediction still being smoothed; read by the verify driver under `?dev`. */
+let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf } });
 
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
@@ -124,7 +126,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
       setState({
         phase: 'playing',
         s: {
-          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0, shots: 0,
+          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0, shots: 0, predict: NO_PREDICTION,
           selfName: name, lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
           effects: [], feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
         },
@@ -155,6 +157,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   const me = snap.players.find((p) => p.id === s.myId);
   if (me) s.selfName = me.name;
+  s.predict = reconcile(s.predict, me?.alive ? me : null, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
   playCues(s, soundsFor(prev, snap, s.selfName), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   for (const ev of snap.events) {
@@ -193,8 +196,12 @@ setInterval(() => {
   if (touchAiming && !touchWasAiming) s.shots++;
   touchWasAiming = touchAiming;
   const shooting = active && (firing || touchAiming);
-  send(s.ws, { t: 'input', seq: s.seq, input: assembleInput(actions, shooting, s.shots, aimOffset(s)) });
-}, 1000 / INPUT_HZ);
+  const input = assembleInput(actions, shooting, s.shots, aimOffset(s));
+  send(s.ws, { t: 'input', seq: s.seq, input });
+  const latest = s.snaps.next?.snap;
+  const solids = solidsOf(s.walls, latest?.crates ?? []);
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS }, solids, latest?.self.speed ?? 0, performance.now());
+}, INPUT_MS);
 
 function pickPerk(slot: number) {
   const s = sessionOf(state);
@@ -250,14 +257,19 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const s = sessionOf(state);
   const latest = s?.snaps.next?.snap;
-  const snap = s && interpolateSnap(s.snaps, now);
-  if (!s || !snap || !latest) {
+  const interpolated = s && interpolateSnap(s.snaps, now);
+  if (!s || !interpolated || !latest) {
     drawBackdrop(now);
     return;
   }
+  s.predict = decayOffset(s.predict, now - lastFrameAt);
+  const drawn = drawnPosition(s.predict, now, INPUT_MS);
+  const snap = drawn
+    ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn } : p)) }
+    : interpolated;
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
-  drawnSelf = { ...s.lastSelf, at: now };
+  drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.offset.x, s.predict.offset.y) };
   camera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;

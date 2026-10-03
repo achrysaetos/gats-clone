@@ -169,6 +169,7 @@ const STEPS: Record<string, () => Promise<void>> = {
   async latency() {
     const samples: number[] = [];
     let misses = 0;
+    await js(`window.maxCorrection = 0; (function watch() { maxCorrection = Math.max(maxCorrection, skirmishDev.drawnSelf().correction); requestAnimationFrame(watch); })(); 0`);
     for (let i = 0; i < 10; i++) {
       await ensureAlive();
       const [code, k] = i % 2 === 0 ? ['KeyA', 'a'] : ['KeyD', 'd'];
@@ -190,7 +191,10 @@ const STEPS: Record<string, () => Promise<void>> = {
     samples.sort((a, b) => a - b);
     const median = samples[Math.floor(samples.length / 2)] ?? NaN;
     const p95 = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))] ?? NaN;
-    log(`info latency keydown -> first frame drawing own movement: median ${median.toFixed(0)}ms p95 ${p95.toFixed(0)}ms n=${samples.length} misses=${misses} lag=${process.env.LAG ?? 0} jitter=${process.env.JITTER ?? 0}`);
+    log(`info largest misprediction being smoothed while moving: ${Number(await js('maxCorrection')).toFixed(1)}px`);
+    // Prediction draws own movement from the next input sample, so the bound holds at any LAG.
+    expect('own movement drawn within 50ms of keydown (median)', median <= 50 && samples.length >= 5,
+      `median ${median.toFixed(0)}ms p95 ${p95.toFixed(0)}ms n=${samples.length} misses=${misses} lag=${process.env.LAG ?? 0} jitter=${process.env.JITTER ?? 0}`);
   },
   async chat() {
     const text = `hello ${Date.now()}`;

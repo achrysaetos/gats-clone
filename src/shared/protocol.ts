@@ -41,6 +41,8 @@ export type ZoneView = { id: number; x: number; y: number; r: number; owner: Tea
 
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
+  /** Move speed without a dash, for predicting the local player's movement. */
+  speed: number;
   perks: Partial<Record<Tier, PerkId>>;
   pendingTier: Tier | null;
   ability: AbilityId | null; abilityReadyIn: number;

@@ -1,5 +1,6 @@
 import type { Team, WallView } from '../shared/protocol.ts';
 import type { SnapPair } from './interp.ts';
+import type { Prediction } from './predict.ts';
 
 export type Effect =
   | { kind: 'hit'; x: number; y: number; born: number }
@@ -22,6 +23,7 @@ export type Session = {
   seq: number;
   /** Trigger presses latched per mousedown; sent whole every input so presses between samples are never lost. */
   shots: number;
+  predict: Prediction;
   selfName: string;
   lastSelf: { x: number; y: number };
   effects: Effect[];
