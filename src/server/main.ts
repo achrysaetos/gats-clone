@@ -89,7 +89,9 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<strin
   if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.values()].map((r) => r.info()));
   if (req.method === 'GET' && path === '/api/leaderboard') return json(res, 200, accounts.leaderboard(20));
   if (req.method === 'GET' && path.startsWith('/api/stats/')) {
-    const stats = accounts.stats(decodeURIComponent(path.slice('/api/stats/'.length)));
+    let name: string;
+    try { name = decodeURIComponent(path.slice('/api/stats/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
+    const stats = accounts.stats(name);
     return stats ? json(res, 200, stats) : json(res, 404, { error: 'No such player' });
   }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {

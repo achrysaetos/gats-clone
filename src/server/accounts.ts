@@ -32,9 +32,10 @@ const SAVE_DELAY_MS = 2000;
 export async function openAccounts(dataDir: string): Promise<Accounts> {
   await mkdir(dataDir, { recursive: true });
   const file = join(dataDir, 'accounts.json');
-  let byKey: Record<string, Account> = {};
+  const byKey = new Map<string, Account>();
   try {
-    byKey = JSON.parse(await readFile(file, 'utf8')) as Record<string, Account>;
+    const saved = JSON.parse(await readFile(file, 'utf8')) as Record<string, Account>;
+    for (const account of Object.values(saved)) byKey.set(key(account.name), account);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
@@ -43,7 +44,7 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
   let saveQueue = Promise.resolve();
   const save = () => {
     saveQueue = saveQueue
-      .then(() => writeFileAtomic(file, JSON.stringify(byKey)))
+      .then(() => writeFileAtomic(file, JSON.stringify(Object.fromEntries(byKey))))
       .catch((err: unknown) => console.error('accounts save failed', err));
     return saveQueue;
   };
@@ -61,37 +62,37 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
 
   return {
     async register(name, password) {
-      if (byKey[key(name)]) return null;
+      if (byKey.has(key(name))) return null;
       const salt = randomBytes(16);
       const hash = await scryptAsync(password, salt, 64);
-      if (byKey[key(name)]) return null;
+      if (byKey.has(key(name))) return null;
       const account: Account = {
         name, salt: salt.toString('hex'), hash: hash.toString('hex'),
         stats: { kills: 0, deaths: 0, score: 0, games: 0, best: 0 },
       };
-      byKey[key(name)] = account;
+      byKey.set(key(name), account);
       await save();
       return issue(account);
     },
     async login(name, password) {
-      const account = byKey[key(name)];
+      const account = byKey.get(key(name));
       if (!account) return null;
       const hash = await scryptAsync(password, Buffer.from(account.salt, 'hex'), 64);
       return timingSafeEqual(hash, Buffer.from(account.hash, 'hex')) ? issue(account) : null;
     },
     nameForToken(token) {
       const k = tokens.get(token);
-      return k ? byKey[k].name : null;
+      return k ? byKey.get(k)?.name ?? null : null;
     },
     stats(name) {
-      const a = byKey[key(name)];
+      const a = byKey.get(key(name));
       return a ? row(a) : null;
     },
     leaderboard(limit) {
-      return Object.values(byKey).map(row).sort((a, b) => b.score - a.score).slice(0, limit);
+      return [...byKey.values()].map(row).sort((a, b) => b.score - a.score).slice(0, limit);
     },
     credit(name, delta) {
-      const a = byKey[key(name)];
+      const a = byKey.get(key(name));
       if (!a) return;
       a.stats.kills += delta.kills;
       a.stats.deaths += delta.deaths;
