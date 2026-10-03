@@ -52,7 +52,6 @@ export type SelfView = {
   pendingTier: Tier | null;
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
-  /** The dash in progress, so the client can replay it from the server's position. */
   dash: Dash | null;
   respawnIn: number;
   kills: number; deaths: number;
