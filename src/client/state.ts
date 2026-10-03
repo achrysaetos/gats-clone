@@ -31,7 +31,6 @@ export type Session = {
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;
-  reloadStartedAt: number | null;
   perkSentFor: number | null;
 };
 

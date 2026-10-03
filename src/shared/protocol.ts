@@ -30,6 +30,7 @@ export type PlayerView = {
   color: ColorId; weapon: WeaponId; team: Team;
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;
+  armorTier: ArmorId;
 };
 
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number };
@@ -41,6 +42,8 @@ export type ZoneView = { id: number; x: number; y: number; r: number; owner: Tea
 
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
+  /** 0..1 through the current reload, 0 when not reloading. */
+  reloadFrac: number;
   /** Move speed without a dash, for predicting the local player's movement. */
   speed: number;
   perks: Partial<Record<Tier, PerkId>>;

@@ -319,3 +319,17 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
   }
   assert.ok(kills > 0);
 });
+
+test('snapshots report the armor tier picked and how far through a reload the player is', () => {
+  const w = createWorld('FFA', 1);
+  w.walls = []; w.crates = [];
+  const p = addPlayer(w, 'Tank', { weapon: 'lmg', armor: 'medium', color: 'red' }, { at: { x: 1000, y: 1000 } });
+  assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.armorTier, 'medium', 'tier comes from the loadout, not reverse-engineered from points');
+  assert.equal(snapshotFor(w, p.id).self.reloadFrac, 0, 'no reload in progress');
+  press(w, p, { fire: true, shots: p.input.shots + 1 });
+  step(w, 1000 / 30);
+  press(w, p, { reload: true });
+  for (let t = 0; t < WEAPONS.lmg.reloadMs / 2; t += 1000 / 30) step(w, 1000 / 30);
+  const frac = snapshotFor(w, p.id).self.reloadFrac;
+  assert.ok(frac > 0.4 && frac < 0.6, `halfway through the reload reads about 0.5, got ${frac}`);
+});

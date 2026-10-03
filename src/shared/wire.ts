@@ -1,7 +1,7 @@
 import { STICKY_KEYS, type Snapshot, type SnapshotWire } from './protocol.ts';
 
 /** Decimal places kept per number field on the wire; any other non-integer keeps one. */
-const DECIMALS: Readonly<Record<string, number>> = { angle: 2, progress: 2, vx: 0, vy: 0, abilityReadyIn: 0, respawnIn: 0, restartIn: 0 };
+const DECIMALS: Readonly<Record<string, number>> = { angle: 2, progress: 2, reloadFrac: 2, vx: 0, vy: 0, abilityReadyIn: 0, respawnIn: 0, restartIn: 0 };
 
 const round = (key: string, v: unknown) => {
   if (typeof v !== 'number' || Number.isInteger(v)) return v;

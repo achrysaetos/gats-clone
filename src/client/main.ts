@@ -131,7 +131,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
         s: {
           ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
           lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
-          effects: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
+          effects: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null,
         },
       });
     }
@@ -179,8 +179,6 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
       case 'kill': s.feed = [...s.feed.slice(-9), { ...ev, at: now }]; break;
     }
   }
-  if (!snap.self.reloading) s.reloadStartedAt = null;
-  else s.reloadStartedAt ??= now;
   if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
 
   const dead = isDead(snap);

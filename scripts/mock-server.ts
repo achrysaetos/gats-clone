@@ -207,14 +207,14 @@ function serve(ws: WebSocket, mode: ModeId) {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,
       armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, weapon: loadout.weapon,
       team: mode === 'FFA' ? null : 'red', alive: me.alive, hidden: false, shield: perks[2] === 'shield', dashing: me.dashUntil > now,
-      score: me.score, level: 1,
+      score: me.score, level: 1, armorTier: loadout.armor,
     };
     const players: PlayerView[] = [selfView, ...w.bots.map(({ phase, orbit, cx, cy, cooldown, ...p }) => p)];
     const winner = winnerUntil > now ? (mode === 'FFA' ? name : 'Red team') : null;
     out({
       t: 'snap', tick: w.tick, ackSeq,
       self: {
-        id: myId, ammo: me.ammo, mag: weapon.mag, speed: WORLD.baseSpeed * weapon.moveMul, reloading: me.reloadUntil > 0, perks: { ...perks }, pendingTier,
+        id: myId, ammo: me.ammo, mag: weapon.mag, speed: WORLD.baseSpeed * weapon.moveMul, reloading: me.reloadUntil > 0, reloadFrac: 0, perks: { ...perks }, pendingTier,
         ability, abilityReadyIn: Math.max(0, me.abilityAt - now), respawnIn: me.alive ? 0 : Math.max(0, me.respawnAt - now),
         kills: me.kills, deaths: me.deaths, viewRadius: perks[1] === 'optics' ? 1100 : WORLD.viewRadius,
       },

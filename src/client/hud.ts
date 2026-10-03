@@ -196,7 +196,7 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
 
 function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
   if (!me) return;
-  const lp = levelProgress(me.score);
+  const lp = levelProgress(me.level, me.score);
   const bw = compact ? w - 150 - 56 : 260;
   const x = compact ? 22 : (w - bw) / 2;
   panel(ctx, x - 10, 10, bw + 20, 44);
@@ -232,12 +232,11 @@ function drawVitals({ ctx, w, h, snap, s, me, now }: Hud) {
   text(ctx, `${Math.ceil(me.armor)}`, x + 12, y + 36, 13, MUTED, 'left', 700);
   bar(ctx, x + 44, y + 31, barW - 32, 10, me.maxArmor ? me.armor / me.maxArmor : 0, '#5b8def');
 
-  const reloading = self.reloading && s.reloadStartedAt !== null;
+  const reloading = self.reloading;
   text(ctx, WEAPONS[me.weapon].name, x + 12, y + 60, 12, MUTED, 'left', 500);
   if (reloading) {
-    const frac = (now - s.reloadStartedAt!) / WEAPONS[me.weapon].reloadMs;
     text(ctx, 'Reloading', x + 12 + barW - 32 + 32, y + 60, 13, '#ffd34d', 'right', 700);
-    bar(ctx, x + 100, y + 56, barW - 120, 8, frac, '#ffd34d');
+    bar(ctx, x + 100, y + 56, barW - 120, 8, self.reloadFrac, '#ffd34d');
   } else {
     text(ctx, `${self.ammo} / ${self.mag}`, x + barW + 12, y + 60, 18, self.ammo === 0 ? PALETTE.hpBad : INK, 'right', 800);
   }

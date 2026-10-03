@@ -1,7 +1,6 @@
 import { COLORS, WORLD, type ArmorId } from '../shared/defs.ts';
 import type { CrateView, PlayerView, Snapshot, Team, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { screenToWorld, type Camera } from './camera.ts';
-import { armorTier } from './derive.ts';
 import { NUMBER_MS, type DamageNumber } from './feedback.ts';
 import { drawGun } from './sprites.ts';
 import { EFFECT_LIFE_MS, type Session } from './state.ts';
@@ -244,7 +243,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.rotate(p.angle);
   drawGun(ctx, p.weapon, R);
   ctx.rotate(-p.angle);
-  const ring = ARMOR_RING[armorTier(p.maxArmor)];
+  const ring = ARMOR_RING[p.armorTier];
   ctx.beginPath();
   ctx.arc(0, 0, R - ring / 2, 0, TAU);
   ctx.fillStyle = color;

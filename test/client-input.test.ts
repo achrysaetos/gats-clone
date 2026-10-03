@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
-import { armorTier, feedMentions, killerOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
+import { feedMentions, killerOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
 import { WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 
@@ -50,16 +50,11 @@ test('aim from screen space converts to world units through the camera', () => {
 });
 
 test('level progress tracks thresholds and caps at max level', () => {
-  assert.deepEqual(levelProgress(0), { level: 1, frac: 0, nextAt: 100 });
-  assert.deepEqual(levelProgress(200), { level: 2, frac: 0.5, nextAt: 300 });
-  assert.deepEqual(levelProgress(5000), { level: 4, frac: 1, nextAt: null });
+  assert.deepEqual(levelProgress(0, 0), { level: 1, frac: 0, nextAt: 100 });
+  assert.deepEqual(levelProgress(1, 200), { level: 2, frac: 0.5, nextAt: 300 });
+  assert.deepEqual(levelProgress(3, 5000), { level: 4, frac: 1, nextAt: null });
 });
 
-test('armor tier and killer derive from snapshot data', () => {
-  assert.equal(armorTier(0), 'none');
-  assert.equal(armorTier(60), 'medium');
-  assert.equal(armorTier(90), 'heavy');
-});
 
 test('killer lookup and kill-feed highlight go by player id, so same-named players never get confused', () => {
   const kill = (killer: string, killerId: number | null, victim: string, victimId: number): Extract<GameEvent, { e: 'kill' }> =>

@@ -1,22 +1,14 @@
-import { ARMORS, ARMOR_IDS, LEVEL_SCORES, WORLD, type ArmorId, type ModeId } from '../shared/defs.ts';
+import { LEVEL_SCORES, WORLD, type ModeId } from '../shared/defs.ts';
 import type { GameEvent, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
 
 export type LevelProgress = { level: number; frac: number; nextAt: number | null };
 
-export function levelProgress(score: number): LevelProgress {
-  let i = 0;
-  while (i + 1 < LEVEL_SCORES.length && score >= LEVEL_SCORES[i + 1]!) i++;
-  const from = LEVEL_SCORES[i]!;
-  const to = LEVEL_SCORES[i + 1];
-  if (to === undefined) return { level: i + 1, frac: 1, nextAt: null };
-  return { level: i + 1, frac: (score - from) / (to - from), nextAt: to };
-}
-
-/** Snapshots carry armor points, not the tier; recover it from the max so the ring width tracks the pick. */
-export function armorTier(maxArmor: number): ArmorId {
-  let best: ArmorId = 'none';
-  for (const id of ARMOR_IDS) if (ARMORS[id].points <= maxArmor) best = id;
-  return best;
+/** `level` is the server's 0-based level; players see it counted from 1. */
+export function levelProgress(level: number, score: number): LevelProgress {
+  const from = LEVEL_SCORES[level] ?? 0;
+  const to = LEVEL_SCORES[level + 1];
+  if (to === undefined) return { level: level + 1, frac: 1, nextAt: null };
+  return { level: level + 1, frac: Math.min(1, Math.max(0, (score - from) / (to - from))), nextAt: to };
 }
 
 export function killerOf(events: readonly GameEvent[], victimId: number): string | null {
