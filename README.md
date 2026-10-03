@@ -24,6 +24,7 @@ Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. B
 | Space | Use ability |
 | 1-9, 0 | Pick a perk |
 | Enter | Chat |
+| M | Mute sound |
 
 At 100, 300 and 600 points you pick an attachment, then a survival perk, then an ability.
 
