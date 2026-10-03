@@ -25,6 +25,7 @@ html, body {
 }
 
 #game {
+  touch-action: none;
   position: fixed;
   inset: 0;
   width: 100vw;
@@ -259,4 +260,14 @@ kbd {
 @media (max-width: 420px) {
   .weapons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+.touch-buttons { display: none; }
+@media (pointer: coarse) {
+  .touch-buttons { display: flex; position: fixed; right: 18px; bottom: 150px; gap: 14px; flex-direction: column; }
+  .touch-buttons button {
+    width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
+    background: rgba(20,24,32,.55); color: #fff; font: 700 22px system-ui, sans-serif; touch-action: none;
+  }
+  .touch-buttons button:active { background: rgba(245,196,0,.7); }
 }

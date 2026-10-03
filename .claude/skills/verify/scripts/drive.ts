@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire chat leave (default: all, in order).
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire chat touch leave (default: all, in order).
 // Drives the real client in headless Chrome over CDP against the server launch.sh started, reads the page's own
 // WebSocket frames as wire evidence, and cross-checks from an independent observer client in the same room.
 import { spawn } from 'node:child_process';
@@ -11,7 +11,7 @@ import WebSocket from 'ws';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
-const ALL = ['menu', 'account', 'join', 'move', 'fire', 'chat', 'leave'];
+const ALL = ['menu', 'account', 'join', 'move', 'fire', 'chat', 'touch', 'leave'];
 const steps = process.argv.length > 3 ? process.argv.slice(3) : ALL;
 const PORT = readFileSync(join(RUN, 'port'), 'utf8').trim();
 const BASE = `http://localhost:${PORT}`;
@@ -142,6 +142,31 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('own chat log shows the message', await until(async () => (await js(`document.getElementById('chat-log').textContent`)).includes(text)));
     expect('observer in the same room receives it', await until(() => observerChat.some((c) => c.from === NAME && c.text === text)));
     await shot('chat');
+  },
+  async touch() {
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }] });
+    await sleep(300);
+    expect('touch buttons visible on a coarse pointer', await js(`getComputedStyle(document.querySelector('.touch-buttons')).display !== 'none'`));
+    const touch = (type: string, points: { x: number; y: number; id: number }[]) => cdp('Input.dispatchTouchEvent', { type, touchPoints: points });
+    const before = me()!;
+    await touch('touchStart', [{ x: 90, y: 600, id: 1 }]);
+    for (let i = 1; i <= 5; i++) { await touch('touchMove', [{ x: 90 + i * 12, y: 600, id: 1 }]); await sleep(30); }
+    await sleep(600);
+    await shot('touch-move');
+    await touch('touchEnd', []);
+    const after = me()!;
+    expect('left thumb drag moves the player right on the server', !!after && after.x > before.x + 50, `x ${before.x.toFixed(0)} -> ${after?.x.toFixed(0)}`);
+    const ammo = frames.last!.self.ammo;
+    await touch('touchStart', [{ x: 300, y: 500, id: 2 }]);
+    for (let i = 1; i <= 4; i++) { await touch('touchMove', [{ x: 300, y: 500 - i * 15, id: 2 }]); await sleep(30); }
+    const fired = await until(() => frames.last!.self.ammo < ammo);
+    await touch('touchEnd', []);
+    expect('right thumb push fires: server ammo decreases', fired, `ammo ${ammo} -> ${frames.last!.self.ammo}`);
+    await cdp('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await cdp('Emulation.setEmulatedMedia', { features: [] });
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   },
   async leave() {
     await cdp('Page.reload', { ignoreCache: true });

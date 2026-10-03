@@ -3,8 +3,9 @@ import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot 
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, worldToScreen, type Camera } from './camera.ts';
 import { killerOf } from './derive.ts';
-import { drawHud } from './hud.ts';
+import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
+import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { createOverlays } from './overlays.ts';
@@ -33,6 +34,7 @@ let camera: Camera | null = null;
 const held = new Set<Action>();
 let firing = false;
 const mouse = { x: 0, y: 0 };
+let sticks: Sticks = NO_STICKS;
 
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
@@ -149,6 +151,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
 }
 
 function aimOffset(s: Session): { dx: number; dy: number } {
+  const touch = touchAim(sticks);
+  if (touch) return touch;
   if (!camera) return { dx: 1, dy: 0 };
   const self = worldToScreen(camera, s.lastSelf);
   return { dx: (mouse.x - self.x) / camera.scale, dy: (mouse.y - self.y) / camera.scale };
@@ -159,7 +163,9 @@ setInterval(() => {
   if (!s) return;
   const active = state.phase === 'playing' && !overlays.typing;
   s.seq++;
-  send(s.ws, { t: 'input', seq: s.seq, input: assembleInput(active ? held : new Set(), active && firing, aimOffset(s)) });
+  const actions = active ? new Set([...held, ...touchMoves(sticks)]) : new Set<Action>();
+  const shooting = active && (firing || touchAim(sticks) !== null);
+  send(s.ws, { t: 'input', seq: s.seq, input: assembleInput(actions, shooting, aimOffset(s)) });
 }, 1000 / INPUT_HZ);
 
 function pickPerk(slot: number) {
@@ -228,6 +234,7 @@ function frame(now: number) {
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   drawWorld(ctx, { snap, s, cam: camera, dpr: view.dpr, now, selfAngle });
   drawHud(ctx, view.dpr, view.w, view.h, snap, s, now);
+  if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now);
 }
 
@@ -269,7 +276,22 @@ function onKeyUp(e: KeyboardEvent) {
 
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
-window.addEventListener('blur', () => { held.clear(); firing = false; });
+window.addEventListener('blur', () => { held.clear(); firing = false; sticks = NO_STICKS; });
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch') return;
+  // Suppresses the emulated mousedown so a thumb on the move stick does not also fire.
+  e.preventDefault();
+  sticks = pressStick(sticks, e.pointerId, e.clientX, e.clientY, view.w);
+});
+window.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch') sticks = dragStick(sticks, e.pointerId, e.clientX, e.clientY); });
+for (const type of ['pointerup', 'pointercancel'] as const) {
+  window.addEventListener(type, (e) => { if (e.pointerType === 'touch') sticks = releaseStick(sticks, e.pointerId); });
+}
+for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'reload']] as const) {
+  const button = $(id);
+  button.addEventListener('pointerdown', (e) => { e.preventDefault(); held.add(action); });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
+}
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
 canvas.addEventListener('mousedown', (e) => { if (e.button === 0) firing = true; });
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });

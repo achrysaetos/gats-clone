@@ -32,6 +32,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['Space', 'Ability'],
   ['1-9, 0', 'Pick perk'],
   ['Enter', 'Chat'],
+  ['Touch', 'Left thumb moves, right thumb aims and fires'],
 ];
 
 export const MAX_AIM_DIST = 2000;

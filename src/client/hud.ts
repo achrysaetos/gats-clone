@@ -1,3 +1,4 @@
+import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { levelProgress } from './derive.ts';
@@ -12,6 +13,23 @@ const FEED_MS = 6000;
 const TAU = Math.PI * 2;
 
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number };
+
+export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
+  for (const st of [sticks.move, sticks.aim]) {
+    if (!st) continue;
+    const v = stickVector(st);
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(st.ox, st.oy, STICK_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(st.ox + v.x * STICK_RADIUS, st.oy + v.y * STICK_RADIUS, STICK_RADIUS * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
 
 export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h: number, snap: Snapshot, s: Session, now: number) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
