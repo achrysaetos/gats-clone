@@ -4,11 +4,11 @@ Score unlocks perk choices at 100, 300 and 600 points: an attachment, then a sur
 
 ## Sub-features
 
-- `prog-perks` offers a perk panel at each threshold, picked by click or number key.
+- `prog-perks` docks a row of perk tiles (key, symbol, short name) at the bottom between the vitals panel and the minimap at each threshold. Hovering a tile shows its description. A number key or a click picks.
 - `prog-ability` uses the tier 3 ability with Space, then puts it on cooldown.
 - `death-screen` names the killer and disables `#respawn` during the countdown.
-- `death-respawn` returns the player with the new loadout.
-- `mode-tdm` and `mode-dom` show team scores, and the winner banner at the win score.
+- `death-respawn` returns the player with the new loadout and shows the objective banner again.
+- `mode-tdm` and `mode-dom` show team scores, the objective under the score bar, and the winner banner at the win score.
 
 ## How to get to it (user POV)
 
@@ -22,7 +22,9 @@ Preconditions:
 
 - Doctor passes.
 
-- **Not yet scripted on the real server.** These states need score, a death or a full match, which the driver cannot cause quickly through the real user path. Report them as not verified.
+- **Perk dock on the real server.** `node .claude/skills/verify/scripts/combat.ts "$RUN" tdm` shoots crates and bots in the first room until the dock opens, then logs `perk dock opens at 100 points`, `perk dock keeps clear of the screen center` with its size and position, `hovering a tile shows its description`, `pressing 2 picks the second tier 1 perk on the server` (read from `self.perks` in the page's frames) and `the dock closes after the pick`. Screenshot `perk-dock-<room>.png`.
+- **Respawn.** When bots kill the driven player during `combat.ts`, it clicks `#respawn` and logs `objective banner shows again after respawning`. This depends on a death happening, so a run without one does not verify it.
+- **Not yet scripted on the real server.** The death screen's killer name, the ability and the winner banner need a specific death or a full match. Report them as not verified.
 - **Render-only check.** Run the repo-root harness: `node scripts/mock-server.ts 8787` in one terminal, then `node scripts/drive.ts http://localhost:8787 "$RUN/evidence/mock"`. It forces each state with mock chat commands and screenshots it. This proves rendering only.
 - **Next harness step.** Add a `death` step that walks the driven player toward bots and waits for `#death` to show, then asserts `#death-title` names a player from the snapshot and that clicking `#respawn` after the countdown hides `#death`.
 

@@ -1,6 +1,6 @@
 # Joining and playing
 
-Clicking a room and `Play` puts the player into a live match. WASD moves, the mouse aims, clicking fires, and closing the page removes the player from the room.
+Clicking a room and `Play` puts the player into a live match. A 4s banner states the objective and team, and a one-line objective stays under the score bar. WASD moves, the mouse aims, clicking fires, and closing the page removes the player from the room. Hits give the shooter a hitmarker and damage numbers, and the victim a red edge vignette.
 
 ## Sub-features
 
@@ -8,6 +8,10 @@ Clicking a room and `Play` puts the player into a live match. WASD moves, the mo
 - `play-move` moves the player on the server.
 - `play-fire` fires and spends ammo on the server.
 - `play-leave` removes the player from the room when the page unloads.
+- `play-objective` shows the `#objective` banner on join and on every respawn, naming the mode, the player's team and the win score, then hides it after 4s.
+- `play-hit-feedback` turns each hit into one `dmg` event (attacker, victim, amount, kind `player` or `crate`) or an `impact` for walls. The shooter sees a crosshair hitmarker for player hits (larger and red on a kill) and floating damage numbers. The victim sees a red edge vignette. The muzzle flash sits at the barrel tip.
+- `play-team-colors` draws every TDM and DOM body in its team color, whatever color was picked, and marks teammates with a small triangle. FFA keeps the picked color.
+- `play-names` gives each player a unique name in the room. A guest who types a registered name or a name already in use gets a number appended.
 
 ## How to get to it (user POV)
 
@@ -23,9 +27,13 @@ Preconditions:
 - **Move.** Run `node drive.ts "$RUN" join move`. It holds `KeyD` for 700ms. Log line `holding D moves the player right on the server` with the measured x change. Screenshot `moved.png`.
 - **Fire.** Run `node drive.ts "$RUN" join fire`. It clicks once. Log line `click fires: server ammo decreases` with the measured ammo. Screenshot `fired.png`.
 - **Leave.** Run `node drive.ts "$RUN" join leave`. It reloads the page. Log line `server human count returns to baseline after the page unloads (reload)`.
+- **Objective, hits and team colors.** Run `node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom`. It writes `$RUN/evidence/combat.log` and ends in `RESULT PASS` or `RESULT FAIL`. Per room it logs `objective banner shows on join` with the banner text, `banner names the player's team from the snapshot`, `objective banner hides after about 4s`, and `a dmg event from the driven player arrives on the page socket` with the count and kinds. Screenshots are `objective-<room>.png`, `muzzle-<room>.png`, `hit-crate-<room>.png`, and, when the chance comes up, `hit-player-<room>.png` (hitmarker), `hurt-<room>.png` (vignette) and `teammate-<room>.png` (team colors and marker).
+- **Names.** Covered by `npm test` (`test/e2e.test.ts` and `test/names.test.ts`), which join real sockets as an impostor, the account owner and two guests named Alex.
 
 ## Gotchas
 
 - Spawning against a wall can block movement. A move under 50 units fails the check. Retry once before calling it a regression.
 - The pistol is semi-automatic. A held mouse fires once. Press and release for each shot.
-- TDM and DOM rooms are reached by clicking the 2nd or 3rd `#servers .server`. The driver currently joins FFA only.
+- TDM and DOM rooms are reached by clicking the 2nd or 3rd `#servers .server`. `drive.ts` joins FFA only. `combat.ts` joins any room.
+- The hitmarker lasts 220ms, so `hit-player-<room>.png` exists only when a bot came within range and the screenshot landed in time. A crate hit alone still passes the dmg check, and the log says the hitmarker was not exercised.
+- After navigating to another room, the old page can stay in the back/forward cache with its socket open. `combat.ts` reads frames only from the newest socket.
