@@ -14,7 +14,7 @@ import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } fro
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
-import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
+import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
@@ -160,7 +160,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = newestSnap(s.snaps);
   s.snaps = pushSnap(s.snaps, snap, now);
   const me = snap.players.find((p) => p.id === s.myId);
-  s.predict = reconcile(s.predict, me?.alive ? me : null, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
+  const server = me?.alive ? { x: me.x, y: me.y, dash: snap.self.dash } : null;
+  s.predict = reconcile(s.predict, server, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.feedback = addFeedback(s.feedback, snap.events, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
@@ -198,7 +199,8 @@ setInterval(() => {
   send(s.ws, { t: 'input', seq: s.seq, input });
   const latest = newestSnap(s.snaps);
   const solids = solidsOf(s.walls, latest?.crates ?? []);
-  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS }, solids, latest?.self.speed ?? 0, performance.now());
+  const dash = !!latest && startsDash(s.predict, input, latest.self, latest.match.winner === null);
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, startsDash: dash }, solids, latest?.self.speed ?? 0, performance.now());
 }, INPUT_MS);
 
 function pickPerk(slot: number) {
@@ -266,7 +268,7 @@ function frame(now: number) {
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const snap = drawn
-    ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn } : p)) }
+    ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) }
     : interpolated;
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };

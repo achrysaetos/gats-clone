@@ -40,6 +40,8 @@ export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' |
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
+export type Dash = { dirX: number; dirY: number; leftMs: number };
+
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
   /** 0..1 through the current reload, 0 when not reloading. */
@@ -50,6 +52,8 @@ export type SelfView = {
   pendingTier: Tier | null;
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
+  /** The dash in progress, so the client can replay it from the server's position. */
+  dash: Dash | null;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;

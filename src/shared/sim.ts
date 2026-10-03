@@ -3,7 +3,7 @@ import {
   type AbilityId, type ModeId, type PerkId, type Tier,
 } from './defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
+  BulletView, CrateView, Dash, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
   Team, ThrownKind, ThrownView, WallView, ZoneView,
 } from './protocol.ts';
 
@@ -20,7 +20,7 @@ export type Life =
     nextFireAt: number;
     lastDamageAt: number;
     lastMoveAt: number;
-    dashUntil: number;
+    dash: Dash | null;
     pressUntil: number;
   }
   | { k: 'dead'; respawnAt: number };
@@ -95,8 +95,9 @@ const REVEAL_MS = 2000;
 const CRATE_SIZE = 44;
 const CRATE_RESPAWN_MS = 15000;
 const BUILT_WALL_MS = 12000;
-const DASH_MS = 250;
-const DASH_MUL = 2.6;
+const DASH_MS = 200;
+const DASH_DISTANCE = 240;
+const MAX_SUBSTEP = WORLD.playerRadius / 2;
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
 const ZONE_RADIUS = 180;
@@ -336,7 +337,7 @@ function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, dashUntil: 0, pressUntil: -Infinity,
+    lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity,
   };
 }
 
@@ -543,13 +544,36 @@ export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): 
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
+export type Motion = { x: number; y: number; dash: Dash | null };
 
-export function moveStep(solids: readonly Rect[], x: number, y: number, keys: MoveKeys, speed: number, dtMs: number): { x: number; y: number } {
-  const mx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-  const my = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
-  if (mx === 0 && my === 0) return { x, y };
+const keyAxes = (keys: MoveKeys) => ({ mx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0), my: (keys.down ? 1 : 0) - (keys.up ? 1 : 0) });
+
+export function startDash(input: MoveKeys & Pick<InputState, 'angle'>): Dash {
+  const { mx, my } = keyAxes(input);
+  const len = Math.hypot(mx, my);
+  return len > 0
+    ? { dirX: mx / len, dirY: my / len, leftMs: DASH_MS }
+    : { dirX: Math.cos(input.angle), dirY: Math.sin(input.angle), leftMs: DASH_MS };
+}
+
+function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number): { x: number; y: number } {
+  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / MAX_SUBSTEP));
+  let at = { x, y };
+  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps);
+  return at;
+}
+
+export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number): Motion {
+  const { dash } = from;
+  if (dash) {
+    const d = (DASH_DISTANCE * Math.min(dtMs, dash.leftMs)) / DASH_MS;
+    const leftMs = dash.leftMs - dtMs;
+    return { ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d), dash: leftMs > 0 ? { ...dash, leftMs } : null };
+  }
+  const { mx, my } = keyAxes(keys);
+  if (mx === 0 && my === 0) return from;
   const d = (speed * dtMs) / 1000 / Math.hypot(mx, my);
-  return resolveCircle(solids, x + mx * d, y + my * d);
+  return { ...slide(solids, from.x, from.y, mx * d, my * d), dash: null };
 }
 
 
@@ -600,7 +624,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     return true;
   },
   dash: (w, p) => {
-    if (p.life.k === 'alive') p.life.dashUntil = w.now + DASH_MS;
+    if (p.life.k === 'alive') p.life.dash = startDash(p.input);
     return true;
   },
 };
@@ -673,12 +697,14 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
-  const moving = inp.right !== inp.left || inp.down !== inp.up;
+  const moving = inp.right !== inp.left || inp.down !== inp.up || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p, !moving);
   if (moving) {
-    const speed = stats.speed * (w.now < life.dashUntil ? DASH_MUL : 1);
-    Object.assign(p, moveStep(solidRects(w), p.x, p.y, inp, speed, dtMs));
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs);
+    p.x = m.x;
+    p.y = m.y;
+    life.dash = m.dash;
   }
 
   if (life.reloadUntil !== null && w.now >= life.reloadUntil) { life.ammo = stats.mag; life.reloadUntil = null; }
@@ -801,7 +827,7 @@ function playerView(w: World, p: Player): PlayerView {
     hp: alive ? Math.ceil(life.hp) : 0, maxHp: stats.maxHp,
     armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
     color: p.loadout.color, weapon: p.loadout.weapon, team: p.team,
-    alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && w.now < life.dashUntil,
+    alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor,
   };
 }
@@ -824,6 +850,7 @@ function selfView(w: World, p: Player): SelfView {
     ability,
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
+    dash: life.k === 'alive' ? life.dash : null,
     respawnIn: life.k === 'dead' ? Math.max(0, life.respawnAt - w.now) : 0,
     kills: p.kills,
     deaths: p.deaths,

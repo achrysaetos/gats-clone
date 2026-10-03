@@ -1,13 +1,13 @@
-import type { CrateView, InputState, WallView } from '../shared/protocol.ts';
-import { moveStep, type Rect } from '../shared/sim.ts';
+import type { CrateView, InputState, SelfView, WallView } from '../shared/protocol.ts';
+import { moveStep, startDash, type Motion, type Rect } from '../shared/sim.ts';
 import { lerp } from './interp.ts';
 
-export type PendingInput = { seq: number; input: InputState; dtMs: number };
+export type PendingInput = { seq: number; input: InputState; dtMs: number; startsDash: boolean };
 type Point = { x: number; y: number };
 
 export type Prediction = {
   pending: PendingInput[];
-  afterNewest: Point | null;
+  afterNewest: Motion | null;
   beforeNewest: Point | null;
   sampledAt: number;
   smoothingCorrection: Point;
@@ -26,17 +26,27 @@ export const solidsOf = (walls: readonly WallView[], crates: readonly CrateView[
   ...crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
 ];
 
-const replay = (solids: readonly Rect[], start: Point, pending: readonly PendingInput[], speed: number): Point =>
-  pending.reduce((at, p) => moveStep(solids, at.x, at.y, p.input, speed, p.dtMs), start);
+export function startsDash(pred: Prediction, input: InputState, self: Pick<SelfView, 'ability' | 'abilityReadyIn'>, armed: boolean): boolean {
+  const dashing = !!pred.afterNewest?.dash || pred.pending.some((p) => p.startsDash);
+  return armed && input.ability && self.ability === 'dash' && self.abilityReadyIn <= 0 && !dashing;
+}
+
+function stepInput(solids: readonly Rect[], at: Motion, p: PendingInput, speed: number): Motion {
+  const moved = moveStep(solids, at, p.input, speed, p.dtMs);
+  return p.startsDash && !moved.dash ? { ...moved, dash: startDash(p.input) } : moved;
+}
+
+const replay = (solids: readonly Rect[], start: Motion, pending: readonly PendingInput[], speed: number): Motion =>
+  pending.reduce((at, p) => stepInput(solids, at, p, speed), start);
 
 export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: number, now: number): Prediction {
   const pending = [...pred.pending, entry].slice(-MAX_PENDING);
   const was = pred.afterNewest;
   if (!was) return { ...pred, pending };
-  return { ...pred, pending, beforeNewest: was, afterNewest: moveStep(solids, was.x, was.y, entry.input, speed, entry.dtMs), sampledAt: now };
+  return { ...pred, pending, beforeNewest: was, afterNewest: stepInput(solids, was, entry, speed), sampledAt: now };
 }
 
-export function reconcile(pred: Prediction, server: Point | null, ackSeq: number, solids: readonly Rect[], speed: number): Prediction {
+export function reconcile(pred: Prediction, server: Motion | null, ackSeq: number, solids: readonly Rect[], speed: number): Prediction {
   const pending = pred.pending.filter((p) => p.seq > ackSeq);
   if (!server) return { ...NO_PREDICTION, pending };
   const afterNewest = replay(solids, server, pending, speed);
