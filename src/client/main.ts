@@ -2,7 +2,8 @@ import { PERK_TIERS, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, worldToScreen, type Camera } from './camera.ts';
-import { killerOf } from './derive.ts';
+import { createAudio } from './audio.ts';
+import { isDead, killerOf } from './derive.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
@@ -10,6 +11,8 @@ import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { createOverlays } from './overlays.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
+import { soundsFor, type SoundCue } from './sfx.ts';
+import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
 
 const INPUT_HZ = 30;
@@ -35,6 +38,9 @@ const held = new Set<Action>();
 let firing = false;
 const mouse = { x: 0, y: 0 };
 let sticks: Sticks = NO_STICKS;
+const audio = createAudio();
+let trauma = 0;
+let lastFrameAt = 0;
 
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
@@ -127,10 +133,19 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
   }
 }
 
+function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
+  audio.play(cues, s.lastSelf, viewRadius);
+  for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
+}
+
+const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, strength: 1 }], WORLD.viewRadius);
+
 function onSnap(s: Session, snap: Snapshot, now: number) {
+  const prev = s.snaps.next?.snap ?? null;
   s.snaps = pushSnap(s.snaps, snap, now);
   const me = snap.players.find((p) => p.id === s.myId);
   if (me) s.selfName = me.name;
+  playCues(s, soundsFor(prev, snap, s.selfName), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   for (const ev of snap.events) {
     switch (ev.e) {
@@ -144,7 +159,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   else s.reloadStartedAt ??= now;
   if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
 
-  const dead = me ? !me.alive : snap.self.respawnIn > 0;
+  const dead = isDead(snap);
   if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.selfName) });
   else if (dead && state.phase === 'dead' && !state.killer) state.killer = killerOf(snap.events, s.selfName);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
@@ -176,6 +191,7 @@ function pickPerk(slot: number) {
   if (!perk) return;
   send(s.ws, { t: 'perk', tier, perk });
   s.perkSentFor = tier;
+  playClick(s);
 }
 
 function respawn() {
@@ -229,10 +245,15 @@ function frame(now: number) {
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
   camera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
+  trauma = decay(trauma, now - lastFrameAt);
+  lastFrameAt = now;
+  const shake = offset(trauma, now);
+  // Aim reads the unshaken `camera`, so shake never jitters where bullets go.
+  const cam = { ...camera, x: camera.x + shake.x / camera.scale, y: camera.y + shake.y / camera.scale };
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
-  drawWorld(ctx, { snap, s, cam: camera, dpr: view.dpr, now, selfAngle });
+  drawWorld(ctx, { snap, s, cam, dpr: view.dpr, now, selfAngle });
   drawHud(ctx, view.dpr, view.w, view.h, snap, s, now);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now);
@@ -257,6 +278,12 @@ function onKeyDown(e: KeyboardEvent) {
     overlays.openChat();
     return;
   }
+  if (e.code === 'KeyM') {
+    const muted = audio.toggleMute();
+    s.chat.push({ from: '', text: muted ? 'Sound off (M to turn on)' : 'Sound on', team: null, at: performance.now() });
+    if (!muted) playClick(s);
+    return;
+  }
   const slot = perkSlotForKey(e.code);
   if (slot !== null) {
     pickPerk(slot);
@@ -274,6 +301,7 @@ function onKeyUp(e: KeyboardEvent) {
   if (action) held.delete(action);
 }
 
+for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, audio.unlock, { capture: true });
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
 window.addEventListener('blur', () => { held.clear(); firing = false; sticks = NO_STICKS; });

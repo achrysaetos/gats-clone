@@ -1,5 +1,5 @@
 import { ARMORS, ARMOR_IDS, LEVEL_SCORES, type ArmorId } from '../shared/defs.ts';
-import type { GameEvent } from '../shared/protocol.ts';
+import type { GameEvent, PlayerView, Snapshot } from '../shared/protocol.ts';
 
 export type LevelProgress = { level: number; frac: number; nextAt: number | null };
 
@@ -22,6 +22,14 @@ export function armorTier(maxArmor: number): ArmorId {
 export function killerOf(events: readonly GameEvent[], victim: string): string | null {
   for (const ev of events) if (ev.e === 'kill' && ev.victim === victim) return ev.killer;
   return null;
+}
+
+export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
+
+/** A dead player may be missing from `players`, so fall back to the respawn timer. */
+export function isDead(snap: Snapshot): boolean {
+  const me = selfOf(snap);
+  return me ? !me.alive : snap.self.respawnIn > 0;
 }
 
 export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
