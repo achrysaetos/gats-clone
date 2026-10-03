@@ -75,6 +75,11 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
   grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 1500, engineer: 10000, dash: 3500,
 };
 
+export const PLAYER_KINDS = ['human', 'bot'] as const;
+export type PlayerKind = (typeof PLAYER_KINDS)[number];
+/** Humans carry triple health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
+export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 3, bot: 1 };
+
 export const LEVEL_SCORES = [0, 100, 250, 450] as const;
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM'] as const;

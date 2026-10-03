@@ -1,6 +1,6 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
-  type AbilityId, type ModeId, type PerkId, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, HP_MULTIPLIER, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
+  type AbilityId, type ModeId, type PerkId, type PlayerKind, type Tier,
 } from './defs.ts';
 import type {
   BulletView, CrateView, Dash, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
@@ -29,6 +29,7 @@ export type Life =
 export type Player = {
   id: number;
   name: string;
+  kind: PlayerKind;
   loadout: Loadout;
   team: Team;
   x: number;
@@ -185,6 +186,8 @@ export function effectiveStats(p: Player, still = false): Stats {
     s.thermal ||= m.thermal ?? false;
     s.ghillie ||= m.ghillie ?? false;
   }
+  s.maxHp *= HP_MULTIPLIER[p.kind];
+  s.regenPerSec *= HP_MULTIPLIER[p.kind];
   return s;
 }
 
@@ -332,7 +335,7 @@ function spawnPoint(w: World, team: Team): { x: number; y: number } {
 }
 
 
-export type AddPlayerOpts = { team?: Team; at?: { x: number; y: number } };
+export type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
 
 function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
@@ -345,7 +348,7 @@ function freshLife(p: Player, now: number): Life {
 export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPlayerOpts = {}): Player {
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
-    id: newId(w), name, loadout, team, x: 0, y: 0, angle: 0,
+    id: newId(w), name, kind: opts.kind ?? 'bot', loadout, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
