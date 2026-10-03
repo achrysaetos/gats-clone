@@ -21,7 +21,8 @@ export type Life =
     lastDamageAt: number;
     lastMoveAt: number;
     dashUntil: number;
-    triggerHeld: boolean;
+    /** A trigger press not yet turned into a shot stays honored until this time, so it survives a cooldown ending a tick late. */
+    pressUntil: number;
   }
   | { k: 'dead'; respawnAt: number };
 
@@ -35,6 +36,8 @@ export type Player = {
   angle: number;
   input: InputState;
   seq: number;
+  /** Highest `input.shots` already counted. */
+  shotsSeen: number;
   life: Life;
   score: number;
   level: number;
@@ -87,7 +90,7 @@ export type World = {
 };
 
 export const IDLE_INPUT: InputState = {
-  up: false, down: false, left: false, right: false, angle: 0, fire: false, reload: false, ability: false, aimDist: 0,
+  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0,
 };
 
 const REVEAL_MS = 2000;
@@ -104,6 +107,7 @@ const ZONE_POINTS_PER_SEC = 5;
 const SHIELD_BLOCK = 0.6;
 const SHIELD_ARC = Math.PI / 3;
 const GAS_RADIUS = 140;
+const PRESS_GRACE_MS = 100;
 
 export function rand(w: World): number {
   // mulberry32
@@ -331,7 +335,7 @@ function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, dashUntil: 0, triggerHeld: false,
+    lastDamageAt: -Infinity, lastMoveAt: now, dashUntil: 0, pressUntil: -Infinity,
   };
 }
 
@@ -339,7 +343,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
     id: newId(w), name, loadout, team, x: 0, y: 0, angle: 0,
-    input: IDLE_INPUT, seq: 0, life: { k: 'dead', respawnAt: 0 },
+    input: IDLE_INPUT, seq: 0, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
@@ -614,8 +618,12 @@ function tickThrown(w: World, dt: number) {
 
 
 function tickPlayer(w: World, p: Player, dtMs: number) {
+  // Counted even while dead so presses made on the death screen do not fire on respawn.
+  const pressed = p.input.shots > p.shotsSeen;
+  p.shotsSeen = Math.max(p.shotsSeen, p.input.shots);
   const life = p.life;
   if (life.k !== 'alive') return;
+  if (pressed) life.pressUntil = w.now + PRESS_GRACE_MS;
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
@@ -636,8 +644,9 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const weapon = WEAPONS[p.loadout.weapon];
-  const canTrigger = weapon.auto || !life.triggerHeld;
-  if (inp.fire && canTrigger && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
+  const wantsShot = w.now <= life.pressUntil || (weapon.auto && inp.fire);
+  if (wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
+    life.pressUntil = -Infinity;
     life.ammo--;
     life.nextFireAt = w.now + weapon.fireMs;
     const muzzle = WORLD.playerRadius + 4;
@@ -652,7 +661,6 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
     w.events.push({ e: 'shot', x: p.x, y: p.y, silenced: stats.silenced, owner: p.id });
   }
-  life.triggerHeld = inp.fire;
 
   const ability = abilityOf(p);
   if (inp.ability && ability && w.now >= p.abilityReadyAt) {

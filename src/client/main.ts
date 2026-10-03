@@ -37,6 +37,7 @@ let view = { w: 0, h: 0, dpr: 1 };
 let camera: Camera | null = null;
 const held = new Set<Action>();
 let firing = false;
+let touchWasAiming = false;
 const mouse = { x: 0, y: 0 };
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
@@ -123,7 +124,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
       setState({
         phase: 'playing',
         s: {
-          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0,
+          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0, shots: 0,
           selfName: name, lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
           effects: [], feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
         },
@@ -188,8 +189,11 @@ setInterval(() => {
   const active = state.phase === 'playing' && !overlays.typing;
   s.seq++;
   const actions = active ? new Set([...held, ...touchMoves(sticks)]) : new Set<Action>();
-  const shooting = active && (firing || touchAim(sticks) !== null);
-  send(s.ws, { t: 'input', seq: s.seq, input: assembleInput(actions, shooting, aimOffset(s)) });
+  const touchAiming = active && touchAim(sticks) !== null;
+  if (touchAiming && !touchWasAiming) s.shots++;
+  touchWasAiming = touchAiming;
+  const shooting = active && (firing || touchAiming);
+  send(s.ws, { t: 'input', seq: s.seq, input: assembleInput(actions, shooting, s.shots, aimOffset(s)) });
 }, 1000 / INPUT_HZ);
 
 function pickPerk(slot: number) {
@@ -331,7 +335,11 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
-canvas.addEventListener('mousedown', (e) => { if (e.button === 0) firing = true; });
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  firing = true;
+  if (state.phase === 'playing' && !overlays.typing) state.s.shots++;
+});
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('resize', resize);

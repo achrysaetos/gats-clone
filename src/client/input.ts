@@ -42,7 +42,7 @@ export const MAX_AIM_DIST = 2000;
  * `aim` is the mouse offset from the player's own on-screen position, already converted to world units,
  * so aimDist means the same throw distance at every zoom level.
  */
-export function assembleInput(held: ReadonlySet<Action>, firing: boolean, aim: { dx: number; dy: number }): InputState {
+export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots: number, aim: { dx: number; dy: number }): InputState {
   return {
     up: held.has('up'),
     down: held.has('down'),
@@ -51,6 +51,7 @@ export function assembleInput(held: ReadonlySet<Action>, firing: boolean, aim: {
     angle: Math.atan2(aim.dy, aim.dx),
     aimDist: Math.min(MAX_AIM_DIST, Math.hypot(aim.dx, aim.dy)),
     fire: firing,
+    shots,
     reload: held.has('reload'),
     ability: held.has('ability'),
   };

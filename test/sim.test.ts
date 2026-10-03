@@ -110,7 +110,7 @@ test('dead player cannot act and respawns after respawnMs', () => {
   assert.equal(b.life.k, 'dead');
 
   const { x, y } = b;
-  press(w, b, { right: true, fire: true, angle: Math.PI });
+  press(w, b, { right: true, fire: true, shots: b.input.shots + 1, angle: Math.PI });
   run(w, 1000);
   assert.deepEqual([b.x, b.y], [x, y], 'dead player did not move');
   assert.equal(w.bullets.filter((bu) => bu.owner === b.id).length, 0, 'dead player did not shoot');

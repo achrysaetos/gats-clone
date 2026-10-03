@@ -10,6 +10,8 @@ export type InputState = {
   up: boolean; down: boolean; left: boolean; right: boolean;
   angle: number;
   fire: boolean;
+  /** Trigger presses since the connection opened. Monotonic, so a press and release between two samples still counts. */
+  shots: number;
   reload: boolean;
   ability: boolean;
   aimDist: number;
@@ -98,9 +100,13 @@ function parseInput(v: unknown): InputState | null {
   if (!isObj(v)) return null;
   const angle = num(v.angle, -10, 10);
   const aimDist = num(v.aimDist, 0, 2000);
-  if (angle === null || aimDist === null) return null;
+  const shots = num(v.shots ?? 0, 0, Number.MAX_SAFE_INTEGER);
+  if (angle === null || aimDist === null || shots === null) return null;
   const b = (k: string) => v[k] === true;
-  return { up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist, fire: b('fire'), reload: b('reload'), ability: b('ability') };
+  return {
+    up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist,
+    fire: b('fire'), shots: Math.floor(shots), reload: b('reload'), ability: b('ability'),
+  };
 }
 
 export function parseClientMsg(raw: string): ClientMsg | null {

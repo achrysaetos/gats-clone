@@ -20,6 +20,8 @@ export type Session = {
   walls: WallView[];
   snaps: SnapPair;
   seq: number;
+  /** Trigger presses latched per mousedown; sent whole every input so presses between samples are never lost. */
+  shots: number;
   selfName: string;
   lastSelf: { x: number; y: number };
   effects: Effect[];

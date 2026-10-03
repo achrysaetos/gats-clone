@@ -19,7 +19,7 @@ export function spawnAt(w: World, x: number, y: number, opts: { loadout?: Partia
 
 let seq = 1;
 export function press(w: World, p: Player, input: Partial<InputState>) {
-  setInput(w, p.id, seq++, { ...IDLE_INPUT, angle: p.input.angle, ...input });
+  setInput(w, p.id, seq++, { ...IDLE_INPUT, angle: p.input.angle, shots: p.input.shots, ...input });
 }
 
 export function run(w: World, ms: number) {
@@ -28,7 +28,7 @@ export function run(w: World, ms: number) {
 
 /** Fire exactly one trigger pull along `angle`, then let bullets fly for `ms`. */
 export function shootOnce(w: World, p: Player, angle: number, ms = 500) {
-  press(w, p, { angle, fire: true });
+  press(w, p, { angle, fire: true, shots: p.input.shots + 1 });
   step(w, TICK_MS);
   press(w, p, { angle });
   run(w, ms);

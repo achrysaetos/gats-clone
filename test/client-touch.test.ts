@@ -24,7 +24,7 @@ test('aim stick fires only past the deadzone and points where it is pushed', () 
   s = dragStick(s, 7, 600, 460);
   const aim = touchAim(s)!;
   assert.ok(Math.abs(Math.atan2(aim.dy, aim.dx) - Math.PI / 2) < 1e-9, 'pushing down aims down');
-  const msg = parseClientMsg(JSON.stringify({ t: 'input', seq: 1, input: assembleInput(new Set(touchMoves(s)), true, aim) }));
+  const msg = parseClientMsg(JSON.stringify({ t: 'input', seq: 1, input: assembleInput(new Set(touchMoves(s)), true, 1, aim) }));
   assert.equal(msg?.t, 'input', 'touch input survives the server parser');
 });
 
