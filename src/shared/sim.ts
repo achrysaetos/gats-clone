@@ -37,6 +37,8 @@ export type Player = {
   angle: number;
   input: InputState;
   seq: number;
+  /** Server time of the world the client was drawing when it sampled `input`, or null when it never said. */
+  viewAt: number | null;
   shotsSeen: number;
   life: Life;
   score: number;
@@ -70,6 +72,9 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: string; restartAt: n
 
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
+type Pose = { x: number; y: number };
+type PoseFrame = { at: number; poses: ReadonlyMap<number, Pose>; walls: readonly Wall[] };
+
 export type World = {
   mode: ModeId;
   now: number;
@@ -87,6 +92,8 @@ export type World = {
   match: Match;
   events: GameEvent[];
   lifeRecords: LifeRecord[];
+  /** Recent player positions, oldest first, so a shot can be judged against the world its shooter saw. */
+  history: PoseFrame[];
 };
 
 export const IDLE_INPUT: InputState = {
@@ -109,6 +116,9 @@ const SHIELD_BLOCK = 0.6;
 const SHIELD_ARC = Math.PI / 3;
 const GAS_RADIUS = 140;
 const PRESS_GRACE_MS = 100;
+/** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
+export const MAX_REWIND_MS = 350;
+const TICK_MS = 1000 / WORLD.tickHz;
 
 function mulberry32(state: number): number {
   let t = state;
@@ -289,7 +299,7 @@ export function createWorld(mode: ModeId, seed: number): World {
   const w: World = {
     mode, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
-    zones: zoneLayout(mode), teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [],
+    zones: zoneLayout(mode), teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [], history: [],
   };
   const s = WORLD.size;
   const keepClear: Rect[] = w.zones.map((z) => ({ x: z.x - z.r, y: z.y - z.r, w: z.r * 2, h: z.r * 2 }));
@@ -349,7 +359,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, team, x: 0, y: 0, angle: 0,
-    input: IDLE_INPUT, seq: 0, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
+    input: IDLE_INPUT, seq: 0, viewAt: null, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
@@ -385,11 +395,12 @@ export function removePlayer(w: World, id: number): void {
   w.players.delete(id);
 }
 
-export function setInput(w: World, id: number, seq: number, input: InputState): void {
+export function setInput(w: World, id: number, seq: number, input: InputState, viewAt: number | null = null): void {
   const p = w.players.get(id);
   if (!p || seq < p.seq) return;
   p.seq = seq;
   p.input = input;
+  p.viewAt = viewAt;
 }
 
 export function choosePerk<T extends Tier>(w: World, id: number, tier: T, perk: PerkId): boolean {
@@ -751,13 +762,15 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.ammo--;
     life.nextFireAt = w.now + weapon.fireMs;
     const muzzle = WORLD.playerRadius + 4;
+    const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, MAX_REWIND_MS);
     for (let i = 0; i < weapon.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * stats.spread * 2;
-      w.bullets.push({
+      const b: Bullet = {
         id: newId(w), owner: p.id, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed,
         left: stats.range, damage: weapon.damage, piercing: stats.piercing, label: weapon.name,
-      });
+      };
+      if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }
     if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id });
@@ -775,37 +788,76 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
 type BulletHit = { t: number | null; apply: (x: number, y: number) => void };
 
-function tickBullets(w: World, dt: number) {
-  const keep: Bullet[] = [];
-  for (const b of w.bullets) {
-    const speed = Math.hypot(b.vx, b.vy);
-    const travel = Math.min(b.left, speed * dt);
-    const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
-    const owner = w.players.get(b.owner) ?? null;
-    const candidates: BulletHit[] = [
-      ...w.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
-      ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
-        t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
-      })),
-      ...[...w.players.values()]
-        .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)))
-        .map((p) => ({
-          t: segmentEntersCircleAt(b.x, b.y, dx, dy, p.x, p.y, WORLD.playerRadius),
+function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose | undefined, walls: readonly Wall[]): boolean {
+  const speed = Math.hypot(b.vx, b.vy);
+  const travel = Math.min(b.left, speed * dt);
+  const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
+  const owner = w.players.get(b.owner) ?? null;
+  const candidates: BulletHit[] = [
+    ...walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
+      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
+    })),
+    ...[...w.players.values()]
+      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)))
+      .flatMap((p) => {
+        const at = poseOf(p);
+        return at ? [{
+          t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
-        })),
-    ];
-    let hit: { t: number; apply: BulletHit['apply'] } | null = null;
-    for (const c of candidates) if (c.t !== null && (!hit || c.t < hit.t)) hit = { t: c.t, apply: c.apply };
-    if (hit) {
-      hit.apply(b.x + dx * hit.t, b.y + dy * hit.t);
-      continue;
-    }
-    b.x += dx;
-    b.y += dy;
-    b.left -= travel;
-    if (b.left > 0.5) keep.push(b);
+        }] : [];
+      }),
+  ];
+  let hit: { t: number; apply: BulletHit['apply'] } | null = null;
+  for (const c of candidates) if (c.t !== null && (!hit || c.t < hit.t)) hit = { t: c.t, apply: c.apply };
+  if (hit) {
+    hit.apply(b.x + dx * hit.t, b.y + dy * hit.t);
+    return false;
   }
-  w.bullets = keep;
+  b.x += dx;
+  b.y += dy;
+  b.left -= travel;
+  return b.left > 0.5;
+}
+
+function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {
+  const h = w.history;
+  const next = h.findIndex((f) => f.at >= at);
+  if (next === -1) return h[h.length - 1]?.poses ?? new Map([...w.players.values()].map((p) => [p.id, { x: p.x, y: p.y }]));
+  const b = h[next]!;
+  const a = h[next - 1];
+  if (!a) return b.poses;
+  const k = (at - a.at) / (b.at - a.at);
+  const poses = new Map<number, Pose>();
+  for (const [id, pb] of b.poses) {
+    const pa = a.poses.get(id);
+    poses.set(id, pa ? { x: pa.x + (pb.x - pa.x) * k, y: pa.y + (pb.y - pa.y) * k } : pb);
+  }
+  return poses;
+}
+
+/** Any wall that stood during the rewound window blocks, so a rewound shot never passes where cover existed. */
+function flyThroughPast(w: World, b: Bullet, rewindMs: number): boolean {
+  const from = w.now - rewindMs;
+  const walls = [...new Set([...w.history.filter((f) => f.at >= from - TICK_MS).flatMap((f) => f.walls), ...w.walls])];
+  for (let t = from; t < w.now;) {
+    const dtMs = Math.min(TICK_MS, w.now - t);
+    t += dtMs;
+    const poses = posesAt(w, t);
+    if (!moveBullet(w, b, dtMs / 1000, (p) => poses.get(p.id), walls)) return false;
+  }
+  return true;
+}
+
+function tickBullets(w: World, dt: number) {
+  w.bullets = w.bullets.filter((b) => moveBullet(w, b, dt, (p) => p, w.walls));
+}
+
+function recordPoses(w: World) {
+  const poses = new Map<number, Pose>();
+  for (const p of w.players.values()) if (p.life.k === 'alive') poses.set(p.id, { x: p.x, y: p.y });
+  w.history.push({ at: w.now, poses, walls: w.walls });
+  while (w.history.length > 2 && w.history[1]!.at <= w.now - MAX_REWIND_MS) w.history.shift();
 }
 
 function tickMatch(w: World, dtMs: number) {
@@ -838,6 +890,7 @@ export function step(w: World, dtMs: number): void {
   w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);
   if (w.walls.length !== wallCount) w.wallsVersion++;
   tickMatch(w, dtMs);
+  recordPoses(w);
 }
 
 

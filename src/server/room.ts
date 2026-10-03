@@ -88,7 +88,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     switch (msg.t) {
       case 'join': return;
       case 'view': client.aspect = msg.aspect; return;
-      case 'input': setInput(world, id, msg.seq, msg.input); return;
+      case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt); return;
       case 'perk': choosePerk(world, id, msg.tier, msg.perk); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
       case 'chat': {

@@ -36,7 +36,7 @@ test('assembled input survives the server parser unchanged, even with far aim', 
   const input = assembleInput(new Set<Action>(['ability']), false, 0, { dx: -5000, dy: 0 });
   assert.equal(input.aimDist, MAX_AIM_DIST);
   const parsed = parseClientMsg(JSON.stringify({ t: 'input', seq: 7, input }));
-  assert.deepEqual(parsed, { t: 'input', seq: 7, input });
+  assert.deepEqual(parsed, { t: 'input', seq: 7, input, viewAt: null });
 });
 
 test('aim from screen space converts to world units through the camera', () => {

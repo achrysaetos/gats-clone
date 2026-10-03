@@ -33,7 +33,7 @@ At 100, 250 and 450 points you pick an attachment, then a survival perk, then an
 - `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
 - `src/shared/protocol.ts` defines the wire messages and parses client input.
 - `src/shared/wire.ts` encodes snapshots per connection: it rounds numbers and omits crates, leaderboard, zones and match while they are unchanged. The client rebuilds full snapshots from the last one it received.
-- `src/shared/sim.ts` is the deterministic game simulation.
+- `src/shared/sim.ts` is the deterministic game simulation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to `MAX_REWIND_MS` back, so players hit what they aim at on screen.
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
 - `src/client/` contains the browser client.
 

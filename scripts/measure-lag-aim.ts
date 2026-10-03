@@ -100,10 +100,13 @@ async function measure(lag: number, jitter: number) {
   let aliveMs = 0;
   let lastTick = performance.now();
   let measuring = false;
+  const viewLagMs: number[] = [];
   const strafe = setInterval(() => {
     const now = performance.now();
     const victim = world.players.get(target.id)!;
     if (measuring && victim.life.k === 'alive') aliveMs += now - lastTick;
+    const viewAt = world.players.get(shooter.id)?.viewAt;
+    if (measuring && typeof viewAt === 'number') viewLagMs.push(world.now - viewAt);
     lastTick = now;
     if (victim.life.k === 'dead') {
       if (canRespawn(world, target.id)) {
@@ -151,14 +154,16 @@ async function measure(lag: number, jitter: number) {
   target.ws.close();
   shooter.chrome.kill();
   await sleep(300);
-  return { lag, jitter, shots, hits: hits.length, damage, aliveMs };
+  viewLagMs.sort((a, b) => a - b);
+  const viewLag = viewLagMs.length ? `${Math.round(viewLagMs[viewLagMs.length >> 1]!)}ms (p90 ${Math.round(viewLagMs[Math.floor(viewLagMs.length * 0.9)]!)}ms)` : 'unreported';
+  return { lag, jitter, shots, hits: hits.length, damage, aliveMs, viewLag };
 }
 
 const results = [];
 for (const [lag, jitter] of CONDITIONS) {
   const r = await measure(lag, jitter);
   results.push(r);
-  console.log(`LAG=${r.lag} JITTER=${r.jitter}  shots ${r.shots}  hits ${r.hits}  hit rate ${(100 * r.hits / Math.max(1, r.shots)).toFixed(1)}%  damage ${Math.round(r.damage)}  damage/min ${Math.round(r.damage / (r.aliveMs / 60000))}`);
+  console.log(`LAG=${r.lag} JITTER=${r.jitter}  shots ${r.shots}  hits ${r.hits}  hit rate ${(100 * r.hits / Math.max(1, r.shots)).toFixed(1)}%  damage ${Math.round(r.damage)}  damage/min ${Math.round(r.damage / (r.aliveMs / 60000))}  view lag ${r.viewLag}`);
 }
 await server.close();
 process.exit(0);

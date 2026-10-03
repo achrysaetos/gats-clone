@@ -207,7 +207,8 @@ setInterval(() => {
   touchWasAiming = touchAiming;
   const shooting = active && (firing || touchAiming);
   const input = assembleInput(actions, shooting, s.shots, aimOffset(s));
-  send(s.ws, { t: 'input', seq: s.seq, input });
+  const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
+  send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
   const solids = solidsOf(s.walls, latest?.crates ?? []);
   const dash = !!latest && startsDash(s.predict, input, latest.self, latest.match.winner === null);
