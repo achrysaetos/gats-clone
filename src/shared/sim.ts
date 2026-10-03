@@ -352,13 +352,21 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   return p;
 }
 
-function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: number }) {
-  p.loadout = loadout;
+function resetProgress(p: Player) {
   p.score = 0;
   p.level = 0;
   p.perks = {};
-  p.lifeKills = 0;
   p.abilityReadyAt = 0;
+  if (p.life.k !== 'alive') return;
+  const s = effectiveStats(p);
+  p.life.hp = Math.min(p.life.hp, s.maxHp);
+  p.life.ammo = Math.min(p.life.ammo, s.mag);
+}
+
+function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: number }) {
+  p.loadout = loadout;
+  resetProgress(p);
+  p.lifeKills = 0;
   const pos = at ?? spawnPoint(w, p.team);
   p.x = pos.x;
   p.y = pos.y;
@@ -741,7 +749,7 @@ function tickMatch(w: World, dtMs: number) {
     w.match = { k: 'playing' };
     w.teamScore = { red: 0, blue: 0 };
     for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
-    for (const p of w.players.values()) { p.score = 0; p.kills = 0; p.deaths = 0; }
+    for (const p of w.players.values()) { resetProgress(p); p.kills = 0; p.deaths = 0; }
     return;
   }
   rules.tick(w, dtMs);
