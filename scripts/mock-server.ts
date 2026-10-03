@@ -9,7 +9,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { ABILITY_COOLDOWN_MS, ARMORS, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type ModeId, type Tier } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type ModeId, type Tier } from '../src/shared/defs.ts';
 import {
   parseClientMsg, type BulletView, type GameEvent, type InputState, type Loadout, type PlayerView, type ServerMsg,
   type Snapshot, type ThrownView, type WallView, type ZoneView,
@@ -70,7 +70,7 @@ function makeWorld(mode: ModeId) {
     hp: 100, maxHp: 100, armor: 30 * (i % 4), maxArmor: 30 * (i % 4),
     color: (['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const)[i]!, weapon: (['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const)[i]!,
     team: teams ? (i % 2 ? 'blue' : 'red') : null, alive: true, hidden: i === 4, shield: i === 2, dashing: false,
-    score: 50 * i, level: 1, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
+    score: 50 * i, level: 1, armorTier: ARMOR_IDS[i % 4]!, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
   }));
   const crates = Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, x: 1100 + (i % 4) * 260, y: 1050 + Math.floor(i / 4) * 450, hp: WORLD.crateHp * ((i % 3) + 1) / 3, size: 50 }));
   const zones: ZoneView[] = mode === 'DOM'

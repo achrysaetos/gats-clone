@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { segRect, type Rect } from '../../../../src/shared/sim.ts';
+import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 
 const RUN = process.argv[2];
@@ -52,18 +53,20 @@ type Snap = {
 const frames = { welcome: null as null | { id: number; mode: string; walls: Rect[] }, last: null as null | Snap, dmg: [] as (Dmg & { at: number })[] };
 let nextId = 1;
 let socketId = '';
+let full: Snapshot | null = null;
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
   const m = JSON.parse(String(raw));
   if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
   // A page left by navigation can linger in the back/forward cache with its socket open; only the newest socket counts.
-  if (m.method === 'Network.webSocketCreated') { socketId = m.params.requestId; frames.last = null; }
+  if (m.method === 'Network.webSocketCreated') { socketId = m.params.requestId; full = null; frames.last = null; }
   else if (m.method === 'Network.webSocketFrameReceived' && m.params.requestId === socketId) {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
     if (msg.t === 'snap') {
       // Unchanged crates, leaderboard, zones and match are omitted after the first snapshot; refill them like the client does.
-      frames.last = (fillSnapshot(msg, frames.last as never) as never) ?? frames.last;
+      full = fillSnapshot(msg, full) ?? full;
+      frames.last = full;
       for (const e of msg.events) if (e.e === 'dmg') frames.dmg.push({ ...e, at: Date.now() });
     }
   } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
@@ -77,6 +80,7 @@ const until = async (fn: () => boolean | Promise<boolean>, ms = 4000) => { const
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const myId = () => frames.welcome?.id;
 const me = () => frames.last?.players.find((p) => p.id === myId());
+const welcomeMode = () => frames.welcome?.mode;
 
 await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
 await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
@@ -100,7 +104,7 @@ async function joinRoom(room: string) {
   await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3, 6000);
   const name = `Combat${Math.floor(Math.random() * 1e4)}`;
   await js(`document.querySelectorAll('#servers .server')[${ROOM_INDEX[room]}].click(); document.getElementById('name').value = '${name}'; document.getElementById('play').click()`);
-  expect(`${room}: joined (welcome frame on the page socket)`, await until(() => frames.welcome !== null && !!me(), 6000), `mode ${frames.welcome?.mode}`);
+  expect(`${room}: joined (welcome frame on the page socket)`, await until(() => frames.welcome !== null && !!me(), 6000), `mode ${welcomeMode()}`);
 }
 
 async function objective(room: string) {
