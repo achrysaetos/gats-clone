@@ -1,0 +1,150 @@
+import type { WebSocket } from 'ws';
+import { WORLD, type ModeId } from '../shared/defs.ts';
+import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg } from '../shared/protocol.ts';
+import {
+  addPlayer, canRespawn, choosePerk, createWorld, rand, removePlayer, respawn, setInput, snapshotFor, step, wallViews,
+  type World,
+} from '../shared/sim.ts';
+import type { Accounts } from './accounts.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+
+const TICK_MS = 1000 / WORLD.tickHz;
+const CHAT_INTERVAL_MS = 1000;
+
+type Client =
+  | { k: 'lobby'; ws: WebSocket }
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number };
+
+export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
+
+export type Room = {
+  id: string;
+  world: World;
+  connect(ws: WebSocket): void;
+  tick(): void;
+  info(): RoomInfo;
+  close(): void;
+};
+
+/** `timeScale` runs that many fixed sim steps per wall-clock tick; tests use it to fast-forward. */
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, timeScale = 1): Room {
+  const world = createWorld(mode, seed);
+  const botRand = () => rand(world);
+  const bots = new Map<number, BotMemory>();
+  const clients = new Map<WebSocket, Client>();
+  let wallsVersion = world.wallsVersion;
+
+  const send = (ws: WebSocket, msg: ServerMsg) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg)); };
+  const joined = () => [...clients.values()].filter((c): c is Extract<Client, { k: 'joined' }> => c.k === 'joined');
+
+  function balanceBots() {
+    while (world.players.size < WORLD.minPlayers) {
+      const p = addPlayer(world, `Bot ${world.nextId}`, randomLoadout(botRand));
+      bots.set(p.id, newBotMemory(botRand));
+    }
+    while (world.players.size > WORLD.minPlayers && bots.size > 0) {
+      const red = [...world.players.values()].filter((p) => p.team === 'red').length;
+      const larger = red * 2 > world.players.size ? 'red' : 'blue';
+      const victim = [...bots.keys()].find((bid) => world.players.get(bid)?.team === larger) ?? [...bots.keys()][0];
+      bots.delete(victim);
+      removePlayer(world, victim);
+    }
+  }
+
+  function creditLives(departed?: Extract<Client, { k: 'joined' }>) {
+    const accountOf = new Map<number, string>();
+    for (const c of departed ? [...joined(), departed] : joined()) if (c.account) accountOf.set(c.playerId, c.account);
+    for (const r of world.lifeRecords.splice(0)) {
+      const account = accountOf.get(r.id);
+      if (account) accounts.credit(account, { kills: r.kills, deaths: r.died ? 1 : 0, score: r.score, games: 0 });
+    }
+  }
+
+  function handle(client: Client, msg: ClientMsg) {
+    if (client.k === 'lobby') {
+      if (msg.t !== 'join') return;
+      const account = msg.token ? accounts.nameForToken(msg.token) : null;
+      const p = addPlayer(world, account ?? msg.name, msg.loadout);
+      if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
+      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity });
+      balanceBots();
+      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: WORLD.size, walls: wallViews(world) });
+      return;
+    }
+    const id = client.playerId;
+    switch (msg.t) {
+      case 'join': return;
+      case 'input': setInput(world, id, msg.seq, msg.input); return;
+      case 'perk': choosePerk(world, id, msg.tier, msg.perk); return;
+      case 'respawn': respawn(world, id, msg.loadout); return;
+      case 'chat': {
+        const now = Date.now();
+        if (now - client.lastChatAt < CHAT_INTERVAL_MS) { send(client.ws, { t: 'error', message: 'Slow down' }); return; }
+        client.lastChatAt = now;
+        const p = world.players.get(id);
+        if (!p) return;
+        for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text: msg.text, team: p.team });
+        return;
+      }
+    }
+  }
+
+  function disconnect(ws: WebSocket) {
+    const c = clients.get(ws);
+    clients.delete(ws);
+    if (c?.k !== 'joined') return;
+    removePlayer(world, c.playerId);
+    creditLives(c);
+    balanceBots();
+  }
+
+  function thinkBots() {
+    for (const [id, mem] of bots) {
+      const d = botThink(snapshotFor(world, id), mem, botRand);
+      bots.set(id, d.mem);
+      setInput(world, id, world.tick, d.input);
+      if (d.perk) choosePerk(world, id, d.perk.tier, d.perk.perk);
+      if (canRespawn(world, id)) respawn(world, id, randomLoadout(botRand));
+    }
+  }
+
+  balanceBots();
+
+  return {
+    id,
+    world,
+    connect(ws) {
+      clients.set(ws, { k: 'lobby', ws });
+      ws.on('message', (data, isBinary) => {
+        const msg = isBinary ? null : parseClientMsg(data.toString());
+        if (!msg) { send(ws, { t: 'error', message: 'Bad message' }); return; }
+        const client = clients.get(ws);
+        if (client) handle(client, msg);
+      });
+      ws.on('close', () => disconnect(ws));
+    },
+    tick() {
+      const events: GameEvent[] = [];
+      for (let i = 0; i < timeScale; i++) {
+        thinkBots();
+        step(world, TICK_MS);
+        events.push(...world.events);
+        creditLives();
+      }
+      // Sub-steps would otherwise drop all but the last step's events from snapshots.
+      world.events = events;
+      if (world.wallsVersion !== wallsVersion) {
+        wallsVersion = world.wallsVersion;
+        const walls = wallViews(world);
+        for (const c of joined()) send(c.ws, { t: 'walls', walls });
+      }
+      for (const c of joined()) send(c.ws, snapshotFor(world, c.playerId));
+    },
+    info() {
+      return { id, mode, players: world.players.size, humans: joined().length };
+    },
+    close() {
+      for (const ws of clients.keys()) ws.close();
+    },
+  };
+}
