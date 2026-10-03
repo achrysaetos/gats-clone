@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#16191f">
+  <title>Skirmish</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <main id="menu" class="menu">
+    <div class="menu-card">
+      <header class="brand">
+        <h1 class="logo">SKIRMISH</h1>
+        <p class="tagline">Top-down arena shooter. Pick a gun, level up, hold the line.</p>
+      </header>
+      <div class="menu-grid">
+        <form id="play-form" class="panel play">
+          <label class="field">
+            <span>Name</span>
+            <input id="name" maxlength="16" autocomplete="nickname" placeholder="Unnamed" spellcheck="false">
+          </label>
+          <div id="loadout-menu" class="loadout"></div>
+          <h2>Server</h2>
+          <div id="servers" class="servers"></div>
+          <p id="menu-status" class="status" role="status"></p>
+          <button id="play" type="submit" class="primary">Play</button>
+        </form>
+        <aside class="side">
+          <section id="account" class="panel"></section>
+          <section class="panel">
+            <h2>Controls</h2>
+            <dl id="controls" class="controls"></dl>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <div id="hud" class="hud" hidden>
+    <div id="perk-panel" class="perk-panel" hidden></div>
+    <div class="chat">
+      <ol id="chat-log" class="chat-log"></ol>
+      <input id="chat-input" class="chat-input" maxlength="120" placeholder="Say something. Enter sends, Esc cancels." autocomplete="off" hidden>
+    </div>
+    <div id="banner" class="banner" hidden></div>
+    <div id="death" class="death" hidden>
+      <div class="death-card">
+        <h2 id="death-title">You were eliminated</h2>
+        <p id="death-sub" class="muted"></p>
+        <div id="loadout-death" class="loadout"></div>
+        <button id="respawn" type="button" class="primary">Respawn</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

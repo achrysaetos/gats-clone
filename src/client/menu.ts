@@ -1,0 +1,127 @@
+import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, WEAPONS, WEAPON_IDS } from '../shared/defs.ts';
+import type { Loadout } from '../shared/protocol.ts';
+import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
+import { CONTROLS } from './input.ts';
+import { drawSilhouette } from './sprites.ts';
+
+export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
+  const node: HTMLElementTagNameMap[K] = Object.assign(document.createElement(tag), props);
+  node.append(...kids);
+  return node;
+}
+
+export type LoadoutPicker = { refresh(): void };
+
+/** One picker instance per container; the menu and the death screen each mount one over the same loadout. */
+export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void): LoadoutPicker {
+  const weaponButtons = WEAPON_IDS.map((id) => {
+    const w = WEAPONS[id];
+    const art = el('canvas', { width: 120, height: 48, className: 'gun-art' });
+    const b = el('button', { type: 'button', className: 'tile weapon', title: w.name },
+      art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`));
+    b.onclick = () => set({ ...get(), weapon: id });
+    return [id, b, art] as const;
+  });
+  const colorButtons = COLOR_IDS.map((id) => {
+    const b = el('button', { type: 'button', className: 'swatch', title: id, ariaLabel: id });
+    b.style.setProperty('--swatch', COLORS[id]);
+    b.onclick = () => set({ ...get(), color: id });
+    return [id, b] as const;
+  });
+  const armorButtons = ARMOR_IDS.map((id) => {
+    const a = ARMORS[id];
+    const speed = Math.round((1 - a.speedMul) * 100);
+    const meter = el('span', { className: 'meter' }, el('i'));
+    meter.style.setProperty('--fill', `${(a.points / ARMORS.heavy.points) * 100}%`);
+    const b = el('button', { type: 'button', className: 'tile armor' },
+      el('b', {}, a.name), meter, el('small', {}, speed ? `${a.points} armor · −${speed}% speed` : 'Full speed'));
+    b.onclick = () => set({ ...get(), armor: id });
+    return [id, b] as const;
+  });
+  root.replaceChildren(
+    el('h2', {}, 'Weapon'), el('div', { className: 'weapons' }, ...weaponButtons.map(([, b]) => b)),
+    el('h2', {}, 'Color'), el('div', { className: 'swatches' }, ...colorButtons.map(([, b]) => b)),
+    el('h2', {}, 'Armor'), el('div', { className: 'armors' }, ...armorButtons.map(([, b]) => b)),
+  );
+  const refresh = () => {
+    const l = get();
+    for (const [id, b, art] of weaponButtons) {
+      b.ariaPressed = String(id === l.weapon);
+      drawSilhouette(art, id, id === l.weapon ? COLORS[l.color] : '#c9ced8');
+    }
+    for (const [id, b] of colorButtons) b.ariaPressed = String(id === l.color);
+    for (const [id, b] of armorButtons) b.ariaPressed = String(id === l.armor);
+  };
+  refresh();
+  return { refresh };
+}
+
+export function renderControls(root: HTMLElement) {
+  root.replaceChildren(...CONTROLS.flatMap(([key, what]) => [el('dt', {}, el('kbd', {}, key)), el('dd', {}, what)]));
+}
+
+export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string) => void) {
+  if (servers === null) {
+    root.replaceChildren(el('p', { className: 'muted' }, 'Could not load servers. Retrying…'));
+    return;
+  }
+  if (!servers.length) {
+    root.replaceChildren(el('p', { className: 'muted' }, 'No servers running.'));
+    return;
+  }
+  root.replaceChildren(...servers.map((s) => {
+    const b = el('button', { type: 'button', className: 'server' },
+      el('span', { className: `mode mode-${s.mode.toLowerCase()}` }, s.mode),
+      el('span', { className: 'server-name' }, `Room ${s.id}`),
+      el('span', { className: 'count' }, `${s.players} players`, el('small', {}, ` · ${s.humans} human`)));
+    b.ariaPressed = String(s.id === selected);
+    b.onclick = () => pick(s.id);
+    return b;
+  }));
+}
+
+/** Account box: login/register form when signed out, stats when signed in. Returns the current account getter. */
+export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): () => Account | null {
+  let account = loadAccount();
+
+  const showSignedIn = (a: Account) => {
+    const stats = el('dl', { className: 'stats' }, el('dd', { className: 'muted' }, 'Loading stats…'));
+    const out = el('button', { type: 'button', className: 'link' }, 'Log out');
+    out.onclick = () => { account = null; saveAccount(null); onChange(null); showSignedOut(); };
+    root.replaceChildren(el('h2', {}, 'Account'), el('p', {}, 'Signed in as ', el('b', {}, a.name), ' ', out), stats);
+    fetchStats(a.name).then((s) => {
+      if (!s) { stats.replaceChildren(el('dd', { className: 'muted' }, 'No games yet.')); return; }
+      const kd = s.deaths ? (s.kills / s.deaths).toFixed(2) : String(s.kills);
+      const cells: [string, string | number][] = [['Kills', s.kills], ['Deaths', s.deaths], ['K/D', kd], ['Score', s.score], ['Games', s.games], ['Best', s.best]];
+      stats.replaceChildren(...cells.map(([k, v]) => el('div', {}, el('dt', {}, k), el('dd', {}, String(v)))));
+    }).catch(() => stats.replaceChildren(el('dd', { className: 'muted' }, 'Stats unavailable.')));
+  };
+
+  const showSignedOut = () => {
+    const name = el('input', { placeholder: 'Account name', autocomplete: 'username', maxLength: 16, required: true });
+    const pass = el('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', required: true });
+    const msg = el('p', { className: 'status', role: 'status' });
+    const login = el('button', { type: 'submit' }, 'Log in');
+    const register = el('button', { type: 'button', className: 'secondary' }, 'Register');
+    const form = el('form', { className: 'auth' }, name, pass, el('div', { className: 'row' }, login, register), msg);
+    const submit = async (kind: 'login' | 'register') => {
+      if (!form.reportValidity()) return;
+      msg.textContent = kind === 'login' ? 'Logging in…' : 'Creating account…';
+      const r = await authenticate(kind, name.value, pass.value);
+      if ('error' in r) { msg.textContent = r.error; return; }
+      account = r;
+      saveAccount(r);
+      onChange(r);
+      showSignedIn(r);
+    };
+    form.onsubmit = (e) => { e.preventDefault(); void submit('login'); };
+    register.onclick = () => void submit('register');
+    root.replaceChildren(el('h2', {}, 'Account'), el('p', { className: 'muted' }, 'Log in to keep stats across games.'), form);
+  };
+
+  if (account) showSignedIn(account);
+  else showSignedOut();
+  return () => account;
+}
