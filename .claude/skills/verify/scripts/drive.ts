@@ -88,7 +88,7 @@ observer.on('open', () => observer.send(JSON.stringify({ t: 'join', name: 'Obser
 observer.on('message', (raw) => {
   const m = JSON.parse(String(raw));
   if (m.t === 'chat') observerChat.push(m);
-  if (m.t === 'snap') observerBoard = m.leaderboard.map((r: { name: string }) => r.name);
+  if (m.t === 'snap' && m.leaderboard) observerBoard = m.leaderboard.map((r: { name: string }) => r.name);
 });
 
 await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');

@@ -13,6 +13,9 @@ const humans = Number(process.argv[2] ?? 6);
 const seconds = Number(process.argv[3] ?? 8);
 const room = process.argv[4] ?? 'ffa';
 const WARMUP_MS = 1500;
+let seed = 12345;
+// Seeded so before/after runs drive the same wandering pattern.
+const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 
 const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-bw-'));
 const server = await startServer({ port: 0, dataDir, limits: { humansPerRoom: humans + 1, socketsPerIp: humans + 1, messagesPerSec: 1000, messageBurst: 1000 } });
@@ -32,7 +35,7 @@ for (let i = 0; i < humans; i++) {
   ws.on('open', () => {
     ws.send(JSON.stringify({ t: 'join', name: `Bw${i}`, loadout: { weapon: 'smg', armor: 'light', color: 'blue' } }));
     setInterval(() => {
-      if (seq % 45 === 0) dir = { up: Math.random() < 0.5, down: Math.random() < 0.3, left: Math.random() < 0.5, right: Math.random() < 0.3 };
+      if (seq % 45 === 0) dir = { up: random() < 0.5, down: random() < 0.3, left: random() < 0.5, right: random() < 0.3 };
       const fire = seq % 20 < 6;
       if (seq % 20 === 0) shots++;
       ws.send(JSON.stringify({ t: 'input', seq: ++seq, input: { ...dir, angle: seq / 10, aimDist: 300, fire, shots, reload: false, ability: false } }));

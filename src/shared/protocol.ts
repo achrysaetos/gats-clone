@@ -76,10 +76,15 @@ export type Snapshot = {
   events: GameEvent[];
 };
 
+/** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match'] as const;
+export type StickyKey = (typeof STICKY_KEYS)[number];
+export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
+
 export type ServerMsg =
   | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[] }
   | { t: 'walls'; walls: WallView[] }
-  | Snapshot
+  | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
   | { t: 'error'; message: string };
 

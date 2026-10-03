@@ -10,6 +10,7 @@ import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, t
 import { EMPTY_BUFFER, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
+import { fillSnapshot } from '../shared/wire.ts';
 import { createOverlays } from './overlays.ts';
 import { decayOffset, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
@@ -137,7 +138,10 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
   const s = state.s;
   if (s.ws !== ws) return;
   switch (msg.t) {
-    case 'snap': return onSnap(s, msg, now);
+    case 'snap': {
+      const snap = fillSnapshot(msg, newestSnap(s.snaps));
+      return snap ? onSnap(s, snap, now) : undefined;
+    }
     case 'walls': s.walls = msg.walls; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;

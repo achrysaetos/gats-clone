@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
-import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg } from '../shared/protocol.ts';
+import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
 import {
   addPlayer, canRespawn, choosePerk, createWorld, rand, removePlayer, respawn, setInput, snapshotFor, step, wallViews,
   type World,
@@ -8,13 +8,14 @@ import {
 import type { Accounts } from './accounts.ts';
 import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { LIMITS, makeBucket, type Limits } from './limits.ts';
+import { makeSnapshotEncoder } from '../shared/wire.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; encode: (snap: Snapshot) => string };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -73,7 +74,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
       const p = addPlayer(world, account ?? msg.name, msg.loadout);
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity });
+      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, encode: makeSnapshotEncoder() });
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: WORLD.size, walls: wallViews(world) });
       return;
@@ -151,7 +152,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const walls = wallViews(world);
         for (const c of joined()) send(c.ws, { t: 'walls', walls });
       }
-      for (const c of joined()) send(c.ws, snapshotFor(world, c.playerId));
+      for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId)));
     },
     info() {
       return { id, mode, players: world.players.size, humans: joined().length };
