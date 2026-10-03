@@ -8,6 +8,7 @@ import { EFFECT_LIFE_MS, type Session } from './state.ts';
 
 export const PALETTE = {
   outside: '#a9aea6',
+  letterbox: '#23262b',
   floor: '#e9e7e0',
   grid: '#d9d6cc',
   border: '#555b66',
@@ -83,6 +84,15 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawEffects(ctx, s, now);
   for (const p of snap.players) if (p.alive && !p.hidden) drawLabel(ctx, p, p.id === s.myId);
   drawDamageNumbers(ctx, s.feedback.numbers, now);
+  drawLetterbox(ctx, cam, dpr);
+}
+
+function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
+  const barW = cam.w / 2 - cam.viewHalfW * cam.scale, barH = cam.h / 2 - cam.viewHalfH * cam.scale;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = PALETTE.letterbox;
+  if (barW >= 1) { ctx.fillRect(0, 0, barW, cam.h); ctx.fillRect(cam.w - barW, 0, barW, cam.h); }
+  if (barH >= 1) { ctx.fillRect(0, 0, cam.w, barH); ctx.fillRect(0, cam.h - barH, cam.w, barH); }
 }
 
 function drawFloor(ctx: CanvasRenderingContext2D, size: number, tl: { x: number; y: number }, br: { x: number; y: number }, scale: number) {

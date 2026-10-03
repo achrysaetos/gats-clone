@@ -5,6 +5,7 @@ import { LEVEL_SCORES, WORLD } from '../src/shared/defs.ts';
 import type { Snapshot, ThrownKind } from '../src/shared/protocol.ts';
 import { BLAST_RADIUS, step } from '../src/shared/sim.ts';
 import { abilityHint } from '../src/client/hud.ts';
+import { makeCamera } from '../src/client/camera.ts';
 import { drawWorld } from '../src/client/render.ts';
 import type { Session } from '../src/client/state.ts';
 import { emptyWorld, hpOf, spawnAt, TICK_MS } from './helpers.ts';
@@ -34,7 +35,7 @@ function arcsDrawnFor(kind: ThrownKind): Arc[] {
     thrown: [{ id: 1, kind, x: 1234, y: 987, r: 10, owner: 2 }],
   } as unknown as Snapshot;
   const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), effects: [], feedback: { numbers: [] } } as unknown as Session;
-  drawWorld(ctx, { snap, s, cam: { x: 1234, y: 987, scale: 1, w: 1280, h: 800 }, dpr: 1, now: 0, selfAngle: null });
+  drawWorld(ctx, { snap, s, cam: makeCamera({ x: 1234, y: 987 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null });
   return arcs.filter((a) => a.x === 1234 && a.y === 987);
 }
 

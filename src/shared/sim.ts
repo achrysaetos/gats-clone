@@ -6,6 +6,7 @@ import type {
   BulletView, CrateView, Dash, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
   Team, ThrownKind, ThrownView, WallView, ZoneView,
 } from './protocol.ts';
+import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN } from './protocol.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Wall = Rect & { built: boolean; expiresAt: number };
@@ -903,12 +904,12 @@ function matchView(w: World): MatchView {
 
 const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
 
-export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events): Snapshot {
+export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = VIEW_ASPECT.max): Snapshot {
   const me = w.players.get(id);
   if (!me) throw new Error(`no player ${id}`);
   const stats = effectiveStats(me);
-  const r = stats.viewRadius;
-  const inView = (x: number, y: number, pad = 0) => Math.abs(x - me.x) <= r + pad && Math.abs(y - me.y) <= r + pad;
+  const halfW = stats.viewRadius * aspect + VIEW_PRELOAD_MARGIN, halfH = stats.viewRadius + VIEW_PRELOAD_MARGIN;
+  const inView = (x: number, y: number, pad = 0) => Math.abs(x - me.x) <= halfW + pad && Math.abs(y - me.y) <= halfH + pad;
 
   const players: PlayerView[] = [];
   for (const p of w.players.values()) {

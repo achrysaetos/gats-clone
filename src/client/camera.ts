@@ -1,8 +1,13 @@
-export type Camera = { x: number; y: number; scale: number; w: number; h: number };
+import { clampAspect } from '../shared/protocol.ts';
+
+export type Camera = { x: number; y: number; scale: number; w: number; h: number; viewHalfW: number; viewHalfH: number };
 export type Point = { x: number; y: number };
 
+export const viewAspect = (w: number, h: number): number => clampAspect(w / h);
+
 export function makeCamera(center: Point, w: number, h: number, viewRadius: number): Camera {
-  return { x: center.x, y: center.y, w, h, scale: Math.max(w, h) / (2 * viewRadius) };
+  const viewHalfW = viewRadius * viewAspect(w, h), viewHalfH = viewRadius;
+  return { x: center.x, y: center.y, w, h, viewHalfW, viewHalfH, scale: Math.min(w / (2 * viewHalfW), h / (2 * viewHalfH)) };
 }
 
 export const worldToScreen = (c: Camera, p: Point): Point => ({

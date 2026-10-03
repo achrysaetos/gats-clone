@@ -16,7 +16,7 @@ const CHAT_INTERVAL_MS = 1000;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; encode: (snap: Snapshot) => string };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; aspect: number; encode: (snap: Snapshot) => string };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -78,7 +78,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const name = uniqueName(account ?? msg.name, names(), takenByAnotherAccount);
       const p = addPlayer(world, name, msg.loadout);
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, encode: makeSnapshotEncoder() });
+      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder() });
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: WORLD.size, walls: wallViews(world), account });
       return;
@@ -86,6 +86,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const id = client.playerId;
     switch (msg.t) {
       case 'join': return;
+      case 'view': client.aspect = msg.aspect; return;
       case 'input': setInput(world, id, msg.seq, msg.input); return;
       case 'perk': choosePerk(world, id, msg.tier, msg.perk); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
@@ -159,7 +160,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const walls = wallViews(world);
         for (const c of joined()) send(c.ws, { t: 'walls', walls });
       }
-      for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events)));
+      for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
     },
     info() {
       return { id, mode, players: world.players.size, humans: joined().length };

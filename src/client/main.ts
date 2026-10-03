@@ -2,7 +2,7 @@ import { PERK_TIERS, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
-import { makeCamera, worldToScreen, type Camera } from './camera.ts';
+import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killerOf, selfOf } from './derive.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
@@ -23,6 +23,7 @@ import { EFFECT_LIFE_MS, type ClientState, type Effect, type Session } from './s
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SESSION_EXPIRED = 'Session expired, log in again.';
+const VIEW_RESEND_MS = 200;
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
 const canvas = $<HTMLCanvasElement>('game');
@@ -40,6 +41,7 @@ let servers: ServerInfo[] | null = [];
 let selectedRoom: string | null = null;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
+let viewTimer: ReturnType<typeof setTimeout> | undefined;
 const held = new Set<Action>();
 let firing = false;
 let touchWasAiming = false;
@@ -97,7 +99,7 @@ function connect(room: string) {
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
   const token = account.current()?.token;
   setState({ phase: 'menu', status: { kind: 'connecting', ws } });
-  ws.onopen = () => send(ws, { t: 'join', name, loadout, token });
+  ws.onopen = () => send(ws, { t: 'join', name, loadout, token, aspect: viewAspect(view.w, view.h) });
   ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
     if (!msg) return;
@@ -230,6 +232,11 @@ function resize() {
   view = { w: window.innerWidth, h: window.innerHeight, dpr };
   canvas.width = Math.round(view.w * dpr);
   canvas.height = Math.round(view.h * dpr);
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(() => {
+    const s = sessionOf(state);
+    if (s) send(s.ws, { t: 'view', aspect: viewAspect(view.w, view.h) });
+  }, VIEW_RESEND_MS);
 }
 
 function drawBackdrop(now: number) {
