@@ -2,7 +2,7 @@
 // Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, restart and expire on request.
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,8 +13,10 @@ const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
 const ALL = ['menu', 'account', 'join', 'move', 'fire', 'latency', 'chat', 'leave'];
 const steps = process.argv.length > 3 ? process.argv.slice(3) : ALL;
-const PORT = readFileSync(join(RUN, 'port'), 'utf8').trim();
-const BASE = `http://localhost:${PORT}`;
+const REMOTE_URL = existsSync(join(RUN, 'url')) ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '') : null;
+const PORT = REMOTE_URL ? '' : readFileSync(join(RUN, 'port'), 'utf8').trim();
+const BASE = REMOTE_URL ?? `http://localhost:${PORT}`;
+const WS_BASE = BASE.replace(/^http/, 'ws');
 const EV = join(RUN, 'evidence');
 const LOG = join(EV, 'drive.log');
 mkdirSync(EV, { recursive: true });
@@ -83,7 +85,7 @@ let humansBefore = 0;
 const observerChat: { from: string; text: string }[] = [];
 let observerBoard: string[] = [];
 const openObserver = () => {
-  const ws = new WebSocket(`ws://localhost:${PORT}/ws?room=ffa`);
+  const ws = new WebSocket(`${WS_BASE}/ws?room=ffa`);
   ws.on('open', () => ws.send(JSON.stringify({ t: 'join', name: 'Observer', loadout: { weapon: 'pistol', armor: 'none', color: 'green' } })));
   ws.on('message', (raw) => {
     const m = JSON.parse(String(raw));
