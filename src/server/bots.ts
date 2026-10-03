@@ -1,6 +1,6 @@
 import { ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../shared/protocol.ts';
-import { segRect } from '../shared/sim.ts';
+import { segmentEntersRectAt } from '../shared/sim.ts';
 
 export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
@@ -81,7 +81,7 @@ function nearestVisibleEnemy(me: PlayerView, players: PlayerView[], walls: reado
   let best: PlayerView | null = null, bestD = Infinity;
   for (const p of players) {
     if (p.id === me.id || !p.alive || (me.team !== null && p.team === me.team)) continue;
-    if (walls.some((w) => segRect(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null)) continue;
+    if (walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null)) continue;
     const d = Math.hypot(p.x - me.x, p.y - me.y);
     if (d < bestD) { best = p; bestD = d; }
   }

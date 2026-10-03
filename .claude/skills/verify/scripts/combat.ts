@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { segRect, type Rect } from '../../../../src/shared/sim.ts';
+import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim.ts';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 
@@ -86,7 +86,7 @@ function nearestTarget(self: Player, snap: Snap): { x: number; y: number; what: 
   const enemies = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team));
   const crates = snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 }));
   const d = (p: { x: number; y: number }) => Math.hypot(p.x - self.x, p.y - self.y);
-  const clear = (p: { x: number; y: number }) => !(frames.welcome?.walls ?? []).some((w) => segRect(self.x, self.y, p.x - self.x, p.y - self.y, w) !== null);
+  const clear = (p: { x: number; y: number }) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, p.x - self.x, p.y - self.y, w) !== null);
   const enemy = enemies.filter(clear).sort((a, b) => d(a) - d(b))[0];
   if (enemy && d(enemy) < 650) return { x: enemy.x, y: enemy.y, what: `bot ${enemy.name}` };
   const crate = crates.filter(clear).sort((a, b) => d(a) - d(b))[0];

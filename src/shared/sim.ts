@@ -47,7 +47,8 @@ export type Player = {
   abilityReadyAt: number;
 };
 
-export type ChosenPerks = { [T in Tier]?: (typeof PERK_TIERS)[T][number] };
+type PerkOfTier<T extends Tier> = (typeof PERK_TIERS)[T][number];
+export type ChosenPerks = { [T in Tier]?: PerkOfTier<T> };
 
 export type Bullet = {
   id: number; owner: number; x: number; y: number; vx: number; vy: number;
@@ -106,12 +107,16 @@ const SHIELD_ARC = Math.PI / 3;
 const GAS_RADIUS = 140;
 const PRESS_GRACE_MS = 100;
 
-export function rand(w: World): number {
-  w.rng = (w.rng + 0x6d2b79f5) | 0;
-  let t = w.rng;
+function mulberry32(state: number): number {
+  let t = state;
   t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+export function rand(w: World): number {
+  w.rng = (w.rng + 0x6d2b79f5) | 0;
+  return mulberry32(w.rng);
 }
 
 const newId = (w: World) => w.nextId++;
@@ -374,14 +379,22 @@ export function setInput(w: World, id: number, seq: number, input: InputState): 
   p.input = input;
 }
 
-export function choosePerk(w: World, id: number, tier: Tier, perk: PerkId): boolean {
+export function choosePerk<T extends Tier>(w: World, id: number, tier: T, perk: PerkId): boolean {
   const p = w.players.get(id);
   if (!p || p.life.k !== 'alive' || pendingTier(p) !== tier) return false;
-  if (!(PERK_TIERS[tier] as readonly PerkId[]).includes(perk)) return false;
+  if (!isPerkOfTier(tier, perk)) return false;
   const before = effectiveStats(p).maxHp;
-  (p.perks as Partial<Record<Tier, PerkId>>)[tier] = perk;
+  setPerk(p.perks, tier, perk);
   p.life.hp += effectiveStats(p).maxHp - before;
   return true;
+}
+
+function isPerkOfTier<T extends Tier>(tier: T, perk: PerkId): perk is PerkOfTier<T> {
+  return PERK_TIERS[tier].some((candidate) => candidate === perk);
+}
+
+function setPerk<T extends Tier>(perks: { [K in T]?: PerkOfTier<K> }, tier: T, perk: PerkOfTier<T>) {
+  perks[tier] = perk;
 }
 
 export function canRespawn(w: World, id: number): boolean {
@@ -470,7 +483,7 @@ function explode(w: World, x: number, y: number, radius: number, maxDamage: numb
 }
 
 
-export function segCircle(px: number, py: number, dx: number, dy: number, cx: number, cy: number, r: number): number | null {
+export function segmentEntersCircleAt(px: number, py: number, dx: number, dy: number, cx: number, cy: number, r: number): number | null {
   const fx = px - cx, fy = py - cy;
   const a = dx * dx + dy * dy;
   const b = 2 * (fx * dx + fy * dy);
@@ -482,7 +495,7 @@ export function segCircle(px: number, py: number, dx: number, dy: number, cx: nu
   return t >= 0 && t <= 1 ? t : null;
 }
 
-export function segRect(px: number, py: number, dx: number, dy: number, r: Rect): number | null {
+export function segmentEntersRectAt(px: number, py: number, dx: number, dy: number, r: Rect): number | null {
   let t0 = 0, t1 = 1;
   for (const [p, d, lo, hi] of [[px, dx, r.x, r.x + r.w], [py, dy, r.y, r.y + r.h]] as const) {
     if (d === 0) { if (p < lo || p > hi) return null; continue; }
@@ -507,10 +520,15 @@ export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): 
       x = cx + ((x - cx) / d) * r;
       y = cy + ((y - cy) / d) * r;
     } else {
-      const opts = [[b.x - r, y, x - b.x], [b.x + b.w + r, y, b.x + b.w - x], [x, b.y - r, y - b.y], [x, b.y + b.h + r, b.y + b.h - y]] as const;
-      const best = opts.reduce((m, o) => (o[2] < m[2] ? o : m));
-      x = best[0];
-      y = best[1];
+      const exits = [
+        { x: b.x - r, y, depth: x - b.x },
+        { x: b.x + b.w + r, y, depth: b.x + b.w - x },
+        { x, y: b.y - r, depth: y - b.y },
+        { x, y: b.y + b.h + r, depth: b.y + b.h - y },
+      ];
+      const shallowest = exits.reduce((m, o) => (o.depth < m.depth ? o : m));
+      x = shallowest.x;
+      y = shallowest.y;
     }
   }
   return { x: clamp(x, r, WORLD.size - r), y: clamp(y, r, WORLD.size - r) };
@@ -578,7 +596,7 @@ function tickThrown(w: World, dt: number) {
       case 'fragGrenade':
       case 'gasGrenade': {
         const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
-        if (solidRects(w).some((b) => segRect(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
+        if (solidRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
         if (t.kind === 'grenade') explode(w, t.x, t.y, 160, 80, owner, 'Grenade');
@@ -623,9 +641,14 @@ function tickThrown(w: World, dt: number) {
 
 
 
-function tickPlayer(w: World, p: Player, dtMs: number) {
+function consumePresses(p: Player): boolean {
   const pressed = p.input.shots > p.shotsSeen;
   p.shotsSeen = Math.max(p.shotsSeen, p.input.shots);
+  return pressed;
+}
+
+function tickPlayer(w: World, p: Player, dtMs: number) {
+  const pressed = consumePresses(p);
   const life = p.life;
   if (life.k !== 'alive') return;
   if (pressed) life.pressUntil = w.now + PRESS_GRACE_MS;
@@ -686,14 +709,14 @@ function tickBullets(w: World, dt: number) {
     const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
     const owner = w.players.get(b.owner) ?? null;
     const candidates: BulletHit[] = [
-      ...w.walls.map((wall) => ({ t: segRect(b.x, b.y, dx, dy, wall), apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+      ...w.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
       ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
-        t: segRect(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
+        t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
       })),
       ...[...w.players.values()]
         .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)))
         .map((p) => ({
-          t: segCircle(b.x, b.y, dx, dy, p.x, p.y, WORLD.playerRadius),
+          t: segmentEntersCircleAt(b.x, b.y, dx, dy, p.x, p.y, WORLD.playerRadius),
           apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
         })),
     ];

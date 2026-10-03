@@ -70,6 +70,8 @@ test('kills award killScore and unlock perk tiers at thresholds', () => {
   self = snapshotFor(w, a.id).self;
   assert.equal(self.pendingTier, 2);
   assert.equal(self.perks[1], 'grip');
+  assert.equal(choosePerk(w, a.id, 2, 'bipod'), false, 'a tier 1 perk cannot fill tier 2');
+  assert.equal(snapshotFor(w, a.id).self.perks[2], undefined);
   assert.equal(choosePerk(w, a.id, 3, 'dash'), false, 'cannot skip to a locked tier');
 });
 
