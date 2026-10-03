@@ -341,14 +341,14 @@ function drawSlash(ctx: CanvasRenderingContext2D, x: number, y: number, angle: n
   const sweep = Math.min(1, k * 3);
   const from = angle - SLASH_HALF_ARC, to = from + 2 * SLASH_HALF_ARC * sweep;
   ctx.lineCap = 'round';
-  ctx.lineWidth = 10 * (1 - k * 0.5);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.lineWidth = 12 * (1 - k * 0.5);
+  ctx.strokeStyle = PALETTE.text;
   ctx.arc(x, y, SLASH_RADIUS, from, to);
   ctx.stroke();
   ctx.beginPath();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(40, 44, 52, 0.8)';
-  ctx.arc(x, y, SLASH_RADIUS + 6, from, to);
+  ctx.lineWidth = 5 * (1 - k * 0.5);
+  ctx.strokeStyle = '#ffffff';
+  ctx.arc(x, y, SLASH_RADIUS - 2, from, to);
   ctx.stroke();
 }
 
