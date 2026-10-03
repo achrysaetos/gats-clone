@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node scripts/bench-bots.ts [minutes=10] [seeds=3]
+// Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10]
 import { PERK_TIERS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import {
@@ -9,11 +9,12 @@ import {
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const minutes = Number(process.argv[2] ?? 10);
-const seeds = Number(process.argv[3] ?? 3);
+const seeds = Number(process.argv[3] ?? 10);
 const TICK_MS = 1000 / WORLD.tickHz;
 const HUMAN_LOADOUT: Loadout = { weapon: 'assault', armor: 'medium', color: 'blue' };
 const HUMAN_REACTION_MS = [220, 380] as const;
-const HUMAN_AIM_SIGMA = 0.05;
+const HUMAN_AIM_SIGMA = 0.04;
+const HUMAN_AIM_SIGMA_PER_RAD_PER_SEC = 0.15;
 const HUMAN_AIM_CORRELATION = 0.9;
 const HUMAN_LEAD = 0.5;
 
@@ -48,7 +49,10 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
     const vel = next.seen?.id === enemy.id ? { x: enemy.x - next.seen.x, y: enemy.y - next.seen.y } : { x: 0, y: 0 };
     const flightTicks = (d / WEAPONS[me.weapon].bulletSpeed) * WORLD.tickHz * HUMAN_LEAD;
-    next.aimErr = next.aimErr * HUMAN_AIM_CORRELATION + Math.sqrt(1 - HUMAN_AIM_CORRELATION ** 2) * HUMAN_AIM_SIGMA * gaussian(r);
+    const bearing = Math.atan2(enemy.y - me.y, enemy.x - me.x);
+    const angularSpeed = next.seen?.id === enemy.id ? Math.abs(Math.atan2(Math.sin(bearing - Math.atan2(next.seen.y - me.y, next.seen.x - me.x)), Math.cos(bearing - Math.atan2(next.seen.y - me.y, next.seen.x - me.x)))) * WORLD.tickHz : 0;
+    const sigma = HUMAN_AIM_SIGMA + HUMAN_AIM_SIGMA_PER_RAD_PER_SEC * angularSpeed;
+    next.aimErr = next.aimErr * HUMAN_AIM_CORRELATION + Math.sqrt(1 - HUMAN_AIM_CORRELATION ** 2) * sigma * gaussian(r);
     angle = Math.atan2(enemy.y + vel.y * flightTicks - me.y, enemy.x + vel.x * flightTicks - me.x) + next.aimErr;
     aimDist = d;
     fire = snap.tick >= next.fireAtTick && d < WEAPONS[me.weapon].range * 0.95;
