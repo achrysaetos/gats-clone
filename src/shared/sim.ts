@@ -546,6 +546,7 @@ export function moveStep(solids: readonly Rect[], x: number, y: number, keys: Mo
 
 
 const GRENADE_FUSE_MS = 900;
+export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
 const THROW_SPEED = 700;
 
 function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
@@ -599,9 +600,9 @@ function tickThrown(w: World, dt: number) {
         if (solidRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
-        if (t.kind === 'grenade') explode(w, t.x, t.y, 160, 80, owner, 'Grenade');
+        if (t.kind === 'grenade') explode(w, t.x, t.y, BLAST_RADIUS.grenade, 80, owner, 'Grenade');
         else if (t.kind === 'fragGrenade') {
-          explode(w, t.x, t.y, 90, 40, owner, 'Frag');
+          explode(w, t.x, t.y, BLAST_RADIUS.fragGrenade, 40, owner, 'Frag');
           for (let i = 0; i < 16; i++) {
             const a = (i / 16) * Math.PI * 2;
             w.bullets.push({

@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { feedMentions, levelProgress, objectiveFor } from './derive.ts';
@@ -259,7 +259,9 @@ function drawVitals({ ctx, w, h, snap, s, me, now }: Hud) {
     text(ctx, left === 0 ? 'Space' : `${(self.abilityReadyIn / 1000).toFixed(1)}s`, ax, ay - 6, 11, left === 0 ? '#ffd34d' : INK, 'center', 700);
     text(ctx, name.length > 9 ? name.split(' ')[0]! : name, ax, ay + 9, 10, MUTED, 'center', 500);
   } else {
-    text(ctx, 'No ability', ax, ay, 9, MUTED, 'center', 500);
+    const [top, bottom] = abilityHint(self.pendingTier);
+    text(ctx, top, ax, ay - 6, 10, MUTED, 'center', 600);
+    text(ctx, bottom, ax, ay + 8, 10, MUTED, 'center', 500);
   }
 
   const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] ? [PERK_INFO[self.perks[t]!].name] : []));
@@ -272,3 +274,8 @@ function drawVitals({ ctx, w, h, snap, s, me, now }: Hud) {
     cx += tw + 6;
   }
 }
+
+const ABILITY_TIER: Tier = 3;
+
+export const abilityHint = (pendingTier: Tier | null): [string, string] =>
+  pendingTier === ABILITY_TIER ? ['Pick an', 'ability'] : ['Unlocks', `at ${LEVEL_SCORES[ABILITY_TIER]}`];

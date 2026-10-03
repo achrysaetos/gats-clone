@@ -1,5 +1,6 @@
 import { COLORS, WORLD, type ArmorId } from '../shared/defs.ts';
 import type { CrateView, PlayerView, Snapshot, Team, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
+import { BLAST_RADIUS } from '../shared/sim.ts';
 import { screenToWorld, type Camera } from './camera.ts';
 import { NUMBER_MS, type DamageNumber } from './feedback.ts';
 import { drawGun } from './sprites.ts';
@@ -196,6 +197,7 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
     case 'grenade':
     case 'fragGrenade':
     case 'gasGrenade': {
+      if (t.kind !== 'gasGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
       const band = t.kind === 'gasGrenade' ? '#7bb33a' : t.kind === 'fragGrenade' ? '#d9822b' : '#c7c9cc';
       if (t.kind === 'fragGrenade') {
         ctx.strokeStyle = '#2d3138';
@@ -216,6 +218,21 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
       return;
     }
   }
+}
+
+function drawBlastRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, now: number) {
+  const pulse = 0.5 + 0.5 * Math.sin(now / 90);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.fillStyle = `rgba(229, 72, 77, ${(0.08 + 0.06 * pulse).toFixed(3)})`;
+  ctx.fill();
+  ctx.setLineDash([14, 10]);
+  ctx.lineDashOffset = -now / 40;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `rgba(229, 72, 77, ${(0.55 + 0.35 * pulse).toFixed(3)})`;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
 }
 
 function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, trail: { x: number; y: number; at: number }[] | undefined, now: number) {

@@ -20,6 +20,7 @@ const ROOMS: { id: string; mode: ModeId }[] = [{ id: '1', mode: 'FFA' }, { id: '
 const MIME: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.map': 'application/json' };
 const SIZE = WORLD.size;
 const DT = 1 / WORLD.tickHz;
+const GRENADE_FUSE_MS = 900;
 
 const WALLS: WallView[] = [
   { x: 1300, y: 1200, w: 400, h: 40, built: false },
@@ -100,6 +101,7 @@ function serve(ws: WebSocket, mode: ModeId) {
   let winnerUntil = 0;
   let bullets: (BulletView & { life: number })[] = [];
   let thrown: ThrownView[] = [];
+  const fuseEndsAt = new Map<number, number>();
   let events: GameEvent[] = [];
 
   ws.on('message', (raw) => {
@@ -162,7 +164,10 @@ function serve(ws: WebSocket, mode: ModeId) {
       if (input.ability && ability && now >= me.abilityAt) {
         me.abilityAt = now + ABILITY_COOLDOWN_MS[ability];
         if (ability === 'dash') me.dashUntil = now + 250;
-        else thrown.push({ id: w.bulletId++, kind: ability === 'landMine' ? 'landMine' : ability === 'gasGrenade' ? 'gasGrenade' : ability === 'fragGrenade' ? 'fragGrenade' : 'grenade', x: me.x + Math.cos(input.angle) * Math.min(400, input.aimDist), y: me.y + Math.sin(input.angle) * Math.min(400, input.aimDist), r: 140, owner: myId });
+        else {
+          fuseEndsAt.set(w.bulletId, now + GRENADE_FUSE_MS);
+          thrown.push({ id: w.bulletId++, kind: ability === 'landMine' ? 'landMine' : ability === 'gasGrenade' ? 'gasGrenade' : ability === 'fragGrenade' ? 'fragGrenade' : 'grenade', x: me.x + Math.cos(input.angle) * Math.min(400, input.aimDist), y: me.y + Math.sin(input.angle) * Math.min(400, input.aimDist), r: 140, owner: myId });
+        }
       }
     }
 
@@ -194,6 +199,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     thrown = thrown.filter((t) => {
       if (t.kind === 'gasCloud') { t.r -= 0.5; return t.r > 20; }
       if (t.kind === 'landMine') return true;
+      if (now < (fuseEndsAt.get(t.id) ?? 0)) return true;
       events.push({ e: 'boom', x: t.x, y: t.y, r: t.r });
       if (t.kind === 'gasGrenade') thrown.push({ ...t, id: w.bulletId++, kind: 'gasCloud', r: 160 });
       return false;
