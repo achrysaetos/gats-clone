@@ -1,13 +1,14 @@
 import { LEVEL_SCORES, WORLD, type ModeId } from '../shared/defs.ts';
 import type { GameEvent, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
 
-export type LevelProgress = { level: number; frac: number; nextAt: number | null };
+export type LevelProgress = { displayLevel: number; frac: number; nextAt: number | null };
 
-export function levelProgress(level: number, score: number): LevelProgress {
-  const from = LEVEL_SCORES[level] ?? 0;
-  const to = LEVEL_SCORES[level + 1];
-  if (to === undefined) return { level: level + 1, frac: 1, nextAt: null };
-  return { level: level + 1, frac: Math.min(1, Math.max(0, (score - from) / (to - from))), nextAt: to };
+export function levelProgress(serverLevel: number, score: number): LevelProgress {
+  const from = LEVEL_SCORES[serverLevel] ?? 0;
+  const to = LEVEL_SCORES[serverLevel + 1];
+  const displayLevel = serverLevel + 1;
+  if (to === undefined) return { displayLevel, frac: 1, nextAt: null };
+  return { displayLevel, frac: Math.min(1, Math.max(0, (score - from) / (to - from))), nextAt: to };
 }
 
 export function killerOf(events: readonly GameEvent[], victimId: number): string | null {

@@ -38,7 +38,7 @@ let loadout: Loadout = loadLoadout();
 let servers: ServerInfo[] | null = [];
 let selectedRoom: string | null = null;
 let view = { w: 0, h: 0, dpr: 1 };
-let camera: Camera | null = null;
+let aimCamera: Camera | null = null;
 const held = new Set<Action>();
 let firing = false;
 let touchWasAiming = false;
@@ -179,9 +179,9 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
 function aimOffset(s: Session): { dx: number; dy: number } {
   const touch = touchAim(sticks);
   if (touch) return touch;
-  if (!camera) return { dx: 1, dy: 0 };
-  const self = worldToScreen(camera, s.lastSelf);
-  return { dx: (mouse.x - self.x) / camera.scale, dy: (mouse.y - self.y) / camera.scale };
+  if (!aimCamera) return { dx: 1, dy: 0 };
+  const self = worldToScreen(aimCamera, s.lastSelf);
+  return { dx: (mouse.x - self.x) / aimCamera.scale, dy: (mouse.y - self.y) / aimCamera.scale };
 }
 
 setInterval(() => {
@@ -271,15 +271,15 @@ function frame(now: number) {
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
-  camera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
+  aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const cam = { ...camera, x: camera.x + shake.x / camera.scale, y: camera.y + shake.y / camera.scale };
+  const shakenCamera = { ...aimCamera, x: aimCamera.x + shake.x / aimCamera.scale, y: aimCamera.y + shake.y / aimCamera.scale };
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
-  drawWorld(ctx, { snap, s, cam, dpr: view.dpr, now, selfAngle });
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle });
   drawHud(ctx, view.dpr, view.w, view.h, snap, s, now, mouse);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now);

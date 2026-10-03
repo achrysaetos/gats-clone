@@ -200,7 +200,7 @@ function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
   const bw = compact ? w - 150 - 56 : 260;
   const x = compact ? 22 : (w - bw) / 2;
   panel(ctx, x - 10, 10, bw + 20, 44);
-  text(ctx, `Level ${lp.level}`, x, 24, 13, INK, 'left', 700);
+  text(ctx, `Level ${lp.displayLevel}`, x, 24, 13, INK, 'left', 700);
   text(ctx, lp.nextAt === null ? `${me.score} · max level` : `${me.score} / ${lp.nextAt}`, x + bw, 24, 12, MUTED, 'right');
   text(ctx, `K ${snap.self.kills} · D ${snap.self.deaths}`, x + bw / 2, 24, 12, MUTED, 'center', 500);
   bar(ctx, x, 38, bw, 7, lp.frac, '#ffd34d');

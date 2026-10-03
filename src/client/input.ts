@@ -37,14 +37,14 @@ export const CONTROLS: readonly [string, string][] = [
 
 export const MAX_AIM_DIST = 2000;
 
-export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots: number, aim: { dx: number; dy: number }): InputState {
+export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots: number, aimWorldOffset: { dx: number; dy: number }): InputState {
   return {
     up: held.has('up'),
     down: held.has('down'),
     left: held.has('left'),
     right: held.has('right'),
-    angle: Math.atan2(aim.dy, aim.dx),
-    aimDist: Math.min(MAX_AIM_DIST, Math.hypot(aim.dx, aim.dy)),
+    angle: Math.atan2(aimWorldOffset.dy, aimWorldOffset.dx),
+    aimDist: Math.min(MAX_AIM_DIST, Math.hypot(aimWorldOffset.dx, aimWorldOffset.dy)),
     fire: firing,
     shots,
     reload: held.has('reload'),
