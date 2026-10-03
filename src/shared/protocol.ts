@@ -40,6 +40,8 @@ export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' |
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
+export type Dash = { dirX: number; dirY: number; leftMs: number };
+
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
   /** 0..1 through the current reload, 0 when not reloading. */
@@ -50,6 +52,7 @@ export type SelfView = {
   pendingTier: Tier | null;
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
+  dash: Dash | null;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;
@@ -63,7 +66,8 @@ export type GameEvent =
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
-  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number };
+  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number }
+  | { e: 'slash'; x: number; y: number; angle: number; owner: number };
 
 export type LeaderRow = { id: number; name: string; score: number; team: Team };
 export type MatchView = { mode: ModeId; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };

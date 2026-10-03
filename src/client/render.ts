@@ -343,9 +343,30 @@ function drawEffects(ctx: CanvasRenderingContext2D, s: Session, now: number) {
         ctx.fill();
         break;
       }
+      case 'slash':
+        drawSlash(ctx, fx.x, fx.y, fx.angle, k);
+        break;
     }
   }
   ctx.globalAlpha = 1;
+}
+
+const SLASH_RADIUS = WORLD.playerRadius + 34;
+const SLASH_HALF_ARC = 1.1;
+
+function drawSlash(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, k: number) {
+  const sweep = Math.min(1, k * 3);
+  const from = angle - SLASH_HALF_ARC, to = from + 2 * SLASH_HALF_ARC * sweep;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 12 * (1 - k * 0.5);
+  ctx.strokeStyle = PALETTE.text;
+  ctx.arc(x, y, SLASH_RADIUS, from, to);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.lineWidth = 5 * (1 - k * 0.5);
+  ctx.strokeStyle = '#ffffff';
+  ctx.arc(x, y, SLASH_RADIUS - 2, from, to);
+  ctx.stroke();
 }
 
 const IMPACT = {

@@ -41,6 +41,8 @@ To measure feel under latency on localhost, set `LAG=<one-way ms>` and `JITTER=<
 
 `node .claude/skills/verify/scripts/combat.ts "$RUN" [room ...]` is the combat driver. It joins TDM and DOM (or the rooms given), checks the objective banner, shoots until a `dmg` event from the driven player arrives in the page's frames, and opens the perk dock in the first room. Its log is `$RUN/evidence/combat.log`.
 
+`node .claude/skills/verify/scripts/abilities.ts "$RUN" [knife] [dash]` earns the ability tier in TDM and proves the dash distance, its client prediction, and the knife slash and hit. Its log is `$RUN/evidence/abilities.log`. See [the progression recipe](features/progression-death-modes.md) for launching a scratch copy with lower perk thresholds.
+
 Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`. Hold `KeyD` to move right. Press the mouse to fire. Press `Enter`, insert text, then press `Enter` to chat. Feature-specific recipes are in [features/README.md](features/README.md).
 
 `scripts/drive.ts` and `scripts/mock-server.ts` at the repo root are a second harness that forces UI states (perk panels, death, winner banner) through mock chat commands. Use it only to check how those states render. Its server is fake, so it proves nothing about gameplay.

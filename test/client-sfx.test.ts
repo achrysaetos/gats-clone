@@ -12,7 +12,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
   t: 'snap', tick: 1, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: o.events ?? [],
 });
@@ -45,6 +45,14 @@ test('a shot sounds like the shooter\'s weapon and is flagged self only for your
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2 },
   ] }));
   assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
+});
+
+test('a knife slash makes a slash sound at the strike point, flagged self only for your own', () => {
+  const cues = soundsFor(null, snap({ events: [
+    { e: 'slash', x: 300, y: 0, angle: 0, owner: 2 },
+    { e: 'slash', x: 120, y: 0, angle: 0, owner: 1 },
+  ] }));
+  assert.deepEqual(cues.map((c) => [c.id, c.self, c.x]), [['slash', false, 300], ['slash', true, 120]]);
 });
 
 test('level-up plays once per newly pending tier', () => {

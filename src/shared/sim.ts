@@ -1,9 +1,9 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMOR_ABSORB, ARMORS, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
+  ABILITY_COOLDOWN_MS, ARMORS, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
   type AbilityId, type ModeId, type PerkId, type Tier,
 } from './defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
+  BulletView, CrateView, Dash, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
   Team, ThrownKind, ThrownView, WallView, ZoneView,
 } from './protocol.ts';
 
@@ -20,7 +20,7 @@ export type Life =
     nextFireAt: number;
     lastDamageAt: number;
     lastMoveAt: number;
-    dashUntil: number;
+    dash: Dash | null;
     pressUntil: number;
   }
   | { k: 'dead'; respawnAt: number };
@@ -95,8 +95,9 @@ const REVEAL_MS = 2000;
 const CRATE_SIZE = 44;
 const CRATE_RESPAWN_MS = 15000;
 const BUILT_WALL_MS = 12000;
-const DASH_MS = 250;
-const DASH_MUL = 2.6;
+const DASH_MS = 200;
+const DASH_DISTANCE = 240;
+const MAX_SUBSTEP = WORLD.playerRadius / 2;
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
 const ZONE_RADIUS = 180;
@@ -336,7 +337,7 @@ function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, dashUntil: 0, pressUntil: -Infinity,
+    lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity,
   };
 }
 
@@ -352,13 +353,21 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   return p;
 }
 
-function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: number }) {
-  p.loadout = loadout;
+function resetProgress(p: Player) {
   p.score = 0;
   p.level = 0;
   p.perks = {};
-  p.lifeKills = 0;
   p.abilityReadyAt = 0;
+  if (p.life.k !== 'alive') return;
+  const s = effectiveStats(p);
+  p.life.hp = Math.min(p.life.hp, s.maxHp);
+  p.life.ammo = Math.min(p.life.ammo, s.mag);
+}
+
+function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: number }) {
+  p.loadout = loadout;
+  resetProgress(p);
+  p.lifeKills = 0;
   const pos = at ?? spawnPoint(w, p.team);
   p.x = pos.x;
   p.y = pos.y;
@@ -428,7 +437,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
   if (!src.piercing && life.armor > 0) {
-    const absorbed = Math.min(life.armor, amount * ARMOR_ABSORB);
+    const absorbed = Math.min(life.armor, amount * ARMORS[victim.loadout.armor].absorbFrac);
     life.armor -= absorbed;
     amount -= absorbed;
   }
@@ -535,13 +544,36 @@ export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): 
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
+export type Motion = { x: number; y: number; dash: Dash | null };
 
-export function moveStep(solids: readonly Rect[], x: number, y: number, keys: MoveKeys, speed: number, dtMs: number): { x: number; y: number } {
-  const mx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-  const my = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
-  if (mx === 0 && my === 0) return { x, y };
+const keyAxes = (keys: MoveKeys) => ({ mx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0), my: (keys.down ? 1 : 0) - (keys.up ? 1 : 0) });
+
+export function startDash(input: MoveKeys & Pick<InputState, 'angle'>): Dash {
+  const { mx, my } = keyAxes(input);
+  const len = Math.hypot(mx, my);
+  return len > 0
+    ? { dirX: mx / len, dirY: my / len, leftMs: DASH_MS }
+    : { dirX: Math.cos(input.angle), dirY: Math.sin(input.angle), leftMs: DASH_MS };
+}
+
+function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number): { x: number; y: number } {
+  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / MAX_SUBSTEP));
+  let at = { x, y };
+  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps);
+  return at;
+}
+
+export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number): Motion {
+  const { dash } = from;
+  if (dash) {
+    const d = (DASH_DISTANCE * Math.min(dtMs, dash.leftMs)) / DASH_MS;
+    const leftMs = dash.leftMs - dtMs;
+    return { ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d), dash: leftMs > 0 ? { ...dash, leftMs } : null };
+  }
+  const { mx, my } = keyAxes(keys);
+  if (mx === 0 && my === 0) return from;
   const d = (speed * dtMs) / 1000 / Math.hypot(mx, my);
-  return resolveCircle(solids, x + mx * d, y + my * d);
+  return { ...slide(solids, from.x, from.y, mx * d, my * d), dash: null };
 }
 
 
@@ -557,35 +589,71 @@ function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
       id: newId(w), kind, owner: p.id, x: p.x, y: p.y,
       vx: Math.cos(p.angle) * speed, vy: Math.sin(p.angle) * speed, explodeAt: w.now + GRENADE_FUSE_MS,
     });
+    return true;
   };
 }
 
-export const ABILITIES: Record<AbilityId, (w: World, p: Player) => void> = {
+const KNIFE_LUNGE = 90;
+const KNIFE_REACH = 70;
+const KNIFE_ARC = Math.PI / 3;
+const KNIFE_DAMAGE = 75;
+
+const insideWorld = (x: number, y: number) =>
+  x >= WORLD.playerRadius && x <= WORLD.size - WORLD.playerRadius && y >= WORLD.playerRadius && y <= WORLD.size - WORLD.playerRadius;
+
+function knifeTarget(w: World, p: Player, solids: readonly Rect[]): Player | null {
+  let best: Player | null = null, bestD = Infinity;
+  for (const v of w.players.values()) {
+    if (v.life.k !== 'alive' || !isEnemy(p, v)) continue;
+    const d = Math.sqrt(dist2(p.x, p.y, v.x, v.y));
+    if (d > KNIFE_REACH + WORLD.playerRadius || d >= bestD) continue;
+    if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - p.y, v.x - p.x), p.angle) > KNIFE_ARC) continue;
+    if (solids.some((b) => segmentEntersRectAt(p.x, p.y, v.x - p.x, v.y - p.y, b) !== null)) continue;
+    best = v;
+    bestD = d;
+  }
+  return best;
+}
+
+export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
   gasGrenade: throwGrenade('gasGrenade'),
   landMine: (w, p) => {
     w.thrown.push({ id: newId(w), kind: 'landMine', owner: p.id, x: p.x, y: p.y, armedAt: w.now + 600, expiresAt: w.now + 60000 });
+    return true;
   },
   knife: (w, p) => {
-    Object.assign(p, resolveCircle(solidRects(w), p.x + Math.cos(p.angle) * 90, p.y + Math.sin(p.angle) * 90));
-    const reach = 70;
-    for (const v of w.players.values()) {
-      if (v.life.k !== 'alive' || !isEnemy(p, v)) continue;
-      const d = Math.sqrt(dist2(p.x, p.y, v.x, v.y));
-      if (d > reach + WORLD.playerRadius) continue;
-      if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - p.y, v.x - p.x), p.angle) > Math.PI / 3) continue;
-      damagePlayer(w, v, 75, { attacker: p, label: 'Knife', piercing: true, fromX: p.x, fromY: p.y });
+    const solids = solidRects(w);
+    const steps = Math.ceil(KNIFE_LUNGE / MAX_SUBSTEP);
+    const sx = (Math.cos(p.angle) * KNIFE_LUNGE) / steps, sy = (Math.sin(p.angle) * KNIFE_LUNGE) / steps;
+    let victim = knifeTarget(w, p, solids);
+    for (let i = 0; i < steps && !victim; i++) {
+      const nx = p.x + sx, ny = p.y + sy;
+      if (!insideWorld(nx, ny) || solids.some((b) => circleHitsRect(nx, ny, WORLD.playerRadius, b))) break;
+      p.x = nx;
+      p.y = ny;
+      victim = knifeTarget(w, p, solids);
     }
+    if (victim) damagePlayer(w, victim, KNIFE_DAMAGE, { attacker: p, label: 'Knife', piercing: true, fromX: p.x, fromY: p.y });
+    w.events.push({ e: 'slash', x: p.x, y: p.y, angle: p.angle, owner: p.id });
+    return true;
   },
   engineer: (w, p) => {
     const cx = p.x + Math.cos(p.angle) * 80, cy = p.y + Math.sin(p.angle) * 80;
     const acrossX = Math.abs(Math.cos(p.angle)) < Math.abs(Math.sin(p.angle));
     const [ww, hh] = acrossX ? [140, 24] : [24, 140];
-    w.walls.push({ x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS });
+    const wall: Wall = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS };
+    const blocked = [...w.players.values()].some((o) => o.life.k === 'alive' && circleHitsRect(o.x, o.y, WORLD.playerRadius, wall));
+    if (blocked) return false;
+    w.walls.push(wall);
     w.wallsVersion++;
+    return true;
   },
-  dash: (w, p) => { if (p.life.k === 'alive') p.life.dashUntil = w.now + DASH_MS; },
+  dash: (w, p) => {
+    if (p.life.k === 'alive') p.life.dash = startDash(p.input);
+    return true;
+  },
 };
 
 function tickThrown(w: World, dt: number) {
@@ -656,12 +724,14 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
-  const moving = inp.right !== inp.left || inp.down !== inp.up;
+  const moving = inp.right !== inp.left || inp.down !== inp.up || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p, !moving);
   if (moving) {
-    const speed = stats.speed * (w.now < life.dashUntil ? DASH_MUL : 1);
-    Object.assign(p, moveStep(solidRects(w), p.x, p.y, inp, speed, dtMs));
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs);
+    p.x = m.x;
+    p.y = m.y;
+    life.dash = m.dash;
   }
 
   if (life.reloadUntil !== null && w.now >= life.reloadUntil) { life.ammo = stats.mag; life.reloadUntil = null; }
@@ -690,9 +760,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const ability = abilityOf(p);
-  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt) {
+  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
-    ABILITIES[ability](w, p);
   }
 
   if (p.life.k === 'alive' && w.now - p.life.lastDamageAt >= WORLD.regenDelayMs) {
@@ -742,7 +811,7 @@ function tickMatch(w: World, dtMs: number) {
     w.match = { k: 'playing' };
     w.teamScore = { red: 0, blue: 0 };
     for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
-    for (const p of w.players.values()) { p.score = 0; p.kills = 0; p.deaths = 0; }
+    for (const p of w.players.values()) { resetProgress(p); p.kills = 0; p.deaths = 0; }
     return;
   }
   rules.tick(w, dtMs);
@@ -785,7 +854,7 @@ function playerView(w: World, p: Player): PlayerView {
     hp: alive ? Math.ceil(life.hp) : 0, maxHp: stats.maxHp,
     armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
     color: p.loadout.color, weapon: p.loadout.weapon, team: p.team,
-    alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && w.now < life.dashUntil,
+    alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor,
   };
 }
@@ -808,6 +877,7 @@ function selfView(w: World, p: Player): SelfView {
     ability,
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
+    dash: life.k === 'alive' ? life.dash : null,
     respawnIn: life.k === 'dead' ? Math.max(0, life.respawnAt - w.now) : 0,
     kills: p.kills,
     deaths: p.deaths,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITY_COOLDOWN_MS, ARMOR_ABSORB, ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import {
   addPlayer, canRespawn, choosePerk, createWorld, rand, respawn, setInput, snapshotFor, step,
   wallViews,
@@ -10,14 +10,14 @@ import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, sp
 
 const PISTOL_DMG = WEAPONS.pistol.damage;
 
-test('armor absorbs ARMOR_ABSORB of a hit and depletes', () => {
+test('armor absorbs its tier\'s share of a hit and depletes', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 700, 500, { loadout: { armor: 'medium' } });
   shootOnce(w, a, 0);
   assert.ok(b.life.k === 'alive');
-  assert.equal(b.life.hp, WORLD.baseHp - PISTOL_DMG * (1 - ARMOR_ABSORB));
-  assert.equal(b.life.armor, ARMORS.medium.points - PISTOL_DMG * ARMOR_ABSORB);
+  assert.equal(b.life.hp, WORLD.baseHp - PISTOL_DMG * (1 - ARMORS.medium.absorbFrac));
+  assert.equal(b.life.armor, ARMORS.medium.points - PISTOL_DMG * ARMORS.medium.absorbFrac);
 });
 
 test('piercing bullets bypass armor entirely', () => {

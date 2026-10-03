@@ -7,9 +7,10 @@ import type { Prediction } from './predict.ts';
 export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
-  | { kind: 'flash'; x: number; y: number; angle: number; born: number };
+  | { kind: 'flash'; x: number; y: number; angle: number; born: number }
+  | { kind: 'slash'; x: number; y: number; angle: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, boom: 550, flash: 70 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, boom: 550, flash: 70, slash: 200 };
 
 export type FeedLine = { killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };

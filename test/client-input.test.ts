@@ -51,7 +51,7 @@ test('aim from screen space converts to world units through the camera', () => {
 
 test('level progress tracks thresholds and caps at max level', () => {
   assert.deepEqual(levelProgress(0, 0), { displayLevel: 1, frac: 0, nextAt: 100 });
-  assert.deepEqual(levelProgress(1, 200), { displayLevel: 2, frac: 0.5, nextAt: 300 });
+  assert.deepEqual(levelProgress(1, 175), { displayLevel: 2, frac: 0.5, nextAt: 250 });
   assert.deepEqual(levelProgress(3, 5000), { displayLevel: 4, frac: 1, nextAt: null });
 });
 
