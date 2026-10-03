@@ -21,6 +21,7 @@ export type Accounts = {
 };
 
 const key = (name: string) => name.toLowerCase();
+const SAVE_DELAY_MS = 2000;
 
 export async function openAccounts(dataDir: string): Promise<Accounts> {
   await mkdir(dataDir, { recursive: true });
@@ -42,6 +43,11 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
       await rename(tmp, file);
     }).catch((err: unknown) => console.error('accounts save failed', err));
     return saving;
+  };
+  // Credits arrive on every death; batching them keeps a busy room from rewriting the whole file each time.
+  let pending: ReturnType<typeof setTimeout> | null = null;
+  const saveSoon = () => {
+    pending ??= setTimeout(() => { pending = null; void save(); }, SAVE_DELAY_MS);
   };
 
   const issue = (account: Account): Session => {
@@ -90,8 +96,11 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
       a.stats.score += delta.score;
       a.stats.games += delta.games;
       a.stats.best = Math.max(a.stats.best, delta.score);
-      void save();
+      saveSoon();
     },
-    flush: () => saving,
+    flush() {
+      if (pending) { clearTimeout(pending); pending = null; void save(); }
+      return saving;
+    },
   };
 }

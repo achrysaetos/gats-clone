@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, resolve, sep } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
@@ -46,14 +47,34 @@ function parseCredentials(body: unknown): { name: string; password: string } | n
   return { name: clean, password };
 }
 
-async function serveStatic(publicDir: string, pathname: string, res: ServerResponse) {
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.map', '.json', '.svg']);
+const fileCache = new Map<string, { etag: string; data: Buffer; gz: Buffer | null }>();
+
+async function loadStatic(file: string) {
+  const st = await stat(file);
+  const etag = `"${st.size.toString(36)}-${st.mtimeMs.toString(36)}"`;
+  const hit = fileCache.get(file);
+  if (hit?.etag === etag) return hit;
+  const data = await readFile(file);
+  const entry = { etag, data, gz: COMPRESSIBLE.has(extname(file)) ? gzipSync(data) : null };
+  fileCache.set(file, entry);
+  return entry;
+}
+
+async function serveStatic(publicDir: string, pathname: string, req: IncomingMessage, res: ServerResponse) {
   let file: string;
   try { file = resolve(publicDir, '.' + decodeURIComponent(pathname === '/' ? '/index.html' : pathname)); } catch { file = ''; }
   if (!file.startsWith(publicDir + sep)) { res.writeHead(404).end(); return; }
   try {
-    const data = await readFile(file);
-    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
-    res.end(data);
+    const { etag, data, gz } = await loadStatic(file);
+    // Assets are not content-hashed, so browsers revalidate every load and get a cheap 304 when unchanged.
+    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag };
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return; }
+    const useGzip = gz !== null && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+    if (useGzip) headers['content-encoding'] = 'gzip';
+    if (gz !== null) headers.vary = 'accept-encoding';
+    res.writeHead(200, headers);
+    res.end(useGzip ? gz : data);
   } catch {
     res.writeHead(404).end('Not found');
   }
@@ -65,6 +86,7 @@ const ipOf = (req: IncomingMessage) => req.socket.remoteAddress ?? '';
 async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
+  if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.size });
   if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.values()].map((r) => r.info()));
   if (req.method === 'GET' && path === '/api/leaderboard') return json(res, 200, accounts.leaderboard(20));
   if (req.method === 'GET' && path.startsWith('/api/stats/')) {
@@ -84,7 +106,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<strin
   }
   if (path.startsWith('/api/')) return json(res, 404, { error: 'Not found' });
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed' });
-  return serveStatic(publicDir, path, res);
+  return serveStatic(publicDir, path, req, res);
 }
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
