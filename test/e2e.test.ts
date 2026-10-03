@@ -169,6 +169,30 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   assert.equal(((await (await fetch(base + '/api/stats/Tester')).json()) as { games: number }).games, 3);
 });
 
+test('display names are unique per room and registered names belong to their signed-in owners', async () => {
+  const reg = await post('/api/register', { name: 'Owner', password: 'owner-pass' });
+  const { token } = (await reg.json()) as { token: string };
+  const joinAs = async (name: string, tok?: string) => {
+    const c = await connect('ffa');
+    send(c, { t: 'join', name, loadout: LOADOUT, token: tok });
+    const snap = await c.waitFor((m): m is Snapshot => isSnap(m) && m.players.some((p) => p.id === m.self.id));
+    return { c, snap, name: snap.players.find((p) => p.id === snap.self.id)!.name };
+  };
+  const impostor = await joinAs('owner');
+  assert.equal(impostor.name, 'owner2', 'a guest cannot take a registered name, in any letter case');
+  const owner = await joinAs('ignored', token);
+  assert.equal(owner.name, 'Owner', 'the signed-in owner keeps the name');
+  const bot = owner.snap.leaderboard.find((r) => r.name !== impostor.name && r.name !== owner.name)!;
+  const copycat = await joinAs(bot.name.toUpperCase());
+  assert.equal(copycat.name, `${bot.name.toUpperCase()}2`, 'a guest cannot impersonate a bot');
+  const alex1 = await joinAs('Alex');
+  const alex2 = await joinAs('Alex');
+  assert.deepEqual([alex1.name, alex2.name], ['Alex', 'Alex2'], 'two guests named Alex get distinct names');
+  const board = alex2.snap.leaderboard;
+  assert.equal(new Set(board.map((r) => r.name.toLowerCase())).size, board.length, 'no two leaderboard rows share a name');
+  for (const j of [impostor, owner, alex1, alex2, copycat]) j.c.ws.close();
+});
+
 async function waitUntil(cond: () => Promise<boolean>, ms = 3000) {
   const end = Date.now() + ms;
   while (!(await cond())) {

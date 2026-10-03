@@ -2,6 +2,7 @@ import { COLORS, WORLD, type ArmorId } from '../shared/defs.ts';
 import type { CrateView, PlayerView, Snapshot, Team, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { screenToWorld, type Camera } from './camera.ts';
 import { armorTier } from './derive.ts';
+import { NUMBER_MS, type DamageNumber } from './feedback.ts';
 import { drawGun } from './sprites.ts';
 import { EFFECT_LIFE_MS, type Session } from './state.ts';
 
@@ -40,6 +41,9 @@ export function shade(hex: string, f: number): string {
 
 const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
+/** Players on a team wear its color, so the loadout color can never pass a red player off as blue. */
+export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
+
 export type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null };
 
 export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
@@ -54,12 +58,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   drawFloor(ctx, s.worldSize, tl, br, cam.scale);
 
-  const teams = snap.match.mode !== 'FFA';
+  const myTeam = snap.players.find((p) => p.id === s.myId)?.team ?? null;
   for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
   for (const t of snap.thrown) if (t.kind === 'gasCloud' || t.kind === 'landMine') drawThrown(ctx, t, now);
   for (const c of snap.crates) drawCrate(ctx, c);
   for (const w of s.walls) drawWall(ctx, w);
-  for (const p of snap.players) drawTrail(ctx, p, s.trails.get(p.id), now);
+  for (const p of snap.players) drawTrail(ctx, p, bodyColor(p), s.trails.get(p.id), now);
 
   ctx.lineCap = 'round';
   for (const b of snap.bullets) {
@@ -74,11 +78,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const p of snap.players) {
     if (!p.alive) continue;
     const angle = p.id === s.myId && f.selfAngle !== null ? f.selfAngle : p.angle;
-    drawPlayer(ctx, { ...p, angle }, teams);
+    drawPlayer(ctx, { ...p, angle }, bodyColor(p), p.id !== s.myId && p.team !== null && p.team === myTeam);
   }
   for (const t of snap.thrown) if (t.kind !== 'gasCloud' && t.kind !== 'landMine') drawThrown(ctx, t, now);
   drawEffects(ctx, s, now);
   for (const p of snap.players) if (p.alive && !p.hidden) drawLabel(ctx, p, p.id === s.myId);
+  drawDamageNumbers(ctx, s.feedback.numbers, now);
 }
 
 function drawFloor(ctx: CanvasRenderingContext2D, size: number, tl: { x: number; y: number }, br: { x: number; y: number }, scale: number) {
@@ -215,9 +220,9 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   }
 }
 
-function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, trail: { x: number; y: number; at: number }[] | undefined, now: number) {
+function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, trail: { x: number; y: number; at: number }[] | undefined, now: number) {
   if (!trail?.length) return;
-  ctx.fillStyle = COLORS[p.color];
+  ctx.fillStyle = color;
   for (const pt of trail) {
     const age = (now - pt.at) / TRAIL_MS;
     if (age >= 1) continue;
@@ -231,9 +236,8 @@ function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, trail: { x: num
 
 export const TRAIL_MS = 260;
 
-function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, teams: boolean) {
+function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, friendly: boolean) {
   const R = WORLD.playerRadius;
-  const color = COLORS[p.color];
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.globalAlpha = p.hidden ? 0.25 : 1;
@@ -248,11 +252,16 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, teams: boolean
   ctx.lineWidth = ring;
   ctx.strokeStyle = shade(color, 0.55);
   ctx.stroke();
-  if (teams && p.team) {
+  if (friendly) {
     ctx.beginPath();
-    ctx.arc(0, 0, R + 4, 0, TAU);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = TEAM_COLORS[p.team];
+    ctx.moveTo(-11, -R - 24);
+    ctx.lineTo(11, -R - 24);
+    ctx.lineTo(0, -R - 9);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#ffffff';
     ctx.stroke();
   }
   if (p.shield) {
@@ -294,17 +303,9 @@ function drawEffects(ctx: CanvasRenderingContext2D, s: Session, now: number) {
     ctx.globalAlpha = 1 - k;
     ctx.beginPath();
     switch (fx.kind) {
-      case 'hit': {
-        const a = 6 + k * 6;
-        ctx.strokeStyle = '#d32f2f';
-        ctx.lineWidth = 3;
-        ctx.moveTo(fx.x - a, fx.y - a); ctx.lineTo(fx.x - a / 3, fx.y - a / 3);
-        ctx.moveTo(fx.x + a, fx.y - a); ctx.lineTo(fx.x + a / 3, fx.y - a / 3);
-        ctx.moveTo(fx.x - a, fx.y + a); ctx.lineTo(fx.x - a / 3, fx.y + a / 3);
-        ctx.moveTo(fx.x + a, fx.y + a); ctx.lineTo(fx.x + a / 3, fx.y + a / 3);
-        ctx.stroke();
+      case 'impact':
+        drawImpact(ctx, fx.surface, fx.x, fx.y, k);
         break;
-      }
       case 'boom':
         ctx.arc(fx.x, fx.y, fx.r * (0.35 + 0.65 * Math.sqrt(k)), 0, TAU);
         ctx.fillStyle = 'rgba(255, 160, 50, 0.45)';
@@ -313,12 +314,61 @@ function drawEffects(ctx: CanvasRenderingContext2D, s: Session, now: number) {
         ctx.strokeStyle = 'rgba(200, 70, 20, 0.7)';
         ctx.stroke();
         break;
-      case 'flash':
-        ctx.arc(fx.x, fx.y, 9, 0, TAU);
-        ctx.fillStyle = '#ffd34d';
+      case 'flash': {
+        const c = Math.cos(fx.angle), s = Math.sin(fx.angle);
+        ctx.moveTo(fx.x - s * 6, fx.y + c * 6);
+        ctx.lineTo(fx.x + c * 18, fx.y + s * 18);
+        ctx.lineTo(fx.x + s * 6, fx.y - c * 6);
+        ctx.closePath();
+        ctx.fillStyle = '#ffb02e';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(fx.x + c * 3, fx.y + s * 3, 5, 0, TAU);
+        ctx.fillStyle = '#fff3b0';
         ctx.fill();
         break;
+      }
     }
+  }
+  ctx.globalAlpha = 1;
+}
+
+const IMPACT = {
+  wall: { color: '#ffe08a', count: 5, reach: 14, size: 2 },
+  crate: { color: '#8d6432', count: 4, reach: 16, size: 4 },
+  player: { color: '#7a0b0b', count: 6, reach: 18, size: 3.5 },
+} as const;
+
+/** Debris flies outward along fixed angles derived from the position, so a spark does not flicker between frames. */
+function drawImpact(ctx: CanvasRenderingContext2D, surface: keyof typeof IMPACT, x: number, y: number, k: number) {
+  const { color, count, reach, size } = IMPACT[surface];
+  const spin = (x * 12.9898 + y * 78.233) % TAU;
+  ctx.fillStyle = color;
+  for (let i = 0; i < count; i++) {
+    const a = spin + (i / count) * TAU;
+    const d = 4 + reach * Math.sqrt(k);
+    const r = size * (1 - k * 0.6);
+    ctx.fillRect(x + Math.cos(a) * d - r / 2, y + Math.sin(a) * d - r / 2, r, r);
+  }
+}
+
+function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly DamageNumber[], now: number) {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  for (const n of numbers) {
+    const k = (now - n.born) / NUMBER_MS;
+    if (k < 0 || k >= 1) continue;
+    const player = n.kind === 'player';
+    ctx.globalAlpha = 1 - k * k;
+    ctx.font = `800 ${player ? 24 : 17}px system-ui, sans-serif`;
+    const label = String(Math.max(1, Math.round(n.amount)));
+    const y = n.y - WORLD.playerRadius - 24 - 46 * k;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(20, 16, 10, 0.85)';
+    ctx.strokeText(label, n.x, y);
+    ctx.fillStyle = player ? '#ffd34d' : '#f3e2c4';
+    ctx.fillText(label, n.x, y);
   }
   ctx.globalAlpha = 1;
 }

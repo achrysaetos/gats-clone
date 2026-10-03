@@ -8,6 +8,7 @@ import {
 import type { Accounts } from './accounts.ts';
 import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { LIMITS, makeBucket, type Limits } from './limits.ts';
+import { uniqueName } from './names.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
@@ -37,11 +38,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   const send = (ws: WebSocket, msg: ServerMsg) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg)); };
   const joined = () => [...clients.values()].filter((c): c is Extract<Client, { k: 'joined' }> => c.k === 'joined');
+  const names = () => [...world.players.values()].map((pl) => pl.name);
+  const registered = (name: string) => accounts.stats(name) !== null;
 
   function balanceBots() {
     while (world.players.size < WORLD.minPlayers) {
-      const taken = new Set([...world.players.values()].map((pl) => pl.name));
-      const p = addPlayer(world, botName(taken, botRand), randomLoadout(botRand));
+      const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
+      const p = addPlayer(world, name, randomLoadout(botRand));
       bots.set(p.id, newBotMemory(botRand));
     }
     while (world.players.size > WORLD.minPlayers && bots.size > 0) {
@@ -71,7 +74,10 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         return;
       }
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
-      const p = addPlayer(world, account ?? msg.name, msg.loadout);
+      // A registered name belongs to its signed-in owner; everyone else gets a numbered variant.
+      const ownsName = (n: string) => account !== null && n.toLowerCase() === account.toLowerCase();
+      const name = uniqueName(account ?? msg.name, names(), (n) => !ownsName(n) && registered(n));
+      const p = addPlayer(world, name, msg.loadout);
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity });
       balanceBots();

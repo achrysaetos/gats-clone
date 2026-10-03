@@ -33,9 +33,11 @@ node .claude/skills/verify/scripts/drive.ts "$RUN" [step ...]
 
 Steps run in order: `menu account join move fire chat leave`. No steps means those seven. `touch` runs only when named. `move`, `fire` and `chat` need `join` earlier in the same invocation. The driver launches headless Chrome (override the binary with `CHROME=`) on a free debug port and talks CDP directly. It proves behavior three independent ways:
 
-- **DOM state** through stable ids: `#servers .server`, `#name`, `#play`, `#account`, `#menu`, `#hud`, `#chat-log`, `#perk-panel`, `#death`, `#death-title`, `#respawn`, `#banner`.
+- **DOM state** through stable ids: `#servers .server`, `#name`, `#play`, `#account`, `#menu`, `#hud`, `#chat-log`, `#perk-panel`, `#objective`, `#death`, `#death-title`, `#respawn`, `#banner`.
 - **The page's own WebSocket frames**, read with `Network.webSocketFrameReceived`. Position and ammo come from the server's snapshots, not from client state.
 - **An observer client** joined to the same room over `ws`. It must see the driven player on its leaderboard and receive the driven player's chat.
+
+`node .claude/skills/verify/scripts/combat.ts "$RUN" [room ...]` is the combat driver. It joins TDM and DOM (or the rooms given), checks the objective banner, shoots until a `dmg` event from the driven player arrives in the page's frames, and opens the perk dock in the first room. Its log is `$RUN/evidence/combat.log`.
 
 Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`. Hold `KeyD` to move right. Press the mouse to fire. Press `Enter`, insert text, then press `Enter` to chat. Feature-specific recipes are in [features/README.md](features/README.md).
 

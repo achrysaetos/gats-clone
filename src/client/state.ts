@@ -1,14 +1,15 @@
-import type { Team, WallView } from '../shared/protocol.ts';
+import type { DamageKind, Team, WallView } from '../shared/protocol.ts';
+import type { Feedback } from './feedback.ts';
 import type { SnapPair } from './interp.ts';
 
 export type Effect =
-  | { kind: 'hit'; x: number; y: number; born: number }
+  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
-  | { kind: 'flash'; x: number; y: number; born: number };
+  | { kind: 'flash'; x: number; y: number; angle: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { hit: 260, boom: 550, flash: 90 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, boom: 550, flash: 70 };
 
-export type FeedLine = { killer: string; victim: string; weapon: string; at: number };
+export type FeedLine = { killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 export type TrailPoint = { x: number; y: number; at: number };
 
@@ -20,9 +21,9 @@ export type Session = {
   walls: WallView[];
   snaps: SnapPair;
   seq: number;
-  selfName: string;
   lastSelf: { x: number; y: number };
   effects: Effect[];
+  feedback: Feedback;
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;

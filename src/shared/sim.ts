@@ -117,6 +117,7 @@ export function rand(w: World): number {
 const newId = (w: World) => w.nextId++;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
+const round1 = (v: number) => Math.round(v * 10) / 10;
 
 
 type PerkMods = {
@@ -409,6 +410,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   const a = src.attacker;
   if (a && (a.id === victim.id || sameTeam(a, victim))) return;
   const life = victim.life;
+  const before = life.hp + life.armor;
   const stats = effectiveStats(victim);
   if (stats.shield) {
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
@@ -421,7 +423,8 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   }
   life.hp -= amount;
   life.lastDamageAt = w.now;
-  w.events.push({ e: 'hit', x: victim.x, y: victim.y });
+  const dealt = before - Math.max(0, life.hp) - life.armor;
+  w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
 
@@ -429,7 +432,7 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
-  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, weapon: label });
+  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label });
   if (!killer) return;
   killer.kills++;
   killer.lifeKills++;
@@ -445,10 +448,13 @@ function addScore(p: Player, amount: number) {
 
 function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null) {
   if (c.respawnAt !== null) return;
+  const dealt = Math.min(c.hp, amount);
   c.hp -= amount;
+  const h = c.size / 2;
+  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate' });
   if (c.hp > 0) return;
   c.respawnAt = w.now + CRATE_RESPAWN_MS;
-  w.events.push({ e: 'boom', x: c.x + c.size / 2, y: c.y + c.size / 2, r: c.size });
+  w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (attacker) addScore(attacker, WORLD.crateScore);
 }
 
@@ -650,7 +656,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       });
     }
     if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
-    w.events.push({ e: 'shot', x: p.x, y: p.y, silenced: stats.silenced, owner: p.id });
+    w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id });
   }
   life.triggerHeld = inp.fire;
 
@@ -665,7 +671,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 }
 
-type BulletHit = { t: number | null; apply: () => void };
+type BulletHit = { t: number | null; apply: (x: number, y: number) => void };
 
 function tickBullets(w: World, dt: number) {
   const keep: Bullet[] = [];
@@ -675,7 +681,7 @@ function tickBullets(w: World, dt: number) {
     const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
     const owner = w.players.get(b.owner) ?? null;
     const candidates: BulletHit[] = [
-      ...w.walls.map((wall) => ({ t: segRect(b.x, b.y, dx, dy, wall), apply: () => {} })),
+      ...w.walls.map((wall) => ({ t: segRect(b.x, b.y, dx, dy, wall), apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
       ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
         t: segRect(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
       })),
@@ -686,11 +692,10 @@ function tickBullets(w: World, dt: number) {
           apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
         })),
     ];
-    let hit: { t: number; apply: () => void } | null = null;
+    let hit: { t: number; apply: BulletHit['apply'] } | null = null;
     for (const c of candidates) if (c.t !== null && (!hit || c.t < hit.t)) hit = { t: c.t, apply: c.apply };
     if (hit) {
-      w.events.push({ e: 'hit', x: b.x + dx * hit.t, y: b.y + dy * hit.t });
-      hit.apply();
+      hit.apply(b.x + dx * hit.t, b.y + dy * hit.t);
       continue;
     }
     b.x += dx;
@@ -780,7 +785,7 @@ function leaderboard(w: World): LeaderRow[] {
   return [...w.players.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, 10)
-    .map((p) => ({ name: p.name, score: p.score, team: p.team }));
+    .map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team }));
 }
 
 function matchView(w: World): MatchView {

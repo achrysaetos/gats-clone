@@ -13,7 +13,7 @@ Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats ar
 
 ## Play
 
-Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at six players or more.
+Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM every body wears its team color.
 
 | Input | Action |
 |---|---|
@@ -22,7 +22,7 @@ Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. B
 | Left click | Fire |
 | R | Reload |
 | Space | Use ability |
-| 1-9, 0 | Pick a perk |
+| 1-9, 0 | Pick a perk (or click its tile) |
 | Enter | Chat |
 | M | Mute sound |
 

@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
-import { armorTier, killerOf, levelProgress } from '../src/client/derive.ts';
-import { parseClientMsg } from '../src/shared/protocol.ts';
+import { armorTier, feedMentions, killerOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
+import { WORLD } from '../src/shared/defs.ts';
+import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 
 test('WASD and arrows map to the same movement; unknown and prototype keys map to nothing', () => {
   assert.deepEqual(['KeyW', 'KeyA', 'KeyS', 'KeyD'].map(actionForKey), ['up', 'left', 'down', 'right']);
@@ -58,7 +59,26 @@ test('armor tier and killer derive from snapshot data', () => {
   assert.equal(armorTier(0), 'none');
   assert.equal(armorTier(60), 'medium');
   assert.equal(armorTier(90), 'heavy');
-  const events = [{ e: 'hit' as const, x: 0, y: 0 }, { e: 'kill' as const, killer: 'Ann', victim: 'Bo', weapon: 'SMG' }];
-  assert.equal(killerOf(events, 'Bo'), 'Ann');
-  assert.equal(killerOf(events, 'Cy'), null);
+});
+
+test('killer lookup and kill-feed highlight go by player id, so same-named players never get confused', () => {
+  const kill = (killer: string, killerId: number | null, victim: string, victimId: number): Extract<GameEvent, { e: 'kill' }> =>
+    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG' });
+  const events = [kill('Ann', 5, 'Alex', 2), kill('Bo', 6, 'Alex', 3)];
+  assert.equal(killerOf(events, 3), 'Bo', 'the second Alex was killed by Bo, not Ann');
+  assert.equal(killerOf(events, 2), 'Ann');
+  assert.equal(killerOf(events, 9), null);
+  assert.equal(killerOf([kill('', null, 'Alex', 3)], 3), null, 'an environmental death has no killer name');
+  assert.equal(feedMentions(events[0]!, 3), false, 'a kill of a different Alex is not highlighted for me');
+  assert.equal(feedMentions(events[1]!, 3), true);
+  assert.equal(feedMentions(events[1]!, 6), true, 'my own kills are highlighted');
+});
+
+// Defect: new players are not told their team or what wins, or the text drifts from the real win scores.
+test('the objective names the mode, your team and the win condition from WORLD', () => {
+  assert.equal(objectiveFor('FFA', null).banner, 'Free for all: most points wins');
+  assert.equal(objectiveFor('TDM', 'red').banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills`);
+  assert.equal(objectiveFor('DOM', 'blue').banner, `Domination: you are BLUE, hold A B C, first to ${WORLD.domWinScore}`);
+  assert.equal(objectiveFor('TDM', 'blue').line, `TDM · Blue team · first to ${WORLD.tdmWinScore} kills`);
+  assert.equal(objectiveFor('DOM', 'red').line, `DOM · Red team · hold A B C · first to ${WORLD.domWinScore}`);
 });
