@@ -20,6 +20,8 @@ export type InputState = {
 export const VIEW_ASPECT = { min: 1, max: 16 / 9 } as const;
 export const VIEW_PRELOAD_MARGIN = 64;
 export const clampAspect = (aspect: number): number => Math.min(VIEW_ASPECT.max, Math.max(VIEW_ASPECT.min, aspect));
+/** The world a player can see: the view radius across, and as much height as the screen's shape allows. Camera, server culling and bot sight all use it, so nobody is hit from off screen. */
+export const viewExtents = (viewRadius: number, aspect: number): { halfW: number; halfH: number } => ({ halfW: viewRadius, halfH: viewRadius / clampAspect(aspect) });
 
 export type ClientMsg =
   | { t: 'join'; name: string; loadout: Loadout; token?: string; aspect: number }

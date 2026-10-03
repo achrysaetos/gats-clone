@@ -40,24 +40,24 @@ test('assembled input survives the server parser unchanged, even with far aim', 
 });
 
 test('aim from screen space converts to world units through the camera', () => {
-  const cam = makeCamera({ x: 500, y: 500 }, 3200, 1800, 900);
-  assert.equal(cam.scale, 1);
-  assert.deepEqual(worldToScreen(cam, { x: 500, y: 500 }), { x: 1600, y: 900 });
-  const zoomed = makeCamera({ x: 0, y: 0 }, 1600, 900, 900);
-  assert.equal(screenToWorld(zoomed, { x: 800 + 100, y: 450 }).x, 200);
+  const cam = makeCamera({ x: 500, y: 500 }, 1800, 1012.5, 900);
+  assert.equal(cam.scale, 1, 'a 16:9 screen 1800 px wide shows exactly the 1800-unit view width');
+  assert.deepEqual(worldToScreen(cam, { x: 500, y: 500 }), { x: 900, y: 506.25 });
+  const zoomed = makeCamera({ x: 0, y: 0 }, 900, 506.25, 900);
+  assert.equal(screenToWorld(zoomed, { x: 450 + 100, y: 253 }).x, 200, 'half the pixels per unit doubles the world offset');
 });
 
-test('the camera shows the view radius vertically and the radius times the aspect horizontally', () => {
+test('the camera shows the view radius across and only the height the screen shape allows', () => {
   const R = WORLD.viewRadius;
   const shown = (w: number, h: number) => {
     const cam = makeCamera({ x: 0, y: 0 }, w, h, R);
     const corner = screenToWorld(cam, { x: w, y: h });
     return { screen: [Math.round(corner.x), Math.round(corner.y)], world: [Math.round(cam.viewHalfW), Math.round(cam.viewHalfH)] };
   };
-  assert.deepEqual(shown(1280, 800), { screen: [1.6 * R, R], world: [1.6 * R, R] }, '16:10 fills the screen with no bars');
-  assert.deepEqual(shown(1920, 1080), { screen: [1600, R], world: [1600, R] }, '16:9 fills the screen with no bars');
-  assert.deepEqual(shown(2560, 1080), { screen: [2133, R], world: [1600, R] }, 'ultrawide is letterboxed to 16:9 at the sides');
-  assert.deepEqual(shown(800, 1280), { screen: [R, 1440], world: [R, R] }, 'portrait fits the short axis and letterboxes top and bottom');
+  assert.deepEqual(shown(1280, 800), { screen: [R, 563], world: [R, 563] }, '16:10 fills the screen with no bars at the original zoom');
+  assert.deepEqual(shown(1920, 1080), { screen: [R, 506], world: [R, 506] }, '16:9 fills the screen with no bars');
+  assert.deepEqual(shown(2560, 1080), { screen: [1200, 506], world: [R, 506] }, 'ultrawide is letterboxed to 16:9 at the sides');
+  assert.deepEqual(shown(800, 1280), { screen: [R, 1440], world: [R, R] }, 'portrait fits the width and letterboxes top and bottom');
 });
 
 test('level progress tracks thresholds and caps at max level', () => {

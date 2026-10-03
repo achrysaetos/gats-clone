@@ -1,5 +1,5 @@
 import { ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
-import { VIEW_ASPECT, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
+import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim.ts';
 
 export type BotMemory = {
@@ -111,10 +111,11 @@ function engage(prev: Engagement | null, enemy: PlayerView, me: PlayerView, tick
 }
 
 function nearestVisibleEnemy(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
+  const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
   let best: PlayerView | null = null, bestD = Infinity;
   for (const p of players) {
     if (p.id === me.id || !p.alive || (me.team !== null && p.team === me.team)) continue;
-    if (Math.abs(p.x - me.x) > viewRadius * VIEW_ASPECT.max || Math.abs(p.y - me.y) > viewRadius) continue;
+    if (Math.abs(p.x - me.x) > sight.halfW || Math.abs(p.y - me.y) > sight.halfH) continue;
     if (walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null)) continue;
     const d = Math.hypot(p.x - me.x, p.y - me.y);
     if (d < bestD) { best = p; bestD = d; }

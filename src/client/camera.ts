@@ -1,4 +1,4 @@
-import { clampAspect } from '../shared/protocol.ts';
+import { clampAspect, viewExtents } from '../shared/protocol.ts';
 
 export type Camera = { x: number; y: number; scale: number; w: number; h: number; viewHalfW: number; viewHalfH: number };
 export type Point = { x: number; y: number };
@@ -6,7 +6,7 @@ export type Point = { x: number; y: number };
 export const viewAspect = (w: number, h: number): number => clampAspect(w / h);
 
 export function makeCamera(center: Point, w: number, h: number, viewRadius: number): Camera {
-  const viewHalfW = viewRadius * viewAspect(w, h), viewHalfH = viewRadius;
+  const { halfW: viewHalfW, halfH: viewHalfH } = viewExtents(viewRadius, viewAspect(w, h));
   return { x: center.x, y: center.y, w, h, viewHalfW, viewHalfH, scale: Math.min(w / (2 * viewHalfW), h / (2 * viewHalfH)) };
 }
 

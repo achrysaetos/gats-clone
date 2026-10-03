@@ -271,14 +271,16 @@ test('a snapshot covers the rectangle the client screen shows, plus a preload ma
   const w = emptyWorld();
   const me = spawnAt(w, 1500, 1500);
   const at = (dx: number, dy: number) => spawnAt(w, me.x + dx, me.y + dy);
-  const edgeX = at(aspect * R, 0), edgeY = at(0, -R), corner = at(-aspect * R, R);
-  const pastX = at(aspect * R + beyond, 0), pastY = at(0, R + beyond);
+  const halfH = R / aspect;
+  const edgeX = at(R, 0), edgeY = at(0, -halfH), corner = at(-R, halfH);
+  const pastX = at(R + beyond, 0), pastY = at(0, halfH + beyond);
   const seen = new Set(snapshotFor(w, me.id, [], aspect).players.map((p) => p.id));
   for (const [name, p] of Object.entries({ edgeX, edgeY, corner })) assert.ok(seen.has(p.id), `${name} on the screen edge is sent`);
   for (const [name, p] of Object.entries({ pastX, pastY })) assert.ok(!seen.has(p.id), `${name} past the margin is not sent`);
   const botView = new Set(snapshotFor(w, me.id).players.map((p) => p.id));
-  assert.ok(botView.has(pastX.id), 'bots see the full 16:9 width');
-  assert.ok(!botView.has(pastY.id), 'but no further vertically');
+  assert.ok(!botView.has(pastX.id), 'bots see no wider than a player');
+  const pastBotY = at(0, R / (16 / 9) + beyond);
+  assert.ok(!new Set(snapshotFor(w, me.id).players.map((p) => p.id)).has(pastBotY.id), 'and only a 16:9 screen of height');
 });
 
 test('minimap always shows teammates', () => {

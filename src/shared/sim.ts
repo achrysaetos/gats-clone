@@ -6,7 +6,7 @@ import type {
   BulletView, CrateView, Dash, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
   Team, ThrownKind, ThrownView, WallView, ZoneView,
 } from './protocol.ts';
-import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN } from './protocol.ts';
+import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from './protocol.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Wall = Rect & { built: boolean; expiresAt: number };
@@ -911,7 +911,8 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const me = w.players.get(id);
   if (!me) throw new Error(`no player ${id}`);
   const stats = effectiveStats(me);
-  const halfW = stats.viewRadius * aspect + VIEW_PRELOAD_MARGIN, halfH = stats.viewRadius + VIEW_PRELOAD_MARGIN;
+  const visible = viewExtents(stats.viewRadius, aspect);
+  const halfW = visible.halfW + VIEW_PRELOAD_MARGIN, halfH = visible.halfH + VIEW_PRELOAD_MARGIN;
   const inView = (x: number, y: number, pad = 0) => Math.abs(x - me.x) <= halfW + pad && Math.abs(y - me.y) <= halfH + pad;
 
   const players: PlayerView[] = [];
