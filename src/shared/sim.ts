@@ -658,8 +658,10 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const weapon = WEAPONS[p.loadout.weapon];
+  // Ceasefire during the end-of-round banner: the scores are about to reset, so nothing earned now would count.
+  const armed = w.match.k === 'playing';
   const wantsShot = w.now <= life.pressUntil || (weapon.auto && inp.fire);
-  if (wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
+  if (armed && wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
     life.pressUntil = -Infinity;
     life.ammo--;
     life.nextFireAt = w.now + weapon.fireMs;
@@ -677,7 +679,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const ability = abilityOf(p);
-  if (inp.ability && ability && w.now >= p.abilityReadyAt) {
+  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
     ABILITIES[ability](w, p);
   }
