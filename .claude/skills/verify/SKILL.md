@@ -61,7 +61,7 @@ Two separate headless Chromes join FFA. The hunter walks toward the target and t
 node .claude/skills/verify/scripts/frametime.ts "$RUN" [seconds] [width] [height]
 ```
 
-One headless Chrome joins FFA at 1920x1080 through `?dev`, picks the SMG, and holds fire while it strafes toward the nearest player. After a 5s warmup it logs to `frametime.log` how busy the view was (players and bullets per snapshot) and three distributions: `frame cost` (the real frame's draw calls, from `skirmishDev.takeFrameCosts()`), `rastered frame cost` (the same frame redrawn back to back by `skirmishDev.benchFrames(n)`, each waiting for its pixels), and the `requestAnimationFrame` interval. The GPU canvas defers rasterizing, so compare `rastered frame cost` before and after any art change. Run it three times per side, since bot positions vary. `SOFTWARE=1` turns off the GPU canvas.
+One headless Chrome joins FFA at 1920x1080 through `?dev`, picks the SMG, and holds fire while it strafes toward the nearest player. After a 5s warmup it logs to `frametime.log` how busy the view was (players and bullets per snapshot), `frame cost` (each real frame's draw calls, from `skirmishDev.takeFrameCosts()`) and the `requestAnimationFrame` interval. The GPU canvas defers rasterizing, so `frame cost` alone misses pixel work. `SOFTWARE=1` turns the GPU canvas off and adds `rastered frame cost`: the current frame redrawn back to back by `skirmishDev.benchFrames(n)`, each waiting for its pixels. Compare both modes before and after any art change, three runs per side, since bot positions vary.
 
 ## Evidence
 

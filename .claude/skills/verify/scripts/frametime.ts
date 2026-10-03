@@ -1,6 +1,7 @@
 /// <reference types="node" />
 // Usage: node frametime.ts <run-dir> [seconds] [width] [height]   Measures client frame cost in a busy FFA room while the driven player fires.
-// `frame cost` times each real frame's draw calls; `rastered frame cost` also waits for the pixels, dropping each batch's first redraw, which waits on the compositor. SOFTWARE=1 disables the GPU canvas.
+// `frame cost` times each real frame's draw calls. With SOFTWARE=1 (no GPU canvas) it also logs `rastered frame cost`, which waits for the pixels,
+// dropping each batch's first redraw, which waits on the compositor. On the GPU canvas the pixel reads would move it to the CPU mid-run and skew every later frame.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -95,7 +96,7 @@ async function fightFor(ms: number) {
     await press('keyDown', k);
     await sleep(400);
     await press('keyUp', k);
-    if (sampling && step % BENCH_EVERY_STEPS === 0 && me()?.alive) rastered.push(...(await js(`skirmishDev.benchFrames(${BENCH_FRAMES})`)).slice(1));
+    if (SOFTWARE && sampling && step % BENCH_EVERY_STEPS === 0 && me()?.alive) rastered.push(...(await js(`skirmishDev.benchFrames(${BENCH_FRAMES})`)).slice(1));
   }
 }
 
@@ -121,7 +122,7 @@ const intervals = stamps.slice(1).map((t, i) => t - stamps[i]!);
 log(`frametime ${VIEW.w}x${VIEW.h} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
 log(`busy: avg ${(busy.players / busy.snaps).toFixed(1)} players and ${(busy.bullets / busy.snaps).toFixed(1)} bullets in view per snapshot`);
 log(`frame cost  ${fmt(stats(costs))}`);
-log(`rastered frame cost  ${fmt(stats(rastered))}`);
+if (SOFTWARE) log(`rastered frame cost  ${fmt(stats(rastered))}`);
 log(`raf interval ${fmt(stats(intervals))}`);
 for (const e of exceptions) log(`exception: ${e}`);
 log(exceptions.length || !costs.length ? 'RESULT FAIL' : 'RESULT PASS');
