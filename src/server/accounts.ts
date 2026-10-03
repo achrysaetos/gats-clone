@@ -21,6 +21,12 @@ export type Accounts = {
 };
 
 const key = (name: string) => name.toLowerCase();
+
+async function writeFileAtomic(file: string, data: string) {
+  const tmp = `${file}.tmp`;
+  await writeFile(tmp, data);
+  await rename(tmp, file);
+}
 const SAVE_DELAY_MS = 2000;
 
 export async function openAccounts(dataDir: string): Promise<Accounts> {
@@ -34,14 +40,12 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
   }
   const tokens = new Map<string, string>();
 
-  let saving = Promise.resolve();
+  let saveQueue = Promise.resolve();
   const save = () => {
-    saving = saving.then(async () => {
-      const tmp = `${file}.tmp`;
-      await writeFile(tmp, JSON.stringify(byKey));
-      await rename(tmp, file);
-    }).catch((err: unknown) => console.error('accounts save failed', err));
-    return saving;
+    saveQueue = saveQueue
+      .then(() => writeFileAtomic(file, JSON.stringify(byKey)))
+      .catch((err: unknown) => console.error('accounts save failed', err));
+    return saveQueue;
   };
   let pending: ReturnType<typeof setTimeout> | null = null;
   const saveSoon = () => {
@@ -98,7 +102,7 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
     },
     flush() {
       if (pending) { clearTimeout(pending); pending = null; void save(); }
-      return saving;
+      return saveQueue;
     },
   };
 }

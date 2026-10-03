@@ -52,9 +52,9 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   let fire = false, ability = false, aimDist = 300;
   if (enemy) {
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
-    const vel = mem.seen?.id === enemy.id ? { x: enemy.x - mem.seen.x, y: enemy.y - mem.seen.y } : { x: 0, y: 0 };
+    const velPerTick = mem.seen?.id === enemy.id ? { x: enemy.x - mem.seen.x, y: enemy.y - mem.seen.y } : { x: 0, y: 0 };
     const flightTicks = (d / weapon.bulletSpeed) * WORLD.tickHz;
-    const aimX = enemy.x + vel.x * flightTicks, aimY = enemy.y + vel.y * flightTicks;
+    const aimX = enemy.x + velPerTick.x * flightTicks, aimY = enemy.y + velPerTick.y * flightTicks;
     angle = Math.atan2(aimY - me.y, aimX - me.x) + (rand() - 0.5) * 0.12;
     aimDist = d;
     fire = d < range * 0.95;

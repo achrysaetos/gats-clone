@@ -8,7 +8,7 @@ import {
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
 import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
-import { LIMITS, makeBucket, type Limits } from './limits.ts';
+import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
@@ -139,7 +139,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     world,
     connect(ws) {
       clients.set(ws, { k: 'lobby', ws });
-      const allow = makeBucket(limits.messagesPerSec, limits.messageBurst);
+      const allow = makeTokenBucket(limits.messagesPerSec, limits.messageBurst);
       const joinTimer = setTimeout(() => { if (clients.get(ws)?.k === 'lobby') ws.close(1008, 'join timeout'); }, limits.joinTimeoutMs);
       ws.on('message', (data, isBinary) => {
         if (!allow(Date.now())) { ws.close(1008, 'too many messages'); return; }
