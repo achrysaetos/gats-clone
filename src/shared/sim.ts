@@ -28,7 +28,6 @@ export type Life =
 export type Player = {
   id: number;
   name: string;
-  isBot: boolean;
   loadout: Loadout;
   team: Team;
   x: number;
@@ -65,7 +64,7 @@ export type Zone = { id: number; x: number; y: number; r: number; owner: Team; c
 
 export type Match = { k: 'playing' } | { k: 'over'; winner: string; restartAt: number };
 
-/** A participant's life ended or they left: the server credits these to accounts. */
+/** A participant's life ended or they left. Queued on the world until the server drains it to credit accounts. */
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
 export type World = {
@@ -119,7 +118,6 @@ const newId = (w: World) => w.nextId++;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
 
-// ---------- perks & effective stats ----------
 
 type PerkMods = {
   spreadMul?: number; stillSpreadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
@@ -198,7 +196,6 @@ export function abilityOf(p: Player): AbilityId | null {
   return p.perks[3] ?? null;
 }
 
-// ---------- modes ----------
 
 export type ModeRules = {
   assignTeam(w: World): Team;
@@ -265,7 +262,6 @@ export const MODES: Record<ModeId, ModeRules> = {
 const sameTeam = (a: Player, b: Player) => a.team !== null && a.team === b.team;
 const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b);
 
-// ---------- world creation ----------
 
 function rectsOverlap(a: Rect, b: Rect, pad = 0) {
   return a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
@@ -328,9 +324,8 @@ function spawnPoint(w: World, team: Team): { x: number; y: number } {
   return { x: s / 2, y: s / 2 };
 }
 
-// ---------- players ----------
 
-export type AddPlayerOpts = { isBot?: boolean; team?: Team; at?: { x: number; y: number } };
+export type AddPlayerOpts = { team?: Team; at?: { x: number; y: number } };
 
 function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
@@ -343,7 +338,7 @@ function freshLife(p: Player, now: number): Life {
 export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPlayerOpts = {}): Player {
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
-    id: newId(w), name, isBot: opts.isBot ?? false, loadout, team, x: 0, y: 0, angle: 0,
+    id: newId(w), name, loadout, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
@@ -402,7 +397,6 @@ export function respawn(w: World, id: number, loadout: Loadout): boolean {
   return true;
 }
 
-// ---------- damage ----------
 
 export type DamageSource = { attacker: Player | null; label: string; piercing: boolean; fromX: number; fromY: number };
 
@@ -471,7 +465,6 @@ function explode(w: World, x: number, y: number, radius: number, maxDamage: numb
   }
 }
 
-// ---------- geometry ----------
 
 /** Earliest t in [0,1] where segment p->p+d enters the circle, or null. */
 export function segCircle(px: number, py: number, dx: number, dy: number, cx: number, cy: number, r: number): number | null {
@@ -523,7 +516,6 @@ function moveCircle(w: World, p: Player, nx: number, ny: number) {
   p.y = clamp(y, r, WORLD.size - r);
 }
 
-// ---------- abilities ----------
 
 const GRENADE_FUSE_MS = 900;
 const THROW_SPEED = 700;
@@ -620,7 +612,6 @@ function tickThrown(w: World, dt: number) {
 }
 
 
-// ---------- step ----------
 
 function tickPlayer(w: World, p: Player, dtMs: number) {
   const life = p.life;
@@ -674,31 +665,32 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 }
 
+type BulletHit = { t: number | null; apply: () => void };
+
 function tickBullets(w: World, dt: number) {
   const keep: Bullet[] = [];
   for (const b of w.bullets) {
-    const travel = Math.min(b.left, Math.hypot(b.vx, b.vy) * dt);
     const speed = Math.hypot(b.vx, b.vy);
+    const travel = Math.min(b.left, speed * dt);
     const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
-    type Hit = { t: number; apply: () => void };
-    let hit: Hit | null = null;
-    const consider = (t: number | null, apply: () => void) => { if (t !== null && (!hit || t < hit.t)) hit = { t, apply }; };
     const owner = w.players.get(b.owner) ?? null;
-    for (const wall of w.walls) consider(segRect(b.x, b.y, dx, dy, wall), () => {});
-    for (const c of w.crates) {
-      if (c.respawnAt === null) consider(segRect(b.x, b.y, dx, dy, crateRect(c)), () => damageCrate(w, c, b.damage, owner));
-    }
-    for (const p of w.players.values()) {
-      if (p.id === b.owner || p.life.k !== 'alive') continue;
-      if (owner && sameTeam(owner, p)) continue;
-      consider(segCircle(b.x, b.y, dx, dy, p.x, p.y, WORLD.playerRadius), () => damagePlayer(w, p, b.damage, {
-        attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y,
-      }));
-    }
-    const h = hit as Hit | null;
-    if (h) {
-      w.events.push({ e: 'hit', x: b.x + dx * h.t, y: b.y + dy * h.t });
-      h.apply();
+    const candidates: BulletHit[] = [
+      ...w.walls.map((wall) => ({ t: segRect(b.x, b.y, dx, dy, wall), apply: () => {} })),
+      ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
+        t: segRect(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
+      })),
+      ...[...w.players.values()]
+        .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)))
+        .map((p) => ({
+          t: segCircle(b.x, b.y, dx, dy, p.x, p.y, WORLD.playerRadius),
+          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
+        })),
+    ];
+    let hit: { t: number; apply: () => void } | null = null;
+    for (const c of candidates) if (c.t !== null && (!hit || c.t < hit.t)) hit = { t: c.t, apply: c.apply };
+    if (hit) {
+      w.events.push({ e: 'hit', x: b.x + dx * hit.t, y: b.y + dy * hit.t });
+      hit.apply();
       continue;
     }
     b.x += dx;
@@ -726,7 +718,6 @@ function tickMatch(w: World, dtMs: number) {
 
 export function step(w: World, dtMs: number): void {
   w.events = [];
-  w.lifeRecords = [];
   w.now += dtMs;
   w.tick++;
   const dt = dtMs / 1000;
@@ -742,7 +733,6 @@ export function step(w: World, dtMs: number): void {
   tickMatch(w, dtMs);
 }
 
-// ---------- views ----------
 
 export function wallViews(w: World): WallView[] {
   return w.walls.map(({ x, y, w: ww, h, built }) => ({ x, y, w: ww, h, built }));

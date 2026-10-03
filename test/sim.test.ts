@@ -305,7 +305,7 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
   const w = createWorld('FFA', 3);
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
-  for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r), { isBot: true }).id, newBotMemory(r));
+  for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
   let kills = 0;
   for (let t = 0; t < 60_000 && kills === 0; t += TICK_MS) {
     for (const [id, mem] of mems) {
