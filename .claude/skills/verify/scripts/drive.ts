@@ -114,7 +114,12 @@ const STEPS: Record<string, () => Promise<void>> = {
     await sleep(300);
     expect('menu has no horizontal scroll at 375px', await js(`document.documentElement.scrollWidth <= innerWidth`));
     await shot('menu-phone');
-    await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    for (const [width, height] of [[1366, 768], [1280, 800]]) {
+      await cdp('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      const r = await js(`(() => { document.getElementById('menu').scrollTop = 0; const r = document.getElementById('play').getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight }; })()`);
+      expect(`Play button in view without scrolling at ${width}x${height}`, r.top >= 0 && r.bottom <= r.vh, `play top ${r.top} bottom ${r.bottom} viewport ${r.vh}`);
+    }
     await shot('menu-desktop');
   },
   async account() {
