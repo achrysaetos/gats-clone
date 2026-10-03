@@ -33,7 +33,7 @@ At 100, 250 and 450 points you pick an attachment, then a survival perk, then an
 - `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
 - `src/shared/protocol.ts` defines the wire messages and parses client input.
 - `src/shared/wire.ts` encodes snapshots per connection: it rounds numbers and omits crates, leaderboard, zones and match while they are unchanged. The client rebuilds full snapshots from the last one it received.
-- `src/shared/sim.ts` is the deterministic game simulation.
+- `src/shared/sim.ts` is the deterministic game simulation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to `MAX_REWIND_MS` back, so players hit what they aim at on screen.
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
 - `src/client/` contains the browser client.
 
@@ -52,7 +52,7 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
 
-`node scripts/mock-server.ts 8787` with `node scripts/drive.ts http://localhost:8787 ./shots` is only a render check. Its fake server forces UI states (perk panels, death, the winner banner) so you can screenshot them, and proves nothing about gameplay. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field.
+`node scripts/mock-server.ts 8787` with `node scripts/drive.ts http://localhost:8787 ./shots` is only a render check. Its fake server forces UI states (perk panels, death, the winner banner) so you can screenshot them, and proves nothing about gameplay. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field. `node scripts/measure-lag-aim.ts [seconds] [lag:jitter ...]` starts a bot-free server, has headless Chrome tap the pistol at where it draws a scripted strafing target, and prints hit rate and damage per minute at each simulated latency.
 
 ## Deploy
 

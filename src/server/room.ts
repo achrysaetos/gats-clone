@@ -43,12 +43,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   const registered = (name: string) => accounts.stats(name) !== null;
 
   function balanceBots() {
-    while (world.players.size < WORLD.minPlayers) {
+    while (world.players.size < limits.minPlayers) {
       const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
       const p = addPlayer(world, name, randomLoadout(botRand));
       bots.set(p.id, newBotMemory(botRand));
     }
-    while (world.players.size > WORLD.minPlayers && bots.size > 0) {
+    while (world.players.size > limits.minPlayers && bots.size > 0) {
       const red = [...world.players.values()].filter((p) => p.team === 'red').length;
       const larger = red * 2 > world.players.size ? 'red' : 'blue';
       const victim = [...bots.keys()].find((bid) => world.players.get(bid)?.team === larger) ?? [...bots.keys()][0];
@@ -88,7 +88,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     switch (msg.t) {
       case 'join': return;
       case 'view': client.aspect = msg.aspect; return;
-      case 'input': setInput(world, id, msg.seq, msg.input); return;
+      case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt); return;
       case 'perk': choosePerk(world, id, msg.tier, msg.perk); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
       case 'chat': {

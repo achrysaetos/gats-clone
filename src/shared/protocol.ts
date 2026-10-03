@@ -26,7 +26,8 @@ export const viewExtents = (viewRadius: number, aspect: number): { halfW: number
 export type ClientMsg =
   | { t: 'join'; name: string; loadout: Loadout; token?: string; aspect: number }
   | { t: 'view'; aspect: number }
-  | { t: 'input'; seq: number; input: InputState }
+  /** `viewAt` is the server time of the world the client was drawing when it sampled `input`, so the server can judge its shots against that world. */
+  | { t: 'input'; seq: number; input: InputState; viewAt: number | null }
   | { t: 'perk'; tier: Tier; perk: PerkId }
   | { t: 'chat'; text: string }
   | { t: 'respawn'; loadout: Loadout };
@@ -155,7 +156,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'input': {
       const input = parseInput(v.input);
       const seq = num(v.seq, 0, Number.MAX_SAFE_INTEGER);
-      return input && seq !== null ? { t: 'input', seq, input } : null;
+      return input && seq !== null ? { t: 'input', seq, input, viewAt: num(v.viewAt, 0, Number.MAX_SAFE_INTEGER) } : null;
     }
     case 'perk': {
       const tier = v.tier;
