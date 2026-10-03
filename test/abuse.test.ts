@@ -14,7 +14,7 @@ const open = (port: number) => new Promise<WebSocket>((resolve) => {
 });
 const closed = (ws: WebSocket) => new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
 
-test('an oversized frame closes that socket and the server keeps serving', async () => {
+test('an oversized frame closes that socket and the server keeps serving', { timeout: 10_000 }, async () => {
   const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-abuse-')) });
   try {
     const ws = await open(server.port);
@@ -23,6 +23,48 @@ test('an oversized frame closes that socket and the server keeps serving', async
     await done;
     const res = await fetch(`http://localhost:${server.port}/api/servers`);
     assert.equal(res.status, 200, 'server still answers after the bad frame');
+  } finally {
+    await server.close();
+  }
+});
+
+const JOIN = (name: string) => JSON.stringify({ t: 'join', name, loadout: { weapon: 'pistol', armor: 'none', color: 'red' } });
+const nextMsg = (ws: WebSocket, t: string) => new Promise<any>((resolve) => ws.on('message', (m) => { const msg = JSON.parse(String(m)); if (msg.t === t) resolve(msg); }));
+
+test('limits: flood, sockets per IP, full room, idle lobby, auth attempts', { timeout: 10_000 }, async () => {
+  const server = await startServer({
+    port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-limits-')),
+    limits: { humansPerRoom: 2, socketsPerIp: 4, joinTimeoutMs: 300, messagesPerSec: 5, messageBurst: 10, authPerMin: 3 },
+  });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const flooder = await open(server.port);
+    const floodClosed = closed(flooder);
+    for (let i = 0; i < 50; i++) flooder.send(JOIN('Flood'));
+    assert.equal(await floodClosed, 1008, 'flooding closes the socket with policy violation');
+
+    const a = await open(server.port);
+    const b = await open(server.port);
+    a.send(JOIN('Ann')); b.send(JOIN('Bob'));
+    await Promise.all([nextMsg(a, 'welcome'), nextMsg(b, 'welcome')]);
+    const c = await open(server.port);
+    const full = nextMsg(c, 'error');
+    c.send(JOIN('Cat'));
+    assert.equal((await full).message, 'Room full');
+
+    const idle = await open(server.port);
+    assert.equal(await closed(idle), 1008, 'a socket that never joins is closed');
+
+    const extra = await Promise.all([open(server.port), open(server.port)]);
+    const refused = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`);
+    const status = await new Promise<number>((resolve) => refused.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0)));
+    assert.equal(status, 429, 'the fifth socket from one IP is refused');
+    for (const ws of [a, b, ...extra]) ws.close();
+
+    const login = () => fetch(`${base}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Nobody', password: 'guess1' }) });
+    const codes = [];
+    for (let i = 0; i < 4; i++) codes.push((await login()).status);
+    assert.deepEqual(codes, [401, 401, 401, 429], 'the fourth login attempt in a minute is rate limited');
   } finally {
     await server.close();
   }

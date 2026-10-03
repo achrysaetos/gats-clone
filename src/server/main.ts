@@ -6,9 +6,10 @@ import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
+import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 
-export type ServerOptions = { port: number; dataDir: string; publicDir?: string; timeScale?: number };
+export type ServerOptions = { port: number; dataDir: string; publicDir?: string; timeScale?: number; limits?: Partial<Limits> };
 export type RunningServer = { port: number; close(): Promise<void> };
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
@@ -58,7 +59,10 @@ async function serveStatic(publicDir: string, pathname: string, res: ServerRespo
   }
 }
 
-async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string) {
+type AuthLimiter = (key: string, now: number) => boolean;
+const ipOf = (req: IncomingMessage) => req.socket.remoteAddress ?? '';
+
+async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.values()].map((r) => r.info()));
@@ -68,6 +72,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<strin
     return stats ? json(res, 200, stats) : json(res, 404, { error: 'No such player' });
   }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {
+    if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
     const creds = parseCredentials(await readBody(req));
     if (!creds) return json(res, 400, { error: 'Name must be 3-16 letters/digits and password at least 4 characters' });
     if (path === '/api/register') {
@@ -83,14 +88,17 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<strin
 }
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
+  const limits: Limits = { ...LIMITS, ...opts.limits };
+  const allowAuth = makeKeyedLimiter(limits.authPerMin / 60, limits.authPerMin);
+  const socketsByIp = new Map<string, number>();
   const accounts = await openAccounts(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const rooms = new Map<string, Room>(
-    ROOM_MODES.map(([id, mode], i) => [id, createRoom(id, mode, 1000 + i, accounts, opts.timeScale ?? 1)]),
+    ROOM_MODES.map(([id, mode], i) => [id, createRoom(id, mode, 1000 + i, accounts, opts.timeScale ?? 1, limits)]),
   );
 
   const http = createServer((req, res) => {
-    route(req, res, rooms, accounts, publicDir).catch((err: unknown) => {
+    route(req, res, rooms, accounts, publicDir, allowAuth).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -101,7 +109,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const url = new URL(req.url ?? '/', 'http://x');
     const room = url.pathname === '/ws' ? rooms.get(url.searchParams.get('room') ?? '') : undefined;
     if (!room) { socket.end('HTTP/1.1 404 Not Found\r\n\r\n'); return; }
-    wss.handleUpgrade(req, socket, head, (ws) => room.connect(ws));
+    const ip = ipOf(req);
+    const open = socketsByIp.get(ip) ?? 0;
+    if (open >= limits.socketsPerIp) { socket.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return; }
+    socketsByIp.set(ip, open + 1);
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.once('close', () => {
+        const left = (socketsByIp.get(ip) ?? 1) - 1;
+        if (left > 0) socketsByIp.set(ip, left);
+        else socketsByIp.delete(ip);
+      });
+      room.connect(ws);
+    });
   });
 
   const timer = setInterval(() => { for (const r of rooms.values()) r.tick(); }, 1000 / WORLD.tickHz);

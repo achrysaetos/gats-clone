@@ -7,6 +7,7 @@ import {
 } from '../shared/sim.ts';
 import type { Accounts } from './accounts.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { LIMITS, makeBucket, type Limits } from './limits.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
@@ -27,7 +28,7 @@ export type Room = {
 };
 
 /** `timeScale` runs that many fixed sim steps per wall-clock tick; tests use it to fast-forward. */
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, timeScale = 1): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, timeScale = 1, limits: Limits = LIMITS): Room {
   const world = createWorld(mode, seed);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
@@ -63,6 +64,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function handle(client: Client, msg: ClientMsg) {
     if (client.k === 'lobby') {
       if (msg.t !== 'join') return;
+      if (joined().length >= limits.humansPerRoom) {
+        send(client.ws, { t: 'error', message: 'Room full' });
+        client.ws.close(1013, 'room full');
+        return;
+      }
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
       const p = addPlayer(world, account ?? msg.name, msg.loadout);
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
@@ -115,13 +121,16 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     world,
     connect(ws) {
       clients.set(ws, { k: 'lobby', ws });
+      const allow = makeBucket(limits.messagesPerSec, limits.messageBurst);
+      const joinTimer = setTimeout(() => { if (clients.get(ws)?.k === 'lobby') ws.close(1008, 'join timeout'); }, limits.joinTimeoutMs);
       ws.on('message', (data, isBinary) => {
+        if (!allow(Date.now())) { ws.close(1008, 'too many messages'); return; }
         const msg = isBinary ? null : parseClientMsg(data.toString());
         if (!msg) { send(ws, { t: 'error', message: 'Bad message' }); return; }
         const client = clients.get(ws);
         if (client) handle(client, msg);
       });
-      ws.on('close', () => disconnect(ws));
+      ws.on('close', () => { clearTimeout(joinTimer); disconnect(ws); });
       // ws emits 'error' for protocol violations like oversized frames; unhandled, it kills the process.
       ws.on('error', () => ws.terminate());
     },
