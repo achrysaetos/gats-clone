@@ -1,0 +1,137 @@
+import {
+  ARMOR_IDS, COLOR_IDS, MODE_IDS, PERK_TIERS, WEAPON_IDS,
+  type AbilityId, type ArmorId, type ColorId, type ModeId, type PerkId, type Tier, type WeaponId,
+} from './defs.ts';
+
+export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
+export type Team = 'red' | 'blue' | null;
+
+export type InputState = {
+  up: boolean; down: boolean; left: boolean; right: boolean;
+  angle: number;
+  fire: boolean;
+  reload: boolean;
+  ability: boolean;
+  aimDist: number;
+};
+
+export type ClientMsg =
+  | { t: 'join'; name: string; loadout: Loadout; token?: string }
+  | { t: 'input'; seq: number; input: InputState }
+  | { t: 'perk'; tier: Tier; perk: PerkId }
+  | { t: 'chat'; text: string }
+  | { t: 'respawn'; loadout: Loadout };
+
+export type PlayerView = {
+  id: number; name: string; x: number; y: number; angle: number;
+  hp: number; maxHp: number; armor: number; maxArmor: number;
+  color: ColorId; weapon: WeaponId; team: Team;
+  alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
+  score: number; level: number;
+};
+
+export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number };
+export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
+export type WallView = { x: number; y: number; w: number; h: number; built: boolean };
+export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
+export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
+export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; progress: number };
+
+export type SelfView = {
+  id: number; ammo: number; mag: number; reloading: boolean;
+  perks: Partial<Record<Tier, PerkId>>;
+  pendingTier: Tier | null;
+  ability: AbilityId | null; abilityReadyIn: number;
+  respawnIn: number;
+  kills: number; deaths: number;
+  viewRadius: number;
+};
+
+export type GameEvent =
+  | { e: 'kill'; killer: string; victim: string; weapon: string }
+  | { e: 'hit'; x: number; y: number }
+  | { e: 'boom'; x: number; y: number; r: number }
+  | { e: 'shot'; x: number; y: number; silenced: boolean; owner: number };
+
+export type LeaderRow = { name: string; score: number; team: Team };
+export type MatchView = { mode: ModeId; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
+
+export type Snapshot = {
+  t: 'snap';
+  tick: number;
+  ackSeq: number;
+  self: SelfView;
+  players: PlayerView[];
+  bullets: BulletView[];
+  crates: CrateView[];
+  thrown: ThrownView[];
+  zones: ZoneView[];
+  minimap: { x: number; y: number; team: Team }[];
+  leaderboard: LeaderRow[];
+  match: MatchView;
+  events: GameEvent[];
+};
+
+export type ServerMsg =
+  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[] }
+  | { t: 'walls'; walls: WallView[] }
+  | Snapshot
+  | { t: 'chat'; from: string; text: string; team: Team }
+  | { t: 'error'; message: string };
+
+const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof v === 'string' && (xs as readonly string[]).includes(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const num = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null);
+
+export function parseLoadout(v: unknown): Loadout | null {
+  if (!isObj(v)) return null;
+  if (!oneOf(WEAPON_IDS, v.weapon) || !oneOf(ARMOR_IDS, v.armor) || !oneOf(COLOR_IDS, v.color)) return null;
+  return { weapon: v.weapon, armor: v.armor, color: v.color };
+}
+
+export function cleanName(v: unknown): string {
+  const s = typeof v === 'string' ? v.replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 16) : '';
+  return s || 'Unnamed';
+}
+
+function parseInput(v: unknown): InputState | null {
+  if (!isObj(v)) return null;
+  const angle = num(v.angle, -10, 10);
+  const aimDist = num(v.aimDist, 0, 2000);
+  if (angle === null || aimDist === null) return null;
+  const b = (k: string) => v[k] === true;
+  return { up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist, fire: b('fire'), reload: b('reload'), ability: b('ability') };
+}
+
+export function parseClientMsg(raw: string): ClientMsg | null {
+  let v: unknown;
+  try { v = JSON.parse(raw); } catch { return null; }
+  if (!isObj(v)) return null;
+  switch (v.t) {
+    case 'join': {
+      const loadout = parseLoadout(v.loadout);
+      if (!loadout) return null;
+      return { t: 'join', name: cleanName(v.name), loadout, token: typeof v.token === 'string' ? v.token.slice(0, 128) : undefined };
+    }
+    case 'input': {
+      const input = parseInput(v.input);
+      const seq = num(v.seq, 0, Number.MAX_SAFE_INTEGER);
+      return input && seq !== null ? { t: 'input', seq, input } : null;
+    }
+    case 'perk': {
+      const tier = v.tier;
+      if (tier !== 1 && tier !== 2 && tier !== 3) return null;
+      return oneOf(PERK_TIERS[tier], v.perk) ? { t: 'perk', tier, perk: v.perk } : null;
+    }
+    case 'chat':
+      return typeof v.text === 'string' && v.text.trim() ? { t: 'chat', text: v.text.trim().slice(0, 120) } : null;
+    case 'respawn': {
+      const loadout = parseLoadout(v.loadout);
+      return loadout ? { t: 'respawn', loadout } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+export const isMode = (v: unknown): v is ModeId => oneOf(MODE_IDS, v);
