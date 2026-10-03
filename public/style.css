@@ -260,6 +260,28 @@ kbd {
 }
 .banner h2 { margin: 0 0 4px; font-size: 26px; color: var(--accent); text-transform: none; letter-spacing: 0; }
 
+.objective {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+  padding: 10px 18px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+  animation: objective ease-out forwards;
+}
+@keyframes objective {
+  0% { opacity: 0; transform: translate(-50%, -8px); }
+  8%, 80% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; }
+}
+
 .death {
   position: absolute;
   inset: 0;

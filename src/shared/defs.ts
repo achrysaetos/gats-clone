@@ -98,5 +98,5 @@ export const WORLD = {
   domWinScore: 1000,
   tdmWinScore: 50,
   roundRestartMs: 8000,
-  minPlayers: 6,
+  minPlayers: 10,
 } as const;

@@ -2,7 +2,7 @@ import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
-import { feedMentions, levelProgress } from './derive.ts';
+import { feedMentions, levelProgress, objectiveFor } from './derive.ts';
 import { HITMARKER_MS, HURT_MS } from './feedback.ts';
 import { PALETTE, TEAM_COLORS } from './render.ts';
 import type { Session } from './state.ts';
@@ -204,6 +204,19 @@ function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
   text(ctx, lp.nextAt === null ? `${me.score} · max level` : `${me.score} / ${lp.nextAt}`, x + bw, 24, 12, MUTED, 'right');
   text(ctx, `K ${snap.self.kills} · D ${snap.self.deaths}`, x + bw / 2, 24, 12, MUTED, 'center', 500);
   bar(ctx, x, 38, bw, 7, lp.frac, '#ffd34d');
+  const line = objectiveFor(snap.match.mode, me.team).line;
+  ctx.font = `600 12px ${FONT}`;
+  const dot = me.team ? 14 : 0;
+  const lw = ctx.measureText(line).width + 20 + dot;
+  const lx = compact ? x - 10 : w / 2 - lw / 2;
+  panel(ctx, lx, 58, lw, 22);
+  if (me.team) {
+    ctx.fillStyle = TEAM_COLORS[me.team];
+    ctx.beginPath();
+    ctx.arc(lx + 14, 69, 4.5, 0, TAU);
+    ctx.fill();
+  }
+  text(ctx, line, lx + 10 + dot, 69, 12, INK, 'left');
 }
 
 function drawVitals({ ctx, w, h, snap, s, me, now }: Hud) {

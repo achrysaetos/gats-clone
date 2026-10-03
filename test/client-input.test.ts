@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
-import { armorTier, feedMentions, killerOf, levelProgress } from '../src/client/derive.ts';
+import { armorTier, feedMentions, killerOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
+import { WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 
 test('WASD and arrows map to the same movement; unknown and prototype keys map to nothing', () => {
@@ -71,4 +72,13 @@ test('killer lookup and kill-feed highlight go by player id, so same-named playe
   assert.equal(feedMentions(events[0]!, 3), false, 'a kill of a different Alex is not highlighted for me');
   assert.equal(feedMentions(events[1]!, 3), true);
   assert.equal(feedMentions(events[1]!, 6), true, 'my own kills are highlighted');
+});
+
+// Defect: new players are not told their team or what wins, or the text drifts from the real win scores.
+test('the objective names the mode, your team and the win condition from WORLD', () => {
+  assert.equal(objectiveFor('FFA', null).banner, 'Free for all: most points wins');
+  assert.equal(objectiveFor('TDM', 'red').banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills`);
+  assert.equal(objectiveFor('DOM', 'blue').banner, `Domination: you are BLUE, hold A B C, first to ${WORLD.domWinScore}`);
+  assert.equal(objectiveFor('TDM', 'blue').line, `TDM · Blue team · first to ${WORLD.tdmWinScore} kills`);
+  assert.equal(objectiveFor('DOM', 'red').line, `DOM · Red team · hold A B C · first to ${WORLD.domWinScore}`);
 });

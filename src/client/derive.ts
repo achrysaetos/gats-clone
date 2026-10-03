@@ -1,5 +1,5 @@
-import { ARMORS, ARMOR_IDS, LEVEL_SCORES, type ArmorId } from '../shared/defs.ts';
-import type { GameEvent, PlayerView, Snapshot } from '../shared/protocol.ts';
+import { ARMORS, ARMOR_IDS, LEVEL_SCORES, WORLD, type ArmorId, type ModeId } from '../shared/defs.ts';
+import type { GameEvent, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
 
 export type LevelProgress = { level: number; frac: number; nextAt: number | null };
 
@@ -33,6 +33,25 @@ export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.f
 export function isDead(snap: Snapshot): boolean {
   const me = selfOf(snap);
   return me ? !me.alive : snap.self.respawnIn > 0;
+}
+
+export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: string } {
+  const side = team ?? 'no';
+  const Side = side[0]!.toUpperCase() + side.slice(1);
+  switch (mode) {
+    case 'FFA':
+      return { banner: 'Free for all: most points wins', line: 'FFA · most points wins' };
+    case 'TDM':
+      return {
+        banner: `Team Deathmatch: you are ${side.toUpperCase()}, first to ${WORLD.tdmWinScore} kills`,
+        line: `TDM · ${Side} team · first to ${WORLD.tdmWinScore} kills`,
+      };
+    case 'DOM':
+      return {
+        banner: `Domination: you are ${side.toUpperCase()}, hold A B C, first to ${WORLD.domWinScore}`,
+        line: `DOM · ${Side} team · hold A B C · first to ${WORLD.domWinScore}`,
+      };
+  }
 }
 
 export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
