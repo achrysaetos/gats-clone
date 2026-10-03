@@ -13,6 +13,8 @@ Clicking a room and `Play` puts the player into a live match. A 4s banner states
 - `play-team-colors` draws every TDM and DOM body in its team color, whatever color was picked, and marks teammates with a small triangle. FFA keeps the picked color.
 - `play-names` gives each player a unique name in the room. A guest who types a registered name or a name already in use gets a number appended.
 
+- `play-duel` two real browsers in one room see and damage each other.
+
 ## How to get to it (user POV)
 
 - Menu, click a room row, then `Play`.
@@ -29,6 +31,8 @@ Preconditions:
 - **Leave.** Run `node drive.ts "$RUN" join leave`. It reloads the page. Log line `server human count returns to baseline after the page unloads (reload)`.
 - **Objective, hits and team colors.** Run `node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom`. It writes `$RUN/evidence/combat.log` and ends in `RESULT PASS` or `RESULT FAIL`. Per room it logs `objective banner shows on join` with the banner text, `banner names the player's team from the snapshot`, `objective banner hides after about 4s`, and `a dmg event from the driven player arrives on the page socket` with the count and kinds. Screenshots are `objective-<room>.png`, `muzzle-<room>.png`, `hit-crate-<room>.png`, and, when the chance comes up, `hit-player-<room>.png` (hitmarker), `hurt-<room>.png` (vignette) and `teammate-<room>.png` (team colors and marker).
 - **Names.** Covered by `npm test` (`test/e2e.test.ts` and `test/names.test.ts`), which join real sockets as an impostor, the account owner and two guests named Alex.
+
+- **Duel.** Run `node duel.ts "$RUN"`. Log lines `each browser had the other in its own snapshots`, `hunter's socket shows a dmg event naming the target` and `target's socket shows the same hit from the hunter`. Screenshots `duel-hunter-view.png` and `duel-target-view.png`.
 
 ## Gotchas
 

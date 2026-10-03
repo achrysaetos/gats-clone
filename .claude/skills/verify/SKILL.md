@@ -47,6 +47,14 @@ Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`.
 
 `scripts/drive.ts` and `scripts/mock-server.ts` at the repo root are a second harness that forces UI states (perk panels, death, winner banner) through mock chat commands. Use it only to check how those states render. Its server is fake, so it proves nothing about gameplay.
 
+### Two players
+
+```bash
+node .claude/skills/verify/scripts/duel.ts "$RUN"
+```
+
+Two separate headless Chromes join FFA. The hunter walks toward the target and taps fire until both sockets agree on the hit. It checks that both browsers joined, that each had the other in its own snapshots, that the hunter's socket shows a `dmg` event naming the target, and that the target's socket shows the same hit. It writes `duel.log`, `duel-hunter-view.png` and `duel-target-view.png`. Like `drive.ts`, it targets a deployed site when the run directory has a `url` file.
+
 ## Evidence
 
 The driver writes `$RUN/evidence/drive.log`, one `ok` or `FAIL` line per check with measured values (for example `x 736 -> 914`, `ammo 12 -> 11`), and a final `RESULT PASS` or `RESULT FAIL`. It saves a PNG per step to `$RUN/evidence/`. It exits non-zero on any failed check, page exception or `console.error`.
