@@ -1,0 +1,47 @@
+# Skirmish
+
+Skirmish is a top-down multiplayer arena shooter for the browser. Its gameplay is modeled on gats.io. The name, art and code are original.
+
+## Run
+
+```bash
+npm install
+npm start
+```
+
+Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats are saved in `data/`.
+
+## Play
+
+Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at six players or more.
+
+| Input | Action |
+|---|---|
+| WASD | Move |
+| Mouse | Aim |
+| Left click | Fire |
+| R | Reload |
+| Space | Use ability |
+| 1-9, 0 | Pick a perk |
+| Enter | Chat |
+
+At 100, 300 and 600 points you pick an attachment, then a survival perk, then an ability.
+
+## Layout
+
+- `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
+- `src/shared/protocol.ts` defines the wire messages and parses client input.
+- `src/shared/sim.ts` is the deterministic game simulation.
+- `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
+- `src/client/` contains the browser client.
+
+## Verify
+
+```bash
+npm test
+npx tsc --noEmit
+node scripts/mock-server.ts 8787
+node scripts/drive.ts http://localhost:8787 ./shots
+```
+
+Run the mock server in its own terminal. `npm test` runs the simulation, protocol, client and end-to-end server tests. `drive.ts` drives headless Chrome through the menu, login, perks, chat, death and respawn. Set `CHROME` if Chrome is not at the default macOS path.
