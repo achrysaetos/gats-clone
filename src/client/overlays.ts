@@ -163,5 +163,3 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
     },
   };
 }
-
-export type Overlays = ReturnType<typeof createOverlays>;

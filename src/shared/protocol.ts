@@ -1,5 +1,5 @@
 import {
-  ARMOR_IDS, COLOR_IDS, MODE_IDS, PERK_TIERS, WEAPON_IDS,
+  ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS,
   type AbilityId, type ArmorId, type ColorId, type ModeId, type PerkId, type Tier, type WeaponId,
 } from './defs.ts';
 
@@ -156,5 +156,3 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return null;
   }
 }
-
-export const isMode = (v: unknown): v is ModeId => oneOf(MODE_IDS, v);

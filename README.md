@@ -40,13 +40,19 @@ At 100, 300 and 600 points you pick an attachment, then a survival perk, then an
 ## Verify
 
 ```bash
-npm test
 npx tsc --noEmit
-node scripts/mock-server.ts 8787
-node scripts/drive.ts http://localhost:8787 ./shots
+npm test
+RUN=/tmp/skirmish-verify
+.claude/skills/verify/scripts/launch.sh "$RUN"
+.claude/skills/verify/scripts/doctor.sh "$RUN"
+node .claude/skills/verify/scripts/drive.ts "$RUN"
+node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
+.claude/skills/verify/scripts/cleanup.sh "$RUN"
 ```
 
-Run the mock server in its own terminal. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field. `npm test` runs the simulation, protocol, client and end-to-end server tests. `drive.ts` drives headless Chrome through the menu, login, perks, chat, death and respawn. Set `CHROME` if Chrome is not at the default macOS path.
+`npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
+
+`node scripts/mock-server.ts 8787` with `node scripts/drive.ts http://localhost:8787 ./shots` is only a render check. Its fake server forces UI states (perk panels, death, the winner banner) so you can screenshot them, and proves nothing about gameplay. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field.
 
 ## Deploy
 
