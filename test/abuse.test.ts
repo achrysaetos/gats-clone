@@ -28,6 +28,36 @@ test('an oversized frame closes that socket and the server keeps serving', { tim
   }
 });
 
+const upgradeStatus = (port: number, forwardedFor: string) => new Promise<number>((resolve) => {
+  const ws = new WebSocket(`ws://localhost:${port}/ws?room=ffa`, { headers: { 'x-forwarded-for': forwardedFor } });
+  ws.on('error', () => {});
+  ws.once('open', () => resolve(101));
+  ws.once('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
+});
+
+test('X-Forwarded-For keys the per-IP socket cap only when the proxy is trusted', { timeout: 10_000 }, async () => {
+  const limits = { socketsPerIp: 2, joinTimeoutMs: 5000 };
+  const untrusted = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-proxy-off-')), limits });
+  try {
+    const codes = [];
+    for (const ip of ['203.0.113.1', '203.0.113.2', '203.0.113.3']) codes.push(await upgradeStatus(untrusted.port, ip));
+    assert.deepEqual(codes, [101, 101, 429], 'without trustProxy a spoofed header does not dodge the cap');
+  } finally {
+    await untrusted.close();
+  }
+  const trusted = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-proxy-on-')), limits, trustProxy: true });
+  try {
+    const distinct = [];
+    for (const ip of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) distinct.push(await upgradeStatus(trusted.port, `${ip}, 10.0.0.1`));
+    assert.deepEqual(distinct, [101, 101, 101], 'players behind one proxy each get their own cap');
+    const same = [];
+    for (let i = 0; i < 3; i++) same.push(await upgradeStatus(trusted.port, `198.51.100.9, 10.0.0.${i}`));
+    assert.deepEqual(same, [101, 101, 429], 'the left-most address is the key');
+  } finally {
+    await trusted.close();
+  }
+});
+
 const JOIN = (name: string) => JSON.stringify({ t: 'join', name, loadout: { weapon: 'pistol', armor: 'none', color: 'red' } });
 const nextMsg = (ws: WebSocket, t: string) => new Promise<any>((resolve) => ws.on('message', (m) => { const msg = JSON.parse(String(m)); if (msg.t === t) resolve(msg); }));
 

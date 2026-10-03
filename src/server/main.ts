@@ -10,7 +10,8 @@ import { openAccounts, type Accounts } from './accounts.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 
-export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits> };
+/** `trustProxy` keys per-IP limits on the left-most X-Forwarded-For address, for a reverse proxy that sets that header. */
+export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
 export type RunningServer = { port: number; close(): Promise<void> };
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
@@ -80,9 +81,16 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
 }
 
 type AuthLimiter = (key: string, now: number) => boolean;
-const ipOf = (req: IncomingMessage) => req.socket.remoteAddress ?? '';
+type IpOf = (req: IncomingMessage) => string;
 
-async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter) {
+const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
+const forwardedIp: IpOf = (req) => {
+  const header = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(header) ? header[0] : header)?.split(',')[0]?.trim();
+  return first || socketIp(req);
+};
+
+async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, ipOf: IpOf) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.size });
@@ -112,6 +120,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<strin
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const limits: Limits = { ...LIMITS, ...opts.limits };
+  const ipOf = opts.trustProxy ? forwardedIp : socketIp;
   const allowAuth = makeKeyedLimiter(limits.authPerMin / 60, limits.authPerMin);
   const socketsByIp = new Map<string, number>();
   const accounts = await openAccounts(opts.dataDir, limits.sessionMs);
@@ -121,7 +130,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   );
 
   const http = createServer((req, res) => {
-    route(req, res, rooms, accounts, publicDir, allowAuth).catch((err: unknown) => {
+    route(req, res, rooms, accounts, publicDir, allowAuth, ipOf).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -179,7 +188,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const port = Number(process.env.PORT ?? 8080);
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
-  const server = await startServer({ port, dataDir });
+  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1' });
   console.log(`Skirmish listening on http://localhost:${server.port}`);
   const shutdown = async (signal: string) => {
     console.log(`${signal}: saving and shutting down`);
