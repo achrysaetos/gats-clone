@@ -8,7 +8,7 @@ import { WORLD } from '../src/shared/defs.ts';
 import type { ServerMsg, Snapshot } from '../src/shared/protocol.ts';
 import { startServer, type RunningServer } from '../src/server/main.ts';
 
-const TIME_SCALE = 8;
+const STEPS_PER_TICK = 8;
 const LOADOUT = { weapon: 'assault', armor: 'light', color: 'green' };
 
 let server: RunningServer;
@@ -24,7 +24,7 @@ before(async () => {
   await mkdir(publicDir);
   await writeFile(join(publicDir, 'index.html'), '<!doctype html><title>skirmish-e2e</title>');
   await writeFile(join(siteDir, 'secret.txt'), 'outside public');
-  server = await startServer({ port: 0, dataDir, publicDir, timeScale: TIME_SCALE });
+  server = await startServer({ port: 0, dataDir, publicDir, stepsPerTick: STEPS_PER_TICK });
   base = `http://localhost:${server.port}`;
 });
 
@@ -127,7 +127,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   assert.equal(moved.ackSeq, 1);
 
   await Promise.any(Object.values(conns).map((c) =>
-    c.waitFor((m): m is Snapshot => isSnap(m) && m.events.some((e) => e.e === 'kill'), (60_000 / TIME_SCALE) + 2000)));
+    c.waitFor((m): m is Snapshot => isSnap(m) && m.events.some((e) => e.e === 'kill'), (60_000 / STEPS_PER_TICK) + 2000)));
 
   const tdm = conns.tdm;
   send(tdm, { t: 'chat', text: '  hello team  ' });
@@ -162,7 +162,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   assert.deepEqual(onDisk.tester.stats, { kills: stats.kills, deaths: stats.deaths, score: stats.score, games: 3, best: stats.best });
   assert.ok(!JSON.stringify(onDisk).includes('hunter22'), 'password not stored in plain text');
 
-  server = await startServer({ port: 0, dataDir, publicDir, timeScale: TIME_SCALE });
+  server = await startServer({ port: 0, dataDir, publicDir, stepsPerTick: STEPS_PER_TICK });
   base = `http://localhost:${server.port}`;
   assert.equal((await post('/api/login', { name: 'Tester', password: 'hunter22' })).status, 200, 'account survives restart');
   assert.equal(((await (await fetch(base + '/api/stats/Tester')).json()) as { games: number }).games, 3);

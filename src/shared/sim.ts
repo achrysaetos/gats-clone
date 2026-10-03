@@ -831,7 +831,7 @@ function matchView(w: World): MatchView {
 
 const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
 
-export function snapshotFor(w: World, id: number): Snapshot {
+export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events): Snapshot {
   const me = w.players.get(id);
   if (!me) throw new Error(`no player ${id}`);
   const stats = effectiveStats(me);
@@ -865,10 +865,10 @@ export function snapshotFor(w: World, id: number): Snapshot {
   const minimap = [...w.players.values()]
     .filter((p) => p.id !== me.id && p.life.k === 'alive' && (sameTeam(me, p) || w.now < p.revealedUntil))
     .map((p) => ({ x: p.x, y: p.y, team: p.team }));
-  const events = w.events.filter((e) => e.e === 'kill' || inView(e.x, e.y, 300));
+  const visibleEvents = events.filter((e) => e.e === 'kill' || inView(e.x, e.y, 300));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
-    players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events,
+    players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
   };
 }

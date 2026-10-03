@@ -29,7 +29,7 @@ export type Room = {
   close(): void;
 };
 
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, timeScale = 1, limits: Limits = LIMITS): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS): Room {
   const world = createWorld(mode, seed);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
@@ -74,8 +74,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         return;
       }
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
-      const ownsName = (n: string) => account !== null && n.toLowerCase() === account.toLowerCase();
-      const name = uniqueName(account ?? msg.name, names(), (n) => !ownsName(n) && registered(n));
+      const takenByAnotherAccount = (n: string) => registered(n) && n.toLowerCase() !== account?.toLowerCase();
+      const name = uniqueName(account ?? msg.name, names(), takenByAnotherAccount);
       const p = addPlayer(world, name, msg.loadout);
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, encode: makeSnapshotEncoder() });
@@ -121,6 +121,17 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
+  function advance(): GameEvent[] {
+    const events: GameEvent[] = [];
+    for (let i = 0; i < stepsPerTick; i++) {
+      thinkBots();
+      step(world, TICK_MS);
+      events.push(...world.events);
+      creditLives();
+    }
+    return events;
+  }
+
   balanceBots();
 
   return {
@@ -142,20 +153,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       ws.on('error', () => ws.terminate());
     },
     tick() {
-      const events: GameEvent[] = [];
-      for (let i = 0; i < timeScale; i++) {
-        thinkBots();
-        step(world, TICK_MS);
-        events.push(...world.events);
-        creditLives();
-      }
-      world.events = events;
+      const events = advance();
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;
         const walls = wallViews(world);
         for (const c of joined()) send(c.ws, { t: 'walls', walls });
       }
-      for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId)));
+      for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events)));
     },
     info() {
       return { id, mode, players: world.players.size, humans: joined().length };
