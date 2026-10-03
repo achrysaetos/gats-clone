@@ -31,7 +31,7 @@ Read-only. It checks the pid is alive, the port is owned by that pid, all three 
 node .claude/skills/verify/scripts/drive.ts "$RUN" [step ...]
 ```
 
-Steps run in order: `menu account join move fire chat leave`. No steps means all. `move`, `fire` and `chat` need `join` earlier in the same invocation. The driver launches headless Chrome (override the binary with `CHROME=`) on a free debug port and talks CDP directly. It proves behavior three independent ways:
+Steps run in order: `menu account join move fire chat leave`. No steps means those seven. `touch` runs only when named. `move`, `fire` and `chat` need `join` earlier in the same invocation. The driver launches headless Chrome (override the binary with `CHROME=`) on a free debug port and talks CDP directly. It proves behavior three independent ways:
 
 - **DOM state** through stable ids: `#servers .server`, `#name`, `#play`, `#account`, `#menu`, `#hud`, `#chat-log`, `#perk-panel`, `#death`, `#death-title`, `#respawn`, `#banner`.
 - **The page's own WebSocket frames**, read with `Network.webSocketFrameReceived`. Position and ammo come from the server's snapshots, not from client state.
@@ -65,4 +65,4 @@ Kills only the pid in `$RUN/pid`, then deletes `$RUN/data`, `$RUN/pid` and `$RUN
 - `/api/servers` counts the observer as a human. Compare against a baseline, never against an absolute number.
 - Navigating the page to `about:blank` keeps the old page in Chrome's back/forward cache, so its socket stays open. Use `Page.reload` to unload the page the way closing a tab would.
 - The menu's server list re-renders every few seconds, so element handles go stale. Query fresh each time, or click through `Runtime.evaluate`.
-- Bots can kill the driven player mid-run. A dead player has no position in snapshots. `move` and `fire` run right after `join` for this reason. Relaunch and retry before suspecting a regression when a death is visible in the screenshot.
+- Bots can kill the driven player mid-run, and a dead player has no position in snapshots. `move`, `fire` and `touch` call `ensureAlive`, which respawns through the real death screen and logs a `note` line, so a death no longer fails the run.

@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire chat touch leave (default: all, in order).
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire chat leave (default, in order), plus touch on request.
 // Drives the real client in headless Chrome over CDP against the server launch.sh started, reads the page's own
 // WebSocket frames as wire evidence, and cross-checks from an independent observer client in the same room.
 import { spawn } from 'node:child_process';
@@ -11,7 +11,7 @@ import WebSocket from 'ws';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
-const ALL = ['menu', 'account', 'join', 'move', 'fire', 'chat', 'touch', 'leave'];
+const ALL = ['menu', 'account', 'join', 'move', 'fire', 'chat', 'leave'];
 const steps = process.argv.length > 3 ? process.argv.slice(3) : ALL;
 const PORT = readFileSync(join(RUN, 'port'), 'utf8').trim();
 const BASE = `http://localhost:${PORT}`;
@@ -68,6 +68,14 @@ const key = async (code: string, k: string, holdMs: number) => {
 };
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const me = () => frames.last?.players.find((p) => p.id === frames.welcome?.id);
+// Bots can kill the driven player between steps; respawn through the real death screen instead of failing on a dead player.
+const ensureAlive = async () => {
+  if (me()) return;
+  log('note driven player is dead, respawning through the death screen');
+  await until(async () => js(`!document.getElementById('respawn').disabled && !document.getElementById('death').hidden`), 8000);
+  await js(`document.getElementById('respawn').click()`);
+  await until(() => !!me(), 4000);
+};
 const humansIn = async (room: string) => ((await (await fetch(`${BASE}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === room)?.humans;
 
 let humansBefore = 0;
@@ -117,6 +125,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('joined');
   },
   async move() {
+    await ensureAlive();
     await until(() => !!me());
     const before = me()!;
     await key('KeyD', 'd', 700);
@@ -126,6 +135,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('moved');
   },
   async fire() {
+    await ensureAlive();
     const ammo = frames.last!.self.ammo;
     await mouse('mouseMoved', 900, 400);
     await mouse('mousePressed', 900, 400);
@@ -144,6 +154,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('chat');
   },
   async touch() {
+    await ensureAlive();
     await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }] });
