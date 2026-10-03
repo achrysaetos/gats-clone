@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: node scripts/measure-bandwidth.ts [humans=6] [seconds=8] [room=ffa]
 // Starts an isolated in-process server, joins `humans` wandering, shooting clients to one room, and reports
-// server-to-client bytes per second per client plus the average JSON bytes each snapshot field costs.
+// server-to-client bytes per second per client, snapshot arrival gaps, and the average JSON bytes each snapshot field costs.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,14 +17,14 @@ const WARMUP_MS = 1500;
 const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-bw-'));
 const server = await startServer({ port: 0, dataDir, limits: { humansPerRoom: humans + 1, socketsPerIp: humans + 1, messagesPerSec: 1000, messageBurst: 1000 } });
 
-type Tally = { bytes: number; snaps: number; fields: Map<string, number> };
+type Tally = { bytes: number; snaps: number; fields: Map<string, number>; snapAt: number[] };
 const tallies: Tally[] = [];
 let measuring = false;
 const sockets: WebSocket[] = [];
 
 for (let i = 0; i < humans; i++) {
   const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=${room}`);
-  const tally: Tally = { bytes: 0, snaps: 0, fields: new Map() };
+  const tally: Tally = { bytes: 0, snaps: 0, fields: new Map(), snapAt: [] };
   tallies.push(tally);
   sockets.push(ws);
   let seq = 0, shots = 0;
@@ -45,6 +45,7 @@ for (let i = 0; i < humans; i++) {
     const msg = JSON.parse(data.toString()) as Record<string, unknown>;
     if (msg.t !== 'snap') return;
     tally.snaps++;
+    tally.snapAt.push(performance.now());
     for (const [k, v] of Object.entries(msg)) tally.fields.set(k, (tally.fields.get(k) ?? 0) + JSON.stringify(v).length + k.length + 4);
   });
 }
@@ -62,6 +63,8 @@ for (const t of tallies) for (const [k, v] of t.fields) fields.set(k, (fields.ge
 console.log(`room=${room} humans=${humans} players>=${Math.max(humans, WORLD.minPlayers)} seconds=${seconds}`);
 console.log(`bytes/sec per client: avg ${(avg / 1024).toFixed(1)} KB/s, min ${(Math.min(...perClient) / 1024).toFixed(1)}, max ${(Math.max(...perClient) / 1024).toFixed(1)}`);
 console.log(`snapshots/sec per client: ${(snaps / tallies.length / seconds).toFixed(1)}, avg snapshot ${(avg * seconds / (snaps / tallies.length)).toFixed(0)} B`);
+const gaps = tallies.flatMap((t) => t.snapAt.slice(1).map((at, i) => at - t.snapAt[i]!)).sort((a, b) => a - b);
+console.log(`snapshot arrival gaps: median ${gaps[gaps.length >> 1]!.toFixed(1)}ms p95 ${gaps[Math.floor(gaps.length * 0.95)]!.toFixed(1)}ms max ${gaps[gaps.length - 1]!.toFixed(1)}ms`);
 console.log('avg bytes per snapshot by field:');
 for (const [k, v] of [...fields].sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(12)} ${(v / snaps).toFixed(0)}`);
 

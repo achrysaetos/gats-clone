@@ -43,7 +43,7 @@ const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
 type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; weapon: WeaponId }[] };
-const frames = { welcome: null as null | { id: number }, last: null as null | Snap, sent: 0 };
+const frames = { welcome: null as null | { id: number }, last: null as null | Snap, sent: 0, snapAt: [] as number[] };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -52,7 +52,7 @@ page.on('message', (raw) => {
   if (m.method === 'Network.webSocketFrameReceived') {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
-    if (msg.t === 'snap') frames.last = msg;
+    if (msg.t === 'snap') { frames.last = msg; frames.snapAt.push(m.params.timestamp * 1000); }
   } else if (m.method === 'Network.webSocketFrameSent') frames.sent++;
   else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
@@ -191,6 +191,8 @@ const STEPS: Record<string, () => Promise<void>> = {
     samples.sort((a, b) => a - b);
     const median = samples[Math.floor(samples.length / 2)] ?? NaN;
     const p95 = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))] ?? NaN;
+    const gaps = frames.snapAt.slice(1).map((t, i) => t - frames.snapAt[i]!).sort((a, b) => a - b);
+    log(`info snapshot arrival gaps at the page: median ${gaps[gaps.length >> 1]!.toFixed(0)}ms p95 ${gaps[Math.floor(gaps.length * 0.95)]!.toFixed(0)}ms max ${gaps[gaps.length - 1]!.toFixed(0)}ms over ${gaps.length}`);
     log(`info largest misprediction being smoothed while moving: ${Number(await js('maxCorrection')).toFixed(1)}px`);
     // Prediction draws own movement from the next input sample, so the bound holds at any LAG.
     expect('own movement drawn within 50ms of keydown (median)', median <= 50 && samples.length >= 5,

@@ -1,5 +1,5 @@
 import type { Team, WallView } from '../shared/protocol.ts';
-import type { SnapPair } from './interp.ts';
+import type { SnapBuffer } from './interp.ts';
 import type { Prediction } from './predict.ts';
 
 export type Effect =
@@ -19,7 +19,7 @@ export type Session = {
   myId: number;
   worldSize: number;
   walls: WallView[];
-  snaps: SnapPair;
+  snaps: SnapBuffer;
   seq: number;
   /** Trigger presses latched per mousedown; sent whole every input so presses between samples are never lost. */
   shots: number;

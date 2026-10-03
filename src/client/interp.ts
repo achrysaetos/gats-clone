@@ -1,27 +1,37 @@
+import { WORLD } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 
-export type TimedSnap = { snap: Snapshot; at: number };
-export type SnapPair = { prev: TimedSnap | null; next: TimedSnap | null };
-
-export const EMPTY_PAIR: SnapPair = { prev: null, next: null };
-
+export const TICK_MS = 1000 / WORLD.tickHz;
+/** Others are drawn this far behind the server so a snapshot arriving up to this late still lands before it is needed. */
+export const INTERP_DELAY_MS = 3 * TICK_MS;
+/** When the buffer runs dry, entities keep moving on their last velocity for at most this long, then hold. */
+export const MAX_EXTRAPOLATE_MS = 100;
 // Beyond this distance between snapshots an entity has respawned or teleported; sliding would draw it crossing the map.
 export const TELEPORT_DIST = 250;
+const KEEP_MS = 1000;
 
-export const pushSnap = (pair: SnapPair, snap: Snapshot, at: number): SnapPair => ({ prev: pair.next, next: { snap, at } });
+/** Snapshots in tick order plus `offset`, a smoothed estimate of server time minus local time for the fastest recent packets. */
+export type SnapBuffer = { snaps: readonly Snapshot[]; offset: number | null };
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+export const EMPTY_BUFFER: SnapBuffer = { snaps: [], offset: null };
 
-/**
- * Fraction from prev to next to draw at `now`. Rendering trails the newest snapshot by one arrival interval,
- * so the frame between two arrivals walks from prev to next and holds at next if the following one is late.
- */
-export function renderAlpha(pair: SnapPair, now: number): number {
-  if (!pair.prev || !pair.next) return 1;
-  const span = pair.next.at - pair.prev.at;
-  if (span <= 0) return 1;
-  return clamp((now - pair.next.at) / span, 0, 1);
+const serverTime = (snap: Snapshot) => snap.tick * TICK_MS;
+
+export const newestSnap = (buf: SnapBuffer): Snapshot | null => buf.snaps[buf.snaps.length - 1] ?? null;
+
+export function pushSnap(buf: SnapBuffer, snap: Snapshot, arrivedAt: number): SnapBuffer {
+  const newest = newestSnap(buf);
+  if (newest && snap.tick <= newest.tick) return buf;
+  const sample = serverTime(snap) - arrivedAt;
+  // Early packets pull the clock forward quickly; late ones pull it back very slowly, so jitter and one-off
+  // stalls barely change how fast others appear to move, while a lasting rise in latency is still followed.
+  const offset = buf.offset === null ? sample : buf.offset + (sample - buf.offset) * (sample > buf.offset ? 0.1 : 0.005);
+  const snaps = [...buf.snaps, snap].filter((s) => serverTime(s) >= serverTime(snap) - KEEP_MS);
+  return { snaps, offset };
 }
+
+/** The server time to draw others at. */
+export const renderTime = (buf: SnapBuffer, now: number) => now + (buf.offset ?? 0) - INTERP_DELAY_MS;
 
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -35,6 +45,7 @@ export function lerpAngle(a: number, b: number, t: number): number {
 
 type Positioned = { id: number; x: number; y: number };
 
+/** `t` outside [0, 1] extrapolates along the a -> b motion. */
 export function interpolateById<T extends Positioned>(
   prev: readonly T[], next: readonly T[], t: number, extra?: (a: T, b: T, t: number) => Partial<T>,
 ): T[] {
@@ -46,17 +57,32 @@ export function interpolateById<T extends Positioned>(
   });
 }
 
-/** Entity lists for one rendered frame; non-moving lists (crates, zones) come straight from the newest snapshot. */
-export function interpolateSnap(pair: SnapPair, now: number): Snapshot | null {
-  if (!pair.next) return null;
-  const next = pair.next.snap;
-  if (!pair.prev) return next;
-  const prev = pair.prev.snap;
-  const t = renderAlpha(pair, now);
+/**
+ * The world as it stood at server time `at`: moving entities interpolated between the snapshots around it, or
+ * extrapolated from the last two when `at` is past the newest. Everything else, including the local player whose
+ * position comes from prediction, is taken from the newest snapshot.
+ */
+export function sampleAt(snaps: readonly Snapshot[], at: number): Snapshot | null {
+  const newest = snaps[snaps.length - 1];
+  if (!newest) return null;
+  let i = snaps.findIndex((s) => serverTime(s) > at);
+  if (i === 0) return withSelf(newest, snaps[0]!.players, snaps[0]!);
+  if (i === -1) i = snaps.length - 1;
+  const a = snaps[i - 1];
+  const b = snaps[i]!;
+  if (!a) return newest;
+  const span = serverTime(b) - serverTime(a);
+  const t = Math.min((at - serverTime(a)) / span, 1 + MAX_EXTRAPOLATE_MS / span);
+  const players = interpolateById(a.players, b.players, t, (pa, pb, k) => ({ angle: lerpAngle(pa.angle, pb.angle, Math.min(k, 1)) }));
   return {
-    ...next,
-    players: interpolateById(prev.players, next.players, t, (a, b, k) => ({ angle: lerpAngle(a.angle, b.angle, k) })),
-    bullets: interpolateById(prev.bullets, next.bullets, t),
-    thrown: interpolateById(prev.thrown, next.thrown, t),
+    ...withSelf(newest, players, b),
+    bullets: interpolateById(a.bullets, b.bullets, t),
+    thrown: interpolateById(a.thrown, b.thrown, Math.min(t, 1)),
   };
+}
+
+function withSelf(newest: Snapshot, others: Snapshot['players'], at: Snapshot): Snapshot {
+  const self = newest.players.find((p) => p.id === newest.self.id);
+  const players = others.filter((p) => p.id !== newest.self.id);
+  return { ...newest, bullets: at.bullets, thrown: at.thrown, players: self ? [...players, self] : players };
 }

@@ -7,7 +7,7 @@ import { isDead, killerOf } from './derive.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
-import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
+import { EMPTY_BUFFER, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
@@ -126,7 +126,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg, name: string) {
       setState({
         phase: 'playing',
         s: {
-          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0, shots: 0, predict: NO_PREDICTION,
+          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
           selfName: name, lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
           effects: [], feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
         },
@@ -153,7 +153,7 @@ function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
 const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, strength: 1 }], WORLD.viewRadius);
 
 function onSnap(s: Session, snap: Snapshot, now: number) {
-  const prev = s.snaps.next?.snap ?? null;
+  const prev = newestSnap(s.snaps);
   s.snaps = pushSnap(s.snaps, snap, now);
   const me = snap.players.find((p) => p.id === s.myId);
   if (me) s.selfName = me.name;
@@ -198,14 +198,14 @@ setInterval(() => {
   const shooting = active && (firing || touchAiming);
   const input = assembleInput(actions, shooting, s.shots, aimOffset(s));
   send(s.ws, { t: 'input', seq: s.seq, input });
-  const latest = s.snaps.next?.snap;
+  const latest = newestSnap(s.snaps);
   const solids = solidsOf(s.walls, latest?.crates ?? []);
   s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS }, solids, latest?.self.speed ?? 0, performance.now());
 }, INPUT_MS);
 
 function pickPerk(slot: number) {
   const s = sessionOf(state);
-  const tier = s?.snaps.next?.snap.self.pendingTier;
+  const tier = s && newestSnap(s.snaps)?.self.pendingTier;
   if (!s || !tier || s.perkSentFor === tier) return;
   const perk = PERK_TIERS[tier][slot];
   if (!perk) return;
@@ -256,8 +256,8 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 function frame(now: number) {
   requestAnimationFrame(frame);
   const s = sessionOf(state);
-  const latest = s?.snaps.next?.snap;
-  const interpolated = s && interpolateSnap(s.snaps, now);
+  const latest = s && newestSnap(s.snaps);
+  const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
   if (!s || !interpolated || !latest) {
     drawBackdrop(now);
     return;
