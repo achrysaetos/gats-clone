@@ -14,7 +14,7 @@ import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } fro
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
-import { decayOffset, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
+import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
@@ -263,14 +263,14 @@ function frame(now: number) {
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
   for (const spec of released.due) s.effects.push({ ...spec, born: now } as Effect);
-  s.predict = decayOffset(s.predict, now - lastFrameAt);
+  s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const snap = drawn
     ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn } : p)) }
     : interpolated;
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
-  drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.offset.x, s.predict.offset.y) };
+  drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
   camera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;

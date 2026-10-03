@@ -6,10 +6,12 @@ export const INTERP_DELAY_MS = 3 * TICK_MS;
 export const MAX_EXTRAPOLATE_MS = 100;
 export const TELEPORT_DIST = 250;
 const KEEP_MS = 1000;
+const CLOCK_CATCH_UP_RATE = 0.1;
+const CLOCK_FALL_BACK_RATE = 0.005;
 
-export type SnapBuffer = { snaps: readonly Snapshot[]; offset: number | null };
+export type SnapBuffer = { snaps: readonly Snapshot[]; serverClockOffset: number | null };
 
-export const EMPTY_BUFFER: SnapBuffer = { snaps: [], offset: null };
+export const EMPTY_BUFFER: SnapBuffer = { snaps: [], serverClockOffset: null };
 
 const serverTime = (snap: Snapshot) => snap.tick * TICK_MS;
 
@@ -19,12 +21,15 @@ export function pushSnap(buf: SnapBuffer, snap: Snapshot, arrivedAt: number): Sn
   const newest = newestSnap(buf);
   if (newest && snap.tick <= newest.tick) return buf;
   const sample = serverTime(snap) - arrivedAt;
-  const offset = buf.offset === null ? sample : buf.offset + (sample - buf.offset) * (sample > buf.offset ? 0.1 : 0.005);
+  const prev = buf.serverClockOffset;
+  const serverClockOffset = prev === null
+    ? sample
+    : prev + (sample - prev) * (sample > prev ? CLOCK_CATCH_UP_RATE : CLOCK_FALL_BACK_RATE);
   const snaps = [...buf.snaps, snap].filter((s) => serverTime(s) >= serverTime(snap) - KEEP_MS);
-  return { snaps, offset };
+  return { snaps, serverClockOffset };
 }
 
-export const renderTime = (buf: SnapBuffer, now: number) => now + (buf.offset ?? 0) - INTERP_DELAY_MS;
+export const renderTime = (buf: SnapBuffer, now: number) => now + (buf.serverClockOffset ?? 0) - INTERP_DELAY_MS;
 
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 

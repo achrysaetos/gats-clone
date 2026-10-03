@@ -19,13 +19,15 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
   }
 }
 
+const isOwnShot = (ev: GameEvent, myId: number) => ev.e === 'shot' && ev.owner === myId;
+
 export function scheduleEffects(snap: Snapshot, serverMs: number, myId: number): { now: EffectSpec[]; later: PendingEffect[] } {
   const now: EffectSpec[] = [];
   const later: PendingEffect[] = [];
   for (const ev of snap.events) {
     const fx = effectOf(ev, snap);
     if (!fx) continue;
-    if (ev.e === 'shot' && ev.owner === myId) now.push(fx);
+    if (isOwnShot(ev, myId)) now.push(fx);
     else later.push({ at: serverMs, fx });
   }
   return { now, later };

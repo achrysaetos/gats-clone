@@ -149,6 +149,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('fired');
 
     const CLICKS = 6;
+    const TAP_MS = 8;
     let weapon = WEAPONS[me()!.weapon], before = 0, fired = 0;
     for (let attempt = 0; attempt < 3; attempt++) {
       await ensureAlive();
@@ -158,7 +159,7 @@ const STEPS: Record<string, () => Promise<void>> = {
       before = frames.last!.self.ammo;
       for (let i = 0; i < CLICKS; i++) {
         await mouse('mousePressed', 900, 400);
-        await sleep(8);
+        await sleep(TAP_MS);
         await mouse('mouseReleased', 900, 400);
         await sleep(weapon.fireMs + 40);
       }

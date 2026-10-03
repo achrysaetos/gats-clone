@@ -32,9 +32,11 @@ test('others are drawn three ticks behind the server clock', () => {
   assert.ok(Math.abs(half - 75) < 1e-9, `interpolates between ticks (x=${half})`);
 });
 
-test('a 191ms arrival gap never moves anyone backward or jumps them forward', () => {
+const STALL_MS = 191;
+
+test(`a ${STALL_MS}ms arrival gap never moves anyone backward or jumps them forward`, () => {
   const arrivals: { at: number; tick: number }[] = [];
-  for (let tick = 1; tick <= 60; tick++) arrivals.push({ tick, at: Math.max(tick * TICK_MS + 10, tick >= 20 ? 19 * TICK_MS + 10 + 191 : 0) });
+  for (let tick = 1; tick <= 60; tick++) arrivals.push({ tick, at: Math.max(tick * TICK_MS + 10, tick >= 20 ? 19 * TICK_MS + 10 + STALL_MS : 0) });
   let buf = EMPTY_BUFFER;
   const xs: number[] = [];
   for (let now = 0; now <= 60 * TICK_MS; now += 16) {

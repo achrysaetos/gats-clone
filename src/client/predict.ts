@@ -7,13 +7,15 @@ type Point = { x: number; y: number };
 
 export type Prediction = {
   pending: PendingInput[];
-  pos: Point | null;
-  from: Point | null;
+  afterNewest: Point | null;
+  beforeNewest: Point | null;
   sampledAt: number;
-  offset: Point;
+  smoothingCorrection: Point;
 };
 
-export const NO_PREDICTION: Prediction = { pending: [], pos: null, from: null, sampledAt: 0, offset: { x: 0, y: 0 } };
+export const NO_PREDICTION: Prediction = {
+  pending: [], afterNewest: null, beforeNewest: null, sampledAt: 0, smoothingCorrection: { x: 0, y: 0 },
+};
 
 const MAX_PENDING = 90;
 export const SNAP_DIST = 150;
@@ -29,33 +31,36 @@ const replay = (solids: readonly Rect[], start: Point, pending: readonly Pending
 
 export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: number, now: number): Prediction {
   const pending = [...pred.pending, entry].slice(-MAX_PENDING);
-  if (!pred.pos) return { ...pred, pending };
-  return { ...pred, pending, from: pred.pos, pos: moveStep(solids, pred.pos.x, pred.pos.y, entry.input, speed, entry.dtMs), sampledAt: now };
+  const was = pred.afterNewest;
+  if (!was) return { ...pred, pending };
+  return { ...pred, pending, beforeNewest: was, afterNewest: moveStep(solids, was.x, was.y, entry.input, speed, entry.dtMs), sampledAt: now };
 }
 
 export function reconcile(pred: Prediction, server: Point | null, ackSeq: number, solids: readonly Rect[], speed: number): Prediction {
   const pending = pred.pending.filter((p) => p.seq > ackSeq);
   if (!server) return { ...NO_PREDICTION, pending };
-  const pos = replay(solids, server, pending, speed);
-  if (!pred.pos || !pred.from || Math.hypot(pos.x - pred.pos.x, pos.y - pred.pos.y) > SNAP_DIST) {
-    return { pending, pos, from: pos, sampledAt: pred.sampledAt, offset: { x: 0, y: 0 } };
+  const afterNewest = replay(solids, server, pending, speed);
+  const was = pred.afterNewest;
+  if (!was || !pred.beforeNewest || Math.hypot(afterNewest.x - was.x, afterNewest.y - was.y) > SNAP_DIST) {
+    return { pending, afterNewest, beforeNewest: afterNewest, sampledAt: pred.sampledAt, smoothingCorrection: { x: 0, y: 0 } };
   }
-  const dx = pos.x - pred.pos.x, dy = pos.y - pred.pos.y;
+  const dx = afterNewest.x - was.x, dy = afterNewest.y - was.y;
   return {
-    pending, pos, sampledAt: pred.sampledAt,
-    from: { x: pred.from.x + dx, y: pred.from.y + dy },
-    offset: { x: pred.offset.x - dx, y: pred.offset.y - dy },
+    pending, afterNewest, sampledAt: pred.sampledAt,
+    beforeNewest: { x: pred.beforeNewest.x + dx, y: pred.beforeNewest.y + dy },
+    smoothingCorrection: { x: pred.smoothingCorrection.x - dx, y: pred.smoothingCorrection.y - dy },
   };
 }
 
-export function decayOffset(pred: Prediction, dtMs: number): Prediction {
+export function decayCorrection(pred: Prediction, dtMs: number): Prediction {
   const k = Math.exp(-Math.max(0, dtMs) / SMOOTH_MS);
-  const x = pred.offset.x * k, y = pred.offset.y * k;
-  return { ...pred, offset: Math.hypot(x, y) < 0.01 ? { x: 0, y: 0 } : { x, y } };
+  const x = pred.smoothingCorrection.x * k, y = pred.smoothingCorrection.y * k;
+  return { ...pred, smoothingCorrection: Math.hypot(x, y) < 0.01 ? { x: 0, y: 0 } : { x, y } };
 }
 
 export function drawnPosition(pred: Prediction, now: number, stepMs: number): Point | null {
-  if (!pred.pos || !pred.from) return null;
+  const { beforeNewest: a, afterNewest: b, smoothingCorrection: c } = pred;
+  if (!a || !b) return null;
   const t = Math.min(1, Math.max(0, (now - pred.sampledAt) / stepMs));
-  return { x: lerp(pred.from.x, pred.pos.x, t) + pred.offset.x, y: lerp(pred.from.y, pred.pos.y, t) + pred.offset.y };
+  return { x: lerp(a.x, b.x, t) + c.x, y: lerp(a.y, b.y, t) + c.y };
 }
