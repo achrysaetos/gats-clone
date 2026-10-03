@@ -28,6 +28,7 @@ async function writeFileAtomic(file: string, data: string) {
   await rename(tmp, file);
 }
 const SAVE_DELAY_MS = 2000;
+const UNKNOWN_ACCOUNT_SALT = randomBytes(16);
 
 export async function openAccounts(dataDir: string): Promise<Accounts> {
   await mkdir(dataDir, { recursive: true });
@@ -76,9 +77,8 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
     },
     async login(name, password) {
       const account = byKey.get(key(name));
-      if (!account) return null;
-      const hash = await scryptAsync(password, Buffer.from(account.salt, 'hex'), 64);
-      return timingSafeEqual(hash, Buffer.from(account.hash, 'hex')) ? issue(account) : null;
+      const hash = await scryptAsync(password, account ? Buffer.from(account.salt, 'hex') : UNKNOWN_ACCOUNT_SALT, 64);
+      return account && timingSafeEqual(hash, Buffer.from(account.hash, 'hex')) ? issue(account) : null;
     },
     nameForToken(token) {
       const k = tokens.get(token);
