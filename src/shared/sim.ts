@@ -806,6 +806,7 @@ function selfView(w: World, p: Player): SelfView {
     pendingTier: pendingTier(p),
     ability,
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
+    alive: life.k === 'alive',
     respawnIn: life.k === 'dead' ? Math.max(0, life.respawnAt - w.now) : 0,
     kills: p.kills,
     deaths: p.deaths,

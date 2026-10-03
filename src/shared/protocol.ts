@@ -49,6 +49,7 @@ export type SelfView = {
   perks: Partial<Record<Tier, PerkId>>;
   pendingTier: Tier | null;
   ability: AbilityId | null; abilityReadyIn: number;
+  alive: boolean;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;

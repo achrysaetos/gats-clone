@@ -21,11 +21,6 @@ export const feedMentions = (kill: { killerId: number | null; victimId: number }
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 
-export function isDead(snap: Snapshot): boolean {
-  const me = selfOf(snap);
-  return me ? !me.alive : snap.self.respawnIn > 0;
-}
-
 export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: string } {
   const side = team ?? 'no';
   const Side = side[0]!.toUpperCase() + side.slice(1);

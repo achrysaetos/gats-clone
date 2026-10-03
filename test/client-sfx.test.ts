@@ -12,7 +12,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
   t: 'snap', tick: 1, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: o.events ?? [],
 });
@@ -62,7 +62,7 @@ test('reload plays when reloading starts, not while it continues', () => {
 
 test('death plays once on the alive-to-dead edge, even when the server drops you from players', () => {
   assert.deepEqual(ids(snap(), snap({ me: { alive: false, hp: 0 } })), ['death']);
-  const gone = { ...snap({ self: { respawnIn: 3000 } }), players: [] };
+  const gone = { ...snap({ self: { alive: false } }), players: [] };
   assert.deepEqual(ids(snap(), gone), ['death']);
   assert.deepEqual(ids(gone, gone), [], 'staying dead is silent');
 });

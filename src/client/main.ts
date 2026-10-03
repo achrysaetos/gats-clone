@@ -4,7 +4,7 @@ import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { isDead, killerOf, selfOf } from './derive.ts';
+import { killerOf, selfOf } from './derive.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
@@ -170,7 +170,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   for (const ev of snap.events) if (ev.e === 'kill') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
 
-  const dead = isDead(snap);
+  const dead = !snap.self.alive;
   if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.myId) });
   else if (dead && state.phase === 'dead' && !state.killer) state.killer = killerOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });

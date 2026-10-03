@@ -1,6 +1,6 @@
 import type { WeaponId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
-import { isDead, selfOf } from './derive.ts';
+import { selfOf } from './derive.ts';
 
 export type SoundId =
   | `shot:${WeaponId}` | 'shot:silenced'
@@ -66,6 +66,6 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   }
   if (next.self.reloading && !prev.self.reloading) mine('reload');
   if (next.self.pendingTier !== null && next.self.pendingTier !== prev.self.pendingTier) mine('levelup');
-  if (isDead(next) && !isDead(prev)) mine('death');
+  if (!next.self.alive && prev.self.alive) mine('death');
   return cues;
 }

@@ -113,6 +113,7 @@ test('dead player cannot act and respawns after respawnMs', () => {
   assert.equal(hpOf(a), WORLD.baseHp);
   assert.equal(respawn(w, b.id, b.loadout), false, 'too early to respawn');
   assert.ok(snapshotFor(w, b.id).self.respawnIn > 0);
+  assert.equal(snapshotFor(w, b.id).self.alive, false);
 
   run(w, WORLD.respawnMs);
   assert.ok(canRespawn(w, b.id));
@@ -120,6 +121,7 @@ test('dead player cannot act and respawns after respawnMs', () => {
   assert.equal(hpOf(b), WORLD.baseHp);
   assert.equal(b.loadout.weapon, 'smg');
   assert.equal(snapshotFor(w, b.id).self.respawnIn, 0);
+  assert.equal(snapshotFor(w, b.id).self.alive, true);
 });
 
 test('TDM friendly fire does no damage but enemies still take hits', () => {
