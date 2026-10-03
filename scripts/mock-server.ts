@@ -74,7 +74,7 @@ function makeWorld(mode: ModeId) {
   }));
   const crates = Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, x: 1100 + (i % 4) * 260, y: 1050 + Math.floor(i / 4) * 450, hp: WORLD.crateHp * ((i % 3) + 1) / 3, size: 50 }));
   const zones: ZoneView[] = mode === 'DOM'
-    ? [{ id: 1, x: 1000, y: 1000, r: 160, owner: 'red', progress: 1 }, { id: 2, x: 1500, y: 1500, r: 160, owner: null, progress: 0.4 }, { id: 3, x: 2000, y: 2000, r: 160, owner: 'blue', progress: 1 }]
+    ? [{ id: 1, x: 1000, y: 1000, r: 160, owner: 'red', capturing: null, progress: 1 }, { id: 2, x: 1500, y: 1500, r: 160, owner: null, capturing: 'blue', progress: 0.4 }, { id: 3, x: 2000, y: 2000, r: 160, owner: 'blue', capturing: null, progress: 1 }]
     : [];
   return { mode, bots, crates, zones, walls: [...WALLS], tick: 0, bulletId: 1 };
 }

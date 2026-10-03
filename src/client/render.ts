@@ -114,6 +114,7 @@ function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
   if (progress > 0) {
     ctx.globalAlpha = 0.85;
     ctx.lineWidth = 10;
+    ctx.strokeStyle = teamColor(z.capturing ?? z.owner);
     ctx.beginPath();
     ctx.arc(z.x, z.y, z.r - 12, -Math.PI / 2, -Math.PI / 2 + progress * TAU);
     ctx.stroke();
@@ -129,23 +130,24 @@ function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
 
 function drawCrate(ctx: CanvasRenderingContext2D, c: CrateView) {
   const h = c.size / 2;
+  const cx = c.x + h, cy = c.y + h;
   const health = Math.max(0, Math.min(1, c.hp / WORLD.crateHp));
   ctx.fillStyle = shade(PALETTE.crate, 0.75 + 0.25 * health);
-  ctx.fillRect(c.x - h, c.y - h, c.size, c.size);
+  ctx.fillRect(cx - h, cy - h, c.size, c.size);
   ctx.strokeStyle = PALETTE.crateEdge;
   ctx.lineWidth = 4;
-  ctx.strokeRect(c.x - h + 2, c.y - h + 2, c.size - 4, c.size - 4);
+  ctx.strokeRect(cx - h + 2, cy - h + 2, c.size - 4, c.size - 4);
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(c.x - h, c.y - h); ctx.lineTo(c.x + h, c.y + h);
-  ctx.moveTo(c.x + h, c.y - h); ctx.lineTo(c.x - h, c.y + h);
+  ctx.moveTo(cx - h, cy - h); ctx.lineTo(cx + h, cy + h);
+  ctx.moveTo(cx + h, cy - h); ctx.lineTo(cx - h, cy + h);
   ctx.stroke();
   if (health < 0.67) {
     ctx.strokeStyle = '#3d2a14';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(c.x - h * 0.7, c.y - h); ctx.lineTo(c.x - h * 0.2, c.y - h * 0.3); ctx.lineTo(c.x - h * 0.5, c.y + h * 0.2);
-    if (health < 0.34) { ctx.moveTo(c.x + h, c.y + h * 0.1); ctx.lineTo(c.x + h * 0.3, c.y + h * 0.4); ctx.lineTo(c.x + h * 0.4, c.y + h); }
+    ctx.moveTo(cx - h * 0.7, cy - h); ctx.lineTo(cx - h * 0.2, cy - h * 0.3); ctx.lineTo(cx - h * 0.5, cy + h * 0.2);
+    if (health < 0.34) { ctx.moveTo(cx + h, cy + h * 0.1); ctx.lineTo(cx + h * 0.3, cy + h * 0.4); ctx.lineTo(cx + h * 0.4, cy + h); }
     ctx.stroke();
   }
 }

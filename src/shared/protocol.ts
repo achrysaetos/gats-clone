@@ -35,7 +35,7 @@ export type CrateView = { id: number; x: number; y: number; hp: number; size: nu
 export type WallView = { x: number; y: number; w: number; h: number; built: boolean };
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
-export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; progress: number };
+export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;

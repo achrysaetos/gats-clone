@@ -824,7 +824,7 @@ export function snapshotFor(w: World, id: number): Snapshot {
       return !!owner && !isEnemy(me, owner);
     })
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
-  const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, progress: z.progress }));
+  const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress }));
   const minimap = [...w.players.values()]
     .filter((p) => p.id !== me.id && p.life.k === 'alive' && (sameTeam(me, p) || w.now < p.revealedUntil))
     .map((p) => ({ x: p.x, y: p.y, team: p.team }));
