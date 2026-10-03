@@ -1,5 +1,8 @@
+import { WORLD } from '../shared/defs.ts';
+
 export const LIMITS = {
   humansPerRoom: 16,
+  minPlayers: WORLD.minPlayers as number,
   socketsPerIp: 8,
   joinTimeoutMs: 10_000,
   heartbeatMs: 10_000,

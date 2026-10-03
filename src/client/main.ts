@@ -54,8 +54,10 @@ let lastFrameAt = 0;
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
+const DEV = params.has('dev');
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
-if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf } });
+let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers } });
 
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
@@ -288,6 +290,10 @@ function frame(now: number) {
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
+  if (DEV) {
+    const cam = aimCamera;
+    drawnOthers = snap.players.filter((p) => p.id !== s.myId).map((p) => ({ id: p.id, x: p.x, y: p.y, screen: worldToScreen(cam, p) }));
+  }
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);

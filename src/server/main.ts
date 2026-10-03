@@ -12,7 +12,7 @@ import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 
 export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
-export type RunningServer = { port: number; close(): Promise<void> };
+export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; close(): Promise<void> };
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
 const MAX_BODY = 4096;
@@ -176,6 +176,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   return {
     port: (http.address() as AddressInfo).port,
+    rooms,
     async close() {
       clearTimeout(timer);
       for (const r of rooms.values()) r.close();
