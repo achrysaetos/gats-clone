@@ -520,7 +520,7 @@ export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): 
   return { x: clamp(x, r, WORLD.size - r), y: clamp(y, r, WORLD.size - r) };
 }
 
-export type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
+type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
 
 /** One movement step. The server moves every player with it and the client predicts its own player with it, so both agree. */
 export function moveStep(solids: readonly Rect[], x: number, y: number, keys: MoveKeys, speed: number, dtMs: number): { x: number; y: number } {

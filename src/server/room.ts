@@ -5,10 +5,10 @@ import {
   addPlayer, canRespawn, choosePerk, createWorld, rand, removePlayer, respawn, setInput, snapshotFor, step, wallViews,
   type World,
 } from '../shared/sim.ts';
+import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
 import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { LIMITS, makeBucket, type Limits } from './limits.ts';
-import { makeSnapshotEncoder } from '../shared/wire.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;

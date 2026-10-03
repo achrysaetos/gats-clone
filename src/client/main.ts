@@ -1,5 +1,6 @@
 import { PERK_TIERS, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
+import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
@@ -10,7 +11,6 @@ import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, t
 import { EMPTY_BUFFER, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
-import { fillSnapshot } from '../shared/wire.ts';
 import { createOverlays } from './overlays.ts';
 import { decayOffset, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
