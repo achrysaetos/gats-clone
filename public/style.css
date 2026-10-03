@@ -270,6 +270,11 @@ kbd {
   pointer-events: none;
 }
 .banner h2 { margin: 0 0 4px; font-size: 26px; color: var(--accent); text-transform: none; letter-spacing: 0; }
+.podium { margin: 10px 0 12px; padding: 0; list-style: none; counter-reset: podium; min-width: 220px; }
+.podium li { display: flex; gap: 16px; align-items: baseline; padding: 4px 0; font-size: 16px; counter-increment: podium; }
+.podium li::before { content: counter(podium) "."; color: var(--muted); min-width: 1.2em; text-align: left; }
+.podium li span { flex: 1; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
+.podium li b { font-variant-numeric: tabular-nums; }
 
 .objective {
   position: absolute;

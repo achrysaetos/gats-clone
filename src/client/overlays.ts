@@ -1,13 +1,12 @@
 import { PERK_INFO, PERK_TIERS, type PerkId, type Tier } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
-import { objectiveFor, seconds } from './derive.ts';
+import { OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
 import { TEAM_COLORS } from './render.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 
 const CHAT_VISIBLE_MS = 15000;
-const OBJECTIVE_MS = 4000;
 
 /** Tile face: a plain BMP symbol (not emoji, so every tile renders at one size) and a name short enough for 58px. */
 const PERK_TILE: Record<PerkId, [glyph: string, short: string]> = {
@@ -18,6 +17,7 @@ const PERK_TILE: Record<PerkId, [glyph: string, short: string]> = {
   landMine: ['⊗', 'Mine'], knife: ['†', 'Knife'], engineer: ['▦', 'Engineer'], dash: ['⇥', 'Dash'],
 };
 const CHAT_LINES = 8;
+const PODIUM_SIZE = 3;
 
 export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => void) {
   const perkPanel = $('perk-panel');
@@ -91,23 +91,36 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
 
   const renderBanner = (snap: Snapshot) => {
     const { winner, restartIn } = snap.match;
-    const key = winner === null ? '' : `${winner}|${seconds(restartIn)}`;
+    const podium = topScorers(snap.leaderboard, PODIUM_SIZE);
+    const key = winner === null ? '' : `${winner}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.score}`).join(',')}`;
     if (key === keys.banner) return;
     keys.banner = key;
     banner.hidden = winner === null;
     if (winner === null) return;
     const h = document.createElement('h2');
     h.textContent = `${winner} wins the round`;
+    const list = document.createElement('ol');
+    list.className = 'podium';
+    list.append(...podium.map((r) => {
+      const li = document.createElement('li');
+      const name = document.createElement('span');
+      name.textContent = r.name;
+      if (r.team) name.style.color = TEAM_COLORS[r.team];
+      const score = document.createElement('b');
+      score.textContent = String(r.score);
+      li.append(name, score);
+      return li;
+    }));
     const p = document.createElement('p');
     p.textContent = `Next round in ${seconds(restartIn)}s`;
-    banner.replaceChildren(h, p);
+    banner.replaceChildren(h, list, p);
   };
 
   const renderObjective = (state: ClientState, snap: Snapshot, now: number) => {
     if (state.phase === 'playing' && lastPhase !== 'playing') objectiveAt = now;
     lastPhase = state.phase;
     const team = snap.players.find((p) => p.id === snap.self.id)?.team ?? null;
-    const show = state.phase === 'playing' && now - objectiveAt < OBJECTIVE_MS;
+    const show = objectiveVisible(state.phase, snap.match, now - objectiveAt);
     const key = show ? `${objectiveAt}|${snap.match.mode}|${team}` : '';
     if (key === keys.objective) return;
     keys.objective = key;

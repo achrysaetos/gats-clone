@@ -1,5 +1,6 @@
 import { LEVEL_SCORES, WORLD, type ModeId } from '../shared/defs.ts';
-import type { GameEvent, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
+import type { GameEvent, LeaderRow, MatchView, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
+import type { ClientState } from './state.ts';
 
 export type LevelProgress = { displayLevel: number; frac: number; nextAt: number | null };
 
@@ -41,3 +42,11 @@ export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: 
 }
 
 export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
+
+export const OBJECTIVE_MS = 4000;
+
+/** The objective shows for a few seconds after each spawn, but never over the round's win banner. */
+export const objectiveVisible = (phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
+  phase === 'playing' && match.winner === null && msSincePlaying < OBJECTIVE_MS;
+
+export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow[] => [...rows].sort((a, b) => b.score - a.score).slice(0, count);
