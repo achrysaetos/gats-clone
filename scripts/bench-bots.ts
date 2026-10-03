@@ -17,6 +17,7 @@ const HUMAN_AIM_SIGMA = 0.04;
 const HUMAN_AIM_SIGMA_PER_RAD_PER_SEC = 0.15;
 const HUMAN_AIM_CORRELATION = 0.9;
 const HUMAN_LEAD = 0.5;
+const HUMAN_VIEW_ASPECT = 1280 / 800;
 
 type HumanStyle = 'idle' | 'strafe';
 type HumanMind = { target: number | null; fireAtTick: number; aimErr: number; strafe: 1 | -1; flipAtTick: number; seen: { id: number; x: number; y: number } | null; shots: number; wanderX: number; wanderY: number };
@@ -90,7 +91,7 @@ function simulate(seed: number, style: HumanStyle): Tally {
       if (d.perk) choosePerk(w, id, d.perk.tier, d.perk.perk);
       if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
     }
-    const snap = snapshotFor(w, human.id);
+    const snap = snapshotFor(w, human.id, w.events, HUMAN_VIEW_ASPECT);
     const h = humanThink(snap, walls, mind, style, r);
     mind = h.mind;
     setInput(w, human.id, w.tick, h.input);

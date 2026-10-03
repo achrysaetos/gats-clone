@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WEAPONS, type WeaponId } from '../src/shared/defs.ts';
+import { WEAPONS, WORLD, type WeaponId } from '../src/shared/defs.ts';
 import type { WallView } from '../src/shared/protocol.ts';
 import { snapshotFor, step } from '../src/shared/sim.ts';
 import { botName, botThink, newBotMemory } from '../src/server/bots.ts';
@@ -71,6 +71,11 @@ test('a bot aims more steadily the longer it tracks the same target', () => {
     late.push(...aimErrors(looks, 60, 90));
   }
   assert.ok(rms(early) > 1.5 * rms(late), `first 300ms ${rms(early).toFixed(3)} rad vs after 2s ${rms(late).toFixed(3)} rad`);
+});
+
+test('a bot ignores an enemy in the snapshot preload margin beyond its 16:9 view', () => {
+  const looks = watch({ seed: 5, ticks: 30, weapon: 'sniper', targetAt: { x: 1000, y: 1000 + WORLD.viewRadius + 30 } });
+  assert.ok(looks.every((l) => !l.fire), 'never fires at what a player there could not see');
 });
 
 test('a bot in range strafes sideways instead of standing still', () => {

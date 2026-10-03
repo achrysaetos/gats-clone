@@ -17,8 +17,13 @@ export type InputState = {
   aimDist: number;
 };
 
+export const VIEW_ASPECT = { min: 1, max: 16 / 9 } as const;
+export const VIEW_PRELOAD_MARGIN = 64;
+export const clampAspect = (aspect: number): number => Math.min(VIEW_ASPECT.max, Math.max(VIEW_ASPECT.min, aspect));
+
 export type ClientMsg =
-  | { t: 'join'; name: string; loadout: Loadout; token?: string }
+  | { t: 'join'; name: string; loadout: Loadout; token?: string; aspect: number }
+  | { t: 'view'; aspect: number }
   | { t: 'input'; seq: number; input: InputState }
   | { t: 'perk'; tier: Tier; perk: PerkId }
   | { t: 'chat'; text: string }
@@ -113,6 +118,8 @@ export function cleanName(v: unknown): string {
   return s || 'Unnamed';
 }
 
+const parseAspect = (v: unknown): number => num(v, VIEW_ASPECT.min, VIEW_ASPECT.max) ?? VIEW_ASPECT.max;
+
 function parseInput(v: unknown): InputState | null {
   if (!isObj(v)) return null;
   const angle = num(v.angle, -10, 10);
@@ -134,8 +141,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'join': {
       const loadout = parseLoadout(v.loadout);
       if (!loadout) return null;
-      return { t: 'join', name: cleanName(v.name), loadout, token: typeof v.token === 'string' ? v.token.slice(0, 128) : undefined };
+      return { t: 'join', name: cleanName(v.name), loadout, token: typeof v.token === 'string' ? v.token.slice(0, 128) : undefined, aspect: parseAspect(v.aspect) };
     }
+    case 'view':
+      return { t: 'view', aspect: parseAspect(v.aspect) };
     case 'input': {
       const input = parseInput(v.input);
       const seq = num(v.seq, 0, Number.MAX_SAFE_INTEGER);

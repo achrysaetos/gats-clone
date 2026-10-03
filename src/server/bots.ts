@@ -1,5 +1,5 @@
 import { ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
-import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../shared/protocol.ts';
+import { VIEW_ASPECT, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim.ts';
 
 export type BotMemory = {
@@ -57,7 +57,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   next.lastX = me.x;
   next.lastY = me.y;
 
-  const enemy = nearestVisibleEnemy(me, snap.players, walls);
+  const enemy = nearestVisibleEnemy(me, snap.players, walls, snap.self.viewRadius);
   const weapon = WEAPONS[me.weapon];
   const range = weapon.range;
   let goX = next.targetX, goY = next.targetY;
@@ -110,10 +110,11 @@ function engage(prev: Engagement | null, enemy: PlayerView, me: PlayerView, tick
   return { id: enemy.id, x: enemy.x, y: enemy.y, bearing, acquiredTick, fireAtTick, aimErrRad };
 }
 
-function nearestVisibleEnemy(me: PlayerView, players: PlayerView[], walls: readonly WallView[]): PlayerView | null {
+function nearestVisibleEnemy(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
   let best: PlayerView | null = null, bestD = Infinity;
   for (const p of players) {
     if (p.id === me.id || !p.alive || (me.team !== null && p.team === me.team)) continue;
+    if (Math.abs(p.x - me.x) > viewRadius * VIEW_ASPECT.max || Math.abs(p.y - me.y) > viewRadius) continue;
     if (walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null)) continue;
     const d = Math.hypot(p.x - me.x, p.y - me.y);
     if (d < bestD) { best = p; bestD = d; }

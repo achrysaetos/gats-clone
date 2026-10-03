@@ -6,6 +6,7 @@ import {
   wallViews,
 } from '../src/shared/sim.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = WEAPONS.pistol.damage;
@@ -263,6 +264,21 @@ test('snapshot culls out-of-view enemies; minimap shows them only after unsilenc
   grantPerks(w, far, ['silencer']);
   shootOnce(w, far, Math.PI / 2, 100);
   assert.equal(snapshotFor(w, me.id).minimap.length, 0, 'silenced shot stays off the minimap');
+});
+
+test('a snapshot covers the rectangle the client screen shows, plus a preload margin, and nothing beyond', () => {
+  const R = WORLD.viewRadius, aspect = 1.6, beyond = VIEW_PRELOAD_MARGIN + WORLD.playerRadius + 1;
+  const w = emptyWorld();
+  const me = spawnAt(w, 1500, 1500);
+  const at = (dx: number, dy: number) => spawnAt(w, me.x + dx, me.y + dy);
+  const edgeX = at(aspect * R, 0), edgeY = at(0, -R), corner = at(-aspect * R, R);
+  const pastX = at(aspect * R + beyond, 0), pastY = at(0, R + beyond);
+  const seen = new Set(snapshotFor(w, me.id, [], aspect).players.map((p) => p.id));
+  for (const [name, p] of Object.entries({ edgeX, edgeY, corner })) assert.ok(seen.has(p.id), `${name} on the screen edge is sent`);
+  for (const [name, p] of Object.entries({ pastX, pastY })) assert.ok(!seen.has(p.id), `${name} past the margin is not sent`);
+  const botView = new Set(snapshotFor(w, me.id).players.map((p) => p.id));
+  assert.ok(botView.has(pastX.id), 'bots see the full 16:9 width');
+  assert.ok(!botView.has(pastY.id), 'but no further vertically');
 });
 
 test('minimap always shows teammates', () => {

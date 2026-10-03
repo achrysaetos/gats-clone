@@ -40,13 +40,24 @@ test('assembled input survives the server parser unchanged, even with far aim', 
 });
 
 test('aim from screen space converts to world units through the camera', () => {
-  const cam = makeCamera({ x: 500, y: 500 }, 1800, 900, 900);
+  const cam = makeCamera({ x: 500, y: 500 }, 3200, 1800, 900);
   assert.equal(cam.scale, 1);
-  const self = worldToScreen(cam, { x: 500, y: 500 });
-  assert.deepEqual(self, { x: 900, y: 450 });
-  const zoomed = makeCamera({ x: 0, y: 0 }, 900, 400, 900);
-  const mouseWorld = screenToWorld(zoomed, { x: 450 + 100, y: 200 });
-  assert.equal(mouseWorld.x, 200);
+  assert.deepEqual(worldToScreen(cam, { x: 500, y: 500 }), { x: 1600, y: 900 });
+  const zoomed = makeCamera({ x: 0, y: 0 }, 1600, 900, 900);
+  assert.equal(screenToWorld(zoomed, { x: 800 + 100, y: 450 }).x, 200);
+});
+
+test('the camera shows the view radius vertically and the radius times the aspect horizontally', () => {
+  const R = WORLD.viewRadius;
+  const shown = (w: number, h: number) => {
+    const cam = makeCamera({ x: 0, y: 0 }, w, h, R);
+    const corner = screenToWorld(cam, { x: w, y: h });
+    return { screen: [Math.round(corner.x), Math.round(corner.y)], world: [Math.round(cam.viewHalfW), Math.round(cam.viewHalfH)] };
+  };
+  assert.deepEqual(shown(1280, 800), { screen: [1.6 * R, R], world: [1.6 * R, R] }, '16:10 fills the screen with no bars');
+  assert.deepEqual(shown(1920, 1080), { screen: [1600, R], world: [1600, R] }, '16:9 fills the screen with no bars');
+  assert.deepEqual(shown(2560, 1080), { screen: [2133, R], world: [1600, R] }, 'ultrawide is letterboxed to 16:9 at the sides');
+  assert.deepEqual(shown(800, 1280), { screen: [R, 1440], world: [R, R] }, 'portrait fits the short axis and letterboxes top and bottom');
 });
 
 test('level progress tracks thresholds and caps at max level', () => {
