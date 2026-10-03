@@ -41,6 +41,9 @@ export function shade(hex: string, f: number): string {
 
 const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
+/** Players on a team wear its color, so the loadout color can never pass a red player off as blue. */
+export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
+
 export type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null };
 
 export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
@@ -55,12 +58,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   drawFloor(ctx, s.worldSize, tl, br, cam.scale);
 
-  const teams = snap.match.mode !== 'FFA';
+  const myTeam = snap.players.find((p) => p.id === s.myId)?.team ?? null;
   for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
   for (const t of snap.thrown) if (t.kind === 'gasCloud' || t.kind === 'landMine') drawThrown(ctx, t, now);
   for (const c of snap.crates) drawCrate(ctx, c);
   for (const w of s.walls) drawWall(ctx, w);
-  for (const p of snap.players) drawTrail(ctx, p, s.trails.get(p.id), now);
+  for (const p of snap.players) drawTrail(ctx, p, bodyColor(p), s.trails.get(p.id), now);
 
   ctx.lineCap = 'round';
   for (const b of snap.bullets) {
@@ -75,7 +78,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const p of snap.players) {
     if (!p.alive) continue;
     const angle = p.id === s.myId && f.selfAngle !== null ? f.selfAngle : p.angle;
-    drawPlayer(ctx, { ...p, angle }, teams);
+    drawPlayer(ctx, { ...p, angle }, bodyColor(p), p.id !== s.myId && p.team !== null && p.team === myTeam);
   }
   for (const t of snap.thrown) if (t.kind !== 'gasCloud' && t.kind !== 'landMine') drawThrown(ctx, t, now);
   drawEffects(ctx, s, now);
@@ -217,9 +220,9 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   }
 }
 
-function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, trail: { x: number; y: number; at: number }[] | undefined, now: number) {
+function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, trail: { x: number; y: number; at: number }[] | undefined, now: number) {
   if (!trail?.length) return;
-  ctx.fillStyle = COLORS[p.color];
+  ctx.fillStyle = color;
   for (const pt of trail) {
     const age = (now - pt.at) / TRAIL_MS;
     if (age >= 1) continue;
@@ -233,9 +236,8 @@ function drawTrail(ctx: CanvasRenderingContext2D, p: PlayerView, trail: { x: num
 
 export const TRAIL_MS = 260;
 
-function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, teams: boolean) {
+function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, friendly: boolean) {
   const R = WORLD.playerRadius;
-  const color = COLORS[p.color];
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.globalAlpha = p.hidden ? 0.25 : 1;
@@ -250,11 +252,16 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, teams: boolean
   ctx.lineWidth = ring;
   ctx.strokeStyle = shade(color, 0.55);
   ctx.stroke();
-  if (teams && p.team) {
+  if (friendly) {
     ctx.beginPath();
-    ctx.arc(0, 0, R + 4, 0, TAU);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = TEAM_COLORS[p.team];
+    ctx.moveTo(-11, -R - 24);
+    ctx.lineTo(11, -R - 24);
+    ctx.lineTo(0, -R - 9);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#ffffff';
     ctx.stroke();
   }
   if (p.shield) {
