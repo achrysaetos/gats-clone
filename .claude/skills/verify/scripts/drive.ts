@@ -40,7 +40,7 @@ for (let i = 0; i < 50 && !target; i++) {
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
-type Snap = { t: 'snap'; self: { id: number; ammo: number }; players: { id: number; name: string; x: number; y: number }[] };
+type Snap = { t: 'snap'; self: { id: number; ammo: number }; players: { id: number; name: string; x: number; y: number; alive: boolean }[] };
 const frames = { welcome: null as null | { id: number }, last: null as null | Snap, sent: 0 };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
@@ -70,11 +70,11 @@ const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEv
 const me = () => frames.last?.players.find((p) => p.id === frames.welcome?.id);
 // Bots can kill the driven player between steps; respawn through the real death screen instead of failing on a dead player.
 const ensureAlive = async () => {
-  if (me()) return;
+  if (me()?.alive) return;
   log('note driven player is dead, respawning through the death screen');
   await until(async () => js(`!document.getElementById('respawn').disabled && !document.getElementById('death').hidden`), 8000);
   await js(`document.getElementById('respawn').click()`);
-  await until(() => !!me(), 4000);
+  await until(() => !!me()?.alive, 4000);
 };
 const humansIn = async (room: string) => ((await (await fetch(`${BASE}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === room)?.humans;
 
