@@ -1,5 +1,6 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire chat leave (default, in order), plus touch on request.
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch on request.
+// LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 // Drives the real client in headless Chrome over CDP against the server launch.sh started, reads the page's own
 // WebSocket frames as wire evidence, and cross-checks from an independent observer client in the same room.
 import { spawn } from 'node:child_process';
@@ -8,10 +9,11 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
+import { WEAPONS, type WeaponId } from '../../../../src/shared/defs.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
-const ALL = ['menu', 'account', 'join', 'move', 'fire', 'chat', 'leave'];
+const ALL = ['menu', 'account', 'join', 'move', 'fire', 'latency', 'chat', 'leave'];
 const steps = process.argv.length > 3 ? process.argv.slice(3) : ALL;
 const PORT = readFileSync(join(RUN, 'port'), 'utf8').trim();
 const BASE = `http://localhost:${PORT}`;
@@ -40,8 +42,8 @@ for (let i = 0; i < 50 && !target; i++) {
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
-type Snap = { t: 'snap'; self: { id: number; ammo: number }; players: { id: number; name: string; x: number; y: number; alive: boolean }[] };
-const frames = { welcome: null as null | { id: number }, last: null as null | Snap, sent: 0 };
+type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; weapon: WeaponId }[] };
+const frames = { welcome: null as null | { id: number }, last: null as null | Snap, sent: 0, snapAt: [] as number[] };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -50,7 +52,7 @@ page.on('message', (raw) => {
   if (m.method === 'Network.webSocketFrameReceived') {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
-    if (msg.t === 'snap') frames.last = msg;
+    if (msg.t === 'snap') { frames.last = msg; frames.snapAt.push(m.params.timestamp * 1000); }
   } else if (m.method === 'Network.webSocketFrameSent') frames.sent++;
   else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
@@ -75,6 +77,7 @@ const ensureAlive = async () => {
   await until(async () => js(`!document.getElementById('respawn').disabled && !document.getElementById('death').hidden`), 8000);
   await js(`document.getElementById('respawn').click()`);
   await until(() => !!me()?.alive, 4000);
+  await sleep(300);
 };
 const humansIn = async (room: string) => ((await (await fetch(`${BASE}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === room)?.humans;
 
@@ -86,12 +89,12 @@ observer.on('open', () => observer.send(JSON.stringify({ t: 'join', name: 'Obser
 observer.on('message', (raw) => {
   const m = JSON.parse(String(raw));
   if (m.t === 'chat') observerChat.push(m);
-  if (m.t === 'snap') observerBoard = m.leaderboard.map((r: { name: string }) => r.name);
+  if (m.t === 'snap' && m.leaderboard) observerBoard = m.leaderboard.map((r: { name: string }) => r.name);
 });
 
 await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
 await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-await cdp('Page.navigate', { url: BASE });
+await cdp('Page.navigate', { url: `${BASE}/?dev&lag=${Number(process.env.LAG ?? 0)}&jitter=${Number(process.env.JITTER ?? 0)}` });
 await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
 log(`drive ${new Date().toISOString()} base=${BASE} name=${NAME} steps=${steps.join(',')}`);
 
@@ -143,6 +146,61 @@ const STEPS: Record<string, () => Promise<void>> = {
     await mouse('mouseReleased', 900, 400);
     expect('click fires: server ammo decreases', await until(() => frames.last!.self.ammo < ammo), `ammo ${ammo} -> ${frames.last!.self.ammo}`);
     await shot('fired');
+
+    const CLICKS = 6;
+    let weapon = WEAPONS[me()!.weapon], before = 0, fired = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await ensureAlive();
+      weapon = WEAPONS[me()!.weapon];
+      if (frames.last!.self.ammo < CLICKS) { await key('KeyR', 'r', 60); await until(() => !frames.last!.self.reloading && frames.last!.self.ammo >= CLICKS, weapon.reloadMs + 2000); }
+      await sleep(weapon.fireMs);
+      before = frames.last!.self.ammo;
+      // 8ms taps always fall inside one 33ms input sample; spaced just past the fire cooldown so every press is allowed.
+      for (let i = 0; i < CLICKS; i++) {
+        await mouse('mousePressed', 900, 400);
+        await sleep(8);
+        await mouse('mouseReleased', 900, 400);
+        await sleep(weapon.fireMs + 40);
+      }
+      await sleep(400);
+      fired = before - frames.last!.self.ammo;
+      if (me()?.alive) break;
+      log(`info player died during the click burst; retrying`);
+    }
+    expect(`${CLICKS} quick clicks fire ${CLICKS} shots (server ammo)`, fired === CLICKS, `${weapon.name} ammo ${before} -> ${frames.last!.self.ammo}, fired ${fired}`);
+  },
+  async latency() {
+    const samples: number[] = [];
+    let misses = 0;
+    await js(`window.maxCorrection = 0; (function watch() { maxCorrection = Math.max(maxCorrection, skirmishDev.drawnSelf().correction); requestAnimationFrame(watch); })(); 0`);
+    for (let i = 0; i < 10; i++) {
+      await ensureAlive();
+      const [code, k] = i % 2 === 0 ? ['KeyA', 'a'] : ['KeyD', 'd'];
+      await js(`window.probe = new Promise((res) => addEventListener('keydown', (e) => {
+        const t0 = e.timeStamp, x0 = skirmishDev.drawnSelf().x;
+        const poll = () => {
+          const d = skirmishDev.drawnSelf();
+          if (d.at >= t0 && Math.abs(d.x - x0) > 0.5) res(d.at - t0);
+          else if (performance.now() - t0 > 2000) res(null);
+          else requestAnimationFrame(poll);
+        };
+        requestAnimationFrame(poll);
+      }, { once: true, capture: true })); 0`);
+      await key(code, k, 250);
+      const ms = await js('window.probe');
+      if (typeof ms === 'number') samples.push(ms); else misses++;
+      await sleep(500);
+    }
+    const inOrder = samples.map((s) => s.toFixed(0)).join(",");
+    samples.sort((a, b) => a - b);
+    const median = samples[Math.floor(samples.length / 2)] ?? NaN;
+    const p95 = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))] ?? NaN;
+    const gaps = frames.snapAt.slice(1).map((t, i) => t - frames.snapAt[i]!).sort((a, b) => a - b);
+    log(`info snapshot arrival gaps at the page: median ${gaps[gaps.length >> 1]!.toFixed(0)}ms p95 ${gaps[Math.floor(gaps.length * 0.95)]!.toFixed(0)}ms max ${gaps[gaps.length - 1]!.toFixed(0)}ms over ${gaps.length}`);
+    log(`info largest misprediction being smoothed while moving: ${Number(await js('maxCorrection')).toFixed(1)}px`);
+    // Prediction draws own movement from the next input sample, so the bound holds at any LAG.
+    expect('own movement drawn within 50ms of keydown (median)', median <= 50 && samples.length >= 5,
+      `median ${median.toFixed(0)}ms p95 ${p95.toFixed(0)}ms n=${samples.length} misses=${misses} lag=${process.env.LAG ?? 0} jitter=${process.env.JITTER ?? 0} samples in order=${inOrder}`);
   },
   async chat() {
     const text = `hello ${Date.now()}`;

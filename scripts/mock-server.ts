@@ -214,7 +214,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     out({
       t: 'snap', tick: w.tick, ackSeq,
       self: {
-        id: myId, ammo: me.ammo, mag: weapon.mag, reloading: me.reloadUntil > 0, perks: { ...perks }, pendingTier,
+        id: myId, ammo: me.ammo, mag: weapon.mag, speed: WORLD.baseSpeed * weapon.moveMul, reloading: me.reloadUntil > 0, perks: { ...perks }, pendingTier,
         ability, abilityReadyIn: Math.max(0, me.abilityAt - now), respawnIn: me.alive ? 0 : Math.max(0, me.respawnAt - now),
         kills: me.kills, deaths: me.deaths, viewRadius: perks[1] === 'optics' ? 1100 : WORLD.viewRadius,
       },

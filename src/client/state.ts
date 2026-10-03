@@ -1,6 +1,7 @@
 import type { DamageKind, Team, WallView } from '../shared/protocol.ts';
 import type { Feedback } from './feedback.ts';
-import type { SnapPair } from './interp.ts';
+import type { SnapBuffer } from './interp.ts';
+import type { Prediction } from './predict.ts';
 
 export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; born: number }
@@ -19,8 +20,11 @@ export type Session = {
   myId: number;
   worldSize: number;
   walls: WallView[];
-  snaps: SnapPair;
+  snaps: SnapBuffer;
   seq: number;
+  /** Trigger presses latched per mousedown; sent whole every input so presses between samples are never lost. */
+  shots: number;
+  predict: Prediction;
   lastSelf: { x: number; y: number };
   effects: Effect[];
   feedback: Feedback;

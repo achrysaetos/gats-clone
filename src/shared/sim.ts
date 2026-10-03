@@ -21,7 +21,8 @@ export type Life =
     lastDamageAt: number;
     lastMoveAt: number;
     dashUntil: number;
-    triggerHeld: boolean;
+    /** A trigger press not yet turned into a shot stays honored until this time, so it survives a cooldown ending a tick late. */
+    pressUntil: number;
   }
   | { k: 'dead'; respawnAt: number };
 
@@ -35,6 +36,8 @@ export type Player = {
   angle: number;
   input: InputState;
   seq: number;
+  /** Highest `input.shots` already counted. */
+  shotsSeen: number;
   life: Life;
   score: number;
   level: number;
@@ -87,7 +90,7 @@ export type World = {
 };
 
 export const IDLE_INPUT: InputState = {
-  up: false, down: false, left: false, right: false, angle: 0, fire: false, reload: false, ability: false, aimDist: 0,
+  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0,
 };
 
 const REVEAL_MS = 2000;
@@ -104,6 +107,7 @@ const ZONE_POINTS_PER_SEC = 5;
 const SHIELD_BLOCK = 0.6;
 const SHIELD_ARC = Math.PI / 3;
 const GAS_RADIUS = 140;
+const PRESS_GRACE_MS = 100;
 
 export function rand(w: World): number {
   // mulberry32
@@ -332,7 +336,7 @@ function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, dashUntil: 0, triggerHeld: false,
+    lastDamageAt: -Infinity, lastMoveAt: now, dashUntil: 0, pressUntil: -Infinity,
   };
 }
 
@@ -340,7 +344,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
     id: newId(w), name, loadout, team, x: 0, y: 0, angle: 0,
-    input: IDLE_INPUT, seq: 0, life: { k: 'dead', respawnAt: 0 },
+    input: IDLE_INPUT, seq: 0, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
@@ -499,10 +503,11 @@ export function segRect(px: number, py: number, dx: number, dy: number, r: Rect)
   return t0;
 }
 
-function moveCircle(w: World, p: Player, nx: number, ny: number) {
+/** Where a player-sized circle aiming for (nx, ny) ends up after being pushed out of every solid and the world edge. */
+export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): { x: number; y: number } {
   const r = WORLD.playerRadius;
   let x = clamp(nx, r, WORLD.size - r), y = clamp(ny, r, WORLD.size - r);
-  for (const b of solidRects(w)) {
+  for (const b of solids) {
     const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
     const d2 = dist2(x, y, cx, cy);
     if (d2 >= r * r) continue;
@@ -518,8 +523,18 @@ function moveCircle(w: World, p: Player, nx: number, ny: number) {
       y = best[1];
     }
   }
-  p.x = clamp(x, r, WORLD.size - r);
-  p.y = clamp(y, r, WORLD.size - r);
+  return { x: clamp(x, r, WORLD.size - r), y: clamp(y, r, WORLD.size - r) };
+}
+
+type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
+
+/** One movement step. The server moves every player with it and the client predicts its own player with it, so both agree. */
+export function moveStep(solids: readonly Rect[], x: number, y: number, keys: MoveKeys, speed: number, dtMs: number): { x: number; y: number } {
+  const mx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const my = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+  if (mx === 0 && my === 0) return { x, y };
+  const d = (speed * dtMs) / 1000 / Math.hypot(mx, my);
+  return resolveCircle(solids, x + mx * d, y + my * d);
 }
 
 
@@ -545,7 +560,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => void> = {
     w.thrown.push({ id: newId(w), kind: 'landMine', owner: p.id, x: p.x, y: p.y, armedAt: w.now + 600, expiresAt: w.now + 60000 });
   },
   knife: (w, p) => {
-    moveCircle(w, p, p.x + Math.cos(p.angle) * 90, p.y + Math.sin(p.angle) * 90);
+    Object.assign(p, resolveCircle(solidRects(w), p.x + Math.cos(p.angle) * 90, p.y + Math.sin(p.angle) * 90));
     const reach = 70;
     for (const v of w.players.values()) {
       if (v.life.k !== 'alive' || !isEnemy(p, v)) continue;
@@ -620,20 +635,21 @@ function tickThrown(w: World, dt: number) {
 
 
 function tickPlayer(w: World, p: Player, dtMs: number) {
+  // Counted even while dead so presses made on the death screen do not fire on respawn.
+  const pressed = p.input.shots > p.shotsSeen;
+  p.shotsSeen = Math.max(p.shotsSeen, p.input.shots);
   const life = p.life;
   if (life.k !== 'alive') return;
+  if (pressed) life.pressUntil = w.now + PRESS_GRACE_MS;
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
-  const mx = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
-  const my = (inp.down ? 1 : 0) - (inp.up ? 1 : 0);
-  const moving = mx !== 0 || my !== 0;
+  const moving = inp.right !== inp.left || inp.down !== inp.up;
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p, !moving);
   if (moving) {
-    const len = Math.hypot(mx, my);
     const speed = stats.speed * (w.now < life.dashUntil ? DASH_MUL : 1);
-    moveCircle(w, p, p.x + (mx / len) * speed * dt, p.y + (my / len) * speed * dt);
+    Object.assign(p, moveStep(solidRects(w), p.x, p.y, inp, speed, dtMs));
   }
 
   if (life.reloadUntil !== null && w.now >= life.reloadUntil) { life.ammo = stats.mag; life.reloadUntil = null; }
@@ -642,8 +658,9 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const weapon = WEAPONS[p.loadout.weapon];
-  const canTrigger = weapon.auto || !life.triggerHeld;
-  if (inp.fire && canTrigger && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
+  const wantsShot = w.now <= life.pressUntil || (weapon.auto && inp.fire);
+  if (wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
+    life.pressUntil = -Infinity;
     life.ammo--;
     life.nextFireAt = w.now + weapon.fireMs;
     const muzzle = WORLD.playerRadius + 4;
@@ -658,7 +675,6 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id });
   }
-  life.triggerHeld = inp.fire;
 
   const ability = abilityOf(p);
   if (inp.ability && ability && w.now >= p.abilityReadyAt) {
@@ -769,6 +785,7 @@ function selfView(w: World, p: Player): SelfView {
     id: p.id,
     ammo: life.k === 'alive' ? life.ammo : 0,
     mag: stats.mag,
+    speed: stats.speed,
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     perks: { ...p.perks },
     pendingTier: pendingTier(p),

@@ -32,6 +32,7 @@ At 100, 300 and 600 points you pick an attachment, then a survival perk, then an
 
 - `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
 - `src/shared/protocol.ts` defines the wire messages and parses client input.
+- `src/shared/wire.ts` encodes snapshots per connection: it rounds numbers and omits crates, leaderboard, zones and match while they are unchanged. The client rebuilds full snapshots from the last one it received.
 - `src/shared/sim.ts` is the deterministic game simulation.
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
 - `src/client/` contains the browser client.
@@ -45,7 +46,7 @@ node scripts/mock-server.ts 8787
 node scripts/drive.ts http://localhost:8787 ./shots
 ```
 
-Run the mock server in its own terminal. `npm test` runs the simulation, protocol, client and end-to-end server tests. `drive.ts` drives headless Chrome through the menu, login, perks, chat, death and respawn. Set `CHROME` if Chrome is not at the default macOS path.
+Run the mock server in its own terminal. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field. `npm test` runs the simulation, protocol, client and end-to-end server tests. `drive.ts` drives headless Chrome through the menu, login, perks, chat, death and respawn. Set `CHROME` if Chrome is not at the default macOS path.
 
 ## Deploy
 

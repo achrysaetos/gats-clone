@@ -1,7 +1,9 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EMPTY_PAIR, interpolateSnap, lerpAngle, pushSnap, renderAlpha } from '../src/client/interp.ts';
+import {
+  EMPTY_BUFFER, INTERP_DELAY_MS, lerpAngle, MAX_EXTRAPOLATE_MS, newestSnap, pushSnap, renderTime, sampleAt, TICK_MS, type SnapBuffer,
+} from '../src/client/interp.ts';
 import type { PlayerView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, x: number, y: number, angle = 0): PlayerView => ({
@@ -11,60 +13,126 @@ const player = (id: number, x: number, y: number, angle = 0): PlayerView => ({
 
 const snap = (tick: number, players: PlayerView[]): Snapshot => ({
   t: 'snap', tick, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, reloading: false, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900 },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900 },
   players, bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: [],
 });
 
-const twoSnaps = (a: PlayerView[], b: PlayerView[]) => pushSnap(pushSnap(EMPTY_PAIR, snap(1, a), 1000), snap(2, b), 1033);
+/** Player 2 walks right 10px per tick. */
+const walking = (tick: number) => snap(tick, [player(1, 0, 0), player(2, tick * 10, 0)]);
+const xOf = (s: Snapshot | null, id = 2) => s?.players.find((p) => p.id === id)?.x;
+const drawnAt = (buf: SnapBuffer, now: number) => sampleAt(buf.snaps, renderTime(buf, now));
 
-test('keeps only the last two snapshots', () => {
-  const pair = pushSnap(twoSnaps([], []), snap(3, []), 1066);
-  assert.equal(pair.prev?.snap.tick, 2);
-  assert.equal(pair.next?.snap.tick, 3);
+// Defect: others drawn at the newest snapshot, so any late packet freezes them.
+test('others are drawn three ticks behind the server clock', () => {
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
+  assert.equal(INTERP_DELAY_MS, 3 * TICK_MS);
+  const x = xOf(drawnAt(buf, 10 * TICK_MS))!;
+  assert.ok(Math.abs(x - 70) < 1e-9, `drawn at tick 7 (x=${x})`);
+  const half = xOf(drawnAt(buf, 10.5 * TICK_MS))!;
+  assert.ok(Math.abs(half - 75) < 1e-9, `interpolates between ticks (x=${half})`);
 });
 
-test('draws the newest snapshot as-is until a second arrives', () => {
-  const pair = pushSnap(EMPTY_PAIR, snap(1, [player(1, 10, 20)]), 1000);
-  assert.deepEqual(interpolateSnap(pair, 5000)?.players[0], player(1, 10, 20));
-  assert.equal(interpolateSnap(EMPTY_PAIR, 0), null);
+// Defect: a late burst freezes others, then snaps them forward or backward when it lands.
+test('a 191ms arrival gap never moves anyone backward or jumps them forward', () => {
+  // In order like TCP: tick 20 lands 191ms after tick 19 and the ticks queued behind it land with it.
+  const arrivals: { at: number; tick: number }[] = [];
+  for (let tick = 1; tick <= 60; tick++) arrivals.push({ tick, at: Math.max(tick * TICK_MS + 10, tick >= 20 ? 19 * TICK_MS + 10 + 191 : 0) });
+  let buf = EMPTY_BUFFER;
+  const xs: number[] = [];
+  for (let now = 0; now <= 60 * TICK_MS; now += 16) {
+    for (const a of arrivals) if (a.at <= now && a.at > now - 16) buf = pushSnap(buf, walking(a.tick), a.at);
+    if (now > 10 * TICK_MS) xs.push(xOf(drawnAt(buf, now))!);
+  }
+  const perFrame = (10 / TICK_MS) * 16;
+  for (let i = 1; i < xs.length; i++) {
+    const step = xs[i]! - xs[i - 1]!;
+    assert.ok(step > 0, `frame ${i} ${step < 0 ? `moved backward by ${-step}` : 'froze'}`);
+    assert.ok(step <= perFrame * 2.5, `frame ${i} jumped ${step.toFixed(1)}px (normal ${perFrame.toFixed(1)})`);
+  }
 });
 
-test('renders one arrival interval behind, walking prev -> next and holding at next', () => {
-  const pair = twoSnaps([player(1, 0, 0)], [player(1, 100, 50)]);
-  assert.equal(interpolateSnap(pair, 1033)?.players[0]?.x, 0);
-  const mid = interpolateSnap(pair, 1033 + 16.5)!.players[0]!;
-  assert.ok(Math.abs(mid.x - 50) < 1e-9 && Math.abs(mid.y - 25) < 1e-9, `midpoint was ${mid.x},${mid.y}`);
-  assert.equal(interpolateSnap(pair, 9999)?.players[0]?.x, 100);
-  assert.equal(renderAlpha(pair, 0), 0);
+// Defect: the render clock chases every packet's arrival time, so jitter makes others speed up and stall.
+test('under 0-40ms jitter with occasional 150ms stalls others move at a steady speed', () => {
+  let seed = 7;
+  const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const arrivals: number[] = [];
+  for (let tick = 1, prev = 0; tick <= 600; tick++) {
+    prev = Math.max(prev, tick * TICK_MS + 10 + (rand() < 0.03 ? 150 : rand() * 40));
+    arrivals[tick] = prev;
+  }
+  let buf = EMPTY_BUFFER, next = 1, last = 0;
+  const perFrame = (10 / TICK_MS) * 16;
+  for (let now = 0; now <= 600 * TICK_MS; now += 16) {
+    while (next <= 600 && arrivals[next]! <= now) { buf = pushSnap(buf, walking(next), arrivals[next]!); next++; }
+    const x = xOf(drawnAt(buf, now))!;
+    if (now > 1000) {
+      const speed = (x - last) / perFrame;
+      assert.ok(speed > 0.8 && speed < 1.2, `at ${now}ms others moved at ${speed.toFixed(2)}x their real speed`);
+    }
+    last = x;
+  }
 });
+
+// Defect: a burst after a long stall drags the render clock backward, replaying motion in reverse.
+test('a burst after a one second stall never draws anyone backward', () => {
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 19; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
+  let last = xOf(drawnAt(buf, 19 * TICK_MS))!;
+  for (let now = 19 * TICK_MS; now < 19 * TICK_MS + 1500; now += 16) {
+    if (now >= 19 * TICK_MS + 1000 && newestSnap(buf)!.tick === 19) {
+      for (let tick = 20; tick <= 50; tick++) buf = pushSnap(buf, walking(tick), now);
+    }
+    const x = xOf(drawnAt(buf, now))!;
+    assert.ok(x >= last, `moved backward ${last} -> ${x} at ${now.toFixed(0)}ms`);
+    last = x;
+  }
+});
+
+// Defect: with the buffer dry, entities freeze at once (then snap) or slide on forever.
+test('when snapshots stop, others extrapolate for at most 100ms and then hold', () => {
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
+  const shortly = xOf(drawnAt(buf, 10 * TICK_MS + INTERP_DELAY_MS + 50))!;
+  assert.ok(Math.abs(shortly - (100 + (50 / TICK_MS) * 10)) < 1e-9, `still moving 50ms past the newest (x=${shortly})`);
+  const later = xOf(drawnAt(buf, 10 * TICK_MS + 5000))!;
+  assert.ok(Math.abs(later - (100 + (MAX_EXTRAPOLATE_MS / TICK_MS) * 10)) < 1e-9, `held after 100ms (x=${later})`);
+});
+
+// Defect: the local player's own hp, alive flag and position lag 100ms behind like everyone else.
+test('the local player comes from the newest snapshot', () => {
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, snap(tick, [player(1, tick, 0), player(2, 0, 0)]), tick * TICK_MS);
+  assert.equal(xOf(drawnAt(buf, 10 * TICK_MS), 1), 10);
+});
+
+test('out-of-order and duplicate snapshots are ignored', () => {
+  let buf = pushSnap(pushSnap(EMPTY_BUFFER, walking(5), 0), walking(6), 33);
+  buf = pushSnap(pushSnap(buf, walking(4), 40), walking(6), 41);
+  assert.deepEqual(buf.snaps.map((s) => s.tick), [5, 6]);
+  assert.equal(newestSnap(buf)?.tick, 6);
+  assert.equal(sampleAt([], 0), null);
+});
+
+const between = (a: PlayerView[], b: PlayerView[]) => sampleAt([snap(1, a), snap(2, b)], 1.5 * TICK_MS)!;
 
 test('matches entities by id, not by array position', () => {
-  const pair = twoSnaps([player(1, 0, 0), player(2, 200, 0)], [player(2, 220, 0), player(1, 20, 0)]);
-  const [a, b] = interpolateSnap(pair, 1033 + 16.5)!.players;
-  assert.equal(a?.id, 2);
-  assert.ok(Math.abs(a!.x - 210) < 1e-9);
-  assert.ok(Math.abs(b!.x - 10) < 1e-9);
+  const [a, b] = between([player(1, 0, 0), player(2, 200, 0), player(3, 0, 0)], [player(3, 20, 0), player(2, 220, 0)]).players;
+  assert.equal(a?.id, 3);
+  assert.ok(Math.abs(a!.x - 10) < 1e-9);
+  assert.ok(Math.abs(b!.x - 210) < 1e-9);
 });
 
-test('new entities and teleports snap to their latest position', () => {
-  const pair = twoSnaps([player(1, 0, 0)], [player(1, 2000, 0), player(3, 5, 5)]);
-  const [respawned, joined] = interpolateSnap(pair, 1033 + 16.5)!.players;
-  assert.equal(respawned?.x, 2000);
-  assert.equal(joined?.x, 5);
-});
-
-test('players that left are dropped', () => {
-  const pair = twoSnaps([player(1, 0, 0), player(2, 0, 0)], [player(1, 0, 0)]);
-  assert.deepEqual(interpolateSnap(pair, 1040)!.players.map((p) => p.id), [1]);
+test('new entities and teleports snap to their latest position; players that left are dropped', () => {
+  const players = between([player(2, 0, 0), player(4, 0, 0)], [player(2, 2000, 0), player(3, 5, 5)]).players;
+  assert.deepEqual(players.map((p) => [p.id, p.x]), [[2, 2000], [3, 5]]);
 });
 
 test('angles turn the short way across the wrap', () => {
   const a = Math.PI - 0.1;
   const b = -Math.PI + 0.1;
-  const half = lerpAngle(a, b, 0.5);
-  assert.ok(Math.abs(Math.abs(half) - Math.PI) < 1e-9, `expected ~pi, got ${half}`);
-  const pair = twoSnaps([player(1, 0, 0, a)], [player(1, 0, 0, b)]);
-  const p = interpolateSnap(pair, 1033 + 16.5)!.players[0]!;
+  assert.ok(Math.abs(Math.abs(lerpAngle(a, b, 0.5)) - Math.PI) < 1e-9);
+  const p = between([player(2, 0, 0, a)], [player(2, 0, 0, b)]).players[0]!;
   assert.ok(Math.abs(Math.cos(p.angle) + 1) < 1e-9, 'should face west, not swing through east');
 });

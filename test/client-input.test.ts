@@ -25,15 +25,15 @@ test('digit keys pick perk slots 0-9 with 0 as the tenth', () => {
 
 test('input carries held actions, fire, and aim angle/distance', () => {
   const held = new Set<Action>(['up', 'right', 'reload']);
-  const input = assembleInput(held, true, { dx: 0, dy: 300 });
+  const input = assembleInput(held, true, 4, { dx: 0, dy: 300 });
   assert.deepEqual(input, {
     up: true, down: false, left: false, right: true,
-    angle: Math.PI / 2, aimDist: 300, fire: true, reload: true, ability: false,
+    angle: Math.PI / 2, aimDist: 300, fire: true, shots: 4, reload: true, ability: false,
   });
 });
 
 test('assembled input survives the server parser unchanged, even with far aim', () => {
-  const input = assembleInput(new Set<Action>(['ability']), false, { dx: -5000, dy: 0 });
+  const input = assembleInput(new Set<Action>(['ability']), false, 0, { dx: -5000, dy: 0 });
   assert.equal(input.aimDist, MAX_AIM_DIST);
   const parsed = parseClientMsg(JSON.stringify({ t: 'input', seq: 7, input }));
   assert.deepEqual(parsed, { t: 'input', seq: 7, input });

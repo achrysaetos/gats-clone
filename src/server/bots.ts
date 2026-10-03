@@ -6,6 +6,7 @@ export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
   strafe: 1 | -1;
   seen: { id: number; x: number; y: number } | null;
+  shots: number;
 };
 
 export type BotDecision = { input: InputState; perk: { tier: Tier; perk: PerkId } | null; mem: BotMemory };
@@ -13,7 +14,7 @@ export type BotDecision = { input: InputState; perk: { tier: Tier; perk: PerkId 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
 export function newBotMemory(rand: () => number): BotMemory {
-  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, strafe: rand() < 0.5 ? 1 : -1, seen: null };
+  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, strafe: rand() < 0.5 ? 1 : -1, seen: null, shots: 0 };
 }
 
 export function randomLoadout(rand: () => number): Loadout {
@@ -26,7 +27,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   const tier = snap.self.pendingTier;
   const perk = tier ? { tier, perk: pick<PerkId>(PERK_TIERS[tier], rand) } : null;
   if (!me || !me.alive) {
-    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, reload: false, ability: false, aimDist: 0 }, perk, mem };
+    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0 }, perk, mem };
   }
 
   let next = { ...mem };
@@ -58,8 +59,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     const aimX = enemy.x + vel.x * flightTicks, aimY = enemy.y + vel.y * flightTicks;
     angle = Math.atan2(aimY - me.y, aimX - me.x) + (rand() - 0.5) * 0.12;
     aimDist = d;
-    // Semi-auto weapons need trigger releases, so alternate.
-    fire = d < range * 0.95 && (weapon.auto || snap.tick % 2 === 0);
+    fire = d < range * 0.95;
     ability = snap.self.ability !== null && d < 350 && rand() < 0.05;
     if (d > range * 0.6) {
       goX = enemy.x; goY = enemy.y;
@@ -69,11 +69,13 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     }
   }
   next.seen = enemy ? { id: enemy.id, x: enemy.x, y: enemy.y } : null;
+  // One press per tick while the bot wants to shoot; the sim's fire-rate gate paces semi-auto weapons.
+  if (fire) next.shots++;
   const mx = goX - me.x, my = goY - me.y;
   const dead = 30;
   const input: InputState = {
     up: my < -dead, down: my > dead, left: mx < -dead, right: mx > dead,
-    angle, fire, reload: !enemy && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
+    angle, fire, shots: next.shots, reload: !enemy && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
   };
   return { input, perk, mem: next };
 }

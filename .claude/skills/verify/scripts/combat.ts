@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { segRect, type Rect } from '../../../../src/shared/sim.ts';
+import { fillSnapshot } from '../../../../src/shared/wire.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node combat.ts <run-dir> [room ...]'); process.exit(2); }
@@ -56,12 +57,13 @@ page.on('message', (raw) => {
   const m = JSON.parse(String(raw));
   if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
   // A page left by navigation can linger in the back/forward cache with its socket open; only the newest socket counts.
-  if (m.method === 'Network.webSocketCreated') socketId = m.params.requestId;
+  if (m.method === 'Network.webSocketCreated') { socketId = m.params.requestId; frames.last = null; }
   else if (m.method === 'Network.webSocketFrameReceived' && m.params.requestId === socketId) {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
     if (msg.t === 'snap') {
-      frames.last = msg;
+      // Unchanged crates, leaderboard, zones and match are omitted after the first snapshot; refill them like the client does.
+      frames.last = (fillSnapshot(msg, frames.last as never) as never) ?? frames.last;
       for (const e of msg.events) if (e.e === 'dmg') frames.dmg.push({ ...e, at: Date.now() });
     }
   } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);

@@ -10,7 +10,7 @@ const PISTOL_DMG = WEAPONS.pistol.damage;
 /** One trigger pull along +x, then `ms` of flight, returning every event the world emitted. */
 function fireAndCollect(w: World, shooter: ReturnType<typeof spawnAt>, ms = 500): GameEvent[] {
   const events: GameEvent[] = [];
-  press(w, shooter, { angle: 0, fire: true });
+  press(w, shooter, { angle: 0, fire: true, shots: shooter.input.shots + 1 });
   step(w, TICK_MS);
   events.push(...w.events);
   press(w, shooter, { angle: 0 });
@@ -86,7 +86,7 @@ test('a shot a teammate shrugs off emits no dmg event', () => {
 test('shot events carry the aim angle', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  press(w, a, { angle: 1.25, fire: true });
+  press(w, a, { angle: 1.25, fire: true, shots: a.input.shots + 1 });
   step(w, TICK_MS);
   assert.deepEqual(w.events.filter((e) => e.e === 'shot').map((e) => e.e === 'shot' && e.angle), [1.25]);
 });

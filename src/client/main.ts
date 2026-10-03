@@ -1,5 +1,6 @@
 import { PERK_TIERS, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
+import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
@@ -8,16 +9,19 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
-import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
+import { EMPTY_BUFFER, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
+import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
+import { decayOffset, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
 import { muzzleTip } from './sprites.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
 
-const INPUT_HZ = 30;
+// One input per server tick, so each predicted step covers exactly the time the server moves the player by it.
+const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
@@ -38,16 +42,25 @@ let view = { w: 0, h: 0, dpr: 1 };
 let camera: Camera | null = null;
 const held = new Set<Action>();
 let firing = false;
+let touchWasAiming = false;
 const mouse = { x: 0, y: 0 };
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
 let trauma = 0;
 let lastFrameAt = 0;
 
+const params = new URLSearchParams(location.search);
+const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
+const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
+/** Where the local player was last drawn, the frame time, and the misprediction still being smoothed; read by the verify driver under `?dev`. */
+let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
+if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf } });
+
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
 function send(ws: WebSocket, msg: ClientMsg) {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  const data = JSON.stringify(msg);
+  delaySend(() => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
 }
 
 function setState(next: ClientState) {
@@ -85,10 +98,10 @@ function connect(room: string) {
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
   setState({ phase: 'menu', status: { kind: 'connecting', ws } });
   ws.onopen = () => send(ws, { t: 'join', name, loadout, token: account()?.token });
-  ws.onmessage = (ev) => {
+  ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
     if (msg) onServerMsg(ws, msg);
-  };
+  });
   ws.onclose = () => {
     const ours = sessionOf(state)?.ws === ws || (state.phase === 'menu' && state.status.kind === 'connecting' && state.status.ws === ws);
     if (ours) setState({ phase: 'menu', status: { kind: 'error', message: 'Disconnected from server.' } });
@@ -116,7 +129,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       setState({
         phase: 'playing',
         s: {
-          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0,
+          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
           lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
           effects: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
         },
@@ -127,7 +140,10 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   const s = state.s;
   if (s.ws !== ws) return;
   switch (msg.t) {
-    case 'snap': return onSnap(s, msg, now);
+    case 'snap': {
+      const snap = fillSnapshot(msg, newestSnap(s.snaps));
+      return snap ? onSnap(s, snap, now) : undefined;
+    }
     case 'walls': s.walls = msg.walls; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
@@ -143,8 +159,10 @@ function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
 const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, strength: 1 }], WORLD.viewRadius);
 
 function onSnap(s: Session, snap: Snapshot, now: number) {
-  const prev = s.snaps.next?.snap ?? null;
+  const prev = newestSnap(s.snaps);
   s.snaps = pushSnap(s.snaps, snap, now);
+  const me = snap.players.find((p) => p.id === s.myId);
+  s.predict = reconcile(s.predict, me?.alive ? me : null, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.feedback = addFeedback(s.feedback, snap.events, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
@@ -185,13 +203,20 @@ setInterval(() => {
   const active = state.phase === 'playing' && !overlays.typing;
   s.seq++;
   const actions = active ? new Set([...held, ...touchMoves(sticks)]) : new Set<Action>();
-  const shooting = active && (firing || touchAim(sticks) !== null);
-  send(s.ws, { t: 'input', seq: s.seq, input: assembleInput(actions, shooting, aimOffset(s)) });
-}, 1000 / INPUT_HZ);
+  const touchAiming = active && touchAim(sticks) !== null;
+  if (touchAiming && !touchWasAiming) s.shots++;
+  touchWasAiming = touchAiming;
+  const shooting = active && (firing || touchAiming);
+  const input = assembleInput(actions, shooting, s.shots, aimOffset(s));
+  send(s.ws, { t: 'input', seq: s.seq, input });
+  const latest = newestSnap(s.snaps);
+  const solids = solidsOf(s.walls, latest?.crates ?? []);
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS }, solids, latest?.self.speed ?? 0, performance.now());
+}, INPUT_MS);
 
 function pickPerk(slot: number) {
   const s = sessionOf(state);
-  const tier = s?.snaps.next?.snap.self.pendingTier;
+  const tier = s && newestSnap(s.snaps)?.self.pendingTier;
   if (!s || !tier || s.perkSentFor === tier) return;
   const perk = PERK_TIERS[tier][slot];
   if (!perk) return;
@@ -242,14 +267,20 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 function frame(now: number) {
   requestAnimationFrame(frame);
   const s = sessionOf(state);
-  const latest = s?.snaps.next?.snap;
-  const snap = s && interpolateSnap(s.snaps, now);
-  if (!s || !snap || !latest) {
+  const latest = s && newestSnap(s.snaps);
+  const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
+  if (!s || !interpolated || !latest) {
     drawBackdrop(now);
     return;
   }
+  s.predict = decayOffset(s.predict, now - lastFrameAt);
+  const drawn = drawnPosition(s.predict, now, INPUT_MS);
+  const snap = drawn
+    ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn } : p)) }
+    : interpolated;
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
+  drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.offset.x, s.predict.offset.y) };
   camera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
@@ -327,7 +358,11 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
-canvas.addEventListener('mousedown', (e) => { if (e.button === 0) firing = true; });
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  firing = true;
+  if (state.phase === 'playing' && !overlays.typing) state.s.shots++;
+});
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('resize', resize);

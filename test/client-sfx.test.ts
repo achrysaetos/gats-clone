@@ -12,7 +12,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
   t: 'snap', tick: 1, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, reloading: false, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: o.events ?? [],
 });

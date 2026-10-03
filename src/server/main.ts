@@ -145,13 +145,27 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
   });
 
-  const timer = setInterval(() => { for (const r of rooms.values()) r.tick(); }, 1000 / WORLD.tickHz);
+  // setInterval drifts late every tick (28.8Hz measured), so game time ran slow and snapshot gaps wobbled.
+  // Ticks are instead scheduled against the wall clock, catching up when a timer fires late.
+  const TICK_MS = 1000 / WORLD.tickHz;
+  let nextTickAt = performance.now();
+  let timer: NodeJS.Timeout;
+  const loop = () => {
+    const now = performance.now();
+    if (now - nextTickAt > 250) nextTickAt = now;
+    while (now >= nextTickAt) {
+      for (const r of rooms.values()) r.tick();
+      nextTickAt += TICK_MS;
+    }
+    timer = setTimeout(loop, nextTickAt - performance.now());
+  };
+  loop();
   await new Promise<void>((done) => http.listen(opts.port, done));
 
   return {
     port: (http.address() as AddressInfo).port,
     async close() {
-      clearInterval(timer);
+      clearTimeout(timer);
       for (const r of rooms.values()) r.close();
       wss.close();
       http.closeAllConnections();

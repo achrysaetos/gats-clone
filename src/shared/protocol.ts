@@ -10,6 +10,8 @@ export type InputState = {
   up: boolean; down: boolean; left: boolean; right: boolean;
   angle: number;
   fire: boolean;
+  /** Trigger presses since the connection opened. Monotonic, so a press and release between two samples still counts. */
+  shots: number;
   reload: boolean;
   ability: boolean;
   aimDist: number;
@@ -39,6 +41,8 @@ export type ZoneView = { id: number; x: number; y: number; r: number; owner: Tea
 
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
+  /** Move speed without a dash, for predicting the local player's movement. */
+  speed: number;
   perks: Partial<Record<Tier, PerkId>>;
   pendingTier: Tier | null;
   ability: AbilityId | null; abilityReadyIn: number;
@@ -76,10 +80,15 @@ export type Snapshot = {
   events: GameEvent[];
 };
 
+/** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match'] as const;
+export type StickyKey = (typeof STICKY_KEYS)[number];
+export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
+
 export type ServerMsg =
   | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[] }
   | { t: 'walls'; walls: WallView[] }
-  | Snapshot
+  | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
   | { t: 'error'; message: string };
 
@@ -104,9 +113,13 @@ function parseInput(v: unknown): InputState | null {
   if (!isObj(v)) return null;
   const angle = num(v.angle, -10, 10);
   const aimDist = num(v.aimDist, 0, 2000);
-  if (angle === null || aimDist === null) return null;
+  const shots = num(v.shots ?? 0, 0, Number.MAX_SAFE_INTEGER);
+  if (angle === null || aimDist === null || shots === null) return null;
   const b = (k: string) => v[k] === true;
-  return { up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist, fire: b('fire'), reload: b('reload'), ability: b('ability') };
+  return {
+    up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist,
+    fire: b('fire'), shots: Math.floor(shots), reload: b('reload'), ability: b('ability'),
+  };
 }
 
 export function parseClientMsg(raw: string): ClientMsg | null {
