@@ -2,6 +2,7 @@ export const LIMITS = {
   humansPerRoom: 16,
   socketsPerIp: 8,
   joinTimeoutMs: 10_000,
+  heartbeatMs: 10_000,
   messagesPerSec: 60,
   messageBurst: 120,
   authPerMin: 10,

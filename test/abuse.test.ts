@@ -99,3 +99,26 @@ test('limits: flood, sockets per IP, full room, idle lobby, auth attempts', { ti
     await server.close();
   }
 });
+
+test('a client that stops answering pings is dropped, a healthy one stays', { timeout: 10_000 }, async () => {
+  const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-heartbeat-')), limits: { heartbeatMs: 150 } });
+  const humans = async () => ((await (await fetch(`http://localhost:${server.port}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === 'ffa')!.humans;
+  try {
+    const silent = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`, { autoPong: false });
+    silent.on('error', () => {});
+    const silentOpen = new Promise((r) => silent.once('open', r));
+    const healthy = await open(server.port);
+    await silentOpen;
+    silent.send(JOIN('Ghost')); healthy.send(JOIN('Alive'));
+    await Promise.all([nextMsg(silent, 'welcome'), nextMsg(healthy, 'welcome')]);
+    assert.equal(await humans(), 2);
+    const dropped = closed(silent);
+    await dropped;
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal(healthy.readyState, WebSocket.OPEN, 'a client answering pings survives several heartbeats');
+    assert.equal(await humans(), 1, 'the silent client no longer holds a human slot');
+    healthy.close();
+  } finally {
+    await server.close();
+  }
+});

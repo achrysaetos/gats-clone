@@ -287,7 +287,7 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async leave() {
     await cdp('Page.reload', { ignoreCache: true });
-    expect('server human count returns to baseline after the page unloads (reload)', await until(async () => (await humansIn('ffa')) === humansBefore, 6000), `baseline ${humansBefore}`);
+    expect('server human count returns to baseline after the page unloads (reload)', await until(async () => (await humansIn('ffa')) === humansBefore, REMOTE_URL ? 25_000 : 6000), `baseline ${humansBefore}`);
   },
 };
 

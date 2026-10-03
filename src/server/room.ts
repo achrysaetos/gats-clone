@@ -142,6 +142,14 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       clients.set(ws, { k: 'lobby', ws });
       const allow = makeTokenBucket(limits.messagesPerSec, limits.messageBurst);
       const joinTimer = setTimeout(() => { if (clients.get(ws)?.k === 'lobby') ws.close(1008, 'join timeout'); }, limits.joinTimeoutMs);
+      // A socket can die without a close frame (a dropped network, a proxy that lingers); unanswered pings are the only signal.
+      let answeredPing = true;
+      ws.on('pong', () => { answeredPing = true; });
+      const heartbeat = setInterval(() => {
+        if (!answeredPing) { ws.terminate(); return; }
+        answeredPing = false;
+        ws.ping();
+      }, limits.heartbeatMs);
       ws.on('message', (data, isBinary) => {
         if (!allow(Date.now())) { ws.close(1008, 'too many messages'); return; }
         const msg = isBinary ? null : parseClientMsg(data.toString());
@@ -149,7 +157,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const client = clients.get(ws);
         if (client) handle(client, msg);
       });
-      ws.on('close', () => { clearTimeout(joinTimer); disconnect(ws); });
+      ws.on('close', () => { clearTimeout(joinTimer); clearInterval(heartbeat); disconnect(ws); });
       // ws emits 'error' for protocol violations like oversized frames; unhandled, it kills the process.
       ws.on('error', () => ws.terminate());
     },
