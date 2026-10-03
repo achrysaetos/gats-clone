@@ -1,6 +1,7 @@
 import type { DamageKind, Team, WallView } from '../shared/protocol.ts';
 import type { Feedback } from './feedback.ts';
 import type { SnapBuffer } from './interp.ts';
+import type { PendingEffect } from './eventclock.ts';
 import type { Prediction } from './predict.ts';
 
 export type Effect =
@@ -27,6 +28,7 @@ export type Session = {
   predict: Prediction;
   lastSelf: { x: number; y: number };
   effects: Effect[];
+  pendingFx: PendingEffect[];
   feedback: Feedback;
   feed: FeedLine[];
   chat: ChatLine[];

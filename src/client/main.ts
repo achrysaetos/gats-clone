@@ -9,16 +9,16 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
-import { EMPTY_BUFFER, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
+import { releaseDue, scheduleEffects } from './eventclock.ts';
+import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayOffset, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf } from './predict.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
-import { muzzleTip } from './sprites.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
-import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
+import { EFFECT_LIFE_MS, type ClientState, type Effect, type Session } from './state.ts';
 
 // One input per server tick, so each predicted step covers exactly the time the server moves the player by it.
 const INPUT_MS = 1000 / WORLD.tickHz;
@@ -131,7 +131,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
         s: {
           ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
           lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
-          effects: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null,
+          effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null,
         },
       });
     }
@@ -166,19 +166,10 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.feedback = addFeedback(s.feedback, snap.events, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
-  for (const ev of snap.events) {
-    switch (ev.e) {
-      case 'impact': s.effects.push({ kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, born: now }); break;
-      case 'dmg': s.effects.push({ kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, born: now }); break;
-      case 'boom': s.effects.push({ kind: 'boom', x: ev.x, y: ev.y, r: ev.r, born: now }); break;
-      case 'shot': {
-        const weapon = snap.players.find((p) => p.id === ev.owner)?.weapon ?? 'pistol';
-        s.effects.push({ kind: 'flash', ...muzzleTip(ev.x, ev.y, ev.angle, weapon, WORLD.playerRadius), angle: ev.angle, born: now });
-        break;
-      }
-      case 'kill': s.feed = [...s.feed.slice(-9), { ...ev, at: now }]; break;
-    }
-  }
+  const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
+  for (const spec of fx.now) s.effects.push({ ...spec, born: now } as Effect);
+  s.pendingFx.push(...fx.later);
+  for (const ev of snap.events) if (ev.e === 'kill') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
 
   const dead = isDead(snap);
@@ -271,6 +262,9 @@ function frame(now: number) {
     drawBackdrop(now);
     return;
   }
+  const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
+  s.pendingFx = released.rest;
+  for (const spec of released.due) s.effects.push({ ...spec, born: now } as Effect);
   s.predict = decayOffset(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const snap = drawn
