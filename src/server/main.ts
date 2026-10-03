@@ -10,7 +10,6 @@ import { openAccounts, type Accounts } from './accounts.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 
-/** `trustProxy` keys per-IP limits on the left-most X-Forwarded-For address, for a reverse proxy that sets that header. */
 export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
 export type RunningServer = { port: number; close(): Promise<void> };
 

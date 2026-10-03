@@ -45,7 +45,6 @@ export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
 
 export const OBJECTIVE_MS = 4000;
 
-/** The objective shows for a few seconds after each spawn, but never over the round's win banner. */
 export const objectiveVisible = (phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
   phase === 'playing' && match.winner === null && msSincePlaying < OBJECTIVE_MS;
 
