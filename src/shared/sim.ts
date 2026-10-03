@@ -322,7 +322,7 @@ function spawnPoint(w: World, team: Team): { x: number; y: number } {
     const x = s * (lo + rand(w) * (hi - lo));
     const y = s * (0.05 + rand(w) * 0.9);
     if (solids.some((b) => circleHitsRect(x, y, r + 10, b))) continue;
-    const tooClose = [...w.players.values()].some((p) => p.life.k === 'alive' && p.team !== team && dist2(p.x, p.y, x, y) < 400 * 400);
+    const tooClose = [...w.players.values()].some((p) => p.life.k === 'alive' && (team === null || p.team !== team) && dist2(p.x, p.y, x, y) < 400 * 400);
     if (tooClose && i < 150) continue;
     return { x, y };
   }
