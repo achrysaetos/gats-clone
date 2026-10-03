@@ -4,7 +4,7 @@ import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { feedMentions, levelProgress, objectiveFor } from './derive.ts';
 import { HITMARKER_MS, HURT_MS } from './feedback.ts';
-import { PALETTE, TEAM_COLORS } from './render.ts';
+import { PALETTE, TEAM_COLORS } from './palette.ts';
 import type { Session } from './state.ts';
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';

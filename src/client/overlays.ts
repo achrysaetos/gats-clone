@@ -3,7 +3,7 @@ import type { Snapshot } from '../shared/protocol.ts';
 import { OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
-import { TEAM_COLORS } from './render.ts';
+import { TEAM_COLORS } from './palette.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 
 const CHAT_VISIBLE_MS = 15000;
