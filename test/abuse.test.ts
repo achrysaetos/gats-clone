@@ -48,11 +48,11 @@ test('X-Forwarded-For keys the per-IP socket cap only when the proxy is trusted'
   const trusted = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-proxy-on-')), limits, trustProxy: true });
   try {
     const distinct = [];
-    for (const ip of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) distinct.push(await upgradeStatus(trusted.port, `${ip}, 10.0.0.1`));
+    for (const ip of ['198.51.100.1', '198.51.100.2', '198.51.100.3']) distinct.push(await upgradeStatus(trusted.port, ip));
     assert.deepEqual(distinct, [101, 101, 101], 'players behind one proxy each get their own cap');
-    const same = [];
-    for (let i = 0; i < 3; i++) same.push(await upgradeStatus(trusted.port, `198.51.100.9, 10.0.0.${i}`));
-    assert.deepEqual(same, [101, 101, 429], 'the left-most address is the key');
+    const spoofed = [];
+    for (let i = 0; i < 3; i++) spoofed.push(await upgradeStatus(trusted.port, `6.6.6.${i}, 198.51.100.9`));
+    assert.deepEqual(spoofed, [101, 101, 429], 'the address the proxy appended is the key, so a client-supplied value cannot dodge the cap');
   } finally {
     await trusted.close();
   }

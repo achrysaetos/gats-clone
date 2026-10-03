@@ -83,10 +83,11 @@ type AuthLimiter = (key: string, now: number) => boolean;
 type IpOf = (req: IncomingMessage) => string;
 
 const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
+// Clients can send their own X-Forwarded-For; the one trusted proxy appends the address it saw, so only the last entry is real.
 const forwardedIp: IpOf = (req) => {
   const header = req.headers['x-forwarded-for'];
-  const first = (Array.isArray(header) ? header[0] : header)?.split(',')[0]?.trim();
-  return first || socketIp(req);
+  const last = (Array.isArray(header) ? header.at(-1) : header)?.split(',').at(-1)?.trim();
+  return last || socketIp(req);
 };
 
 async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, ipOf: IpOf) {

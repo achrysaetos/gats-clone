@@ -63,7 +63,7 @@ docker build -t skirmish .
 docker run -p 8080:8080 -v skirmish-data:/data skirmish
 ```
 
-The server limits WebSocket connections and login attempts per IP address. Behind a reverse proxy every player arrives from the proxy's address, so they all share one limit. Set `TRUST_PROXY=1` to key the limits on the left-most `X-Forwarded-For` address instead. Enable it only when a proxy you run sets that header, because clients can send any `X-Forwarded-For` value they like.
+The server limits WebSocket connections and login attempts per IP address. Behind a reverse proxy every player arrives from the proxy's address, so they all share one limit. Set `TRUST_PROXY=1` to key the limits on the last `X-Forwarded-For` address instead, which is the one your proxy appends. Enable it only when exactly one proxy you control sits in front of the server, because clients can put any value they like at the front of that header.
 
 ```bash
 docker run -p 8080:8080 -e TRUST_PROXY=1 -v skirmish-data:/data skirmish

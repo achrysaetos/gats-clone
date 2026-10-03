@@ -16,5 +16,5 @@ RUN mkdir /data && chown node /data
 USER node
 VOLUME /data
 EXPOSE 8080
-HEALTHCHECK CMD wget -qO- http://localhost:8080/api/servers >/dev/null || exit 1
+HEALTHCHECK CMD wget -qO- http://localhost:8080/healthz >/dev/null || exit 1
 CMD ["node", "--experimental-strip-types", "src/server/main.ts"]
