@@ -188,6 +188,7 @@ const STEPS: Record<string, () => Promise<void>> = {
       if (typeof ms === 'number') samples.push(ms); else misses++;
       await sleep(500);
     }
+    const inOrder = samples.map((s) => s.toFixed(0)).join(",");
     samples.sort((a, b) => a - b);
     const median = samples[Math.floor(samples.length / 2)] ?? NaN;
     const p95 = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))] ?? NaN;
@@ -196,7 +197,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     log(`info largest misprediction being smoothed while moving: ${Number(await js('maxCorrection')).toFixed(1)}px`);
     // Prediction draws own movement from the next input sample, so the bound holds at any LAG.
     expect('own movement drawn within 50ms of keydown (median)', median <= 50 && samples.length >= 5,
-      `median ${median.toFixed(0)}ms p95 ${p95.toFixed(0)}ms n=${samples.length} misses=${misses} lag=${process.env.LAG ?? 0} jitter=${process.env.JITTER ?? 0}`);
+      `median ${median.toFixed(0)}ms p95 ${p95.toFixed(0)}ms n=${samples.length} misses=${misses} lag=${process.env.LAG ?? 0} jitter=${process.env.JITTER ?? 0} samples in order=${inOrder}`);
   },
   async chat() {
     const text = `hello ${Date.now()}`;
