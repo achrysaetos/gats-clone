@@ -124,4 +124,11 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
   const server = await startServer({ port, dataDir });
   console.log(`Skirmish listening on http://localhost:${server.port}`);
+  const shutdown = async (signal: string) => {
+    console.log(`${signal}: saving and shutting down`);
+    await server.close();
+    process.exit(0);
+  };
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 }

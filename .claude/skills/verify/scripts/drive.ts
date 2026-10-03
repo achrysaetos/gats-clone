@@ -3,7 +3,7 @@
 // Drives the real client in headless Chrome over CDP against the server launch.sh started, reads the page's own
 // WebSocket frames as wire evidence, and cross-checks from an independent observer client in the same room.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +17,7 @@ const PORT = readFileSync(join(RUN, 'port'), 'utf8').trim();
 const BASE = `http://localhost:${PORT}`;
 const EV = join(RUN, 'evidence');
 const LOG = join(EV, 'drive.log');
+mkdirSync(EV, { recursive: true });
 const NAME = `Verifier${Math.floor(Math.random() * 1e4)}`;
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

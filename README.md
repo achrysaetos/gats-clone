@@ -45,3 +45,12 @@ node scripts/drive.ts http://localhost:8787 ./shots
 ```
 
 Run the mock server in its own terminal. `npm test` runs the simulation, protocol, client and end-to-end server tests. `drive.ts` drives headless Chrome through the menu, login, perks, chat, death and respawn. Set `CHROME` if Chrome is not at the default macOS path.
+
+## Deploy
+
+The `Dockerfile` builds the client, drops dev dependencies, and runs the server as a non-root user on port 8080. Mount a volume at `/data` to keep accounts. The server saves and exits cleanly on SIGTERM.
+
+```bash
+docker build -t skirmish .
+docker run -p 8080:8080 -v skirmish-data:/data skirmish
+```
