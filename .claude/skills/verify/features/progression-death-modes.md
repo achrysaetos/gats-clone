@@ -1,6 +1,6 @@
 # Progression, death and modes
 
-Score unlocks perk choices at 100, 300 and 600 points: an attachment, then a survival perk, then an ability on Space. Dying shows the killer, a respawn countdown and a loadout re-pick. TDM and DOM add team scores and a winner banner.
+Score unlocks perk choices at 100, 250 and 450 points: an attachment, then a survival perk, then an ability on Space. Dying shows the killer, a respawn countdown and a loadout re-pick. TDM and DOM add team scores and a winner banner.
 
 ## Sub-features
 

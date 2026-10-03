@@ -26,7 +26,7 @@ Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. B
 | Enter | Chat |
 | M | Mute sound |
 
-At 100, 300 and 600 points you pick an attachment, then a survival perk, then an ability.
+At 100, 250 and 450 points you pick an attachment, then a survival perk, then an ability.
 
 ## Layout
 

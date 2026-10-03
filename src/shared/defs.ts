@@ -76,7 +76,7 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
   grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 1500, engineer: 10000, dash: 3500,
 };
 
-export const LEVEL_SCORES = [0, 100, 300, 600] as const;
+export const LEVEL_SCORES = [0, 100, 250, 450] as const;
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
