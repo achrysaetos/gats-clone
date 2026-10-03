@@ -51,7 +51,11 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         cues.push({ id: ev.silenced ? 'shot:silenced' : `shot:${weapon}`, x: ev.x, y: ev.y, self: ev.owner === next.self.id, strength: 1 });
         break;
       }
-      case 'hit': cues.push({ id: 'hit', x: ev.x, y: ev.y, self: false, strength: 1 }); break;
+      case 'dmg': {
+        const iHitSomeone = ev.kind === 'player' && ev.attacker === next.self.id && ev.victim !== next.self.id;
+        if (iHitSomeone && !cues.some((c) => c.id === 'hit')) mine('hit');
+        break;
+      }
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, strength: 1 }); break;
       case 'kill': if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine('kill'); break;
     }

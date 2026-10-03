@@ -47,6 +47,11 @@ export function drawGun(ctx: CanvasRenderingContext2D, weapon: WeaponId, radius:
   }
 }
 
+export function muzzleTip(x: number, y: number, angle: number, weapon: WeaponId, radius: number) {
+  const reach = Math.max(...GUN_PARTS[weapon].map((p) => p.x + p.w)) * radius;
+  return { x: x + Math.cos(angle) * reach, y: y + Math.sin(angle) * reach };
+}
+
 const ALL_PARTS = Object.values(GUN_PARTS).flat();
 const bounds = (parts: readonly Part[]) => ({
   minX: Math.min(...parts.map((p) => p.x)),

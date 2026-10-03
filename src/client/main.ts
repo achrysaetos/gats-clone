@@ -3,7 +3,8 @@ import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot 
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { isDead, killerOf } from './derive.ts';
+import { isDead, killerOf, selfOf } from './derive.ts';
+import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
@@ -11,6 +12,7 @@ import { EMPTY_PAIR, interpolateSnap, pushSnap } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
 import { createOverlays } from './overlays.ts';
 import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
+import { muzzleTip } from './sprites.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
@@ -116,7 +118,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
         s: {
           ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_PAIR, seq: 0,
           lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
-          effects: [], feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
+          effects: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), reloadStartedAt: null, perkSentFor: null,
         },
       });
     }
@@ -145,11 +147,17 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
+  s.feedback = addFeedback(s.feedback, snap.events, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   for (const ev of snap.events) {
     switch (ev.e) {
-      case 'hit': s.effects.push({ kind: 'hit', x: ev.x, y: ev.y, born: now }); break;
+      case 'impact': s.effects.push({ kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, born: now }); break;
+      case 'dmg': s.effects.push({ kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, born: now }); break;
       case 'boom': s.effects.push({ kind: 'boom', x: ev.x, y: ev.y, r: ev.r, born: now }); break;
-      case 'shot': s.effects.push({ kind: 'flash', x: ev.x, y: ev.y, born: now }); break;
+      case 'shot': {
+        const weapon = snap.players.find((p) => p.id === ev.owner)?.weapon ?? 'pistol';
+        s.effects.push({ kind: 'flash', ...muzzleTip(ev.x, ev.y, ev.angle, weapon, WORLD.playerRadius), angle: ev.angle, born: now });
+        break;
+      }
       case 'kill': s.feed = [...s.feed.slice(-9), { ...ev, at: now }]; break;
     }
   }
@@ -252,7 +260,7 @@ function frame(now: number) {
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   drawWorld(ctx, { snap, s, cam, dpr: view.dpr, now, selfAngle });
-  drawHud(ctx, view.dpr, view.w, view.h, snap, s, now);
+  drawHud(ctx, view.dpr, view.w, view.h, snap, s, now, mouse);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now);
 }

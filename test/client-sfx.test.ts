@@ -39,9 +39,9 @@ test('hurt plays on damage, including armor-absorbed hits, and never on regen or
 test('a shot sounds like the shooter\'s weapon and is flagged self only for your own shots', () => {
   const players = [player(2, { weapon: 'sniper' })];
   const shots = soundsFor(null, snap({ players, me: { weapon: 'smg' }, events: [
-    { e: 'shot', x: 200, y: 0, silenced: false, owner: 2 },
-    { e: 'shot', x: 100, y: 0, silenced: false, owner: 1 },
-    { e: 'shot', x: 200, y: 0, silenced: true, owner: 2 },
+    { e: 'shot', x: 200, y: 0, angle: 0, silenced: false, owner: 2 },
+    { e: 'shot', x: 100, y: 0, angle: 0, silenced: false, owner: 1 },
+    { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2 },
   ] }));
   assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
 });
@@ -65,6 +65,17 @@ test('death plays once on the alive-to-dead edge, even when the server drops you
   const gone = { ...snap({ self: { respawnIn: 3000 } }), players: [] };
   assert.deepEqual(ids(snap(), gone), ['death']);
   assert.deepEqual(ids(gone, gone), [], 'staying dead is silent');
+});
+
+// Defect: the hit sound played for every hit anywhere on screen, so it never meant "I hit someone".
+test('the hit sound plays once per snapshot only when you damage another player', () => {
+  const dmg = (attacker: number, victim: number, kind: 'player' | 'crate' = 'player'): GameEvent =>
+    ({ e: 'dmg', attacker, victim, amount: 15, x: 0, y: 0, kind });
+  const hits = (events: GameEvent[]) => soundsFor(snap(), snap({ events })).filter((c) => c.id === 'hit');
+  assert.deepEqual(hits([dmg(1, 2), dmg(1, 2), dmg(1, 3)]).map((c) => c.self), [true], 'shotgun pellets make one hit sound');
+  assert.deepEqual(hits([dmg(2, 3)]), [], 'other players trading hits');
+  assert.deepEqual(hits([dmg(1, 40, 'crate')]), [], 'hitting a crate');
+  assert.deepEqual(hits([dmg(2, 1)]), [], 'being hit plays hurt, not hit');
 });
 
 test('the first snapshot of a session derives no state-transition sounds', () => {

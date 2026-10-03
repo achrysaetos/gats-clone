@@ -1,7 +1,9 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
+import type { Point } from './camera.ts';
 import { feedMentions, levelProgress } from './derive.ts';
+import { HITMARKER_MS, HURT_MS } from './feedback.ts';
 import { PALETTE, TEAM_COLORS } from './render.ts';
 import type { Session } from './state.ts';
 
@@ -31,16 +33,53 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
   ctx.globalAlpha = 1;
 }
 
-export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h: number, snap: Snapshot, s: Session, now: number) {
+export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h: number, snap: Snapshot, s: Session, now: number, crosshair: Point) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
   const hud: Hud = { ctx, w, h, snap, s, me, now };
   const compact = w < 640;
+  drawHurtVignette(hud);
   drawKillFeed(hud, compact ? 74 : 18);
   drawLeaderboard(hud, compact);
   drawMinimap(hud, compact ? 110 : 170);
   drawScore(hud, compact);
   if (me?.alive) drawVitals(hud);
+  drawHitmarker(hud, crosshair);
+}
+
+function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
+  const hurt = s.feedback.hurt;
+  if (!hurt) return;
+  const k = (now - hurt.born) / HURT_MS;
+  if (k < 0 || k >= 1) return;
+  const alpha = (0.25 + 0.5 * hurt.strength) * (1 - k);
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) / 2);
+  g.addColorStop(0, 'rgba(200, 20, 20, 0)');
+  g.addColorStop(1, `rgba(200, 20, 20, ${alpha.toFixed(3)})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
+  const hm = s.feedback.hitmarker;
+  if (!hm) return;
+  const k = (now - hm.born) / HITMARKER_MS[hm.kill ? 'kill' : 'hit'];
+  if (k < 0 || k >= 1) return;
+  const [inner, outer] = hm.kill ? [7, 17] : [5, 11];
+  const pop = 1 + (1 - k) * 0.25;
+  ctx.globalAlpha = 1 - k * k;
+  ctx.lineCap = 'round';
+  for (const [width, color] of [[5, 'rgba(0,0,0,0.6)'], [hm.kill ? 3 : 2.5, hm.kill ? '#ff4d4f' : '#ffffff']] as const) {
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      ctx.moveTo(at.x + dx * inner * pop, at.y + dy * inner * pop);
+      ctx.lineTo(at.x + dx * outer * pop, at.y + dy * outer * pop);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {

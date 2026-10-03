@@ -158,7 +158,7 @@ function serve(ws: WebSocket, mode: ModeId) {
           const a = input.angle + (Math.random() - 0.5) * weapon.spread;
           bullets.push({ id: w.bulletId++, x: me.x + Math.cos(a) * 40, y: me.y + Math.sin(a) * 40, vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed, owner: myId, life: weapon.range / weapon.bulletSpeed });
         }
-        events.push({ e: 'shot', x: me.x + Math.cos(input.angle) * 50, y: me.y + Math.sin(input.angle) * 50, silenced: false, owner: myId });
+        events.push({ e: 'shot', x: me.x, y: me.y, angle: input.angle, silenced: false, owner: myId });
       }
       if (input.ability && ability && now >= me.abilityAt) {
         me.abilityAt = now + ABILITY_COOLDOWN_MS[ability];
@@ -184,7 +184,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       if (b.owner === myId) {
         const hit = w.bots.find((bot) => Math.hypot(bot.x - b.x, bot.y - b.y) < WORLD.playerRadius);
         if (hit) {
-          events.push({ e: 'hit', x: b.x, y: b.y });
+          events.push({ e: 'dmg', attacker: myId, victim: hit.id, amount: weapon.damage, x: hit.x, y: hit.y, kind: 'player' });
           hit.hp -= weapon.damage;
           if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, killerId: myId, victimId: hit.id, weapon: weapon.name }); }
           return false;
@@ -200,7 +200,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       return false;
     });
     if (me.alive && me.hp < 100) me.hp = Math.min(100, me.hp + WORLD.regenPerSec * DT);
-    if (w.tick % 90 === 0 && me.alive) { me.hp = Math.max(1, me.hp - 15); events.push({ e: 'hit', x: me.x, y: me.y }); }
+    if (w.tick % 90 === 0 && me.alive) { me.hp = Math.max(1, me.hp - 15); events.push({ e: 'dmg', attacker: 101, victim: myId, amount: 15, x: me.x, y: me.y, kind: 'player' }); }
     if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'SMG' });
 
     const selfView: PlayerView = {
