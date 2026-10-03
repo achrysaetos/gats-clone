@@ -2,9 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addTrauma, decay, MAX_SHAKE_PX, offset, traumaFor } from '../src/client/shake.ts';
-import type { SoundCue } from '../src/client/sfx.ts';
+import type { SoundCue, SoundId } from '../src/client/sfx.ts';
 
-const cue = (o: Partial<SoundCue>): SoundCue => ({ id: 'hit', x: 0, y: 0, self: false, strength: 1, ...o });
+const cue = (o: Partial<Extract<SoundCue, { id: Exclude<SoundId, 'hurt'> }>>): SoundCue => ({ id: 'hit', x: 0, y: 0, self: false, gain: 1, ...o });
+const hurt = (damageFrac: number): SoundCue => ({ id: 'hurt', x: 0, y: 0, self: true, gain: 1, damageFrac });
 const me = { x: 0, y: 0 };
 
 test('trauma never exceeds 1 or drops below 0, and the shake never exceeds MAX_SHAKE_PX', () => {
@@ -27,10 +28,10 @@ test('trauma decays to exactly zero and then the camera is still', () => {
 });
 
 test('bigger hits and closer booms shake harder; distant booms and other players\' shots do not', () => {
-  assert.ok(traumaFor(cue({ id: 'hurt', strength: 0.8 }), me, 900) > traumaFor(cue({ id: 'hurt', strength: 0.1 }), me, 900));
+  assert.ok(traumaFor(hurt(0.8), me, 900) > traumaFor(hurt(0.1), me, 900));
   assert.ok(traumaFor(cue({ id: 'boom', x: 100 }), me, 900) > traumaFor(cue({ id: 'boom', x: 700 }), me, 900));
   assert.equal(traumaFor(cue({ id: 'boom', x: 1000 }), me, 900), 0, 'a boom off screen does not shake');
   assert.equal(traumaFor(cue({ id: 'shot:sniper', self: false }), me, 900), 0, 'someone else firing does not kick your camera');
   const kick = traumaFor(cue({ id: 'shot:pistol', self: true }), me, 900);
-  assert.ok(kick > 0 && kick < traumaFor(cue({ id: 'hurt', strength: 0 }), me, 900), 'firing kicks, less than being hit');
+  assert.ok(kick > 0 && kick < traumaFor(hurt(0), me, 900), 'firing kicks, less than being hit');
 });

@@ -154,7 +154,7 @@ function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
 
-const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, strength: 1 }], WORLD.viewRadius);
+const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
 
 function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = newestSnap(s.snaps);

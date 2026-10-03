@@ -4,6 +4,7 @@ import { SOUNDS, type Layer, type SoundCue } from './sfx.ts';
 const MAX_VOICES = 24;
 const AUDIBLE_RADII = 1.2;
 const MASTER_GAIN = 0.5;
+const MAX_NOISE_OFFSET_S = 0.5;
 const MUTE_KEY = 'skirmish.muted';
 
 export type Audio = {
@@ -54,8 +55,8 @@ export function createAudio(): Audio {
     if (layer.src === 'tone') {
       const osc = c.createOscillator();
       osc.type = layer.wave;
-      osc.frequency.setValueAtTime(layer.hz[0], t0);
-      osc.frequency.exponentialRampToValueAtTime(layer.hz[1], t1);
+      osc.frequency.setValueAtTime(layer.pitchHz[0], t0);
+      osc.frequency.exponentialRampToValueAtTime(layer.pitchHz[1], t1);
       osc.connect(env);
       osc.start(t0);
       src = osc;
@@ -65,10 +66,10 @@ export function createAudio(): Audio {
       const filter = c.createBiquadFilter();
       filter.type = layer.filter;
       filter.Q.value = layer.q;
-      filter.frequency.setValueAtTime(layer.hz[0], t0);
-      filter.frequency.exponentialRampToValueAtTime(layer.hz[1], t1);
+      filter.frequency.setValueAtTime(layer.cutoffHz[0], t0);
+      filter.frequency.exponentialRampToValueAtTime(layer.cutoffHz[1], t1);
       buf.connect(filter).connect(env);
-      buf.start(t0, Math.random() * 0.5);
+      buf.start(t0, Math.random() * MAX_NOISE_OFFSET_S);
       src = buf;
     }
     voices++;
@@ -86,7 +87,7 @@ export function createAudio(): Audio {
       const falloff = cue.self ? 1 : Math.max(0, 1 - Math.hypot(dx, cue.y - listener.y) / audible) ** 2;
       if (falloff <= 0) continue;
       const gain = ctx.createGain();
-      gain.gain.value = falloff * (0.5 + 0.5 * cue.strength);
+      gain.gain.value = falloff * cue.gain;
       const pan = ctx.createStereoPanner();
       pan.pan.value = cue.self ? 0 : Math.max(-1, Math.min(1, dx / viewRadius)) * 0.8;
       gain.connect(pan).connect(master);

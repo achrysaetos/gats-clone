@@ -30,7 +30,8 @@ test('kill-confirm plays only when you are the killer, matched by id not name', 
 
 test('hurt plays on damage, including armor-absorbed hits, and never on regen or respawn', () => {
   const hurt = soundsFor(snap({ me: { hp: 100 } }), snap({ me: { hp: 70 } }));
-  assert.deepEqual(hurt.map((c) => [c.id, c.self, c.strength]), [['hurt', true, 0.3]], 'strength is damage over max hp');
+  assert.deepEqual(hurt.map((c) => [c.id, c.self, c.id === 'hurt' && c.damageFrac]), [['hurt', true, 0.3]], 'damageFrac is damage over max hp');
+  assert.equal(hurt[0]!.gain, 0.65, 'a bigger hit is louder');
   assert.deepEqual(ids(snap({ me: { hp: 90, armor: 50 } }), snap({ me: { hp: 85, armor: 30 } })), ['hurt']);
   assert.deepEqual(ids(snap({ me: { hp: 70 } }), snap({ me: { hp: 75 } })), [], 'regen is silent');
   assert.deepEqual(ids(snap({ me: { hp: 0, alive: false } }), snap({ me: { hp: 100 } })), [], 'respawning at full hp is silent');
