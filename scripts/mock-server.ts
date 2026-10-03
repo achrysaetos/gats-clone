@@ -110,7 +110,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         loadout = msg.loadout;
         name = msg.name;
         me.ammo = WEAPONS[loadout.weapon].mag;
-        out({ t: 'welcome', id: myId, mode, worldSize: SIZE, walls: w.walls, account: null });
+        out({ t: 'welcome', id: myId, mode, worldSize: SIZE, walls: w.walls, account: msg.token?.startsWith('mock-') ? msg.token.slice('mock-'.length) : null });
         out({ t: 'chat', from: 'Ash', text: 'gl hf', team: w.bots[0]!.team });
         return;
       case 'input': input = msg.input; ackSeq = msg.seq; return;
