@@ -6,7 +6,7 @@ import {
   type World,
 } from '../shared/sim.ts';
 import type { Accounts } from './accounts.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { LIMITS, makeBucket, type Limits } from './limits.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
@@ -40,7 +40,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   function balanceBots() {
     while (world.players.size < WORLD.minPlayers) {
-      const p = addPlayer(world, `Bot ${world.nextId}`, randomLoadout(botRand));
+      const taken = new Set([...world.players.values()].map((pl) => pl.name));
+      const p = addPlayer(world, botName(taken, botRand), randomLoadout(botRand));
       bots.set(p.id, newBotMemory(botRand));
     }
     while (world.players.size > WORLD.minPlayers && bots.size > 0) {
@@ -105,8 +106,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   }
 
   function thinkBots() {
+    const walls = wallViews(world);
     for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(world, id), mem, botRand);
+      const d = botThink(snapshotFor(world, id), walls, mem, botRand);
       bots.set(id, d.mem);
       setInput(world, id, world.tick, d.input);
       if (d.perk) choosePerk(world, id, d.perk.tier, d.perk.perk);

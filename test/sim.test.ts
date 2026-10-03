@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { ABILITY_COOLDOWN_MS, ARMOR_ABSORB, ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import {
   addPlayer, canRespawn, choosePerk, createWorld, rand, respawn, setInput, snapshotFor, step,
+  wallViews,
 } from '../src/shared/sim.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
@@ -309,7 +310,7 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
   let kills = 0;
   for (let t = 0; t < 60_000 && kills === 0; t += TICK_MS) {
     for (const [id, mem] of mems) {
-      const d = botThink(snapshotFor(w, id), mem, r);
+      const d = botThink(snapshotFor(w, id), wallViews(w), mem, r);
       mems.set(id, d.mem);
       setInput(w, id, t, d.input);
     }
