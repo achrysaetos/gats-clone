@@ -19,11 +19,6 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
   }
 }
 
-/**
- * Your own player is drawn in the present, so your muzzle flash shows at once. Everything else in the world is
- * drawn on the render clock, behind the server, so its effects wait for that clock to reach their tick and line up
- * with the bullets and bodies that caused them.
- */
 export function scheduleEffects(snap: Snapshot, serverMs: number, myId: number): { now: EffectSpec[]; later: PendingEffect[] } {
   const now: EffectSpec[] = [];
   const later: PendingEffect[] = [];

@@ -19,10 +19,6 @@ const PERK_TILE: Record<PerkId, [glyph: string, short: string]> = {
 };
 const CHAT_LINES = 8;
 
-/**
- * DOM layers over the canvas. Each region re-renders only when its key changes,
- * since this runs every animation frame.
- */
 export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => void) {
   const perkPanel = $('perk-panel');
   const chatLog = $('chat-log');
@@ -107,7 +103,6 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
     banner.replaceChildren(h, p);
   };
 
-  /** Shown for a few seconds each time the player enters play, on join and on every respawn. */
   const renderObjective = (state: ClientState, snap: Snapshot, now: number) => {
     if (state.phase === 'playing' && lastPhase !== 'playing') objectiveAt = now;
     lastPhase = state.phase;
@@ -144,7 +139,6 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
       chatInput.value = '';
       chatInput.focus();
     },
-    /** Closes the chat box and returns what was typed. */
     closeChat(): string {
       const text = chatInput.value.trim();
       chatInput.value = '';

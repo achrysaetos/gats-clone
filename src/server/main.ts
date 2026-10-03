@@ -67,7 +67,6 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
   if (!file.startsWith(publicDir + sep)) { res.writeHead(404).end(); return; }
   try {
     const { etag, data, gz } = await loadStatic(file);
-    // Assets are not content-hashed, so browsers revalidate every load and get a cheap 304 when unchanged.
     const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return; }
     const useGzip = gz !== null && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));

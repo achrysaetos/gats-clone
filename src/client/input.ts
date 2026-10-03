@@ -14,7 +14,6 @@ export const KEY_BINDINGS: Readonly<Record<string, Action>> = {
 
 export const actionForKey = (code: string): Action | null => (Object.hasOwn(KEY_BINDINGS, code) ? KEY_BINDINGS[code]! : null);
 
-/** Perk choice slots in order; tier 1 offers ten perks, so 0 is the tenth. */
 export const PERK_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'] as const;
 
 export const perkSlotForKey = (code: string): number | null => {
@@ -38,10 +37,6 @@ export const CONTROLS: readonly [string, string][] = [
 
 export const MAX_AIM_DIST = 2000;
 
-/**
- * `aim` is the mouse offset from the player's own on-screen position, already converted to world units,
- * so aimDist means the same throw distance at every zoom level.
- */
 export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots: number, aim: { dx: number; dy: number }): InputState {
   return {
     up: held.has('up'),

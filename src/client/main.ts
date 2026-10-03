@@ -20,7 +20,6 @@ import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Effect, type Session } from './state.ts';
 
-// One input per server tick, so each predicted step covers exactly the time the server moves the player by it.
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
@@ -52,7 +51,6 @@ let lastFrameAt = 0;
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
-/** Where the local player was last drawn, the frame time, and the misprediction still being smoothed; read by the verify driver under `?dev`. */
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 if (params.has('dev')) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf } });
 
@@ -277,7 +275,6 @@ function frame(now: number) {
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  // Aim reads the unshaken `camera`, so shake never jitters where bullets go.
   const cam = { ...camera, x: camera.x + shake.x / camera.scale, y: camera.y + shake.y / camera.scale };
   updateTrails(s, snap, now);
   const aim = aimOffset(s);

@@ -68,7 +68,6 @@ export function createAudio(): Audio {
       filter.frequency.setValueAtTime(layer.hz[0], t0);
       filter.frequency.exponentialRampToValueAtTime(layer.hz[1], t1);
       buf.connect(filter).connect(env);
-      // A random offset into the shared noise buffer keeps rapid fire from repeating the exact same burst.
       buf.start(t0, Math.random() * 0.5);
       src = buf;
     }

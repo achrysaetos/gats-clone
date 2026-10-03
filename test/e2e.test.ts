@@ -126,7 +126,6 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   });
   assert.equal(moved.ackSeq, 1);
 
-  // Kill events are global, so any room's snapshots witness bot fights; 60 simulated seconds at TIME_SCALE.
   await Promise.any(Object.values(conns).map((c) =>
     c.waitFor((m): m is Snapshot => isSnap(m) && m.events.some((e) => e.e === 'kill'), (60_000 / TIME_SCALE) + 2000)));
 

@@ -21,7 +21,6 @@ export function randomLoadout(rand: () => number): Loadout {
   return { weapon: pick(WEAPON_IDS, rand), armor: pick(ARMOR_IDS, rand), color: pick(COLOR_IDS, rand) };
 }
 
-/** Pure: the bot sees only what a client would see (its own snapshot). */
 export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMemory, rand: () => number): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
   const tier = snap.self.pendingTier;
@@ -53,7 +52,6 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   let fire = false, ability = false, aimDist = 300;
   if (enemy) {
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
-    // Lead the target by its per-tick velocity times the bullet's flight time in ticks.
     const vel = mem.seen?.id === enemy.id ? { x: enemy.x - mem.seen.x, y: enemy.y - mem.seen.y } : { x: 0, y: 0 };
     const flightTicks = (d / weapon.bulletSpeed) * WORLD.tickHz;
     const aimX = enemy.x + vel.x * flightTicks, aimY = enemy.y + vel.y * flightTicks;
@@ -69,7 +67,6 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     }
   }
   next.seen = enemy ? { id: enemy.id, x: enemy.x, y: enemy.y } : null;
-  // One press per tick while the bot wants to shoot; the sim's fire-rate gate paces semi-auto weapons.
   if (fire) next.shots++;
   const mx = goX - me.x, my = goY - me.y;
   const dead = 30;
@@ -96,7 +93,6 @@ const BOT_NAMES = [
   'Flint', 'Ivy', 'Onyx', 'Tansy', 'Vale', 'Cobalt', 'Lark', 'Ember', 'Rune', 'Thistle', 'Gale', 'Pip',
 ];
 
-/** A name no current player is using, so bots read like players and never collide. */
 export function botName(taken: ReadonlySet<string>, rand: () => number): string {
   const free = BOT_NAMES.filter((n) => !taken.has(n));
   return free.length ? pick(free, rand) : `${pick(BOT_NAMES, rand)} ${Math.floor(rand() * 90) + 10}`;

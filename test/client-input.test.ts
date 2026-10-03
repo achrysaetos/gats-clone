@@ -69,7 +69,6 @@ test('killer lookup and kill-feed highlight go by player id, so same-named playe
   assert.equal(feedMentions(events[1]!, 6), true, 'my own kills are highlighted');
 });
 
-// Defect: new players are not told their team or what wins, or the text drifts from the real win scores.
 test('the objective names the mode, your team and the win condition from WORLD', () => {
   assert.equal(objectiveFor('FFA', null).banner, 'Free for all: most points wins');
   assert.equal(objectiveFor('TDM', 'red').banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills`);

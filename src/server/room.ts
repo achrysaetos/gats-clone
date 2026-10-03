@@ -29,7 +29,6 @@ export type Room = {
   close(): void;
 };
 
-/** `timeScale` runs that many fixed sim steps per wall-clock tick; tests use it to fast-forward. */
 export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, timeScale = 1, limits: Limits = LIMITS): Room {
   const world = createWorld(mode, seed);
   const botRand = () => rand(world);
@@ -75,7 +74,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         return;
       }
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
-      // A registered name belongs to its signed-in owner; everyone else gets a numbered variant.
       const ownsName = (n: string) => account !== null && n.toLowerCase() === account.toLowerCase();
       const name = uniqueName(account ?? msg.name, names(), (n) => !ownsName(n) && registered(n));
       const p = addPlayer(world, name, msg.loadout);
@@ -151,7 +149,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         events.push(...world.events);
         creditLives();
       }
-      // Sub-steps would otherwise drop all but the last step's events from snapshots.
       world.events = events;
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;

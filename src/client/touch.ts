@@ -7,10 +7,8 @@ export const NO_STICKS: Sticks = { move: null, aim: null };
 export const STICK_RADIUS = 56;
 const DEADZONE = 0.2;
 const AXIS_THRESHOLD = 0.38;
-/** World units a fully pushed aim stick throws a grenade. */
 const AIM_RANGE = 700;
 
-/** Left half of the screen is the move stick, right half the aim stick; a second finger on a taken side is ignored. */
 export function pressStick(s: Sticks, id: number, x: number, y: number, viewW: number): Sticks {
   const stick = { id, ox: x, oy: y, x, y };
   if (x < viewW / 2) return s.move ? s : { ...s, move: stick };
@@ -29,7 +27,6 @@ export function releaseStick(s: Sticks, id: number): Sticks {
   return s;
 }
 
-/** Stick displacement as a unit-clamped vector. */
 export function stickVector(st: Stick): { x: number; y: number; mag: number } {
   const dx = st.x - st.ox;
   const dy = st.y - st.oy;
@@ -50,7 +47,6 @@ export function touchMoves(s: Sticks): Action[] {
   return out;
 }
 
-/** Twin-stick aim: pushing the aim stick past the deadzone aims and fires. */
 export function touchAim(s: Sticks): { dx: number; dy: number } | null {
   if (!s.aim) return null;
   const v = stickVector(s.aim);

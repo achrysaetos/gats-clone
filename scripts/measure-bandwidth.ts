@@ -1,7 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/measure-bandwidth.ts [humans=6] [seconds=8] [room=ffa]
-// Starts an isolated in-process server, joins `humans` wandering, shooting clients to one room, and reports
-// server-to-client bytes per second per client, snapshot arrival gaps, and the average JSON bytes each snapshot field costs.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +12,6 @@ const seconds = Number(process.argv[3] ?? 8);
 const room = process.argv[4] ?? 'ffa';
 const WARMUP_MS = 1500;
 let seed = 12345;
-// Seeded so before/after runs drive the same wandering pattern.
 const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 
 const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-bw-'));

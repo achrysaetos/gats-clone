@@ -34,7 +34,6 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
   }
   const tokens = new Map<string, string>();
 
-  // Saves are chained so concurrent credits never interleave partial writes; rename keeps the file whole on crash.
   let saving = Promise.resolve();
   const save = () => {
     saving = saving.then(async () => {
@@ -44,7 +43,6 @@ export async function openAccounts(dataDir: string): Promise<Accounts> {
     }).catch((err: unknown) => console.error('accounts save failed', err));
     return saving;
   };
-  // Credits arrive on every death; batching them keeps a busy room from rewriting the whole file each time.
   let pending: ReturnType<typeof setTimeout> | null = null;
   const saveSoon = () => {
     pending ??= setTimeout(() => { pending = null; void save(); }, SAVE_DELAY_MS);

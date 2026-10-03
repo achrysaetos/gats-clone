@@ -1,8 +1,5 @@
 /// <reference types="node" />
 /**
- * Drives the client in headless Chrome over CDP against a running server (usually scripts/mock-server.ts),
- * screenshots each UI state, and exits non-zero on any page exception or console error.
- *
  *   node scripts/mock-server.ts 8787 &
  *   node scripts/drive.ts http://localhost:8787 <out-dir>
  */
@@ -32,7 +29,7 @@ async function pageSocket(): Promise<string> {
       const list = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
       const page = list.find((t) => t.type === 'page');
       if (page) return page.webSocketDebuggerUrl;
-    } catch { /* chrome still starting */ }
+    } catch {}
     await sleep(200);
   }
   throw new Error('chrome did not expose a page target');

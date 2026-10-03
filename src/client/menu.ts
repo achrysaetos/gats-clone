@@ -14,7 +14,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 
 export type LoadoutPicker = { refresh(): void };
 
-/** One picker instance per container; the menu and the death screen each mount one over the same loadout. */
 export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void): LoadoutPicker {
   const weaponButtons = WEAPON_IDS.map((id) => {
     const w = WEAPONS[id];
@@ -82,7 +81,6 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   }));
 }
 
-/** Account box: login/register form when signed out, stats when signed in. Returns the current account getter. */
 export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): () => Account | null {
   let account = loadAccount();
 

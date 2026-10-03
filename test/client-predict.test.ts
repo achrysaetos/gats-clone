@@ -8,10 +8,6 @@ import { emptyWorld, spawnAt, TICK_MS } from './helpers.ts';
 
 const LATENCY_TICKS = 3;
 
-/**
- * Lockstep client and server: every input reaches the server LATENCY_TICKS later and drives exactly one tick, and
- * every snapshot reaches the client LATENCY_TICKS after that tick.
- */
 function playOut(inputs: Partial<InputState>[], clientSolids?: (snap: Snapshot) => Rect[]) {
   const w = emptyWorld();
   w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, expiresAt: Infinity }];
@@ -51,7 +47,6 @@ const route: Partial<InputState>[] = [
   ...Array(10).fill({ right: true }),
 ];
 
-// Defect: client and server move by different rules (walls ignored, other speed), or acked inputs are replayed twice.
 test('prediction with a wall in the way matches the server every snapshot and ends exactly on it', () => {
   const { server, pred, maxCorrection } = playOut(route);
   assert.ok(server.x <= 600 - 24 + 1e-9, `the wall stopped the server player (x=${server.x})`);
@@ -60,7 +55,6 @@ test('prediction with a wall in the way matches the server every snapshot and en
   assert.equal(pred.pending.length, LATENCY_TICKS * 2, 'acknowledged inputs are dropped; only the round trip in flight remains');
 });
 
-// Defect: a misprediction (here an obstacle the client never saw) accumulates instead of converging to the server.
 test('a misprediction converges to the server position and the drawn player glides there', () => {
   const { server, pred, maxCorrection } = playOut(route, () => []);
   assert.ok(maxCorrection > 1, 'the client did mispredict through the wall');
@@ -72,7 +66,6 @@ test('a misprediction converges to the server position and the drawn player glid
 
 const at = (x: number, y: number): Prediction => ({ ...NO_PREDICTION, pos: { x, y }, from: { x, y } });
 
-// Defect: a small correction teleports the drawn player instead of smoothing it out.
 test('a small correction leaves the drawn player in place, then decays toward the server', () => {
   const pred = reconcile(at(100, 100), { x: 106, y: 100 }, 0, [], 300);
   assert.deepEqual(drawnPosition(pred, 0, TICK_MS), { x: 100, y: 100 });
@@ -81,13 +74,11 @@ test('a small correction leaves the drawn player in place, then decays toward th
   assert.ok(Math.abs(drawnPosition(decayOffset(pred, 600), 0, TICK_MS)!.x - 106) < 0.01);
 });
 
-// Defect: a respawn across the map is smoothed, drawing the player sliding over it.
 test('a respawn-sized correction snaps', () => {
   const pred = reconcile(at(100, 100), { x: 2000, y: 1500 }, 0, [], 300);
   assert.deepEqual(drawnPosition(pred, 0, TICK_MS), { x: 2000, y: 1500 });
 });
 
-// Defect: own movement is drawn only when inputs are sent (30Hz steps) or runs ahead of the step it shows.
 test('the drawn player walks the latest step across one input interval', () => {
   const pred = predictInput(at(100, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS }, [], 300, 1000);
   assert.equal(drawnPosition(pred, 1000, TICK_MS)!.x, 100);

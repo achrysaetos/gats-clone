@@ -40,7 +40,6 @@ export function shade(hex: string, f: number): string {
 
 const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
-/** Players on a team wear its color, so the loadout color can never pass a red player off as blue. */
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
 export type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null };
@@ -338,7 +337,6 @@ const IMPACT = {
   player: { color: '#7a0b0b', count: 6, reach: 18, size: 3.5 },
 } as const;
 
-/** Debris flies outward along fixed angles derived from the position, so a spark does not flicker between frames. */
 function drawImpact(ctx: CanvasRenderingContext2D, surface: keyof typeof IMPACT, x: number, y: number, k: number) {
   const { color, count, reach, size } = IMPACT[surface];
   const spin = (x * 12.9898 + y * 78.233) % TAU;

@@ -1,6 +1,5 @@
 import type { WeaponId } from '../shared/defs.ts';
 
-/** Rectangles in player-radius units, gun pointing along +x from the player's center. */
 type Part = { x: number; y: number; w: number; h: number; tone: 0 | 1 | 2 };
 
 const TONES = ['#2a2d34', '#454a55', '#6b7280'] as const;
@@ -39,7 +38,6 @@ export const GUN_PARTS: Record<WeaponId, readonly Part[]> = {
   ],
 };
 
-/** Draws the gun in the current transform; caller has translated to the player and rotated to its aim. */
 export function drawGun(ctx: CanvasRenderingContext2D, weapon: WeaponId, radius: number, flat?: string) {
   for (const p of GUN_PARTS[weapon]) {
     ctx.fillStyle = flat ?? TONES[p.tone];
@@ -60,7 +58,6 @@ const bounds = (parts: readonly Part[]) => ({
   maxY: Math.max(...parts.map((p) => p.y + p.h)),
 });
 
-/** All silhouettes share one scale so relative gun size reads at a glance. */
 export function drawSilhouette(canvas: HTMLCanvasElement, weapon: WeaponId, color: string) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;

@@ -15,7 +15,6 @@ export type FeedLine = { killer: string; victim: string; killerId: number | null
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 export type TrailPoint = { x: number; y: number; at: number };
 
-/** Everything that lives exactly as long as one websocket connection to a room. */
 export type Session = {
   ws: WebSocket;
   myId: number;
@@ -23,7 +22,6 @@ export type Session = {
   walls: WallView[];
   snaps: SnapBuffer;
   seq: number;
-  /** Trigger presses latched per mousedown; sent whole every input so presses between samples are never lost. */
   shots: number;
   predict: Prediction;
   lastSelf: { x: number; y: number };

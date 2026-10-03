@@ -3,7 +3,6 @@ import type { GameEvent, PlayerView, Snapshot, Team } from '../shared/protocol.t
 
 export type LevelProgress = { level: number; frac: number; nextAt: number | null };
 
-/** `level` is the server's 0-based level; players see it counted from 1. */
 export function levelProgress(level: number, score: number): LevelProgress {
   const from = LEVEL_SCORES[level] ?? 0;
   const to = LEVEL_SCORES[level + 1];
@@ -21,7 +20,6 @@ export const feedMentions = (kill: { killerId: number | null; victimId: number }
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 
-/** A dead player may be missing from `players`, so fall back to the respawn timer. */
 export function isDead(snap: Snapshot): boolean {
   const me = selfOf(snap);
   return me ? !me.alive : snap.self.respawnIn > 0;

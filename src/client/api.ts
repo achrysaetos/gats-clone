@@ -49,7 +49,7 @@ const store = {
     try {
       if (value === null) localStorage.removeItem(key);
       else localStorage.setItem(key, value);
-    } catch { /* storage unavailable */ }
+    } catch {}
   },
 };
 
@@ -69,7 +69,7 @@ export const saveName = (name: string) => store.set('skirmish.name', name);
 
 export function loadLoadout(): Loadout {
   let saved: unknown = null;
-  try { saved = JSON.parse(store.get('skirmish.loadout') ?? 'null'); } catch { /* corrupt entry */ }
+  try { saved = JSON.parse(store.get('skirmish.loadout') ?? 'null'); } catch {}
   return parseLoadout(saved) ?? { weapon: WEAPON_IDS[0], armor: ARMOR_IDS[1], color: COLOR_IDS[4] };
 }
 

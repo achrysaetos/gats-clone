@@ -13,7 +13,6 @@ export const NO_FEEDBACK: Feedback = { numbers: [], hitmarker: null, hurt: null 
 export const NUMBER_MS = 900;
 export const HITMARKER_MS = { hit: 220, kill: 450 } as const;
 export const HURT_MS = 650;
-/** Hits on one target this close together add up in one number, so SMG streams and shotgun pellets read as a total. */
 const MERGE_MS = 300;
 
 export function addFeedback(fb: Feedback, events: readonly GameEvent[], myId: number, myMaxHp: number, now: number): Feedback {

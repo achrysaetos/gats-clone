@@ -10,7 +10,6 @@ import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, sp
 
 const PISTOL_DMG = WEAPONS.pistol.damage;
 
-// Defect: armor ignored, or absorbing the wrong share.
 test('armor absorbs ARMOR_ABSORB of a hit and depletes', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -21,7 +20,6 @@ test('armor absorbs ARMOR_ABSORB of a hit and depletes', () => {
   assert.equal(b.life.armor, ARMORS.medium.points - PISTOL_DMG * ARMOR_ABSORB);
 });
 
-// Defect: piercing perk not consulted when applying armor.
 test('piercing bullets bypass armor entirely', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -33,7 +31,6 @@ test('piercing bullets bypass armor entirely', () => {
   assert.equal(b.life.armor, ARMORS.heavy.points);
 });
 
-// Defect: bullets ignore walls (tunnel through) or skip the rect test.
 test('walls stop bullets', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -48,7 +45,6 @@ test('walls stop bullets', () => {
   assert.ok(hpOf(b) < WORLD.baseHp, 'same shot without the wall hits');
 });
 
-// Defect: kill grants no score, or level/pending tier do not follow LEVEL_SCORES.
 test('kills award killScore and unlock perk tiers at thresholds', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -77,7 +73,6 @@ test('kills award killScore and unlock perk tiers at thresholds', () => {
   assert.equal(choosePerk(w, a.id, 3, 'dash'), false, 'cannot skip to a locked tier');
 });
 
-// Defect: perk chosen but derived stats unchanged.
 test('extended mag enlarges the magazine', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -100,7 +95,6 @@ test('lightweight moves 10% faster', () => {
   assert.ok(Math.abs(distanceIn1s(true) / base - 1.1) < 0.01);
 });
 
-// Defect: dead players still move/shoot, or respawn ignores respawnAt.
 test('dead player cannot act and respawns after respawnMs', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -126,7 +120,6 @@ test('dead player cannot act and respawns after respawnMs', () => {
   assert.equal(snapshotFor(w, b.id).self.respawnIn, 0);
 });
 
-// Defect: friendly fire applies in team modes.
 test('TDM friendly fire does no damage but enemies still take hits', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'red' });
@@ -156,7 +149,6 @@ test('TDM auto-balances teams', () => {
   assert.equal(teams.filter((t) => t === 'blue').length, 3);
 });
 
-// Defect: zones never capture, never score, or the round never ends/resets.
 test('DOM zone capture scores for the team, declares a winner, then resets', () => {
   const w = emptyWorld('DOM');
   const zone = w.zones[0];
@@ -188,7 +180,6 @@ test('TDM team reaching tdmWinScore kills wins', () => {
   assert.equal(snapshotFor(w, a.id).match.winner, 'Blue team');
 });
 
-// Defect: crate destruction awards nothing or the crate never respawns.
 test('destroying a crate awards crateScore and it respawns later', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -201,7 +192,6 @@ test('destroying a crate awards crateScore and it respawns later', () => {
   assert.ok(snapshotFor(w, a.id).crates.some((c) => c.id === 999 && c.hp === WORLD.crateHp), 'crate respawned');
 });
 
-// Defect: abilities fire every tick the key is held (cooldown ignored).
 test('ability respects its cooldown', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -251,7 +241,6 @@ test('enemy land mine is hidden but its owner sees it', () => {
   assert.equal(snapshotFor(w, b.id).thrown.filter((t) => t.kind === 'landMine').length, 0);
 });
 
-// Defect: snapshot leaks positions outside the view radius, or the minimap ignores firing/silencer.
 test('snapshot culls out-of-view enemies; minimap shows them only after unsilenced fire', () => {
   const w = emptyWorld();
   const me = spawnAt(w, 300, 300);
@@ -280,7 +269,6 @@ test('minimap always shows teammates', () => {
   assert.deepEqual(snapshotFor(w, me.id).minimap.map((m) => m.team), ['red']);
 });
 
-// Defect: map generation uses unseeded randomness.
 test('same seed builds the same map', () => {
   const a = createWorld('FFA', 7), b = createWorld('FFA', 7), c = createWorld('FFA', 8);
   assert.deepEqual(a.walls, b.walls);
@@ -289,7 +277,6 @@ test('same seed builds the same map', () => {
   assert.equal(a.crates.length, WORLD.crateCount);
 });
 
-// Defect: players walk through walls or off the map.
 test('players collide with walls and map edges', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);

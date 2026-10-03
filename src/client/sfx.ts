@@ -8,7 +8,6 @@ export type SoundId =
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
-/** `hz` sweeps the oscillator pitch for a tone and the filter cutoff for noise. */
 export type Layer =
   | ({ src: 'tone'; wave: Wave; hz: readonly [number, number] } & Timing)
   | ({ src: 'noise'; filter: 'lowpass' | 'highpass' | 'bandpass'; q: number; hz: readonly [number, number] } & Timing);
@@ -36,7 +35,6 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   click: [{ src: 'tone', wave: 'square', hz: [1800, 1800], ms: 18, gain: 0.15 }],
 };
 
-/** `strength` (0..1) scales loudness, and for `hurt` it is the damage taken as a fraction of max hp. */
 export type SoundCue = { id: SoundId; x: number; y: number; self: boolean; strength: number };
 
 export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {

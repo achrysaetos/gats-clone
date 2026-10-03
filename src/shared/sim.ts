@@ -21,7 +21,6 @@ export type Life =
     lastDamageAt: number;
     lastMoveAt: number;
     dashUntil: number;
-    /** A trigger press not yet turned into a shot stays honored until this time, so it survives a cooldown ending a tick late. */
     pressUntil: number;
   }
   | { k: 'dead'; respawnAt: number };
@@ -36,7 +35,6 @@ export type Player = {
   angle: number;
   input: InputState;
   seq: number;
-  /** Highest `input.shots` already counted. */
   shotsSeen: number;
   life: Life;
   score: number;
@@ -67,7 +65,6 @@ export type Zone = { id: number; x: number; y: number; r: number; owner: Team; c
 
 export type Match = { k: 'playing' } | { k: 'over'; winner: string; restartAt: number };
 
-/** A participant's life ended or they left. Queued on the world until the server drains it to credit accounts. */
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
 export type World = {
@@ -110,7 +107,6 @@ const GAS_RADIUS = 140;
 const PRESS_GRACE_MS = 100;
 
 export function rand(w: World): number {
-  // mulberry32
   w.rng = (w.rng + 0x6d2b79f5) | 0;
   let t = w.rng;
   t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -191,7 +187,6 @@ export function levelForScore(score: number): number {
   return level;
 }
 
-/** Lowest unlocked tier without a chosen perk. */
 export function pendingTier(p: Player): Tier | null {
   for (const tier of [1, 2, 3] as const) if (tier <= p.level && !p.perks[tier]) return tier;
   return null;
@@ -384,7 +379,6 @@ export function choosePerk(w: World, id: number, tier: Tier, perk: PerkId): bool
   if (!p || p.life.k !== 'alive' || pendingTier(p) !== tier) return false;
   if (!(PERK_TIERS[tier] as readonly PerkId[]).includes(perk)) return false;
   const before = effectiveStats(p).maxHp;
-  // Membership in PERK_TIERS[tier] was just checked, so this widening write is sound.
   (p.perks as Partial<Record<Tier, PerkId>>)[tier] = perk;
   p.life.hp += effectiveStats(p).maxHp - before;
   return true;
@@ -476,7 +470,6 @@ function explode(w: World, x: number, y: number, radius: number, maxDamage: numb
 }
 
 
-/** Earliest t in [0,1] where segment p->p+d enters the circle, or null. */
 export function segCircle(px: number, py: number, dx: number, dy: number, cx: number, cy: number, r: number): number | null {
   const fx = px - cx, fy = py - cy;
   const a = dx * dx + dy * dy;
@@ -489,7 +482,6 @@ export function segCircle(px: number, py: number, dx: number, dy: number, cx: nu
   return t >= 0 && t <= 1 ? t : null;
 }
 
-/** Earliest t in [0,1] where segment p->p+d enters the rect (slab method), or null. */
 export function segRect(px: number, py: number, dx: number, dy: number, r: Rect): number | null {
   let t0 = 0, t1 = 1;
   for (const [p, d, lo, hi] of [[px, dx, r.x, r.x + r.w], [py, dy, r.y, r.y + r.h]] as const) {
@@ -503,7 +495,6 @@ export function segRect(px: number, py: number, dx: number, dy: number, r: Rect)
   return t0;
 }
 
-/** Where a player-sized circle aiming for (nx, ny) ends up after being pushed out of every solid and the world edge. */
 export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): { x: number; y: number } {
   const r = WORLD.playerRadius;
   let x = clamp(nx, r, WORLD.size - r), y = clamp(ny, r, WORLD.size - r);
@@ -516,7 +507,6 @@ export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): 
       x = cx + ((x - cx) / d) * r;
       y = cy + ((y - cy) / d) * r;
     } else {
-      // Center inside the rect: push out along the shallowest side.
       const opts = [[b.x - r, y, x - b.x], [b.x + b.w + r, y, b.x + b.w - x], [x, b.y - r, y - b.y], [x, b.y + b.h + r, b.y + b.h - y]] as const;
       const best = opts.reduce((m, o) => (o[2] < m[2] ? o : m));
       x = best[0];
@@ -528,7 +518,6 @@ export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): 
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
 
-/** One movement step. The server moves every player with it and the client predicts its own player with it, so both agree. */
 export function moveStep(solids: readonly Rect[], x: number, y: number, keys: MoveKeys, speed: number, dtMs: number): { x: number; y: number } {
   const mx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
   const my = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
@@ -635,7 +624,6 @@ function tickThrown(w: World, dt: number) {
 
 
 function tickPlayer(w: World, p: Player, dtMs: number) {
-  // Counted even while dead so presses made on the death screen do not fire on respawn.
   const pressed = p.input.shots > p.shotsSeen;
   p.shotsSeen = Math.max(p.shotsSeen, p.input.shots);
   const life = p.life;
@@ -658,7 +646,6 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const weapon = WEAPONS[p.loadout.weapon];
-  // Ceasefire during the end-of-round banner: the scores are about to reset, so nothing earned now would count.
   const armed = w.match.k === 'playing';
   const wantsShot = w.now <= life.pressUntil || (weapon.auto && inp.fire);
   if (armed && wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {

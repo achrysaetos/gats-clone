@@ -67,7 +67,6 @@ test('death plays once on the alive-to-dead edge, even when the server drops you
   assert.deepEqual(ids(gone, gone), [], 'staying dead is silent');
 });
 
-// Defect: the hit sound played for every hit anywhere on screen, so it never meant "I hit someone".
 test('the hit sound plays once per snapshot only when you damage another player', () => {
   const dmg = (attacker: number, victim: number, kind: 'player' | 'crate' = 'player'): GameEvent =>
     ({ e: 'dmg', attacker, victim, amount: 15, x: 0, y: 0, kind });

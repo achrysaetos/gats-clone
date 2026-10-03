@@ -1,8 +1,5 @@
 /// <reference types="node" />
 // Usage: node combat.ts <run-dir> [room ...]   Rooms: tdm dom ffa (default: tdm dom).
-// Joins each room through the real menu, screenshots the objective banner, then shoots the nearest bot or crate
-// until the page's own WebSocket frames carry a dmg event from the driven player, and screenshots the feedback.
-// In the first room it keeps shooting until the perk dock opens, then checks its placement, tooltip and key pick.
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -38,7 +35,7 @@ for (let i = 0; i < 50 && !target; i++) {
   try {
     const list = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
     target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-  } catch { /* chrome still starting */ }
+  } catch {}
   if (!target) await sleep(200);
 }
 const page = new WebSocket(target);
@@ -64,7 +61,6 @@ page.on('message', (raw) => {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
     if (msg.t === 'snap') {
-      // Unchanged crates, leaderboard, zones and match are omitted after the first snapshot; refill them like the client does.
       full = fillSnapshot(msg, full) ?? full;
       frames.last = full;
       for (const e of msg.events) if (e.e === 'dmg') frames.dmg.push({ ...e, at: Date.now() });
@@ -86,7 +82,6 @@ await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable
 await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 log(`combat ${new Date().toISOString()} base=${BASE} rooms=${ROOMS.join(',')}`);
 
-/** The nearest live enemy in view, else the nearest crate; bots move, so this is re-read before every shot. */
 function nearestTarget(self: Player, snap: Snap): { x: number; y: number; what: string } | null {
   const enemies = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team));
   const crates = snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 }));
@@ -122,7 +117,6 @@ async function objective(room: string) {
 
 type Watch = { room: string; shots: number; hurtShot: string; mateShot: string };
 
-/** One aimed click at the nearest target; returns the dmg events from the driven player that it produced. */
 async function shootOnce(w: Watch): Promise<{ mine: Dmg[]; what: string } | null> {
   const snap = frames.last, self = me();
   if (!snap || !self?.alive) {
@@ -183,7 +177,6 @@ async function hitSomething(w: Watch) {
   if (!sawPlayer) log(`     note: no bot came into range, so the hitmarker was not exercised in ${w.room}`);
 }
 
-/** Earn the first level by shooting, then check the dock stays out of the aim area and picks by key. */
 async function perkDock(w: Watch) {
   const start = Date.now();
   const open = () => js(`!document.getElementById('perk-panel').hidden`);

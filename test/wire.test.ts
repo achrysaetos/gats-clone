@@ -6,10 +6,8 @@ import { createWorld, snapshotFor, step } from '../src/shared/sim.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { press, spawnAt, TICK_MS } from './helpers.ts';
 
-/** What a client that receives every field every tick would hold. */
 const fullForm = (snap: Snapshot): Snapshot => JSON.parse(makeSnapshotEncoder()(snap));
 
-// Defect: an omitted field is never resent after it changes, or the client fills it from the wrong snapshot.
 test('omitting unchanged crates, leaderboard, zones and match reconstructs the same state as full snapshots', () => {
   for (const mode of ['FFA', 'DOM'] as const) {
     const w = createWorld(mode, 3);
@@ -36,7 +34,6 @@ test('omitting unchanged crates, leaderboard, zones and match reconstructs the s
   }
 });
 
-// Defect: positions or angles rounded so coarsely that drawing or reconciliation visibly drifts, or ids get mangled.
 test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and integers exact', () => {
   const w = createWorld('FFA', 3);
   const p = spawnAt(w, 1500.123456, 1500.987654);

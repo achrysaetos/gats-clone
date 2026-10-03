@@ -1,6 +1,5 @@
 /// <reference types="node" />
 /**
- * Stand-in server for driving the client without the real sim. Each connection gets its own synthetic world.
  * Chat commands exercise UI states: /die, /level, /win, /walls.
  *
  *   npm run build && node scripts/mock-server.ts [port]

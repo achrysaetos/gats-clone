@@ -5,11 +5,6 @@ import { lerp } from './interp.ts';
 export type PendingInput = { seq: number; input: InputState; dtMs: number };
 type Point = { x: number; y: number };
 
-/**
- * The local player's movement, run ahead of the server. `pos` is where the player stands once the newest sent input
- * has played out, `from` where it stood when that input was sampled; drawing walks from one to the other.
- * `offset` is a recent correction still being smoothed away.
- */
 export type Prediction = {
   pending: PendingInput[];
   pos: Point | null;
@@ -20,9 +15,7 @@ export type Prediction = {
 
 export const NO_PREDICTION: Prediction = { pending: [], pos: null, from: null, sampledAt: 0, offset: { x: 0, y: 0 } };
 
-/** Three seconds of inputs; the server acks far sooner, so overflow only happens while it is not answering. */
 const MAX_PENDING = 90;
-/** A correction this large is a respawn or teleport, not a misprediction, so it is not smoothed. */
 export const SNAP_DIST = 150;
 const SMOOTH_MS = 60;
 
@@ -34,17 +27,12 @@ export const solidsOf = (walls: readonly WallView[], crates: readonly CrateView[
 const replay = (solids: readonly Rect[], start: Point, pending: readonly PendingInput[], speed: number): Point =>
   pending.reduce((at, p) => moveStep(solids, at.x, at.y, p.input, speed, p.dtMs), start);
 
-/** Records an input as it is sent and moves the predicted player by it right away. */
 export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: number, now: number): Prediction {
   const pending = [...pred.pending, entry].slice(-MAX_PENDING);
   if (!pred.pos) return { ...pred, pending };
   return { ...pred, pending, from: pred.pos, pos: moveStep(solids, pred.pos.x, pred.pos.y, entry.input, speed, entry.dtMs), sampledAt: now };
 }
 
-/**
- * Rebuilds the prediction from the server's authoritative position: drops inputs the server has applied, replays the
- * rest, and moves any difference into `offset` so the drawn player does not jump.
- */
 export function reconcile(pred: Prediction, server: Point | null, ackSeq: number, solids: readonly Rect[], speed: number): Prediction {
   const pending = pred.pending.filter((p) => p.seq > ackSeq);
   if (!server) return { ...NO_PREDICTION, pending };
@@ -66,7 +54,6 @@ export function decayOffset(pred: Prediction, dtMs: number): Prediction {
   return { ...pred, offset: Math.hypot(x, y) < 0.01 ? { x: 0, y: 0 } : { x, y } };
 }
 
-/** Where to draw the local player at `now`, given inputs are sampled every `stepMs`. */
 export function drawnPosition(pred: Prediction, now: number, stepMs: number): Point | null {
   if (!pred.pos || !pred.from) return null;
   const t = Math.min(1, Math.max(0, (now - pred.sampledAt) / stepMs));

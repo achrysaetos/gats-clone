@@ -5,7 +5,6 @@ import { parseClientMsg } from '../src/shared/protocol.ts';
 const input = { up: true, down: false, left: false, right: false, angle: 1, fire: false, reload: false, ability: false, aimDist: 100 };
 const loadout = { weapon: 'smg', armor: 'light', color: 'blue' };
 
-// Defect: the server trusts a malformed frame and feeds garbage into the sim.
 test('parseClientMsg rejects malformed frames', () => {
   const bad: unknown[] = [
     '{not json',

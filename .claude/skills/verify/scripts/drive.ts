@@ -1,8 +1,6 @@
 /// <reference types="node" />
 // Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch on request.
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
-// Drives the real client in headless Chrome over CDP against the server launch.sh started, reads the page's own
-// WebSocket frames as wire evidence, and cross-checks from an independent observer client in the same room.
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -36,7 +34,7 @@ for (let i = 0; i < 50 && !target; i++) {
   try {
     const list = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
     target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-  } catch { /* chrome still starting */ }
+  } catch {}
   if (!target) await sleep(200);
 }
 const page = new WebSocket(target);
@@ -70,7 +68,6 @@ const key = async (code: string, k: string, holdMs: number) => {
 };
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const me = () => frames.last?.players.find((p) => p.id === frames.welcome?.id);
-// Bots can kill the driven player between steps; respawn through the real death screen instead of failing on a dead player.
 const ensureAlive = async () => {
   if (me()?.alive) return;
   log('note driven player is dead, respawning through the death screen');
@@ -159,7 +156,6 @@ const STEPS: Record<string, () => Promise<void>> = {
       if (frames.last!.self.ammo < CLICKS) { await key('KeyR', 'r', 60); await until(() => !frames.last!.self.reloading && frames.last!.self.ammo >= CLICKS, weapon.reloadMs + 2000); }
       await sleep(weapon.fireMs);
       before = frames.last!.self.ammo;
-      // 8ms taps always fall inside one 33ms input sample; spaced just past the fire cooldown so every press is allowed.
       for (let i = 0; i < CLICKS; i++) {
         await mouse('mousePressed', 900, 400);
         await sleep(8);
@@ -202,7 +198,6 @@ const STEPS: Record<string, () => Promise<void>> = {
     const gaps = frames.snapAt.slice(1).map((t, i) => t - frames.snapAt[i]!).sort((a, b) => a - b);
     log(`info snapshot arrival gaps at the page: median ${gaps[gaps.length >> 1]!.toFixed(0)}ms p95 ${gaps[Math.floor(gaps.length * 0.95)]!.toFixed(0)}ms max ${gaps[gaps.length - 1]!.toFixed(0)}ms over ${gaps.length}`);
     log(`info largest misprediction being smoothed while moving: ${Number(await js('maxCorrection')).toFixed(1)}px`);
-    // Prediction draws own movement from the next input sample, so the bound holds at any LAG.
     expect('own movement drawn within 50ms of keydown (median)', median <= 50 && samples.length >= 5,
       `median ${median.toFixed(0)}ms p95 ${p95.toFixed(0)}ms n=${samples.length} misses=${misses} lag=${process.env.LAG ?? 0} jitter=${process.env.JITTER ?? 0} samples in order=${inOrder}`);
   },

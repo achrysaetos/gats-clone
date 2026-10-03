@@ -7,7 +7,6 @@ import { emptyWorld, press, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = WEAPONS.pistol.damage;
 
-/** One trigger pull along +x, then `ms` of flight, returning every event the world emitted. */
 function fireAndCollect(w: World, shooter: ReturnType<typeof spawnAt>, ms = 500): GameEvent[] {
   const events: GameEvent[] = [];
   press(w, shooter, { angle: 0, fire: true, shots: shooter.input.shots + 1 });
@@ -20,7 +19,6 @@ function fireAndCollect(w: World, shooter: ReturnType<typeof spawnAt>, ms = 500)
 
 const hits = (events: GameEvent[]) => events.filter((e) => e.e === 'dmg' || e.e === 'impact');
 
-// Defect: a player hit pushed one event from the bullet and another from damagePlayer.
 test('one bullet hitting a player emits exactly one dmg event naming attacker, victim and amount', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -30,7 +28,6 @@ test('one bullet hitting a player emits exactly one dmg event naming attacker, v
   assert.deepEqual(got[0], { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: b.x, y: b.y, kind: 'player' });
 });
 
-// Defect: amount reports only hp lost, so armored targets show smaller numbers than the damage dealt.
 test('dmg amount counts armor absorbed as damage dealt', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -41,7 +38,6 @@ test('dmg amount counts armor absorbed as damage dealt', () => {
   assert.equal(ev.amount, PISTOL_DMG);
 });
 
-// Defect: overkill reported as damage, so a 22-damage shot on a 5-hp target reads 22.
 test('dmg amount stops at what the target had left', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -53,7 +49,6 @@ test('dmg amount stops at what the target had left', () => {
   assert.equal(b.life.k, 'dead');
 });
 
-// Defect: crate hits indistinguishable from player hits.
 test('a crate hit emits one crate-kind dmg event with the crate id', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -62,7 +57,6 @@ test('a crate hit emits one crate-kind dmg event with the crate id', () => {
   assert.deepEqual(got, [{ e: 'dmg', attacker: a.id, victim: 999, amount: PISTOL_DMG, x: 662, y: 500, kind: 'crate' }]);
 });
 
-// Defect: wall hits drawn as damage.
 test('a wall hit emits an impact at the wall face and no dmg', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -74,7 +68,6 @@ test('a wall hit emits an impact at the wall face and no dmg', () => {
   assert.ok(Math.abs(ev.x - 650) < 1 && Math.abs(ev.y - 500) < 10, `impact at ${ev.x},${ev.y}`);
 });
 
-// Defect: blocked friendly fire still flashes a hit for both teammates.
 test('a shot a teammate shrugs off emits no dmg event', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'red' });
@@ -82,7 +75,6 @@ test('a shot a teammate shrugs off emits no dmg event', () => {
   assert.deepEqual(hits(fireAndCollect(w, a)).filter((e) => e.e === 'dmg'), []);
 });
 
-// Defect: the client cannot place a muzzle flash at the barrel without knowing the aim.
 test('shot events carry the aim angle', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -91,7 +83,6 @@ test('shot events carry the aim angle', () => {
   assert.deepEqual(w.events.filter((e) => e.e === 'shot').map((e) => e.e === 'shot' && e.angle), [1.25]);
 });
 
-// Defect: kill events identify players only by name, which can be shared.
 test('kill events carry killer and victim ids', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500, { name: 'Alex' });

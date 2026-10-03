@@ -7,11 +7,9 @@ const DECAY_PER_MS = 1 / 700;
 export const addTrauma = (t: number, amount: number) => Math.min(1, Math.max(0, t + amount));
 export const decay = (t: number, dtMs: number) => Math.max(0, t - dtMs * DECAY_PER_MS);
 
-/** Incommensurate sines stand in for Perlin noise: smooth, deterministic, bounded by 1. */
 const wobble = (now: number, seed: number) =>
   (Math.sin(now * 0.031 + seed) + 0.6 * Math.sin(now * 0.047 + seed * 3) + 0.4 * Math.sin(now * 0.073 + seed * 7)) / 2;
 
-/** Squaring trauma keeps small hits subtle while big ones still land; the √2 keeps the vector within MAX_SHAKE_PX. */
 export function offset(t: number, now: number): Point {
   const k = (MAX_SHAKE_PX * t * t) / Math.SQRT2;
   return { x: k * wobble(now, 1), y: k * wobble(now, 5) };

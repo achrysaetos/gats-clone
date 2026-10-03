@@ -10,7 +10,6 @@ export type Limits = typeof LIMITS;
 
 type Bucket = { tokens: number; at: number };
 
-/** Token bucket: refills `perSec` tokens per second up to `burst`; each call spends one. */
 export function makeBucket(perSec: number, burst: number) {
   const b: Bucket = { tokens: burst, at: -Infinity };
   return (now: number): boolean => {
@@ -22,7 +21,6 @@ export function makeBucket(perSec: number, burst: number) {
   };
 }
 
-/** One bucket per key, dropped once it would be full again so idle keys do not accumulate. */
 export function makeKeyedLimiter(perSec: number, burst: number) {
   const buckets = new Map<string, { take: (now: number) => boolean; fullAt: number }>();
   return (key: string, now: number): boolean => {

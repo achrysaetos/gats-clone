@@ -18,12 +18,10 @@ const snap = (tick: number, players: PlayerView[]): Snapshot => ({
   match: { mode: 'FFA', teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: [],
 });
 
-/** Player 2 walks right 10px per tick. */
 const walking = (tick: number) => snap(tick, [player(1, 0, 0), player(2, tick * 10, 0)]);
 const xOf = (s: Snapshot | null, id = 2) => s?.players.find((p) => p.id === id)?.x;
 const drawnAt = (buf: SnapBuffer, now: number) => sampleAt(buf.snaps, renderTime(buf, now));
 
-// Defect: others drawn at the newest snapshot, so any late packet freezes them.
 test('others are drawn three ticks behind the server clock', () => {
   let buf = EMPTY_BUFFER;
   for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
@@ -34,9 +32,7 @@ test('others are drawn three ticks behind the server clock', () => {
   assert.ok(Math.abs(half - 75) < 1e-9, `interpolates between ticks (x=${half})`);
 });
 
-// Defect: a late burst freezes others, then snaps them forward or backward when it lands.
 test('a 191ms arrival gap never moves anyone backward or jumps them forward', () => {
-  // In order like TCP: tick 20 lands 191ms after tick 19 and the ticks queued behind it land with it.
   const arrivals: { at: number; tick: number }[] = [];
   for (let tick = 1; tick <= 60; tick++) arrivals.push({ tick, at: Math.max(tick * TICK_MS + 10, tick >= 20 ? 19 * TICK_MS + 10 + 191 : 0) });
   let buf = EMPTY_BUFFER;
@@ -53,7 +49,6 @@ test('a 191ms arrival gap never moves anyone backward or jumps them forward', ()
   }
 });
 
-// Defect: the render clock chases every packet's arrival time, so jitter makes others speed up and stall.
 test('under 0-40ms jitter with occasional 150ms stalls others move at a steady speed', () => {
   let seed = 7;
   const rand = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
@@ -75,7 +70,6 @@ test('under 0-40ms jitter with occasional 150ms stalls others move at a steady s
   }
 });
 
-// Defect: a burst after a long stall drags the render clock backward, replaying motion in reverse.
 test('a burst after a one second stall never draws anyone backward', () => {
   let buf = EMPTY_BUFFER;
   for (let tick = 1; tick <= 19; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
@@ -90,7 +84,6 @@ test('a burst after a one second stall never draws anyone backward', () => {
   }
 });
 
-// Defect: with the buffer dry, entities freeze at once (then snap) or slide on forever.
 test('when snapshots stop, others extrapolate for at most 100ms and then hold', () => {
   let buf = EMPTY_BUFFER;
   for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
@@ -100,7 +93,6 @@ test('when snapshots stop, others extrapolate for at most 100ms and then hold', 
   assert.ok(Math.abs(later - (100 + (MAX_EXTRAPOLATE_MS / TICK_MS) * 10)) < 1e-9, `held after 100ms (x=${later})`);
 });
 
-// Defect: the local player's own hp, alive flag and position lag 100ms behind like everyone else.
 test('the local player comes from the newest snapshot', () => {
   let buf = EMPTY_BUFFER;
   for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, snap(tick, [player(1, tick, 0), player(2, 0, 0)]), tick * TICK_MS);
