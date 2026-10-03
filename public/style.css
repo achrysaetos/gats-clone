@@ -177,25 +177,55 @@ kbd {
 .hud { position: fixed; inset: 0; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 
+/* Docked in the strip between the vitals panel (left, 352px wide) and the minimap (right, 182px), clear of the aim area. */
 .perk-panel {
   position: absolute;
   z-index: 2;
-  top: 66px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(640px, calc(100vw - 24px));
-  max-height: calc(100vh - 200px);
-  overflow-y: auto;
+  bottom: 12px;
+  left: 364px;
+  right: 194px;
+  width: fit-content;
+  max-width: calc(100vw - 558px);
+  margin-inline: auto;
   background: var(--panel);
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 6px;
 }
-.perk-panel h2 { margin: 0 0 8px; color: var(--accent); }
-.perk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
-.perk { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; text-align: left; align-items: center; padding: 8px; }
-.perk kbd { grid-row: span 2; }
-.perk span { font-size: 11px; color: var(--muted); }
+.perk-panel h2 { margin: 0 2px 5px; font-size: 11px; color: var(--accent); }
+.perk-panel h2 span { color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
+.perk-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.perk {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  padding: 3px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  align-items: center;
+}
+.perk kbd { justify-self: start; min-width: 0; padding: 0 4px; font-size: 10px; }
+.perk-icon { font-size: 18px; line-height: 1; color: var(--accent); }
+.perk b { max-width: 100%; font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perk-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 200px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(18, 21, 26, 0.96);
+  font-size: 12px;
+  text-align: left;
+  pointer-events: none;
+  visibility: hidden;
+}
+.perk-tip strong { display: block; color: var(--accent); }
+.perk:hover .perk-tip, .perk:focus-visible .perk-tip { visibility: visible; }
 
 .chat {
   position: absolute;
@@ -248,10 +278,8 @@ kbd {
 }
 .death-card > h2:first-child { margin: 0 0 4px; font-size: 24px; color: var(--danger); text-transform: none; letter-spacing: 0; }
 
-@media (max-width: 640px) {
-  .perk-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .perk { padding: 6px; }
-  .perk span { display: none; }
+@media (max-width: 900px) {
+  .perk-panel { left: 12px; right: 12px; bottom: 128px; max-width: calc(100vw - 24px); }
 }
 @media (max-width: 760px) {
   .menu-grid { grid-template-columns: minmax(0, 1fr); }
