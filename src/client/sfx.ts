@@ -4,7 +4,7 @@ import { selfOf } from './derive.ts';
 
 export type SoundId =
   | `shot:${WeaponId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'kill' | 'death' | 'reload' | 'levelup' | 'click';
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'death' | 'reload' | 'levelup' | 'click';
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
@@ -28,6 +28,10 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   hit: [{ src: 'tone', wave: 'square', pitchHz: [900, 500], ms: 45, gain: 0.18 }, crack(4000, 30, 0.2)],
   hurt: [{ src: 'tone', wave: 'sawtooth', pitchHz: [220, 90], ms: 140, gain: 0.3 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [800, 200], ms: 120, gain: 0.3 }],
   boom: [{ src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [1600, 60], ms: 700, gain: 0.9 }, thump(90, 500, 0.8)],
+  slash: [
+    { src: 'noise', filter: 'bandpass', q: 2.5, cutoffHz: [5200, 1400], ms: 150, gain: 0.55 },
+    { src: 'tone', wave: 'triangle', pitchHz: [1100, 500], ms: 60, gain: 0.12, delayMs: 50 },
+  ],
   kill: [note(880, 0), note(1320, 70, 160)],
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
   reload: [{ src: 'noise', filter: 'highpass', q: 1, cutoffHz: [3000, 3000], ms: 40, gain: 0.25 }, { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [2200, 2200], ms: 50, gain: 0.25, delayMs: 110 }],
@@ -56,6 +60,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         break;
       }
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1 }); break;
+      case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
       case 'kill': if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine('kill'); break;
     }
   }

@@ -592,6 +592,28 @@ function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
   };
 }
 
+const KNIFE_LUNGE = 90;
+const KNIFE_REACH = 70;
+const KNIFE_ARC = Math.PI / 3;
+const KNIFE_DAMAGE = 75;
+
+const insideWorld = (x: number, y: number) =>
+  x >= WORLD.playerRadius && x <= WORLD.size - WORLD.playerRadius && y >= WORLD.playerRadius && y <= WORLD.size - WORLD.playerRadius;
+
+function knifeTarget(w: World, p: Player, solids: readonly Rect[]): Player | null {
+  let best: Player | null = null, bestD = Infinity;
+  for (const v of w.players.values()) {
+    if (v.life.k !== 'alive' || !isEnemy(p, v)) continue;
+    const d = Math.sqrt(dist2(p.x, p.y, v.x, v.y));
+    if (d > KNIFE_REACH + WORLD.playerRadius || d >= bestD) continue;
+    if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - p.y, v.x - p.x), p.angle) > KNIFE_ARC) continue;
+    if (solids.some((b) => segmentEntersRectAt(p.x, p.y, v.x - p.x, v.y - p.y, b) !== null)) continue;
+    best = v;
+    bestD = d;
+  }
+  return best;
+}
+
 export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
@@ -601,15 +623,19 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     return true;
   },
   knife: (w, p) => {
-    Object.assign(p, resolveCircle(solidRects(w), p.x + Math.cos(p.angle) * 90, p.y + Math.sin(p.angle) * 90));
-    const reach = 70;
-    for (const v of w.players.values()) {
-      if (v.life.k !== 'alive' || !isEnemy(p, v)) continue;
-      const d = Math.sqrt(dist2(p.x, p.y, v.x, v.y));
-      if (d > reach + WORLD.playerRadius) continue;
-      if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - p.y, v.x - p.x), p.angle) > Math.PI / 3) continue;
-      damagePlayer(w, v, 75, { attacker: p, label: 'Knife', piercing: true, fromX: p.x, fromY: p.y });
+    const solids = solidRects(w);
+    const steps = Math.ceil(KNIFE_LUNGE / MAX_SUBSTEP);
+    const sx = (Math.cos(p.angle) * KNIFE_LUNGE) / steps, sy = (Math.sin(p.angle) * KNIFE_LUNGE) / steps;
+    let victim = knifeTarget(w, p, solids);
+    for (let i = 0; i < steps && !victim; i++) {
+      const nx = p.x + sx, ny = p.y + sy;
+      if (!insideWorld(nx, ny) || solids.some((b) => circleHitsRect(nx, ny, WORLD.playerRadius, b))) break;
+      p.x = nx;
+      p.y = ny;
+      victim = knifeTarget(w, p, solids);
     }
+    if (victim) damagePlayer(w, victim, KNIFE_DAMAGE, { attacker: p, label: 'Knife', piercing: true, fromX: p.x, fromY: p.y });
+    w.events.push({ e: 'slash', x: p.x, y: p.y, angle: p.angle, owner: p.id });
     return true;
   },
   engineer: (w, p) => {

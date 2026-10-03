@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
-import { snapshotFor, type Player, type World } from '../src/shared/sim.ts';
-import { emptyWorld, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { snapshotFor, step, type Player, type World } from '../src/shared/sim.ts';
+import { emptyWorld, grantPerks, hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const R = WORLD.playerRadius;
 const builtWalls = (w: World) => w.walls.filter((x) => x.built);
@@ -25,6 +25,59 @@ test('an engineer wall never spawns on a player, keeps the cooldown ready, and b
   assert.ok(wall, 'the held key builds as soon as the spot is clear');
   for (const p of w.players.values()) assert.ok(!overlaps(p, wall), `wall clear of player ${p.id}`);
   assert.ok(snapshotFor(w, builder.id).self.abilityReadyIn > 0, 'cooldown spent on the build');
+});
+
+function knifer(w: World, x = 500, y = 500): Player {
+  const p = spawnAt(w, x, y);
+  grantPerks(w, p, ['grip', 'thickSkin', 'knife']);
+  return p;
+}
+
+function slash(w: World, p: Player, angle = 0) {
+  press(w, p, { ability: true, angle });
+  step(w, TICK_MS);
+  const events = w.events;
+  press(w, p, { angle });
+  return events.filter((e) => e.e === 'slash');
+}
+
+test('a knife lunge stops at a wall and cannot reach an enemy behind it', () => {
+  const w = emptyWorld();
+  const p = knifer(w);
+  const enemy = spawnAt(w, 600, 500);
+  w.walls.push({ x: 540, y: 400, w: 24, h: 200, built: true, expiresAt: Infinity });
+  slash(w, p);
+  assert.ok(p.x <= 540 - R + 1e-6, `stopped on the near side (x ${p.x})`);
+  assert.equal(hpOf(enemy), WORLD.baseHp, 'enemy behind the wall untouched');
+});
+
+test('a knife hits a point-blank enemy without lunging past them', () => {
+  const w = emptyWorld();
+  const p = knifer(w);
+  const enemy = spawnAt(w, 550, 500);
+  slash(w, p);
+  assert.ok(hpOf(enemy) < WORLD.baseHp, `enemy hit (hp ${hpOf(enemy)})`);
+  assert.equal(p.x, 500, 'no lunge needed');
+});
+
+test('a knife lunge stops at the first enemy it reaches and hits only them', () => {
+  const w = emptyWorld();
+  const p = knifer(w);
+  const first = spawnAt(w, 640, 500);
+  const second = spawnAt(w, 700, 500);
+  const [ev] = slash(w, p, 0);
+  assert.ok(hpOf(first) < WORLD.baseHp, 'first enemy hit');
+  assert.equal(hpOf(second), WORLD.baseHp, 'second enemy spared');
+  assert.ok(p.x > 500 && p.x < first.x - 2 * R, `lunged toward but not into the first enemy (x ${p.x})`);
+  assert.deepEqual(ev, { e: 'slash', x: p.x, y: p.y, angle: 0, owner: p.id });
+});
+
+test('a whiffed knife still lunges the full distance and emits a slash', () => {
+  const w = emptyWorld();
+  const p = knifer(w);
+  const events = slash(w, p, Math.PI / 2);
+  assert.ok(Math.abs(p.y - 590) < 1e-6, `lunged 90px (y ${p.y})`);
+  assert.equal(events.length, 1);
 });
 
 function dasher(w: World, x = 500, y = 500): Player {

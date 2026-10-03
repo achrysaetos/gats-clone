@@ -15,6 +15,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
       const weapon = snap.players.find((p) => p.id === ev.owner)?.weapon ?? 'pistol';
       return { kind: 'flash', ...muzzleTip(ev.x, ev.y, ev.angle, weapon, WORLD.playerRadius), angle: ev.angle };
     }
+    case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'kill': return null;
   }
 }

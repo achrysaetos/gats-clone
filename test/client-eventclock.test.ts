@@ -28,6 +28,18 @@ test('impacts, sparks and booms are drawn on the render clock, even from my own 
   assert.deepEqual(later.map((p) => p.fx.kind), ['impact', 'impact', 'boom'], 'kills are not world effects');
 });
 
+test('a knife slash draws an arc at the strike point on the render clock, including my own', () => {
+  const { now, later } = scheduleEffects(snapWith([
+    { e: 'slash', x: 10, y: 20, angle: 1.5, owner: ME },
+    { e: 'slash', x: 30, y: 40, angle: 0, owner: 2 },
+  ]), 700, ME);
+  assert.deepEqual(now, []);
+  assert.deepEqual(later, [
+    { at: 700, fx: { kind: 'slash', x: 10, y: 20, angle: 1.5 } },
+    { at: 700, fx: { kind: 'slash', x: 30, y: 40, angle: 0 } },
+  ]);
+});
+
 test('deferred effects release exactly when the render clock reaches their tick', () => {
   const { later } = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1 }]), 1000, ME);
   const early = releaseDue(later, 999);

@@ -47,6 +47,14 @@ test('a shot sounds like the shooter\'s weapon and is flagged self only for your
   assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
 });
 
+test('a knife slash makes a slash sound at the strike point, flagged self only for your own', () => {
+  const cues = soundsFor(null, snap({ events: [
+    { e: 'slash', x: 300, y: 0, angle: 0, owner: 2 },
+    { e: 'slash', x: 120, y: 0, angle: 0, owner: 1 },
+  ] }));
+  assert.deepEqual(cues.map((c) => [c.id, c.self, c.x]), [['slash', false, 300], ['slash', true, 120]]);
+});
+
 test('level-up plays once per newly pending tier', () => {
   const t = (pendingTier: 1 | 2 | null) => snap({ self: { pendingTier } });
   assert.deepEqual(ids(t(null), t(1)), ['levelup']);

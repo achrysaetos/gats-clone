@@ -67,7 +67,8 @@ export type GameEvent =
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
-  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number };
+  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number }
+  | { e: 'slash'; x: number; y: number; angle: number; owner: number };
 
 export type LeaderRow = { id: number; name: string; score: number; team: Team };
 export type MatchView = { mode: ModeId; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
