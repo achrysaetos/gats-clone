@@ -1,7 +1,6 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-balance.ts [worlds=8] [minutes=5] [mode=FFA]
-import { ARMOR_IDS, LEVEL_SCORES, WEAPON_IDS, WORLD, type ArmorId, type WeaponId } from '../src/shared/defs.ts';
-import { isMode } from '../src/shared/protocol.ts';
+import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
 import {
   addPlayer, canRespawn, choosePerk, createWorld, IDLE_INPUT, levelForScore, rand, respawn, setInput, snapshotFor, step, wallViews,
 } from '../src/shared/sim.ts';
@@ -9,8 +8,8 @@ import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/se
 
 const worlds = Number(process.argv[2] ?? 8);
 const minutes = Number(process.argv[3] ?? 5);
-const mode = process.argv[4] ?? 'FFA';
-if (!isMode(mode)) throw new Error(`unknown mode ${mode}`);
+const mode = MODE_IDS.find((m) => m === (process.argv[4] ?? 'FFA')) satisfies ModeId | undefined;
+if (!mode) throw new Error(`unknown mode ${process.argv[4]}; use one of ${MODE_IDS.join(', ')}`);
 const TICK_MS = 1000 / WORLD.tickHz;
 
 const median = (xs: number[]) => {
