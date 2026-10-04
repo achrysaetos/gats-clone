@@ -7,7 +7,7 @@ import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { abilityOf, choosePerk, pendingTier } from '../src/shared/sim/stats.ts';
-import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
+import { createWorld, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const TICKS = 4000;
