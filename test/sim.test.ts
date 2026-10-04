@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { ABILITY_COOLDOWN_MS, ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { explode } from '../src/shared/sim/combat.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
@@ -73,6 +74,25 @@ test('extended mag enlarges the magazine', () => {
   assert.equal(snapshotFor(w, a.id).self.mag, GUNS.pistol.mag);
   grantPerks(w, a, ['extended']);
   assert.equal(snapshotFor(w, a.id).self.mag, Math.round(GUNS.pistol.mag * 1.5));
+});
+
+test('a shield blocks 35% of bullets from within 40 degrees of its facing, and nothing else', () => {
+  const lostTo = (facingOff: number, hit: 'bullet' | 'blast') => {
+    const w = emptyWorld();
+    const a = spawnAt(w, 500, 500);
+    const v = spawnAt(w, 700, 500);
+    grantPerks(w, v, ['optics', 'shield']);
+    press(w, v, { angle: Math.PI + facingOff });
+    step(w, TICK_MS);
+    if (hit === 'bullet') shootOnce(w, a, 0);
+    else explode(w, 640, 500, 100, 50, null, 'test');
+    return Math.round((WORLD.baseHp - hpOf(v)) * 1e6) / 1e6;
+  };
+  const deg = Math.PI / 180;
+  assert.equal(lostTo(0, 'bullet'), PISTOL_DMG * (1 - 0.35), 'head on');
+  assert.equal(lostTo(35 * deg, 'bullet'), PISTOL_DMG * (1 - 0.35), 'inside the arc');
+  assert.equal(lostTo(50 * deg, 'bullet'), PISTOL_DMG, 'outside the arc');
+  assert.equal(lostTo(0, 'blast'), 50 * (1 - (60 - WORLD.playerRadius) / 100), 'a blast in front is not blocked');
 });
 
 test('lightweight moves 10% faster', () => {

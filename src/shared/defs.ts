@@ -174,7 +174,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   silencer: { name: 'Silencer', desc: 'Firing does not reveal you on the minimap' },
   lightweight: { name: 'Lightweight', desc: '+10% move speed' },
   longRange: { name: 'Long range', desc: '+40% bullet range' },
-  shield: { name: 'Shield', desc: 'Blocks 60% of frontal damage' },
+  shield: { name: 'Shield', desc: 'Blocks 35% of bullet damage from the front' },
   thickSkin: { name: 'Thick skin', desc: '+30 max health' },
   firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster' },
   grenade: { name: 'Grenade', desc: 'Thrown explosive' },

@@ -5,15 +5,16 @@ import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, sameTeam, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
-const SHIELD_BLOCK = 0.6;
-const SHIELD_ARC = Math.PI / 3;
+const SHIELD_BLOCK = 0.35;
+const SHIELD_ARC = (40 * Math.PI) / 180;
 /** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
 export const MAX_REWIND_MS = 350;
 const TICK_MS = 1000 / WORLD.tickHz;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
-type DamageSource = { attacker: Player | null; label: string; piercing: boolean; fromX: number; fromY: number };
+/** `bullet` marks damage a shield can stop. */
+type DamageSource = { attacker: Player | null; label: string; piercing: boolean; bullet: boolean; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k !== 'alive') return;
@@ -22,7 +23,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   const life = victim.life;
   const before = life.hp + life.armor;
   const stats = effectiveStats(victim);
-  if (stats.shield) {
+  if (stats.shield && src.bullet) {
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
@@ -79,7 +80,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const d = Math.sqrt(dist2(at.x, at.y, x, y));
     if (d > radius + WORLD.playerRadius || sheltered(view.walls, x, y, at.x, at.y)) continue;
     const dmg = maxDamage * (1 - Math.max(0, d - WORLD.playerRadius) / radius);
-    damagePlayer(w, p, dmg, { attacker: owner, label, piercing: false, fromX: x, fromY: y });
+    damagePlayer(w, p, dmg, { attacker: owner, label, piercing: false, bullet: false, fromX: x, fromY: y });
   }
   for (const c of w.crates) {
     const r = crateRect(c);
@@ -120,7 +121,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
+          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, bullet: true, fromX: b.x, fromY: b.y }),
         }] : [];
       }),
   ];
