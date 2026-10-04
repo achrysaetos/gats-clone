@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from '../src/client/moments.ts';
-import { approachAlpha, PANEL_ALPHA } from '../src/client/hud.ts';
+import { approachAlpha, drawHud, PANEL_ALPHA } from '../src/client/hud.ts';
+import { makeCamera } from '../src/client/camera.ts';
+import { NO_FEEDBACK } from '../src/client/feedback.ts';
+import type { Session } from '../src/client/state.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -71,6 +74,34 @@ test('a HUD panel fades toward see-through while a player is under it, and back 
   for (let i = 0; i < 10; i++) alpha = approachAlpha(alpha, false, 50);
   assert.equal(alpha, PANEL_ALPHA.rest, 'returns to its resting opacity');
   assert.ok(PANEL_ALPHA.rest < 1, 'even at rest the panel is translucent');
+});
+
+type Drawn = { text: string; color: unknown };
+
+/** Draws the HUD into a recording context and returns every filled string with its fill color. */
+function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
+  const drawn: Drawn[] = [];
+  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop === 'fillText') return (text: string) => drawn.push({ text, color: target.fillStyle });
+      if (prop === 'measureText') return (text: string) => ({ width: text.length * 7 });
+      return () => {};
+    },
+    set(target, prop, value) { target[prop] = value; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  Object.assign(globalThis, { Path2D: class {} });
+  const s = { myId: 1, worldSize: WORLD.size, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], ...session } as unknown as Session;
+  drawHud(ctx, 1, makeCamera(s.lastSelf, 1280, 800, WORLD.viewRadius), frame, s, 1000, { x: 0, y: 0 });
+  return drawn;
+}
+
+test('the kill feed spells out an evolved gun in its accent color and keeps the icon for a class gun', () => {
+  const line = (weapon: string) => ({ ...kill({ weapon }), at: 1000 });
+  const evolved = hudTexts(snap(), { feed: [line('Hornet')] });
+  assert.deepEqual(evolved.filter((d) => d.text === 'Hornet').map((d) => d.color), [GUNS.hornet.look.accent]);
+  const base = hudTexts(snap(), { feed: [line('SMG')] });
+  assert.equal(base.some((d) => d.text === 'SMG'), false, 'a class gun is drawn as its icon, not its name');
 });
 
 test('the death screen names the killer\'s gun and what the life had earned', () => {

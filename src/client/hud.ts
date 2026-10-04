@@ -278,23 +278,17 @@ function caps(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, co
 const FEED_ICON_W = 34;
 const BOUNTY_TAG = `+${WORLD.bountyScore} BOUNTY`;
 
-function drawFeedWeapon(ctx: CanvasRenderingContext2D, label: string, x: number, y: number): number {
+/** Class guns read as their icon; an evolved gun is spelled out in its accent color, since its silhouette is easy to mistake. */
+function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: number; draw(x: number, y: number): void } {
   const gun = GUN_BY_NAME.get(label);
-  if (gun) {
-    ctx.save();
-    ctx.translate(x - 4, y);
-    drawGun(ctx, gun, 10, MUTED);
-    ctx.restore();
-    return FEED_ICON_W;
+  if (gun && GUNS[gun].stage === 0) {
+    return { width: FEED_ICON_W, draw: (x, y) => { ctx.save(); ctx.translate(x - 4, y); drawGun(ctx, gun, 10, MUTED); ctx.restore(); } };
   }
   const perk = PERK_BY_NAME.get(label);
-  if (perk) {
-    strokeIcon(ctx, PERK_ICONS[perk], x + 9, y, 15, MUTED, 2.4);
-    return 22;
-  }
-  setFont(ctx, 500, TYPE.label);
-  text(ctx, label, x, y, TYPE.label, MUTED, 'left', 500);
-  return ctx.measureText(label).width + SPACE.sm;
+  if (perk) return { width: 22, draw: (x, y) => strokeIcon(ctx, PERK_ICONS[perk], x + 9, y, 15, MUTED, 2.4) };
+  const [color, weight] = gun ? [GUNS[gun].look.accent, 800] : [MUTED, 500];
+  setFont(ctx, weight, TYPE.label);
+  return { width: ctx.measureText(label).width + SPACE.sm, draw: (x, y) => text(ctx, label, x, y, TYPE.label, color, 'left', weight) };
 }
 
 function drawKillFeed({ ctx, s, now }: Hud, top: number) {
@@ -313,14 +307,15 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
     }
     const kw = f.killer ? ctx.measureText(f.killer).width : 0;
     const vw = ctx.measureText(f.victim).width;
-    const ww = GUN_BY_NAME.has(f.weapon) ? FEED_ICON_W : 40;
+    const weapon = feedWeapon(ctx, f.weapon);
     setFont(ctx, 800, TYPE.micro);
     const bw = f.bounty ? ctx.measureText(BOUNTY_TAG).width + SPACE.sm * 2 : 0;
     const mine = feedMentions(f, s.myId);
-    panel(ctx, 12, y - 12, kw + vw + ww + bw + SPACE.lg * 2, 24, mine ? PALETTE.gold : f.bounty ? PALETTE.hunted : undefined);
+    panel(ctx, 12, y - 12, kw + vw + weapon.width + bw + SPACE.lg * 2, 24, mine ? PALETTE.gold : f.bounty ? PALETTE.hunted : undefined);
     let x = 12 + SPACE.md;
     if (f.killer) { text(ctx, f.killer, x, y, TYPE.body, f.killerId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700); x += kw + SPACE.sm; }
-    x += drawFeedWeapon(ctx, f.weapon, x, y);
+    weapon.draw(x, y);
+    x += weapon.width;
     text(ctx, f.victim, x, y, TYPE.body, f.victimId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
     if (f.bounty) text(ctx, BOUNTY_TAG, x + vw + SPACE.sm, y, TYPE.micro, PALETTE.hunted, 'left', 800);
     ctx.globalAlpha = 1;
