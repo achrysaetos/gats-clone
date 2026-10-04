@@ -336,7 +336,6 @@ const GUARD_RADIUS = 550;
 const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
 const KITE_PX = 140;
-const STICKY_TARGET = 1.5;
 
 /** A squad bot's errands, first match wins: get a downed squadmate up, mend a wall while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
 const SIEGE_RULES: readonly ((s: Watch) => Errand | null)[] = [
@@ -360,10 +359,7 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonl
     .map(([id, , x, y]) => ({ id, x, y, d: Math.hypot(x - me.x, y - me.y) }))
     .filter((z) => Math.abs(z.x - me.x) <= sight.halfW && Math.abs(z.y - me.y) <= sight.halfH
       && !walls.some((r) => segmentEntersRectAt(me.x, me.y, z.x - me.x, z.y - me.y, r) !== null));
-  const closest = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
-  // Switching targets restarts the reaction delay, so a bot stays on the zombie it is shooting until another is much closer.
-  const held = zombies.find((z) => z.id === mem.engaged?.id);
-  const zombie = held && closest && held.d <= closest.d * STICKY_TARGET ? held : closest;
+  const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
   const damaged = (snap.buildings ?? [])
@@ -377,7 +373,8 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonl
   let angle = Math.atan2(errand.y - me.y, errand.x - me.x), aimDist = 300, fire = false;
   let threat: Situation['threat'] = null;
   if (zombie) {
-    const engaged = engage(mem.engaged?.id === zombie.id ? mem.engaged : null, zombie, SHARPNESS[0]!, me, snap.tick, rand);
+    // A bot reacts once when the horde comes into sight, then swings from zombie to zombie without waiting again.
+    const engaged = engage(mem.engaged, zombie, SHARPNESS[0]!, me, snap.tick, rand);
     angle = Math.atan2(zombie.y - me.y, zombie.x - me.x) + engaged.aimErrRad;
     aimDist = zombie.d;
     const reacted = snap.tick >= engaged.fireAtTick;
