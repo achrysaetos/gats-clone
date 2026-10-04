@@ -28,7 +28,7 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | Enter | Chat |
 | M | Mute sound |
 
-Points in one life raise your level. At 100, 350 and 500 points you pick an attachment, a survival perk and an ability. At 200 and 700 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy minimap pings their position every 2.5 seconds and whenever they fire an unsilenced shot, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill. An attacker who dealt at least 30% of a victim's max health earns a 50-point assist when someone else gets the kill.
+Points in one life raise your level. At 100, 300 and 400 points you pick an attachment, a survival perk and an ability. At 200 and 550 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy minimap pings their position every 2.5 seconds and whenever they fire an unsilenced shot, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill. An attacker who dealt at least 30% of a victim's max health earns a 50-point assist when someone else gets the kill.
 
 ## Layout
 

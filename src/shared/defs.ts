@@ -201,7 +201,7 @@ export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
   { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 200, pick: { k: 'evolve' } },
-  { score: 350, pick: { k: 'perk', tier: 2 } }, { score: 500, pick: { k: 'perk', tier: 3 } }, { score: 700, pick: { k: 'evolve' } },
+  { score: 300, pick: { k: 'perk', tier: 2 } }, { score: 400, pick: { k: 'perk', tier: 3 } }, { score: 550, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] => (pick.k === 'perk' ? PERK_TIERS[pick.tier] : EVOLUTIONS[gun]);
