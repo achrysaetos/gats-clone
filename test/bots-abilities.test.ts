@@ -89,3 +89,10 @@ test('an engineer bot builds cover only while under fire at mid range', () => {
   assert.ok(!uses(inputs({ ability: 'engineer', enemyAt: { x: 1350, y: 1000 } })), 'no wall when nobody is shooting');
   assert.ok(!uses(inputs({ ability: 'engineer', enemyAt: { x: 1100, y: 1000 }, hitEveryTick: true })), 'no wall against a shooter 100px away');
 });
+
+test('a bot with its knife ready closes on a nearby enemy instead of strafing at range', () => {
+  const knife = inputs({ ability: 'knife', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
+  assert.ok(knife.right, 'steps toward an enemy 250px away');
+  const grenade = inputs({ ability: 'grenade', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
+  assert.ok(!grenade.right && (grenade.up || grenade.down), 'a grenade bot strafes at the same distance');
+});
