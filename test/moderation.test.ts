@@ -29,15 +29,29 @@ test('the server renames a blocked name and masks chat before anyone else sees i
   const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-mod-'));
   await writeFile(join(dataDir, 'blocklist.txt'), 'grief\n');
   const server = await startServer({ port: 0, dataDir });
-  const connect = () => new Promise<InstanceType<typeof WebSocket>>((resolve) => { const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`); ws.once('open', () => resolve(ws)); });
+  const { fillSnapshot } = await import('../src/shared/wire.ts');
+  const full = new Map<unknown, any>();
+  const connect = () => new Promise<InstanceType<typeof WebSocket>>((resolve) => {
+    const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`);
+    // Track the rebuilt snapshot from the first frame: welcome and the first full snapshot can arrive in one chunk, and later ones omit an unchanged leaderboard.
+    ws.on('message', (m) => { const msg = JSON.parse(String(m)); if (msg.t === 'snap') full.set(ws, fillSnapshot(msg, full.get(ws) ?? null) ?? full.get(ws)); });
+    ws.once('open', () => resolve(ws));
+  });
+  const leaderboardOf = async (ws: InstanceType<typeof WebSocket>, ready: (names: string[]) => boolean) => {
+    for (let i = 0; i < 100; i++) {
+      const names = ((full.get(ws)?.leaderboard ?? []) as { name: string }[]).map((r) => r.name);
+      if (ready(names)) return names;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    throw new Error('leaderboard never listed both players');
+  };
   const next = (ws: InstanceType<typeof WebSocket>, t: string) => new Promise<any>((resolve) => ws.on('message', (m) => { const msg = JSON.parse(String(m)); if (msg.t === t) resolve(msg); }));
   const join_ = (ws: InstanceType<typeof WebSocket>, name: string) => ws.send(JSON.stringify({ t: 'join', name, loadout: { weapon: 'pistol', armor: 'none', color: 'red' } }));
   try {
     const rude = await connect(), listener = await connect();
     join_(rude, 'griefer'); join_(listener, 'Calm');
     await Promise.all([next(rude, 'welcome'), next(listener, 'welcome')]);
-    const snap = await next(listener, 'snap');
-    const names = (snap.leaderboard as { name: string }[]).map((r) => r.name);
+    const names = await leaderboardOf(listener, (n) => n.includes('Calm') && n.length >= 2);
     assert.ok(names.includes('Player') && !names.some((n) => /grief/i.test(n)), `blocked name replaced: ${names.join(', ')}`);
     const heard = next(listener, 'chat');
     rude.send(JSON.stringify({ t: 'chat', text: 'you are sh1t' }));
