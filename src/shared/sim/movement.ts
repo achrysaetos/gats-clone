@@ -94,6 +94,43 @@ function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: nu
   return at;
 }
 
+const KNIFE_LUNGE = 90;
+const KNIFE_REACH = 70;
+const KNIFE_ARC = Math.PI / 3;
+
+type Point = { x: number; y: number };
+
+const insideWorld = (x: number, y: number) =>
+  x >= WORLD.playerRadius && x <= WORLD.size - WORLD.playerRadius && y >= WORLD.playerRadius && y <= WORLD.size - WORLD.playerRadius;
+
+function knifeTarget<T extends Point>(at: Point, angle: number, enemies: readonly T[], solids: readonly Rect[]): T | null {
+  let best: T | null = null, bestD = Infinity;
+  for (const v of enemies) {
+    const d = Math.sqrt(dist2(at.x, at.y, v.x, v.y));
+    if (d > KNIFE_REACH + WORLD.playerRadius || d >= bestD) continue;
+    if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - at.y, v.x - at.x), angle) > KNIFE_ARC) continue;
+    if (solids.some((b) => segmentEntersRectAt(at.x, at.y, v.x - at.x, v.y - at.y, b) !== null)) continue;
+    best = v;
+    bestD = d;
+  }
+  return best;
+}
+
+export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point, angle: number, enemies: readonly T[]): Point & { victim: T | null } {
+  const steps = Math.ceil(KNIFE_LUNGE / MAX_SUBSTEP);
+  const sx = (Math.cos(angle) * KNIFE_LUNGE) / steps, sy = (Math.sin(angle) * KNIFE_LUNGE) / steps;
+  let { x, y } = from;
+  let victim = knifeTarget(from, angle, enemies, solids);
+  for (let i = 0; i < steps && !victim; i++) {
+    const nx = x + sx, ny = y + sy;
+    if (!insideWorld(nx, ny) || solids.some((b) => circleHitsRect(nx, ny, WORLD.playerRadius, b))) break;
+    x = nx;
+    y = ny;
+    victim = knifeTarget({ x, y }, angle, enemies, solids);
+  }
+  return { x, y, victim };
+}
+
 export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number): Motion {
   const { dash } = from;
   if (dash) {

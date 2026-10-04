@@ -1,9 +1,10 @@
-import type { CrateView, InputState, SelfView, WallView } from '../shared/protocol.ts';
-import { moveStep, startDash, type Motion, type Rect } from '../shared/sim/movement.ts';
+import type { CrateView, InputState, Snapshot, WallView } from '../shared/protocol.ts';
+import { knifeLunge, moveStep, startDash, type Motion, type Rect } from '../shared/sim/movement.ts';
 import { lerp } from './interp.ts';
 
-export type PendingInput = { seq: number; input: InputState; dtMs: number; startsDash: boolean };
 type Point = { x: number; y: number };
+export type PredictedAbility = { k: 'dash' } | { k: 'knife'; enemies: readonly Point[] };
+export type PendingInput = { seq: number; input: InputState; dtMs: number; ability: PredictedAbility | null };
 
 export type Prediction = {
   pending: PendingInput[];
@@ -26,14 +27,30 @@ export const solidsOf = (walls: readonly WallView[], crates: readonly CrateView[
   ...crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
 ];
 
-export function startsDash(pred: Prediction, input: InputState, self: Pick<SelfView, 'ability' | 'abilityReadyIn'>, armed: boolean): boolean {
-  const dashing = !!pred.afterNewest?.dash || pred.pending.some((p) => p.startsDash);
-  return armed && input.ability && self.ability === 'dash' && self.abilityReadyIn <= 0 && !dashing;
+export function predictAbility(pred: Prediction, input: InputState, latest: Snapshot): PredictedAbility | null {
+  const { self } = latest;
+  const busy = !!pred.afterNewest?.dash || pred.pending.some((p) => p.ability);
+  if (!input.ability || latest.match.winner !== null || self.abilityReadyIn > 0 || busy) return null;
+  switch (self.ability) {
+    case 'dash': return { k: 'dash' };
+    case 'knife': {
+      const team = latest.players.find((p) => p.id === self.id)?.team ?? null;
+      return { k: 'knife', enemies: latest.players.filter((p) => p.alive && p.id !== self.id && (team === null || p.team !== team)) };
+    }
+    default: return null;
+  }
 }
 
 function stepInput(solids: readonly Rect[], at: Motion, p: PendingInput, speed: number): Motion {
   const moved = moveStep(solids, at, p.input, speed, p.dtMs);
-  return p.startsDash && !moved.dash ? { ...moved, dash: startDash(p.input) } : moved;
+  switch (p.ability?.k) {
+    case 'dash': return moved.dash ? moved : { ...moved, dash: startDash(p.input) };
+    case 'knife': {
+      const { x, y } = knifeLunge(solids, moved, p.input.angle, p.ability.enemies);
+      return { ...moved, x, y };
+    }
+    case undefined: return moved;
+  }
 }
 
 const replay = (solids: readonly Rect[], start: Motion, pending: readonly PendingInput[], speed: number): Motion =>

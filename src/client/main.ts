@@ -15,7 +15,7 @@ import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } fro
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
-import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash } from './predict.ts';
+import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, solidsOf } from './predict.ts';
 import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
@@ -286,8 +286,8 @@ setInterval(() => {
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
   const solids = solidsOf(s.walls, latest?.crates ?? []);
-  const dash = !!latest && startsDash(s.predict, input, latest.self, latest.match.winner === null);
-  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, startsDash: dash }, solids, latest?.self.speed ?? 0, performance.now());
+  const ability = latest ? predictAbility(s.predict, input, latest) : null;
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solids, latest?.self.speed ?? 0, performance.now());
 }, INPUT_MS);
 
 function pickPerk(slot: number) {

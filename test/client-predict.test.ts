@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash, type Prediction } from '../src/client/predict.ts';
+import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, solidsOf, type Prediction } from '../src/client/predict.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import type { Motion, Rect } from '../src/shared/sim/movement.ts';
@@ -11,13 +11,14 @@ import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
 const LATENCY_TICKS = 3;
 
-type Lockstep = { clientSolids?: (snap: Snapshot) => Rect[]; dashPerk?: boolean };
+type Lockstep = { clientSolids?: (snap: Snapshot) => Rect[]; ability?: 'dash' | 'knife'; enemyAt?: { x: number; y: number } };
 
-function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, dashPerk = false }: Lockstep = {}) {
+function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability, enemyAt }: Lockstep = {}) {
   const w = emptyWorld();
   w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, expiresAt: Infinity }];
   const p = spawnAt(w, 500, 500);
-  if (dashPerk) grantPerks(w, p, ['grip', 'thickSkin', 'dash']);
+  if (ability) grantPerks(w, p, ['grip', 'thickSkin', ability]);
+  if (enemyAt) spawnAt(w, enemyAt.x, enemyAt.y);
   const walls = wallViews(w);
   const solidsFor = clientSolids ?? ((snap: Snapshot) => solidsOf(walls, snap.crates));
   const selfOf = (snap: Snapshot): Motion => {
@@ -34,8 +35,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, dashPerk
   all.forEach((partial, i) => {
     const seq = i + 1;
     const input = { ...IDLE_INPUT, ...partial };
-    const dash = startsDash(pred, input, latest.self, true);
-    pred = predictInput(pred, { seq, input, dtMs: TICK_MS, startsDash: dash }, solidsFor(latest), latest.self.speed, seq * TICK_MS);
+    pred = predictInput(pred, { seq, input, dtMs: TICK_MS, ability: predictAbility(pred, input, latest) }, solidsFor(latest), latest.self.speed, seq * TICK_MS);
     toServer.push({ at: seq + LATENCY_TICKS, seq, input });
     for (const m of toServer.filter((m) => m.at === seq)) setInput(w, p.id, m.seq, m.input);
     step(w, TICK_MS);
@@ -90,7 +90,7 @@ test('a respawn-sized correction snaps', () => {
 });
 
 test('the drawn player walks the latest step across one input interval', () => {
-  const pred = predictInput(at(100, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS, startsDash: false }, [], 300, 1000);
+  const pred = predictInput(at(100, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS, ability: null }, [], 300, 1000);
   assert.equal(drawnPosition(pred, 1000, TICK_MS)!.x, 100);
   assert.ok(Math.abs(drawnPosition(pred, 1000 + TICK_MS / 2, TICK_MS)!.x - 105) < 1e-9);
   assert.ok(Math.abs(drawnPosition(pred, 5000, TICK_MS)!.x - 110) < 1e-9);
@@ -105,8 +105,30 @@ const dashRoute: Partial<InputState>[] = [
 ];
 
 test('a dash predicted on the client matches the server every snapshot, so the local player never rubber-bands', () => {
-  const { server, pred, maxCorrection } = playOutLockstep(dashRoute, { dashPerk: true });
+  const { server, pred, maxCorrection } = playOutLockstep(dashRoute, { ability: 'dash' });
   assert.ok(server.y - 500 > 240, `the server dashed down (y ${server.y})`);
+  assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
+  assert.deepEqual(pred.afterNewest, server);
+});
+
+const knifeRoute: Partial<InputState>[] = [
+  ...Array(4).fill({ ability: true, angle: -Math.PI / 2 }),
+  ...Array(50).fill({}),
+  ...Array(4).fill({ ability: true, angle: 0 }),
+  ...Array(10).fill({}),
+];
+
+test('a knife lunge predicted on the client matches the server every snapshot, including one cut short by a wall', () => {
+  const { server, pred, maxCorrection } = playOutLockstep(knifeRoute, { ability: 'knife' });
+  assert.ok(500 - server.y > 80, `the server lunged up (y ${server.y})`);
+  assert.ok(server.x < 600 - 24 && server.x > 500 + 45, `the second lunge stopped at the wall (x ${server.x})`);
+  assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
+  assert.deepEqual(pred.afterNewest, server);
+});
+
+test('a knife lunge that reaches an enemy stops where the server stops it', () => {
+  const { server, pred, maxCorrection } = playOutLockstep(knifeRoute.slice(0, 20), { ability: 'knife', enemyAt: { x: 500, y: 360 } });
+  assert.ok(server.y < 470 && server.y > 420, `the lunge stopped short of its full 90px (y ${server.y})`);
   assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
   assert.deepEqual(pred.afterNewest, server);
 });
