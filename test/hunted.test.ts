@@ -5,7 +5,7 @@ import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
-import { emptyWorld, equip, press, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 test('killing a hunted player pays the bounty on top of the kill score, and the kill says so', () => {
   const w = emptyWorld();
@@ -52,4 +52,16 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
   assert.deepEqual(snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'), [], 'stage 1 is not hunted');
   assert.ok(choosePick(w, a.id, 5, 'thunderclap'));
   assert.deepEqual(snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'), [{ e: 'hunted', id: a.id, name: 'Kestrel' }]);
+});
+
+test('a hunted player cannot vanish in a ghillie suit', () => {
+  const w = emptyWorld();
+  const camper = spawnAt(w, 500, 500);
+  const enemy = spawnAt(w, 900, 500);
+  grantPerks(w, camper, ['ghillie']);
+  const seen = () => snapshotFor(w, enemy.id).players.some((p) => p.id === camper.id);
+  run(w, 1000);
+  assert.equal(seen(), false, 'a still ghillie player with a class gun is hidden');
+  equip(camper, 'executioner');
+  assert.equal(seen(), true);
 });
