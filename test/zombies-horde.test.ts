@@ -107,15 +107,27 @@ test('a zombie turns on a squad player it can see close by and bites at its own 
   assert.equal(before - hpOf(p), 2 * ZOMBIES.walker.damage, 'a second bite after the attack interval');
 });
 
-test('a wall between a player and a zombie keeps the zombie on its march', () => {
+test('a player behind a wall does not draw a zombie off its march', () => {
   const w = nightWorld();
   w.run!.core.hp = 1e9;
-  const p = spawnAt(w, 12.5 * ZOM.cell, 10.5 * ZOM.cell);
-  for (let cy = 8; cy <= 13; cy++) addWall(w, 11, cy);
-  addZombie(w, 'walker', 9.5 * ZOM.cell, 10.5 * ZOM.cell);
-  const before = hpOf(p);
-  stepFor(w, 3000);
-  assert.equal(hpOf(p), before);
+  const p = spawnAt(w, 8.5 * ZOM.cell, 30.5 * ZOM.cell);
+  for (let cy = 27; cy <= 33; cy++) addWall(w, 9, cy);
+  const z = addZombie(w, 'walker', 10.5 * ZOM.cell, 30.5 * ZOM.cell);
+  assert.ok(Math.hypot(p.x - z.x, p.y - z.y) < ZOM.aggroPx);
+  stepFor(w, 2000);
+  assert.ok(z.x > 10.5 * ZOM.cell + 150, `the zombie headed for the core, at x ${z.x.toFixed(0)}`);
+});
+
+test('a diagonal line of walls closes the way: the horde chews through it rather than wedging between corners', () => {
+  const w = nightWorld();
+  const mid = (CORE_CELL.lo + CORE_CELL.hi) / 2;
+  for (let cy = 0; cy < 60; cy++) for (let cx = 0; cx < 60; cx++) if (Math.abs(cx - mid) + Math.abs(cy - mid) === 6) addWall(w, cx, cy);
+  const walls = w.buildings.length;
+  // Outside the line, one diagonal step from a cell inside it, across the corner two walls meet at.
+  addZombie(w, 'walker', (mid - 2.5 + 0.5) * ZOM.cell, (mid - 4.5 + 0.5) * ZOM.cell);
+  stepFor(w, 60_000);
+  assert.ok(w.run!.core.hp < ZOM.coreHp, 'the zombie got through to the core');
+  assert.equal(w.buildings.length, walls - 1, 'by chewing through one wall');
 });
 
 test('zombies piled on one spot spread apart', () => {
