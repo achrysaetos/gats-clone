@@ -1,4 +1,4 @@
-import { ARMOR_IDS, COLOR_IDS, GUNS, pickOptions, WEAPON_IDS, WORLD, type PickOption } from '../shared/defs.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type PickOption } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
@@ -7,6 +7,7 @@ export type BotMemory = {
   strafe: 1 | -1;
   engaged: Engagement | null;
   shots: number;
+  hitTick: number;
 };
 
 type Engagement = { id: number; x: number; y: number; bearing: number; acquiredTick: number; fireAtTick: number; aimErrRad: number };
@@ -22,12 +23,33 @@ const BOT_AIM = {
 
 const TICK_MS = 1000 / WORLD.tickHz;
 
+/** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
+type Situation = { threat: { d: number } | null; hurting: boolean; underFire: boolean; onContestedZone: boolean };
+
+/** Knife lunge (90) plus knife reach (70) from sim/movement.ts, short of the target's radius so a strafing target is still caught. */
+const KNIFE_REACH_PX = 160;
+const throwRange = (s: Situation) => s.threat !== null && s.threat.d >= 150 && s.threat.d <= 450;
+
+const ABILITY_RULES: Record<AbilityId, (s: Situation) => boolean> = {
+  knife: (s) => s.threat !== null && s.threat.d <= KNIFE_REACH_PX,
+  grenade: throwRange,
+  fragGrenade: throwRange,
+  gasGrenade: throwRange,
+  landMine: (s) => (s.hurting && s.threat !== null) || s.onContestedZone,
+  dash: (s) => s.hurting && s.threat !== null,
+  engineer: (s) => s.underFire && s.threat !== null && s.threat.d >= 200 && s.threat.d <= 500,
+};
+
+const HURTING_HP_FRAC = 0.4;
+const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
+const RETREAT_CLEARANCE = 240 + WORLD.playerRadius;
+
 type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
 export function newBotMemory(rand: () => number): BotMemory {
-  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0 };
+  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0, hitTick: -Infinity };
 }
 
 export function randomLoadout(rand: () => number): Loadout {
@@ -57,12 +79,16 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   next.lastX = me.x;
   next.lastY = me.y;
 
+  if (snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id)) next.hitTick = snap.tick;
+  const hurting = me.hp < me.maxHp * HURTING_HP_FRAC;
   const enemy = nearestVisibleEnemy(me, snap.players, walls, snap.self.viewRadius);
   const weapon = GUNS[me.gun];
   const range = weapon.range;
+  const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   let goX = next.targetX, goY = next.targetY;
   let angle = Math.atan2(goY - me.y, goX - me.x);
-  let fire = false, ability = false, aimDist = 300;
+  let fire = false, aimDist = 300;
+  let threat: Situation['threat'] = null;
   if (enemy) {
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
     const tracked = mem.engaged?.id === enemy.id ? mem.engaged : null;
@@ -72,9 +98,13 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     const aimX = enemy.x + velPerTick.x * flightTicks, aimY = enemy.y + velPerTick.y * flightTicks;
     angle = Math.atan2(aimY - me.y, aimX - me.x) + engaged.aimErrRad;
     aimDist = d;
-    fire = snap.tick >= engaged.fireAtTick && d < range * 0.95;
-    ability = snap.self.ability !== null && d < 350 && rand() < 0.05;
-    if (d > range * 0.6) {
+    const reacted = snap.tick >= engaged.fireAtTick;
+    fire = reacted && d < range * 0.95;
+    if (reacted) threat = { d };
+    if (hurting) {
+      const away = retreatHeading(me, Math.atan2(me.y - enemy.y, me.x - enemy.x), walls);
+      goX = me.x + Math.cos(away) * 200; goY = me.y + Math.sin(away) * 200;
+    } else if (d > range * 0.6 || (readyAbility === 'knife' && d < 300)) {
       goX = enemy.x; goY = enemy.y;
     } else {
       const toward = Math.atan2(enemy.y - me.y, enemy.x - me.x) + (Math.PI / 2) * next.strafe;
@@ -84,6 +114,12 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   } else {
     next.engaged = null;
   }
+  const situation: Situation = {
+    threat, hurting,
+    underFire: snap.tick - next.hitTick <= UNDER_FIRE_TICKS,
+    onContestedZone: snap.zones.some((z) => z.owner !== me.team && Math.hypot(z.x - me.x, z.y - me.y) < z.r),
+  };
+  const ability = readyAbility !== null && ABILITY_RULES[readyAbility](situation);
   if (fire) next.shots++;
   const mx = goX - me.x, my = goY - me.y;
   const dead = 30;
@@ -108,6 +144,20 @@ function engage(prev: Engagement | null, enemy: PlayerView, me: PlayerView, tick
   const rho = BOT_AIM.errCorrelation;
   const aimErrRad = prev ? prev.aimErrRad * rho + Math.sqrt(1 - rho * rho) * sigma * gaussian(rand) : sigma * gaussian(rand);
   return { id: enemy.id, x: enemy.x, y: enemy.y, bearing, acquiredTick, fireAtTick, aimErrRad };
+}
+
+/** The 8-way heading closest to `away` whose dash-length path is free of walls and the world edge, so a retreat or dash does not end against cover. */
+function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]): number {
+  const headings = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)
+    .filter((h) => Math.cos(h - away) > 0)
+    .sort((a, b) => Math.cos(b - away) - Math.cos(a - away));
+  const clear = headings.find((h) => {
+    const dx = Math.cos(h) * RETREAT_CLEARANCE, dy = Math.sin(h) * RETREAT_CLEARANCE;
+    const ex = me.x + dx, ey = me.y + dy;
+    if (ex < WORLD.playerRadius || ey < WORLD.playerRadius || ex > WORLD.size - WORLD.playerRadius || ey > WORLD.size - WORLD.playerRadius) return false;
+    return !walls.some((w) => segmentEntersRectAt(me.x, me.y, dx, dy, w) !== null);
+  });
+  return clear ?? headings[0] ?? away;
 }
 
 function nearestVisibleEnemy(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
