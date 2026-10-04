@@ -1,27 +1,33 @@
 # Chat
 
-Pressing Enter in a match opens the chat box. The message appears in the sender's chat log and reaches every other player in the room.
+Pressing Enter in a match opens the chat box. The message appears in the sender's chat log and reaches every other player in the room. The server masks blocked words, and each player can mute a sender for themselves.
 
 ## Sub-features
 
-- `chat-send` sends a message from the chat box.
-- `chat-receive` delivers it to another client in the same room.
-- `chat-limit` drops messages sent faster than about one per second.
+- `chat-send` sends a message from the chat box. The server trims it and caps it at 120 characters.
+- `chat-receive` delivers it to every client in the room. In TDM it goes to both teams.
+- `chat-limit` accepts at most one message per client per 1000 ms, measured from the last accepted message. An over-limit message reaches nobody. The server replies `{t:'error', message:'Slow down'}` and the client shows it as a system chat line.
+- `chat-mask` replaces blocked words with asterisks before the broadcast. Lookalikes such as `sh1t` are caught. Operators extend the list with `<dataDir>/blocklist.txt`.
+- `chat-name-filter` joins a guest whose name contains a blocked word as `Player`, deduped with a number like any other name.
+- `chat-mute` hides a sender for this viewer only. Clicking a sender's name in `#chat-log` mutes it and stores it in localStorage `skirmish.mutedNames`. The muted sender's lines collapse to one clickable `MUTED` marker. Clicking the marker or `Unmute` in the menu's `#muted` panel shows the sender again.
 
 ## How to get to it (user POV)
 
 - In a match, press `Enter`, type, press `Enter`. `Escape` cancels.
+- Click a name in the chat log to mute it. Click the muted marker to unmute.
 
 ## Driving it with drive.ts
 
 Preconditions:
 
-- Doctor passes. The step needs `join` first.
+- Doctor passes. The steps need `join` first.
 
 - **Send and receive.** Run `node drive.ts "$RUN" join chat`. Log lines `own chat log shows the message` and `observer in the same room receives it`. Screenshot `chat.png`.
-- **Rate limit.** Not scripted in drive.ts. `test/e2e.test.ts` covers it at the WebSocket level.
+- **Mute.** Run `node drive.ts "$RUN" join chat mute`. The observer chats and the page clicks its name. Log lines `muted name stored in localStorage`, `earlier line from the muted player is hidden`, `chat log shows a muted marker for the player`, `page socket still receives the muted player chat`, `later line from the muted player is not shown`, `menu lists the muted player after a reload`, `muted player stays hidden after the reload`, `after unmuting, the player is shown again` and `unmuting clears the stored name`. Screenshots `chat-muted.png`, `menu-muted-list.png` and `chat-muted-after-reload.png`.
+- **Masking, renaming and rate limit.** Not in drive.ts. Open two `ws` clients to `ws://localhost:<port>/ws?room=ffa` and send `{t:'join', name, loadout:{weapon:'pistol', armor:'none', color:'green'}}` on each. Join one as `sh1tlord`. The other client's snapshot `leaderboard` lists it as `Player`. Send `{t:'chat', text:'nice shot sh1t'}` from it. The other client receives `nice shot ****`. Send a second chat within 1 s. The sender receives an `error` frame with `Slow down`, and the other client receives nothing.
 
 ## Gotchas
 
 - Movement keys are ignored while the chat box is open. Close chat before driving movement in the same run.
-- A message sent within a second of another is dropped silently, so space out chat steps.
+- Space chat steps more than 1 s apart. A faster message is rejected with `Slow down` and reaches nobody.
+- Mute is per viewer. The muted sender's frames still arrive on the page socket, so prove a mute from the chat log text, not from the frames.
