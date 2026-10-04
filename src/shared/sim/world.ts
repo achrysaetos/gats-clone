@@ -86,7 +86,6 @@ export type LifeRecord = { id: number; name: string; kills: number; score: numbe
 
 export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number };
 
-/** A wall the squad built, filling grid cell (`cx`, `cy`). */
 export type Building = { id: number; kind: BuildingKind; cx: number; cy: number; hp: number };
 
 type RunPhase =
@@ -100,7 +99,6 @@ export type RunStats = { name: string; kills: number; revives: number; built: nu
 /** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
 type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
 
-/** One zombies run, from the first dawn to the core's fall. */
 export type Run = {
   core: { hp: number };
   scrap: number;
@@ -140,7 +138,6 @@ export type World = {
   zombies: Zombie[];
   buildings: Building[];
   buildingsVersion: number;
-  /** The zombies run; null in every other mode. */
   run: Run | null;
 };
 

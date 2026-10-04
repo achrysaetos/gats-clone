@@ -86,7 +86,6 @@ export function startDash(input: MoveKeys & Pick<InputState, 'angle'>): Dash {
     : { dirX: Math.cos(input.angle), dirY: Math.sin(input.angle), leftMs: DASH_MS };
 }
 
-/** Moves a circle of radius `r` by (`dx`, `dy`), sliding along whatever solid it meets. */
 export function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number, r: number = WORLD.playerRadius): { x: number; y: number } {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / MAX_SUBSTEP));
   let at = { x, y };

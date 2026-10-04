@@ -84,10 +84,8 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
 type AuthLimiter = (key: string, now: number) => boolean;
 
 const SQUAD_CODE_CHARS = 'abcdefghijklmnopqrstuvwxyz234567';
-/** `z-` and six base-32 characters from the system's secure random source. */
 const squadCode = () => `z-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
 
-/** The rooms anyone may list, and the private squads only their code reaches. */
 type Rooms = { all: Map<string, Room>; openSquad(): string | null };
 type IpOf = (req: IncomingMessage) => string;
 

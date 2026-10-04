@@ -24,7 +24,6 @@ export function goDown(w: World, p: Player) {
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'downed', by: null });
 }
 
-/** A downed player gets up after a squadmate holds use beside them long enough, and bleeds out if nobody does in time. */
 function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<Player>) {
   const life = p.life;
   if (life.k !== 'downed') return;
@@ -47,7 +46,6 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
 }
 
-/** Holding use beside a damaged wall mends it, as far as the squad's scrap goes. */
 function repair(w: World, run: Run, p: Player, dtMs: number) {
   let best: Building | null = null, bestD = ZOM.reachPx ** 2;
   for (const b of w.buildings) {
@@ -90,7 +88,6 @@ function buildRefusal(w: World, run: Run, p: Player, cx: number, cy: number): Bu
   return null;
 }
 
-/** Puts a wall on cell (`cx`, `cy`) for the squad's scrap: by day, near the core, in the builder's reach, on clear ground. */
 export function build(w: World, id: number, cx: number, cy: number): BuildRefusal | null {
   const p = w.players.get(id);
   const run = w.run;
@@ -104,7 +101,6 @@ export function build(w: World, id: number, cx: number, cy: number): BuildRefusa
   return null;
 }
 
-/** Takes down a squad wall by day for part of its cost back. */
 export function demolish(w: World, id: number, cx: number, cy: number): boolean {
   const p = w.players.get(id);
   const run = w.run;
@@ -147,7 +143,6 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   addScore(w, attacker, def.score);
 }
 
-/** The night's zombies in spawn order, each kind drawn by its share of the night. */
 function buildWave(w: World, night: number): ZombieKind[] {
   const shares = ZOMBIE_KINDS.map((kind) => ZOM.share(kind, night));
   const total = shares.reduce((a, b) => a + b, 0);

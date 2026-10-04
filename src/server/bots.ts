@@ -319,7 +319,6 @@ export function botName(taken: ReadonlySet<string>, rand: () => number): string 
   return free.length ? pick(free, rand) : `${pick(BOT_NAMES, rand)} ${Math.floor(rand() * 90) + 10}`;
 }
 
-/** What a squad bot sees in a zombies run. */
 type Watch = {
   me: PlayerView;
   core: { x: number; y: number };
@@ -328,7 +327,6 @@ type Watch = {
   damagedWall: { x: number; y: number } | null;
 };
 
-/** Where a squad bot heads and whether it holds use when it gets there. */
 type Errand = { x: number; y: number; use: boolean };
 
 /** How far from the core a squad bot will wander, and how close a zombie must be before it stops mending walls. */

@@ -3,7 +3,6 @@ import { damagePlayer } from './combat.ts';
 import { clamp, dist2, rectsOverlap, segmentEntersRectAt, slide, type Rect } from './movement.ts';
 import { cellRect, coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
-/** Cells per side of the grid the flow field and the squad's walls share. */
 const GRID = WORLD.size / ZOM.cell;
 const UNREACHABLE = 0xffff;
 const ORTH = 10, DIAG = 14;
@@ -133,7 +132,6 @@ function biteBuilding(w: World, b: Building, amount: number) {
   w.events.push({ e: 'boom', x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell, r: ZOM.cell / 2 });
 }
 
-/** Pushes overlapping zombies apart, half the overlap each, looking only at the 3x3 cells around each one. */
 function separation(zombies: readonly Zombie[]): Map<Zombie, { x: number; y: number }> {
   const byCell = new Map<number, Zombie[]>();
   for (const z of zombies) {
