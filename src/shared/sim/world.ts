@@ -46,6 +46,8 @@ export type Player = {
   deaths: number;
   lifeKills: number;
   revealedUntil: number;
+  /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
+  huntedPing: (Pose & { at: number }) | null;
   abilityReadyAt: number;
 };
 

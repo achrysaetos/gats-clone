@@ -27,7 +27,7 @@ test('killing a hunted player pays the bounty on top of the kill score, and the 
   assert.deepEqual(killOne('executioner'), { gained: WORLD.killScore + WORLD.bountyScore, bounty: true });
 });
 
-test('every enemy sees a hunted player on the minimap; teammates see an ally, not a threat', () => {
+test('every enemy sees a hunted player on the minimap as a ping; teammates see an ally, not a threat', () => {
   const w = emptyWorld('TDM');
   const hunter = spawnAt(w, 2600, 2600, { team: 'red' });
   const ally = spawnAt(w, 300, 300, { team: 'red' });
@@ -35,12 +35,48 @@ test('every enemy sees a hunted player on the minimap; teammates see an ally, no
   const marks = (viewer: typeof ally) => snapshotFor(w, viewer.id).minimap.filter((m) => m.x === hunter.x && m.y === hunter.y);
   assert.deepEqual(marks(enemy), [], 'a far enemy with a stage-1 gun stays hidden');
   equip(hunter, 'juggernaut');
-  assert.deepEqual(marks(enemy).map((m) => m.hunted), [true]);
-  assert.deepEqual(marks(ally).map((m) => m.hunted), [false]);
+  step(w, TICK_MS);
+  assert.deepEqual(marks(enemy).map((m) => m.pingAge), [0]);
+  assert.deepEqual(marks(ally).map((m) => m.pingAge), [null]);
   const near = spawnAt(w, 2500, 2600, { team: 'red' });
   const seenByAlly = snapshotFor(w, near.id).players.find((p) => p.id === hunter.id);
   assert.equal(seenByAlly?.hunted, false, 'no hunted marker over a teammate');
   assert.equal(snapshotFor(w, hunter.id).players.find((p) => p.id === hunter.id)?.hunted, true, 'the hunted player knows it');
+});
+
+function huntedPhantom() {
+  const w = emptyWorld();
+  const hunter = spawnAt(w, 2600, 2600);
+  const enemy = spawnAt(w, 300, 300);
+  equip(hunter, 'phantom');
+  step(w, TICK_MS);
+  const mark = () => snapshotFor(w, enemy.id).minimap.map((m) => ({ x: Math.round(m.x), y: Math.round(m.y) }));
+  return { w, hunter, mark };
+}
+
+test('a hunted enemy stays where the last ping caught them until the next ping, 2.5s later', () => {
+  const { w, hunter, mark } = huntedPhantom();
+  assert.deepEqual(mark(), [{ x: 2600, y: 2600 }]);
+  press(w, hunter, { left: true });
+  run(w, 1000);
+  assert.ok(hunter.x < 2400, `the hunter moved (x ${hunter.x})`);
+  assert.deepEqual(mark(), [{ x: 2600, y: 2600 }], 'frozen between pings');
+  run(w, 1600);
+  const at = mark()[0]!;
+  assert.ok(at.x < 2000 && Math.abs(at.x - hunter.x) < 200, `the next ping moved the mark (x ${at.x}, hunter ${Math.round(hunter.x)})`);
+});
+
+test('an unsilenced shot from a hunted player pings them at once; a silenced one does not', () => {
+  const { w, hunter, mark } = huntedPhantom();
+  press(w, hunter, { left: true });
+  run(w, 1000);
+  press(w, hunter, { shots: hunter.input.shots + 1 });
+  step(w, TICK_MS);
+  assert.deepEqual(mark(), [{ x: 2600, y: 2600 }], 'the silenced Phantom keeps its old ping');
+  equip(hunter, 'juggernaut');
+  press(w, hunter, { shots: hunter.input.shots + 1 });
+  run(w, 100);
+  assert.deepEqual(mark(), [{ x: Math.round(hunter.x), y: Math.round(hunter.y) }], 'the loud Juggernaut is pinged where it fired');
 });
 
 test('reaching a stage-2 gun announces the hunt to everyone, however far away', () => {

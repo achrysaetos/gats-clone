@@ -243,7 +243,9 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
   });
 }
 
-function drawMinimap({ ctx, w, h, snap, s, me, now }: Hud, size: number) {
+const PING_WAVE_MS = 700;
+
+function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
   const x = w - size - 12;
   const y = h - size - 12;
   const k = size / s.worldSize;
@@ -271,23 +273,25 @@ function drawMinimap({ ctx, w, h, snap, s, me, now }: Hud, size: number) {
     ctx.globalAlpha = 1;
   }
   for (const m of snap.minimap) {
-    if (m.hunted) continue;
+    if (m.pingAge !== null) continue;
     ctx.fillStyle = m.team ? TEAM_COLORS[m.team] : '#ff6b6b';
     ctx.beginPath();
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);
     ctx.fill();
   }
-  const pulse = 0.5 + 0.5 * Math.sin(now / 150);
   for (const m of snap.minimap) {
-    if (!m.hunted) continue;
+    if (m.pingAge === null) continue;
     const mx = x + m.x * k, my = y + m.y * k;
-    ctx.globalAlpha = 1 - 0.7 * pulse;
-    ctx.beginPath();
-    ctx.arc(mx, my, 5 + 5 * pulse, 0, TAU);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = PALETTE.hunted;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    const wave = m.pingAge / PING_WAVE_MS;
+    if (wave < 1) {
+      ctx.globalAlpha = 1 - wave;
+      ctx.beginPath();
+      ctx.arc(mx, my, 5 + 14 * wave, 0, TAU);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = PALETTE.hunted;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     ctx.beginPath();
     ctx.moveTo(mx, my - 5);
     ctx.lineTo(mx + 5, my);

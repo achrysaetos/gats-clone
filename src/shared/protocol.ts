@@ -82,6 +82,9 @@ export type GameEvent =
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number };
 
+/** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
+export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
+
 export type LeaderRow = { id: number; name: string; score: number; team: Team };
 /** `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise. */
 export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
@@ -96,7 +99,7 @@ export type Snapshot = {
   crates: CrateView[];
   thrown: ThrownView[];
   zones: ZoneView[];
-  minimap: { x: number; y: number; team: Team; hunted: boolean }[];
+  minimap: MinimapMark[];
   leaderboard: LeaderRow[];
   match: MatchView;
   events: GameEvent[];

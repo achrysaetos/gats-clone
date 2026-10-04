@@ -4,10 +4,11 @@ import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep } from './sim/movement.ts';
-import { abilityOf, effectiveStats, resetProgress } from './sim/stats.ts';
+import { abilityOf, effectiveStats, isHunted, resetProgress } from './sim/stats.ts';
 import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Life, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
+const HUNTED_PING_MS = 2500;
 const PRESS_GRACE_MS = 100;
 
 type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
@@ -25,7 +26,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
-    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
+    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
   spawn(w, p, loadout, opts.at);
@@ -128,7 +129,10 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }
-    if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
+    if (!stats.silenced) {
+      p.revealedUntil = w.now + REVEAL_MS;
+      if (isHunted(p)) p.huntedPing = { x: p.x, y: p.y, at: w.now };
+    }
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
   }
 
@@ -142,6 +146,11 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 }
 
+function pingHunted(w: World, p: Player) {
+  if (p.life.k !== 'alive' || !isHunted(p)) p.huntedPing = null;
+  else if (!p.huntedPing || w.now - p.huntedPing.at >= HUNTED_PING_MS) p.huntedPing = { x: p.x, y: p.y, at: w.now };
+}
+
 export function step(w: World, dtMs: number): void {
   w.events = w.queuedEvents;
   w.queuedEvents = [];
@@ -149,6 +158,7 @@ export function step(w: World, dtMs: number): void {
   w.tick++;
   const dt = dtMs / 1000;
   for (const p of w.players.values()) tickPlayer(w, p, dtMs);
+  for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);
   tickThrown(w, dt);
   for (const c of w.crates) {
