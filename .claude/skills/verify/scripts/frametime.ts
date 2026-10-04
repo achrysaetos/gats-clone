@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import WebSocket from 'ws';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node frametime.ts <run-dir> [seconds] [width] [height]'); process.exit(2); }
@@ -31,8 +32,8 @@ const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 const port = await freePort();
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-frametime-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', ...(SOFTWARE ? ['--disable-gpu', '--disable-accelerated-2d-canvas'] : []), 'about:blank'], { stdio: 'ignore' });
+const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-frametime-'))}`,
+  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', ...(SOFTWARE ? ['--disable-gpu', '--disable-accelerated-2d-canvas'] : []), 'about:blank'], { stdio: 'ignore' }));
 let target = '';
 for (let i = 0; i < 50 && !target; i++) {
   try {

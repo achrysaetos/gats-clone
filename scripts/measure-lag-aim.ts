@@ -13,6 +13,7 @@ import type { GameEvent, Loadout } from '../src/shared/protocol.ts';
 import { canRespawn, respawn } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { startServer } from '../src/server/main.ts';
+import { killOnExit } from './kill-on-exit.ts';
 
 const SECONDS = Number(process.argv[2] ?? 60);
 const CONDITIONS = (process.argv.length > 3 ? process.argv.slice(3) : ['0:0', '100:40']).map((c) => c.split(':').map(Number) as [number, number]);
@@ -46,8 +47,8 @@ function arenaCenter(): { x: number; y: number } {
 
 async function openShooter(lag: number, jitter: number) {
   const port = await freePort();
-  const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-lagaim-chrome-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-lagaim-chrome-'))}`,
+    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
   let target = '';
   for (let i = 0; i < 50 && !target; i++) {
     try {

@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
+import { killOnExit } from './kill-on-exit.ts';
 
 const URL_ = process.argv[2] ?? 'http://localhost:8787';
 const OUT = process.argv[3] ?? join(tmpdir(), 'skirmish-shots');
@@ -16,10 +17,10 @@ const PORT = 9333;
 const [DESKTOP_W, DESKTOP_H] = (process.env.DESKTOP ?? '1280x800').split('x').map(Number) as [number, number];
 mkdirSync(OUT, { recursive: true });
 
-const chrome = spawn(CHROME, [
-  '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-chrome-'))}`,
+const chrome = killOnExit(spawn(CHROME, [
+  '--headless=new', '--mute-audio', `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-chrome-'))}`,
   '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank',
-], { stdio: 'ignore' });
+], { stdio: 'ignore' }));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const problems: string[] = [];
