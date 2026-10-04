@@ -79,6 +79,27 @@ export function edgePoint(from: Pt, to: Pt, w: number, h: number, inset: number)
 
 export const seconds =(ms: number) => Math.max(0, Math.ceil(ms / 1000));
 
+export type Rect = { x: number; y: number; w: number; h: number };
+
+/** Pulls `to` back along the ray from `from` until it sits outside every rect grown by `pad`, so an edge marker keeps its bearing without landing on a HUD panel. */
+export function clearOfRects(from: Pt, to: Pt, rects: readonly Rect[], pad: number): Pt {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  let t = 1;
+  for (const r of rects) {
+    const x0 = r.x - pad, x1 = r.x + r.w + pad, y0 = r.y - pad, y1 = r.y + r.h + pad;
+    if (from.x > x0 && from.x < x1 && from.y > y0 && from.y < y1) continue;
+    let enter = 0, exit = 1;
+    for (const [d, lo, hi, o] of [[dx, x0, x1, from.x], [dy, y0, y1, from.y]] as const) {
+      if (d === 0) { if (o < lo || o > hi) { enter = 1; exit = 0; } continue; }
+      const a = (lo - o) / d, b = (hi - o) / d;
+      enter = Math.max(enter, Math.min(a, b));
+      exit = Math.min(exit, Math.max(a, b));
+    }
+    if (enter <= exit && enter < t) t = enter;
+  }
+  return { x: from.x + dx * t, y: from.y + dy * t };
+}
+
 export const OBJECTIVE_MS = 4000;
 
 /** Long enough for a held or spammed trigger click to land before the death screen takes clicks, so it cannot repick the loadout. */

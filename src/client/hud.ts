@@ -2,7 +2,7 @@ import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
-import { edgePoint, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
+import { clearOfRects, edgePoint, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
@@ -52,16 +52,17 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
   const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf) };
   lastHudAt = now;
+  panels = [];
   const compact = w < 640;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
-  drawHuntedArrows(hud);
   drawKillFeed(hud, compact ? 74 : 18);
   drawLeaderboard(hud, compact);
   drawMinimap(hud, compact ? 110 : 170);
   drawScore(hud, compact);
   ctx.globalAlpha = 1;
   if (me?.alive) drawVitals(hud);
+  drawHuntedArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
   if (spread !== null) drawReticle(hud, crosshair, spread);
@@ -90,6 +91,7 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
 }
 
 const EDGE_INSET = 34;
+const ARROW_CLEARANCE = 16;
 
 function drawHuntedArrows({ ctx, w, h, snap, now, cam, selfAt }: Hud) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 140);
@@ -97,8 +99,9 @@ function drawHuntedArrows({ ctx, w, h, snap, now, cam, selfAt }: Hud) {
     if (m.pingAge === null) continue;
     const at = edgePoint(selfAt, worldToScreen(cam, m), w, h, EDGE_INSET);
     if (!at) continue;
+    const clear = clearOfRects(selfAt, at, panels, ARROW_CLEARANCE);
     ctx.save();
-    ctx.translate(at.x, at.y);
+    ctx.translate(clear.x, clear.y);
     ctx.rotate(at.angle);
     ctx.scale(1 + 0.15 * pulse, 1 + 0.15 * pulse);
     ctx.globalAlpha = 0.65 + 0.35 * pulse;
@@ -247,7 +250,11 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
   ctx.globalAlpha = 1;
 }
 
+/** Panels drawn this frame, so edge markers drawn after them can stay clear. */
+let panels: Rect[] = [];
+
 function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, accent?: string) {
+  panels.push({ x, y, w, h });
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, PANEL_RADIUS);
   ctx.fillStyle = PANEL_FILL;

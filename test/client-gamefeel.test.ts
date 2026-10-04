@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
-import { deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
+import { clearOfRects, deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
 import { spreadFor } from '../src/shared/sim/stats.ts';
 import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, NO_MOMENTS } from '../src/client/moments.ts';
 import { approachAlpha, drawHud, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
@@ -194,4 +194,16 @@ test('a hunted death says the bounty went to the killer, and an environmental on
   assert.equal(deathText(kill({ bounty: true }), null).cause, `with Hornet · your bounty paid them ${WORLD.bountyScore}`);
   assert.deepEqual(deathText(kill({ killer: '', killerId: null, weapon: 'Gas' }), null), { title: 'You were eliminated', cause: 'Gas', lost: '' });
   assert.equal(killOf([kill({ victimId: 2 }), kill({ killer: 'Bo' })], 1)?.killer, 'Bo', 'the kill whose victim is you');
+});
+
+test('an edge marker that would land on a HUD panel slides back along its bearing to just outside it', () => {
+  const from = { x: 640, y: 400 };
+  const feed = { x: 12, y: 6, w: 300, h: 140 };
+  const onFeed = { x: 40, y: 34 };
+  const at = clearOfRects(from, onFeed, [feed], 16);
+  assert.ok(at.x > feed.x + feed.w + 15 || at.y > feed.y + feed.h + 15, `outside the grown panel, got ${at.x},${at.y}`);
+  const bearing = (p: { x: number; y: number }) => Math.atan2(p.y - from.y, p.x - from.x);
+  assert.ok(Math.abs(bearing(at) - bearing(onFeed)) < 1e-9, 'same bearing');
+  const clearSpot = { x: 1246, y: 400 };
+  assert.deepEqual(clearOfRects(from, clearSpot, [feed], 16), clearSpot, 'a marker clear of every panel stays put');
 });
