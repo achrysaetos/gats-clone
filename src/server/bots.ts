@@ -1,7 +1,7 @@
 import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
-import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt } from '../shared/sim/movement.ts';
+import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
 
 export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
@@ -23,6 +23,7 @@ const BOT_AIM = {
 } as const;
 
 const TICK_MS = 1000 / WORLD.tickHz;
+const crateRect = (c: CrateView): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 
 /**
  * Bots sharpen against a human who has climbed further, indexed by the human's level; a hunted human gets the last row.
@@ -114,7 +115,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
 
   if (snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id)) next.hitTick = snap.tick;
   const hurting = me.hp < me.maxHp * HURTING_HP_FRAC;
-  const enemy = chooseTarget(me, snap.players, walls, snap.self.viewRadius);
+  const enemy = chooseTarget(me, snap.players, [...walls, ...snap.crates.map(crateRect)], snap.self.viewRadius);
   const weapon = GUNS[me.gun];
   const range = weapon.range;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
@@ -214,12 +215,15 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
 const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
   xs.reduce<T | null>((best, x) => (best && Math.hypot(best.x - me.x, best.y - me.y) <= Math.hypot(x.x - me.x, x.y - me.y) ? best : x), null);
 
-/** The nearest of the most dangerous enemies in sight: hunted first, then the highest-level human, so bots in view of a leading human all turn on it. Among bots only hunted counts, so a climbing bot is not ganged up on before it evolves. */
-function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
+/**
+ * The nearest of the most dangerous enemies in sight: hunted first, then the highest-level human, so bots in view of a leading human all turn on it. Among bots only hunted counts, so a climbing bot is not ganged up on before it evolves.
+ * Crates block sight like walls, since they stop bullets too.
+ */
+function chooseTarget(me: PlayerView, players: PlayerView[], cover: readonly Rect[], viewRadius: number): PlayerView | null {
   const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
   const visible = players.filter((p) => p.id !== me.id && p.alive && (me.team === null || p.team !== me.team)
     && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
-    && !walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null));
+    && !cover.some((r) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, r) !== null));
   const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
   const top = Math.max(...visible.map(danger));
   return nearest(me, visible.filter((p) => danger(p) === top));
@@ -228,11 +232,10 @@ function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly Wal
 /** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score. */
 function crateInSight(me: PlayerView, crates: readonly CrateView[], walls: readonly WallView[], range: number, viewRadius: number): { x: number; y: number } | null {
   const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
-  const rect = (c: CrateView) => ({ x: c.x, y: c.y, w: c.size, h: c.size });
   const centres = crates.map((c) => ({ id: c.id, x: c.x + c.size / 2, y: c.y + c.size / 2 }));
   const open = centres.filter((c) => Math.abs(c.x - me.x) <= sight.halfW && Math.abs(c.y - me.y) <= sight.halfH
     && Math.hypot(c.x - me.x, c.y - me.y) <= range
-    && ![...walls, ...crates.filter((o) => o.id !== c.id).map(rect)].some((b) => segmentEntersRectAt(me.x, me.y, c.x - me.x, c.y - me.y, b) !== null));
+    && ![...walls, ...crates.filter((o) => o.id !== c.id).map(crateRect)].some((b) => segmentEntersRectAt(me.x, me.y, c.x - me.x, c.y - me.y, b) !== null));
   return nearest(me, open);
 }
 

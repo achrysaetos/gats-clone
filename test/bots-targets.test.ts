@@ -100,6 +100,18 @@ test('a bot fights an enemy in view before shooting crates', () => {
   assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `aims down at the enemy, angle ${angle.toFixed(2)}`);
 });
 
+test('a bot passes over an enemy behind a crate for one in the clear', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    addCrate(w, 1150, 1000);
+    spawnAt(w, 1300, 1000);
+    spawnAt(w, 1000, 1400);
+    const angle = think(w, bot.id, seed, 20).angle;
+    assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the enemy in the clear, angle ${angle.toFixed(2)}`);
+  }
+});
+
 test('a bot aims at the highest-level human in view over a nearer fresh enemy', () => {
   for (let seed = 1; seed <= 5; seed++) {
     const w = emptyWorld();
