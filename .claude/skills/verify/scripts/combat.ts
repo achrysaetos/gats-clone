@@ -136,7 +136,14 @@ async function shootOnce(w: Watch): Promise<{ mine: Dmg[]; what: string } | null
     log(`     screenshot ${w.mateShot} (teammate ${mate.name} in view; bodies should both be ${self.team}, the teammate marked)`);
   }
   const t = nearestTarget(self, snap);
-  if (!t) { await sleep(200); return null; }
+  if (!t) {
+    // Crates are culled to the view, so with no bot near and no crate on screen the driver must go find one.
+    const toCenter = [...(self.x < 1500 ? [['KeyD', 'd']] : [['KeyA', 'a']]), ...(self.y < 1500 ? [['KeyS', 's']] : [['KeyW', 'w']])];
+    for (const [code, key] of toCenter) await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code, key, windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0) });
+    await sleep(400);
+    for (const [code, key] of toCenter) await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code, key, windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0) });
+    return null;
+  }
   const scale = Math.max(W, H) / (2 * (snap.self.viewRadius || 900));
   const sx = W / 2 + (t.x - self.x) * scale, sy = H / 2 + (t.y - self.y) * scale;
   const before = frames.dmg.length;
