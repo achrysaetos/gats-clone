@@ -81,7 +81,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
 
   if (snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id)) next.hitTick = snap.tick;
   const hurting = me.hp < me.maxHp * HURTING_HP_FRAC;
-  const enemy = nearestVisibleEnemy(me, snap.players, walls, snap.self.viewRadius);
+  const enemy = chooseTarget(me, snap.players, walls, snap.self.viewRadius);
   const weapon = GUNS[me.gun];
   const range = weapon.range;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
@@ -113,6 +113,8 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     next.engaged = engaged;
   } else {
     next.engaged = null;
+    const bounty = snap.zones.length === 0 ? nearest(me, snap.minimap.filter((m) => m.hunted)) : null;
+    if (bounty) { goX = bounty.x; goY = bounty.y; }
   }
   const situation: Situation = {
     threat, hurting,
@@ -160,17 +162,16 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
   return clear ?? headings[0] ?? away;
 }
 
-function nearestVisibleEnemy(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
+const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
+  xs.reduce<T | null>((best, x) => (best && Math.hypot(best.x - me.x, best.y - me.y) <= Math.hypot(x.x - me.x, x.y - me.y) ? best : x), null);
+
+/** The nearest hunted enemy in sight, for the bounty, else the nearest enemy in sight. */
+function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
   const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
-  let best: PlayerView | null = null, bestD = Infinity;
-  for (const p of players) {
-    if (p.id === me.id || !p.alive || (me.team !== null && p.team === me.team)) continue;
-    if (Math.abs(p.x - me.x) > sight.halfW || Math.abs(p.y - me.y) > sight.halfH) continue;
-    if (walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null)) continue;
-    const d = Math.hypot(p.x - me.x, p.y - me.y);
-    if (d < bestD) { best = p; bestD = d; }
-  }
-  return best;
+  const visible = players.filter((p) => p.id !== me.id && p.alive && (me.team === null || p.team !== me.team)
+    && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
+    && !walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null));
+  return nearest(me, visible.filter((p) => p.hunted)) ?? nearest(me, visible);
 }
 
 const BOT_NAMES = [
