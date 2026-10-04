@@ -4,7 +4,7 @@ import { BUILDINGS, GUNS, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/de
 import { explode } from '../src/shared/sim/combat.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
-import { equip, grantPerks, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import { equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 /** A quiet night, so only what a test places takes part. Tests line up on the open ground due south of the core, where a zombie walks straight at the shooter. */
 function nightWorld(): World {
@@ -113,4 +113,12 @@ test('a human shoots zombies for plain damage: the triple-health handicap is onl
   const z = addZombie(w, 'brute', X, Y + 300, 1000);
   shootOnce(w, p, DOWN);
   assert.equal(1000 - z.hp, GUNS.pistol.damage);
+});
+
+test('in a run only bites hurt the squad: a blast at a player\'s own feet leaves them whole', () => {
+  const w = nightWorld();
+  const p = spawnAt(w, X, Y);
+  const before = hpOf(p);
+  explode(w, X, Y, 130, 90, { attacker: p, team: p.team, label: 'test' });
+  assert.equal(hpOf(p), before);
 });

@@ -31,6 +31,8 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (victim.life.k !== 'alive' || w.match.k === 'over') return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
+  // The squad fights the horde at arm's length, so in a run only bites hurt it, never its own blasts.
+  if (w.run && src.via !== 'bite') return;
   const life = victim.life;
   const before = life.hp + life.armor;
   const stats = effectiveStats(victim);
