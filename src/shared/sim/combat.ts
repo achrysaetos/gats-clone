@@ -1,8 +1,9 @@
 import { ARMORS, HP_MULTIPLIER, WORLD } from '../defs.ts';
+import type { Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
-import { crateRect, sameTeam, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
+import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.35;
@@ -14,13 +15,15 @@ const OWN_BLAST_SHARE = 0.5;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
+/** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
+type Culprit = { attacker: Player | null; team: Team; label: string };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
-type DamageSource = { attacker: Player | null; label: string; piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas'; fromX: number; fromY: number };
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas'; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k !== 'alive' || w.match.k === 'over') return;
   const a = src.attacker;
-  if (a && (a.id === victim.id ? src.via !== 'blast' : sameTeam(a, victim))) return;
+  if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
   const life = victim.life;
   const before = life.hp + life.armor;
   const stats = effectiveStats(victim);
@@ -74,22 +77,22 @@ const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
 const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) =>
   walls.some((wall) => segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
 
-export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, owner: Player | null, label: string, view: View = liveView(w)) {
+export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, by: Culprit, view: View = liveView(w)) {
   w.events.push({ e: 'boom', x, y, r: radius });
   for (const p of w.players.values()) {
     const at = view.poseOf(p);
     if (!at) continue;
     const d = Math.sqrt(dist2(at.x, at.y, x, y));
     if (d > radius + WORLD.playerRadius || sheltered(view.walls, x, y, at.x, at.y)) continue;
-    const dmg = maxDamage * (1 - Math.max(0, d - WORLD.playerRadius) / radius) * (p === owner ? OWN_BLAST_SHARE : 1);
-    damagePlayer(w, p, dmg, { attacker: owner, label, piercing: false, via: 'blast', fromX: x, fromY: y });
+    const dmg = maxDamage * (1 - Math.max(0, d - WORLD.playerRadius) / radius) * (p === by.attacker ? OWN_BLAST_SHARE : 1);
+    damagePlayer(w, p, dmg, { ...by, piercing: false, via: 'blast', fromX: x, fromY: y });
   }
   for (const c of w.crates) {
     const r = crateRect(c);
     const nx = clamp(x, r.x, r.x + r.w), ny = clamp(y, r.y, r.y + r.h);
     const d = Math.sqrt(dist2(x, y, nx, ny));
     if (d >= radius || sheltered(view.walls, x, y, nx, ny)) continue;
-    damageCrate(w, c, maxDamage * (1 - d / radius), owner);
+    damageCrate(w, c, maxDamage * (1 - d / radius), by.attacker);
   }
 }
 
@@ -102,7 +105,7 @@ function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | n
   if (!b.blast) return false;
   const speed = Math.hypot(b.vx, b.vy);
   const bx = x - (b.vx / speed) * BLAST_STANDOFF, by = y - (b.vy / speed) * BLAST_STANDOFF;
-  explode(w, bx, by, b.blast.radius, b.blast.damage, owner, b.label, view);
+  explode(w, bx, by, b.blast.radius, b.blast.damage, { attacker: owner, team: b.team, label: b.label }, view);
   return false;
 }
 
@@ -117,13 +120,13 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),
     ...[...w.players.values()]
-      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)) && !b.passed.includes(p.id))
+      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !friendly(b.team, p) && !b.passed.includes(p.id))
       .flatMap((p) => {
         const at = view.poseOf(p);
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y }),
+          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y }),
         }] : [];
       }),
   ];

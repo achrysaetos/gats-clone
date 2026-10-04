@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
-import { setInput, step } from '../src/shared/sim.ts';
+import { removePlayer, setInput, step } from '../src/shared/sim.ts';
 import { explode } from '../src/shared/sim/combat.ts';
 import { IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -80,7 +80,7 @@ test('a blast hurts crates less the farther they sit from its center', () => {
   const near = { id: 1, x: 500, y: 490, size: 20, hp: WORLD.crateHp, respawnAt: null };
   const far = { id: 2, x: 550, y: 490, size: 20, hp: WORLD.crateHp, respawnAt: null };
   w.crates.push(near, far);
-  explode(w, 480, 500, 100, 30, null, 'test');
+  explode(w, 480, 500, 100, 30, { attacker: null, team: null, label: 'test' });
   assert.equal(near.hp, WORLD.crateHp - 30 * (1 - 20 / 100));
   assert.equal(far.hp, WORLD.crateHp - 30 * (1 - 70 / 100));
 });
@@ -104,7 +104,7 @@ test('a blast hurts its owner for half, never a teammate, and a self-kill earns 
   const w = emptyWorld('TDM');
   const owner = spawnAt(w, 500, 500, { team: 'red' });
   const mate = spawnAt(w, 540, 540, { team: 'red' });
-  explode(w, 500, 540, 100, 40, owner, 'Grenade');
+  explode(w, 500, 540, 100, 40, { attacker: owner, team: owner.team, label: 'Grenade' });
   assert.ok(Math.abs(WORLD.baseHp - hpOf(owner) - 40 * (1 - (40 - WORLD.playerRadius) / 100) * 0.5) < 1e-9, 'half what an enemy there would take');
   assert.equal(hpOf(mate), WORLD.baseHp, 'a teammate takes nothing');
   const shooter = spawnAt(w, 300, 900, { team: 'red' });
@@ -114,9 +114,23 @@ test('a blast hurts its owner for half, never a teammate, and a self-kill earns 
   pressAndCollect(w, shooter, 300);
   assert.ok(hpOf(shooter) < before, 'firing artillery into a wall at point blank hurts the shooter');
   if (owner.life.k === 'alive') owner.life.hp = 1;
-  explode(w, 500, 500, 100, 40, owner, 'Grenade');
+  explode(w, 500, 500, 100, 40, { attacker: owner, team: owner.team, label: 'Grenade' });
   assert.equal(owner.life.k, 'dead');
   assert.deepEqual([owner.kills, owner.score, w.teamScore.red], [0, 0, 0], 'no kill, score or team point for blowing yourself up');
+});
+
+test('a round or grenade from a player who left still spares their old team', () => {
+  const w = emptyWorld('TDM');
+  const shooter = spawnAt(w, 500, 500, { team: 'red' });
+  const mate = spawnAt(w, 900, 500, { team: 'red' });
+  const enemy = spawnAt(w, 1200, 500, { team: 'blue' });
+  press(w, shooter, { angle: 0, shots: 1 });
+  step(w, TICK_MS);
+  w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 900, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
+  removePlayer(w, shooter.id);
+  run(w, 500);
+  assert.equal(hpOf(mate), WORLD.baseHp, 'neither the round nor the blast hurt a teammate');
+  assert.ok(hpOf(enemy) < WORLD.baseHp, 'the round flew on to the enemy');
 });
 
 test('a silenced gun fires without revealing the shooter, like the silencer perk', () => {

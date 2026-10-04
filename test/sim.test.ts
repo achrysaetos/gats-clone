@@ -85,7 +85,7 @@ test('a shield blocks 35% of bullets from within 40 degrees of its facing, and n
     press(w, v, { angle: Math.PI + facingOff });
     step(w, TICK_MS);
     if (hit === 'bullet') shootOnce(w, a, 0);
-    else explode(w, 640, 500, 100, 50, null, 'test');
+    else explode(w, 640, 500, 100, 50, { attacker: null, team: null, label: 'test' });
     return Math.round((WORLD.baseHp - hpOf(v)) * 1e6) / 1e6;
   };
   const deg = Math.PI / 180;

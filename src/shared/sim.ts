@@ -114,7 +114,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * stats.spread * 2;
       const b: Bullet = {
-        id: newId(w), owner: p.id, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
+        id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
         left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
         gun: p.gun, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
