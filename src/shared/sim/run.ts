@@ -1,9 +1,9 @@
-import { ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
+import { BUILDINGS, ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { tickHorde } from './horde.ts';
-import { circleHitsRect } from './movement.ts';
+import { circleHitsRect, dist2 } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { loadMap, newId, newRun, rand, solidRects, spawnPoint, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
+import { loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
 
 const humans = (w: World) => [...w.players.values()].filter((p) => p.kind === 'human').length;
 
@@ -13,6 +13,53 @@ export function statsFor(run: Run, p: Player): RunStats {
   let s = run.stats.get(p.id);
   if (!s) run.stats.set(p.id, (s = { name: p.name, kills: 0, revives: 0, built: 0 }));
   return s;
+}
+
+export function goDown(w: World, p: Player) {
+  p.life = { k: 'downed', bleedOutAt: w.now + ZOM.bleedOutMs, reviveProgress: 0 };
+  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'downed', by: null });
+}
+
+/** A downed player gets up after a squadmate holds use beside them long enough, and bleeds out if nobody does in time. */
+function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<Player>) {
+  const life = p.life;
+  if (life.k !== 'downed') return;
+  if (w.now >= life.bleedOutAt) {
+    p.life = { k: 'dead', respawnAt: Infinity };
+    p.deaths++;
+    w.events.push({ e: 'life', id: p.id, name: p.name, k: 'bledOut', by: null });
+    return;
+  }
+  const reviver = [...w.players.values()].find((o) => o.life.k === 'alive' && o.input.use && sameTeam(o, p) && dist2(o.x, o.y, p.x, p.y) <= ZOM.reviveRange ** 2);
+  if (!reviver) { life.reviveProgress = 0; return; }
+  revivers.add(reviver);
+  life.reviveProgress += dtMs;
+  if (life.reviveProgress < ZOM.reviveMs) return;
+  const revived = freshLife(p, w.now);
+  revived.hp *= ZOM.reviveHpFrac;
+  revived.lastDamageAt = w.now;
+  p.life = revived;
+  statsFor(run, reviver).revives++;
+  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
+}
+
+/** Holding use beside a damaged wall mends it, as far as the squad's scrap goes. */
+function repair(w: World, run: Run, p: Player, dtMs: number) {
+  let best: Building | null = null, bestD = ZOM.reachPx ** 2;
+  for (const b of w.buildings) {
+    const d = dist2(p.x, p.y, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell);
+    if (b.hp < BUILDINGS[b.kind].hp && d <= bestD) { best = b; bestD = d; }
+  }
+  if (!best) return;
+  const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, BUILDINGS[best.kind].hp - best.hp, run.scrap / ZOM.repairScrapPerHp);
+  best.hp += hp;
+  run.scrap -= hp * ZOM.repairScrapPerHp;
+}
+
+function tickSquad(w: World, run: Run, dtMs: number) {
+  const revivers = new Set<Player>();
+  for (const p of w.players.values()) tickDowned(w, run, p, dtMs, revivers);
+  for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) repair(w, run, p, dtMs);
 }
 
 /** A zombie's death pays its killer score toward the gun ladder and the squad scrap for walls. */
@@ -108,6 +155,7 @@ export function tickRun(w: World, dtMs: number) {
       return;
   }
   tickHorde(w, run, dtMs);
+  tickSquad(w, run, dtMs);
   if (run.core.hp <= 0) {
     run.phase = { k: 'over', night: run.night, restartAt: w.now + ZOM.restartMs };
     w.zombies = [];

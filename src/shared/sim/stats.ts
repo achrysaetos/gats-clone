@@ -74,7 +74,7 @@ export function effectiveStats(p: Player, still = false): Stats {
   return s;
 }
 
-export function freshLife(p: Player, now: number): Life {
+export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }> {
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,

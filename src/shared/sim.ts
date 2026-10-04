@@ -1,4 +1,4 @@
-import { ABILITY_COOLDOWN_MS, GUNS, WORLD, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
@@ -72,6 +72,13 @@ function consumePresses(p: Player): boolean {
 function tickPlayer(w: World, p: Player, dtMs: number) {
   const pressed = consumePresses(p);
   const life = p.life;
+  if (life.k === 'downed') {
+    p.angle = p.input.angle;
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs);
+    p.x = m.x;
+    p.y = m.y;
+    return;
+  }
   if (life.k !== 'alive') return;
   const gun = GUNS[p.gun];
   const dt = dtMs / 1000;

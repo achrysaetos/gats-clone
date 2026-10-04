@@ -14,7 +14,8 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
     case 'shot': return { kind: 'flash', ...muzzleTip(ev.x, ev.y, ev.angle, ev.gun, WORLD.playerRadius), angle: ev.angle };
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'hunted':
-    case 'zkill': return null;
+    case 'zkill':
+    case 'life': return null;
     case 'kill': {
       const blow = snap.events.filter((d) => d.e === 'dmg' && d.kind === 'player' && d.victim === ev.victimId).at(-1);
       return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId } : null;

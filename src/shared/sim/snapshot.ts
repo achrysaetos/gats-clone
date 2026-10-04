@@ -130,7 +130,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
-  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || inView(e.x, e.y, 300));
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || inView(e.x, e.y, 300));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),

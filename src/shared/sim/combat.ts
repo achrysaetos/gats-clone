@@ -2,7 +2,7 @@ import { ARMORS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
-import { damageZombie } from './run.ts';
+import { damageZombie, goDown } from './run.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
@@ -75,6 +75,7 @@ function creditFor(w: World, victim: Player, killer: Player | null): Player | nu
 }
 
 function kill(w: World, victim: Player, killer: Player | null, label: string) {
+  if (w.run) { goDown(w, victim); return; }
   const credited = creditFor(w, victim, killer);
   const named = credited ?? killer;
   const bounty = credited !== null && isHunted(victim);

@@ -89,7 +89,9 @@ export type GameEvent =
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
   /** A zombie died; `by` is the squad player credited, null for none. */
-  | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null };
+  | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null }
+  /** A squad player went down, was revived (`by` the reviver), or bled out. */
+  | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut'; by: number | null };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
