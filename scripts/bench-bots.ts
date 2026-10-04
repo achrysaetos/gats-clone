@@ -1,13 +1,13 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10] [abilityMinutes=3]
 // minutes=0 or abilityMinutes=0 skips that section.
-import { GUNS, PERK_TIERS, pickOptions, WORLD, type AbilityId } from '../src/shared/defs.ts';
+import { EVOLUTIONS, GUNS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type GunId } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePick, pendingPick } from '../src/shared/sim/stats.ts';
-import { createWorld, IDLE_INPUT, rand, type World } from '../src/shared/sim/world.ts';
+import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
+import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const minutes = Number(process.argv[2] ?? 10);
@@ -75,12 +75,22 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
 
 type Tally = { lives: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number };
 
-function simulate(seed: number, style: HumanStyle): Tally {
+/** A stage-2 gun of the human's class, standing in for a human who has reached the hunted stage. */
+const HUNTED_GUN: GunId = EVOLUTIONS[EVOLUTIONS[HUMAN_LOADOUT.weapon][0]!][0]!;
+
+function arm(p: Player, gun: GunId | null) {
+  if (!gun) return;
+  p.gun = gun;
+  if (p.life.k === 'alive') p.life.ammo = effectiveStats(p).mag;
+}
+
+function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tally {
   const w: World = createWorld('FFA', seed, 'boneyard');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers - 1; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
-  const human = addPlayer(w, 'human', HUMAN_LOADOUT);
+  const human = addPlayer(w, 'human', HUMAN_LOADOUT, { kind: 'human' });
+  arm(human, forcedGun);
   let mind: HumanMind = { target: null, fireAtTick: 0, aimErr: 0, strafe: 1, flipAtTick: 0, seen: null, shots: 0, wanderX: r() * WORLD.size, wanderY: r() * WORLD.size };
   let bornAt = w.now;
   const tally: Tally = { lives: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
@@ -100,7 +110,7 @@ function simulate(seed: number, style: HumanStyle): Tally {
     setInput(w, human.id, w.tick, h.input);
     const pending = pendingPick(human);
     if (pending) choosePick(w, human.id, pending.level, pickOptions(pending, human.gun)[0]!);
-    if (canRespawn(w, human.id) && respawn(w, human.id, HUMAN_LOADOUT)) bornAt = w.now;
+    if (canRespawn(w, human.id) && respawn(w, human.id, HUMAN_LOADOUT)) { bornAt = w.now; arm(human, forcedGun); }
     step(w, TICK_MS);
     for (const e of w.events) {
       if (e.e !== 'kill') continue;
@@ -119,22 +129,28 @@ const median = (xs: number[]) => {
   return s.length === 0 ? NaN : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
-for (const style of minutes > 0 ? (['idle', 'strafe'] as const) : []) {
+const VARIANTS: { label: string; style: HumanStyle; gun: GunId | null }[] = [
+  { label: 'idle', style: 'idle', gun: null },
+  { label: 'strafe', style: 'strafe', gun: null },
+  { label: `strafe, always ${GUNS[HUNTED_GUN].name}`, style: 'strafe', gun: HUNTED_GUN },
+];
+
+console.log(`human (3x health) vs ${WORLD.minPlayers - 1} bots, ${minutes} min x ${seeds} seeds`);
+for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
   const all: Tally = { lives: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
   for (let seed = 1; seed <= seeds; seed++) {
-    const t = simulate(seed, style);
+    const t = simulate(seed, style, gun);
     all.lives.push(...t.lives);
     all.kills += t.kills; all.deaths += t.deaths; all.botOnBotKills += t.botOnBotKills; all.botsKilledByHuman += t.botsKilledByHuman;
   }
   const simMinutes = minutes * seeds;
   console.log([
-    `${style.padEnd(6)}`,
+    `  ${label.padEnd(26)}`,
     `median life ${median(all.lives).toFixed(1)}s`,
     `deaths ${all.deaths}`,
     `kills ${all.kills}`,
     `K/D ${(all.kills / Math.max(1, all.deaths)).toFixed(2)}`,
     `bot-on-bot kills/min ${(all.botOnBotKills / simMinutes).toFixed(1)}`,
-    `(${simMinutes} sim minutes)`,
   ].join('  '));
 }
 
