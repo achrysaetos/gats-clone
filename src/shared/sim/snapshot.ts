@@ -2,7 +2,7 @@ import { GUNS, WORLD } from '../defs.ts';
 import type {
   BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
 } from '../protocol.ts';
-import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
@@ -64,10 +64,7 @@ function selfView(w: World, p: Player): SelfView {
 }
 
 function leaderboard(w: World): LeaderRow[] {
-  return [...w.players.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
-    .map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team }));
+  return rankRows(w.mode, [...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, team: p.team }))).slice(0, 10);
 }
 
 function matchView(w: World): MatchView {

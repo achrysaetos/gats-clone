@@ -1,8 +1,8 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
-import type { PlayerView, Snapshot } from '../shared/protocol.ts';
+import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
-import { feedMentions, levelProgress, mapNotice, objectiveFor } from './derive.ts';
+import { feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
 import { HITMARKER_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
@@ -203,12 +203,12 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
 }
 
 function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
-  const rows = [...snap.leaderboard].sort((a, b) => b.score - a.score).slice(0, compact ? 5 : 10);
+  const rows = topScorers(snap.match.mode, snap.leaderboard, compact ? 5 : 10);
   const teams = snap.match.mode !== 'FFA';
   const pw = compact ? 150 : 210;
   const x = w - pw - 12;
   const rowH = 20;
-  const ph = 36 + rows.length * rowH + (teams ? 30 : 0);
+  const ph = 36 + rows.length * rowH + (teams ? 30 : 18);
   panel(ctx, x, 12, pw, ph);
   caps(ctx, 'Leaderboard', x + SPACE.md, 29);
   text(ctx, snap.match.mode, x + pw - SPACE.md, 29, TYPE.label, PALETTE.gold, 'right', 800);
@@ -222,6 +222,9 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
     text(ctx, `to ${goal}`, x + pw / 2, y + 13, TYPE.micro, MUTED, 'center', 500);
     text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
     y += 30;
+  } else {
+    text(ctx, `First to ${WORLD.ffaWinKills} kills`, x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
+    y += 18;
   }
   rows.forEach((r, i) => {
     const mine = r.id === s.myId;
@@ -238,7 +241,7 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
       ctx.fill();
     }
     text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
-    text(ctx, String(r.score), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
+    text(ctx, String(rankValue(snap.match.mode, r)), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
     y += rowH;
   });
 }

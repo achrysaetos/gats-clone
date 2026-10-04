@@ -23,6 +23,13 @@ function smallerTeam(w: World): Team {
   return red <= blue ? 'red' : 'blue';
 }
 
+/** The player with the most kills this round, or null before anyone has one. */
+function topKiller(w: World): Player | null {
+  let top: Player | null = null;
+  for (const p of w.players.values()) if (p.kills > (top?.kills ?? 0)) top = p;
+  return top;
+}
+
 function teamAtLeast(w: World, target: number): string | null {
   if (w.teamScore.red >= target) return TEAM_NAME.red;
   if (w.teamScore.blue >= target) return TEAM_NAME.blue;
@@ -64,7 +71,10 @@ export const MODES: Record<ModeId, ModeRules> = {
     assignTeam: () => null,
     onKill: () => {},
     tick: () => {},
-    winner: () => null,
+    winner: (w) => {
+      const top = topKiller(w);
+      return top && (top.kills >= WORLD.ffaWinKills || w.now >= w.mapChangeAt) ? top.name : null;
+    },
   },
   TDM: {
     assignTeam: smallerTeam,
@@ -93,9 +103,14 @@ function changeMap(w: World) {
 
 export function tickMatch(w: World, dtMs: number) {
   const rules = MODES[w.mode];
-  if (w.now >= w.mapChangeAt) changeMap(w);
-  if (w.match.k === 'over') {
-    if (w.now < w.match.restartAt) return;
+  if (w.match.k === 'playing') {
+    rules.tick(w, dtMs);
+    const winner = rules.winner(w);
+    if (winner) {
+      w.match = { k: 'over', winner, restartAt: w.now + WORLD.roundRestartMs };
+      w.mapChangeAt = w.match.restartAt;
+    }
+  } else if (w.now >= w.match.restartAt) {
     w.match = { k: 'playing' };
     w.teamScore = { red: 0, blue: 0 };
     for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
@@ -105,12 +120,6 @@ export function tickMatch(w: World, dtMs: number) {
       p.deaths = 0;
       if (p.life.k === 'alive') p.life = freshLife(p, w.now);
     }
-    return;
   }
-  rules.tick(w, dtMs);
-  const winner = rules.winner(w);
-  if (winner) {
-    w.match = { k: 'over', winner, restartAt: w.now + WORLD.roundRestartMs };
-    w.mapChangeAt = w.match.restartAt;
-  }
+  if (w.now >= w.mapChangeAt) changeMap(w);
 }

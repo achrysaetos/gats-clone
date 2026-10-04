@@ -1,5 +1,5 @@
 import { LEVELS, WORLD, type ModeId } from '../shared/defs.ts';
-import type { GameEvent, LeaderRow, MatchView, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
+import { rankRows, type GameEvent, type LeaderRow, type MatchView, type PlayerView, type Snapshot, type Team } from '../shared/protocol.ts';
 import type { ClientState } from './state.ts';
 
 type LevelProgress = { displayLevel: number; frac: number; nextAt: number | null };
@@ -27,7 +27,7 @@ export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: 
   const Side = side[0]!.toUpperCase() + side.slice(1);
   switch (mode) {
     case 'FFA':
-      return { banner: 'Free for all: most points wins', line: 'FFA · most points wins' };
+      return { banner: `Free for all: first to ${WORLD.ffaWinKills} kills`, line: `FFA · first to ${WORLD.ffaWinKills} kills` };
     case 'TDM':
       return {
         banner: `Team Deathmatch: you are ${side.toUpperCase()}, first to ${WORLD.tdmWinScore} kills`,
@@ -51,4 +51,4 @@ export const mapNotice = (match: Pick<MatchView, 'nextMap' | 'mapChangeIn'>): st
 export const objectiveVisible = (phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
   phase === 'playing' && match.winner === null && msSincePlaying < OBJECTIVE_MS;
 
-export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow[] => [...rows].sort((a, b) => b.score - a.score).slice(0, count);
+export const topScorers = (mode: ModeId, rows: readonly LeaderRow[], count: number): LeaderRow[] => rankRows(mode, rows).slice(0, count);
