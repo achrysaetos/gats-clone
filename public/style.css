@@ -310,6 +310,10 @@ a.wordmark { text-decoration: none; }
 }
 .perk-tip strong { display: block; color: var(--accent); }
 .perk:hover .perk-tip, .perk:focus-visible .perk-tip { visibility: visible; }
+.perk.evolve { width: 150px; height: auto; grid-template-rows: auto auto auto auto; gap: 2px; padding: 4px 6px 6px; }
+.perk.evolve canvas { width: 108px; height: 34px; }
+.perk.evolve b { font-size: 12px; }
+.perk.evolve small { font-size: 10px; line-height: 1.25; color: var(--muted); text-align: center; }
 
 .chat {
   position: absolute;

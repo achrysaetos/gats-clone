@@ -62,14 +62,14 @@ test('the camera shows the view radius across and only the height the screen sha
 
 test('level progress tracks thresholds and caps at max level', () => {
   assert.deepEqual(levelProgress(0, 0), { displayLevel: 1, frac: 0, nextAt: 100 });
-  assert.deepEqual(levelProgress(1, 175), { displayLevel: 2, frac: 0.5, nextAt: 250 });
-  assert.deepEqual(levelProgress(3, 5000), { displayLevel: 4, frac: 1, nextAt: null });
+  assert.deepEqual(levelProgress(1, 150), { displayLevel: 2, frac: 0.5, nextAt: 200 });
+  assert.deepEqual(levelProgress(5, 5000), { displayLevel: 6, frac: 1, nextAt: null });
 });
 
 
 test('killer lookup and kill-feed highlight go by player id, so same-named players never get confused', () => {
   const kill = (killer: string, killerId: number | null, victim: string, victimId: number): Extract<GameEvent, { e: 'kill' }> =>
-    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG' });
+    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG', bounty: false });
   const events = [kill('Ann', 5, 'Alex', 2), kill('Bo', 6, 'Alex', 3)];
   assert.equal(killerOf(events, 3), 'Bo', 'the second Alex was killed by Bo, not Ann');
   assert.equal(killerOf(events, 2), 'Ann');

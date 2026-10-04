@@ -1,4 +1,4 @@
-import { ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, pickOptions, WEAPON_IDS, WORLD, type PickOption } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
@@ -22,7 +22,7 @@ const BOT_AIM = {
 
 const TICK_MS = 1000 / WORLD.tickHz;
 
-type BotDecision = { input: InputState; perk: { tier: Tier; perk: PerkId } | null; mem: BotMemory };
+type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
@@ -36,11 +36,11 @@ export function randomLoadout(rand: () => number): Loadout {
 
 export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMemory, rand: () => number): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
-  const tier = snap.self.pendingTier;
-  const perk = tier ? { tier, perk: pick<PerkId>(PERK_TIERS[tier], rand) } : null;
   if (!me || !me.alive) {
-    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0 }, perk, mem };
+    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0 }, pick: null, mem };
   }
+  const pending = snap.self.pending;
+  const choice = pending ? { level: pending.level, option: pick(pickOptions(pending, me.gun), rand) } : null;
 
   let next = { ...mem };
   const moved = Math.hypot(me.x - mem.lastX, me.y - mem.lastY);
@@ -58,7 +58,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   next.lastY = me.y;
 
   const enemy = nearestVisibleEnemy(me, snap.players, walls, snap.self.viewRadius);
-  const weapon = WEAPONS[me.weapon];
+  const weapon = GUNS[me.gun];
   const range = weapon.range;
   let goX = next.targetX, goY = next.targetY;
   let angle = Math.atan2(goY - me.y, goX - me.x);
@@ -91,7 +91,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     up: my < -dead, down: my > dead, left: mx < -dead, right: mx > dead,
     angle, fire, shots: next.shots, reload: !enemy && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
   };
-  return { input, perk, mem: next };
+  return { input, pick: choice, mem: next };
 }
 
 const gaussian = (rand: () => number) => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());

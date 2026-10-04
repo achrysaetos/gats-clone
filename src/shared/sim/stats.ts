@@ -1,4 +1,6 @@
-import { ARMORS, HP_MULTIPLIER, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type PerkId, type Tier } from '../defs.ts';
+import {
+  ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type PendingPick, type PerkId, type PickOption, type Tier,
+} from '../defs.ts';
 import type { PerkOfTier, Player, World } from './world.ts';
 
 type PerkMods = {
@@ -30,7 +32,7 @@ type Stats = {
 };
 
 export function effectiveStats(p: Player, still = false): Stats {
-  const weapon = WEAPONS[p.loadout.weapon];
+  const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
   const s: Stats = {
     speed: WORLD.baseSpeed * weapon.moveMul * armor.speedMul,
@@ -41,7 +43,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     spread: weapon.spread,
     regenPerSec: WORLD.regenPerSec,
     viewRadius: WORLD.viewRadius,
-    piercing: false, silenced: false, shield: false, thermal: false, ghillie: false,
+    piercing: false, silenced: weapon.silenced ?? false, shield: false, thermal: false, ghillie: false,
   };
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
@@ -66,14 +68,22 @@ export function effectiveStats(p: Player, still = false): Stats {
 
 export function levelForScore(score: number): number {
   let level = 0;
-  LEVEL_SCORES.forEach((threshold, i) => { if (score >= threshold) level = i; });
+  LEVELS.forEach((l, i) => { if (score >= l.score) level = i; });
   return level;
 }
 
-export function pendingTier(p: Player): Tier | null {
-  for (const tier of [1, 2, 3] as const) if (tier <= p.level && !p.perks[tier]) return tier;
+/** The lowest reached level whose pick is still open: a perk tier left empty, or an evolution the gun has not made. */
+export function pendingPick(p: Player): PendingPick | null {
+  let evolves = 0;
+  for (let level = 1; level <= p.level; level++) {
+    const pick = LEVELS[level]?.pick;
+    if (!pick) continue;
+    if (pick.k === 'perk' ? !p.perks[pick.tier] : GUNS[p.gun].stage < ++evolves) return { level, ...pick };
+  }
   return null;
 }
+
+export const isHunted = (p: Player): boolean => GUNS[p.gun].stage === 2;
 
 export function abilityOf(p: Player): AbilityId | null {
   return p.perks[3] ?? null;
@@ -83,33 +93,54 @@ export function resetProgress(p: Player) {
   p.score = 0;
   p.level = 0;
   p.perks = {};
+  p.gun = p.loadout.weapon;
   p.abilityReadyAt = 0;
   if (p.life.k !== 'alive') return;
   const s = effectiveStats(p);
   p.life.hp = Math.min(p.life.hp, s.maxHp);
   p.life.ammo = Math.min(p.life.ammo, s.mag);
+  p.life.burstLeft = 0;
 }
 
-export function choosePerk<T extends Tier>(w: World, id: number, tier: T, perk: PerkId): boolean {
+/** Applies `option` only when `level` is the pending pick and `option` is one of its options, so a repeated or stale pick changes nothing. */
+export function choosePick(w: World, id: number, level: number, option: PickOption): boolean {
   const p = w.players.get(id);
-  if (!p || p.life.k !== 'alive' || pendingTier(p) !== tier) return false;
-  if (!isPerkOfTier(tier, perk)) return false;
-  const before = effectiveStats(p).maxHp;
-  setPerk(p.perks, tier, perk);
-  p.life.hp += effectiveStats(p).maxHp - before;
+  const pending = p && pendingPick(p);
+  if (!p || p.life.k !== 'alive' || pending?.level !== level || !pickOptions(pending, p.gun).includes(option)) return false;
+  if (pending.k === 'perk') {
+    if (!isPerkOfTier(pending.tier, option)) return false;
+    const before = effectiveStats(p).maxHp;
+    setPerk(p.perks, pending.tier, option);
+    p.life.hp += effectiveStats(p).maxHp - before;
+    return true;
+  }
+  const gun = GUN_IDS.find((g) => g === option);
+  if (!gun) return false;
+  p.gun = gun;
+  p.life.ammo = effectiveStats(p).mag;
+  p.life.reloadUntil = null;
+  p.life.burstLeft = 0;
+  if (isHunted(p)) w.events.push({ e: 'hunted', id: p.id, name: p.name });
   return true;
 }
 
-function isPerkOfTier<T extends Tier>(tier: T, perk: PerkId): perk is PerkOfTier<T> {
-  return PERK_TIERS[tier].some((candidate) => candidate === perk);
+function isPerkOfTier<T extends Tier>(tier: T, option: PickOption): option is PerkOfTier<T> {
+  return PERK_TIERS[tier].some((candidate) => candidate === option);
 }
 
 function setPerk<T extends Tier>(perks: { [K in T]?: PerkOfTier<K> }, tier: T, perk: PerkOfTier<T>) {
   perks[tier] = perk;
 }
 
-export function addScore(p: Player, amount: number) {
+function catchUpMul(w: World, p: Player): number {
+  const others = [...w.players.values()].filter((o) => o.id !== p.id && o.life.k === 'alive');
+  if (others.length === 0) return 1;
+  const average = others.reduce((sum, o) => sum + o.level, 0) / others.length;
+  return p.level < average ? WORLD.catchUpMul : 1;
+}
+
+export function addScore(w: World, p: Player, amount: number) {
   if (p.life.k !== 'alive') return;
-  p.score += amount;
+  p.score += Math.round(amount * catchUpMul(w, p));
   p.level = Math.max(p.level, levelForScore(p.score));
 }

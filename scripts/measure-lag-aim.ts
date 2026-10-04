@@ -8,11 +8,12 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import WebSocket from 'ws';
-import { WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent, Loadout } from '../src/shared/protocol.ts';
 import { canRespawn, respawn } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { startServer } from '../src/server/main.ts';
+import { killOnExit } from './kill-on-exit.ts';
 
 const SECONDS = Number(process.argv[2] ?? 60);
 const CONDITIONS = (process.argv.length > 3 ? process.argv.slice(3) : ['0:0', '100:40']).map((c) => c.split(':').map(Number) as [number, number]);
@@ -21,7 +22,7 @@ const VIEW = { w: 1280, h: 800 };
 const RANGE = 350;
 const STRAFE_MS = 1200;
 const STRAFE_HALF = (WORLD.baseSpeed * STRAFE_MS) / 2000;
-const TAP_MS = WEAPONS.pistol.fireMs + 30;
+const TAP_MS = GUNS.pistol.fireMs + 30;
 const WARMUP_MS = 1500;
 const TARGET_LOADOUT: Loadout = { weapon: 'pistol', armor: 'none', color: 'red' };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -46,8 +47,8 @@ function arenaCenter(): { x: number; y: number } {
 
 async function openShooter(lag: number, jitter: number) {
   const port = await freePort();
-  const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-lagaim-chrome-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-lagaim-chrome-'))}`,
+    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
   let target = '';
   for (let i = 0; i < 50 && !target; i++) {
     try {
@@ -136,7 +137,7 @@ async function measure(lag: number, jitter: number) {
       velocity = { x: velocity.x * 0.5 + 0.5 * (drawn.screen.x - last.x) / dt, y: velocity.y * 0.5 + 0.5 * (drawn.screen.y - last.y) / dt };
     }
     last = { x: drawn.screen.x, y: drawn.screen.y, at: drawn.now };
-    const flight = Math.hypot(drawn.x - drawn.self.x, drawn.y - drawn.self.y) / WEAPONS.pistol.bulletSpeed;
+    const flight = Math.hypot(drawn.x - drawn.self.x, drawn.y - drawn.self.y) / GUNS.pistol.bulletSpeed;
     const sx = drawn.screen.x + velocity.x * flight, sy = drawn.screen.y + velocity.y * flight;
     await shooter.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sx, y: sy, button: 'none' });
     if (performance.now() >= nextTapAt) {

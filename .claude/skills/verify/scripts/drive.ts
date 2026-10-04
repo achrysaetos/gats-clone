@@ -7,7 +7,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { WEAPON_IDS, WEAPONS, type WeaponId } from '../../../../src/shared/defs.ts';
+import { GUNS, WEAPON_IDS, type GunId, type WeaponId } from '../../../../src/shared/defs.ts';
+import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
@@ -28,8 +29,8 @@ const problems: string[] = [];
 
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 const debugPort = await freePort();
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-verify-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-verify-'))}`,
+  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
 
 let target = '';
 for (let i = 0; i < 50 && !target; i++) {
@@ -42,7 +43,7 @@ for (let i = 0; i < 50 && !target; i++) {
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
-type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; weapon: WeaponId }[] };
+type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; gun: GunId }[] };
 const frames = { welcome: null as null | { id: number; account: string | null }, last: null as null | Snap, sent: 0, snapAt: [] as number[], chat: [] as { from: string; text: string }[] };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
@@ -160,7 +161,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     if (signedIn) expect('server accepts the stored session (welcome.account)', welcomed()?.account === signedIn, `account ${welcomed()?.account}`);
     expect('menu hidden and HUD shown', await until(async () => js(`document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
     expect('own player present in snapshots', await until(() => !!me()));
-    if (pickedWeapon) expect('joined player carries the picked weapon (server snapshot)', me()?.weapon === pickedWeapon, `weapon ${me()?.weapon}`);
+    if (pickedWeapon) expect('joined player carries the picked weapon (server snapshot)', me()?.gun === pickedWeapon, `gun ${me()?.gun}`);
     expect('server human count in ffa rises by one', await until(async () => (await humansIn('ffa')) === humansBefore + 1), `baseline ${humansBefore} incl. observer`);
     expect('observer leaderboard lists the player', await until(() => observerBoard.includes(NAME)));
     await shot('joined');
@@ -202,10 +203,10 @@ const STEPS: Record<string, () => Promise<void>> = {
 
     const CLICKS = 6;
     const TAP_MS = 8;
-    let weapon = WEAPONS[me()!.weapon], before = 0, fired = 0;
+    let weapon = GUNS[me()!.gun], before = 0, fired = 0;
     for (let attempt = 0; attempt < 3; attempt++) {
       await ensureAlive();
-      weapon = WEAPONS[me()!.weapon];
+      weapon = GUNS[me()!.gun];
       if (frames.last!.self.ammo < CLICKS) { await key('KeyR', 'r', 60); await until(() => !frames.last!.self.reloading && frames.last!.self.ammo >= CLICKS, weapon.reloadMs + 2000); }
       await sleep(weapon.fireMs);
       before = frames.last!.self.ammo;

@@ -11,6 +11,7 @@ import { WORLD } from '../src/shared/defs.ts';
 import type { GameEvent, Snapshot } from '../src/shared/protocol.ts';
 import { fillSnapshot } from '../src/shared/wire.ts';
 import { makeCamera } from '../src/client/camera.ts';
+import { killOnExit } from './kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) throw new Error('usage: node scripts/offscreen-hits.ts <run dir> [seconds] [WxH ...]');
@@ -22,8 +23,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 const debugPort = await freePort();
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-offscreen-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-offscreen-'))}`,
+  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
 let target = '';
 for (let i = 0; i < 50 && !target; i++) {
   try {

@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITY_COOLDOWN_MS, ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePerk } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
-const PISTOL_DMG = WEAPONS.pistol.damage;
+const PISTOL_DMG = GUNS.pistol.damage;
 
 test('armor absorbs its tier\'s share of a hit and depletes', () => {
   const w = emptyWorld();
@@ -46,7 +45,7 @@ test('walls stop bullets', () => {
   assert.ok(hpOf(b) < WORLD.baseHp, 'same shot without the wall hits');
 });
 
-test('kills award killScore and unlock perk tiers at thresholds', () => {
+test('kills award killScore and open picks at the level thresholds', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const killOne = () => {
@@ -56,32 +55,24 @@ test('kills award killScore and unlock perk tiers at thresholds', () => {
     assert.equal(v.life.k, 'dead');
   };
   killOne();
-  let self = snapshotFor(w, a.id).self;
+  const self = snapshotFor(w, a.id).self;
   assert.equal(a.score, WORLD.killScore);
   assert.equal(a.level, 1);
-  assert.equal(self.pendingTier, 1);
+  assert.deepEqual(self.pending, { level: 1, k: 'perk', tier: 1 });
   assert.equal(self.kills, 1);
 
   killOne();
-  killOne();
-  assert.equal(a.score, 3 * WORLD.killScore);
+  assert.equal(a.score, 2 * WORLD.killScore);
   assert.equal(a.level, 2);
-  assert.equal(snapshotFor(w, a.id).self.pendingTier, 1, 'tier 1 stays pending until chosen');
-  assert.ok(choosePerk(w, a.id, 1, 'grip'));
-  self = snapshotFor(w, a.id).self;
-  assert.equal(self.pendingTier, 2);
-  assert.equal(self.perks[1], 'grip');
-  assert.equal(choosePerk(w, a.id, 2, 'bipod'), false, 'a tier 1 perk cannot fill tier 2');
-  assert.equal(snapshotFor(w, a.id).self.perks[2], undefined);
-  assert.equal(choosePerk(w, a.id, 3, 'dash'), false, 'cannot skip to a locked tier');
+  assert.deepEqual(snapshotFor(w, a.id).self.pending, { level: 1, k: 'perk', tier: 1 }, 'the tier 1 perk stays pending until chosen');
 });
 
 test('extended mag enlarges the magazine', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  assert.equal(snapshotFor(w, a.id).self.mag, WEAPONS.pistol.mag);
+  assert.equal(snapshotFor(w, a.id).self.mag, GUNS.pistol.mag);
   grantPerks(w, a, ['extended']);
-  assert.equal(snapshotFor(w, a.id).self.mag, Math.round(WEAPONS.pistol.mag * 1.5));
+  assert.equal(snapshotFor(w, a.id).self.mag, Math.round(GUNS.pistol.mag * 1.5));
 });
 
 test('lightweight moves 10% faster', () => {
@@ -330,7 +321,7 @@ test('snapshots report the armor tier picked and how far through a reload the pl
   press(w, p, { fire: true, shots: p.input.shots + 1 });
   step(w, 1000 / 30);
   press(w, p, { reload: true });
-  for (let t = 0; t < WEAPONS.lmg.reloadMs / 2; t += 1000 / 30) step(w, 1000 / 30);
+  for (let t = 0; t < GUNS.lmg.reloadMs / 2; t += 1000 / 30) step(w, 1000 / 30);
   const frac = snapshotFor(w, p.id).self.reloadFrac;
   assert.ok(frac > 0.4 && frac < 0.6, `halfway through the reload reads about 0.5, got ${frac}`);
 });

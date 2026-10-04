@@ -29,7 +29,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['Left click', 'Fire'],
   ['R', 'Reload'],
   ['Space', 'Ability'],
-  ['1-9, 0', 'Pick perk'],
+  ['1-9, 0', 'Pick perk or evolution'],
   ['Enter', 'Chat'],
   ['M', 'Mute sound'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],

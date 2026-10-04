@@ -9,6 +9,7 @@ import WebSocket from 'ws';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node combat.ts <run-dir> [room ...]'); process.exit(2); }
@@ -27,8 +28,8 @@ const problems: string[] = [];
 
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 const debugPort = await freePort();
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-combat-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-combat-'))}`,
+  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
 
 let target = '';
 for (let i = 0; i < 50 && !target; i++) {

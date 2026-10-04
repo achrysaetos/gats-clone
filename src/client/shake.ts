@@ -1,5 +1,6 @@
 import type { Point } from './camera.ts';
-import type { SoundCue, SoundId } from './sfx.ts';
+import { GUN_IDS, GUNS, type WeaponId } from '../shared/defs.ts';
+import type { SoundCue } from './sfx.ts';
 
 export const MAX_SHAKE_PX = 10;
 const DECAY_PER_MS = 1 / 700;
@@ -16,12 +17,14 @@ export function offset(t: number, now: number): Point {
   return { x: k * wobble(now, 1), y: k * wobble(now, 5) };
 }
 
-const RECOIL: Partial<Record<SoundId, number>> = { 'shot:shotgun': 0.22, 'shot:sniper': 0.3 };
+const RECOIL: Partial<Record<WeaponId, number>> = { shotgun: 0.22, sniper: 0.3 };
 
 export function traumaFor(cue: SoundCue, listener: Point, viewRadius: number): number {
   if (cue.id === 'hurt') return 0.25 + 0.5 * cue.damageFrac;
   if (cue.id === 'death') return 0.6;
   if (cue.id === 'boom') return 0.7 * Math.max(0, 1 - Math.hypot(cue.x - listener.x, cue.y - listener.y) / viewRadius);
-  if (cue.self && cue.id.startsWith('shot:')) return RECOIL[cue.id] ?? 0.1;
+  const gun = cue.self ? GUN_IDS.find((g) => cue.id === `shot:${g}`) : undefined;
+  if (gun) return RECOIL[GUNS[gun].base] ?? 0.1;
+  if (cue.self && cue.id === 'shot:silenced') return 0.1;
   return 0;
 }

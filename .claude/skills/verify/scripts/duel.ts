@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import WebSocket from 'ws';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node duel.ts <run-dir>'); process.exit(2); }
@@ -35,8 +36,8 @@ type Player = {
 
 async function openPlayer(label: string, name: string): Promise<Player> {
   const port = await freePort();
-  const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-duel-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-duel-'))}`,
+    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
   let target = '';
   for (let i = 0; i < 50 && !target; i++) {
     try {

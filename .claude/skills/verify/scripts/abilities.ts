@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node abilities.ts <run-dir> [knife] [dash]   Earns the ability tier in TDM, then uses each ability named (default both).
+// Usage: node abilities.ts <run-dir> [knife] [dash]   Earns the ability pick in TDM, then uses each ability named (default both).
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -10,6 +10,7 @@ import { PERK_TIERS, WORLD, type AbilityId } from '../../../../src/shared/defs.t
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node abilities.ts <run-dir> [knife] [dash]'); process.exit(2); }
@@ -28,8 +29,8 @@ const problems: string[] = [];
 
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 const debugPort = await freePort();
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-abilities-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' });
+const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-abilities-'))}`,
+  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
 
 let target = '';
 for (let i = 0; i < 50 && !target; i++) {
@@ -127,9 +128,9 @@ async function earnAbility(ability: AbilityId): Promise<boolean> {
     const self = selfView();
     if (self?.ability === ability) return true;
     if (self?.ability) { await sleep(500); continue; }
-    const tier = self?.pendingTier;
-    const slot = tier === 3 ? PERK_TIERS[3].indexOf(ability) : 0;
-    if (tier) await tap(`Digit${slot + 1}`, String(slot + 1), 49 + slot);
+    const pending = self?.pending;
+    const slot = pending?.k === 'perk' && pending.tier === 3 ? PERK_TIERS[3].indexOf(ability) : 0;
+    if (pending) await tap(`Digit${slot + 1}`, String(slot + 1), 49 + slot);
     else await shootNearest();
     await sleep(120);
   }

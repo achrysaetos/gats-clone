@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { MAX_REWIND_MS } from '../src/shared/sim/combat.ts';
@@ -59,7 +59,7 @@ test('a rewound shot stops at a built wall that stood when the shooter saw the v
 
 test(`a victim who reached cover can be hit only for the rewind cap less the bullet's flight, however far back the client claims to see`, (t) => {
   const range = 200;
-  const flightMs = (range / WEAPONS.pistol.bulletSpeed) * 1000;
+  const flightMs = (range / GUNS.pistol.bulletSpeed) * 1000;
   let latestHitAfterCoverMs = -Infinity;
   for (let delayMs = 0; delayMs <= MAX_REWIND_MS + 200; delayMs += TICK_MS) {
     const w = emptyWorld();

@@ -32,5 +32,5 @@ Each feature file starts with an H1 and one paragraph on the user-visible behavi
 - [Accounts and stats](./accounts.md) covers register, login, the token, server-side stats, the leaderboard and error codes.
 - [Joining and playing](./join-play.md) covers joining a room, moving, firing, leaving, the duel, reconnect, the view rectangle and lag compensation.
 - [Chat](./chat.md) covers sending and receiving, the rate limit, word masking, renaming blocked names, and mute.
-- [Progression, death and modes](./progression-death-modes.md) covers perks, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
+- [Progression, death and modes](./progression-death-modes.md) covers perks, gun evolution, the hunted marker and bounty, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
 - [Map rotation](./maps.md) covers the four maps, per-mode rotation and the next-map notice.

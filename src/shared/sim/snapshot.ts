@@ -1,4 +1,4 @@
-import { WEAPONS, WORLD } from '../defs.ts';
+import { GUNS, WORLD } from '../defs.ts';
 import type {
   BulletView, CrateView, GameEvent, LeaderRow, MatchView, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
 } from '../protocol.ts';
@@ -6,7 +6,7 @@ import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, pendingTier } from './stats.ts';
+import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { isEnemy, sameTeam, type Player, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
@@ -17,10 +17,13 @@ export function wallViews(w: World): WallView[] {
 }
 
 function isHidden(w: World, p: Player): boolean {
-  return p.life.k === 'alive' && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
+  return p.life.k === 'alive' && !isHunted(p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
 }
 
-function playerView(w: World, p: Player): PlayerView {
+/** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
+const huntedFor = (me: Player, p: Player) => isHunted(p) && (p.id === me.id || isEnemy(me, p));
+
+function playerView(w: World, p: Player, me: Player): PlayerView {
   const life = p.life;
   const stats = effectiveStats(p);
   const alive = life.k === 'alive';
@@ -28,9 +31,9 @@ function playerView(w: World, p: Player): PlayerView {
     id: p.id, name: p.name, x: p.x, y: p.y, angle: p.angle,
     hp: alive ? Math.ceil(life.hp) : 0, maxHp: stats.maxHp,
     armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
-    color: p.loadout.color, weapon: p.loadout.weapon, team: p.team,
+    color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
-    score: p.score, level: p.level, armorTier: p.loadout.armor,
+    score: p.score, level: p.level, armorTier: p.loadout.armor, hunted: huntedFor(me, p),
   };
 }
 
@@ -45,10 +48,10 @@ function selfView(w: World, p: Player): SelfView {
     speed: stats.speed,
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
-      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / WEAPONS[p.loadout.weapon].reloadMs))
+      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / GUNS[p.gun].reloadMs))
       : 0,
     perks: { ...p.perks },
-    pendingTier: pendingTier(p),
+    pending: pendingPick(p),
     ability,
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
@@ -97,11 +100,11 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
       const seesHidden = !isEnemy(me, p) || stats.thermal || dist2(p.x, p.y, me.x, me.y) < HIDDEN_REVEAL_DIST ** 2;
       if (isHidden(w, p) && !seesHidden) continue;
     }
-    players.push(playerView(w, p));
+    players.push(playerView(w, p, me));
   }
   const bullets: BulletView[] = w.bullets
     .filter((b) => inView(b.x, b.y, 100))
-    .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner }));
+    .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
     .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size }));
@@ -115,9 +118,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress }));
   const minimap = [...w.players.values()]
-    .filter((p) => p.id !== me.id && p.life.k === 'alive' && (sameTeam(me, p) || w.now < p.revealedUntil))
-    .map((p) => ({ x: p.x, y: p.y, team: p.team }));
-  const visibleEvents = events.filter((e) => e.e === 'kill' || inView(e.x, e.y, 300));
+    .filter((p) => p.id !== me.id && p.life.k === 'alive' && (sameTeam(me, p) || w.now < p.revealedUntil || huntedFor(me, p)))
+    .map((p) => ({ x: p.x, y: p.y, team: p.team, hunted: huntedFor(me, p) }));
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || inView(e.x, e.y, 300));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),

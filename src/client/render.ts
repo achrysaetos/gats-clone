@@ -1,11 +1,11 @@
-import { COLORS, WORLD } from '../shared/defs.ts';
+import { COLORS, GUNS, WORLD } from '../shared/defs.ts';
 import type { BulletView, CrateView, PlayerView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes } from './effects.ts';
 import { NUMBER_MS, type DamageNumber } from './feedback.ts';
 import { ARMOR_BAND, INK, PALETTE, shade, TEAM_COLORS, teamColor } from './palette.ts';
-import { drawGun, GRIPS } from './sprites.ts';
+import { drawGun, gripsOf } from './sprites.ts';
 import type { Session } from './state.ts';
 import { crateDamage, crateSprite, floorCracks, PLAYER_SHADOW, SLAB, slabLevels, WALL_SHADOW } from './textures.ts';
 
@@ -57,7 +57,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
     const flash = flashes.get(p.id);
     drawPlayer(ctx, { ...p, angle }, bodyColor(p), {
-      self, friendly: !self && p.team !== null && p.team === myTeam, flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS,
+      self, friendly: !self && p.team !== null && p.team === myTeam, flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, now,
     });
   }
   for (const t of snap.thrown) if (t.kind !== 'landMine' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
@@ -367,24 +367,36 @@ function drawTrail(ctx: CanvasRenderingContext2D, color: string, trail: { x: num
 
 export const TRAIL_MS = 260;
 
+/** Class guns and shrapnel keep the plain tracer, orange for your own; an evolved gun's rounds wear its own color and size. */
+function tracerLook(b: BulletView, myId: number): { r: number; color: string; own: boolean } {
+  const own = b.owner === myId;
+  if (b.gun && GUNS[b.gun].stage > 0) return { ...GUNS[b.gun].look.bullet, own };
+  return { r: 1.6, color: own ? PALETTE.ownBullet : PALETTE.bullet, own };
+}
+
 function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], myId: number) {
   ctx.lineCap = 'round';
-  for (const own of [false, true]) {
-    const mine = bullets.filter((b) => (b.owner === myId) === own);
-    if (!mine.length) continue;
-    const color = own ? PALETTE.ownBullet : PALETTE.bullet;
-    for (const [len, width, alpha] of [[TRACER.tail, 3, 0.28], [TRACER.core, 5, 1]] as const) {
+  const groups = new Map<string, { look: ReturnType<typeof tracerLook>; bullets: BulletView[] }>();
+  for (const b of bullets) {
+    const look = tracerLook(b, myId);
+    const key = `${look.color}|${look.r}|${look.own}`;
+    const group = groups.get(key);
+    if (group) group.bullets.push(b);
+    else groups.set(key, { look, bullets: [b] });
+  }
+  for (const { look, bullets: group } of groups.values()) {
+    for (const [len, width, alpha] of [[TRACER.tail, look.r * 1.9, 0.28], [TRACER.core, look.r * 3.1, 1]] as const) {
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = look.color;
       ctx.lineWidth = width;
       ctx.beginPath();
-      for (const b of mine) { ctx.moveTo(b.x - b.vx * len, b.y - b.vy * len); ctx.lineTo(b.x, b.y); }
+      for (const b of group) { ctx.moveTo(b.x - b.vx * len, b.y - b.vy * len); ctx.lineTo(b.x, b.y); }
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    ctx.fillStyle = own ? '#fff1c4' : '#f4efe6';
+    ctx.fillStyle = look.own ? '#fff1c4' : '#f4efe6';
     ctx.beginPath();
-    for (const b of mine) { ctx.moveTo(b.x + 1.6, b.y); ctx.arc(b.x, b.y, 1.6, 0, TAU); }
+    for (const b of group) { ctx.moveTo(b.x + look.r, b.y); ctx.arc(b.x, b.y, look.r, 0, TAU); }
     ctx.fill();
   }
 }
@@ -400,7 +412,47 @@ function drawPlayerShadows(ctx: CanvasRenderingContext2D, players: readonly Play
   ctx.fill();
 }
 
-type PlayerLook = { self: boolean; friendly: boolean; flash: number };
+type PlayerLook = { self: boolean; friendly: boolean; flash: number; now: number };
+const TIER_COLORS = { 1: '#d8dee9', 2: PALETTE.gold } as const;
+
+function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2, top: number) {
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const [width, color] of [[10, INK], [5, TIER_COLORS[stage]]] as const) {
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < stage; i++) {
+      const y = top - i * 11;
+      ctx.moveTo(-13, y);
+      ctx.lineTo(0, y - 9);
+      ctx.lineTo(13, y);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawHuntedMark(ctx: CanvasRenderingContext2D, now: number) {
+  const pulse = 0.5 + 0.5 * Math.sin(now / 150);
+  const r = R + 14 + 3 * pulse;
+  const spin = now / 900;
+  ctx.lineCap = 'round';
+  for (const [width, color, alpha] of [[8, INK, 0.5], [4, PALETTE.hunted, 0.65 + 0.35 * pulse]] as const) {
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = spin + (i * Math.PI) / 2;
+      ctx.moveTo(Math.cos(a - 0.45) * r, Math.sin(a - 0.45) * r);
+      ctx.arc(0, 0, r, a - 0.45, a + 0.45);
+      ctx.moveTo(Math.cos(a) * (r - 7), Math.sin(a) * (r - 7));
+      ctx.lineTo(Math.cos(a) * (r + 7), Math.sin(a) * (r + 7));
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
 const HAND_R = R * 0.27;
 
 function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, look: PlayerLook) {
@@ -415,7 +467,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.stroke();
   }
   ctx.rotate(p.angle);
-  drawGun(ctx, p.weapon, R);
+  drawGun(ctx, p.gun, R);
   ctx.rotate(-p.angle);
   const band = ARMOR_BAND[p.armorTier];
   ctx.beginPath();
@@ -454,7 +506,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   }
   ctx.rotate(p.angle);
   ctx.beginPath();
-  for (const [hx, hy] of GRIPS[p.weapon]) {
+  for (const [hx, hy] of gripsOf(p.gun)) {
     ctx.moveTo(hx * R + HAND_R, hy * R);
     ctx.arc(hx * R, hy * R, HAND_R, 0, TAU);
   }
@@ -464,6 +516,10 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.strokeStyle = INK;
   ctx.stroke();
   ctx.rotate(-p.angle);
+  const { stage } = GUNS[p.gun];
+  if (p.hunted) drawHuntedMark(ctx, look.now);
+  if (stage !== 0) drawTierMark(ctx, stage, look.friendly ? -R - 34 : -R - 12);
+  ctx.globalAlpha = p.hidden ? 0.25 : 1;
   if (look.friendly) {
     ctx.beginPath();
     ctx.moveTo(-11, -R - 26);

@@ -1,8 +1,27 @@
 export const WEAPON_IDS = ['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const;
 export type WeaponId = (typeof WEAPON_IDS)[number];
 
-export type WeaponDef = {
+export const GUN_IDS = [
+  ...WEAPON_IDS,
+  'handCannon', 'machinePistol', 'executioner', 'thunderclap', 'twinFang', 'hailstorm',
+  'skirmisher', 'heavySmg', 'phantom', 'hornet', 'ripper', 'spitfire',
+  'slugGun', 'doubleBarrel', 'railSlug', 'boomSlug', 'quadBarrel', 'streetSweeper',
+  'battleRifle', 'carbine', 'marksman', 'grenadier', 'vanguard', 'specter',
+  'longshot', 'semiAuto', 'piercer', 'artillery', 'repeater', 'ghost',
+  'heavyLmg', 'lightMg', 'juggernaut', 'siegeGun', 'minigun', 'twinMg',
+] as const;
+export type GunId = (typeof GUN_IDS)[number];
+
+export type Blast = { radius: number; damage: number };
+
+export type GunLook = { length: number; width: number; barrels: 1 | 2 | 3; accent: string; bullet: { r: number; color: string } };
+
+export type GunDef = {
   name: string;
+  desc: string;
+  base: WeaponId;
+  stage: 0 | 1 | 2;
+  from: GunId | null;
   damage: number;
   fireMs: number;
   pellets: number;
@@ -13,16 +32,112 @@ export type WeaponDef = {
   reloadMs: number;
   moveMul: number;
   auto: boolean;
+  /** One press fires `count` rounds `gapMs` apart, one ammo each, then waits `fireMs`. */
+  burst?: { count: number; gapMs: number };
+  /** Players a bullet passes through before it stops. */
+  penetrate?: number;
+  /** The bullet explodes wherever it stops. */
+  blast?: Blast;
+  silenced?: true;
+  look: GunLook;
 };
 
-export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  pistol: { name: 'Pistol', damage: 22, fireMs: 220, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1100, moveMul: 1.0, auto: false },
-  smg: { name: 'SMG', damage: 13, fireMs: 75, pellets: 1, spread: 0.12, range: 550, bulletSpeed: 1400, mag: 30, reloadMs: 1300, moveMul: 0.97, auto: true },
-  shotgun: { name: 'Shotgun', damage: 15, fireMs: 750, pellets: 7, spread: 0.22, range: 420, bulletSpeed: 1300, mag: 6, reloadMs: 1800, moveMul: 0.93, auto: false },
-  assault: { name: 'Assault', damage: 16, fireMs: 110, pellets: 1, spread: 0.07, range: 800, bulletSpeed: 1700, mag: 30, reloadMs: 1500, moveMul: 0.92, auto: true },
-  sniper: { name: 'Bolt-action', damage: 100, fireMs: 1300, pellets: 1, spread: 0.01, range: 1400, bulletSpeed: 2600, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false },
-  lmg: { name: 'LMG', damage: 14, fireMs: 90, pellets: 1, spread: 0.14, range: 750, bulletSpeed: 1600, mag: 75, reloadMs: 3200, moveMul: 0.82, auto: true },
+const BASE_BULLET = { r: 1.6, color: '#25211c' };
+const BASE_LOOK: GunLook = { length: 1, width: 1, barrels: 1, accent: '#7b8494', bullet: BASE_BULLET };
+
+export const GUNS: Record<GunId, GunDef> = {
+  pistol: { name: 'Pistol', desc: 'Reliable sidearm', base: 'pistol', stage: 0, from: null, damage: 22, fireMs: 220, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1100, moveMul: 1.0, auto: false, look: BASE_LOOK },
+  handCannon: { name: 'Hand Cannon', desc: 'Heavy single shots', base: 'pistol', stage: 1, from: 'pistol', damage: 38, fireMs: 420, pellets: 1, spread: 0.03, range: 780, bulletSpeed: 1650, mag: 8, reloadMs: 1300, moveMul: 0.98, auto: false,
+    look: { length: 1.2, width: 1.3, barrels: 1, accent: '#c8553d', bullet: { r: 2.6, color: '#7a2e1f' } } },
+  machinePistol: { name: 'Machine Pistol', desc: 'Three-round bursts', base: 'pistol', stage: 1, from: 'pistol', damage: 19, fireMs: 430, pellets: 1, spread: 0.06, range: 650, bulletSpeed: 1500, mag: 18, reloadMs: 1200, moveMul: 1.0, auto: false, burst: { count: 3, gapMs: 60 },
+    look: { length: 1.1, width: 1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
+  executioner: { name: 'Executioner', desc: 'Huge rounds punch through one body', base: 'pistol', stage: 2, from: 'handCannon', damage: 60, fireMs: 560, pellets: 1, spread: 0.02, range: 900, bulletSpeed: 2000, mag: 6, reloadMs: 1400, moveMul: 0.97, auto: false, penetrate: 1,
+    look: { length: 1.45, width: 1.35, barrels: 1, accent: '#e5484d', bullet: { r: 3.2, color: '#b3261e' } } },
+  thunderclap: { name: 'Thunderclap', desc: 'Rounds burst on impact', base: 'pistol', stage: 2, from: 'handCannon', damage: 34, fireMs: 420, pellets: 1, spread: 0.03, range: 700, bulletSpeed: 1400, mag: 6, reloadMs: 1400, moveMul: 0.97, auto: false, blast: { radius: 70, damage: 22 },
+    look: { length: 1.25, width: 1.5, barrels: 1, accent: '#f76b15', bullet: { r: 3.4, color: '#e0661a' } } },
+  twinFang: { name: 'Twin Fang', desc: 'Bursts of paired rounds', base: 'pistol', stage: 2, from: 'machinePistol', damage: 14, fireMs: 520, pellets: 2, spread: 0.06, range: 650, bulletSpeed: 1500, mag: 21, reloadMs: 1200, moveMul: 1.0, auto: false, burst: { count: 3, gapMs: 60 },
+    look: { length: 1.1, width: 1.15, barrels: 2, accent: '#30c0a0', bullet: { r: 1.8, color: '#11806a' } } },
+  hailstorm: { name: 'Hailstorm', desc: 'Full auto with a deep magazine', base: 'pistol', stage: 2, from: 'machinePistol', damage: 15, fireMs: 98, pellets: 1, spread: 0.12, range: 560, bulletSpeed: 1500, mag: 40, reloadMs: 1500, moveMul: 0.98, auto: true,
+    look: { length: 1.25, width: 1.1, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
+
+  smg: { name: 'SMG', desc: 'Fast and light', base: 'smg', stage: 0, from: null, damage: 13, fireMs: 75, pellets: 1, spread: 0.12, range: 550, bulletSpeed: 1400, mag: 30, reloadMs: 1300, moveMul: 0.97, auto: true, look: BASE_LOOK },
+  skirmisher: { name: 'Skirmisher', desc: 'Faster fire, faster feet', base: 'smg', stage: 1, from: 'smg', damage: 12, fireMs: 66, pellets: 1, spread: 0.12, range: 550, bulletSpeed: 1450, mag: 32, reloadMs: 1200, moveMul: 1.04, auto: true,
+    look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.5, color: '#1f5560' } } },
+  heavySmg: { name: 'Heavy SMG', desc: 'Harder hits, longer reach', base: 'smg', stage: 1, from: 'smg', damage: 17, fireMs: 78, pellets: 1, spread: 0.1, range: 650, bulletSpeed: 1500, mag: 30, reloadMs: 1400, moveMul: 0.94, auto: true,
+    look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
+  phantom: { name: 'Phantom', desc: 'Silenced, fastest on foot', base: 'smg', stage: 2, from: 'skirmisher', damage: 15, fireMs: 66, pellets: 1, spread: 0.11, range: 520, bulletSpeed: 1450, mag: 34, reloadMs: 1100, moveMul: 1.1, auto: true, silenced: true,
+    look: { length: 1.15, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.4, color: '#5a2d85' } } },
+  hornet: { name: 'Hornet', desc: 'Blistering rate, big magazine', base: 'smg', stage: 2, from: 'skirmisher', damage: 9, fireMs: 33, pellets: 1, spread: 0.14, range: 520, bulletSpeed: 1450, mag: 50, reloadMs: 1500, moveMul: 1.02, auto: true,
+    look: { length: 1, width: 1.05, barrels: 1, accent: '#f5c400', bullet: { r: 1.5, color: '#a88600' } } },
+  ripper: { name: 'Ripper', desc: 'Rounds punch through one body', base: 'smg', stage: 2, from: 'heavySmg', damage: 22, fireMs: 80, pellets: 1, spread: 0.09, range: 700, bulletSpeed: 1600, mag: 30, reloadMs: 1500, moveMul: 0.93, auto: true, penetrate: 1,
+    look: { length: 1.3, width: 1.25, barrels: 1, accent: '#e5484d', bullet: { r: 2.2, color: '#b3261e' } } },
+  spitfire: { name: 'Spitfire', desc: 'Two rounds every shot', base: 'smg', stage: 2, from: 'heavySmg', damage: 12, fireMs: 82, pellets: 2, spread: 0.15, range: 560, bulletSpeed: 1450, mag: 30, reloadMs: 1500, moveMul: 0.93, auto: true,
+    look: { length: 1.1, width: 1.3, barrels: 2, accent: '#f76b15', bullet: { r: 1.8, color: '#e0661a' } } },
+
+  shotgun: { name: 'Shotgun', desc: 'Devastating up close', base: 'shotgun', stage: 0, from: null, damage: 15, fireMs: 750, pellets: 7, spread: 0.22, range: 420, bulletSpeed: 1300, mag: 6, reloadMs: 1800, moveMul: 0.93, auto: false, look: BASE_LOOK },
+  slugGun: { name: 'Slug Gun', desc: 'One heavy slug, long reach', base: 'shotgun', stage: 1, from: 'shotgun', damage: 100, fireMs: 900, pellets: 1, spread: 0.02, range: 750, bulletSpeed: 1700, mag: 6, reloadMs: 1800, moveMul: 0.93, auto: false,
+    look: { length: 1.2, width: 0.9, barrels: 1, accent: '#c8553d', bullet: { r: 3, color: '#7a2e1f' } } },
+  doubleBarrel: { name: 'Double Barrel', desc: 'Two quick blasts, more pellets', base: 'shotgun', stage: 1, from: 'shotgun', damage: 16, fireMs: 260, pellets: 9, spread: 0.24, range: 400, bulletSpeed: 1300, mag: 2, reloadMs: 1400, moveMul: 0.93, auto: false,
+    look: { length: 0.95, width: 1.1, barrels: 2, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
+  railSlug: { name: 'Rail Slug', desc: 'Hypersonic slug pierces two bodies', base: 'shotgun', stage: 2, from: 'slugGun', damage: 110, fireMs: 650, pellets: 1, spread: 0.01, range: 1000, bulletSpeed: 3000, mag: 5, reloadMs: 1900, moveMul: 0.92, auto: false, penetrate: 2,
+    look: { length: 1.5, width: 0.85, barrels: 1, accent: '#e5484d', bullet: { r: 2.6, color: '#ff3b30' } } },
+  boomSlug: { name: 'Boom Slug', desc: 'Slugs explode on impact', base: 'shotgun', stage: 2, from: 'slugGun', damage: 70, fireMs: 650, pellets: 1, spread: 0.02, range: 650, bulletSpeed: 1500, mag: 5, reloadMs: 1900, moveMul: 0.92, auto: false, blast: { radius: 90, damage: 50 },
+    look: { length: 1.2, width: 1.25, barrels: 1, accent: '#f76b15', bullet: { r: 3.8, color: '#e0661a' } } },
+  quadBarrel: { name: 'Quad Barrel', desc: 'Four blasts before a reload', base: 'shotgun', stage: 2, from: 'doubleBarrel', damage: 14, fireMs: 380, pellets: 8, spread: 0.24, range: 400, bulletSpeed: 1300, mag: 4, reloadMs: 1900, moveMul: 0.91, auto: false,
+    look: { length: 1, width: 1.3, barrels: 3, accent: '#30c0a0', bullet: { r: 1.8, color: '#11806a' } } },
+  streetSweeper: { name: 'Street Sweeper', desc: 'Automatic drum shotgun', base: 'shotgun', stage: 2, from: 'doubleBarrel', damage: 13, fireMs: 300, pellets: 7, spread: 0.24, range: 420, bulletSpeed: 1300, mag: 12, reloadMs: 2400, moveMul: 0.9, auto: true,
+    look: { length: 1.15, width: 1.35, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
+
+  assault: { name: 'Assault', desc: 'All-rounder rifle', base: 'assault', stage: 0, from: null, damage: 16, fireMs: 110, pellets: 1, spread: 0.07, range: 800, bulletSpeed: 1700, mag: 30, reloadMs: 1500, moveMul: 0.92, auto: true, look: BASE_LOOK },
+  battleRifle: { name: 'Battle Rifle', desc: 'Hard-hitting three-round bursts', base: 'assault', stage: 1, from: 'assault', damage: 24, fireMs: 300, pellets: 1, spread: 0.05, range: 850, bulletSpeed: 1800, mag: 24, reloadMs: 1600, moveMul: 0.91, auto: true, burst: { count: 3, gapMs: 60 },
+    look: { length: 1.15, width: 1.1, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
+  carbine: { name: 'Carbine', desc: 'Quicker fire, lighter carry', base: 'assault', stage: 1, from: 'assault', damage: 16, fireMs: 88, pellets: 1, spread: 0.08, range: 720, bulletSpeed: 1700, mag: 30, reloadMs: 1300, moveMul: 0.97, auto: true,
+    look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
+  marksman: { name: 'Marksman', desc: 'Precise shots pierce one body', base: 'assault', stage: 2, from: 'battleRifle', damage: 60, fireMs: 320, pellets: 1, spread: 0.02, range: 1100, bulletSpeed: 2300, mag: 12, reloadMs: 1700, moveMul: 0.9, auto: false, penetrate: 1,
+    look: { length: 1.4, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#b3261e' } } },
+  grenadier: { name: 'Grenadier', desc: 'Bursts of exploding rounds', base: 'assault', stage: 2, from: 'battleRifle', damage: 20, fireMs: 380, pellets: 1, spread: 0.05, range: 750, bulletSpeed: 1500, mag: 18, reloadMs: 1800, moveMul: 0.89, auto: true, burst: { count: 3, gapMs: 70 }, blast: { radius: 55, damage: 14 },
+    look: { length: 1.2, width: 1.35, barrels: 1, accent: '#f76b15', bullet: { r: 2.8, color: '#e0661a' } } },
+  vanguard: { name: 'Vanguard', desc: 'Bigger magazine, harder hits', base: 'assault', stage: 2, from: 'carbine', damage: 21, fireMs: 88, pellets: 1, spread: 0.07, range: 780, bulletSpeed: 1800, mag: 45, reloadMs: 1500, moveMul: 0.95, auto: true,
+    look: { length: 1.1, width: 1.15, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
+  specter: { name: 'Specter', desc: 'Silenced and light', base: 'assault', stage: 2, from: 'carbine', damage: 20, fireMs: 82, pellets: 1, spread: 0.07, range: 720, bulletSpeed: 1700, mag: 30, reloadMs: 1200, moveMul: 1.0, auto: true, silenced: true,
+    look: { length: 1.2, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.5, color: '#5a2d85' } } },
+
+  sniper: { name: 'Bolt-action', desc: 'One shot, one kill', base: 'sniper', stage: 0, from: null, damage: 100, fireMs: 1300, pellets: 1, spread: 0.01, range: 1400, bulletSpeed: 2600, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false, look: BASE_LOOK },
+  longshot: { name: 'Longshot', desc: 'Heavier rounds, farther, faster', base: 'sniper', stage: 1, from: 'sniper', damage: 150, fireMs: 1850, pellets: 1, spread: 0.008, range: 1600, bulletSpeed: 3200, mag: 5, reloadMs: 2100, moveMul: 0.89, auto: false,
+    look: { length: 1.2, width: 1.05, barrels: 1, accent: '#c8553d', bullet: { r: 2.2, color: '#7a2e1f' } } },
+  semiAuto: { name: 'Semi-auto Rifle', desc: 'Fast follow-up shots', base: 'sniper', stage: 1, from: 'sniper', damage: 62, fireMs: 470, pellets: 1, spread: 0.015, range: 1300, bulletSpeed: 2500, mag: 10, reloadMs: 1900, moveMul: 0.91, auto: false,
+    look: { length: 1, width: 1.1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.8, color: '#1f5560' } } },
+  piercer: { name: 'Piercer', desc: 'Rounds pass through three bodies', base: 'sniper', stage: 2, from: 'longshot', damage: 150, fireMs: 1450, pellets: 1, spread: 0.006, range: 1800, bulletSpeed: 3600, mag: 5, reloadMs: 2100, moveMul: 0.89, auto: false, penetrate: 3,
+    look: { length: 1.45, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#ff3b30' } } },
+  artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast', base: 'sniper', stage: 2, from: 'longshot', damage: 110, fireMs: 1300, pellets: 1, spread: 0.01, range: 1500, bulletSpeed: 1800, mag: 4, reloadMs: 2300, moveMul: 0.86, auto: false, blast: { radius: 130, damage: 90 },
+    look: { length: 1.3, width: 1.45, barrels: 1, accent: '#f76b15', bullet: { r: 4, color: '#e0661a' } } },
+  repeater: { name: 'Repeater', desc: 'Rapid precision fire', base: 'sniper', stage: 2, from: 'semiAuto', damage: 60, fireMs: 340, pellets: 1, spread: 0.015, range: 1300, bulletSpeed: 2600, mag: 12, reloadMs: 1800, moveMul: 0.92, auto: false,
+    look: { length: 1.05, width: 1.2, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
+  ghost: { name: 'Ghost', desc: 'Silenced marksman rifle', base: 'sniper', stage: 2, from: 'semiAuto', damage: 75, fireMs: 480, pellets: 1, spread: 0.012, range: 1300, bulletSpeed: 2600, mag: 10, reloadMs: 1900, moveMul: 0.94, auto: false, silenced: true,
+    look: { length: 1.25, width: 0.95, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.6, color: '#5a2d85' } } },
+
+  lmg: { name: 'LMG', desc: 'Sustained suppressing fire', base: 'lmg', stage: 0, from: null, damage: 14, fireMs: 90, pellets: 1, spread: 0.14, range: 750, bulletSpeed: 1600, mag: 75, reloadMs: 3200, moveMul: 0.82, auto: true, look: BASE_LOOK },
+  heavyLmg: { name: 'Heavy LMG', desc: 'Harder hits, longer reach, slower feet', base: 'lmg', stage: 1, from: 'lmg', damage: 19, fireMs: 92, pellets: 1, spread: 0.12, range: 850, bulletSpeed: 1700, mag: 75, reloadMs: 3300, moveMul: 0.78, auto: true,
+    look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2.1, color: '#7a2e1f' } } },
+  lightMg: { name: 'Light MG', desc: 'Lighter build, quicker fire', base: 'lmg', stage: 1, from: 'lmg', damage: 13, fireMs: 66, pellets: 1, spread: 0.14, range: 720, bulletSpeed: 1600, mag: 70, reloadMs: 2800, moveMul: 0.9, auto: true,
+    look: { length: 0.95, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
+  juggernaut: { name: 'Juggernaut', desc: 'Huge belt, rounds pierce one body', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 25, fireMs: 84, pellets: 1, spread: 0.11, range: 900, bulletSpeed: 1800, mag: 150, reloadMs: 4000, moveMul: 0.75, auto: true, penetrate: 1,
+    look: { length: 1.3, width: 1.45, barrels: 1, accent: '#e5484d', bullet: { r: 2.3, color: '#b3261e' } } },
+  siegeGun: { name: 'Siege Gun', desc: 'Every round bursts', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 18, fireMs: 100, pellets: 1, spread: 0.12, range: 800, bulletSpeed: 1500, mag: 60, reloadMs: 3600, moveMul: 0.77, auto: true, blast: { radius: 50, damage: 10 },
+    look: { length: 1.25, width: 1.5, barrels: 1, accent: '#f76b15', bullet: { r: 2.6, color: '#e0661a' } } },
+  minigun: { name: 'Minigun', desc: 'Torrent of lead, long reload', base: 'lmg', stage: 2, from: 'lightMg', damage: 8, fireMs: 33, pellets: 1, spread: 0.15, range: 700, bulletSpeed: 1600, mag: 200, reloadMs: 4500, moveMul: 0.84, auto: true,
+    look: { length: 1.2, width: 1.25, barrels: 3, accent: '#f5c400', bullet: { r: 1.6, color: '#a88600' } } },
+  twinMg: { name: 'Twin MG', desc: 'Paired barrels, double rounds', base: 'lmg', stage: 2, from: 'lightMg', damage: 12, fireMs: 75, pellets: 2, spread: 0.15, range: 720, bulletSpeed: 1600, mag: 80, reloadMs: 3000, moveMul: 0.88, auto: true,
+    look: { length: 1.05, width: 1.3, barrels: 2, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
 };
+
+export function byGun<T>(f: (id: GunId) => T): Record<GunId, T> {
+  const out: Partial<Record<GunId, T>> = {};
+  for (const id of GUN_IDS) out[id] = f(id);
+  return out as Record<GunId, T>;
+}
+
+export const EVOLUTIONS: Record<GunId, readonly GunId[]> = byGun((id) => GUN_IDS.filter((child) => GUNS[child].from === id));
 
 export const ARMOR_IDS = ['none', 'light', 'medium', 'heavy'] as const;
 export type ArmorId = (typeof ARMOR_IDS)[number];
@@ -80,7 +195,20 @@ export type PlayerKind = (typeof PLAYER_KINDS)[number];
 /** Humans carry triple health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
 export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 3, bot: 1 };
 
-export const LEVEL_SCORES = [0, 100, 250, 450] as const;
+export type Pick = { k: 'perk'; tier: Tier } | { k: 'evolve' };
+export type PendingPick = { level: number } & Pick;
+export type PickOption = PerkId | GunId;
+
+export const LEVELS = [
+  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 200, pick: { k: 'evolve' } },
+  { score: 350, pick: { k: 'perk', tier: 2 } }, { score: 500, pick: { k: 'perk', tier: 3 } }, { score: 700, pick: { k: 'evolve' } },
+] as const satisfies readonly { score: number; pick: Pick | null }[];
+
+export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] => (pick.k === 'perk' ? PERK_TIERS[pick.tier] : EVOLUTIONS[gun]);
+
+export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(PERK_INFO, option);
+
+export const PICK_OPTIONS: readonly PickOption[] = [...PERK_TIERS[1], ...PERK_TIERS[2], ...PERK_TIERS[3], ...GUN_IDS];
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
@@ -97,6 +225,9 @@ export const WORLD = {
   crateHp: 40,
   crateScore: 10,
   killScore: 100,
+  bountyScore: 200,
+  /** Score multiplier while your level trails the other living players' average. */
+  catchUpMul: 1.5,
   respawnMs: 3000,
   domWinScore: 1000,
   tdmWinScore: 50,

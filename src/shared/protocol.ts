@@ -1,6 +1,6 @@
 import {
-  ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS,
-  type AbilityId, type ArmorId, type ColorId, type ModeId, type PerkId, type Tier, type WeaponId,
+  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type Tier, type WeaponId,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -28,20 +28,24 @@ export type ClientMsg =
   | { t: 'view'; aspect: number }
   /** `viewAt` is the server time of the world the client was drawing when it sampled `input`, so the server can judge its shots against that world. */
   | { t: 'input'; seq: number; input: InputState; viewAt: number | null }
-  | { t: 'perk'; tier: Tier; perk: PerkId }
+  /** `level` names the pending pick being answered, so a pick sent twice, or after the next one opened, is ignored. */
+  | { t: 'pick'; level: number; option: PickOption }
   | { t: 'chat'; text: string }
   | { t: 'respawn'; loadout: Loadout };
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
   hp: number; maxHp: number; armor: number; maxArmor: number;
-  color: ColorId; weapon: WeaponId; team: Team;
+  color: ColorId; gun: GunId; team: Team;
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;
   armorTier: ArmorId;
+  /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
+  hunted: boolean;
 };
 
-export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number };
+/** `gun` is null for shrapnel. */
+export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
 export type WallView = { x: number; y: number; w: number; h: number; built: boolean };
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
@@ -57,7 +61,7 @@ export type SelfView = {
   /** Move speed without a dash, for predicting the local player's movement. */
   speed: number;
   perks: Partial<Record<Tier, PerkId>>;
-  pendingTier: Tier | null;
+  pending: PendingPick | null;
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
@@ -70,11 +74,12 @@ export type SelfView = {
 export type DamageKind = 'player' | 'crate';
 
 export type GameEvent =
-  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string }
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean }
+  | { e: 'hunted'; id: number; name: string }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
-  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number }
+  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number };
 
 export type LeaderRow = { id: number; name: string; score: number; team: Team };
@@ -91,7 +96,7 @@ export type Snapshot = {
   crates: CrateView[];
   thrown: ThrownView[];
   zones: ZoneView[];
-  minimap: { x: number; y: number; team: Team }[];
+  minimap: { x: number; y: number; team: Team; hunted: boolean }[];
   leaderboard: LeaderRow[];
   match: MatchView;
   events: GameEvent[];
@@ -159,10 +164,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const seq = num(v.seq, 0, Number.MAX_SAFE_INTEGER);
       return input && seq !== null ? { t: 'input', seq, input, viewAt: num(v.viewAt, 0, Number.MAX_SAFE_INTEGER) } : null;
     }
-    case 'perk': {
-      const tier = v.tier;
-      if (tier !== 1 && tier !== 2 && tier !== 3) return null;
-      return oneOf(PERK_TIERS[tier], v.perk) ? { t: 'perk', tier, perk: v.perk } : null;
+    case 'pick': {
+      const level = v.level;
+      if (typeof level !== 'number' || !Number.isInteger(level) || level < 1 || level >= LEVELS.length) return null;
+      return oneOf(PICK_OPTIONS, v.option) ? { t: 'pick', level, option: v.option } : null;
     }
     case 'chat':
       return typeof v.text === 'string' && v.text.trim() ? { t: 'chat', text: v.text.trim().slice(0, 120) } : null;

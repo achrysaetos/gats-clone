@@ -2,12 +2,12 @@
 // Usage: node scripts/golden-replay.ts [expectedHash]
 // Replays fixed-seed matches and hashes every snapshot; a behavior-preserving sim refactor must keep the hash.
 import { createHash } from 'node:crypto';
-import { MODE_IDS, PERK_TIERS, WORLD } from '../src/shared/defs.ts';
+import { LEVELS, MODE_IDS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { MAP_NOTICE_MS, ROTATION } from '../src/shared/maps.ts';
 import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { abilityOf, choosePerk, pendingTier } from '../src/shared/sim/stats.ts';
+import { abilityOf, choosePick, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
@@ -16,7 +16,7 @@ const SEEDS = [7, 8];
 const TICK_MS = 1000 / WORLD.tickHz;
 
 const hash = createHash('sha256');
-const seen = { kills: 0, slashes: 0, booms: 0, rewoundShots: 0, abilityUses: {} as Record<string, number>, roundsOver: 0, mapChanges: 0, perks: 0, respawns: 0 };
+const seen = { kills: 0, slashes: 0, booms: 0, rewoundShots: 0, abilityUses: {} as Record<string, number>, roundsOver: 0, mapChanges: 0, picks: 0, respawns: 0 };
 
 function nearestEnemy(w: World, me: Player): Player | null {
   let best: Player | null = null, bestD = Infinity;
@@ -70,7 +70,7 @@ for (const mode of MODE_IDS) {
       addPlayer(w, 'lagged', { weapon: 'assault', armor: 'light', color: 'red' }, { kind: 'human', at: { x: WORLD.size / 2, y: WORLD.size / 2 } }),
       addPlayer(w, 'local', { weapon: 'shotgun', armor: 'medium', color: 'blue' }, { kind: 'human' }),
     ];
-    for (const h of humans) h.level = 3;
+    for (const h of humans) h.level = LEVELS.length - 1;
     let seq = 1;
     for (let tick = 0; tick < TICKS; tick++) {
       const walls = wallViews(w);
@@ -78,7 +78,7 @@ for (const mode of MODE_IDS) {
         const d = botThink(snapshotFor(w, id), walls, mem, r);
         bots.set(id, d.mem);
         setInput(w, id, w.tick, d.input);
-        if (d.perk && choosePerk(w, id, d.perk.tier, d.perk.perk)) seen.perks++;
+        if (d.pick && choosePick(w, id, d.pick.level, d.pick.option)) seen.picks++;
         if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) seen.respawns++;
       }
       humans.forEach((h, i) => {
@@ -86,11 +86,12 @@ for (const mode of MODE_IDS) {
         const input = humanInput(w, h, i * 17);
         if (lagTicks !== null && h.life.k === 'alive' && input.shots > h.shotsSeen) seen.rewoundShots++;
         setInput(w, h.id, seq++, input, lagTicks === null ? null : w.now - lagTicks * TICK_MS);
-        const tier = pendingTier(h);
-        if (tier) {
-          const options = PERK_TIERS[tier];
-          const pick = tier === 3 ? worldIndex * 2 + i : tier === 1 && i === 1 ? PERK_TIERS[1].indexOf('ghillie') : tick + h.id;
-          if (choosePerk(w, h.id, tier, options[pick % options.length])) seen.perks++;
+        const pending = pendingPick(h);
+        if (pending) {
+          const options = pickOptions(pending, h.gun);
+          const tier = pending.k === 'perk' ? pending.tier : null;
+          const pick = tier === 3 ? worldIndex * 2 + i : tier === 1 && i === 1 ? options.indexOf('ghillie') : tick + h.id;
+          if (choosePick(w, h.id, pending.level, options[pick % options.length]!)) seen.picks++;
         }
         if (canRespawn(w, h.id) && respawn(w, h.id, h.loadout)) seen.respawns++;
       });

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { emptyWorld, press, spawnAt, TICK_MS } from './helpers.ts';
 
-const PISTOL_DMG = WEAPONS.pistol.damage;
+const PISTOL_DMG = GUNS.pistol.damage;
 
 function fireAndCollect(w: World, shooter: ReturnType<typeof spawnAt>, ms = 500): GameEvent[] {
   const events: GameEvent[] = [];

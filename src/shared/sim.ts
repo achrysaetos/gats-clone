@@ -1,4 +1,4 @@
-import { ABILITY_COOLDOWN_MS, WEAPONS, WORLD, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, WORLD, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
@@ -15,7 +15,7 @@ type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: Player
 function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);
   return {
-    k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0,
+    k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity,
   };
 }
@@ -23,7 +23,7 @@ function freshLife(p: Player, now: number): Life {
 export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPlayerOpts = {}): Player {
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
-    id: newId(w), name, kind: opts.kind ?? 'bot', loadout, team, x: 0, y: 0, angle: 0,
+    id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
@@ -95,29 +95,36 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   if (life.reloadUntil !== null && w.now >= life.reloadUntil) { life.ammo = stats.mag; life.reloadUntil = null; }
   if (life.reloadUntil === null && (life.ammo <= 0 || (inp.reload && life.ammo < stats.mag))) {
-    life.reloadUntil = w.now + WEAPONS[p.loadout.weapon].reloadMs;
+    life.reloadUntil = w.now + GUNS[p.gun].reloadMs;
+    life.burstLeft = 0;
   }
 
-  const weapon = WEAPONS[p.loadout.weapon];
+  const gun = GUNS[p.gun];
   const armed = w.match.k === 'playing';
-  const wantsShot = w.now <= life.pressUntil || (weapon.auto && inp.fire);
+  const bursting = life.burstLeft > 0;
+  const wantsShot = bursting || w.now <= life.pressUntil || (gun.auto && inp.fire);
   if (armed && wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
-    life.pressUntil = -Infinity;
+    if (!bursting) {
+      life.pressUntil = -Infinity;
+      life.burstLeft = gun.burst?.count ?? 1;
+    }
     life.ammo--;
-    life.nextFireAt = w.now + weapon.fireMs;
+    life.burstLeft = life.ammo > 0 ? life.burstLeft - 1 : 0;
+    life.nextFireAt = w.now + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
     const muzzle = WORLD.playerRadius + 4;
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, MAX_REWIND_MS);
-    for (let i = 0; i < weapon.pellets; i++) {
+    for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * stats.spread * 2;
       const b: Bullet = {
         id: newId(w), owner: p.id, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
-        vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed,
-        left: stats.range, damage: weapon.damage, piercing: stats.piercing, label: weapon.name,
+        vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
+        left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
+        gun: p.gun, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }
     if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
-    w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id });
+    w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
   }
 
   const ability = abilityOf(p);

@@ -7,13 +7,13 @@ import {
 import type { PlayerView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, x: number, y: number, angle = 0): PlayerView => ({
-  id, name: `p${id}`, x, y, angle, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', weapon: 'pistol',
-  team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none',
+  id, name: `p${id}`, x, y, angle, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', gun: 'pistol',
+  team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none', hunted: false,
 });
 
 const snap = (tick: number, players: PlayerView[]): Snapshot => ({
   t: 'snap', tick, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, alive: true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900 },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900 },
   players, bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: [],
 });

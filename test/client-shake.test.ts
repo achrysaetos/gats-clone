@@ -34,4 +34,5 @@ test('bigger hits and closer booms shake harder; distant booms and other players
   assert.equal(traumaFor(cue({ id: 'shot:sniper', self: false }), me, 900), 0, 'someone else firing does not kick your camera');
   const kick = traumaFor(cue({ id: 'shot:pistol', self: true }), me, 900);
   assert.ok(kick > 0 && kick < traumaFor(hurt(0), me, 900), 'firing kicks, less than being hit');
+  assert.equal(traumaFor(cue({ id: 'shot:railSlug', self: true }), me, 900), traumaFor(cue({ id: 'shot:shotgun', self: true }), me, 900), 'an evolved gun kicks like its class');
 });

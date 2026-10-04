@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { choosePerk } from '../src/shared/sim/stats.ts';
+import { choosePick } from '../src/shared/sim/stats.ts';
+import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
-test('four kills and five crates in one life unlock the ability tier', () => {
+const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
+const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
+
+test('four kills and ten crates in one life open the ability pick', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   for (let i = 0; i < 4; i++) {
@@ -15,24 +19,101 @@ test('four kills and five crates in one life unlock the ability tier', () => {
     assert.equal(v.life.k, 'dead');
     w.players.delete(v.id);
   }
-  for (let i = 0; i < 5; i++) {
+  press(w, a, { reload: true });
+  run(w, GUNS.pistol.reloadMs + 100);
+  press(w, a, {});
+  for (let i = 0; i < 10; i++) {
     w.crates.push({ id: 900 + i, x: 600, y: 478, size: 44, hp: 1, respawnAt: null });
     shootOnce(w, a, 0);
   }
-  assert.equal(a.score, 4 * WORLD.killScore + 5 * WORLD.crateScore);
-  assert.ok(choosePerk(w, a.id, 1, 'grip'));
-  assert.ok(choosePerk(w, a.id, 2, 'thickSkin'));
-  assert.equal(snapshotFor(w, a.id).self.pendingTier, 3, 'the ability tier is open');
+  assert.equal(a.score, 4 * WORLD.killScore + 10 * WORLD.crateScore);
+  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
+  assert.deepEqual(pendingOf(w, a), { level: 4, k: 'perk', tier: 3 }, 'the ability pick is open');
 });
 
-test('a round restart resets level, perks and ability along with score', () => {
+test('picks open in ladder order: perk, evolve, perk, ability, evolve', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  a.level = LEVELS.length - 1;
+  const seen = [];
+  for (let pending = pendingOf(w, a); pending; pending = pendingOf(w, a)) {
+    seen.push(pending);
+    assert.ok(choosePick(w, a.id, pending.level, pickOptions(pending, a.gun)[1]!));
+    assert.ok(seen.length <= 5, 'the ladder runs out');
+  }
+  assert.deepEqual(seen, [
+    { level: 1, k: 'perk', tier: 1 }, { level: 2, k: 'evolve' }, { level: 3, k: 'perk', tier: 2 }, { level: 4, k: 'perk', tier: 3 }, { level: 5, k: 'evolve' },
+  ]);
+  assert.equal(gunOf(w, a), 'hailstorm', 'pistol, then machine pistol, then its second branch');
+});
+
+test('a stale, duplicate or foreign pick changes nothing', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  a.level = 2;
+  assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'the evolve pick waits behind the open perk pick');
+  assert.equal(choosePick(w, a.id, 1, 'shield'), false, 'a tier 2 perk does not fill tier 1');
+  assert.equal(choosePick(w, a.id, 1, 'handCannon'), false, 'a gun does not fill a perk pick');
+  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.equal(choosePick(w, a.id, 1, 'optics'), false, 'a repeated pick for the same level');
+  assert.deepEqual(snapshotFor(w, a.id).self.perks, { 1: 'grip' });
+  assert.equal(choosePick(w, a.id, 2, 'executioner'), false, 'no skipping to stage 2');
+  assert.equal(choosePick(w, a.id, 2, 'slugGun'), false, 'another class\'s branch');
+  assert.ok(choosePick(w, a.id, 2, 'machinePistol'));
+  assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'a second evolve for the same level');
+  assert.equal(gunOf(w, a), 'machinePistol');
+  assert.equal(pendingOf(w, a), null);
+});
+
+test('evolving swaps in the new gun with its own stats and a full magazine', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  const target = spawnAt(w, 750, 500);
+  a.level = 2;
+  shootOnce(w, a, Math.PI);
+  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  const self = snapshotFor(w, a.id).self;
+  assert.deepEqual([self.ammo, self.mag], [GUNS.handCannon.mag, GUNS.handCannon.mag]);
+  shootOnce(w, a, 0);
+  assert.equal(WORLD.baseHp - hpOf(target), GUNS.handCannon.damage);
+});
+
+test('score is multiplied while your level trails the other living players\' average, and never when alone', () => {
+  const scoreForOneKill = (myLevel: number, others: { level: number; alive: boolean }[]) => {
+    const w = emptyWorld();
+    const a = spawnAt(w, 500, 500);
+    a.level = myLevel;
+    others.forEach((o, i) => {
+      const p = spawnAt(w, 500 + i * 100, 1500);
+      p.level = o.level;
+      if (!o.alive) p.life = { k: 'dead', respawnAt: Infinity };
+    });
+    const v = spawnAt(w, 650, 500);
+    if (v.life.k === 'alive') v.life.hp = 1;
+    shootOnce(w, a, 0);
+    return a.score;
+  };
+  const boosted = Math.round(WORLD.killScore * WORLD.catchUpMul);
+  assert.equal(scoreForOneKill(0, []), WORLD.killScore, 'alone');
+  assert.equal(scoreForOneKill(0, [{ level: 2, alive: true }, { level: 1, alive: true }]), boosted, 'below an average of 1.5');
+  assert.equal(scoreForOneKill(1, [{ level: 2, alive: true }, { level: 1, alive: true }]), boosted, 'still below');
+  assert.equal(scoreForOneKill(2, [{ level: 2, alive: true }, { level: 1, alive: true }]), WORLD.killScore, 'above the average');
+  assert.equal(scoreForOneKill(1, [{ level: 1, alive: true }]), WORLD.killScore, 'level with the average');
+  assert.equal(scoreForOneKill(0, [{ level: 5, alive: false }, { level: 0, alive: true }]), WORLD.killScore, 'the dead do not count');
+});
+
+test('a round restart resets level, perks, ability and gun along with score', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'red' });
   grantPerks(w, a, ['extended', 'thickSkin', 'dash']);
   press(w, a, { reload: true });
-  run(w, WEAPONS.pistol.reloadMs + 100);
+  run(w, GUNS.pistol.reloadMs + 100);
   press(w, a, {});
   a.score = 450;
+  a.gun = 'hailstorm';
   w.teamScore.red = WORLD.tdmWinScore;
   run(w, TICK_MS);
   assert.equal(w.match.k, 'over');
@@ -42,7 +123,7 @@ test('a round restart resets level, perks and ability along with score', () => {
   run(w, 300);
   const snap = snapshotFor(w, a.id);
   const view = snap.players.find((p) => p.id === a.id)!;
-  assert.deepEqual([view.score, view.level, snap.self.perks, snap.self.pendingTier, snap.self.ability], [0, 0, {}, null, null]);
+  assert.deepEqual([view.score, view.level, snap.self.perks, snap.self.pending, snap.self.ability, view.gun], [0, 0, {}, null, null, 'pistol']);
   assert.equal(view.maxHp, WORLD.baseHp);
   assert.ok(view.hp <= view.maxHp, `hp ${view.hp} fits the base max`);
   assert.ok(snap.self.ammo <= snap.self.mag, `ammo ${snap.self.ammo} fits the base magazine ${snap.self.mag}`);
