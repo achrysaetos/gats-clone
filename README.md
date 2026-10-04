@@ -25,6 +25,8 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | R | Reload |
 | Space | Use ability |
 | 1-9, 0 | Pick a perk or an evolution (or click its tile) |
+| B | Zombies: build mode by day (left click builds, right click takes your wall down) |
+| E | Zombies: hold to revive a downed squadmate or repair a wall |
 | Enter | Chat |
 | M | Mute sound |
 
@@ -32,7 +34,7 @@ Points in one life raise your level. At 100, 300 and 400 points you pick an atta
 
 ### Zombies
 
-Zombies is a co-op mode for a private squad of up to four. `POST /api/squads` opens a squad room and answers `{ "room": "z-xxxxxx" }`; everyone who joins the WebSocket with `?room=<code>` plays in it. Squads stay off the public room list, one address may open six a minute, at most 20 run at once, and a squad closes 30 seconds after its last human leaves. Bots fill the empty seats and give a seat up when a human joins. Humans keep their triple health. The whole squad is one team, and nothing the squad does hurts the squad.
+Zombies is a co-op mode for a private squad of up to four. Start a squad from the menu's Zombies block and send friends its invite link (`?squad=<code>`), which opens the menu with that squad selected. Under the hood `POST /api/squads` opens a squad room and answers `{ "room": "z-xxxxxx" }`; everyone who joins the WebSocket with `?room=<code>` plays in it. Squads stay off the public room list, one address may open six a minute, at most 20 run at once, and a squad closes 30 seconds after its last human leaves. Bots fill the empty seats and give a seat up when a human joins. Humans keep their triple health. The whole squad is one team, and nothing the squad does hurts the squad.
 
 The squad defends a core at the center of the Outpost map. A run opens on a 40-second day. Night follows, and a wave walks in from the four map edges toward the core. The night ends once the whole wave has spawned and died, and the next day starts. Each night's wave is bigger and its zombies tougher, so every run ends when the core falls. The run's score is the night it fell on. A report of the night reached, the run's length and each player's kills, revives and walls built shows for 20 seconds, and then a fresh run starts on a reset map.
 
@@ -56,6 +58,7 @@ A player whose health runs out goes down instead of dying. A downed player crawl
   - `abilities.ts` holds the tier 3 abilities and the grenades, mines and gas they leave behind.
   - `modes.ts` holds the FFA, TDM, DOM and zombies rules and the round cycle.
   - `run.ts` holds the zombies run: its day, night and restart cycle, waves, downed players, revives, walls and scrap.
+  - `build.ts` holds the wall rules, which the server applies and the client's build preview mirrors.
   - `horde.ts` holds the zombies themselves: the flow field to the core, their steps, bites and spacing.
   - `snapshot.ts` builds each player's culled view of the world.
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
@@ -78,7 +81,7 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `e54ee82c52afba41fc8d79f37b12b62a6f3f5f8b58a7ee2d2bcb72500e72413c`. Zombies runs stay out of the replay so the hash holds; `test/zombies-determinism.test.ts` checks that a bot squad's run replays exactly from its seed.
 
-`node scripts/bench-zombies.ts [seeds] [squad]` plays zombies runs on fixed seeds to the core's fall with a squad of four bots, or with `1` a lone bot-brained player with a human's health. It prints the night each run reached and each night's length and core health, then holds a full horde of 200 zombies on the squad and prints server step time, whole-tick time and snapshot bytes. `node .claude/skills/verify/scripts/zombies.ts "$RUN"` opens a squad on a launched server and plays its first night over `ws`.
+`node scripts/bench-zombies.ts [seeds] [squad]` plays zombies runs on fixed seeds to the core's fall with a squad of four bots, or with `1` a lone bot-brained player with a human's health. It prints the night each run reached and each night's length and core health, then holds a full horde of 200 zombies on the squad and prints server step time, whole-tick time and snapshot bytes. `node .claude/skills/verify/scripts/zombies.ts "$RUN"` opens a squad on a launched server and plays its first night over `ws`. `node .claude/skills/verify/scripts/zombies-ui.ts "$RUN"` plays the same in headless Chrome through the menu, build mode and night 1, and screenshots each state.
 
 `node scripts/unused-exports.ts` lists every export that no file in `src/`, `test/`, `scripts/` or the verify scripts imports, and says whether its own module still uses it.
 

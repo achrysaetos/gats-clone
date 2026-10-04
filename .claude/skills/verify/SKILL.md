@@ -49,6 +49,14 @@ Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`.
 
 `scripts/drive.ts` and `scripts/mock-server.ts` at the repo root are a second harness that forces UI states (perk panels, death, winner banner) through mock chat commands. Use it only to check how those states render. Its server is fake, so it proves nothing about gameplay.
 
+### Zombies
+
+```bash
+node .claude/skills/verify/scripts/zombies-ui.ts "$RUN" [step ...]
+```
+
+One muted headless Chrome plays a zombies squad through real input. Steps: `menu badlink squad build night` by default, plus `downed` and `report`, which need a scratch copy with fragile humans and a weak core. It starts a squad from the menu, follows its invite link, builds and takes down a wall with real clicks, reads the ghost and callouts from `skirmishDev.zombies()`, and plays night 1 to dawn. Its log is `$RUN/evidence/zombies-ui.log`. The recipes and scratch values are in [the zombies feature file](features/zombies.md). `SQUAD=1 frametime.ts` measures frame cost in a squad.
+
 ### Two players
 
 ```bash
