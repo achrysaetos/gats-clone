@@ -3,7 +3,7 @@ import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunI
 import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
-import { HITMARKER_MS, HURT_MS } from './feedback.ts';
+import { ASSIST_MS, HITMARKER_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
 import { drawGun } from './sprites.ts';
@@ -56,6 +56,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h
   drawScore(hud, compact);
   if (me?.alive) drawVitals(hud);
   drawHitmarker(hud, crosshair);
+  drawAssist(hud, crosshair);
 }
 
 /** Stacked translucent edge bands instead of a full-screen radial gradient, which costs several milliseconds to rasterize. */
@@ -75,6 +76,16 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
     ctx.fillRect(0, d, d, h - d * 2);
     ctx.fillRect(w - d, d, d, h - d * 2);
   }
+  ctx.globalAlpha = 1;
+}
+
+function drawAssist({ ctx, s, now }: Hud, at: Point) {
+  const assist = s.feedback.assist;
+  if (!assist) return;
+  const k = (now - assist.born) / ASSIST_MS;
+  if (k < 0 || k >= 1) return;
+  ctx.globalAlpha = 1 - k * k;
+  text(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 30 - 18 * k, TYPE.body, PALETTE.gold, 'center', 800);
   ctx.globalAlpha = 1;
 }
 

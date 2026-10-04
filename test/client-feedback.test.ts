@@ -1,13 +1,13 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addFeedback, HURT_MS, NO_FEEDBACK, NUMBER_MS, type Feedback } from '../src/client/feedback.ts';
+import { addFeedback, ASSIST_MS, HURT_MS, NO_FEEDBACK, NUMBER_MS, type Feedback } from '../src/client/feedback.ts';
 import type { DamageKind, GameEvent } from '../src/shared/protocol.ts';
 
 const ME = 1;
 const dmg = (attacker: number | null, victim: number, amount: number, kind: DamageKind = 'player'): GameEvent =>
   ({ e: 'dmg', attacker, victim, amount, x: victim * 10, y: 0, kind });
-const kill = (killerId: number, victimId: number): GameEvent => ({ e: 'kill', killer: 'k', victim: 'v', killerId, victimId, weapon: 'Pistol', bounty: false });
+const kill = (killerId: number, victimId: number, assisters: number[] = []): GameEvent => ({ e: 'kill', killer: 'k', victim: 'v', killerId, victimId, weapon: 'Pistol', bounty: false, assisters });
 const apply = (events: GameEvent[], now = 1000, fb: Feedback = NO_FEEDBACK) => addFeedback(fb, events, ME, 100, now);
 
 test('the hitmarker shows only for damage you deal to a player', () => {
@@ -39,4 +39,10 @@ test('the hurt vignette scales with damage taken and ignores damage you deal', (
   assert.equal(apply([dmg(ME, 2, 25)]).hurt, null);
   const stacked = apply([dmg(2, ME, 20)], 1000 + HURT_MS / 2, apply([dmg(2, ME, 40)]));
   assert.ok(Math.abs(stacked.hurt!.strength - 0.4) < 1e-9, 'a second hit adds to what is left of the first');
+});
+
+test('an assist on someone else\'s kill shows the assist bonus, and only to the assister', () => {
+  assert.deepEqual(apply([kill(4, 2, [ME])]).assist, { born: 1000 });
+  assert.equal(apply([kill(4, 2, [5])]).assist, null, 'another player\'s assist');
+  assert.equal(apply([], 1000 + ASSIST_MS, apply([kill(4, 2, [ME])])).assist, null, 'it fades');
 });

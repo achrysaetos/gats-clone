@@ -226,6 +226,7 @@ export const WORLD = {
   crateScore: 10,
   killScore: 100,
   bountyScore: 200,
+  assistScore: 50,
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,
   respawnMs: 3000,

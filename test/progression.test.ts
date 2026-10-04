@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { ARMORS, GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
@@ -184,4 +185,19 @@ test('nothing in flight hurts a player once the round is over', () => {
   assert.ok(w.bullets.length > 0, 'the shell is still flying');
   run(w, 1000);
   assert.equal(hpOf(b), WORLD.baseHp);
+});
+
+test('another attacker who took 30% of the victim\'s health gets the assist score, and the kill names them', () => {
+  const w = emptyWorld();
+  const helper = spawnAt(w, 500, 500);
+  const chipper = spawnAt(w, 500, 900);
+  const killer = spawnAt(w, 900, 500);
+  const victim = spawnAt(w, 700, 700);
+  const hit = (p: Player, amount: number) => damagePlayer(w, victim, amount, { attacker: p, team: null, label: 'test', piercing: true, via: 'bullet', fromX: p.x, fromY: p.y });
+  hit(helper, 30);
+  hit(chipper, 29);
+  hit(killer, 100);
+  const k = w.events.find((e) => e.e === 'kill');
+  assert.deepEqual(k?.e === 'kill' && k.assisters, [helper.id]);
+  assert.deepEqual([helper.score, chipper.score, killer.score], [WORLD.assistScore, 0, WORLD.killScore]);
 });

@@ -12,6 +12,7 @@ const SHIELD_ARC = (40 * Math.PI) / 180;
 export const MAX_REWIND_MS = 350;
 const TICK_MS = 1000 / WORLD.tickHz;
 const OWN_BLAST_SHARE = 0.5;
+const ASSIST_SHARE = 0.3;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
@@ -40,6 +41,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   life.hp -= amount * (a?.kind === 'human' ? HP_MULTIPLIER[victim.kind] : 1);
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp) - life.armor;
+  if (a && a.id !== victim.id) life.damageBy.set(a.id, (life.damageBy.get(a.id) ?? 0) + dealt);
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
@@ -47,15 +49,32 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
 function kill(w: World, victim: Player, killer: Player | null, label: string) {
   const credited = killer?.id === victim.id ? null : killer;
   const bounty = credited !== null && isHunted(victim);
+  const assisters = assistersOf(w, victim, credited);
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
-  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label, bounty });
+  w.events.push({
+    e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label, bounty,
+    assisters: assisters.map((p) => p.id),
+  });
+  for (const p of assisters) addScore(w, p, WORLD.assistScore);
   if (!credited) return;
   credited.kills++;
   credited.lifeKills++;
   addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
   MODES[w.mode].onKill(w, credited, victim);
+}
+
+/** Living players other than the killer who took at least ASSIST_SHARE of the victim's max health off this life. */
+function assistersOf(w: World, victim: Player, killer: Player | null): Player[] {
+  if (victim.life.k !== 'alive') return [];
+  const enough = ASSIST_SHARE * effectiveStats(victim).maxHp;
+  return [...victim.life.damageBy]
+    .filter(([id, dealt]) => id !== killer?.id && dealt >= enough)
+    .flatMap(([id]) => {
+      const p = w.players.get(id);
+      return p?.life.k === 'alive' ? [p] : [];
+    });
 }
 
 function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null) {

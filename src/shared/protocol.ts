@@ -74,7 +74,8 @@ export type SelfView = {
 export type DamageKind = 'player' | 'crate';
 
 export type GameEvent =
-  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean }
+  /** `assisters` are the other players paid an assist for this kill. */
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[] }
   | { e: 'hunted'; id: number; name: string }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }

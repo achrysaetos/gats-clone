@@ -138,7 +138,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         return;
       case 'chat': {
         const cmd = msg.text;
-        if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, killerId: 104, victimId: myId, weapon: 'Bolt-action', bounty: false }); }
+        if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, killerId: 104, victimId: myId, weapon: 'Bolt-action', bounty: false, assisters: [] }); }
         else if (cmd === '/level') pending = !perks[2] ? { level: 3, k: 'perk', tier: 2 } : { level: 4, k: 'perk', tier: 3 };
         else if (cmd === '/evolve') pending = { level: GUNS[gun].stage === 0 ? 2 : 5, k: 'evolve' };
         else if (cmd === '/win') winnerUntil = Date.now() + WORLD.roundRestartMs;
@@ -202,7 +202,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         if (hit) {
           events.push({ e: 'dmg', attacker: myId, victim: hit.id, amount: weapon.damage, x: hit.x, y: hit.y, kind: 'player' });
           hit.hp -= weapon.damage;
-          if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, killerId: myId, victimId: hit.id, weapon: weapon.name, bounty: hit.hunted }); }
+          if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, killerId: myId, victimId: hit.id, weapon: weapon.name, bounty: hit.hunted, assisters: [] }); }
           return false;
         }
       }
@@ -219,7 +219,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     }).concat(clouds);
     if (me.alive && me.hp < 100) me.hp = Math.min(100, me.hp + WORLD.regenPerSec * DT);
     if (w.tick % 90 === 0 && me.alive) { me.hp = Math.max(1, me.hp - 15); events.push({ e: 'dmg', attacker: 101, victim: myId, amount: 15, x: me.x, y: me.y, kind: 'player' }); }
-    if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'Juggernaut', bounty: true });
+    if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'Juggernaut', bounty: true, assisters: [] });
 
     const selfView: PlayerView = {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,

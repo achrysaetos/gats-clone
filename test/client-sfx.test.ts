@@ -22,7 +22,7 @@ const ids = (prev: Snapshot | null, next: Snapshot) => soundsFor(prev, next).map
 
 test('kill-confirm plays only when you are the killer, matched by id not name', () => {
   const kill = (killerId: number, victimId: number, killer = `p${killerId}`): GameEvent =>
-    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol', bounty: false });
+    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol', bounty: false, assisters: [] });
   assert.deepEqual(ids(snap(), snap({ events: [kill(1, 2)] })), ['kill']);
   assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3)] })), [], 'someone else scoring a kill is silent');
   assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3, ME)] })), [], 'another player sharing my name scoring a kill is silent');
