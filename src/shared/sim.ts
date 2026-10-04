@@ -79,7 +79,11 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const pressed = consumePresses(p);
   const life = p.life;
   if (life.k !== 'alive') return;
-  if (pressed) life.pressUntil = w.now + PRESS_GRACE_MS;
+  const gun = GUNS[p.gun];
+  if (pressed) {
+    const readyAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
+    life.pressUntil = Math.max(w.now, readyAt) + PRESS_GRACE_MS;
+  }
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
@@ -99,7 +103,6 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.burstLeft = 0;
   }
 
-  const gun = GUNS[p.gun];
   const armed = w.match.k === 'playing';
   const bursting = life.burstLeft > 0;
   const wantsShot = bursting || w.now <= life.pressUntil || (gun.auto && inp.fire);
