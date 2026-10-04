@@ -207,6 +207,7 @@ export function tickRun(w: World, dtMs: number) {
   tickHorde(w, run, dtMs);
   tickSquad(w, run, dtMs);
   if (run.core.hp <= 0) {
+    for (const p of w.players.values()) statsFor(run, p);
     run.phase = { k: 'over', night: run.night, restartAt: w.now + ZOM.restartMs };
     w.zombies = [];
   }

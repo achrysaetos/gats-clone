@@ -26,21 +26,22 @@ test('a zombies snapshot shows the horde in view as compact tuples, the squad wa
   });
 });
 
-test('the run view times the night by its wave and reports the run once the core falls', () => {
+test('the run view times the night by its wave and reports the run once the core falls, with a row for everyone', () => {
   const w = zomWorld();
   const p = spawnAt(w, 1380, 1500);
+  const idle = spawnAt(w, 1380, 1600);
   run(w, ZOM.dayMs + TICK_MS);
   const night = snapshotFor(w, p.id).run!;
   assert.equal(night.phase, 'night');
   assert.equal(night.phaseEndsAt, null);
-  assert.equal(night.waveLeft, ZOM.waveSize(1, { humans: 0, bots: 1 }));
+  assert.equal(night.waveLeft, ZOM.waveSize(1, { humans: 0, bots: 2 }));
   w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
   w.run!.core.hp = 0;
   step(w, TICK_MS);
   const over = snapshotFor(w, p.id).run!;
   assert.equal(over.phase, 'over');
   assert.equal(over.phaseEndsAt, w.now + ZOM.restartMs);
-  assert.deepEqual(over.report, { night: 1, durationMs: w.now, players: [{ name: p.name, kills: 4, revives: 1, built: 2 }] });
+  assert.deepEqual(over.report, { night: 1, durationMs: w.now, players: [{ name: p.name, kills: 4, revives: 1, built: 2 }, { name: idle.name, kills: 0, revives: 0, built: 0 }] });
 });
 
 test('squadmates see a downed player with the revive and bleed-out clocks; nobody sees one who bled out', () => {
