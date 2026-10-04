@@ -18,7 +18,7 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 type DamageSource = { attacker: Player | null; label: string; piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas'; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
-  if (victim.life.k !== 'alive') return;
+  if (victim.life.k !== 'alive' || w.match.k === 'over') return;
   const a = src.attacker;
   if (a && (a.id === victim.id ? src.via !== 'blast' : sameTeam(a, victim))) return;
   const life = victim.life;
@@ -52,7 +52,7 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   credited.kills++;
   credited.lifeKills++;
   addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
-  if (w.match.k === 'playing') MODES[w.mode].onKill(w, credited, victim);
+  MODES[w.mode].onKill(w, credited, victim);
 }
 
 function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null) {

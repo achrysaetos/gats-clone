@@ -4,22 +4,14 @@ import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep } from './sim/movement.ts';
-import { abilityOf, effectiveStats, isHunted, resetProgress } from './sim/stats.ts';
-import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Life, type Player, type World } from './sim/world.ts';
+import { abilityOf, effectiveStats, freshLife, isHunted, resetProgress } from './sim/stats.ts';
+import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
 const PRESS_GRACE_MS = 100;
 
 type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
-
-function freshLife(p: Player, now: number): Life {
-  const s = effectiveStats(p);
-  return {
-    k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity,
-  };
-}
 
 export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPlayerOpts = {}): Player {
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);

@@ -1,7 +1,7 @@
 import {
   ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
-import type { PerkOfTier, Player, World } from './world.ts';
+import type { Life, PerkOfTier, Player, World } from './world.ts';
 
 type PerkMods = {
   spreadMul?: number; stillSpreadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
@@ -66,6 +66,14 @@ export function effectiveStats(p: Player, still = false): Stats {
   return s;
 }
 
+export function freshLife(p: Player, now: number): Life {
+  const s = effectiveStats(p);
+  return {
+    k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
+    lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity,
+  };
+}
+
 export function levelForScore(score: number): number {
   let level = 0;
   LEVELS.forEach((l, i) => { if (score >= l.score) level = i; });
@@ -95,11 +103,6 @@ export function resetProgress(p: Player) {
   p.perks = {};
   p.gun = p.loadout.weapon;
   p.abilityReadyAt = 0;
-  if (p.life.k !== 'alive') return;
-  const s = effectiveStats(p);
-  p.life.hp = Math.min(p.life.hp, s.maxHp);
-  p.life.ammo = Math.min(p.life.ammo, s.mag);
-  p.life.burstLeft = 0;
 }
 
 /** Applies `option` only when `level` is the pending pick and `option` is one of its options, so a repeated or stale pick changes nothing. */

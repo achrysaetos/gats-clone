@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
+import { ARMORS, GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
 const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
@@ -153,6 +153,35 @@ test('a round restart resets level, perks, ability and gun along with score', ()
   const view = snap.players.find((p) => p.id === a.id)!;
   assert.deepEqual([view.score, view.level, snap.self.perks, snap.self.pending, snap.self.ability, view.gun], [0, 0, {}, null, null, 'pistol']);
   assert.equal(view.maxHp, WORLD.baseHp);
-  assert.ok(view.hp <= view.maxHp, `hp ${view.hp} fits the base max`);
-  assert.ok(snap.self.ammo <= snap.self.mag, `ammo ${snap.self.ammo} fits the base magazine ${snap.self.mag}`);
+  assert.deepEqual([view.hp, view.armor, snap.self.ammo, snap.self.reloading], [WORLD.baseHp, view.maxArmor, GUNS.pistol.mag, false], 'a fresh life');
+});
+
+test('a hurt, half-empty survivor starts the next round at full health, armor and ammo', () => {
+  const w = emptyWorld('TDM');
+  const a = spawnAt(w, 500, 500, { team: 'red', loadout: { armor: 'medium' } });
+  if (a.life.k === 'alive') Object.assign(a.life, { hp: 10, armor: 5, ammo: 2 });
+  w.teamScore.red = WORLD.tdmWinScore;
+  run(w, TICK_MS);
+  assert.equal(w.match.k, 'over');
+  if (a.life.k === 'alive') a.life.lastDamageAt = Infinity;
+  run(w, WORLD.roundRestartMs + 100);
+  assert.equal(w.match.k, 'playing');
+  const self = snapshotFor(w, a.id);
+  const view = self.players.find((p) => p.id === a.id)!;
+  assert.deepEqual([view.hp, view.armor, self.self.ammo], [WORLD.baseHp, ARMORS.medium.points, GUNS.pistol.mag]);
+});
+
+test('nothing in flight hurts a player once the round is over', () => {
+  const w = emptyWorld('TDM');
+  const a = spawnAt(w, 500, 500, { team: 'red' });
+  const b = spawnAt(w, 1100, 500, { team: 'blue' });
+  equip(a, 'artillery');
+  press(w, a, { angle: 0, shots: a.input.shots + 1 });
+  step(w, TICK_MS);
+  w.teamScore.red = WORLD.tdmWinScore;
+  step(w, TICK_MS);
+  assert.equal(w.match.k, 'over');
+  assert.ok(w.bullets.length > 0, 'the shell is still flying');
+  run(w, 1000);
+  assert.equal(hpOf(b), WORLD.baseHp);
 });

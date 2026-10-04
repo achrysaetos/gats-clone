@@ -1,7 +1,7 @@
 import { WORLD, type ModeId } from '../defs.ts';
 import type { Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
-import { resetProgress } from './stats.ts';
+import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
 import { loadMap, spawnPoint, type Player, type World } from './world.ts';
 
@@ -89,7 +89,12 @@ export function tickMatch(w: World, dtMs: number) {
     w.match = { k: 'playing' };
     w.teamScore = { red: 0, blue: 0 };
     for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
-    for (const p of w.players.values()) { resetProgress(p); p.kills = 0; p.deaths = 0; }
+    for (const p of w.players.values()) {
+      resetProgress(p);
+      p.kills = 0;
+      p.deaths = 0;
+      if (p.life.k === 'alive') p.life = freshLife(p, w.now);
+    }
     return;
   }
   rules.tick(w, dtMs);
