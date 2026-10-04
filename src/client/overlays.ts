@@ -2,7 +2,7 @@ import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, t
 import { rankValue, type Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
-import { deathScreenArmed, deathText, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
+import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
@@ -36,8 +36,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const respawn = $<HTMLButtonElement>('respawn');
   respawn.onclick = onRespawn;
   const keys = { perk: '', chat: '', banner: '', death: '', objective: '' };
-  let lastPhase: ClientState['phase'] = 'menu';
-  let objectiveAt = -Infinity;
+  let objectiveSeen = NO_OBJECTIVE_SEEN;
   let deathAt = -Infinity;
 
   const perkTile = (perk: PerkId) => {
@@ -164,11 +163,10 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   };
 
   const renderObjective = (state: ClientState, snap: Snapshot, now: number) => {
-    if (state.phase === 'playing' && lastPhase !== 'playing') objectiveAt = now;
-    lastPhase = state.phase;
     const team = snap.players.find((p) => p.id === snap.self.id)?.team ?? null;
-    const show = objectiveVisible(state.phase, snap.match, now - objectiveAt);
-    const key = show ? `${objectiveAt}|${snap.match.mode}|${team}` : '';
+    objectiveSeen = nextObjectiveSeen(objectiveSeen, state.phase, snap.match, team, now);
+    const show = objectiveVisible(state.phase, snap.match, now - objectiveSeen.at);
+    const key = show ? `${objectiveSeen.at}|${snap.match.mode}|${team}` : '';
     if (key === keys.objective) return;
     keys.objective = key;
     objective.hidden = !show;
@@ -226,7 +224,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     },
     reset() {
       keys.perk = keys.chat = keys.banner = keys.death = keys.objective = '';
-      lastPhase = 'menu';
+      objectiveSeen = NO_OBJECTIVE_SEEN;
       perkPanel.hidden = banner.hidden = death.hidden = objective.hidden = true;
       chatLog.replaceChildren();
       chatInput.hidden = true;

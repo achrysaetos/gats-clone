@@ -123,7 +123,8 @@ async function shootOnce(w: Watch): Promise<{ mine: Dmg[]; what: string } | null
   if (!snap || !self?.alive) {
     const clicked = await js(`(() => { const b = document.getElementById('respawn'); if (document.getElementById('death').hidden || b.disabled) return false; b.click(); return true; })()`);
     if (clicked && await until(() => !!me()?.alive, 3000)) {
-      expect(`${w.room}: objective banner shows again after respawning`, await until(async () => js(`!document.getElementById('objective').hidden`), 1000));
+      const reshown = await until(async () => js(`!document.getElementById('objective').hidden`), 1000);
+      expect(`${w.room}: objective banner stays hidden after respawning into the same round`, !reshown);
     }
     await sleep(200);
     return null;

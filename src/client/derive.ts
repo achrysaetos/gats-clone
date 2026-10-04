@@ -85,7 +85,19 @@ export const deathScreenArmed = (openedAt: number, now: number): boolean => now 
 export const mapNotice = (match: Pick<MatchView, 'nextMap' | 'mapChangeIn'>): string | null =>
   match.mapChangeIn > 0 ? `Next map: ${match.nextMap} in ${seconds(match.mapChangeIn)}s` : null;
 
-export const objectiveVisible = (phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
+/** The round the objective banner last introduced (mode, map and team), and when. */
+export type ObjectiveSeen = { key: string | null; at: number };
+export const NO_OBJECTIVE_SEEN: ObjectiveSeen = { key: null, at: -Infinity };
+
+/** Introduces each round once: a respawn into the same round keeps the old time, so the banner stays gone. A shown winner forgets the round, so the next one is introduced even on the same map. */
+export function nextObjectiveSeen(seen: ObjectiveSeen, phase: ClientState['phase'], match: Pick<MatchView, 'mode' | 'map' | 'winner'>, team: Team, now: number): ObjectiveSeen {
+  if (match.winner !== null) return seen.key === null ? seen : { ...seen, key: null };
+  if (phase !== 'playing') return seen;
+  const key = `${match.mode}|${match.map}|${team}`;
+  return key === seen.key ? seen : { key, at: now };
+}
+
+export const objectiveVisible =(phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
   phase === 'playing' && match.winner === null && msSincePlaying < OBJECTIVE_MS;
 
 export const topScorers = (mode: ModeId, rows: readonly LeaderRow[], count: number): LeaderRow[] => rankRows(mode, rows).slice(0, count);
