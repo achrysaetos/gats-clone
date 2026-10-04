@@ -212,3 +212,42 @@ for (const ability of abilityMinutes > 0 ? PERK_TIERS[3] : []) {
     `deaths/min ${(deaths / simMinutes).toFixed(1)}`,
   ].join('  '));
 }
+
+/** Each bot life draws one ability at random, so holders of different abilities fight each other and their K/D shows which one wins fights. */
+function mixedArena(seed: number, kills: Map<AbilityId, number>, deaths: Map<AbilityId, number>) {
+  const w: World = createWorld('FFA', seed, 'boneyard');
+  const r = () => rand(w);
+  const bots = new Map<number, BotMemory>();
+  const holds = new Map<number, AbilityId>();
+  const draw = (id: number) => holds.set(id, PERK_TIERS[3][Math.floor(r() * PERK_TIERS[3].length)]!);
+  for (let i = 0; i < WORLD.minPlayers; i++) {
+    const id = addPlayer(w, `bot${i}`, randomLoadout(r)).id;
+    bots.set(id, newBotMemory(r));
+    draw(id);
+  }
+  const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
+  for (let t = 0; t < ticks; t++) {
+    const walls = wallViews(w);
+    for (const [id, mem] of bots) {
+      w.players.get(id)!.perks[3] = holds.get(id)!;
+      const d = botThink(snapshotFor(w, id), walls, mem, r);
+      bots.set(id, d.mem);
+      setInput(w, id, w.tick, d.input);
+      if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) draw(id);
+    }
+    step(w, TICK_MS);
+    for (const e of w.events) {
+      if (e.e !== 'kill') continue;
+      const victim = holds.get(e.victimId), killer = e.killerId === null ? undefined : holds.get(e.killerId);
+      if (victim) deaths.set(victim, (deaths.get(victim) ?? 0) + 1);
+      if (killer && e.killerId !== e.victimId) kills.set(killer, (kills.get(killer) ?? 0) + 1);
+    }
+  }
+}
+
+if (abilityMinutes > 0) {
+  const kills = new Map<AbilityId, number>(), deaths = new Map<AbilityId, number>();
+  for (let seed = 1; seed <= seeds; seed++) mixedArena(seed, kills, deaths);
+  console.log(`\nmixed ability arena: each bot life holds a random ability, ${abilityMinutes} min x ${seeds} seeds; K/D by ability held`);
+  for (const ability of PERK_TIERS[3]) console.log(`  ${ability.padEnd(12)} kills ${String(kills.get(ability) ?? 0).padStart(4)}  deaths ${String(deaths.get(ability) ?? 0).padStart(4)}  K/D ${((kills.get(ability) ?? 0) / Math.max(1, deaths.get(ability) ?? 0)).toFixed(2)}`);
+}
