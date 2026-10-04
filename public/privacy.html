@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121419">
+  <title>Privacy · Skirmish</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="menu">
+    <div class="menu-card doc-card">
+      <header class="brand">
+        <a class="wordmark" href="/">
+          <h1 class="logo"><em>S</em>KIRMISH</h1>
+        </a>
+        <p class="tagline">Privacy</p>
+      </header>
+
+      <p class="draft-note" role="note"><b>Draft: review before launch.</b> This page was written from the game's source code. The operator has not reviewed it yet.</p>
+
+      <article class="panel doc">
+        <p class="lede">Skirmish keeps as little about you as it can. You can play as a guest without an account. There are no ads, no analytics and no third-party trackers.</p>
+
+        <h2>If you make an account</h2>
+        <p>The server saves these in a file on the game server so your stats carry from game to game:</p>
+        <ul>
+          <li>Your account name.</li>
+          <li>A scrypt hash of your password and the random salt used to make it. Your password itself is never saved.</li>
+          <li>Your stats: kills, deaths, total score, games played and best score.</li>
+        </ul>
+        <p>Your account name and stats are public. They appear on the leaderboard, and anyone can look them up by name.</p>
+
+        <h2>Staying logged in</h2>
+        <p>When you log in or register, the server gives your browser a session token, which your browser keeps in its local storage. The token holds your account name and the times it was issued and expires, 30 days later. The server signs it, so nobody can make a token for an account they do not own. Logging out deletes it from your browser.</p>
+
+        <h2>What your browser keeps</h2>
+        <p>The game stores a few settings in your browser's local storage, under these keys:</p>
+        <ul>
+          <li><code>skirmish.token</code> and <code>skirmish.account</code>: your session token and account name, while you are logged in.</li>
+          <li><code>skirmish.name</code>: the name you last played under.</li>
+          <li><code>skirmish.loadout</code>: your last weapon, armor and color.</li>
+          <li><code>skirmish.muted</code>: whether sound is off.</li>
+          <li><code>skirmish.mutedNames</code>: the players you muted in chat.</li>
+        </ul>
+        <p>Your name, loadout and token go to the server when you join a room. The sound setting and your muted list never leave your browser. Clearing this site's data removes all of them.</p>
+
+        <h2>Matches and chat</h2>
+        <p>Positions, health and scores during a match live only in the server's memory. If you are logged in, your kills, deaths and score are added to your saved stats.</p>
+        <p>Chat messages pass through a word filter and go to the players in your room. The server does not save or log them. Guest names go through the same filter.</p>
+
+        <h2>Rate limits</h2>
+        <p>To slow down password guessing and connection floods, the server counts login attempts and open game connections per IP address. These counters exist only in the server's memory and are never written to disk or to logs. A login counter is dropped about a minute after your last attempt, a connection count when the connection closes, and all of them when the server restarts.</p>
+
+        <h2>No cookies, ads or trackers</h2>
+        <p>The game sets no cookies. Every page, script and style comes from the game's own server. It loads nothing from other sites, and it sends nothing about you to anyone else.</p>
+
+        <h2>Where it runs</h2>
+        <p>The game is hosted on Fly.io, in its <code>iad</code> region near Ashburn, Virginia, USA. Fly.io carries the traffic to the game and may keep its own network logs under its own privacy policy.</p>
+
+        <h2>Keeping and deleting your data</h2>
+        <p>Accounts stay until the operator deletes them. There is no delete button yet. To have your account name, password hash and stats removed, ask the operator at the contact below.</p>
+
+        <h2>Contact</h2>
+        <!-- OPERATOR: add a contact address -->
+        <p class="muted">A contact address will be added here before launch.</p>
+      </article>
+
+      <footer class="menu-footer"><a href="/">Back to the game</a></footer>
+    </div>
+  </main>
+</body>
+</html>

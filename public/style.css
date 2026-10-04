@@ -230,6 +230,27 @@ kbd {
 .controls { display: grid; grid-template-columns: auto 1fr; gap: 6px var(--s3); margin: 0; align-items: center; font-size: var(--t-label); }
 .controls dd { margin: 0; color: var(--muted); }
 
+.menu-footer { margin-top: var(--s4); text-align: center; font-size: var(--t-label); }
+.menu-footer a { color: var(--muted); }
+.menu-footer a:hover { color: var(--accent); }
+
+.doc-card { max-width: 720px; }
+a.wordmark { text-decoration: none; }
+.draft-note {
+  margin-bottom: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--accent-deep);
+  border-radius: var(--radius-sm);
+  background: #2a2a22;
+  color: var(--accent);
+}
+.doc { line-height: 1.55; }
+.doc .lede { font-size: var(--t-title); line-height: 1.45; }
+.doc h2 { margin-top: var(--s5); }
+.doc p + p, .doc ul + p, .doc p + ul { margin-top: var(--s2); }
+.doc ul { margin: 0; padding-left: var(--s5); display: grid; gap: var(--s1); }
+.doc code { font: 600 0.92em ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: var(--well); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+
 .muted-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: var(--t-label); }
 .muted-list li { display: flex; justify-content: space-between; gap: var(--s3); }
 
