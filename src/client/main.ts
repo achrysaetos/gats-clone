@@ -15,10 +15,13 @@ import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } fr
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash } from './predict.ts';
-import { drawWorld, PALETTE, TRAIL_MS } from './render.ts';
+import { startEffect } from './effects.ts';
+import type { EffectSpec } from './eventclock.ts';
+import { createPool } from './particles.ts';
+import { bodyColor, drawBackdrop, drawWorld, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
-import { EFFECT_LIFE_MS, type ClientState, type Effect, type Session } from './state.ts';
+import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -57,7 +60,20 @@ const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('j
 const DEV = params.has('dev');
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers } });
+const FRAME_COST_CAP = 4000;
+const frameCosts: number[] = [];
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, takeFrameCosts: () => frameCosts.splice(0), benchFrames } });
+
+/** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
+function benchFrames(n: number): number[] {
+  const now = performance.now();
+  return Array.from({ length: n }, () => {
+    const start = performance.now();
+    drawFrame(now);
+    ctx.getImageData(0, 0, 1, 1);
+    return performance.now() - start;
+  });
+}
 
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
@@ -140,7 +156,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
         s: {
           ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
           lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
-          effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null,
+          effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null, particles: createPool(),
         },
       });
     }
@@ -177,7 +193,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.feedback = addFeedback(s.feedback, snap.events, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
-  for (const spec of fx.now) s.effects.push({ ...spec, born: now } as Effect);
+  for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
   for (const ev of snap.events) if (ev.e === 'kill') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
@@ -186,6 +202,12 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.myId) });
   else if (dead && state.phase === 'dead' && !state.killer) state.killer = killerOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
+}
+
+function deathTint(s: Session, spec: EffectSpec): string | undefined {
+  if (spec.kind !== 'death') return undefined;
+  const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
+  return victim && bodyColor(victim);
 }
 
 function aimOffset(s: Session): { dx: number; dy: number } {
@@ -242,20 +264,6 @@ function resize() {
   }, VIEW_RESEND_MS);
 }
 
-function drawBackdrop(now: number) {
-  const { w, h, dpr } = view;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = PALETTE.floor;
-  ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = PALETTE.grid;
-  ctx.lineWidth = 1.5;
-  const off = (now / 60) % 60;
-  ctx.beginPath();
-  for (let x = -off; x < w; x += 60) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-  for (let y = -off; y < h; y += 60) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
-  ctx.stroke();
-}
-
 function updateTrails(s: Session, snap: Snapshot, now: number) {
   for (const p of snap.players) {
     if (!p.dashing || !p.alive) continue;
@@ -272,16 +280,22 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  const start = performance.now();
+  drawFrame(now);
+  if (frameCosts.length < FRAME_COST_CAP) frameCosts.push(performance.now() - start);
+}
+
+function drawFrame(now: number) {
   const s = sessionOf(state);
   const latest = s && newestSnap(s.snaps);
   const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
   if (!s || !interpolated || !latest) {
-    drawBackdrop(now);
+    drawBackdrop(ctx, view.w, view.h, view.dpr, now);
     return;
   }
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
-  for (const spec of released.due) s.effects.push({ ...spec, born: now } as Effect);
+  for (const spec of released.due) startEffect(s, spec, now, deathTint(s, spec));
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const snap = drawn

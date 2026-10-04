@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COLORS } from '../src/shared/defs.ts';
-import { bodyColor, TEAM_COLORS } from '../src/client/render.ts';
+import { TEAM_COLORS } from '../src/client/palette.ts';
+import { bodyColor } from '../src/client/render.ts';
 
 test('team modes draw bodies in the team color, whatever color was picked', () => {
   assert.equal(bodyColor({ color: 'blue', team: 'red' }), TEAM_COLORS.red);

@@ -1,20 +1,20 @@
 import { PERK_INFO, PERK_TIERS, type PerkId, type Tier } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
+import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
-import { TEAM_COLORS } from './render.ts';
+import { TEAM_COLORS } from './palette.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 
 const CHAT_VISIBLE_MS = 15000;
 
-/** Tile face: a plain BMP symbol (not emoji, so every tile renders at one size) and a name short enough for 58px. */
-const PERK_TILE: Record<PerkId, [glyph: string, short: string]> = {
-  bipod: ['⊥', 'Bipod'], optics: ['◎', 'Optics'], thermal: ['◉', 'Thermal'], ghillie: ['♣', 'Ghillie'],
-  piercing: ['➤', 'Piercing'], extended: ['▤', 'Ext. mag'], grip: ['✥', 'Grip'], silencer: ['◌', 'Silencer'],
-  lightweight: ['»', 'Light'], longRange: ['⟶', 'Range'], shield: ['◗', 'Shield'], thickSkin: ['✚', 'Thick skin'],
-  firstAid: ['♥', 'First aid'], grenade: ['●', 'Grenade'], fragGrenade: ['✸', 'Frag'], gasGrenade: ['☁', 'Gas'],
-  landMine: ['⊗', 'Mine'], knife: ['†', 'Knife'], engineer: ['▦', 'Engineer'], dash: ['⇥', 'Dash'],
+/** Tile labels short enough for a 58px tile. */
+const PERK_SHORT: Record<PerkId, string> = {
+  bipod: 'Bipod', optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
+  grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', shield: 'Shield', thickSkin: 'Thick skin',
+  firstAid: 'First aid', grenade: 'Grenade', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Mine', knife: 'Knife',
+  engineer: 'Engineer', dash: 'Dash',
 };
 const CHAT_LINES = 8;
 const PODIUM_SIZE = 3;
@@ -55,12 +55,9 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
       b.setAttribute('aria-label', `${name}: ${desc}`);
       const kbd = document.createElement('kbd');
       kbd.textContent = perkKeyLabel(slot);
-      const icon = document.createElement('span');
-      icon.className = 'perk-icon';
-      const [glyph, short] = PERK_TILE[perk];
-      icon.textContent = glyph;
+      const icon = iconSvg(PERK_ICONS[perk], 'perk-icon');
       const label = document.createElement('b');
-      label.textContent = short;
+      label.textContent = PERK_SHORT[perk];
       const tip = document.createElement('span');
       tip.className = 'perk-tip';
       const tipName = document.createElement('strong');

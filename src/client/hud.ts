@@ -1,20 +1,30 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, PERK_INFO, WEAPONS, WORLD, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, PERK_INFO, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier, type WeaponId } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { feedMentions, levelProgress, objectiveFor } from './derive.ts';
 import { HITMARKER_MS, HURT_MS } from './feedback.ts';
-import { PALETTE, TEAM_COLORS } from './render.ts';
+import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
+import { PALETTE, TEAM_COLORS } from './palette.ts';
+import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
 
-const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-const PANEL = 'rgba(22, 25, 31, 0.72)';
-const INK = '#f2f3f5';
-const MUTED = '#a3a9b5';
+const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 22 } as const;
+const SPACE = { sm: 8, md: 12, lg: 16 } as const;
+const HUD_INK = '#f2f3f5';
+const MUTED = '#9ba2ae';
+const PANEL_FILL = 'rgba(17, 19, 24, 0.8)';
+const PANEL_EDGE = 'rgba(255, 255, 255, 0.08)';
+const PANEL_RADIUS = 10;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
+const HURT_BANDS = 12;
 
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number };
+
+const WEAPON_BY_NAME = new Map<string, WeaponId>(WEAPON_IDS.map((id) => [WEAPONS[id].name, id]));
+const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id, info]) => [info.name, id as PerkId]));
 
 export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
   for (const st of [sticks.move, sticks.aim]) {
@@ -35,6 +45,7 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
 
 export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h: number, snap: Snapshot, s: Session, now: number, crosshair: Point) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  hudFont = '';
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
   const hud: Hud = { ctx, w, h, snap, s, me, now };
   const compact = w < 640;
@@ -47,17 +58,24 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h
   drawHitmarker(hud, crosshair);
 }
 
+/** Stacked translucent edge bands instead of a full-screen radial gradient, which costs several milliseconds to rasterize. */
 function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
   const hurt = s.feedback.hurt;
   if (!hurt) return;
   const k = (now - hurt.born) / HURT_MS;
   if (k < 0 || k >= 1) return;
-  const alpha = (0.25 + 0.5 * hurt.strength) * (1 - k);
-  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) / 2);
-  g.addColorStop(0, 'rgba(200, 20, 20, 0)');
-  g.addColorStop(1, `rgba(200, 20, 20, ${alpha.toFixed(3)})`);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
+  const depth = Math.min(w, h) * 0.2;
+  const step = depth / HURT_BANDS;
+  ctx.fillStyle = 'rgb(200, 20, 20)';
+  ctx.globalAlpha = ((0.25 + 0.5 * hurt.strength) * (1 - k)) / HURT_BANDS;
+  for (let i = 0; i < HURT_BANDS; i++) {
+    const d = depth - i * step;
+    ctx.fillRect(0, 0, w, d);
+    ctx.fillRect(0, h - d, w, d);
+    ctx.fillRect(0, d, d, h - d * 2);
+    ctx.fillRect(w - d, d, d, h - d * 2);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
@@ -82,15 +100,21 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
   ctx.globalAlpha = 1;
 }
 
-function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.fillStyle = PANEL;
+function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, accent?: string) {
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 8);
+  ctx.roundRect(x, y, w, h, PANEL_RADIUS);
+  ctx.fillStyle = PANEL_FILL;
   ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = PANEL_EDGE;
+  ctx.stroke();
+  if (!accent) return;
+  ctx.fillStyle = accent;
+  ctx.fillRect(x + PANEL_RADIUS, y, w - PANEL_RADIUS * 2, 2);
 }
 
 function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, frac: number, color: string) {
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, h / 2);
   ctx.fill();
@@ -100,28 +124,68 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   ctx.beginPath();
   ctx.roundRect(x, y, Math.max(h, w * f), h, h / 2);
   ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.fillRect(x + h / 2, y + 1, Math.max(0, w * f - h), Math.max(1, h * 0.25));
 }
 
-function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color = INK, align: CanvasTextAlign = 'left', weight = 600) {
-  ctx.font = `${weight} ${size}px ${FONT}`;
+/** Assigning ctx.font reparses the string every time, so skip the assignment when the HUD's last font is still set. */
+let hudFont = '';
+const fonts = new Map<number, string>();
+function setFont(ctx: CanvasRenderingContext2D, weight: number, size: number) {
+  const key = weight * 1000 + size;
+  let font = fonts.get(key);
+  if (!font) fonts.set(key, (font = `${weight} ${size}px ${HUD_FONT}`));
+  if (font !== hudFont) { ctx.font = font; hudFont = font; }
+}
+
+function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color = HUD_INK, align: CanvasTextAlign = 'left', weight = 600) {
+  setFont(ctx, weight, size);
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.fillText(s, x, y);
 }
 
+function caps(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, color = MUTED, align: CanvasTextAlign = 'left') {
+  text(ctx, s.toUpperCase(), x, y, TYPE.micro, color, align, 750);
+}
+
+const FEED_ICON_W = 34;
+
+function drawFeedWeapon(ctx: CanvasRenderingContext2D, label: string, x: number, y: number): number {
+  const weapon = WEAPON_BY_NAME.get(label);
+  if (weapon) {
+    ctx.save();
+    ctx.translate(x - 4, y);
+    drawGun(ctx, weapon, 10, MUTED);
+    ctx.restore();
+    return FEED_ICON_W;
+  }
+  const perk = PERK_BY_NAME.get(label);
+  if (perk) {
+    strokeIcon(ctx, PERK_ICONS[perk], x + 9, y, 15, MUTED, 2.4);
+    return 22;
+  }
+  setFont(ctx, 500, TYPE.label);
+  text(ctx, label, x, y, TYPE.label, MUTED, 'left', 500);
+  return ctx.measureText(label).width + SPACE.sm;
+}
+
 function drawKillFeed({ ctx, s, now }: Hud, top: number) {
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-5);
   lines.forEach((f, i) => {
-    const y = top + i * 26;
-    const msg = `${f.killer}  ⟶  ${f.victim}`;
-    ctx.font = `600 13px ${FONT}`;
-    const tw = ctx.measureText(msg).width + ctx.measureText(`  ${f.weapon}`).width;
+    const y = top + i * 28;
+    setFont(ctx, 700, TYPE.body);
+    const kw = f.killer ? ctx.measureText(f.killer).width : 0;
+    const vw = ctx.measureText(f.victim).width;
+    const ww = WEAPON_BY_NAME.has(f.weapon) ? FEED_ICON_W : 40;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
-    panel(ctx, 12, y - 11, tw + 20, 22);
     const mine = feedMentions(f, s.myId);
-    text(ctx, msg, 22, y, 13, mine ? '#ffd34d' : INK);
-    text(ctx, `  ${f.weapon}`, 22 + ctx.measureText(msg).width, y, 12, MUTED, 'left', 500);
+    panel(ctx, 12, y - 12, kw + vw + ww + SPACE.lg * 2, 24, mine ? PALETTE.gold : undefined);
+    let x = 12 + SPACE.md;
+    if (f.killer) { text(ctx, f.killer, x, y, TYPE.body, f.killerId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700); x += kw + SPACE.sm; }
+    x += drawFeedWeapon(ctx, f.weapon, x, y);
+    text(ctx, f.victim, x, y, TYPE.body, f.victimId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
     ctx.globalAlpha = 1;
   });
 }
@@ -131,31 +195,39 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
   const teams = snap.match.mode !== 'FFA';
   const pw = compact ? 150 : 210;
   const x = w - pw - 12;
-  const ph = 34 + rows.length * 20 + (teams ? 28 : 0);
+  const rowH = 20;
+  const ph = 36 + rows.length * rowH + (teams ? 30 : 0);
   panel(ctx, x, 12, pw, ph);
-  text(ctx, `Leaderboard · ${snap.match.mode}`, x + 12, 29, 13, INK, 'left', 700);
-  let y = 50;
+  caps(ctx, 'Leaderboard', x + SPACE.md, 29);
+  text(ctx, snap.match.mode, x + pw - SPACE.md, 29, TYPE.label, PALETTE.gold, 'right', 800);
+  let y = 52;
   if (teams) {
     const goal = snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore;
-    const half = (pw - 24) / 2;
-    bar(ctx, x + 12, y - 5, half - 4, 10, snap.match.teamScore.red / goal, TEAM_COLORS.red);
-    bar(ctx, x + 16 + half, y - 5, half - 4, 10, snap.match.teamScore.blue / goal, TEAM_COLORS.blue);
-    text(ctx, `Red ${snap.match.teamScore.red}`, x + 12, y + 13, 11, MUTED);
-    text(ctx, `to ${goal}`, x + pw / 2, y + 13, 10, MUTED, 'center', 500);
-    text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - 12, y + 13, 11, MUTED, 'right');
-    y += 28;
+    const half = (pw - SPACE.md * 2) / 2;
+    bar(ctx, x + SPACE.md, y - 5, half - 4, 8, snap.match.teamScore.red / goal, TEAM_COLORS.red);
+    bar(ctx, x + SPACE.md + 4 + half, y - 5, half - 4, 8, snap.match.teamScore.blue / goal, TEAM_COLORS.blue);
+    text(ctx, `Red ${snap.match.teamScore.red}`, x + SPACE.md, y + 13, TYPE.label, HUD_INK, 'left', 700);
+    text(ctx, `to ${goal}`, x + pw / 2, y + 13, TYPE.micro, MUTED, 'center', 500);
+    text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
+    y += 30;
   }
   rows.forEach((r, i) => {
     const mine = r.id === s.myId;
+    if (mine) {
+      ctx.fillStyle = 'rgba(255, 211, 77, 0.14)';
+      ctx.beginPath();
+      ctx.roundRect(x + 6, y - rowH / 2, pw - 12, rowH, 5);
+      ctx.fill();
+    }
     if (r.team) {
       ctx.fillStyle = TEAM_COLORS[r.team];
       ctx.beginPath();
-      ctx.arc(x + 16, y, 4, 0, TAU);
+      ctx.arc(x + SPACE.md + 4, y, 4, 0, TAU);
       ctx.fill();
     }
-    text(ctx, `${i + 1}. ${r.name}`, x + 26, y, 12, mine ? '#ffd34d' : INK, 'left', mine ? 700 : 500);
-    text(ctx, String(r.score), x + pw - 12, y, 12, mine ? '#ffd34d' : MUTED, 'right');
-    y += 20;
+    text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
+    text(ctx, String(r.score), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
+    y += rowH;
   });
 }
 
@@ -163,11 +235,19 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
   const x = w - size - 12;
   const y = h - size - 12;
   const k = size / s.worldSize;
-  panel(ctx, x - 4, y - 4, size + 8, size + 8);
-  ctx.fillStyle = 'rgba(233, 231, 224, 0.15)';
+  panel(ctx, x - 5, y - 5, size + 10, size + 10);
+  ctx.fillStyle = 'rgba(226, 221, 209, 0.12)';
   ctx.fillRect(x, y, size, size);
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let g = 1; g < 4; g++) {
+    ctx.moveTo(x + (size * g) / 4, y); ctx.lineTo(x + (size * g) / 4, y + size);
+    ctx.moveTo(x, y + (size * g) / 4); ctx.lineTo(x + size, y + (size * g) / 4);
+  }
+  ctx.stroke();
   for (const wall of s.walls) {
-    ctx.fillStyle = wall.built ? 'rgba(179,143,87,0.8)' : 'rgba(200,204,212,0.55)';
+    ctx.fillStyle = wall.built ? 'rgba(210,171,115,0.85)' : 'rgba(205,210,220,0.6)';
     ctx.fillRect(x + wall.x * k, y + wall.y * k, Math.max(1, wall.w * k), Math.max(1, wall.h * k));
   }
   for (const z of snap.zones) {
@@ -187,9 +267,9 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
   const self = me ?? s.lastSelf;
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#000';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(x + self.x * k, y + self.y * k, 3.5, 0, TAU);
+  ctx.arc(x + self.x * k, y + self.y * k, 4, 0, TAU);
   ctx.fill();
   ctx.stroke();
 }
@@ -200,12 +280,18 @@ function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
   const bw = compact ? w - 150 - 56 : 260;
   const x = compact ? 22 : (w - bw) / 2;
   panel(ctx, x - 10, 10, bw + 20, 44);
-  text(ctx, `Level ${lp.displayLevel}`, x, 24, 13, INK, 'left', 700);
-  text(ctx, lp.nextAt === null ? `${me.score} · max level` : `${me.score} / ${lp.nextAt}`, x + bw, 24, 12, MUTED, 'right');
-  text(ctx, `K ${snap.self.kills} · D ${snap.self.deaths}`, x + bw / 2, 24, 12, MUTED, 'center', 500);
-  bar(ctx, x, 38, bw, 7, lp.frac, '#ffd34d');
+  ctx.beginPath();
+  ctx.arc(x + 9, 30, 13, 0, TAU);
+  ctx.fillStyle = PALETTE.gold;
+  ctx.fill();
+  text(ctx, String(lp.displayLevel), x + 9, 31, TYPE.title, '#1d1a0b', 'center', 850);
+  const bx = x + 30, barW = bw - 30;
+  caps(ctx, 'Level', bx, 22);
+  text(ctx, `K ${snap.self.kills}  D ${snap.self.deaths}`, bx + barW / 2, 22, TYPE.label, MUTED, 'center', 600);
+  text(ctx, lp.nextAt === null ? `${me.score} · max` : `${me.score} / ${lp.nextAt}`, bx + barW, 22, TYPE.label, HUD_INK, 'right', 700);
+  bar(ctx, bx, 34, barW, 8, lp.frac, PALETTE.gold);
   const line = objectiveFor(snap.match.mode, me.team).line;
-  ctx.font = `600 12px ${FONT}`;
+  setFont(ctx, 600, TYPE.label + 1);
   const dot = me.team ? 14 : 0;
   const lw = ctx.measureText(line).width + 20 + dot;
   const lx = compact ? x - 10 : w / 2 - lw / 2;
@@ -216,62 +302,76 @@ function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
     ctx.arc(lx + 14, 69, 4.5, 0, TAU);
     ctx.fill();
   }
-  text(ctx, line, lx + 10 + dot, 69, 12, INK, 'left');
+  text(ctx, line, lx + 10 + dot, 69, TYPE.label + 1, HUD_INK, 'left');
 }
 
-function drawVitals({ ctx, w, h, snap, s, me, now }: Hud) {
+function drawVitals({ ctx, w, h, snap, me }: Hud) {
   if (!me) return;
   const self = snap.self;
   const pw = Math.min(340, w - 24 - (w < 640 ? 130 : 190));
   const x = 12;
   const y = h - 92;
   panel(ctx, x, y, pw, 80);
-  const barW = pw - 110;
-  text(ctx, `${Math.ceil(me.hp)}`, x + 12, y + 18, 13, INK, 'left', 700);
-  bar(ctx, x + 44, y + 13, barW - 32, 10, me.hp / me.maxHp, me.hp / me.maxHp > 0.35 ? PALETTE.hpGood : PALETTE.hpBad);
-  text(ctx, `${Math.ceil(me.armor)}`, x + 12, y + 36, 13, MUTED, 'left', 700);
-  bar(ctx, x + 44, y + 31, barW - 32, 10, me.maxArmor ? me.armor / me.maxArmor : 0, '#5b8def');
+  const barX = x + 58, barW = pw - 150;
+  const hpFrac = me.hp / me.maxHp;
+  const hpColor = hpFrac > 0.35 ? PALETTE.hpGood : PALETTE.hpBad;
+  strokeIcon(ctx, UI_ICONS.heart, x + 18, y + 18, 14, hpColor, 2.6);
+  text(ctx, `${Math.ceil(me.hp)}`, x + 30, y + 18, TYPE.body, HUD_INK, 'left', 800);
+  bar(ctx, barX, y + 13, barW, 10, hpFrac, hpColor);
+  strokeIcon(ctx, UI_ICONS.armor, x + 18, y + 37, 14, PALETTE.armor, 2.6);
+  text(ctx, `${Math.ceil(me.armor)}`, x + 30, y + 37, TYPE.body, MUTED, 'left', 800);
+  bar(ctx, barX, y + 32, barW, 10, me.maxArmor ? me.armor / me.maxArmor : 0, PALETTE.armor);
 
-  const reloading = self.reloading;
-  text(ctx, WEAPONS[me.weapon].name, x + 12, y + 60, 12, MUTED, 'left', 500);
-  if (reloading) {
-    text(ctx, 'Reloading', x + 12 + barW - 32 + 32, y + 60, 13, '#ffd34d', 'right', 700);
-    bar(ctx, x + 100, y + 56, barW - 120, 8, self.reloadFrac, '#ffd34d');
+  ctx.save();
+  ctx.translate(x + 10, y + 62);
+  drawGun(ctx, me.weapon, 11, MUTED);
+  ctx.restore();
+  caps(ctx, WEAPONS[me.weapon].name, x + 46, y + 62);
+  const ammoRight = barX + barW;
+  if (self.reloading) {
+    text(ctx, 'Reloading', ammoRight, y + 56, TYPE.label, PALETTE.gold, 'right', 800);
+    bar(ctx, ammoRight - 70, y + 66, 70, 5, self.reloadFrac, PALETTE.gold);
   } else {
-    text(ctx, `${self.ammo} / ${self.mag}`, x + barW + 12, y + 60, 18, self.ammo === 0 ? PALETTE.hpBad : INK, 'right', 800);
+    setFont(ctx, 500, TYPE.body);
+    const magW = ctx.measureText(` / ${self.mag}`).width;
+    text(ctx, ` / ${self.mag}`, ammoRight, y + 63, TYPE.body, MUTED, 'right', 500);
+    text(ctx, String(self.ammo), ammoRight - magW, y + 61, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : HUD_INK, 'right', 850);
   }
 
   const ax = x + pw - 46;
   const ay = y + 40;
   ctx.beginPath();
-  ctx.arc(ax, ay, 28, 0, TAU);
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.arc(ax, ay, 29, 0, TAU);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
   ctx.fill();
   if (self.ability) {
     const total = ABILITY_COOLDOWN_MS[self.ability];
     const left = Math.max(0, Math.min(1, self.abilityReadyIn / total));
+    const ready = left === 0;
     ctx.beginPath();
-    ctx.arc(ax, ay, 28, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
+    ctx.arc(ax, ay, 29, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
     ctx.lineWidth = 4;
-    ctx.strokeStyle = left === 0 ? '#ffd34d' : MUTED;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = ready ? PALETTE.gold : MUTED;
     ctx.stroke();
-    const name = PERK_INFO[self.ability].name;
-    text(ctx, left === 0 ? 'Space' : `${(self.abilityReadyIn / 1000).toFixed(1)}s`, ax, ay - 6, 11, left === 0 ? '#ffd34d' : INK, 'center', 700);
-    text(ctx, name.length > 9 ? name.split(' ')[0]! : name, ax, ay + 9, 10, MUTED, 'center', 500);
+    strokeIcon(ctx, PERK_ICONS[self.ability], ax, ay - 6, 20, ready ? PALETTE.gold : MUTED, 2.2);
+    text(ctx, ready ? 'SPACE' : `${(self.abilityReadyIn / 1000).toFixed(1)}s`, ax, ay + 14, TYPE.micro, ready ? PALETTE.gold : HUD_INK, 'center', 800);
   } else {
     const [top, bottom] = abilityHint(self.pendingTier);
-    text(ctx, top, ax, ay - 6, 10, MUTED, 'center', 600);
-    text(ctx, bottom, ax, ay + 8, 10, MUTED, 'center', 500);
+    text(ctx, top, ax, ay - 6, TYPE.micro, MUTED, 'center', 600);
+    text(ctx, bottom, ax, ay + 8, TYPE.micro, MUTED, 'center', 600);
   }
 
-  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] ? [PERK_INFO[self.perks[t]!].name] : []));
+  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] ? [self.perks[t]!] : []));
   let cx = x;
-  for (const name of owned) {
-    ctx.font = `600 11px ${FONT}`;
-    const tw = ctx.measureText(name).width + 16;
-    panel(ctx, cx, y - 28, tw, 22);
-    text(ctx, name, cx + 8, y - 17, 11, INK);
-    cx += tw + 6;
+  for (const perk of owned) {
+    const name = PERK_INFO[perk].name;
+    setFont(ctx, 600, TYPE.label);
+    const tw = ctx.measureText(name).width + 34;
+    panel(ctx, cx, y - 30, tw, 24);
+    strokeIcon(ctx, PERK_ICONS[perk], cx + 14, y - 18, 14, PALETTE.gold, 2.4);
+    text(ctx, name, cx + 26, y - 18, TYPE.label, HUD_INK);
+    cx += tw + SPACE.sm - 2;
   }
 }
 

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /**
  *   node scripts/mock-server.ts 8787 &
- *   node scripts/drive.ts http://localhost:8787 <out-dir>
+ *   DESKTOP=1920x1080 node scripts/drive.ts http://localhost:8787 <out-dir>   (DESKTOP defaults to 1280x800)
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -13,6 +13,7 @@ const URL_ = process.argv[2] ?? 'http://localhost:8787';
 const OUT = process.argv[3] ?? join(tmpdir(), 'skirmish-shots');
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9333;
+const [DESKTOP_W, DESKTOP_H] = (process.env.DESKTOP ?? '1280x800').split('x').map(Number) as [number, number];
 mkdirSync(OUT, { recursive: true });
 
 const chrome = spawn(CHROME, [
@@ -97,7 +98,7 @@ await sleep(1200);
 await expect('menu fits phone width without horizontal scroll', `document.documentElement.scrollWidth <= innerWidth && document.getElementById('menu').scrollWidth <= innerWidth`);
 await shot('menu-phone');
 
-await viewport(1280, 800);
+await viewport(DESKTOP_W, DESKTOP_H);
 await cdp('Page.navigate', { url: URL_ });
 await sleep(1200);
 await expect('server list loaded', `document.querySelectorAll('#servers .server').length === 3`);
@@ -142,6 +143,8 @@ await mouse('mouseMoved', 900, 250);
 await key('Space', ' ', 80);
 await sleep(120);
 await shot('game-boom');
+await sleep(900);
+await shot('game-explosion');
 await chat('/walls');
 await chat('hello from the driver');
 await shot('game-ability');

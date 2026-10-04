@@ -25,7 +25,20 @@ test('impacts, sparks and booms are drawn on the render clock, even from my own 
     { e: 'kill', killer: 'a', victim: 'b', killerId: ME, victimId: 2, weapon: 'Pistol' },
   ]), 500, ME);
   assert.deepEqual(now, []);
-  assert.deepEqual(later.map((p) => p.fx.kind), ['impact', 'impact', 'boom'], 'kills are not world effects');
+  assert.deepEqual(later.map((p) => p.fx.kind), ['impact', 'impact', 'boom', 'death']);
+});
+
+test('a kill puffs where the killing blow landed, and a hit names its victim for the hit flash', () => {
+  const { later } = scheduleEffects(snapWith([
+    { e: 'dmg', attacker: ME, victim: 2, amount: 10, x: 5, y: 5, kind: 'player' },
+    { e: 'dmg', attacker: ME, victim: 2, amount: 90, x: 8, y: 9, kind: 'player' },
+    { e: 'dmg', attacker: ME, victim: 70, amount: 5, x: 1, y: 1, kind: 'crate' },
+    { e: 'kill', killer: 'a', victim: 'b', killerId: ME, victimId: 2, weapon: 'Pistol' },
+    { e: 'kill', killer: 'a', victim: 'c', killerId: ME, victimId: 3, weapon: 'Pistol' },
+  ]), 500, ME);
+  const fx = later.map((p) => p.fx);
+  assert.deepEqual(fx.filter((f) => f.kind === 'death'), [{ kind: 'death', x: 8, y: 9, victim: 2 }], 'no puff without a known blow');
+  assert.deepEqual(fx.filter((f) => f.kind === 'impact').map((f) => f.kind === 'impact' && f.victim), [2, 2, null], 'crates never flash a player');
 });
 
 test('a knife slash draws an arc at the strike point on the render clock, including my own', () => {

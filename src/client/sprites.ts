@@ -1,8 +1,11 @@
 import type { WeaponId } from '../shared/defs.ts';
+import { INK } from './palette.ts';
 
 type Part = { x: number; y: number; w: number; h: number; tone: 0 | 1 | 2 };
+type Point = readonly [x: number, y: number];
 
-const TONES = ['#2a2d34', '#454a55', '#6b7280'] as const;
+const TONES = ['#2a2d34', '#4a505c', '#7b8494'] as const;
+const OUTLINE = 0.16;
 
 export const GUN_PARTS: Record<WeaponId, readonly Part[]> = {
   pistol: [
@@ -38,8 +41,24 @@ export const GUN_PARTS: Record<WeaponId, readonly Part[]> = {
   ],
 };
 
+/** Where the rear (trigger) and fore hands hold each gun, in body radii from the body's center, facing +x. */
+export const GRIPS: Record<WeaponId, readonly [rear: Point, fore: Point]> = {
+  pistol: [[0.66, 0.2], [0.78, -0.18]],
+  smg: [[0.86, 0.3], [1.42, 0.02]],
+  shotgun: [[0.62, 0.18], [1.38, 0.17]],
+  assault: [[0.92, 0.32], [1.55, 0.0]],
+  sniper: [[0.66, 0.16], [1.5, 0.0]],
+  lmg: [[0.9, 0.36], [1.62, 0.04]],
+};
+
 export function drawGun(ctx: CanvasRenderingContext2D, weapon: WeaponId, radius: number, flat?: string) {
-  for (const p of GUN_PARTS[weapon]) {
+  const parts = GUN_PARTS[weapon];
+  if (!flat) {
+    const o = OUTLINE * radius;
+    ctx.fillStyle = INK;
+    for (const p of parts) ctx.fillRect(p.x * radius - o, p.y * radius - o, p.w * radius + o * 2, p.h * radius + o * 2);
+  }
+  for (const p of parts) {
     ctx.fillStyle = flat ?? TONES[p.tone];
     ctx.fillRect(p.x * radius, p.y * radius, p.w * radius, p.h * radius);
   }
