@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import { ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
-import type { World } from '../src/shared/sim/world.ts';
-import { emptyWorld, press, spawnAt, TICK_MS } from './helpers.ts';
+import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
+import type { Player, World } from '../src/shared/sim/world.ts';
+import { emptyWorld, equip, press, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = GUNS.pistol.damage;
 
@@ -92,4 +93,34 @@ test('kill events carry killer and victim ids', () => {
   const kill = fireAndCollect(w, a).find((e) => e.e === 'kill');
   assert.ok(kill?.e === 'kill');
   assert.deepEqual([kill.killerId, kill.victimId], [a.id, b.id]);
+});
+
+test('a player finished by their own blast gives the kill, bounty and team point to whoever hurt them most', () => {
+  const w = emptyWorld('TDM');
+  const most = spawnAt(w, 300, 300, { team: 'red', name: 'Most' });
+  const less = spawnAt(w, 300, 900, { team: 'red', name: 'Less' });
+  const victim = spawnAt(w, 900, 900, { team: 'blue', name: 'Victim' });
+  equip(victim, 'thunderclap');
+  const hurt = (by: Player, amount: number) => damagePlayer(w, victim, amount, { attacker: by, team: by.team, label: 'test', piercing: false, via: 'bullet', fromX: by.x, fromY: by.y });
+  hurt(less, 10);
+  hurt(most, 50);
+  w.events = [];
+  explode(w, victim.x, victim.y, 70, 200, { attacker: victim, team: victim.team, label: 'Thunderclap' });
+  const kill = w.events.find((e) => e.e === 'kill');
+  assert.equal(victim.life.k, 'dead');
+  assert.ok(kill?.e === 'kill');
+  assert.deepEqual({ killerId: kill.killerId, bounty: kill.bounty }, { killerId: most.id, bounty: true });
+  assert.deepEqual({ kills: most.kills, score: most.score, red: w.teamScore.red }, { kills: 1, score: WORLD.killScore + WORLD.bountyScore, red: 1 });
+  assert.deepEqual({ kills: less.kills, victimKills: victim.kills }, { kills: 0, victimKills: 0 });
+});
+
+test('a player who blows themselves up untouched credits nobody', () => {
+  const w = emptyWorld();
+  const victim = spawnAt(w, 900, 900);
+  const other = spawnAt(w, 300, 300);
+  explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Thunderclap' });
+  const kill = w.events.find((e) => e.e === 'kill');
+  assert.ok(kill?.e === 'kill');
+  assert.equal(kill.killerId, victim.id);
+  assert.deepEqual([victim.kills, other.kills, other.score], [0, 0, 0]);
 });

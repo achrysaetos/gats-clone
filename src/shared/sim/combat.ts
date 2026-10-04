@@ -47,15 +47,28 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
 
+/** A player finished by their own blast gives the kill to whoever hurt them most, so blowing yourself up never denies a kill or bounty. */
+function creditFor(w: World, victim: Player, killer: Player | null): Player | null {
+  if (killer?.id !== victim.id) return killer;
+  if (victim.life.k !== 'alive') return null;
+  let top: Player | null = null, most = 0;
+  for (const [id, dealt] of victim.life.damageBy) {
+    const p = w.players.get(id);
+    if (p && dealt > most) { top = p; most = dealt; }
+  }
+  return top;
+}
+
 function kill(w: World, victim: Player, killer: Player | null, label: string) {
-  const credited = killer?.id === victim.id ? null : killer;
+  const credited = creditFor(w, victim, killer);
+  const named = credited ?? killer;
   const bounty = credited !== null && isHunted(victim);
   const assisters = assistersOf(w, victim, credited);
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
   w.events.push({
-    e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label, bounty,
+    e: 'kill', killer: named?.name ?? '', victim: victim.name, killerId: named?.id ?? null, victimId: victim.id, weapon: label, bounty,
     assisters: assisters.map((p) => p.id),
   });
   for (const p of assisters) addScore(w, p, WORLD.assistScore);
