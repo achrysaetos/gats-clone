@@ -62,9 +62,6 @@ export function drawGun(ctx: CanvasRenderingContext2D, weapon: WeaponId, radius:
     ctx.fillStyle = flat ?? TONES[p.tone];
     ctx.fillRect(p.x * radius, p.y * radius, p.w * radius, p.h * radius);
   }
-  if (flat) return;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-  for (const p of parts) ctx.fillRect(p.x * radius, p.y * radius, p.w * radius, Math.min(p.h * radius, radius * 0.07));
 }
 
 export function muzzleTip(x: number, y: number, angle: number, weapon: WeaponId, radius: number) {

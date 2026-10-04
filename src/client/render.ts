@@ -69,14 +69,17 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawLetterbox(ctx, cam, dpr);
 }
 
-const BACKDROP = { zoom: 0.75, swayMs: 40_000, sway: 400, center: 1000 } as const;
+const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
 
 export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, now: number) {
-  const x = BACKDROP.center + BACKDROP.sway * Math.sin(now / BACKDROP.swayMs);
-  const y = BACKDROP.center + BACKDROP.sway * 0.5 * Math.cos(now / BACKDROP.swayMs);
-  const k = dpr * BACKDROP.zoom;
+  const zoom = Math.max(BACKDROP.zoom, w / (WORLD.size * BACKDROP.fill), h / (WORLD.size * BACKDROP.fill));
+  const viewW = w / zoom, viewH = h / zoom;
+  const freeX = WORLD.size - viewW, freeY = WORLD.size - viewH;
+  const x = freeX / 2 + (freeX / 2) * Math.sin(now / BACKDROP.swayMs);
+  const y = freeY / 2 + (freeY / 2) * 0.5 * Math.cos(now / BACKDROP.swayMs);
+  const k = dpr * zoom;
   ctx.setTransform(k, 0, 0, k, -x * k, -y * k);
-  drawFloor(ctx, WORLD.size, { x, y }, { x: x + w / BACKDROP.zoom, y: y + h / BACKDROP.zoom });
+  drawFloor(ctx, WORLD.size, { x, y }, { x: x + viewW, y: y + viewH });
 }
 
 function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
@@ -91,17 +94,19 @@ const SLAB_SPREAD = 0.028;
 const SLAB_COLORS = [0, -1, 1, -0.5].map((i) => shade(PALETTE.floor, 1 + i * SLAB_SPREAD));
 const PLAIN_SLABS = 0.55;
 const CRACKS_PER_SLAB = 0.08;
+const TONE_PATCH = 2 * SLAB;
 
-/** Per tone, flat [slabX, slabY, length] runs of same-tone slabs in a row, reused every frame. */
+/** Per tone, flat [patchX, patchY, length] runs of same-tone patches in a row, reused every frame. */
 const slabRuns: number[][] = SLAB_COLORS.map(() => []);
 
-type FloorPlan = { size: number; perRow: number; levels: number[]; cracks: number[][] };
+type FloorPlan = { size: number; patchesPerRow: number; levels: number[]; cracks: number[][] };
 let floorPlan: FloorPlan | null = null;
 
 function planFor(size: number): FloorPlan {
   if (floorPlan?.size !== size) {
-    const perRow = Math.ceil(size / SLAB);
-    floorPlan = { size, perRow, levels: slabLevels(7, perRow * perRow, SLAB_COLORS.length, PLAIN_SLABS), cracks: floorCracks(11, size, Math.round(perRow * perRow * CRACKS_PER_SLAB)) };
+    const patchesPerRow = Math.ceil(size / TONE_PATCH);
+    const slabs = (size / SLAB) ** 2;
+    floorPlan = { size, patchesPerRow, levels: slabLevels(7, patchesPerRow ** 2, SLAB_COLORS.length, PLAIN_SLABS), cracks: floorCracks(11, size, Math.round(slabs * CRACKS_PER_SLAB)) };
   }
   return floorPlan;
 }
@@ -130,14 +135,15 @@ function drawGround(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: 
 /** Axis-aligned fillRect stays on the rasterizer's fast path; one path of many rects does not. */
 function drawFloor(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: Point) {
   const plan = planFor(size);
-  const ix0 = Math.max(0, Math.floor(tl.x / SLAB)), ix1 = Math.min(plan.perRow - 1, Math.floor(br.x / SLAB));
-  const iy0 = Math.max(0, Math.floor(tl.y / SLAB)), iy1 = Math.min(plan.perRow - 1, Math.floor(br.y / SLAB));
-  if (ix1 < ix0 || iy1 < iy0) return;
+  const x0 = Math.max(0, tl.x), x1 = Math.min(size, br.x), y0 = Math.max(0, tl.y), y1 = Math.min(size, br.y);
+  if (x1 <= x0 || y1 <= y0) return;
   ctx.fillStyle = SLAB_COLORS[0]!;
-  ctx.fillRect(ix0 * SLAB, iy0 * SLAB, (ix1 - ix0 + 1) * SLAB, (iy1 - iy0 + 1) * SLAB);
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  const ix0 = Math.floor(x0 / TONE_PATCH), ix1 = Math.min(plan.patchesPerRow - 1, Math.floor(x1 / TONE_PATCH));
+  const iy0 = Math.floor(y0 / TONE_PATCH), iy1 = Math.min(plan.patchesPerRow - 1, Math.floor(y1 / TONE_PATCH));
   for (const runs of slabRuns) runs.length = 0;
   for (let iy = iy0; iy <= iy1; iy++) {
-    const row = iy * plan.perRow;
+    const row = iy * plan.patchesPerRow;
     for (let ix = ix0; ix <= ix1;) {
       const level = plan.levels[row + ix]!;
       let end = ix + 1;
@@ -149,9 +155,8 @@ function drawFloor(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: P
   for (let level = 1; level < SLAB_COLORS.length; level++) {
     const runs = slabRuns[level]!;
     ctx.fillStyle = SLAB_COLORS[level]!;
-    for (let i = 0; i < runs.length; i += 3) ctx.fillRect(runs[i]! * SLAB, runs[i + 1]! * SLAB, runs[i + 2]! * SLAB, SLAB);
+    for (let i = 0; i < runs.length; i += 3) ctx.fillRect(runs[i]! * TONE_PATCH, runs[i + 1]! * TONE_PATCH, runs[i + 2]! * TONE_PATCH, TONE_PATCH);
   }
-  const x0 = ix0 * SLAB, x1 = Math.min(size, (ix1 + 1) * SLAB), y0 = iy0 * SLAB, y1 = Math.min(size, (iy1 + 1) * SLAB);
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = PALETTE.speck;
   ctx.globalAlpha = 0.3;
@@ -164,8 +169,8 @@ function drawFloor(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: P
   ctx.stroke();
   ctx.globalAlpha = 1;
   ctx.fillStyle = PALETTE.seam;
-  for (let ix = ix0; ix <= ix1 + 1; ix++) ctx.fillRect(ix * SLAB - 1.25, y0, 2.5, y1 - y0);
-  for (let iy = iy0; iy <= iy1 + 1; iy++) ctx.fillRect(x0, iy * SLAB - 1.25, x1 - x0, 2.5);
+  for (let x = Math.ceil(x0 / SLAB) * SLAB; x <= x1; x += SLAB) ctx.fillRect(x - 1.25, y0, 2.5, y1 - y0);
+  for (let y = Math.ceil(y0 / SLAB) * SLAB; y <= y1; y += SLAB) ctx.fillRect(x0, y - 1.25, x1 - x0, 2.5);
 }
 
 function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
@@ -396,6 +401,7 @@ function drawPlayerShadows(ctx: CanvasRenderingContext2D, players: readonly Play
 }
 
 type PlayerLook = { self: boolean; friendly: boolean; flash: number };
+const HAND_R = R * 0.27;
 
 function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, look: PlayerLook) {
   ctx.save();
@@ -447,16 +453,16 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.globalAlpha = p.hidden ? 0.25 : 1;
   }
   ctx.rotate(p.angle);
-  const hand = shade(color, 0.85);
+  ctx.beginPath();
   for (const [hx, hy] of GRIPS[p.weapon]) {
-    ctx.beginPath();
-    ctx.arc(hx * R, hy * R, R * 0.27, 0, TAU);
-    ctx.fillStyle = hand;
-    ctx.fill();
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
+    ctx.moveTo(hx * R + HAND_R, hy * R);
+    ctx.arc(hx * R, hy * R, HAND_R, 0, TAU);
   }
+  ctx.fillStyle = shade(color, 0.85);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = INK;
+  ctx.stroke();
   ctx.rotate(-p.angle);
   if (look.friendly) {
     ctx.beginPath();

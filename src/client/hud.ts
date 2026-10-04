@@ -130,8 +130,11 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 
 /** Assigning ctx.font reparses the string every time, so skip the assignment when the HUD's last font is still set. */
 let hudFont = '';
+const fonts = new Map<number, string>();
 function setFont(ctx: CanvasRenderingContext2D, weight: number, size: number) {
-  const font = `${weight} ${size}px ${HUD_FONT}`;
+  const key = weight * 1000 + size;
+  let font = fonts.get(key);
+  if (!font) fonts.set(key, (font = `${weight} ${size}px ${HUD_FONT}`));
   if (font !== hudFont) { ctx.font = font; hudFont = font; }
 }
 
@@ -216,14 +219,13 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
       ctx.roundRect(x + 6, y - rowH / 2, pw - 12, rowH, 5);
       ctx.fill();
     }
-    text(ctx, String(i + 1), x + SPACE.md + 8, y, TYPE.label, MUTED, 'right', 600);
     if (r.team) {
       ctx.fillStyle = TEAM_COLORS[r.team];
       ctx.beginPath();
-      ctx.arc(x + 32, y, 4, 0, TAU);
+      ctx.arc(x + SPACE.md + 4, y, 4, 0, TAU);
       ctx.fill();
     }
-    text(ctx, r.name, x + (r.team ? 42 : 30), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
+    text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
     text(ctx, String(r.score), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
     y += rowH;
   });
