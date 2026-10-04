@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim.ts';
+import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 

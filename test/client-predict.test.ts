@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash, type Prediction } from '../src/client/predict.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
-import { IDLE_INPUT, setInput, snapshotFor, step, wallViews, type Motion, type Rect } from '../src/shared/sim.ts';
+import { IDLE_INPUT, setInput, snapshotFor, step, wallViews } from '../src/shared/sim.ts';
+import type { Motion, Rect } from '../src/shared/sim/movement.ts';
 import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
 const LATENCY_TICKS = 3;

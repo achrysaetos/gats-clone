@@ -3,9 +3,9 @@
 import { PERK_TIERS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import {
-  addPlayer, canRespawn, choosePerk, createWorld, IDLE_INPUT, rand, respawn, segmentEntersRectAt, setInput, snapshotFor, step, wallViews,
-  type World,
+  addPlayer, canRespawn, choosePerk, createWorld, IDLE_INPUT, rand, respawn, setInput, snapshotFor, step, wallViews, type World,
 } from '../src/shared/sim.ts';
+import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const minutes = Number(process.argv[2] ?? 10);

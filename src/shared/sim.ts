@@ -1,14 +1,17 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, HP_MULTIPLIER, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD,
-  type AbilityId, type ModeId, type PerkId, type PlayerKind, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, HP_MULTIPLIER, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type ModeId, type PerkId,
+  type PlayerKind, type Tier,
 } from './defs.ts';
-import type {
-  BulletView, CrateView, Dash, GameEvent, InputState, LeaderRow, Loadout, MatchView, PlayerView, SelfView, Snapshot,
-  Team, ThrownKind, ThrownView, WallView, ZoneView,
+import {
+  VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents, type BulletView, type CrateView, type Dash, type GameEvent, type InputState,
+  type LeaderRow, type Loadout, type MatchView, type PlayerView, type SelfView, type Snapshot, type Team, type ThrownKind,
+  type ThrownView, type WallView, type ZoneView,
 } from './protocol.ts';
-import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from './protocol.ts';
+import {
+  angleDiff, circleHitsRect, clamp, dist2, MAX_SUBSTEP, moveStep, rectsOverlap, segmentEntersCircleAt, segmentEntersRectAt,
+  startDash, type Rect,
+} from './sim/movement.ts';
 
-export type Rect = { x: number; y: number; w: number; h: number };
 export type Wall = Rect & { built: boolean; expiresAt: number };
 
 export type Life =
@@ -104,9 +107,6 @@ const REVEAL_MS = 2000;
 const CRATE_SIZE = 44;
 const CRATE_RESPAWN_MS = 15000;
 const BUILT_WALL_MS = 12000;
-const DASH_MS = 200;
-const DASH_DISTANCE = 240;
-const MAX_SUBSTEP = WORLD.playerRadius / 2;
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
 const ZONE_RADIUS = 180;
@@ -133,10 +133,7 @@ export function rand(w: World): number {
 }
 
 const newId = (w: World) => w.nextId++;
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
 const round1 = (v: number) => Math.round(v * 10) / 10;
-
 
 type PerkMods = {
   spreadMul?: number; stillSpreadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
@@ -216,7 +213,6 @@ export function abilityOf(p: Player): AbilityId | null {
   return p.perks[3] ?? null;
 }
 
-
 export type ModeRules = {
   assignTeam(w: World): Team;
   onKill(w: World, killer: Player, victim: Player): void;
@@ -282,11 +278,6 @@ export const MODES: Record<ModeId, ModeRules> = {
 const sameTeam = (a: Player, b: Player) => a.team !== null && a.team === b.team;
 const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b);
 
-
-function rectsOverlap(a: Rect, b: Rect, pad = 0) {
-  return a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
-}
-
 function zoneLayout(mode: ModeId): Zone[] {
   if (mode !== 'DOM') return [];
   const s = WORLD.size;
@@ -324,11 +315,6 @@ export function createWorld(mode: ModeId, seed: number): World {
 const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 const solidRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
 
-function circleHitsRect(x: number, y: number, r: number, b: Rect) {
-  const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
-  return dist2(x, y, cx, cy) < r * r;
-}
-
 function spawnPoint(w: World, team: Team): { x: number; y: number } {
   const s = WORLD.size, r = WORLD.playerRadius;
   const [lo, hi] = team === 'red' ? [0.05, 0.3] : team === 'blue' ? [0.7, 0.95] : [0.05, 0.95];
@@ -343,7 +329,6 @@ function spawnPoint(w: World, team: Team): { x: number; y: number } {
   }
   return { x: s / 2, y: s / 2 };
 }
-
 
 export type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
 
@@ -433,12 +418,7 @@ export function respawn(w: World, id: number, loadout: Loadout): boolean {
   return true;
 }
 
-
 export type DamageSource = { attacker: Player | null; label: string; piercing: boolean; fromX: number; fromY: number };
-
-function angleDiff(a: number, b: number) {
-  return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
-}
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k !== 'alive') return;
@@ -505,92 +485,6 @@ function explode(w: World, x: number, y: number, radius: number, maxDamage: numb
     if (circleHitsRect(x, y, radius, crateRect(c))) damageCrate(w, c, maxDamage, owner);
   }
 }
-
-
-export function segmentEntersCircleAt(px: number, py: number, dx: number, dy: number, cx: number, cy: number, r: number): number | null {
-  const fx = px - cx, fy = py - cy;
-  const a = dx * dx + dy * dy;
-  const b = 2 * (fx * dx + fy * dy);
-  const c = fx * fx + fy * fy - r * r;
-  if (c <= 0) return 0;
-  const disc = b * b - 4 * a * c;
-  if (disc < 0 || a === 0) return null;
-  const t = (-b - Math.sqrt(disc)) / (2 * a);
-  return t >= 0 && t <= 1 ? t : null;
-}
-
-export function segmentEntersRectAt(px: number, py: number, dx: number, dy: number, r: Rect): number | null {
-  let t0 = 0, t1 = 1;
-  for (const [p, d, lo, hi] of [[px, dx, r.x, r.x + r.w], [py, dy, r.y, r.y + r.h]] as const) {
-    if (d === 0) { if (p < lo || p > hi) return null; continue; }
-    let a = (lo - p) / d, b = (hi - p) / d;
-    if (a > b) [a, b] = [b, a];
-    t0 = Math.max(t0, a);
-    t1 = Math.min(t1, b);
-    if (t0 > t1) return null;
-  }
-  return t0;
-}
-
-export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): { x: number; y: number } {
-  const r = WORLD.playerRadius;
-  let x = clamp(nx, r, WORLD.size - r), y = clamp(ny, r, WORLD.size - r);
-  for (const b of solids) {
-    const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
-    const d2 = dist2(x, y, cx, cy);
-    if (d2 >= r * r) continue;
-    if (d2 > 0) {
-      const d = Math.sqrt(d2);
-      x = cx + ((x - cx) / d) * r;
-      y = cy + ((y - cy) / d) * r;
-    } else {
-      const exits = [
-        { x: b.x - r, y, depth: x - b.x },
-        { x: b.x + b.w + r, y, depth: b.x + b.w - x },
-        { x, y: b.y - r, depth: y - b.y },
-        { x, y: b.y + b.h + r, depth: b.y + b.h - y },
-      ];
-      const shallowest = exits.reduce((m, o) => (o.depth < m.depth ? o : m));
-      x = shallowest.x;
-      y = shallowest.y;
-    }
-  }
-  return { x: clamp(x, r, WORLD.size - r), y: clamp(y, r, WORLD.size - r) };
-}
-
-type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
-export type Motion = { x: number; y: number; dash: Dash | null };
-
-const keyAxes = (keys: MoveKeys) => ({ mx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0), my: (keys.down ? 1 : 0) - (keys.up ? 1 : 0) });
-
-export function startDash(input: MoveKeys & Pick<InputState, 'angle'>): Dash {
-  const { mx, my } = keyAxes(input);
-  const len = Math.hypot(mx, my);
-  return len > 0
-    ? { dirX: mx / len, dirY: my / len, leftMs: DASH_MS }
-    : { dirX: Math.cos(input.angle), dirY: Math.sin(input.angle), leftMs: DASH_MS };
-}
-
-function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number): { x: number; y: number } {
-  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / MAX_SUBSTEP));
-  let at = { x, y };
-  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps);
-  return at;
-}
-
-export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number): Motion {
-  const { dash } = from;
-  if (dash) {
-    const d = (DASH_DISTANCE * Math.min(dtMs, dash.leftMs)) / DASH_MS;
-    const leftMs = dash.leftMs - dtMs;
-    return { ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d), dash: leftMs > 0 ? { ...dash, leftMs } : null };
-  }
-  const { mx, my } = keyAxes(keys);
-  if (mx === 0 && my === 0) return from;
-  const d = (speed * dtMs) / 1000 / Math.hypot(mx, my);
-  return { ...slide(solids, from.x, from.y, mx * d, my * d), dash: null };
-}
-
 
 const GRENADE_FUSE_MS = 900;
 export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
@@ -722,8 +616,6 @@ function tickThrown(w: World, dt: number) {
   }
   w.thrown = keep;
 }
-
-
 
 function consumePresses(p: Player): boolean {
   const pressed = p.input.shots > p.shotsSeen;
@@ -892,7 +784,6 @@ export function step(w: World, dtMs: number): void {
   tickMatch(w, dtMs);
   recordPoses(w);
 }
-
 
 export function wallViews(w: World): WallView[] {
   return w.walls.map(({ x, y, w: ww, h, built }) => ({ x, y, w: ww, h, built }));
