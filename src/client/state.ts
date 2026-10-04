@@ -1,6 +1,7 @@
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
+import type { Moments } from './moments.ts';
 import type { SnapBuffer } from './interp.ts';
 import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
@@ -37,6 +38,7 @@ export type Session = {
   effects: Effect[];
   pendingFx: PendingEffect[];
   feedback: Feedback;
+  moments: Moments;
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;

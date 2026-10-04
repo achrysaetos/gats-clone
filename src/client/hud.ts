@@ -5,6 +5,7 @@ import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
+import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
 import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
@@ -58,6 +59,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   drawMinimap(hud, compact ? 110 : 170);
   drawScore(hud, compact);
   if (me?.alive) drawVitals(hud);
+  drawScorePopups(hud);
+  drawCallouts(hud);
   drawHitmarker(hud, crosshair);
   drawAssist(hud, crosshair);
 }
@@ -108,8 +111,50 @@ function drawAssist({ ctx, s, now }: Hud, at: Point) {
   const k = (now - assist.born) / ASSIST_MS;
   if (k < 0 || k >= 1) return;
   ctx.globalAlpha = 1 - k * k;
-  text(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 30 - 18 * k, TYPE.body, PALETTE.gold, 'center', 800);
+  outlined(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 34 - 18 * k, 17, PALETTE.gold, 850);
   ctx.globalAlpha = 1;
+}
+
+function drawScorePopups({ ctx, s, now, cam }: Hud) {
+  for (const p of s.moments.popups) {
+    const k = (now - p.born) / POPUP_MS;
+    if (k < 0 || k >= 1) continue;
+    const at = worldToScreen(cam, p);
+    ctx.globalAlpha = 1 - k * k * k;
+    outlined(ctx, `+${p.amount}`, at.x, at.y - 40 - 50 * k, Math.round(22 + 6 * Math.max(0, 1 - k * 5)), PALETTE.gold, 900);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const CALLOUT_GAP = 54;
+
+function drawCallouts({ ctx, w, h, s, now, selfAt }: Hud) {
+  let row = 0;
+  for (const c of s.moments.callouts) {
+    const age = now - c.born;
+    if (age < 0 || age >= CALLOUT_MS) continue;
+    if (c.ring && age < RING_MS) drawRingBurst(ctx, selfAt, c.color, age);
+    const pop = 1 + 0.35 * Math.max(0, 1 - age / 160);
+    ctx.globalAlpha = Math.min(1, age / 90, (CALLOUT_MS - age) / 450);
+    const y = h * 0.26 + row * CALLOUT_GAP;
+    outlined(ctx, c.title, w / 2, y, Math.round(30 * pop), c.color, 900);
+    outlined(ctx, c.line, w / 2, y + 24, TYPE.body + 1, HUD_INK, 650);
+    row++;
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRingBurst(ctx: CanvasRenderingContext2D, at: Point, color: string, age: number) {
+  for (const lag of [0, 140]) {
+    const k = (age - lag) / (RING_MS - lag);
+    if (k <= 0 || k >= 1) continue;
+    ctx.globalAlpha = 1 - k;
+    ctx.lineWidth = 7 * (1 - k) + 1;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, 24 + 130 * (1 - (1 - k) ** 3), 0, TAU);
+    ctx.stroke();
+  }
 }
 
 function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
@@ -177,6 +222,18 @@ function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, si
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
+  ctx.fillText(s, x, y);
+}
+
+function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, weight: number) {
+  setFont(ctx, weight, size);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(3, size / 5);
+  ctx.strokeStyle = 'rgba(10, 11, 14, 0.85)';
+  ctx.strokeText(s, x, y);
+  ctx.fillStyle = color;
   ctx.fillText(s, x, y);
 }
 

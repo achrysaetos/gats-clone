@@ -7,6 +7,7 @@ import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts'
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
+import { addMoments, NO_MOMENTS } from './moments.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
@@ -225,7 +226,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
+    effects: [], pendingFx: [], feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
   };
 }
 
@@ -244,6 +245,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.predict = reconcile(s.predict, server, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
+  s.moments = addMoments(s.moments, prev, snap, now);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));

@@ -70,6 +70,20 @@ test('level-up plays once per newly pending pick', () => {
   assert.deepEqual(ids(t(1), t(2)), ['levelup'], 'the next pick opening right after one is made still announces itself');
 });
 
+test('an evolution plays its own cue, a perk pick a smaller confirm, and neither replays on respawn', () => {
+  assert.deepEqual(ids(snap({ me: { gun: 'pistol' } }), snap({ me: { gun: 'handCannon' } })), ['evolve']);
+  assert.deepEqual(ids(snap({ me: { gun: 'handCannon', alive: false } }), snap({ me: { gun: 'pistol' } })), [], 'respawning is not an evolution');
+  assert.deepEqual(ids(snap(), snap({ self: { perks: { 1: 'grip' } } })), ['perk']);
+  assert.deepEqual(ids(snap({ self: { perks: { 1: 'grip' } } }), snap({ self: { perks: { 1: 'grip' } } })), [], 'a kept perk is silent');
+  assert.ok(SOUNDS.evolve.length > SOUNDS.perk.length, 'the evolution cue is the bigger one');
+});
+
+test('a bounty kill plays the bounty cue in place of the plain kill confirm', () => {
+  const kill = (bounty: boolean): GameEvent => ({ e: 'kill', killer: ME, victim: 'p2', killerId: 1, victimId: 2, weapon: 'Pistol', bounty, assisters: [] });
+  assert.deepEqual(ids(snap(), snap({ events: [kill(true)] })), ['bounty']);
+  assert.deepEqual(ids(snap(), snap({ events: [kill(false)] })), ['kill']);
+});
+
 test('reload plays when reloading starts, not while it continues', () => {
   const r = (reloading: boolean) => snap({ self: { reloading } });
   assert.deepEqual(ids(r(false), r(true)), ['reload']);

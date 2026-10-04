@@ -4,7 +4,7 @@ import { selfOf } from './derive.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'death' | 'reload' | 'levelup' | 'click';
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click';
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
@@ -72,6 +72,13 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
   reload: [{ src: 'noise', filter: 'highpass', q: 1, cutoffHz: [3000, 3000], ms: 40, gain: 0.25 }, { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [2200, 2200], ms: 50, gain: 0.25, delayMs: 110 }],
   levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22)],
+  evolve: [
+    { src: 'tone', wave: 'sawtooth', pitchHz: [180, 720], ms: 420, gain: 0.16 },
+    note(392, 60, 120, 0.18), note(587, 170, 120, 0.2), note(784, 280, 380, 0.24),
+    { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [6000, 9000], ms: 500, gain: 0.12, delayMs: 280 },
+  ],
+  perk: [{ src: 'tone', wave: 'triangle', pitchHz: [660, 660], ms: 60, gain: 0.22 }, { src: 'tone', wave: 'triangle', pitchHz: [990, 990], ms: 90, gain: 0.22, delayMs: 60 }],
+  bounty: [note(988, 0, 80, 0.22), note(1319, 80, 320, 0.24), { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [7000, 7000], ms: 200, gain: 0.1, delayMs: 80 }],
   click: [{ src: 'tone', wave: 'square', pitchHz: [1800, 1800], ms: 18, gain: 0.15 }],
 };
 
@@ -95,7 +102,9 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       }
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1 }); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
-      case 'kill': if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine('kill'); break;
+      case 'kill':
+        if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(ev.bounty ? 'bounty' : 'kill');
+        break;
     }
   }
   if (!prev) return cues;
@@ -106,6 +115,8 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       const damageFrac = Math.min(1, damage / me.maxHp);
       cues.push({ id: 'hurt', ...at, self: true, gain: 0.5 + 0.5 * damageFrac, damageFrac });
     }
+    if (GUNS[me.gun].stage > GUNS[was.gun].stage) mine('evolve');
+    if (Object.keys(next.self.perks).length > Object.keys(prev.self.perks).length) mine('perk');
   }
   if (next.self.reloading && !prev.self.reloading) mine('reload');
   if (next.self.pending !== null && next.self.pending.level !== prev.self.pending?.level) mine('levelup');
