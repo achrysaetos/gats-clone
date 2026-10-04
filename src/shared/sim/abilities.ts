@@ -22,12 +22,15 @@ function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
 }
 
 const KNIFE_DAMAGE = 75;
+const MAX_MINES = 2;
 
 export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
   gasGrenade: throwGrenade('gasGrenade'),
   landMine: (w, p) => {
+    const mines = w.thrown.filter((t) => t.kind === 'landMine' && t.owner === p.id);
+    if (mines.length >= MAX_MINES) w.thrown = w.thrown.filter((t) => t !== mines[0]);
     w.thrown.push({ id: newId(w), kind: 'landMine', owner: p.id, x: p.x, y: p.y, armedAt: w.now + 600, expiresAt: w.now + 60000 });
     return true;
   },
@@ -86,7 +89,7 @@ export function tickThrown(w: World, dt: number) {
         break;
       }
       case 'landMine': {
-        if (w.now >= t.expiresAt || !owner) break;
+        if (w.now >= t.expiresAt || owner?.life.k !== 'alive') break;
         const tripped = w.now >= t.armedAt && [...w.players.values()].some(
           (p) => p.life.k === 'alive' && isEnemy(owner, p) && dist2(p.x, p.y, t.x, t.y) < (WORLD.playerRadius + 30) ** 2,
         );

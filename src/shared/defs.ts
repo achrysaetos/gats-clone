@@ -180,7 +180,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   grenade: { name: 'Grenade', desc: 'Thrown explosive' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
-  landMine: { name: 'Land mine', desc: 'Hidden explosive at your feet' },
+  landMine: { name: 'Land mine', desc: 'Hidden explosive at your feet, two at a time' },
   knife: { name: 'Knife', desc: 'Lunge melee strike' },
   engineer: { name: 'Engineer', desc: 'Build a wall' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
