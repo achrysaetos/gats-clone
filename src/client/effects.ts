@@ -9,7 +9,6 @@ export const HIT_FLASH_MS = 120;
 
 const IMPACT_BURST: Record<'wall' | 'crate' | 'player', BurstKind> = { wall: 'spark', crate: 'splinter', player: 'hit' };
 
-/** Starts an effect and throws its particles; `tint` colors part of a death puff in the victim's body color. */
 export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: string) {
   s.effects.push({ ...spec, born: now } as Effect);
   const angle = Math.random() * TAU;
@@ -26,7 +25,6 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
   }
 }
 
-/** The newest hit-flash start per victim, from live player impacts. */
 export function hitFlashes(effects: readonly Effect[], now: number): Map<number, number> {
   const flashes = new Map<number, number>();
   for (const fx of effects) {

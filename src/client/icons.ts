@@ -1,6 +1,5 @@
 import type { PerkId } from '../shared/defs.ts';
 
-/** Stroke-only icons on a 24-unit grid. One table feeds both the canvas HUD (Path2D) and the DOM perk tiles (inline SVG). */
 export const PERK_ICONS: Record<PerkId, string> = {
   bipod: 'M3 8h18M8 8l-4 12M16 8l4 12M12 8V4',
   optics: 'M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 2v7M12 15v7M2 12h7M15 12h7',
@@ -27,13 +26,10 @@ export const PERK_ICONS: Record<PerkId, string> = {
 export const UI_ICONS = {
   heart: 'M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 4-3 7-10 13z',
   armor: 'M12 2l8 3v7c0 5-4 9-8 10-4-1-8-5-8-10V5z',
-  ammo: 'M9 22V9l1.5-5h3L15 9v13zM9 13h6',
-  skull: 'M5 11a7 7 0 1 1 14 0v4h-3v4H8v-4H5zM9 12h.01M15 12h.01',
 } as const;
 
 const paths = new Map<string, Path2D>();
 
-/** Strokes a 24-grid icon centered at (x, y), `size` pixels across. */
 export function strokeIcon(ctx: CanvasRenderingContext2D, d: string, x: number, y: number, size: number, color: string, width = 2.2) {
   let path = paths.get(d);
   if (!path) paths.set(d, (path = new Path2D(d)));

@@ -1,7 +1,6 @@
 import { COLORS, type ArmorId } from '../shared/defs.ts';
 import type { Team } from '../shared/protocol.ts';
 
-/** One outline color for every world object, so bodies, walls, crates and grenades read as one drawn set. */
 export const INK = '#1b1d22';
 
 export const PALETTE = {
@@ -39,7 +38,6 @@ export const PALETTE = {
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };
 
-/** Armor band width inside the body outline, in world units: the heavier the armor, the thicker the band. */
 export const ARMOR_BAND: Record<ArmorId, number> = { none: 0, light: 4.5, medium: 7, heavy: 9.5 };
 
 export function shade(hex: string, f: number): string {

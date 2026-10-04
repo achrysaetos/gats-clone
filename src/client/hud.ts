@@ -9,10 +9,9 @@ import { PALETTE, TEAM_COLORS } from './palette.ts';
 import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
 
-export const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-/** The one type scale and spacing scale shared by every HUD panel, in CSS pixels. */
-export const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 22 } as const;
-export const SPACE = { xs: 4, sm: 8, md: 12, lg: 16 } as const;
+const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 22 } as const;
+const SPACE = { sm: 8, md: 12, lg: 16 } as const;
 const HUD_INK = '#f2f3f5';
 const MUTED = '#9ba2ae';
 const PANEL_FILL = 'rgba(17, 19, 24, 0.8)';

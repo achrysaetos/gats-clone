@@ -16,7 +16,6 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-/** A tone per floor slab, row-major: 0 (the plain floor) for about `plainShare` of slabs, otherwise 1..tones-1. */
 export function slabLevels(seed: number, count: number, tones: number, plainShare: number): number[] {
   const rand = seededRandom(seed);
   return Array.from({ length: count }, () => (rand() < plainShare ? 0 : 1 + Math.floor(rand() * (tones - 1))));
@@ -111,7 +110,6 @@ export function crateSprite(size: number, damage: CrateDamage, pxPerUnit: number
   return { image, pad: CRATE_PAD };
 }
 
-/** Hairline floor cracks as world-space polylines, seeded so every client sees the same floor. */
 export function floorCracks(seed: number, worldSize: number, count: number): number[][] {
   const rand = seededRandom(seed);
   return Array.from({ length: count }, () => {

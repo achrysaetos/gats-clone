@@ -7,10 +7,9 @@ export type Particle = {
   size: number; grow: number; color: string; shape: ParticleShape;
 };
 
-/** A ring of preallocated slots: emitting overwrites the oldest slot, so the live count can never pass the capacity. */
 export type ParticlePool = { readonly slots: readonly Particle[]; next: number };
 
-export const PARTICLE_CAP = 320;
+const PARTICLE_CAP = 320;
 
 const deadParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 0, born: -Infinity, life: 0, size: 0, grow: 0, color: '', shape: 'chip' });
 
