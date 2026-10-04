@@ -52,7 +52,6 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
 
-/** Damage taken from each attacker since `since`. */
 function damageSince(hits: readonly { by: number; at: number; dealt: number }[], since: number): Map<number, number> {
   const by = new Map<number, number>();
   for (const h of hits) if (h.at >= since) by.set(h.by, (by.get(h.by) ?? 0) + h.dealt);
