@@ -19,6 +19,8 @@ export type Life =
     lastMoveAt: number;
     dash: Dash | null;
     pressUntil: number;
+    /** Health and armor each attacker has taken off this life, for assists. */
+    damageBy: Map<number, number>;
   }
   | { k: 'dead'; respawnAt: number };
 
@@ -46,6 +48,8 @@ export type Player = {
   deaths: number;
   lifeKills: number;
   revealedUntil: number;
+  /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
+  huntedPing: (Pose & { at: number }) | null;
   abilityReadyAt: number;
 };
 
@@ -53,7 +57,8 @@ export type PerkOfTier<T extends Tier> = (typeof PERK_TIERS)[T][number];
 export type ChosenPerks = { [T in Tier]?: PerkOfTier<T> };
 
 export type Bullet = {
-  id: number; owner: number; x: number; y: number; vx: number; vy: number;
+  /** `team` is the owner's at the time of firing, so the round still spares teammates after its owner leaves. */
+  id: number; owner: number; team: Team; x: number; y: number; vx: number; vy: number;
   left: number; damage: number; piercing: boolean; label: string;
   gun: GunId | null;
   /** Players it can still pass through, and the ones it already has. */
@@ -64,9 +69,9 @@ export type Bullet = {
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null };
 
 export type Thrown =
-  | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; x: number; y: number; vx: number; vy: number; explodeAt: number }
-  | { id: number; kind: 'landMine'; owner: number; x: number; y: number; armedAt: number; expiresAt: number }
-  | { id: number; kind: 'gasCloud'; owner: number; x: number; y: number; expiresAt: number };
+  | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
+  | { id: number; kind: 'landMine'; owner: number; team: Team; x: number; y: number; armedAt: number; expiresAt: number }
+  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; expiresAt: number };
 
 export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
@@ -95,6 +100,8 @@ export type World = {
   teamScore: { red: number; blue: number };
   match: Match;
   events: GameEvent[];
+  /** Events raised between ticks, such as by a pick; the next step ships them. */
+  queuedEvents: GameEvent[];
   lifeRecords: LifeRecord[];
   /** Recent player positions, oldest first, so a shot can be judged against the world its shooter saw. */
   history: PoseFrame[];
@@ -118,14 +125,15 @@ export function rand(w: World): number {
 
 export const newId = (w: World) => w.nextId++;
 
-export const sameTeam = (a: Player, b: Player) => a.team !== null && a.team === b.team;
+export const friendly = (team: Team, p: Player) => team !== null && team === p.team;
+export const sameTeam = (a: Player, b: Player) => friendly(a.team, b);
 export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b);
 
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
-    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [], history: [],
+    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], history: [],
   };
   loadMap(w, map);
   return w;

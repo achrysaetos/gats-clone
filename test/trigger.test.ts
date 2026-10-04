@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { GUNS } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { respawn, step } from '../src/shared/sim.ts';
-import { emptyWorld, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const ammoOf = (p: { life: { k: string; ammo?: number } }) => (p.life.k === 'alive' ? p.life.ammo! : -1);
 
@@ -42,6 +42,33 @@ test('a press landing just before the cooldown ends fires as soon as the weapon 
   assert.equal(start - ammoOf(p), 2);
 });
 
+test('a press during the cooldown is held and fires once the weapon is ready; a second one adds nothing', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500);
+  const start = ammoOf(p);
+  press(w, p, { shots: 1 });
+  step(w, TICK_MS);
+  press(w, p, { shots: 2 });
+  run(w, 2 * TICK_MS);
+  press(w, p, { shots: 3 });
+  run(w, GUNS.pistol.fireMs);
+  assert.equal(start - ammoOf(p), 2, 'the first press and one held press');
+  run(w, 1000);
+  assert.equal(start - ammoOf(p), 2, 'the held press fired once');
+});
+
+test('a press during a burst fires the next burst once the burst and its cooldown end', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500);
+  equip(p, 'machinePistol');
+  const start = ammoOf(p);
+  press(w, p, { shots: 1 });
+  step(w, TICK_MS);
+  press(w, p, { shots: 2 });
+  run(w, 2 * GUNS.machinePistol.fireMs);
+  assert.equal(start - ammoOf(p), 2 * GUNS.machinePistol.burst!.count);
+});
+
 test('a tap on an automatic weapon fires one shot; holding keeps firing', () => {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500, { loadout: { weapon: 'smg' } });
@@ -77,4 +104,14 @@ test('input parser keeps shots as a non-negative integer and defaults it when ab
   assert.equal(parsed({ shots: -3 }), 0);
   assert.equal(parsed({}), 0);
   assert.equal(parsed({ shots: 'many' }), null);
+});
+
+test('a held automatic fires at its own rate, not rounded up to the tick', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500, { loadout: { weapon: 'lmg' } });
+  assert.notEqual(GUNS.lmg.fireMs % TICK_MS, 0, 'the interval falls between ticks');
+  const start = ammoOf(p);
+  press(w, p, { fire: true, shots: 1 });
+  run(w, 3000);
+  assert.ok(Math.abs(start - ammoOf(p) - 3000 / GUNS.lmg.fireMs) <= 1, `${start - ammoOf(p)} shots in 3s at ${GUNS.lmg.fireMs}ms`);
 });

@@ -144,7 +144,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     next.engaged = null;
     // The minimap shows enemies who fired lately, so an idle bot heads for the shooting, the hunted first.
     const heard = snap.minimap.filter((m) => me.team === null || m.team !== me.team);
-    const lead = snap.zones.length === 0 ? nearest(me, heard.filter((m) => m.hunted)) ?? nearest(me, heard) : null;
+    const lead = snap.zones.length === 0 ? nearest(me, heard.filter((m) => m.pingAge !== null)) ?? nearest(me, heard) : null;
     if (lead) { goX = lead.x; goY = lead.y; }
     const crate = snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading ? crateInSight(me, snap.crates, walls, range * 0.95, snap.self.viewRadius) : null;
     if (crate) {

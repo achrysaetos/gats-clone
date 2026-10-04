@@ -57,7 +57,7 @@ test('the blast reaches exactly the bodies the ring touches', () => {
     const reach = BLAST_RADIUS[kind] + WORLD.playerRadius;
     const inside = spawnAt(w, 1000 + reach - 2, 1000);
     const outside = spawnAt(w, 1000, 1000 + reach + 2);
-    w.thrown.push({ id: 999, kind, owner: owner.id, x: 1000, y: 1000, vx: 0, vy: 0, explodeAt: w.now });
+    w.thrown.push({ id: 999, kind, owner: owner.id, team: owner.team, x: 1000, y: 1000, vx: 0, vy: 0, explodeAt: w.now });
     step(w, TICK_MS);
     assert.ok(hpOf(inside) < WORLD.baseHp, `${kind}: a body whose edge is inside the ring is hurt`);
     assert.equal(hpOf(outside), WORLD.baseHp, `${kind}: a body just outside the ring is untouched`);

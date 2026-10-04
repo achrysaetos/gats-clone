@@ -4,28 +4,21 @@ import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep } from './sim/movement.ts';
-import { abilityOf, effectiveStats, resetProgress } from './sim/stats.ts';
-import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Life, type Player, type World } from './sim/world.ts';
+import { abilityOf, effectiveStats, freshLife, isHunted, resetProgress } from './sim/stats.ts';
+import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
+const HUNTED_PING_MS = 2500;
 const PRESS_GRACE_MS = 100;
 
 type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
-
-function freshLife(p: Player, now: number): Life {
-  const s = effectiveStats(p);
-  return {
-    k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity,
-  };
-}
 
 export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPlayerOpts = {}): Player {
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
-    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
+    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
   spawn(w, p, loadout, opts.at);
@@ -79,7 +72,11 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const pressed = consumePresses(p);
   const life = p.life;
   if (life.k !== 'alive') return;
-  if (pressed) life.pressUntil = w.now + PRESS_GRACE_MS;
+  const gun = GUNS[p.gun];
+  if (pressed) {
+    const readyAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
+    life.pressUntil = Math.max(w.now, readyAt) + PRESS_GRACE_MS;
+  }
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
@@ -99,7 +96,6 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.burstLeft = 0;
   }
 
-  const gun = GUNS[p.gun];
   const armed = w.match.k === 'playing';
   const bursting = life.burstLeft > 0;
   const wantsShot = bursting || w.now <= life.pressUntil || (gun.auto && inp.fire);
@@ -110,20 +106,25 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     }
     life.ammo--;
     life.burstLeft = life.ammo > 0 ? life.burstLeft - 1 : 0;
-    life.nextFireAt = w.now + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
+    // Carry the part of the interval that fell between ticks, so a held trigger keeps the gun's rate rather than the tick's.
+    const from = w.now - life.nextFireAt < dtMs ? life.nextFireAt : w.now;
+    life.nextFireAt = from + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
     const muzzle = WORLD.playerRadius + 4;
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, MAX_REWIND_MS);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * stats.spread * 2;
       const b: Bullet = {
-        id: newId(w), owner: p.id, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
+        id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
         left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
         gun: p.gun, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }
-    if (!stats.silenced) p.revealedUntil = w.now + REVEAL_MS;
+    if (!stats.silenced) {
+      p.revealedUntil = w.now + REVEAL_MS;
+      if (isHunted(p)) p.huntedPing = { x: p.x, y: p.y, at: w.now };
+    }
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
   }
 
@@ -137,12 +138,19 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 }
 
+function pingHunted(w: World, p: Player) {
+  if (p.life.k !== 'alive' || !isHunted(p)) p.huntedPing = null;
+  else if (!p.huntedPing || w.now - p.huntedPing.at >= HUNTED_PING_MS) p.huntedPing = { x: p.x, y: p.y, at: w.now };
+}
+
 export function step(w: World, dtMs: number): void {
-  w.events = [];
+  w.events = w.queuedEvents;
+  w.queuedEvents = [];
   w.now += dtMs;
   w.tick++;
   const dt = dtMs / 1000;
   for (const p of w.players.values()) tickPlayer(w, p, dtMs);
+  for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);
   tickThrown(w, dt);
   for (const c of w.crates) {

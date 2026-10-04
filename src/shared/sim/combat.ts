@@ -1,28 +1,34 @@
-import { ARMORS, WORLD } from '../defs.ts';
+import { ARMORS, HP_MULTIPLIER, WORLD } from '../defs.ts';
+import type { Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
-import { angleDiff, circleHitsRect, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
+import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
-import { crateRect, sameTeam, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
+import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
-const SHIELD_BLOCK = 0.6;
-const SHIELD_ARC = Math.PI / 3;
+const SHIELD_BLOCK = 0.35;
+const SHIELD_ARC = (40 * Math.PI) / 180;
 /** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
 export const MAX_REWIND_MS = 350;
 const TICK_MS = 1000 / WORLD.tickHz;
+const OWN_BLAST_SHARE = 0.5;
+const ASSIST_SHARE = 0.3;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
-type DamageSource = { attacker: Player | null; label: string; piercing: boolean; fromX: number; fromY: number };
+/** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
+type Culprit = { attacker: Player | null; team: Team; label: string };
+/** A shield stops only bullets, and only a blast hurts its own attacker. */
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas'; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
-  if (victim.life.k !== 'alive') return;
+  if (victim.life.k !== 'alive' || w.match.k === 'over') return;
   const a = src.attacker;
-  if (a && (a.id === victim.id || sameTeam(a, victim))) return;
+  if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
   const life = victim.life;
   const before = life.hp + life.armor;
   const stats = effectiveStats(victim);
-  if (stats.shield) {
+  if (stats.shield && src.via === 'bullet') {
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
@@ -31,24 +37,43 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     life.armor -= absorbed;
     amount -= absorbed;
   }
-  life.hp -= amount;
+  // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace; armor is not multiplied, so this follows absorption.
+  life.hp -= amount * (a?.kind === 'human' ? HP_MULTIPLIER[victim.kind] : 1);
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp) - life.armor;
+  if (a && a.id !== victim.id) life.damageBy.set(a.id, (life.damageBy.get(a.id) ?? 0) + dealt);
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
 
 function kill(w: World, victim: Player, killer: Player | null, label: string) {
-  const bounty = killer !== null && isHunted(victim);
+  const credited = killer?.id === victim.id ? null : killer;
+  const bounty = credited !== null && isHunted(victim);
+  const assisters = assistersOf(w, victim, credited);
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
-  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label, bounty });
-  if (!killer) return;
-  killer.kills++;
-  killer.lifeKills++;
-  addScore(w, killer, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
-  if (w.match.k === 'playing') MODES[w.mode].onKill(w, killer, victim);
+  w.events.push({
+    e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label, bounty,
+    assisters: assisters.map((p) => p.id),
+  });
+  for (const p of assisters) addScore(w, p, WORLD.assistScore);
+  if (!credited) return;
+  credited.kills++;
+  credited.lifeKills++;
+  addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
+  MODES[w.mode].onKill(w, credited, victim);
+}
+
+function assistersOf(w: World, victim: Player, killer: Player | null): Player[] {
+  if (victim.life.k !== 'alive') return [];
+  const enough = ASSIST_SHARE * effectiveStats(victim).maxHp;
+  return [...victim.life.damageBy]
+    .filter(([id, dealt]) => id !== killer?.id && dealt >= enough)
+    .flatMap(([id]) => {
+      const p = w.players.get(id);
+      return p?.life.k === 'alive' ? [p] : [];
+    });
 }
 
 function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null) {
@@ -63,44 +88,63 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   if (attacker) addScore(w, attacker, WORLD.crateScore);
 }
 
-export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, owner: Player | null, label: string) {
+/** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
+type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[] };
+const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
+
+const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) =>
+  walls.some((wall) => segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
+
+export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, by: Culprit, view: View = liveView(w)) {
   w.events.push({ e: 'boom', x, y, r: radius });
   for (const p of w.players.values()) {
-    const d = Math.sqrt(dist2(p.x, p.y, x, y));
-    if (d > radius + WORLD.playerRadius) continue;
-    const dmg = maxDamage * (1 - Math.max(0, d - WORLD.playerRadius) / radius);
-    damagePlayer(w, p, dmg, { attacker: owner, label, piercing: false, fromX: x, fromY: y });
+    const at = view.poseOf(p);
+    if (!at) continue;
+    const d = Math.sqrt(dist2(at.x, at.y, x, y));
+    if (d > radius + WORLD.playerRadius || sheltered(view.walls, x, y, at.x, at.y)) continue;
+    const dmg = maxDamage * (1 - Math.max(0, d - WORLD.playerRadius) / radius) * (p === by.attacker ? OWN_BLAST_SHARE : 1);
+    damagePlayer(w, p, dmg, { ...by, piercing: false, via: 'blast', fromX: x, fromY: y });
   }
   for (const c of w.crates) {
-    if (circleHitsRect(x, y, radius, crateRect(c))) damageCrate(w, c, maxDamage, owner);
+    const r = crateRect(c);
+    const nx = clamp(x, r.x, r.x + r.w), ny = clamp(y, r.y, r.y + r.h);
+    const d = Math.sqrt(dist2(x, y, nx, ny));
+    if (d >= radius || sheltered(view.walls, x, y, nx, ny)) continue;
+    damageCrate(w, c, maxDamage * (1 - d / radius), by.attacker);
   }
 }
 
 type BulletHit = { t: number | null; victim: Player | null; apply: (x: number, y: number) => void };
 
-function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | null): false {
-  if (b.blast) explode(w, x, y, b.blast.radius, b.blast.damage, owner, b.label);
+/** Backs the blast off the surface it struck, so the wall it hit does not shelter the side the bullet came from. */
+const BLAST_STANDOFF = 2;
+
+function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | null, view: View): false {
+  if (!b.blast) return false;
+  const speed = Math.hypot(b.vx, b.vy);
+  const bx = x - (b.vx / speed) * BLAST_STANDOFF, by = y - (b.vy / speed) * BLAST_STANDOFF;
+  explode(w, bx, by, b.blast.radius, b.blast.damage, { attacker: owner, team: b.team, label: b.label }, view);
   return false;
 }
 
-function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose | undefined, walls: readonly Wall[]): boolean {
+function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const speed = Math.hypot(b.vx, b.vy);
   const travel = Math.min(b.left, speed * dt);
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   const candidates: BulletHit[] = [
-    ...walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),
     ...[...w.players.values()]
-      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)) && !b.passed.includes(p.id))
+      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !friendly(b.team, p) && !b.passed.includes(p.id))
       .flatMap((p) => {
-        const at = poseOf(p);
+        const at = view.poseOf(p);
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
+          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y }),
         }] : [];
       }),
   ];
@@ -108,14 +152,14 @@ function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose
   for (const hit of hits) {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
     hit.apply(x, y);
-    if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner);
+    if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner, view);
     b.penetrate--;
     b.passed.push(hit.victim.id);
   }
   b.x += dx;
   b.y += dy;
   b.left -= travel;
-  return b.left > 0.5 || stopBullet(w, b, b.x, b.y, owner);
+  return b.left > 0.5 || stopBullet(w, b, b.x, b.y, owner, view);
 }
 
 function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {
@@ -142,13 +186,13 @@ export function flyThroughPast(w: World, b: Bullet, rewindMs: number): boolean {
     const dtMs = Math.min(TICK_MS, w.now - t);
     t += dtMs;
     const poses = posesAt(w, t);
-    if (!moveBullet(w, b, dtMs / 1000, (p) => poses.get(p.id), walls)) return false;
+    if (!moveBullet(w, b, dtMs / 1000, { poseOf: (p) => poses.get(p.id), walls })) return false;
   }
   return true;
 }
 
 export function tickBullets(w: World, dt: number) {
-  w.bullets = w.bullets.filter((b) => moveBullet(w, b, dt, (p) => p, w.walls));
+  w.bullets = w.bullets.filter((b) => moveBullet(w, b, dt, liveView(w)));
 }
 
 export function recordPoses(w: World) {

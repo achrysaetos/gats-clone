@@ -74,7 +74,8 @@ export type SelfView = {
 export type DamageKind = 'player' | 'crate';
 
 export type GameEvent =
-  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean }
+  /** `assisters` are the other players paid an assist for this kill. */
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[] }
   | { e: 'hunted'; id: number; name: string }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
@@ -82,8 +83,15 @@ export type GameEvent =
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number };
 
-export type LeaderRow = { id: number; name: string; score: number; team: Team };
+/** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
+export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
+
+/** `kills` counts this round only; FFA ranks on it, team modes on `score`. */
+export type LeaderRow = { id: number; name: string; score: number; kills: number; team: Team };
 /** `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise. */
+/** FFA rounds are won on kills and team rounds on the team score, so that is what each mode ranks players by. */
+export const rankValue = (mode: ModeId, r: LeaderRow): number => (mode === 'FFA' ? r.kills : r.score);
+export const rankRows = (mode: ModeId, rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort((a, b) => rankValue(mode, b) - rankValue(mode, a));
 export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
 
 export type Snapshot = {
@@ -96,7 +104,7 @@ export type Snapshot = {
   crates: CrateView[];
   thrown: ThrownView[];
   zones: ZoneView[];
-  minimap: { x: number; y: number; team: Team; hunted: boolean }[];
+  minimap: MinimapMark[];
   leaderboard: LeaderRow[];
   match: MatchView;
   events: GameEvent[];

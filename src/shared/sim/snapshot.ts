@@ -1,8 +1,8 @@
 import { GUNS, WORLD } from '../defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, LeaderRow, MatchView, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
+  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
 } from '../protocol.ts';
-import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
@@ -64,10 +64,7 @@ function selfView(w: World, p: Player): SelfView {
 }
 
 function leaderboard(w: World): LeaderRow[] {
-  return [...w.players.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
-    .map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team }));
+  return rankRows(w.mode, [...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, team: p.team }))).slice(0, 10);
 }
 
 function matchView(w: World): MatchView {
@@ -117,9 +114,13 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     })
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress }));
-  const minimap = [...w.players.values()]
-    .filter((p) => p.id !== me.id && p.life.k === 'alive' && (sameTeam(me, p) || w.now < p.revealedUntil || huntedFor(me, p)))
-    .map((p) => ({ x: p.x, y: p.y, team: p.team, hunted: huntedFor(me, p) }));
+  const minimap: MinimapMark[] = [];
+  for (const p of w.players.values()) {
+    if (p.id === me.id || p.life.k !== 'alive') continue;
+    if (huntedFor(me, p)) {
+      if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
+    } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
+  }
   const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || inView(e.x, e.y, 300));
 
   return {

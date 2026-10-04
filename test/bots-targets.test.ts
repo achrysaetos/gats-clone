@@ -40,6 +40,7 @@ test('a bot with nobody in view heads for the hunted marker on its minimap', () 
       const w = emptyWorld();
       const bot = spawnAt(w, 1500, 1500);
       equip(spawnAt(w, corner.x, corner.y), 'executioner');
+      step(w, TICK_MS);
       const input = think(w, bot.id, seed, 1);
       const toward = corner.x < 1500 ? input.left && input.up : input.right && input.down;
       assert.ok(toward, `seed ${seed}: moves toward the marker at (${corner.x}, ${corner.y})`);
@@ -122,6 +123,7 @@ test('a bot with nobody in view heads for gunfire on its minimap, the hunted fir
   const bot = spawnAt(w, 1500, 1500);
   spawnAt(w, 400, 1500).revealedUntil = w.now + 10_000;
   equip(spawnAt(w, 2900, 2900), 'executioner');
+  step(w, TICK_MS);
   const input = think(w, bot.id, 1, 1);
   assert.ok(input.right && input.down, 'passes over a nearer shooter for the hunted one');
 });

@@ -69,7 +69,7 @@ test('level progress tracks thresholds and caps at max level', () => {
 
 test('killer lookup and kill-feed highlight go by player id, so same-named players never get confused', () => {
   const kill = (killer: string, killerId: number | null, victim: string, victimId: number): Extract<GameEvent, { e: 'kill' }> =>
-    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG', bounty: false });
+    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG', bounty: false, assisters: [] });
   const events = [kill('Ann', 5, 'Alex', 2), kill('Bo', 6, 'Alex', 3)];
   assert.equal(killerOf(events, 3), 'Bo', 'the second Alex was killed by Bo, not Ann');
   assert.equal(killerOf(events, 2), 'Ann');
@@ -81,7 +81,7 @@ test('killer lookup and kill-feed highlight go by player id, so same-named playe
 });
 
 test('the objective names the mode, your team and the win condition from WORLD', () => {
-  assert.equal(objectiveFor('FFA', null).banner, 'Free for all: most points wins');
+  assert.equal(objectiveFor('FFA', null).banner, `Free for all: first to ${WORLD.ffaWinKills} kills`);
   assert.equal(objectiveFor('TDM', 'red').banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills`);
   assert.equal(objectiveFor('DOM', 'blue').banner, `Domination: you are BLUE, hold A B C, first to ${WORLD.domWinScore}`);
   assert.equal(objectiveFor('TDM', 'blue').line, `TDM · Blue team · first to ${WORLD.tdmWinScore} kills`);

@@ -1,9 +1,9 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
-import type { PlayerView, Snapshot } from '../shared/protocol.ts';
+import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
-import { feedMentions, levelProgress, mapNotice, objectiveFor } from './derive.ts';
-import { HITMARKER_MS, HURT_MS } from './feedback.ts';
+import { feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
+import { ASSIST_MS, HITMARKER_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
 import { drawGun } from './sprites.ts';
@@ -56,6 +56,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h
   drawScore(hud, compact);
   if (me?.alive) drawVitals(hud);
   drawHitmarker(hud, crosshair);
+  drawAssist(hud, crosshair);
 }
 
 /** Stacked translucent edge bands instead of a full-screen radial gradient, which costs several milliseconds to rasterize. */
@@ -75,6 +76,16 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
     ctx.fillRect(0, d, d, h - d * 2);
     ctx.fillRect(w - d, d, d, h - d * 2);
   }
+  ctx.globalAlpha = 1;
+}
+
+function drawAssist({ ctx, s, now }: Hud, at: Point) {
+  const assist = s.feedback.assist;
+  if (!assist) return;
+  const k = (now - assist.born) / ASSIST_MS;
+  if (k < 0 || k >= 1) return;
+  ctx.globalAlpha = 1 - k * k;
+  text(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 30 - 18 * k, TYPE.body, PALETTE.gold, 'center', 800);
   ctx.globalAlpha = 1;
 }
 
@@ -203,12 +214,12 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
 }
 
 function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
-  const rows = [...snap.leaderboard].sort((a, b) => b.score - a.score).slice(0, compact ? 5 : 10);
+  const rows = topScorers(snap.match.mode, snap.leaderboard, compact ? 5 : 10);
   const teams = snap.match.mode !== 'FFA';
   const pw = compact ? 150 : 210;
   const x = w - pw - 12;
   const rowH = 20;
-  const ph = 36 + rows.length * rowH + (teams ? 30 : 0);
+  const ph = 36 + rows.length * rowH + (teams ? 30 : 18);
   panel(ctx, x, 12, pw, ph);
   caps(ctx, 'Leaderboard', x + SPACE.md, 29);
   text(ctx, snap.match.mode, x + pw - SPACE.md, 29, TYPE.label, PALETTE.gold, 'right', 800);
@@ -222,6 +233,9 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
     text(ctx, `to ${goal}`, x + pw / 2, y + 13, TYPE.micro, MUTED, 'center', 500);
     text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
     y += 30;
+  } else {
+    text(ctx, `First to ${WORLD.ffaWinKills} kills`, x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
+    y += 18;
   }
   rows.forEach((r, i) => {
     const mine = r.id === s.myId;
@@ -238,12 +252,14 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
       ctx.fill();
     }
     text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
-    text(ctx, String(r.score), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
+    text(ctx, String(rankValue(snap.match.mode, r)), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
     y += rowH;
   });
 }
 
-function drawMinimap({ ctx, w, h, snap, s, me, now }: Hud, size: number) {
+const PING_WAVE_MS = 700;
+
+function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
   const x = w - size - 12;
   const y = h - size - 12;
   const k = size / s.worldSize;
@@ -271,23 +287,25 @@ function drawMinimap({ ctx, w, h, snap, s, me, now }: Hud, size: number) {
     ctx.globalAlpha = 1;
   }
   for (const m of snap.minimap) {
-    if (m.hunted) continue;
+    if (m.pingAge !== null) continue;
     ctx.fillStyle = m.team ? TEAM_COLORS[m.team] : '#ff6b6b';
     ctx.beginPath();
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);
     ctx.fill();
   }
-  const pulse = 0.5 + 0.5 * Math.sin(now / 150);
   for (const m of snap.minimap) {
-    if (!m.hunted) continue;
+    if (m.pingAge === null) continue;
     const mx = x + m.x * k, my = y + m.y * k;
-    ctx.globalAlpha = 1 - 0.7 * pulse;
-    ctx.beginPath();
-    ctx.arc(mx, my, 5 + 5 * pulse, 0, TAU);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = PALETTE.hunted;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    const wave = m.pingAge / PING_WAVE_MS;
+    if (wave < 1) {
+      ctx.globalAlpha = 1 - wave;
+      ctx.beginPath();
+      ctx.arc(mx, my, 5 + 14 * wave, 0, TAU);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = PALETTE.hunted;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     ctx.beginPath();
     ctx.moveTo(mx, my - 5);
     ctx.lineTo(mx + 5, my);

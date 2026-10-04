@@ -66,6 +66,53 @@ test('FFA announces the next map, then loads it on a timer and moves everyone in
   assertStandingInSpawns(w, second);
 });
 
+test('FFA: the first to the kill target wins the round, and the next round starts on the next map with kills reset', () => {
+  const [first, second] = ROTATION.FFA;
+  const w = createWorld('FFA', 1, first);
+  populate(w);
+  const [leader, viewer] = [...w.players.values()];
+  leader!.kills = WORLD.ffaWinKills - 1;
+  viewer!.score = 500;
+  run(w, TICK_MS);
+  assert.equal(w.match.k, 'playing', 'one short of the target');
+  leader!.kills = WORLD.ffaWinKills;
+  run(w, TICK_MS);
+  const over = snapshotFor(w, viewer!.id);
+  assert.equal(over.match.winner, leader!.name);
+  assert.deepEqual(over.leaderboard[0], { id: leader!.id, name: leader!.name, score: leader!.score, kills: WORLD.ffaWinKills, team: null }, 'the leaderboard ranks by kills');
+  assert.equal(w.map, first, 'the map holds during the end-of-round banner');
+  run(w, WORLD.roundRestartMs + 100);
+  assert.deepEqual([w.match.k, w.map, leader!.kills], ['playing', second, 0]);
+  assertStandingInSpawns(w, second);
+});
+
+test('FFA: when the map timer runs out, the player with the most kills wins the round', () => {
+  const [first, second] = ROTATION.FFA;
+  const w = createWorld('FFA', 1, first);
+  populate(w);
+  const [a, b, viewer] = [...w.players.values()];
+  a!.kills = 4;
+  b!.kills = 7;
+  run(w, MAP_MS.FFA + TICK_MS);
+  assert.equal(snapshotFor(w, viewer!.id).match.winner, b!.name);
+  assert.equal(w.map, first);
+  run(w, WORLD.roundRestartMs + 100);
+  assert.equal(w.map, second);
+});
+
+test('a map change places players apart on the new map, not apart from where the others stood on the old one', () => {
+  const close: string[] = [];
+  for (let seed = 1; seed <= 60; seed++) {
+    const w = createWorld('FFA', seed, ROTATION.FFA[0]);
+    for (let i = 0; i < 8; i++) addPlayer(w, `p${i}`, PISTOL);
+    w.mapChangeAt = w.now;
+    run(w, TICK_MS);
+    const ps = [...w.players.values()];
+    close.push(...ps.flatMap((a, i) => ps.slice(i + 1).filter((b) => Math.hypot(a.x - b.x, a.y - b.y) < 200).map((b) => `seed ${seed}: ${a.name}-${b.name}`)));
+  }
+  assert.deepEqual(close, [], 'eight players fit the FFA spawns with nobody on top of anyone');
+});
+
 function fakeSocket() {
   const sent: ServerMsg[] = [];
   const ws = Object.assign(new EventEmitter(), {

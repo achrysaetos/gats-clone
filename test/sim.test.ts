@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { ABILITY_COOLDOWN_MS, ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { explode } from '../src/shared/sim/combat.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
@@ -73,6 +74,25 @@ test('extended mag enlarges the magazine', () => {
   assert.equal(snapshotFor(w, a.id).self.mag, GUNS.pistol.mag);
   grantPerks(w, a, ['extended']);
   assert.equal(snapshotFor(w, a.id).self.mag, Math.round(GUNS.pistol.mag * 1.5));
+});
+
+test('a shield blocks 35% of bullets from within 40 degrees of its facing, and nothing else', () => {
+  const lostTo = (facingOff: number, hit: 'bullet' | 'blast') => {
+    const w = emptyWorld();
+    const a = spawnAt(w, 500, 500);
+    const v = spawnAt(w, 700, 500);
+    grantPerks(w, v, ['optics', 'shield']);
+    press(w, v, { angle: Math.PI + facingOff });
+    step(w, TICK_MS);
+    if (hit === 'bullet') shootOnce(w, a, 0);
+    else explode(w, 640, 500, 100, 50, { attacker: null, team: null, label: 'test' });
+    return Math.round((WORLD.baseHp - hpOf(v)) * 1e6) / 1e6;
+  };
+  const deg = Math.PI / 180;
+  assert.equal(lostTo(0, 'bullet'), PISTOL_DMG * (1 - 0.35), 'head on');
+  assert.equal(lostTo(35 * deg, 'bullet'), PISTOL_DMG * (1 - 0.35), 'inside the arc');
+  assert.equal(lostTo(50 * deg, 'bullet'), PISTOL_DMG, 'outside the arc');
+  assert.equal(lostTo(0, 'blast'), 50 * (1 - (60 - WORLD.playerRadius) / 100), 'a blast in front is not blocked');
 });
 
 test('lightweight moves 10% faster', () => {
@@ -163,6 +183,29 @@ test('DOM zone capture scores for the team, declares a winner, then resets', () 
   const after = snapshotFor(w, p.id).match;
   assert.equal(after.winner, null);
   assert.ok(after.teamScore.red < 10, `scores reset (${after.teamScore.red})`);
+});
+
+test("DOM: an owner standing alone drains an attacker's partial capture, and a held zone turns neutral before it flips", () => {
+  const w = emptyWorld('DOM');
+  const zone = w.zones[0]!;
+  zone.owner = 'red';
+  const attacker = spawnAt(w, zone.x, zone.y, { team: 'blue' });
+  run(w, 1500);
+  assert.deepEqual([zone.owner, zone.capturing], ['red', 'blue']);
+  const partial = zone.progress;
+  attacker.x = zone.x + 2 * zone.r;
+  const owner = spawnAt(w, zone.x, zone.y, { team: 'red' });
+  run(w, 1000);
+  assert.ok(zone.progress < partial - 0.25, `the owner pushed the capture back (${partial.toFixed(2)} -> ${zone.progress.toFixed(2)})`);
+  run(w, 1000);
+  assert.deepEqual([zone.owner, zone.capturing, zone.progress], ['red', null, 0]);
+
+  owner.x = zone.x + 2 * zone.r;
+  attacker.x = zone.x;
+  run(w, 3100);
+  assert.deepEqual([zone.owner, zone.capturing], [null, 'blue'], 'one full capture only neutralizes');
+  run(w, 3100);
+  assert.equal(zone.owner, 'blue', 'a second takes it');
 });
 
 test('TDM team reaching tdmWinScore kills wins', () => {

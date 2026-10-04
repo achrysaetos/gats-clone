@@ -115,7 +115,7 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
   DOM: ['citadel', 'causeway', 'oldtown', 'boneyard'],
 };
 
-/** How long a map lasts; TDM and DOM change map when a round restarts instead. FFA has no round end, so its map changes on a timer. */
+/** How long a map lasts; every mode changes map when a round restarts. An FFA round that nobody wins on kills ends when this runs out. */
 export const MAP_MS: Record<ModeId, number> = { FFA: 8 * 60_000, TDM: Infinity, DOM: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 

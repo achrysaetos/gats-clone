@@ -6,20 +6,23 @@ export type Feedback = {
   numbers: DamageNumber[];
   hitmarker: { born: number; kill: boolean } | null;
   hurt: { born: number; strength: number } | null;
+  assist: { born: number } | null;
 };
 
-export const NO_FEEDBACK: Feedback = { numbers: [], hitmarker: null, hurt: null };
+export const NO_FEEDBACK: Feedback = { numbers: [], hitmarker: null, hurt: null, assist: null };
 
 export const NUMBER_MS = 900;
 export const HITMARKER_MS = { hit: 220, kill: 450 } as const;
 export const HURT_MS = 650;
+export const ASSIST_MS = 1200;
 const MERGE_MS = 300;
 
 export function addFeedback(fb: Feedback, events: readonly GameEvent[], myId: number, myMaxHp: number, now: number): Feedback {
   let numbers = fb.numbers.filter((n) => now - n.born < NUMBER_MS);
-  let { hitmarker, hurt } = fb;
+  let { hitmarker, hurt, assist } = fb;
   if (hitmarker && now - hitmarker.born >= HITMARKER_MS[hitmarker.kill ? 'kill' : 'hit']) hitmarker = null;
   if (hurt && now - hurt.born >= HURT_MS) hurt = null;
+  if (assist && now - assist.born >= ASSIST_MS) assist = null;
   for (const ev of events) {
     if (ev.e === 'dmg' && ev.attacker === myId && ev.victim !== myId) {
       const recent = numbers.find((n) => n.victim === ev.victim && n.kind === ev.kind && now - n.born < MERGE_MS);
@@ -32,7 +35,9 @@ export function addFeedback(fb: Feedback, events: readonly GameEvent[], myId: nu
       hurt = { born: now, strength: Math.min(1, prior + ev.amount / myMaxHp) };
     } else if (ev.e === 'kill' && ev.killerId === myId && ev.victimId !== myId) {
       hitmarker = { born: now, kill: true };
+    } else if (ev.e === 'kill' && ev.assisters.includes(myId)) {
+      assist = { born: now };
     }
   }
-  return { numbers, hitmarker, hurt };
+  return { numbers, hitmarker, hurt, assist };
 }

@@ -116,3 +116,24 @@ test('a dash stops at a thin built wall instead of passing through it', () => {
   run(w, 600);
   assert.ok(p.x <= 540 - R + 1e-6, `stopped on the near side (x ${p.x})`);
 });
+
+test('an owner keeps at most two mines, the third replacing the oldest, and loses them all on death', () => {
+  const w = emptyWorld();
+  const miner = spawnAt(w, 500, 500);
+  grantPerks(w, miner, ['grip', 'thickSkin', 'landMine']);
+  const plant = (x: number) => {
+    miner.x = x;
+    miner.abilityReadyAt = 0;
+    press(w, miner, { ability: true });
+    step(w, TICK_MS);
+    press(w, miner, {});
+  };
+  const mineXs = () => w.thrown.filter((t) => t.kind === 'landMine').map((t) => t.x);
+  plant(500);
+  plant(700);
+  plant(900);
+  assert.deepEqual(mineXs(), [700, 900]);
+  miner.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
+  step(w, TICK_MS);
+  assert.deepEqual(mineXs(), [], 'a dead owner leaves no mines behind');
+});

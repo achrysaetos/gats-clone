@@ -15,7 +15,7 @@ Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats ar
 
 Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM every body wears its team color.
 
-Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). TDM and DOM load the next map when a round restarts. FFA has no round end, so it changes map every 8 minutes and announces the next map 15 seconds ahead.
+Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). Every mode loads the next map when a round restarts. TDM is won at 50 team kills and DOM at 1000 points. An FFA round goes to the first player to 20 kills, or to the player with the most kills when its 8-minute map timer runs out. The next map is announced 15 seconds ahead.
 
 | Input | Action |
 |---|---|
@@ -28,7 +28,7 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | Enter | Chat |
 | M | Mute sound |
 
-Points in one life raise your level. At 100, 350 and 500 points you pick an attachment, a survival perk and an ability. At 200 and 700 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy sees them on the minimap, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill.
+Points in one life raise your level. At 100, 350 and 500 points you pick an attachment, a survival perk and an ability. At 200 and 700 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy minimap pings their position every 2.5 seconds and whenever they fire an unsilenced shot, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill. An attacker who dealt at least 30% of a victim's max health earns a 50-point assist when someone else gets the kill.
 
 ## Layout
 
@@ -62,7 +62,7 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
 
-`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `64f1e56cadd495e6f0b2fa993b7c33c8a7714c69f0728b4ea108f7a18b721ec1`.
+`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `73b78b8774011c6d773be910ecc99bf20a32281d65865557ddf8bd51016fe7e9`.
 
 `node scripts/unused-exports.ts` lists every export that no file in `src/`, `test/`, `scripts/` or the verify scripts imports, and says whether its own module still uses it.
 
