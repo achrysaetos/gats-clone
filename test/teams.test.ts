@@ -39,13 +39,17 @@ for (const mode of MODE_IDS.filter((m) => m !== 'FFA')) {
       ws.send({ t: 'join', name, loadout: PISTOL, aspect: 1.5 });
       sockets.set(name, ws);
     };
-    for (const name of ['Ann', 'Bo', 'Cy', 'Di']) join(name);
-    assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 3, blueBots: 3 });
-    for (const p of [...room.world.players.values()]) if (p.kind === 'human' && p.team === 'red') sockets.get(p.name)!.close();
-    assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 7, blueBots: 1 }, 'red plays seven bots against two humans and a bot');
-    join('Eve');
-    assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 5, blueBots: 2 }, 'the next human joins red and two of its extra bots leave');
-    for (const ws of sockets.values()) ws.close();
+    // The room's heartbeat timers keep the test process alive until every socket closes, so close them even when an assertion fails.
+    try {
+      for (const name of ['Ann', 'Bo', 'Cy', 'Di']) join(name);
+      assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 3, blueBots: 3 });
+      for (const p of [...room.world.players.values()]) if (p.kind === 'human' && p.team === 'red') sockets.get(p.name)!.close();
+      assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 7, blueBots: 1 }, 'red plays seven bots against two humans and a bot');
+      join('Eve');
+      assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 5, blueBots: 2 }, 'the next human joins red and two of its extra bots leave');
+    } finally {
+      for (const ws of sockets.values()) ws.close();
+    }
   });
 }
 
