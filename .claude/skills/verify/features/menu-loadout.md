@@ -17,7 +17,7 @@ The menu lets a player type a name, pick one of six weapons, six colors and four
 ## How to get to it (user POV)
 
 - Open the server's root URL.
-- After death, the same loadout picker appears on the death screen.
+- After death, the same loadout picker appears, compacted, on the death card docked left. It ignores clicks for the first 700ms.
 - The privacy link sits in the menu footer.
 
 ## Driving it with drive.ts

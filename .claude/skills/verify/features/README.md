@@ -20,7 +20,7 @@ This directory is the maintained source for verifying what a Skirmish player can
 
 - Report the `drive.log` line with its measured values, plus the matching screenshot.
 - Confirm side effects through `/api/*` reads or the observer client.
-- A feature whose state the driver cannot reach on the real server (for example the death screen, which needs a bot to kill you) is reported as not verified, with the reason. Mock-server screenshots do not count as verification.
+- A feature whose state the driver cannot reach on the real server (for example a full-length match at the stock win score) is reported as not verified, with the reason. Mock-server screenshots do not count as verification.
 
 ## Feature entry contract
 
@@ -30,7 +30,7 @@ Each feature file starts with an H1 and one paragraph on the user-visible behavi
 
 - [Menu and loadout](./menu-loadout.md) covers the room list, weapon, color and armor pickers, phone layout, the privacy link and the muted panel.
 - [Accounts and stats](./accounts.md) covers register, login, the token, server-side stats, the leaderboard and error codes.
-- [Joining and playing](./join-play.md) covers joining a room, moving, firing, leaving, the duel, reconnect, the view rectangle and lag compensation.
+- [Joining and playing](./join-play.md) covers joining a room, moving, firing, hit feedback, the reticle, HUD fading, leaving, the duel, reconnect, the view rectangle and lag compensation.
 - [Chat](./chat.md) covers sending and receiving, the rate limit, word masking, renaming blocked names, and mute.
-- [Progression, death and modes](./progression-death-modes.md) covers perks, gun evolution, the hunted marker and bounty, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
+- [Progression, death and modes](./progression-death-modes.md) covers perks, gun evolution and its callouts, the hunted marker, edge chevrons and bounty, kill popups, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
 - [Map rotation](./maps.md) covers the four maps, per-mode rotation and the next-map notice.
