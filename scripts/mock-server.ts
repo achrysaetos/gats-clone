@@ -157,9 +157,9 @@ function serve(ws: WebSocket, mode: ModeId) {
         if (me.ammo === 0) me.reloadUntil = now + weapon.reloadMs;
         for (let p = 0; p < weapon.pellets; p++) {
           const a = input.angle + (Math.random() - 0.5) * weapon.spread;
-          bullets.push({ id: w.bulletId++, x: me.x + Math.cos(a) * 40, y: me.y + Math.sin(a) * 40, vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed, owner: myId, life: weapon.range / weapon.bulletSpeed });
+          bullets.push({ id: w.bulletId++, x: me.x + Math.cos(a) * 40, y: me.y + Math.sin(a) * 40, vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed, owner: myId, gun: loadout.weapon, life: weapon.range / weapon.bulletSpeed });
         }
-        events.push({ e: 'shot', x: me.x, y: me.y, angle: input.angle, silenced: false, owner: myId });
+        events.push({ e: 'shot', x: me.x, y: me.y, angle: input.angle, silenced: false, owner: myId, gun: loadout.weapon });
       }
       if (input.ability && ability && now >= me.abilityAt) {
         me.abilityAt = now + ABILITY_COOLDOWN_MS[ability];
@@ -179,7 +179,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       b.dashing = b.id === 105 && Math.sin(b.phase * 3) > 0.7;
       if (now >= b.cooldown && Math.hypot(me.x - b.x, me.y - b.y) < 700) {
         b.cooldown = now + 900 + (b.id % 3) * 300;
-        bullets.push({ id: w.bulletId++, x: b.x, y: b.y, vx: Math.cos(b.angle) * 1400, vy: Math.sin(b.angle) * 1400, owner: b.id, life: 0.5 });
+        bullets.push({ id: w.bulletId++, x: b.x, y: b.y, vx: Math.cos(b.angle) * 1400, vy: Math.sin(b.angle) * 1400, owner: b.id, gun: b.gun, life: 0.5 });
       }
     }
 

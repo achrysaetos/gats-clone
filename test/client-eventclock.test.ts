@@ -9,8 +9,8 @@ const snapWith = (events: GameEvent[]): Snapshot => ({ players: [], events } as 
 
 test('my own muzzle flash shows at once; another player\'s waits for the render clock', () => {
   const { now, later } = scheduleEffects(snapWith([
-    { e: 'shot', x: 0, y: 0, angle: 0, silenced: false, owner: ME },
-    { e: 'shot', x: 50, y: 0, angle: 0, silenced: false, owner: 2 },
+    { e: 'shot', x: 0, y: 0, angle: 0, silenced: false, owner: ME, gun: 'pistol' },
+    { e: 'shot', x: 50, y: 0, angle: 0, silenced: false, owner: 2, gun: 'pistol' },
   ]), 1000, ME);
   assert.equal(now.length, 1, 'own flash is immediate');
   assert.equal(later.length, 1, 'remote flash is deferred');

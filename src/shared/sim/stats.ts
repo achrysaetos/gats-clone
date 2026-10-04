@@ -41,7 +41,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     spread: weapon.spread,
     regenPerSec: WORLD.regenPerSec,
     viewRadius: WORLD.viewRadius,
-    piercing: false, silenced: false, shield: false, thermal: false, ghillie: false,
+    piercing: false, silenced: weapon.silenced ?? false, shield: false, thermal: false, ghillie: false,
   };
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];

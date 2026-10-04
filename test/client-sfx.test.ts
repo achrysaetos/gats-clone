@@ -38,11 +38,10 @@ test('hurt plays on damage, including armor-absorbed hits, and never on regen or
 });
 
 test('a shot sounds like the shooter\'s weapon and is flagged self only for your own shots', () => {
-  const players = [player(2, { gun: 'sniper' })];
-  const shots = soundsFor(null, snap({ players, me: { gun: 'smg' }, events: [
-    { e: 'shot', x: 200, y: 0, angle: 0, silenced: false, owner: 2 },
-    { e: 'shot', x: 100, y: 0, angle: 0, silenced: false, owner: 1 },
-    { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2 },
+  const shots = soundsFor(null, snap({ events: [
+    { e: 'shot', x: 200, y: 0, angle: 0, silenced: false, owner: 2, gun: 'sniper' },
+    { e: 'shot', x: 100, y: 0, angle: 0, silenced: false, owner: 1, gun: 'smg' },
+    { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2, gun: 'sniper' },
   ] }));
   assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
 });

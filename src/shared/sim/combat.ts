@@ -75,7 +75,12 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
   }
 }
 
-type BulletHit = { t: number | null; apply: (x: number, y: number) => void };
+type BulletHit = { t: number | null; victim: Player | null; apply: (x: number, y: number) => void };
+
+function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | null): false {
+  if (b.blast) explode(w, x, y, b.blast.radius, b.blast.damage, owner, b.label);
+  return false;
+}
 
 function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose | undefined, walls: readonly Wall[]): boolean {
   const speed = Math.hypot(b.vx, b.vy);
@@ -83,30 +88,33 @@ function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   const candidates: BulletHit[] = [
-    ...walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
-      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), apply: () => damageCrate(w, c, b.damage, owner),
+      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),
     ...[...w.players.values()]
-      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)))
+      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)) && !b.passed.includes(p.id))
       .flatMap((p) => {
         const at = poseOf(p);
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
+          victim: p,
           apply: () => damagePlayer(w, p, b.damage, { attacker: owner, label: b.label, piercing: b.piercing, fromX: b.x, fromY: b.y }),
         }] : [];
       }),
   ];
-  let hit: { t: number; apply: BulletHit['apply'] } | null = null;
-  for (const c of candidates) if (c.t !== null && (!hit || c.t < hit.t)) hit = { t: c.t, apply: c.apply };
-  if (hit) {
-    hit.apply(b.x + dx * hit.t, b.y + dy * hit.t);
-    return false;
+  const hits = candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
+  for (const hit of hits) {
+    const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
+    hit.apply(x, y);
+    if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner);
+    b.penetrate--;
+    b.passed.push(hit.victim.id);
   }
   b.x += dx;
   b.y += dy;
   b.left -= travel;
-  return b.left > 0.5;
+  return b.left > 0.5 || stopBullet(w, b, b.x, b.y, owner);
 }
 
 function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {

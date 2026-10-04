@@ -50,7 +50,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   for (const ev of next.events) {
     switch (ev.e) {
       case 'shot': {
-        const weapon = GUNS[next.players.find((p) => p.id === ev.owner)?.gun ?? 'pistol'].base;
+        const weapon = GUNS[ev.gun].base;
         cues.push({ id: ev.silenced ? 'shot:silenced' : `shot:${weapon}`, x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 });
         break;
       }

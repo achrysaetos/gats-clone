@@ -1,8 +1,8 @@
-import type { ModeId, PerkId } from '../src/shared/defs.ts';
+import type { GunId, ModeId, PerkId } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { InputState, Loadout, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
-import { choosePerk, pendingTier } from '../src/shared/sim/stats.ts';
+import { choosePerk, effectiveStats, pendingTier } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
 
 export const TICK_MS = 1000 / 30;
@@ -41,6 +41,12 @@ export function grantPerks(w: World, p: Player, perks: PerkId[]) {
     const tier = pendingTier(p);
     if (!tier || !choosePerk(w, p.id, tier, perk)) throw new Error(`could not choose ${perk}`);
   }
+}
+
+/** Hands `p` an evolved gun with a full magazine, skipping the score it would take to evolve into it. */
+export function equip(p: Player, gun: GunId) {
+  p.gun = gun;
+  if (p.life.k === 'alive') p.life.ammo = effectiveStats(p).mag;
 }
 
 export function hpOf(p: Player): number {

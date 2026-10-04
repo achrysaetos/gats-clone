@@ -1,4 +1,4 @@
-import { PERK_TIERS, WORLD, type GunId, type ModeId, type PlayerKind, type Tier } from '../defs.ts';
+import { PERK_TIERS, WORLD, type Blast, type GunId, type ModeId, type PlayerKind, type Tier } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, Team } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type MapId } from '../maps.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
@@ -13,6 +13,8 @@ export type Life =
     ammo: number;
     reloadUntil: number | null;
     nextFireAt: number;
+    /** Rounds still to come from the burst in progress. */
+    burstLeft: number;
     lastDamageAt: number;
     lastMoveAt: number;
     dash: Dash | null;
@@ -53,6 +55,10 @@ export type ChosenPerks = { [T in Tier]?: PerkOfTier<T> };
 export type Bullet = {
   id: number; owner: number; x: number; y: number; vx: number; vy: number;
   left: number; damage: number; piercing: boolean; label: string;
+  gun: GunId | null;
+  /** Players it can still pass through, and the ones it already has. */
+  penetrate: number; passed: number[];
+  blast: Blast | null;
 };
 
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null };
