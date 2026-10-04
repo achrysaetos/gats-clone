@@ -1,7 +1,8 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { soundsFor } from '../src/client/sfx.ts';
+import { GUN_IDS, GUNS } from '../src/shared/defs.ts';
+import { SOUNDS, soundsFor } from '../src/client/sfx.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
@@ -44,6 +45,13 @@ test('a shot sounds like the shooter\'s weapon and is flagged self only for your
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2, gun: 'sniper' },
   ] }));
   assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
+});
+
+test('every gun on the evolution tree has its own shot sound, and blast guns add a low thump', () => {
+  const recipes = GUN_IDS.map((id) => JSON.stringify(SOUNDS[`shot:${id}`]));
+  assert.equal(new Set(recipes).size, GUN_IDS.length);
+  const lowest = (id: (typeof GUN_IDS)[number]) => Math.min(...SOUNDS[`shot:${id}`].flatMap((l) => (l.src === 'tone' ? [l.pitchHz[1]] : [])));
+  for (const id of GUN_IDS.filter((g) => GUNS[g].blast)) assert.ok(lowest(id) < lowest(GUNS[id].base), `${id} thumps below its class gun`);
 });
 
 test('a knife slash makes a slash sound at the strike point, flagged self only for your own', () => {

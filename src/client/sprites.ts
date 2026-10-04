@@ -103,8 +103,8 @@ export function muzzleTip(x: number, y: number, angle: number, gun: GunId, radiu
   return { x: x + Math.cos(angle) * reach, y: y + Math.sin(angle) * reach };
 }
 
-/** Guns of one stage share a scale, so the loadout tiles and each pick's options compare at true size. */
-const STAGE_PARTS = [0, 1, 2].map((stage) => GUN_IDS.filter((id) => GUNS[id].stage === stage).flatMap((id) => GUN_PARTS[id]));
+/** Siblings share a scale, so the loadout tiles and each evolve pick's two options compare at true size. */
+const peerParts = (gun: GunId) => GUN_IDS.filter((id) => GUNS[id].from === GUNS[gun].from).flatMap((id) => GUN_PARTS[id]);
 const bounds = (parts: readonly Part[]) => ({
   minX: Math.min(...parts.map((p) => p.x)),
   maxX: Math.max(...parts.map((p) => p.x + p.w)),
@@ -115,7 +115,7 @@ const bounds = (parts: readonly Part[]) => ({
 export function drawSilhouette(canvas: HTMLCanvasElement, gun: GunId, color: string) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const all = bounds(STAGE_PARTS[GUNS[gun].stage]!);
+  const all = bounds(peerParts(gun));
   const r = Math.min((canvas.width * 0.9) / (all.maxX - all.minX), (canvas.height * 0.85) / (all.maxY - all.minY));
   const { minX, maxX, minY, maxY } = bounds(GUN_PARTS[gun]);
   ctx.clearRect(0, 0, canvas.width, canvas.height);

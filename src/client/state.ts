@@ -1,4 +1,4 @@
-import type { DamageKind, Loadout, Team, WallView } from '../shared/protocol.ts';
+import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { Feedback } from './feedback.ts';
 import type { SnapBuffer } from './interp.ts';
 import type { PendingEffect } from './eventclock.ts';
@@ -15,7 +15,7 @@ export type Effect =
 
 export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200 };
 
-type FeedLine = { killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; at: number };
+type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 type TrailPoint = { x: number; y: number; at: number };
 

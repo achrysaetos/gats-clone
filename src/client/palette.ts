@@ -34,6 +34,7 @@ export const PALETTE = {
   gasEdge: 'rgba(92, 140, 36, 0.6)',
   neutral: '#8b8f98',
   gold: '#ffd34d',
+  hunted: '#ff3b30',
 } as const;
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };

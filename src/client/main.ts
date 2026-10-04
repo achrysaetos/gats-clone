@@ -248,7 +248,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
-  for (const ev of snap.events) if (ev.e === 'kill') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+  for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
   const dead = !snap.self.alive;

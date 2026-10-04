@@ -151,6 +151,7 @@ function caps(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, co
 }
 
 const FEED_ICON_W = 34;
+const BOUNTY_TAG = `+${WORLD.bountyScore} BOUNTY`;
 
 function drawFeedWeapon(ctx: CanvasRenderingContext2D, label: string, x: number, y: number): number {
   const gun = GUN_BY_NAME.get(label);
@@ -175,17 +176,28 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-5);
   lines.forEach((f, i) => {
     const y = top + i * 28;
+    ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
     setFont(ctx, 700, TYPE.body);
+    if (f.e === 'hunted') {
+      const line = `${f.name} is hunted`;
+      panel(ctx, 12, y - 12, ctx.measureText(line).width + 22 + SPACE.lg * 2, 24, PALETTE.hunted);
+      strokeIcon(ctx, UI_ICONS.target, 12 + SPACE.md + 8, y, 15, PALETTE.hunted, 2.4);
+      text(ctx, line, 12 + SPACE.md + 22, y, TYPE.body, f.id === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
+      ctx.globalAlpha = 1;
+      return;
+    }
     const kw = f.killer ? ctx.measureText(f.killer).width : 0;
     const vw = ctx.measureText(f.victim).width;
     const ww = GUN_BY_NAME.has(f.weapon) ? FEED_ICON_W : 40;
-    ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
+    setFont(ctx, 800, TYPE.micro);
+    const bw = f.bounty ? ctx.measureText(BOUNTY_TAG).width + SPACE.sm * 2 : 0;
     const mine = feedMentions(f, s.myId);
-    panel(ctx, 12, y - 12, kw + vw + ww + SPACE.lg * 2, 24, mine ? PALETTE.gold : undefined);
+    panel(ctx, 12, y - 12, kw + vw + ww + bw + SPACE.lg * 2, 24, mine ? PALETTE.gold : f.bounty ? PALETTE.hunted : undefined);
     let x = 12 + SPACE.md;
     if (f.killer) { text(ctx, f.killer, x, y, TYPE.body, f.killerId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700); x += kw + SPACE.sm; }
     x += drawFeedWeapon(ctx, f.weapon, x, y);
     text(ctx, f.victim, x, y, TYPE.body, f.victimId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
+    if (f.bounty) text(ctx, BOUNTY_TAG, x + vw + SPACE.sm, y, TYPE.micro, PALETTE.hunted, 'left', 800);
     ctx.globalAlpha = 1;
   });
 }
@@ -231,7 +243,7 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
   });
 }
 
-function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
+function drawMinimap({ ctx, w, h, snap, s, me, now }: Hud, size: number) {
   const x = w - size - 12;
   const y = h - size - 12;
   const k = size / s.worldSize;
@@ -259,10 +271,34 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
     ctx.globalAlpha = 1;
   }
   for (const m of snap.minimap) {
+    if (m.hunted) continue;
     ctx.fillStyle = m.team ? TEAM_COLORS[m.team] : '#ff6b6b';
     ctx.beginPath();
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);
     ctx.fill();
+  }
+  const pulse = 0.5 + 0.5 * Math.sin(now / 150);
+  for (const m of snap.minimap) {
+    if (!m.hunted) continue;
+    const mx = x + m.x * k, my = y + m.y * k;
+    ctx.globalAlpha = 1 - 0.7 * pulse;
+    ctx.beginPath();
+    ctx.arc(mx, my, 5 + 5 * pulse, 0, TAU);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = PALETTE.hunted;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(mx, my - 5);
+    ctx.lineTo(mx + 5, my);
+    ctx.lineTo(mx, my + 5);
+    ctx.lineTo(mx - 5, my);
+    ctx.closePath();
+    ctx.fillStyle = PALETTE.hunted;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
   }
   const self = me ?? s.lastSelf;
   ctx.fillStyle = '#ffffff';
@@ -331,9 +367,10 @@ function drawVitals({ ctx, w, h, snap, me }: Hud) {
 
   ctx.save();
   ctx.translate(x + 10, y + 62);
-  drawGun(ctx, me.gun, 11, MUTED);
+  drawGun(ctx, me.gun, 11 / Math.max(1, GUNS[me.gun].look.length), MUTED);
   ctx.restore();
   caps(ctx, GUNS[me.gun].name, x + 46, y + 62);
+  drawStagePips(ctx, me.gun, x + 46 + ctx.measureText(GUNS[me.gun].name.toUpperCase()).width + SPACE.sm, y + 62);
   const ammoRight = barX + barW;
   if (self.reloading) {
     text(ctx, 'Reloading', ammoRight, y + 56, TYPE.label, PALETTE.gold, 'right', 800);
@@ -379,6 +416,21 @@ function drawVitals({ ctx, w, h, snap, me }: Hud) {
     strokeIcon(ctx, PERK_ICONS[perk], cx + 14, y - 18, 14, PALETTE.gold, 2.4);
     text(ctx, name, cx + 26, y - 18, TYPE.label, HUD_INK);
     cx += tw + SPACE.sm - 2;
+  }
+}
+
+function drawStagePips(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {
+  const { stage, look } = GUNS[gun];
+  ctx.fillStyle = look.accent;
+  for (let i = 0; i < stage; i++) {
+    const cx = x + 3.5 + i * 9;
+    ctx.beginPath();
+    ctx.moveTo(cx, y - 4);
+    ctx.lineTo(cx + 3.5, y);
+    ctx.lineTo(cx, y + 4);
+    ctx.lineTo(cx - 3.5, y);
+    ctx.closePath();
+    ctx.fill();
   }
 }
 

@@ -132,6 +132,15 @@ await sleep(700);
 await mouse('mouseReleased', 1000, 300);
 await shot('game-fire');
 
+await chat('/evolve');
+await sleep(200);
+await expect('evolve panel offers the two pistol branches by name', `[...document.querySelectorAll('.perk.evolve b')].map((b) => b.textContent).join() === 'Hand Cannon,Machine Pistol'`);
+await shot('game-evolve');
+await key('Digit1', '1');
+await sleep(300);
+await expect('evolve panel closes after picking', `document.getElementById('perk-panel').hidden`);
+await shot('game-evolved');
+
 await chat('/level');
 await key('Digit1', '1');
 await chat('/level');
