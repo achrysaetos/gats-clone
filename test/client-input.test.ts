@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
-import { deathText, feedMentions, killOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
+import { clock, deathText, feedMentions, killOf, levelProgress, objectiveFor, roundTimeLeft } from '../src/client/derive.ts';
 import { WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 
@@ -81,9 +81,19 @@ test('killer lookup and kill-feed highlight go by player id, so same-named playe
 });
 
 test('the objective names the mode, your team and the win condition from WORLD', () => {
-  assert.equal(objectiveFor('FFA', null).banner, `Free for all: most kills in 6:00 · first player to ${WORLD.ffaWinKills} ends it`);
-  assert.equal(objectiveFor('TDM', 'red').banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills or most in 10:00`);
-  assert.equal(objectiveFor('DOM', 'blue').banner, `Domination: you are BLUE, hold A B C, first to ${WORLD.domWinScore}`);
-  assert.equal(objectiveFor('TDM', 'blue').line, `TDM · Blue team · first to ${WORLD.tdmWinScore} kills or most in 10:00`);
-  assert.equal(objectiveFor('DOM', 'red').line, `DOM · Red team · hold A B C · first to ${WORLD.domWinScore}`);
+  assert.equal(objectiveFor('FFA', null, null).banner, `Free for all: most kills in 6:00 · first player to ${WORLD.ffaWinKills} ends it`);
+  assert.equal(objectiveFor('TDM', 'red', null).banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills or most in 10:00`);
+  assert.equal(objectiveFor('DOM', 'blue', null).banner, `Domination: you are BLUE, hold A B C, first to ${WORLD.domWinScore}`);
+  assert.equal(objectiveFor('TDM', 'blue', null).line, `TDM · Blue team · first to ${WORLD.tdmWinScore} kills or most in 10:00`);
+  assert.equal(objectiveFor('DOM', 'red', null).line, `DOM · Red team · hold A B C · first to ${WORLD.domWinScore}`);
+});
+
+test('the round clock counts down from the server\'s round end in m:ss, reading 0:00 only once time is up', () => {
+  const match = { roundEndsAt: 360_000 };
+  assert.equal(roundTimeLeft(match, null), null, 'unknown until the server clock is');
+  assert.equal(roundTimeLeft({ roundEndsAt: null }, 1000), null, 'no clock in a mode without one');
+  assert.deepEqual([0, 107_900, 359_001, 360_000, 365_000].map((at) => clock(roundTimeLeft(match, at)!)), ['6:00', '4:13', '0:01', '0:00', '0:00']);
+  assert.equal(objectiveFor('FFA', null, 252_000).line, `FFA · most kills · 4:12 left · first player to ${WORLD.ffaWinKills} ends it`);
+  assert.equal(objectiveFor('TDM', 'red', 61_000).line, `TDM · Red team · first to ${WORLD.tdmWinScore} kills · 1:01 left`);
+  assert.equal(objectiveFor('DOM', 'red', null).line, objectiveFor('DOM', 'red', 5000).line, 'DOM has no clock to show');
 });

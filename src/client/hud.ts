@@ -2,8 +2,9 @@ import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
-import { clearOfRects, edgePoint, FFA_ROUND, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers, type Rect } from './derive.ts';
+import { clearOfRects, edgePoint, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, topScorers, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
+import { serverNow } from './interp.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
@@ -364,6 +365,8 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
   });
 }
 
+const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
+
 function drawLeaderboard(hud: Hud, compact: boolean) {
   const { ctx, w, snap, s } = hud;
   const rows = topScorers(snap.leaderboard, compact ? 5 : 10);
@@ -387,7 +390,8 @@ function drawLeaderboard(hud: Hud, compact: boolean) {
     text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
     y += 30;
   } else {
-    text(ctx, `Most kills in ${FFA_ROUND}`, x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
+    const mostKills = mostKillsText(timeLeft(hud));
+    text(ctx, mostKills[0]!.toUpperCase() + mostKills.slice(1), x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
     y += 18;
   }
   rows.forEach((r, i) => {
@@ -531,7 +535,7 @@ function drawScore(hud: Hud, compact: boolean) {
   text(ctx, `K ${snap.self.kills}  D ${snap.self.deaths}`, bx + barW / 2, 22, TYPE.label, MUTED, 'center', 600);
   text(ctx, lp.nextAt === null ? `${me.score} · max` : `${me.score} / ${lp.nextAt}`, bx + barW, 22, TYPE.label, HUD_INK, 'right', 700);
   bar(ctx, bx, 34, barW, 8, lp.frac, PALETTE.gold);
-  const line = `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team).line}`;
+  const line = `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team, timeLeft(hud)).line}`;
   setFont(ctx, 600, TYPE.label + 1);
   const dot = me.team ? 14 : 0;
   const lw = ctx.measureText(line).width + 20 + dot;

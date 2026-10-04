@@ -127,6 +127,22 @@ test('TDM: when the time limit runs out the team ahead wins, on kills if the sco
   assert.deepEqual([draw.w.match.k, draw.winner, draw.w.map, draw.w.teamScore], ['playing', null, ROTATION.TDM[1], { red: 0, blue: 0 }]);
 });
 
+test('the snapshot carries when the round\'s clock runs out, unchanged through the round, and a fresh time for the next one', () => {
+  const w = createWorld('TDM', 1, ROTATION.TDM[0]);
+  const viewer = addPlayer(w, 'v', PISTOL, { team: 'red' });
+  const endsAt = () => snapshotFor(w, viewer.id).match.roundEndsAt;
+  assert.equal(endsAt(), MAP_MS.TDM);
+  run(w, 60_000);
+  assert.equal(endsAt(), MAP_MS.TDM, 'the same end time a minute in, so the match field is not resent');
+  w.teamScore.red = WORLD.tdmWinScore;
+  run(w, TICK_MS);
+  assert.equal(endsAt(), null, 'no clock under the winner banner');
+  run(w, WORLD.roundRestartMs + 100);
+  assert.ok(endsAt()! - w.now > MAP_MS.TDM - 1000, 'the next round starts a full clock');
+  const dom = createWorld('DOM', 1, ROTATION.DOM[0]);
+  assert.equal(snapshotFor(dom, addPlayer(dom, 'd', PISTOL).id).match.roundEndsAt, null, 'DOM has no clock');
+});
+
 test('FFA: a timer finish with no kills starts a fresh round on the next map without a winner', () => {
   const [first, second] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);

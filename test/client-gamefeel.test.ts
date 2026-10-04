@@ -8,6 +8,7 @@ import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, NO_MOMENTS } from '../src/c
 import { approachAlpha, drawHud, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
+import { EMPTY_BUFFER } from '../src/client/interp.ts';
 import type { Session } from '../src/client/state.ts';
 import { createPool } from '../src/client/particles.ts';
 import { PALETTE } from '../src/client/palette.ts';
@@ -23,7 +24,7 @@ const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?:
   t: 'snap', tick: 1, ackSeq: 0,
   self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
-  match: { mode: 'FFA', map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: o.events ?? [],
+  match: { mode: 'FFA', map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0, roundEndsAt: null }, events: o.events ?? [],
 });
 
 const kill = (over: Partial<KillEvent> = {}): KillEvent =>
@@ -113,7 +114,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { Path2D: class {} });
-  const s = { myId: 1, worldSize: WORLD.size, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], ...session } as unknown as Session;
+  const s = { myId: 1, worldSize: WORLD.size, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], snaps: EMPTY_BUFFER, ...session } as unknown as Session;
   drawHud(ctx, 1, makeCamera(s.lastSelf, 1280, 800, WORLD.viewRadius), frame, s, 1000, { x: 0, y: 0 }, null);
   return drawn;
 }

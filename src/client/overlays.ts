@@ -2,7 +2,8 @@ import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, t
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
-import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, seconds } from './derive.ts';
+import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, roundTimeLeft, seconds } from './derive.ts';
+import { serverNow } from './interp.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
@@ -179,7 +180,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     banner.replaceChildren(h, note, teamScore, list, p);
   };
 
-  const renderObjective = (state: ClientState, snap: Snapshot, now: number) => {
+  const renderObjective = (state: ClientState, snap: Snapshot, now: number, clockNow: number | null) => {
     const team = snap.players.find((p) => p.id === snap.self.id)?.team ?? null;
     objectiveSeen = nextObjectiveSeen(objectiveSeen, state.phase, snap.match, team, now);
     const show = objectiveVisible(state.phase, snap.match, now - objectiveSeen.at);
@@ -188,7 +189,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     keys.objective = key;
     objective.hidden = !show;
     if (!show) return;
-    objective.textContent = objectiveFor(snap.match.mode, team).banner;
+    objective.textContent = objectiveFor(snap.match.mode, team, roundTimeLeft(snap.match, clockNow)).banner;
     objective.style.animationDuration = `${OBJECTIVE_MS}ms`;
     objective.style.borderColor = team ? TEAM_COLORS[team] : '';
   };
@@ -236,7 +237,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       const selfName = snap.players.find((p) => p.id === snap.self.id)?.name ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.name;
       renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
       renderBanner(snap);
-      renderObjective(state, snap, now);
+      renderObjective(state, snap, now, serverNow(s.snaps, now));
       renderDeath(state, snap, now);
     },
     reset() {

@@ -48,7 +48,7 @@ test('a team round podium lists the winning team with the final team score; FFA 
     { id: 3, name: 'Ivy', score: 0, kills: 5, deaths: 0, team: 'red' },
     { id: 4, name: 'Nova', score: 0, kills: 3, deaths: 0, team: 'red' },
   ];
-  const match = { mode: 'TDM', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 50, blue: 44 }, winner: { name: 'Red team', id: null, note: null }, restartIn: 8000 } as const;
+  const match = { mode: 'TDM', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 50, blue: 44 }, winner: { name: 'Red team', id: null, note: null }, restartIn: 8000, roundEndsAt: null } as const;
   const team = roundPodium(match, rows, 3);
   assert.deepEqual(team.rows.map((r) => r.name), ['Ivy', 'Nova']);
   assert.equal(team.score, 'Red 50 · Blue 44');
@@ -62,7 +62,7 @@ test('an FFA podium puts the round winner first even when a bot out-killed them'
     { id: 2, name: 'Juno', score: 0, kills: 25, deaths: 9, team: null },
     { id: 3, name: 'Kestrel', score: 0, kills: 20, deaths: 2, team: null },
   ];
-  const match = { mode: 'FFA', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: { name: 'Kestrel', id: 3, note: 'Kestrel reached 20 kills' }, restartIn: 8000 } as const;
+  const match = { mode: 'FFA', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: { name: 'Kestrel', id: 3, note: 'Kestrel reached 20 kills' }, restartIn: 8000, roundEndsAt: null } as const;
   assert.deepEqual(roundPodium(match, rows, 3).rows.map((r) => r.name), ['Kestrel', 'Pike', 'Juno']);
 });
 

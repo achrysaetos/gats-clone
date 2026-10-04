@@ -85,6 +85,7 @@ function matchView(w: World): MatchView {
     teamScore: { red: Math.floor(w.teamScore.red), blue: Math.floor(w.teamScore.blue) },
     winner: w.match.k === 'over' ? w.match.winner : null,
     restartIn: w.match.k === 'over' ? Math.max(0, w.match.restartAt - w.now) : 0,
+    roundEndsAt: w.match.k === 'playing' && Number.isFinite(w.mapChangeAt) ? w.mapChangeAt : null,
   };
 }
 

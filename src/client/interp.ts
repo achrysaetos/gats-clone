@@ -29,6 +29,8 @@ export function pushSnap(buf: SnapBuffer, snap: Snapshot, arrivedAt: number): Sn
 }
 
 export const renderTime = (buf: SnapBuffer, now: number) => now + (buf.serverClockOffset ?? 0) - INTERP_DELAY_MS;
+/** The server's clock right now, not delayed for interpolation, or null before the first snapshot. */
+export const serverNow = (buf: SnapBuffer, now: number): number | null => (buf.serverClockOffset === null ? null : now + buf.serverClockOffset);
 
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 

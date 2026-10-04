@@ -97,8 +97,14 @@ export const byRank = (a: { kills: number; deaths: number }, b: { kills: number;
 export const rankRows = (rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort(byRank);
 /** `id` is the winning player's, null for a team. `note` says why they won when the ranking does not, such as a human reaching the FFA kill target behind a bot. */
 export type RoundWinner = { name: string; id: number | null; note: string | null };
-/** `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise. */
-export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: RoundWinner | null; restartIn: number };
+/**
+ * `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise.
+ * `roundEndsAt` is the server time (tick × tick length) the round's clock runs out, null while it is over or when it has no clock; it holds still for the whole round, so the sticky match field is not resent every tick.
+ */
+export type MatchView = {
+  mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: RoundWinner | null; restartIn: number;
+  roundEndsAt: number | null;
+};
 
 export type Snapshot = {
   t: 'snap';

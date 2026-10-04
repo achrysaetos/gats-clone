@@ -43,15 +43,25 @@ export const feedMentions = (kill: { killerId: number | null; victimId: number }
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 
-const clock = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
-/** An FFA round's length as m:ss. */
-export const FFA_ROUND = clock(MAP_MS.FFA);
-const TDM_GOAL = `first to ${WORLD.tdmWinScore} kills or most in ${clock(MAP_MS.TDM)}`;
-const FFA_GOAL = `most kills in ${FFA_ROUND} · first player to ${WORLD.ffaWinKills} ends it`;
+/** m:ss, rounded up so it reads 0:00 only once the time is up. */
+export function clock(ms: number): string {
+  const s = seconds(ms);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
-export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: string } {
+/** Ms left on the round's clock, or null when it has none or the server's clock is not known yet. */
+export const roundTimeLeft = (match: Pick<MatchView, 'roundEndsAt'>, serverNow: number | null): number | null =>
+  match.roundEndsAt === null || serverNow === null ? null : Math.max(0, match.roundEndsAt - serverNow);
+
+/** `most kills · 4:12 left` while the clock runs, `most kills in 6:00` before it is known. */
+export const mostKillsText = (leftMs: number | null): string =>
+  leftMs === null ? `most kills in ${clock(MAP_MS.FFA)}` : `most kills · ${clock(leftMs)} left`;
+
+export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): { banner: string; line: string } {
   const side = team ?? 'no';
   const Side = side[0]!.toUpperCase() + side.slice(1);
+  const FFA_GOAL = `${mostKillsText(leftMs)} · first player to ${WORLD.ffaWinKills} ends it`;
+  const TDM_GOAL = `first to ${WORLD.tdmWinScore} kills ${leftMs === null ? `or most in ${clock(MAP_MS.TDM)}` : `· ${clock(leftMs)} left`}`;
   switch (mode) {
     case 'FFA':
       return { banner: `Free for all: ${FFA_GOAL}`, line: `FFA · ${FFA_GOAL}` };
