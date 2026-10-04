@@ -1,14 +1,14 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addFeedback, ASSIST_MS, HURT_MS, NO_FEEDBACK, NUMBER_MS, type Feedback } from '../src/client/feedback.ts';
+import { addFeedback, ASSIST_MS, HURT_ARC_MS, HURT_MS, NO_FEEDBACK, NUMBER_MS, type Feedback } from '../src/client/feedback.ts';
 import type { DamageKind, GameEvent } from '../src/shared/protocol.ts';
 
 const ME = 1;
 const dmg = (attacker: number | null, victim: number, amount: number, kind: DamageKind = 'player'): GameEvent =>
   ({ e: 'dmg', attacker, victim, amount, x: victim * 10, y: 0, kind });
 const kill = (killerId: number, victimId: number, assisters: number[] = []): GameEvent => ({ e: 'kill', killer: 'k', victim: 'v', killerId, victimId, weapon: 'Pistol', bounty: false, assisters });
-const apply = (events: GameEvent[], now = 1000, fb: Feedback = NO_FEEDBACK) => addFeedback(fb, events, ME, 100, now);
+const apply = (events: GameEvent[], now = 1000, fb: Feedback = NO_FEEDBACK, players: { id: number; x: number; y: number }[] = []) => addFeedback(fb, events, players, ME, 100, now);
 
 test('the hitmarker shows only for damage you deal to a player', () => {
   assert.deepEqual(apply([dmg(ME, 2, 20)]).hitmarker, { born: 1000, kill: false });
@@ -31,6 +31,28 @@ test('damage numbers show your damage, summing rapid hits on one target', () => 
   const separate = apply([dmg(ME, 2, 10)], 1000 + 600, pellets);
   assert.deepEqual(separate.numbers.map((n) => [n.victim, n.amount]), [[2, 30], [3, 15], [2, 10]], 'a hit after a pause starts a new number');
   assert.deepEqual(apply([], 1000 + NUMBER_MS, pellets).numbers, [], 'numbers expire');
+});
+
+test('a hit draws an arc on the side the attacker stands, or where the hit landed when the attacker is unseen', () => {
+  const at = (x: number, y: number) => [{ id: ME, x: 500, y: 500 }, { id: 2, x, y }];
+  const [east] = apply([dmg(2, ME, 20)], 1000, NO_FEEDBACK, at(900, 500)).arcs;
+  assert.equal(east?.angle, 0, 'attacker due east');
+  const [north] = apply([dmg(2, ME, 20)], 1000, NO_FEEDBACK, at(500, 100)).arcs;
+  assert.equal(north?.angle, -Math.PI / 2, 'attacker due north, screen y grows downward');
+  const unseen = apply([{ e: 'dmg', attacker: 9, victim: ME, amount: 20, x: 500, y: 520, kind: 'player' }], 1000, NO_FEEDBACK, at(0, 0)).arcs;
+  assert.deepEqual(unseen.map((a) => a.angle), [Math.PI / 2], 'an attacker off the snapshot falls back to the impact point, below you');
+  assert.deepEqual(apply([dmg(ME, 2, 20)], 1000, NO_FEEDBACK, at(900, 500)).arcs, [], 'damage you deal draws no arc');
+});
+
+test('a stream of hits from one side refreshes one arc, and arcs fade', () => {
+  const players = [{ id: ME, x: 0, y: 0 }, { id: 2, x: 100, y: 0 }, { id: 3, x: -100, y: 0 }];
+  const first = apply([dmg(2, ME, 10)], 1000, NO_FEEDBACK, players);
+  const stream = apply([dmg(2, ME, 10)], 1100, first, players);
+  assert.equal(stream.arcs.length, 1, 'same side merges');
+  assert.equal(stream.arcs[0]!.born, 1100, 'the merged arc restarts its fade');
+  assert.ok(stream.arcs[0]!.strength > first.arcs[0]!.strength, 'and grows stronger');
+  assert.equal(apply([dmg(3, ME, 10)], 1100, first, players).arcs.length, 2, 'the opposite side adds its own arc');
+  assert.deepEqual(apply([], 1000 + HURT_ARC_MS, first, players).arcs, [], 'arcs expire');
 });
 
 test('the hurt vignette scales with damage taken and ignores damage you deal', () => {

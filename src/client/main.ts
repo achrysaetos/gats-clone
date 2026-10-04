@@ -244,7 +244,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.predict = reconcile(s.predict, server, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
-  s.feedback = addFeedback(s.feedback, snap.events, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
+  s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
@@ -373,7 +373,7 @@ function drawFrame(now: number) {
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId });
-  drawHud(ctx, view.dpr, view.w, view.h, snap, s, now, mouse);
+  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
 }

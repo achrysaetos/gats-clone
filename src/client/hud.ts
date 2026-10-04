@@ -1,9 +1,9 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
-import type { Point } from './camera.ts';
+import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
-import { ASSIST_MS, HITMARKER_MS, HURT_MS } from './feedback.ts';
+import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
 import { drawGun } from './sprites.ts';
@@ -21,7 +21,8 @@ const FEED_MS = 6000;
 const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
 
-type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number };
+/** `selfAt` is where your player is drawn on screen. */
+type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; cam: Camera; selfAt: Point };
 
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((id) => [GUNS[id].name, id]));
 const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id, info]) => [info.name, id as PerkId]));
@@ -43,13 +44,15 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
   ctx.globalAlpha = 1;
 }
 
-export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, w: number, h: number, snap: Snapshot, s: Session, now: number, crosshair: Point) {
+export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera, snap: Snapshot, s: Session, now: number, crosshair: Point) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   hudFont = '';
+  const { w, h } = cam;
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
-  const hud: Hud = { ctx, w, h, snap, s, me, now };
+  const hud: Hud = { ctx, w, h, snap, s, me, now, cam, selfAt: worldToScreen(cam, s.lastSelf) };
   const compact = w < 640;
   drawHurtVignette(hud);
+  drawHurtArcs(hud);
   drawKillFeed(hud, compact ? 74 : 18);
   drawLeaderboard(hud, compact);
   drawMinimap(hud, compact ? 110 : 170);
@@ -68,13 +71,33 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
   const depth = Math.min(w, h) * 0.2;
   const step = depth / HURT_BANDS;
   ctx.fillStyle = 'rgb(200, 20, 20)';
-  ctx.globalAlpha = ((0.25 + 0.5 * hurt.strength) * (1 - k)) / HURT_BANDS;
+  ctx.globalAlpha = ((0.15 + 0.3 * hurt.strength) * (1 - k)) / HURT_BANDS;
   for (let i = 0; i < HURT_BANDS; i++) {
     const d = depth - i * step;
     ctx.fillRect(0, 0, w, d);
     ctx.fillRect(0, h - d, w, d);
     ctx.fillRect(0, d, d, h - d * 2);
     ctx.fillRect(w - d, d, d, h - d * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const ARC = { radius: 62, half: 0.55 } as const;
+
+function drawHurtArcs({ ctx, s, now, selfAt }: Hud) {
+  ctx.lineCap = 'round';
+  for (const arc of s.feedback.arcs) {
+    const k = (now - arc.born) / HURT_ARC_MS;
+    if (k < 0 || k >= 1) continue;
+    const r = ARC.radius + 8 * k;
+    for (const [width, color, alpha] of [[11, 'rgba(0,0,0,0.5)', 0.6], [6, PALETTE.hunted, 1]] as const) {
+      ctx.globalAlpha = alpha * (1 - k * k) * (0.55 + 0.45 * arc.strength);
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(selfAt.x, selfAt.y, r, arc.angle - ARC.half, arc.angle + ARC.half);
+      ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
 }
