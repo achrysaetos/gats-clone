@@ -196,14 +196,15 @@ function serve(ws: WebSocket, mode: ModeId) {
       }
       return b.life > 0;
     });
+    const clouds: ThrownView[] = [];
     thrown = thrown.filter((t) => {
       if (t.kind === 'gasCloud') { t.r -= 0.5; return t.r > 20; }
       if (t.kind === 'landMine') return true;
       if (now < (fuseEndsAt.get(t.id) ?? 0)) return true;
       events.push({ e: 'boom', x: t.x, y: t.y, r: t.r });
-      if (t.kind === 'gasGrenade') thrown.push({ ...t, id: w.bulletId++, kind: 'gasCloud', r: 160 });
+      if (t.kind === 'gasGrenade') clouds.push({ ...t, id: w.bulletId++, kind: 'gasCloud', r: 160 });
       return false;
-    });
+    }).concat(clouds);
     if (me.alive && me.hp < 100) me.hp = Math.min(100, me.hp + WORLD.regenPerSec * DT);
     if (w.tick % 90 === 0 && me.alive) { me.hp = Math.max(1, me.hp - 15); events.push({ e: 'dmg', attacker: 101, victim: myId, amount: 15, x: me.x, y: me.y, kind: 'player' }); }
     if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'SMG' });
