@@ -122,7 +122,7 @@ test('the run announces the night ten seconds ahead, nightfall with its wave, da
 
 test('the run report ranks the squad by kills, then revives, and marks you', () => {
   const report = { night: 4, durationMs: 372_000, players: [
-    { name: 'Bo', kills: 12, revives: 0, built: 3 }, { name: 'Ann', kills: 30, revives: 1, built: 0 }, { name: 'Cy', kills: 12, revives: 4, built: 7 },
+    { name: 'Bo', kills: 12, revives: 0, built: 9 }, { name: 'Ann', kills: 30, revives: 1, built: 0 }, { name: 'Cy', kills: 12, revives: 4, built: 7 },
   ] };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The core fell on night 4');
