@@ -17,7 +17,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
-    input: IDLE_INPUT, seq: 0, viewAt: null, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
+    input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
@@ -42,12 +42,13 @@ export function removePlayer(w: World, id: number): void {
   w.players.delete(id);
 }
 
-export function setInput(w: World, id: number, seq: number, input: InputState, viewAt: number | null = null): void {
+export function setInput(w: World, id: number, seq: number, input: InputState, viewAt: number | null = null, rewindCapMs = MAX_REWIND_MS): void {
   const p = w.players.get(id);
   if (!p || seq < p.seq) return;
   p.seq = seq;
   p.input = input;
   p.viewAt = viewAt;
+  p.rewindCapMs = rewindCapMs;
 }
 
 export function canRespawn(w: World, id: number): boolean {
@@ -110,7 +111,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     const from = w.now - life.nextFireAt < dtMs ? life.nextFireAt : w.now;
     life.nextFireAt = from + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
     const muzzle = WORLD.playerRadius + 4;
-    const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, MAX_REWIND_MS);
+    const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * stats.spread * 2;
       const b: Bullet = {

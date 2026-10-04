@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
-import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
+import { INTERP_DELAY_MS, parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { MAX_REWIND_MS } from '../src/shared/sim/combat.ts';
+import { MAX_REWIND_MS, rewindCapFor } from '../src/shared/sim/combat.ts';
 import { IDLE_INPUT, type Player, type Wall, type World } from '../src/shared/sim/world.ts';
 import { emptyWorld, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 let seq = 1_000_000;
-function fireSeeing(w: World, shooter: Player, angle: number, viewAt: number | null): GameEvent[] {
-  setInput(w, shooter.id, seq++, { ...IDLE_INPUT, angle, fire: true, shots: shooter.input.shots + 1 }, viewAt);
+function fireSeeing(w: World, shooter: Player, angle: number, viewAt: number | null, rewindCapMs = MAX_REWIND_MS): GameEvent[] {
+  setInput(w, shooter.id, seq++, { ...IDLE_INPUT, angle, fire: true, shots: shooter.input.shots + 1 }, viewAt, rewindCapMs);
   step(w, TICK_MS);
   const events = [...w.events];
-  setInput(w, shooter.id, seq++, { ...IDLE_INPUT, angle, shots: shooter.input.shots }, viewAt);
+  setInput(w, shooter.id, seq++, { ...IDLE_INPUT, angle, shots: shooter.input.shots }, viewAt, rewindCapMs);
   for (let t = 0; t < 500; t += TICK_MS) { step(w, TICK_MS); events.push(...w.events); }
   return events;
 }
@@ -57,10 +57,9 @@ test('a rewound shot stops at a built wall that stood when the shooter saw the v
   assert.ok(!hitOn(fireSeeing(w, shooter, 0, sawAt), victim), 'no hit through the wall as it stood');
 });
 
-test(`a victim who reached cover can be hit only for the rewind cap less the bullet's flight, however far back the client claims to see`, (t) => {
-  const range = 200;
-  const flightMs = (range / GUNS.pistol.bulletSpeed) * 1000;
-  let latestHitAfterCoverMs = -Infinity;
+/** How long after reaching cover a victim can still be hit by a shooter who claims to have seen the world at time 0. */
+function latestHitAfterCover(rewindCapMs: number, range: number): number {
+  let latest = -Infinity;
   for (let delayMs = 0; delayMs <= MAX_REWIND_MS + 200; delayMs += TICK_MS) {
     const w = emptyWorld();
     const shooter = spawnAt(w, 500, 380);
@@ -73,11 +72,28 @@ test(`a victim who reached cover can be hit only for the rewind cap less the bul
     const coveredAt = w.now;
     run(w, delayMs);
     const firedAt = w.now + TICK_MS;
-    if (hitOn(fireSeeing(w, shooter, 0, 0), victim)) latestHitAfterCoverMs = Math.max(latestHitAfterCoverMs, firedAt - coveredAt);
+    if (hitOn(fireSeeing(w, shooter, 0, 0, rewindCapMs), victim)) latest = Math.max(latest, firedAt - coveredAt);
   }
-  t.diagnostic(`latest hit ${Math.round(latestHitAfterCoverMs)}ms after reaching cover (cap ${MAX_REWIND_MS}ms, flight ${Math.round(flightMs)}ms)`);
-  assert.ok(latestHitAfterCoverMs >= 0, 'a shot fired just after the victim reached cover still lands');
-  assert.ok(latestHitAfterCoverMs <= MAX_REWIND_MS - flightMs + TICK_MS, `latest hit ${Math.round(latestHitAfterCoverMs)}ms after cover`);
+  return latest;
+}
+
+const RTT_MS = 40;
+for (const [label, capMs] of [['the rewind cap', MAX_REWIND_MS], [`a ${RTT_MS}ms round trip's cap`, rewindCapFor(RTT_MS)]] as const) {
+  test(`a victim who reached cover can be hit only for ${label} less the bullet's flight, however far back the client claims to see`, (t) => {
+    const range = 200;
+    const flightMs = (range / GUNS.pistol.bulletSpeed) * 1000;
+    const latest = latestHitAfterCover(capMs, range);
+    t.diagnostic(`latest hit ${Math.round(latest)}ms after reaching cover (cap ${Math.round(capMs)}ms, flight ${Math.round(flightMs)}ms)`);
+    assert.ok(latest >= 0, 'a shot fired just after the victim reached cover still lands');
+    assert.ok(latest <= capMs - flightMs + TICK_MS, `latest hit ${Math.round(latest)}ms after cover`);
+  });
+}
+
+test('a measured round trip caps the rewind at the round trip plus the render delay and a margin, never above the global cap', () => {
+  assert.equal(rewindCapFor(null), MAX_REWIND_MS, 'unmeasured clients get the full cap');
+  assert.ok(rewindCapFor(RTT_MS) < MAX_REWIND_MS / 1.5, `a ${RTT_MS}ms round trip caps at ${rewindCapFor(RTT_MS)}ms`);
+  assert.ok(rewindCapFor(RTT_MS) >= RTT_MS + INTERP_DELAY_MS, 'covers the view a lagged client really drew');
+  assert.equal(rewindCapFor(1000), MAX_REWIND_MS);
 });
 
 test('input parsing keeps a numeric view time and drops anything else', () => {

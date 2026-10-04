@@ -39,6 +39,8 @@ export type Player = {
   seq: number;
   /** Server time of the world the client was drawing when it sampled `input`, or null when it never said. */
   viewAt: number | null;
+  /** The furthest back this player's shots may be judged, from their measured round trip. */
+  rewindCapMs: number;
   shotsSeen: number;
   life: Life;
   score: number;

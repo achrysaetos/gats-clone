@@ -3,6 +3,7 @@ import { WORLD, type ModeId, type PlayerKind } from '../shared/defs.ts';
 import { ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
+import { rewindCapFor } from '../shared/sim/combat.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { choosePick } from '../shared/sim/stats.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
@@ -15,6 +16,7 @@ import { uniqueName } from './names.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
+const RTT_SAMPLES = 5;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
@@ -76,7 +78,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
-  function handle(client: Client, msg: ClientMsg) {
+  function handle(client: Client, msg: ClientMsg, rewindCapMs: number) {
     if (client.k === 'lobby') {
       if (msg.t !== 'join') return;
       if (joined().length >= limits.humansPerRoom) {
@@ -98,7 +100,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     switch (msg.t) {
       case 'join': return;
       case 'view': client.aspect = msg.aspect; return;
-      case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt); return;
+      case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt, rewindCapMs); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
       case 'chat': {
@@ -156,20 +158,34 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const joinTimer = setTimeout(() => { if (clients.get(ws)?.k === 'lobby') ws.close(1008, 'join timeout'); }, limits.joinTimeoutMs);
       // A socket can die without a close frame (a dropped network, a proxy that lingers); unanswered pings are the only signal.
       let answeredPing = true;
-      ws.on('pong', () => { answeredPing = true; });
+      // The worst of the last few round trips, so ordinary jitter between pings does not shrink the rewind a shot needs.
+      let rtts: number[] = [];
+      let pinged: { id: number; at: number } | null = null;
+      let pingId = 0;
+      const ping = () => {
+        pinged = { id: ++pingId, at: Date.now() };
+        ws.ping(String(pinged.id));
+      };
+      ws.on('pong', (data) => {
+        answeredPing = true;
+        if (pinged === null || String(data) !== String(pinged.id)) return;
+        rtts = [...rtts.slice(1 - RTT_SAMPLES), Date.now() - pinged.at];
+        pinged = null;
+      });
       const heartbeat = setInterval(() => {
         if (!answeredPing) { ws.terminate(); return; }
         answeredPing = false;
-        ws.ping();
+        ping();
       }, limits.heartbeatMs);
+      const rttTimer = setInterval(ping, limits.rttPingMs);
       ws.on('message', (data, isBinary) => {
         if (!allow(Date.now())) { ws.close(1008, 'too many messages'); return; }
         const msg = isBinary ? null : parseClientMsg(data.toString());
         if (!msg) { send(ws, { t: 'error', message: 'Bad message' }); return; }
         const client = clients.get(ws);
-        if (client) handle(client, msg);
+        if (client) handle(client, msg, rewindCapFor(rtts.length > 0 ? Math.max(...rtts) : null));
       });
-      ws.on('close', () => { clearTimeout(joinTimer); clearInterval(heartbeat); disconnect(ws); });
+      ws.on('close', () => { clearTimeout(joinTimer); clearInterval(heartbeat); clearInterval(rttTimer); disconnect(ws); });
       // ws emits 'error' for protocol violations like oversized frames; unhandled, it kills the process.
       ws.on('error', () => ws.terminate());
     },

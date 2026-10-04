@@ -1,5 +1,5 @@
 import {
-  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS,
+  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD,
   type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId,
 } from './defs.ts';
 
@@ -16,6 +16,9 @@ export type InputState = {
   ability: boolean;
   aimDist: number;
 };
+
+/** How far behind the newest snapshot a client draws the world; the server allows for it when judging a lagged shot. */
+export const INTERP_DELAY_MS = (3 * 1000) / WORLD.tickHz;
 
 export const VIEW_ASPECT = { min: 1, max: 16 / 9 } as const;
 export const VIEW_PRELOAD_MARGIN = 64;

@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  EMPTY_BUFFER, INTERP_DELAY_MS, lerpAngle, MAX_EXTRAPOLATE_MS, newestSnap, pushSnap, renderTime, sampleAt, TICK_MS, type SnapBuffer,
+  EMPTY_BUFFER, lerpAngle, MAX_EXTRAPOLATE_MS, newestSnap, pushSnap, renderTime, sampleAt, TICK_MS, type SnapBuffer,
 } from '../src/client/interp.ts';
-import type { PlayerView, Snapshot } from '../src/shared/protocol.ts';
+import { INTERP_DELAY_MS, type PlayerView, type Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, x: number, y: number, angle = 0): PlayerView => ({
   id, name: `p${id}`, x, y, angle, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', gun: 'pistol',

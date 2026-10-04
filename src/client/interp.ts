@@ -1,8 +1,7 @@
 import { WORLD } from '../shared/defs.ts';
-import type { Snapshot } from '../shared/protocol.ts';
+import { INTERP_DELAY_MS, type Snapshot } from '../shared/protocol.ts';
 
 export const TICK_MS = 1000 / WORLD.tickHz;
-export const INTERP_DELAY_MS = 3 * TICK_MS;
 export const MAX_EXTRAPOLATE_MS = 100;
 const TELEPORT_DIST = 250;
 const KEEP_MS = 1000;

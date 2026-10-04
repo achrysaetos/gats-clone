@@ -6,6 +6,7 @@ export const LIMITS = {
   socketsPerIp: 8,
   joinTimeoutMs: 10_000,
   heartbeatMs: 10_000,
+  rttPingMs: 2_000,
   messagesPerSec: 60,
   messageBurst: 120,
   authPerMin: 10,

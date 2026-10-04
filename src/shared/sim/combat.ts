@@ -1,5 +1,5 @@
 import { ARMORS, HP_MULTIPLIER, WORLD } from '../defs.ts';
-import type { Team } from '../protocol.ts';
+import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
@@ -10,6 +10,10 @@ const SHIELD_BLOCK = 0.33;
 const SHIELD_ARC = (40 * Math.PI) / 180;
 /** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
 export const MAX_REWIND_MS = 350;
+const REWIND_MARGIN_MS = 60;
+/** A client sees the world its round trip plus its render delay ago, so it may claim no staler view than that; until a round trip is measured it gets the full cap. */
+export const rewindCapFor = (rttMs: number | null): number =>
+  rttMs === null ? MAX_REWIND_MS : Math.min(MAX_REWIND_MS, rttMs + INTERP_DELAY_MS + REWIND_MARGIN_MS);
 const TICK_MS = 1000 / WORLD.tickHz;
 const OWN_BLAST_SHARE = 0.5;
 const ASSIST_SHARE = 0.3;
