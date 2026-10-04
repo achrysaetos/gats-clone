@@ -230,6 +230,9 @@ kbd {
 .controls { display: grid; grid-template-columns: auto 1fr; gap: 6px var(--s3); margin: 0; align-items: center; font-size: var(--t-label); }
 .controls dd { margin: 0; color: var(--muted); }
 
+.muted-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: var(--t-label); }
+.muted-list li { display: flex; justify-content: space-between; gap: var(--s3); }
+
 /* In-game overlays */
 .hud { position: fixed; inset: 0; pointer-events: none; }
 .hud > * { pointer-events: auto; }
@@ -304,6 +307,17 @@ kbd {
   overflow-wrap: anywhere;
 }
 .chat-log li.system { color: var(--accent); }
+.chat-name {
+  pointer-events: auto;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  font-weight: 700;
+}
+.chat-name:hover:not(:disabled) { background: none; text-decoration: underline; }
+.chat-log li.muted-line { color: var(--muted); }
+.muted-tag { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.06em; }
 .chat-input { pointer-events: auto; background: rgba(18, 21, 26, 0.92); }
 
 .banner {

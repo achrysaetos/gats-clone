@@ -1,5 +1,6 @@
 import { PERK_INFO, PERK_TIERS, type PerkId, type Tier } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
+import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
 import { OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
@@ -19,7 +20,7 @@ const PERK_SHORT: Record<PerkId, string> = {
 const CHAT_LINES = 8;
 const PODIUM_SIZE = 3;
 
-export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => void) {
+export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => void, onToggleMute: (name: string) => void) {
   const perkPanel = $('perk-panel');
   const chatLog = $('chat-log');
   const chatInput = $<HTMLInputElement>('chat-input');
@@ -70,18 +71,44 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
     perkPanel.replaceChildren(title, list);
   };
 
-  const renderChat = (lines: ChatLine[], now: number, open: boolean) => {
-    const shown = lines.slice(-CHAT_LINES).filter((l) => open || now - l.at < CHAT_VISIBLE_MS);
-    const key = `${open}|${shown.length}|${shown.at(-1)?.at ?? 0}`;
+  const sender = (name: string, label: string, title: string) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chat-name';
+    b.textContent = label;
+    b.title = title;
+    // A focused button would also take the Space that triggers the ability.
+    b.onmousedown = (e) => e.preventDefault();
+    b.onclick = () => onToggleMute(name);
+    return b;
+  };
+
+  const renderChat = (lines: ChatLine[], muted: MutedNames, selfName: string | undefined, now: number, open: boolean) => {
+    const entryAt = (e: ChatEntry) => (e.kind === 'said' ? e.line.at : e.at);
+    const shown = chatEntries(lines, muted).slice(-CHAT_LINES).filter((e) => open || now - entryAt(e) < CHAT_VISIBLE_MS);
+    const key = `${open}|${[...muted].join('\n')}|${shown.length}|${lines.at(-1)?.at ?? 0}`;
     if (key === keys.chat) return;
     keys.chat = key;
-    chatLog.replaceChildren(...shown.map((l) => {
+    chatLog.replaceChildren(...shown.map((e) => {
       const li = document.createElement('li');
-      const who = document.createElement('b');
-      who.textContent = l.from ? `${l.from}: ` : '';
+      if (e.kind === 'muted') {
+        const tag = document.createElement('span');
+        tag.className = 'muted-tag';
+        tag.textContent = 'muted';
+        li.className = 'muted-line';
+        li.append(sender(e.from, e.from, `Unmute ${e.from}`), tag);
+        return li;
+      }
+      const l = e.line;
+      if (!l.from) {
+        li.className = 'system';
+        li.append(l.text);
+        return li;
+      }
+      const label = `${l.from}: `;
+      const who = l.from === selfName ? Object.assign(document.createElement('b'), { textContent: label }) : sender(l.from, label, `Mute ${l.from}`);
       if (l.team) who.style.color = TEAM_COLORS[l.team];
       li.append(who, l.text);
-      if (!l.from) li.className = 'system';
       return li;
     }));
   };
@@ -156,10 +183,11 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
       chatInput.blur();
       return text;
     },
-    update(state: ClientState, s: Session, snap: Snapshot, now: number) {
+    update(state: ClientState, s: Session, snap: Snapshot, now: number, muted: MutedNames) {
       const pending = snap.self.pendingTier;
       renderPerks(state.phase === 'playing' && pending !== s.perkSentFor ? pending : null);
-      renderChat(s.chat, now, !chatInput.hidden);
+      const selfName = snap.players.find((p) => p.id === snap.self.id)?.name ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.name;
+      renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
       renderBanner(snap);
       renderObjective(state, snap, now);
       renderDeath(state, snap);

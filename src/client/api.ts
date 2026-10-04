@@ -1,5 +1,6 @@
 import { ARMOR_IDS, COLOR_IDS, MODE_IDS, WEAPON_IDS, type ModeId } from '../shared/defs.ts';
 import { parseLoadout, type Loadout } from '../shared/protocol.ts';
+import { parseMuted, serializeMuted, type MutedNames } from './chatmute.ts';
 
 export type ServerInfo = { id: string; mode: ModeId; players: number; humans: number };
 type Stats = { name: string; kills: number; deaths: number; score: number; games: number; best: number };
@@ -74,3 +75,6 @@ export function loadLoadout(): Loadout {
 }
 
 export const saveLoadout = (l: Loadout) => store.set('skirmish.loadout', JSON.stringify(l));
+
+export const loadMuted = () => parseMuted(store.get('skirmish.mutedNames'));
+export const saveMuted = (muted: MutedNames) => store.set('skirmish.mutedNames', serializeMuted(muted));

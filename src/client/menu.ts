@@ -1,6 +1,7 @@
 import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, WEAPONS, WEAPON_IDS } from '../shared/defs.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
+import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
 import { drawSilhouette } from './sprites.ts';
 
@@ -59,6 +60,15 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
 
 export function renderControls(root: HTMLElement) {
   root.replaceChildren(...CONTROLS.flatMap(([key, what]) => [el('dt', {}, el('kbd', {}, key)), el('dd', {}, what)]));
+}
+
+export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name: string) => void) {
+  root.hidden = muted.size === 0;
+  root.replaceChildren(el('h2', {}, 'Muted in chat'), el('ul', { className: 'muted-list' }, ...[...muted].map((name) => {
+    const b = el('button', { type: 'button', className: 'link' }, 'Unmute');
+    b.onclick = () => unmute(name);
+    return el('li', {}, el('span', {}, name), b);
+  })));
 }
 
 export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string) => void) {

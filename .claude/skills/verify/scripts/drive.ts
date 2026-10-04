@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, restart, reconnect and expire on request.
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, mute, restart, reconnect and expire on request.
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
@@ -43,7 +43,7 @@ const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
 type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; weapon: WeaponId }[] };
-const frames = { welcome: null as null | { id: number; account: string | null }, last: null as null | Snap, sent: 0, snapAt: [] as number[] };
+const frames = { welcome: null as null | { id: number; account: string | null }, last: null as null | Snap, sent: 0, snapAt: [] as number[], chat: [] as { from: string; text: string }[] };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -53,6 +53,7 @@ page.on('message', (raw) => {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
     if (msg.t === 'snap') { frames.last = msg; frames.snapAt.push(m.params.timestamp * 1000); }
+    if (msg.t === 'chat') frames.chat.push(msg);
   } else if (m.method === 'Network.webSocketFrameSent') frames.sent++;
   else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
@@ -244,6 +245,54 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('own chat log shows the message', await until(async () => (await js(`document.getElementById('chat-log').textContent`)).includes(text)));
     expect('observer in the same room receives it', await until(() => observerChat.some((c) => c.from === NAME && c.text === text)));
     await shot('chat');
+  },
+  async mute() {
+    const chatLog = () => js(`document.getElementById('chat-log').textContent`) as Promise<string>;
+    let sentAt = 0;
+    const observerSays = async (text: string) => {
+      await sleep(Math.max(0, sentAt + 1100 - Date.now()));
+      sentAt = Date.now();
+      observer.send(JSON.stringify({ t: 'chat', text }));
+      return until(() => frames.chat.some((c) => c.text === text));
+    };
+    const clickChatName = async (label: string) => {
+      const at = await js(`(() => { const b = [...document.querySelectorAll('#chat-log .chat-name')].find(b => b.textContent.startsWith(${JSON.stringify(label)})); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+      if (!at) return false;
+      await mouse('mousePressed', at[0], at[1]);
+      await mouse('mouseReleased', at[0], at[1]);
+      return true;
+    };
+    const before = `before mute ${Date.now()}`;
+    expect('page socket receives the observer chat', await observerSays(before));
+    const sender = frames.chat.find((c) => c.text === before)!.from;
+    expect('chat log shows the observer line', await until(async () => (await chatLog()).includes(before)));
+    expect('clicking the sender name in the chat log is possible', await clickChatName(`${sender}: `));
+    expect('muted name stored in localStorage', await until(async () => JSON.parse(await js(`localStorage.getItem('skirmish.mutedNames')`) ?? '[]').includes(sender)));
+    expect('earlier line from the muted player is hidden', await until(async () => !(await chatLog()).includes(before)));
+    expect('chat log shows a muted marker for the player', (await js(`[...document.querySelectorAll('#chat-log .muted-line')].map(l => l.textContent).join('|')`)).includes(`${sender}muted`));
+    const later = `after mute ${Date.now()}`;
+    expect('page socket still receives the muted player chat', await observerSays(later));
+    await sleep(300);
+    expect('later line from the muted player is not shown', !(await chatLog()).includes(later));
+    await shot('chat-muted');
+
+    await cdp('Page.reload', { ignoreCache: true });
+    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    expect('menu lists the muted player after a reload', await until(async () => js(`!document.getElementById('muted').hidden && document.getElementById('muted').textContent.includes(${JSON.stringify(sender)})`)));
+    await shot('menu-muted-list');
+    frames.welcome = null;
+    await clickPlay();
+    expect('rejoined after the reload', await until(() => frames.welcome !== null) && await until(async () => js(`!document.getElementById('hud').hidden`)));
+    const afterReload = `after reload ${Date.now()}`;
+    expect('page socket receives the muted player chat after the reload', await observerSays(afterReload));
+    await sleep(300);
+    expect('muted player stays hidden after the reload', !(await chatLog()).includes(afterReload));
+    await shot('chat-muted-after-reload');
+    expect('clicking the muted marker is possible', await clickChatName(sender));
+    const unmuted = `after unmute ${Date.now()}`;
+    await observerSays(unmuted);
+    expect('after unmuting, the player is shown again', await until(async () => (await chatLog()).includes(unmuted)));
+    expect('unmuting clears the stored name', !JSON.parse(await js(`localStorage.getItem('skirmish.mutedNames')`) ?? '[]').includes(sender));
   },
   async touch() {
     await ensureAlive();

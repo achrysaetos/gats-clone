@@ -1,7 +1,8 @@
 import { PERK_TIERS, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
-import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
+import { fetchServers, loadLoadout, loadMuted, loadName, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
+import { toggleMute } from './chatmute.ts';
 import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killerOf, selfOf } from './derive.ts';
@@ -11,7 +12,7 @@ import { actionForKey, assembleInput, perkSlotForKey, type Action } from './inpu
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
-import { $, mountAccount, mountLoadoutPicker, renderControls, renderServers } from './menu.ts';
+import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash } from './predict.ts';
@@ -44,6 +45,7 @@ const serversEl = $('servers');
 
 let state: ClientState = { phase: 'menu', status: { kind: 'idle' } };
 let loadout: Loadout = loadLoadout();
+let muted = loadMuted();
 let servers: ServerInfo[] | null = [];
 let selectedRoom: string | null = null;
 let view = { w: 0, h: 0, dpr: 1 };
@@ -370,7 +372,7 @@ function drawFrame(now: number) {
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle });
   drawHud(ctx, view.dpr, view.w, view.h, snap, s, now, mouse);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
-  overlays.update(state, s, latest, now);
+  overlays.update(state, s, latest, now, muted);
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -460,7 +462,14 @@ function showServers() {
   refreshPlayButton();
 }
 
-const overlays = createOverlays(pickPerk, respawn);
+function toggleMuted(name: string) {
+  muted = toggleMute(muted, name);
+  saveMuted(muted);
+  renderMuted($('muted'), muted, toggleMuted);
+}
+
+const overlays = createOverlays(pickPerk, respawn, toggleMuted);
+renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),
   mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout),
