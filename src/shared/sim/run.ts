@@ -1,9 +1,10 @@
 import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { tickHorde } from './horde.ts';
-import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
+import { buildRefusal, type BuildRefusal, type BuildSite } from './build.ts';
+import { circleHitsRect, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { cellRect, coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
+import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
@@ -64,35 +65,22 @@ function tickSquad(w: World, run: Run, dtMs: number) {
   for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) repair(w, run, p, dtMs);
 }
 
-/** Why a wall cannot go up, or null once it has. */
-export type BuildRefusal = 'notDay' | 'farFromCore' | 'outOfReach' | 'cover' | 'core' | 'body' | 'taken' | 'scrap';
-
 const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
 
-function buildRefusal(w: World, run: Run, p: Player, cx: number, cy: number): BuildRefusal | null {
-  const core = coreRect(w);
-  if (run.phase.k !== 'day' || p.life.k !== 'alive' || !core) return 'notDay';
-  const at = cellCenter(cx, cy);
-  if (dist2(at.x, at.y, core.x + core.w / 2, core.y + core.h / 2) > ZOM.buildRadius ** 2) return 'farFromCore';
-  if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return 'outOfReach';
-  const cell = cellRect(cx, cy);
-  if (coverRects(w).some((r) => rectsOverlap(r, cell))) return 'cover';
-  if (rectsOverlap(core, cell)) return 'core';
+function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
   const bodies = [
     ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
     ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
   ];
-  if (bodies.some((b) => circleHitsRect(b.x, b.y, b.r, cell))) return 'body';
-  if (w.buildings.some((b) => b.cx === cx && b.cy === cy)) return 'taken';
-  if (run.scrap < BUILDINGS.wall.cost) return 'scrap';
-  return null;
+  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, walls: w.buildings, scrap: run.scrap };
 }
 
 export function build(w: World, id: number, cx: number, cy: number): BuildRefusal | null {
   const p = w.players.get(id);
   const run = w.run;
-  if (!p || !run) return 'notDay';
-  const refusal = buildRefusal(w, run, p, cx, cy);
+  const core = coreRect(w);
+  if (!p || !run || !core) return 'notDay';
+  const refusal = buildRefusal(siteFor(w, run, p, core), cx, cy);
   if (refusal) return refusal;
   run.scrap -= BUILDINGS.wall.cost;
   w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });

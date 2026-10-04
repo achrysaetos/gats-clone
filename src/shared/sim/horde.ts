@@ -1,7 +1,8 @@
 import { WORLD, ZOM, ZOMBIES } from '../defs.ts';
 import { damagePlayer } from './combat.ts';
 import { clamp, dist2, rectsOverlap, segmentEntersRectAt, slide, type Rect } from './movement.ts';
-import { cellRect, coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
+import { cellRect } from './build.ts';
+import { coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
 const GRID = WORLD.size / ZOM.cell;
 const UNREACHABLE = 0xffff;

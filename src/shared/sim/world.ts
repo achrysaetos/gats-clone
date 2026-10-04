@@ -1,6 +1,7 @@
 import { PERK_TIERS, WORLD, ZOM, type Blast, type BuildingKind, type GunId, type ModeId, type PlayerKind, type Tier, type ZombieKind } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type MapId } from '../maps.ts';
+import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 
 export type Wall = Rect & { built: boolean; expiresAt: number };
@@ -200,11 +201,9 @@ export function loadMap(w: World, map: MapId) {
 }
 
 export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
-export const cellRect = (cx: number, cy: number): Rect => ({ x: cx * ZOM.cell, y: cy * ZOM.cell, w: ZOM.cell, h: ZOM.cell });
-
 export function coreRect(w: World): Rect | null {
   const core = MAPS[w.map].siege?.core;
-  return core ? { x: core.x - ZOM.coreHalf, y: core.y - ZOM.coreHalf, w: ZOM.coreHalf * 2, h: ZOM.coreHalf * 2 } : null;
+  return core ? coreRectAt(core) : null;
 }
 
 /** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. */
