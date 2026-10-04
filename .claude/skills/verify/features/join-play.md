@@ -13,7 +13,7 @@ Clicking a room and `Play` puts the player into a live match. A 4s banner states
 - `play-hit-feedback` turns each hit into one `dmg` event (attacker, victim, amount, kind `player` or `crate`) or an `impact` for walls. The shooter sees a crosshair hitmarker for player hits (larger and red on a kill) and floating damage numbers. The victim sees a red edge vignette. The muzzle flash sits at the barrel tip.
 - `play-team-colors` draws every TDM and DOM body in its team color, whatever color was picked, and marks teammates with a small triangle. FFA keeps the picked color.
 - `play-names` gives each player a unique name in the room. A guest who types a registered name or a name already in use gets a number appended.
-- `play-health` gives human players 300 HP with triple regen. Bots have 100 HP.
+- `play-health` gives human players 300 HP with triple regen. Bots have 100 HP. A human's hits on another human deal triple damage after armor, so a human duel lasts as long as a bot duel. `duel.ts` shows this live: one pistol hit on a light-armored human reads `-44` (11 to armor, 33 to health).
 - `play-view` sends each client only what lies inside its visible rectangle. The rectangle is the view radius across and radius divided by aspect tall, with the aspect clamped to 1..16/9, plus a 64-unit margin. The camera shows the same rectangle, and bots see the same one.
 - `play-lag-comp` judges a shot against where targets were on the shooter's screen, up to 350ms back. Walls that stood during that window block it.
 - `play-duel` two real browsers in one room see and damage each other.
@@ -41,7 +41,7 @@ Preconditions:
 ## Gotchas
 
 - Spawning against a wall can block movement. A move under 50 units fails the check. Retry once before calling it a regression.
-- The pistol is semi-automatic. A held mouse fires once. Press and release for each shot.
+- The pistol is semi-automatic. A held mouse fires once. Press and release for each shot. One press made during the cooldown is held and fires the moment the gun is ready; extra presses in the same cooldown add nothing. A held automatic fires at its own rate (an LMG's 90ms, not the next 33ms tick).
 - TDM and DOM rooms are reached by clicking the 2nd or 3rd `#servers .server`. `drive.ts` joins FFA only. `combat.ts` joins any room.
 - The hitmarker lasts 220ms, so `hit-player-<room>.png` exists only when a bot came within range and the screenshot landed in time. A crate hit alone still passes the dmg check, and the log says the hitmarker was not exercised.
 - After navigating to another room, the old page can stay in the back/forward cache with its socket open. `combat.ts` reads frames only from the newest socket.
