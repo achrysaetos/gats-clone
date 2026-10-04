@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, restart and expire on request.
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, restart, reconnect and expire on request.
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
@@ -108,6 +108,22 @@ await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, devi
 await cdp('Page.navigate', { url: `${BASE}/?dev&lag=${Number(process.env.LAG ?? 0)}&jitter=${Number(process.env.JITTER ?? 0)}` });
 await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
 log(`drive ${new Date().toISOString()} base=${BASE} name=${NAME} steps=${steps.join(',')}`);
+
+/** Stops the server this run started and starts it again on the same port and data dir. `whileDown` runs between the two. */
+const restartServer = async (whileDown = async () => {}) => {
+  const pidFile = join(RUN, 'pid');
+  const oldPid = Number(readFileSync(pidFile, 'utf8'));
+  process.kill(oldPid, 'SIGTERM');
+  await until(() => { try { process.kill(oldPid, 0); return false; } catch { return true; } }, 6000);
+  await whileDown();
+  const out = openSync(join(RUN, 'server.log'), 'a');
+  const server = spawn('node', ['src/server/main.ts'], { cwd: join(import.meta.dirname, '../../../..'), env: { ...process.env, PORT, DATA_DIR: join(RUN, 'data') }, detached: true, stdio: ['ignore', out, out] });
+  server.unref();
+  writeFileSync(pidFile, String(server.pid));
+  expect('server restarts on the same port and data dir', await until(async () => { try { return (await fetch(`${BASE}/api/servers`)).ok; } catch { return false; } }, 6000), `pid ${oldPid} -> ${server.pid}`);
+  observerBoard = [];
+  observer = openObserver();
+};
 
 const STEPS: Record<string, () => Promise<void>> = {
   async menu() {
@@ -256,20 +272,33 @@ const STEPS: Record<string, () => Promise<void>> = {
     await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
   },
   async restart() {
-    const pidFile = join(RUN, 'pid');
-    const oldPid = Number(readFileSync(pidFile, 'utf8'));
-    process.kill(oldPid, 'SIGTERM');
-    await until(() => { try { process.kill(oldPid, 0); return false; } catch { return true; } }, 6000);
-    const out = openSync(join(RUN, 'server.log'), 'a');
-    const server = spawn('node', ['src/server/main.ts'], { cwd: join(import.meta.dirname, '../../../..'), env: { ...process.env, PORT, DATA_DIR: join(RUN, 'data') }, detached: true, stdio: ['ignore', out, out] });
-    server.unref();
-    writeFileSync(pidFile, String(server.pid));
-    expect('server restarts on the same port and data dir', await until(async () => { try { return (await fetch(`${BASE}/api/servers`)).ok; } catch { return false; } }, 6000), `pid ${oldPid} -> ${server.pid}`);
-    observer = openObserver();
+    await restartServer();
     await cdp('Page.reload', { ignoreCache: true });
     await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
     expect('menu still shows signed in after the restart', (await js(`document.getElementById('account').textContent`)).includes(`Signed in as ${NAME}`));
     await shot('account-after-restart');
+  },
+  async reconnect() {
+    if (REMOTE_URL) { log('skip reconnect: it restarts the server, so it runs only against a local run'); return; }
+    expect('page is in a match before the restart', !!welcomed() && await js(`!document.getElementById('hud').hidden`));
+    const oldId = welcomed()?.id;
+    let overlay = '';
+    await restartServer(async () => {
+      frames.welcome = null;
+      overlay = await until(async () => js(`!document.getElementById('reconnect').hidden`)) ? await js(`document.getElementById('reconnect').textContent`) : '';
+      expect('page shows the reconnecting overlay over the game while the server is down', /^Reconnecting… \(attempt \d+\)$/.test(overlay), `overlay "${overlay}"`);
+      expect('page stays out of the menu while reconnecting', await js(`document.getElementById('menu').hidden && !document.getElementById('hud').hidden`));
+      await shot('reconnecting');
+    });
+    const startedAt = Date.now();
+    expect('a new welcome arrives on the page socket without any click', await until(() => frames.welcome !== null, 15_000), `id ${oldId} -> ${welcomed()?.id} after ${Date.now() - startedAt}ms`);
+    const signedIn = await js(`localStorage.getItem('skirmish.account')`);
+    if (signedIn) expect('the rejoin carries the stored session (welcome.account)', welcomed()?.account === signedIn, `account ${welcomed()?.account}`);
+    expect('HUD is back and the overlay is gone', await until(async () => js(`document.getElementById('reconnect').hidden && document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
+    expect('own player present in snapshots from the new server', await until(() => !!me()));
+    expect('observer on the restarted server lists the player', await until(() => observerBoard.includes(NAME), 6000));
+    expect('chat says the player reconnected', (await js(`document.getElementById('chat-log').textContent`)).includes('Reconnected.'));
+    await shot('reconnected');
   },
   async expire() {
     await js(`localStorage.setItem('skirmish.token', 'forged.token'); localStorage.setItem('skirmish.account', '${NAME}')`);
