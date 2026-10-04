@@ -199,7 +199,6 @@ export type Pick = { k: 'perk'; tier: Tier } | { k: 'evolve' };
 export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
-/** The score each level needs and what reaching it lets you pick. */
 export const LEVELS = [
   { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 200, pick: { k: 'evolve' } },
   { score: 350, pick: { k: 'perk', tier: 2 } }, { score: 500, pick: { k: 'perk', tier: 3 } }, { score: 700, pick: { k: 'evolve' } },
@@ -226,7 +225,6 @@ export const WORLD = {
   crateHp: 40,
   crateScore: 10,
   killScore: 100,
-  /** Paid on top of the kill score for killing a hunted player. */
   bountyScore: 200,
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,

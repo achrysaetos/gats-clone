@@ -83,7 +83,6 @@ export function pendingPick(p: Player): PendingPick | null {
   return null;
 }
 
-/** A stage-2 gun marks its holder for every enemy, with a bounty on their head. */
 export const isHunted = (p: Player): boolean => GUNS[p.gun].stage === 2;
 
 export function abilityOf(p: Player): AbilityId | null {

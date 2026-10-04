@@ -415,7 +415,6 @@ function drawPlayerShadows(ctx: CanvasRenderingContext2D, players: readonly Play
 type PlayerLook = { self: boolean; friendly: boolean; flash: number; now: number };
 const TIER_COLORS = { 1: '#d8dee9', 2: PALETTE.gold } as const;
 
-/** Chevrons over the head: one silver for a stage-1 gun, two gold for stage 2. */
 function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2, top: number) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -433,7 +432,6 @@ function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2, top: number) 
   }
 }
 
-/** A pulsing red reticle that turns slowly around a hunted player. */
 function drawHuntedMark(ctx: CanvasRenderingContext2D, now: number) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 150);
   const r = R + 14 + 3 * pulse;
