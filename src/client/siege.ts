@@ -167,7 +167,16 @@ export function faceZombies(faces: Map<number, { x: number; y: number; a: number
   for (const id of faces.keys()) if (!seen.has(id)) faces.delete(id);
 }
 
-/** One path per kind and part, so a full horde costs a handful of fills rather than hundreds. */
+/** Circles from flat [x, y, r] triples, each grown by `pad`. */
+function addCircles(ctx: CanvasRenderingContext2D, xyr: readonly number[], pad: number) {
+  for (let i = 0; i < xyr.length; i += 3) {
+    const r = xyr[i + 2]! + pad;
+    ctx.moveTo(xyr[i]! + r, xyr[i + 1]!);
+    ctx.arc(xyr[i]!, xyr[i + 1]!, r, 0, TAU);
+  }
+}
+
+/** One path per kind and part, outlined by an ink underlay rather than strokes, so a full horde costs a handful of fills rather than hundreds of draws. */
 export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], faces: ReadonlyMap<number, { a: number }>, flashes: ReadonlyMap<number, number>, now: number) {
   ctx.fillStyle = PALETTE.shadow;
   ctx.beginPath();
@@ -182,35 +191,31 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
     const r = ZOMBIES[kind].radius;
     const mine = zombies.filter((z) => z[1] === k);
     if (!mine.length) return;
-    const sway = (id: number) => Math.sin(now / 180 + id) * 0.18;
-    ctx.beginPath();
+    const limbs: number[] = [];
     for (const [id, , x, y] of mine) {
       const a = faces.get(id)?.a ?? 0;
+      const sway = Math.sin(now / 180 + id) * 0.18;
       for (const side of [-1, 1]) {
-        const arm = a + side * (0.55 + side * sway(id));
-        const ax = x + Math.cos(arm) * r * 1.05, ay = y + Math.sin(arm) * r * 1.05;
-        ctx.moveTo(ax + r * 0.38, ay);
-        ctx.arc(ax, ay, r * 0.38, 0, TAU);
-      }
-      if (kind === 'brute') {
-        for (const side of [-1, 1]) {
-          const sx = x + Math.cos(a + side * Math.PI / 2) * r * 0.78, sy = y + Math.sin(a + side * Math.PI / 2) * r * 0.78;
-          ctx.moveTo(sx + r * 0.5, sy);
-          ctx.arc(sx, sy, r * 0.5, 0, TAU);
-        }
+        const arm = a + side * 0.55 + sway;
+        limbs.push(x + Math.cos(arm) * r * 1.05, y + Math.sin(arm) * r * 1.05, r * 0.38);
+        if (kind === 'brute') limbs.push(x + Math.cos(a + side * Math.PI / 2) * r * 0.78, y + Math.sin(a + side * Math.PI / 2) * r * 0.78, r * 0.5);
       }
     }
-    ctx.fillStyle = look.arm;
-    ctx.fill();
-    ctx.lineWidth = look.line - 1;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
+    const half = look.line / 2;
+    ctx.fillStyle = INK;
     ctx.beginPath();
-    for (const [, , x, y] of mine) { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); }
-    ctx.fillStyle = look.body;
+    addCircles(ctx, limbs, half);
+    for (const [, , x, y] of mine) { ctx.moveTo(x + r + half, y); ctx.arc(x, y, r + half, 0, TAU); }
     ctx.fill();
-    ctx.lineWidth = look.line;
-    ctx.stroke();
+    ctx.fillStyle = look.arm;
+    ctx.beginPath();
+    addCircles(ctx, limbs, -half);
+    ctx.fill();
+    ctx.fillStyle = look.body;
+    ctx.beginPath();
+    for (const [, , x, y] of mine) { ctx.moveTo(x + r - half, y); ctx.arc(x, y, r - half, 0, TAU); }
+    ctx.fill();
+    ctx.fillStyle = look.eye;
     ctx.beginPath();
     for (const [id, , x, y] of mine) {
       const a = faces.get(id)?.a ?? 0;
@@ -220,7 +225,6 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
         ctx.arc(ex, ey, r * 0.16, 0, TAU);
       }
     }
-    ctx.fillStyle = look.eye;
     ctx.fill();
   });
   for (const [id, kind, x, y] of zombies) {
