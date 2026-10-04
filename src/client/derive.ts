@@ -1,4 +1,4 @@
-import { LEVELS, WORLD, type ModeId } from '../shared/defs.ts';
+import { GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type ModeId, type PerkId, type Tier } from '../shared/defs.ts';
 import { rankRows, type GameEvent, type LeaderRow, type MatchView, type PlayerView, type Snapshot, type Team } from '../shared/protocol.ts';
 import type { ClientState } from './state.ts';
 
@@ -12,9 +12,29 @@ export function levelProgress(serverLevel: number, score: number): LevelProgress
   return { displayLevel, frac: Math.min(1, Math.max(0, (score - from) / (to - from))), nextAt: to };
 }
 
-export function killerOf(events: readonly GameEvent[], victimId: number): string | null {
-  for (const ev of events) if (ev.e === 'kill' && ev.victimId === victimId) return ev.killer || null;
-  return null;
+export type KillEvent = Extract<GameEvent, { e: 'kill' }>;
+
+export const killOf = (events: readonly GameEvent[], victimId: number): KillEvent | null =>
+  events.find((ev): ev is KillEvent => ev.e === 'kill' && ev.victimId === victimId) ?? null;
+
+/** What a death took away: the displayed level, the evolved gun (null for a class gun) and the perks, read from the last snapshot of the life. */
+export type Loss = { level: number; gun: GunId | null; perks: PerkId[] };
+
+const TIERS: readonly Tier[] = [1, 2, 3];
+
+export function lossOf(snap: Snapshot): Loss | null {
+  const me = selfOf(snap);
+  if (!me?.alive) return null;
+  const perks = TIERS.flatMap((t) => snap.self.perks[t] ?? []);
+  return { level: me.level + 1, gun: GUNS[me.gun].stage > 0 ? me.gun : null, perks };
+}
+
+export function deathText(kill: KillEvent | null, loss: Loss | null): { title: string; cause: string; lost: string } {
+  const title = kill?.killer ? `Eliminated by ${kill.killer}` : 'You were eliminated';
+  const weapon = kill?.weapon ?? '';
+  const cause = !weapon ? '' : `${kill?.killer ? `with ${weapon}` : weapon}${kill?.bounty ? ` · your bounty paid them ${WORLD.bountyScore}` : ''}`;
+  const parts = loss ? [...(loss.level > 1 ? [`level ${loss.level}`] : []), ...(loss.gun ? [GUNS[loss.gun].name] : []), ...loss.perks.map((p) => PERK_INFO[p].name)] : [];
+  return { title, cause, lost: parts.length ? `Lost ${parts.join(' · ')}` : '' };
 }
 
 export const feedMentions = (kill: { killerId: number | null; victimId: number }, myId: number): boolean =>

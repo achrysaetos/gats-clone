@@ -1,4 +1,5 @@
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
+import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
 import type { SnapBuffer } from './interp.ts';
 import type { PendingEffect } from './eventclock.ts';
@@ -52,5 +53,5 @@ type MenuStatus =
 export type ClientState =
   | { phase: 'menu'; status: MenuStatus }
   | { phase: 'playing'; s: Session }
-  | { phase: 'dead'; s: Session; killer: string | null }
+  | { phase: 'dead'; s: Session; kill: KillEvent | null; loss: Loss | null }
   | { phase: 'reconnecting'; s: Session; rejoin: Rejoin; retry: Retry; dial: WebSocket | null };

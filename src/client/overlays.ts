@@ -2,7 +2,7 @@ import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, t
 import { rankValue, type Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
-import { deathScreenArmed, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
+import { deathScreenArmed, deathText, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
@@ -31,6 +31,8 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const death = $('death');
   const deathTitle = $('death-title');
   const deathSub = $('death-sub');
+  const deathCause = $('death-cause');
+  const deathLost = $('death-lost');
   const respawn = $<HTMLButtonElement>('respawn');
   respawn.onclick = onRespawn;
   const keys = { perk: '', chat: '', banner: '', death: '', objective: '' };
@@ -182,12 +184,17 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const inert = dead && !deathScreenArmed(deathAt, now);
     if (death.inert !== inert) death.inert = inert;
     const wait = seconds(snap.self.respawnIn);
-    const key = dead ? `${state.killer}|${wait}` : '';
+    const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}` : '';
     if (key === keys.death) return;
     keys.death = key;
     death.hidden = !dead;
     if (!dead) return;
-    deathTitle.textContent = state.killer ? `Eliminated by ${state.killer}` : 'You were eliminated';
+    const text = deathText(state.kill, state.loss);
+    deathTitle.textContent = text.title;
+    deathCause.textContent = text.cause;
+    deathCause.hidden = !text.cause;
+    deathLost.textContent = text.lost;
+    deathLost.hidden = !text.lost;
     deathSub.textContent = wait > 0 ? `Respawn in ${wait}s. Change your loadout below.` : 'Ready. Change your loadout or jump back in.';
     respawn.disabled = wait > 0;
     respawn.textContent = wait > 0 ? `Respawn (${wait})` : 'Respawn';

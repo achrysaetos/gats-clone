@@ -39,7 +39,7 @@ function arcsDrawnFor(kind: ThrownKind): Arc[] {
     thrown: [{ id: 1, kind, x: 1234, y: 987, r: 10, owner: 2 }],
   } as unknown as Snapshot;
   const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), effects: [], particles: createPool(), feedback: { numbers: [] } } as unknown as Session;
-  drawWorld(ctx, { snap, s, cam: makeCamera({ x: 1234, y: 987 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null });
+  drawWorld(ctx, { snap, s, cam: makeCamera({ x: 1234, y: 987 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId: null });
   return arcs.filter((a) => a.x === 1234 && a.y === 987);
 }
 

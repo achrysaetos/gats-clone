@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
-import { feedMentions, killerOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
+import { deathText, feedMentions, killOf, levelProgress, objectiveFor } from '../src/client/derive.ts';
 import { WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 
@@ -71,10 +71,10 @@ test('killer lookup and kill-feed highlight go by player id, so same-named playe
   const kill = (killer: string, killerId: number | null, victim: string, victimId: number): Extract<GameEvent, { e: 'kill' }> =>
     ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG', bounty: false, assisters: [] });
   const events = [kill('Ann', 5, 'Alex', 2), kill('Bo', 6, 'Alex', 3)];
-  assert.equal(killerOf(events, 3), 'Bo', 'the second Alex was killed by Bo, not Ann');
-  assert.equal(killerOf(events, 2), 'Ann');
-  assert.equal(killerOf(events, 9), null);
-  assert.equal(killerOf([kill('', null, 'Alex', 3)], 3), null, 'an environmental death has no killer name');
+  assert.equal(killOf(events, 3)?.killer, 'Bo', 'the second Alex was killed by Bo, not Ann');
+  assert.equal(killOf(events, 2)?.killer, 'Ann');
+  assert.equal(killOf(events, 9), null);
+  assert.equal(deathText(killOf([kill('', null, 'Alex', 3)], 3), null).title, 'You were eliminated', 'an environmental death names no killer');
   assert.equal(feedMentions(events[0]!, 3), false, 'a kill of a different Alex is not highlighted for me');
   assert.equal(feedMentions(events[1]!, 3), true);
   assert.equal(feedMentions(events[1]!, 6), true, 'my own kills are highlighted');

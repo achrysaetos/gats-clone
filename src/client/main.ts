@@ -5,7 +5,7 @@ import { fetchServers, loadLoadout, loadMuted, loadName, saveLoadout, saveMuted,
 import { toggleMute } from './chatmute.ts';
 import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { killerOf, selfOf } from './derive.ts';
+import { killOf, lossOf, selfOf } from './derive.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
@@ -252,8 +252,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
   const dead = !snap.self.alive;
-  if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.myId) });
-  else if (dead && state.phase === 'dead' && !state.killer) state.killer = killerOf(snap.events, s.myId);
+  if (dead && state.phase === 'playing') setState({ phase: 'dead', s, kill: killOf(snap.events, s.myId), loss: prev && lossOf(prev) });
+  else if (dead && state.phase === 'dead' && !state.kill) state.kill = killOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
 
@@ -371,7 +371,8 @@ function drawFrame(now: number) {
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle });
+  const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId });
   drawHud(ctx, view.dpr, view.w, view.h, snap, s, now, mouse);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);

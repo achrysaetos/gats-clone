@@ -49,7 +49,7 @@ test('coming back online dials now instead of waiting out the backoff, and never
 
 test('an unexpected close of the live session socket reconnects, alive or dead', () => {
   const ws = socket();
-  for (const state of [playing(ws), { phase: 'dead', s: { ws } as Session, killer: null } satisfies ClientState]) {
+  for (const state of [playing(ws), { phase: 'dead', s: { ws } as Session, kill: null, loss: null } satisfies ClientState]) {
     for (const code of [ABNORMAL, NO_STATUS, 1001, 1012]) assert.equal(closeVerdict(socketRole(state, ws), code), 'reconnect', `${state.phase} ${code}`);
   }
 });

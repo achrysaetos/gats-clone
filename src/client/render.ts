@@ -18,7 +18,8 @@ const TRACER = { tail: 0.07, core: 0.022 } as const;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null };
+/** `killerId` is the player to call out while you are dead. */
+type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
@@ -65,6 +66,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawEffects(ctx, s.effects, now);
   drawParticles(ctx, s.particles, now);
   for (const p of alive) if (!p.hidden) drawLabel(ctx, p, p.id === s.myId);
+  const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
+  if (killer) drawKillerMark(ctx, killer, now);
   drawDamageNumbers(ctx, s.feedback.numbers, now);
   drawLetterbox(ctx, cam, dpr);
 }
@@ -542,6 +545,27 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.stroke();
   }
   ctx.restore();
+}
+
+function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: number) {
+  const pulse = 0.5 + 0.5 * Math.sin(now / 160);
+  ctx.globalAlpha = 0.7 + 0.3 * pulse;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, R + 16 + 3 * pulse, 0, TAU);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = PALETTE.hunted;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.font = '850 15px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = INK;
+  const y = p.y - R - (GUNS[p.gun].stage ? 50 : 26);
+  ctx.strokeText('KILLER', p.x, y);
+  ctx.fillStyle = PALETTE.hunted;
+  ctx.fillText('KILLER', p.x, y);
 }
 
 const LABEL = { font: 15, barW: 56, barH: 7 } as const;
