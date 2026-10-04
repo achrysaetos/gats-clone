@@ -28,6 +28,9 @@ type Situation = { threat: { d: number } | null; hurting: boolean; underFire: bo
 
 /** Knife lunge (90) plus knife reach (70) from sim/movement.ts, short of the target's radius so a strafing target is still caught. */
 const KNIFE_REACH_PX = 160;
+/** Grenades land where they were aimed when the 900ms fuse in sim/abilities.ts runs out, so bots aim where the target will be then. */
+const GRENADE_FUSE_TICKS = Math.round(900 / TICK_MS);
+const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
 const throwRange = (s: Situation) => s.threat !== null && s.threat.d >= 150 && s.threat.d <= 450;
 
 const ABILITY_RULES: Record<AbilityId, (s: Situation) => boolean> = {
@@ -102,6 +105,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   let angle = Math.atan2(goY - me.y, goX - me.x);
   let fire = false, aimDist = 300;
   let threat: Situation['threat'] = null;
+  let throwAt: { x: number; y: number; err: number } | null = null;
   if (enemy) {
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
     const tracked = mem.engaged?.id === enemy.id ? mem.engaged : null;
@@ -114,10 +118,8 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     const reacted = snap.tick >= engaged.fireAtTick;
     fire = reacted && d < range * 0.95;
     if (reacted) threat = { d };
-    if (hurting) {
-      const away = retreatHeading(me, Math.atan2(me.y - enemy.y, me.x - enemy.x), walls);
-      goX = me.x + Math.cos(away) * 200; goY = me.y + Math.sin(away) * 200;
-    } else if (d > range * 0.6 || (readyAbility === 'knife' && d < 300)) {
+    throwAt = { x: enemy.x + velPerTick.x * GRENADE_FUSE_TICKS, y: enemy.y + velPerTick.y * GRENADE_FUSE_TICKS, err: engaged.aimErrRad };
+    if (d > range * 0.6 || (readyAbility === 'knife' && d < 300)) {
       goX = enemy.x; goY = enemy.y;
     } else {
       const toward = Math.atan2(enemy.y - me.y, enemy.x - me.x) + (Math.PI / 2) * next.strafe;
@@ -141,6 +143,14 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     onContestedZone: snap.zones.some((z) => z.owner !== me.team && Math.hypot(z.x - me.x, z.y - me.y) < z.r),
   };
   const ability = readyAbility !== null && ABILITY_RULES[readyAbility](situation);
+  if (ability && readyAbility === 'dash' && enemy) {
+    const away = retreatHeading(me, Math.atan2(me.y - enemy.y, me.x - enemy.x), walls);
+    goX = me.x + Math.cos(away) * 200; goY = me.y + Math.sin(away) * 200;
+  }
+  if (ability && throwAt && GRENADES.has(readyAbility)) {
+    angle = Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err;
+    aimDist = Math.hypot(throwAt.x - me.x, throwAt.y - me.y);
+  }
   if (fire) next.shots++;
   const mx = goX - me.x, my = goY - me.y;
   const dead = 30;

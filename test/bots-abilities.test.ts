@@ -8,6 +8,8 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
 
 type Scene = {
@@ -69,11 +71,11 @@ test('a hurt dash bot dashes away from the enemy, and a healthy one does not das
   assert.ok(!uses(inputs({ ability: 'dash', enemyAt: { x: 1300, y: 1000 } })), 'no dash at full health');
 });
 
-test('a hurt bot retreats around a wall behind it rather than into it', () => {
-  const wall: WallView = { x: 900, y: 900, w: 40, h: 200, built: false };
-  const moves = inputs({ ability: 'dash', enemyAt: { x: 1300, y: 1000 }, hp: 20, walls: [wall] }).slice(10);
-  assert.ok(moves.every((i) => !i.right), 'never moves toward the enemy');
-  assert.ok(moves.every((i) => i.up || i.down), 'slips past the wall diagonally');
+test('a hurt bot dashes around a wall behind it rather than into it', () => {
+  const wall: WallView = { x: 900, y: 950, w: 40, h: 100, built: false };
+  const dash = inputs({ ability: 'dash', enemyAt: { x: 1300, y: 1000 }, hp: 20, walls: [wall] }).find((i) => i.ability);
+  assert.ok(dash, 'dashes');
+  assert.ok(dash.left && !dash.right && (dash.up || dash.down), 'dashes diagonally away, past the wall');
 });
 
 test('a bot drops a land mine when hurt in a fight or standing on a zone it does not own', () => {
@@ -95,4 +97,50 @@ test('a bot with its knife ready closes on a nearby enemy instead of strafing at
   assert.ok(knife.right, 'steps toward an enemy 250px away');
   const grenade = inputs({ ability: 'grenade', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
   assert.ok(!grenade.right && (grenade.up || grenade.down), 'a grenade bot strafes at the same distance');
+});
+
+test('a bot throws a grenade where a moving target will be when it lands', () => {
+  const speed = 200, fuseS = 0.9;
+  const offLanding: number[] = [], offNow: number[] = [], distErr: number[] = [];
+  for (let seed = 1; seed <= 20; seed++) {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    grantPerks(w, bot, ['grip', 'thickSkin', 'grenade']);
+    const target = spawnAt(w, 1350, 850);
+    const r = seeded(seed);
+    let mem = newBotMemory(r);
+    for (let i = 0; i < 30; i++) {
+      const d = botThink(snapshotFor(w, bot.id), [], mem, r);
+      mem = d.mem;
+      if (d.input.ability) {
+        const landing = { x: target.x, y: target.y + speed * fuseS };
+        offLanding.push(wrap(d.input.angle - Math.atan2(landing.y - bot.y, landing.x - bot.x)));
+        offNow.push(wrap(d.input.angle - Math.atan2(target.y - bot.y, target.x - bot.x)));
+        distErr.push(d.input.aimDist - Math.hypot(landing.x - bot.x, landing.y - bot.y));
+        break;
+      }
+      target.y += speed * TICK_MS / 1000;
+      step(w, TICK_MS);
+    }
+  }
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  assert.equal(offLanding.length, 20, 'every bot throws');
+  assert.ok(Math.abs(mean(offLanding)) < 0.1, `aims ${mean(offLanding).toFixed(2)} rad off the landing point on average`);
+  assert.ok(mean(offNow) > 0.3, `aims ${mean(offNow).toFixed(2)} rad ahead of where the target is now`);
+  assert.ok(Math.abs(mean(distErr)) < 30, `throws ${mean(distErr).toFixed(0)}px past the landing point on average`);
+});
+
+test('a hurt bot without a dash keeps fighting rather than backing away', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  spawnAt(w, 1300, 1000);
+  const r = seeded(2);
+  let mem = newBotMemory(r);
+  for (let i = 0; i < 20; i++) {
+    if (bot.life.k === 'alive') bot.life.hp = 20;
+    const d = botThink(snapshotFor(w, bot.id), [], mem, r);
+    mem = d.mem;
+    assert.ok(!d.input.left, `tick ${i}: does not back away`);
+    step(w, TICK_MS);
+  }
 });
