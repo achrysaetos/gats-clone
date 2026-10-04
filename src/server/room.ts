@@ -9,7 +9,7 @@ import { choosePick } from '../shared/sim/stats.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
-import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { botName, botSeats, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
@@ -17,6 +17,11 @@ import { uniqueName } from './names.ts';
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
 const RTT_SAMPLES = 5;
+/**
+ * Humans carry triple health, so a side short of humans gets this many bots for each one it lacks.
+ * Measured over 24 seeded TDM rounds with bot-driven humans: 1v0, 2v0, 0v2, 3v0 and 2v1 each land between a third and two thirds of wins; at 2.5 one split went 88% to the humans and at 2 another went 92%.
+ */
+const BOTS_PER_HUMAN = 3;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
@@ -45,22 +50,29 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   const names = () => [...world.players.values()].map((pl) => pl.name);
   const registered = (name: string) => accounts.stats(name) !== null;
 
+  function botTargets(): [Team, number][] {
+    const humans = (team: Team) => [...world.players.values()].filter((p) => p.kind === 'human' && p.team === team).length;
+    if (mode === 'FFA') return [[null, Math.max(0, limits.minPlayers - humans(null))]];
+    const seats = botSeats({ red: humans('red'), blue: humans('blue') }, limits.minPlayers, BOTS_PER_HUMAN, limits.humansPerRoom);
+    return [['red', seats.red], ['blue', seats.blue]];
+  }
+
   function balanceBots() {
-    while (world.players.size < limits.minPlayers) {
-      const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
-      const p = addPlayer(world, name, randomLoadout(botRand));
-      bots.set(p.id, newBotMemory(botRand));
-    }
-    while (world.players.size > limits.minPlayers && bots.size > 0) {
-      const red = [...world.players.values()].filter((p) => p.team === 'red').length;
-      const larger = red * 2 > world.players.size ? 'red' : 'blue';
-      const victim = [...bots.keys()].find((bid) => world.players.get(bid)?.team === larger) ?? [...bots.keys()][0];
-      bots.delete(victim);
-      removePlayer(world, victim);
+    for (const [team, want] of botTargets()) {
+      const mine = [...bots.keys()].filter((id) => world.players.get(id)?.team === team);
+      for (const id of mine.slice(want)) {
+        bots.delete(id);
+        removePlayer(world, id);
+      }
+      for (let i = mine.length; i < want; i++) {
+        const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
+        const p = addPlayer(world, name, randomLoadout(botRand), { team });
+        bots.set(p.id, newBotMemory(botRand));
+      }
     }
   }
 
-  /** Humans split evenly first, so a lone pair lands on opposite sides; balanceBots then trims a bot from whichever side is larger. */
+  /** Humans split evenly first, so a lone pair lands on opposite sides; balanceBots then evens the sides out with bots. */
   function teamForHuman(): Team {
     if (mode === 'FFA') return null;
     const count = (team: Team, kind?: PlayerKind) => [...world.players.values()].filter((p) => p.team === team && (kind === undefined || p.kind === kind)).length;

@@ -29,4 +29,28 @@ for (const mode of MODE_IDS.filter((m) => m !== 'FFA')) {
   test(`${mode}: four humans split two and two, with the bots keeping the teams level`, () => {
     assert.deepEqual(sidesWith(createRoom('r', mode, 1, accounts), 4), { redHumans: 2, blueHumans: 2, red: WORLD.minPlayers / 2, blue: WORLD.minPlayers / 2 });
   });
+
+  test(`${mode}: a side that loses its humans gets three bots for each human the other side has, until a human joins it`, () => {
+    const room = createRoom('r', mode, 1, accounts);
+    const sockets = new Map<string, ReturnType<typeof fakeSocket>>();
+    const join = (name: string) => {
+      const ws = fakeSocket();
+      room.connect(ws.socket);
+      ws.send({ t: 'join', name, loadout: PISTOL, aspect: 1.5 });
+      sockets.set(name, ws);
+    };
+    for (const name of ['Ann', 'Bo', 'Cy', 'Di']) join(name);
+    assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 3, blueBots: 3 });
+    for (const p of [...room.world.players.values()]) if (p.kind === 'human' && p.team === 'red') sockets.get(p.name)!.close();
+    assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 7, blueBots: 1 }, 'red plays seven bots against two humans and a bot');
+    join('Eve');
+    assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 5, blueBots: 2 }, 'the next human joins red and two of its extra bots leave');
+    for (const ws of sockets.values()) ws.close();
+  });
+}
+
+function sides(room: Room) {
+  const ps = [...room.world.players.values()];
+  const tally = (team: 'red' | 'blue', kind: 'human' | 'bot') => ps.filter((p) => p.team === team && p.kind === kind).length;
+  return { redHumans: tally('red', 'human'), blueHumans: tally('blue', 'human'), redBots: tally('red', 'bot'), blueBots: tally('blue', 'bot') };
 }

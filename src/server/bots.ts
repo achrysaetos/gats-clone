@@ -286,6 +286,21 @@ function crateInSight(me: PlayerView, crates: readonly CrateView[], walls: reado
   return nearest(me, open);
 }
 
+export type TeamCounts = { red: number; blue: number };
+
+/**
+ * How many bots each team gets so the room holds at least `minPlayers` and both sides are equally strong, a human counting as `botsPerHuman` bots.
+ * A team left without its humans gets extra bots rather than playing short against the other side's humans, up to `maxBots` in all.
+ */
+export function botSeats(humans: TeamCounts, minPlayers: number, botsPerHuman: number, maxBots: number): TeamCounts {
+  const gap = (humans.red - humans.blue) * botsPerHuman;
+  const total = Math.min(maxBots, Math.max(minPlayers - humans.red - humans.blue, Math.round(Math.abs(gap))));
+  const imbalance = (red: number) => Math.abs(humans.red * botsPerHuman + red - humans.blue * botsPerHuman - (total - red));
+  const red = Math.max(0, Math.min(total, Math.floor((total - gap) / 2)));
+  const best = red + 1 <= total && imbalance(red + 1) < imbalance(red) ? red + 1 : red;
+  return { red: best, blue: total - best };
+}
+
 const BOT_NAMES = [
   'Kestrel', 'Juno', 'Pike', 'Wren', 'Atlas', 'Moss', 'Echo', 'Rook', 'Sable', 'Quill', 'Bramble', 'Nova',
   'Flint', 'Ivy', 'Onyx', 'Tansy', 'Vale', 'Cobalt', 'Lark', 'Ember', 'Rune', 'Thistle', 'Gale', 'Pip',
