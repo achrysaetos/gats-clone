@@ -1,6 +1,6 @@
 import { COLORS, WORLD } from '../shared/defs.ts';
 import type { BulletView, CrateView, PlayerView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
-import { BLAST_RADIUS } from '../shared/sim.ts';
+import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes } from './effects.ts';
 import { NUMBER_MS, type DamageNumber } from './feedback.ts';

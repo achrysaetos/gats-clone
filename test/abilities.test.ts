@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
-import { snapshotFor, step, type Player, type World } from '../src/shared/sim.ts';
+import { step } from '../src/shared/sim.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const R = WORLD.playerRadius;

@@ -1,5 +1,5 @@
 import type { CrateView, InputState, SelfView, WallView } from '../shared/protocol.ts';
-import { moveStep, startDash, type Motion, type Rect } from '../shared/sim.ts';
+import { moveStep, startDash, type Motion, type Rect } from '../shared/sim/movement.ts';
 import { lerp } from './interp.ts';
 
 export type PendingInput = { seq: number; input: InputState; dtMs: number; startsDash: boolean };

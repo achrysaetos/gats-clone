@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WEAPONS, WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
-import { IDLE_INPUT, MAX_REWIND_MS, setInput, step, type Player, type Wall, type World } from '../src/shared/sim.ts';
+import { setInput, step } from '../src/shared/sim.ts';
+import { MAX_REWIND_MS } from '../src/shared/sim/combat.ts';
+import { IDLE_INPUT, type Player, type Wall, type World } from '../src/shared/sim/world.ts';
 import { emptyWorld, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 let seq = 1_000_000;

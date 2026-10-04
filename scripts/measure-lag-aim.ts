@@ -10,7 +10,8 @@ import { join, resolve } from 'node:path';
 import WebSocket from 'ws';
 import { WEAPONS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent, Loadout } from '../src/shared/protocol.ts';
-import { canRespawn, respawn, type Rect } from '../src/shared/sim.ts';
+import { canRespawn, respawn } from '../src/shared/sim.ts';
+import type { Rect } from '../src/shared/sim/movement.ts';
 import { startServer } from '../src/server/main.ts';
 
 const SECONDS = Number(process.argv[2] ?? 60);

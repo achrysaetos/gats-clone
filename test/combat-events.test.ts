@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
-import { step, type World } from '../src/shared/sim.ts';
+import { step } from '../src/shared/sim.ts';
+import type { World } from '../src/shared/sim/world.ts';
 import { emptyWorld, press, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = WEAPONS.pistol.damage;

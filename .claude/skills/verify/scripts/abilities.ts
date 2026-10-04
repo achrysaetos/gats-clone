@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { PERK_TIERS, WORLD, type AbilityId } from '../../../../src/shared/defs.ts';
-import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim.ts';
+import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 

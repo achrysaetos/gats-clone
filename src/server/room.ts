@@ -1,10 +1,10 @@
 import type { WebSocket } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
-import {
-  addPlayer, canRespawn, choosePerk, createWorld, rand, removePlayer, respawn, setInput, snapshotFor, step, wallViews,
-  type World,
-} from '../shared/sim.ts';
+import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
+import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
+import { choosePerk } from '../shared/sim/stats.ts';
+import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
 import { botName, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';

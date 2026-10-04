@@ -1,6 +1,6 @@
 import { ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
-import { segmentEntersRectAt } from '../shared/sim.ts';
+import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
 export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
