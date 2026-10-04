@@ -214,13 +214,13 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
 const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
   xs.reduce<T | null>((best, x) => (best && Math.hypot(best.x - me.x, best.y - me.y) <= Math.hypot(x.x - me.x, x.y - me.y) ? best : x), null);
 
-/** The nearest of the most dangerous enemies in sight: hunted first, then highest level, so bots in view of a leader all turn on it. */
+/** The nearest of the most dangerous enemies in sight: hunted first, then the highest-level human, so bots in view of a leading human all turn on it. Among bots only hunted counts, so a climbing bot is not ganged up on before it evolves. */
 function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
   const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
   const visible = players.filter((p) => p.id !== me.id && p.alive && (me.team === null || p.team !== me.team)
     && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
     && !walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null));
-  const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.level);
+  const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
   const top = Math.max(...visible.map(danger));
   return nearest(me, visible.filter((p) => danger(p) === top));
 }
