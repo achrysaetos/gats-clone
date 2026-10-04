@@ -5,9 +5,9 @@ import { createHash } from 'node:crypto';
 import { MODE_IDS, PERK_TIERS, WORLD } from '../src/shared/defs.ts';
 import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
 import {
-  abilityOf, addPlayer, canRespawn, choosePerk, createWorld, IDLE_INPUT, pendingTier, rand, removePlayer, respawn, setInput, snapshotFor, step,
-  wallViews, type Player, type World,
+  abilityOf, addPlayer, canRespawn, choosePerk, pendingTier, removePlayer, respawn, setInput, snapshotFor, step, wallViews,
 } from '../src/shared/sim.ts';
+import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const TICKS = 4000;

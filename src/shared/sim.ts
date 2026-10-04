@@ -3,113 +3,23 @@ import {
   type PlayerKind, type Tier,
 } from './defs.ts';
 import {
-  VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents, type BulletView, type CrateView, type Dash, type GameEvent, type InputState,
-  type LeaderRow, type Loadout, type MatchView, type PlayerView, type SelfView, type Snapshot, type Team, type ThrownKind,
-  type ThrownView, type WallView, type ZoneView,
+  VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents, type BulletView, type CrateView, type GameEvent, type InputState, type LeaderRow,
+  type Loadout, type MatchView, type PlayerView, type SelfView, type Snapshot, type Team, type ThrownKind, type ThrownView,
+  type WallView, type ZoneView,
 } from './protocol.ts';
 import {
-  angleDiff, circleHitsRect, clamp, dist2, MAX_SUBSTEP, moveStep, rectsOverlap, segmentEntersCircleAt, segmentEntersRectAt,
-  startDash, type Rect,
+  angleDiff, circleHitsRect, clamp, dist2, MAX_SUBSTEP, moveStep, segmentEntersCircleAt, segmentEntersRectAt, startDash, type Rect,
 } from './sim/movement.ts';
-
-export type Wall = Rect & { built: boolean; expiresAt: number };
-
-export type Life =
-  | {
-    k: 'alive';
-    hp: number;
-    armor: number;
-    ammo: number;
-    reloadUntil: number | null;
-    nextFireAt: number;
-    lastDamageAt: number;
-    lastMoveAt: number;
-    dash: Dash | null;
-    pressUntil: number;
-  }
-  | { k: 'dead'; respawnAt: number };
-
-export type Player = {
-  id: number;
-  name: string;
-  kind: PlayerKind;
-  loadout: Loadout;
-  team: Team;
-  x: number;
-  y: number;
-  angle: number;
-  input: InputState;
-  seq: number;
-  /** Server time of the world the client was drawing when it sampled `input`, or null when it never said. */
-  viewAt: number | null;
-  shotsSeen: number;
-  life: Life;
-  score: number;
-  level: number;
-  perks: ChosenPerks;
-  kills: number;
-  deaths: number;
-  lifeKills: number;
-  revealedUntil: number;
-  abilityReadyAt: number;
-};
-
-type PerkOfTier<T extends Tier> = (typeof PERK_TIERS)[T][number];
-export type ChosenPerks = { [T in Tier]?: PerkOfTier<T> };
-
-export type Bullet = {
-  id: number; owner: number; x: number; y: number; vx: number; vy: number;
-  left: number; damage: number; piercing: boolean; label: string;
-};
-
-export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null };
-
-export type Thrown =
-  | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; x: number; y: number; vx: number; vy: number; explodeAt: number }
-  | { id: number; kind: 'landMine'; owner: number; x: number; y: number; armedAt: number; expiresAt: number }
-  | { id: number; kind: 'gasCloud'; owner: number; x: number; y: number; expiresAt: number };
-
-export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
-
-export type Match = { k: 'playing' } | { k: 'over'; winner: string; restartAt: number };
-
-export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
-
-type Pose = { x: number; y: number };
-type PoseFrame = { at: number; poses: ReadonlyMap<number, Pose>; walls: readonly Wall[] };
-
-export type World = {
-  mode: ModeId;
-  now: number;
-  tick: number;
-  rng: number;
-  nextId: number;
-  players: Map<number, Player>;
-  bullets: Bullet[];
-  crates: Crate[];
-  walls: Wall[];
-  wallsVersion: number;
-  thrown: Thrown[];
-  zones: Zone[];
-  teamScore: { red: number; blue: number };
-  match: Match;
-  events: GameEvent[];
-  lifeRecords: LifeRecord[];
-  /** Recent player positions, oldest first, so a shot can be judged against the world its shooter saw. */
-  history: PoseFrame[];
-};
-
-export const IDLE_INPUT: InputState = {
-  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0,
-};
+import {
+  crateRect, IDLE_INPUT, isEnemy, newId, rand, sameTeam, solidRects, type Bullet, type Crate, type Life, type PerkOfTier,
+  type Player, type Pose, type Thrown, type Wall, type World,
+} from './sim/world.ts';
 
 const REVEAL_MS = 2000;
-const CRATE_SIZE = 44;
 const CRATE_RESPAWN_MS = 15000;
 const BUILT_WALL_MS = 12000;
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
-const ZONE_RADIUS = 180;
 const ZONE_CAPTURE_MS = 3000;
 const ZONE_POINTS_PER_SEC = 5;
 const SHIELD_BLOCK = 0.6;
@@ -120,19 +30,6 @@ const PRESS_GRACE_MS = 100;
 export const MAX_REWIND_MS = 350;
 const TICK_MS = 1000 / WORLD.tickHz;
 
-function mulberry32(state: number): number {
-  let t = state;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-}
-
-export function rand(w: World): number {
-  w.rng = (w.rng + 0x6d2b79f5) | 0;
-  return mulberry32(w.rng);
-}
-
-const newId = (w: World) => w.nextId++;
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 type PerkMods = {
@@ -274,46 +171,6 @@ export const MODES: Record<ModeId, ModeRules> = {
     winner: (w) => teamAtLeast(w, WORLD.domWinScore),
   },
 };
-
-const sameTeam = (a: Player, b: Player) => a.team !== null && a.team === b.team;
-const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b);
-
-function zoneLayout(mode: ModeId): Zone[] {
-  if (mode !== 'DOM') return [];
-  const s = WORLD.size;
-  return [[0.2, 0.5], [0.5, 0.5], [0.8, 0.5]].map(([fx, fy], id) => ({
-    id, x: s * fx, y: s * fy, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0,
-  }));
-}
-
-export function createWorld(mode: ModeId, seed: number): World {
-  const w: World = {
-    mode, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
-    zones: zoneLayout(mode), teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [], history: [],
-  };
-  const s = WORLD.size;
-  const keepClear: Rect[] = w.zones.map((z) => ({ x: z.x - z.r, y: z.y - z.r, w: z.r * 2, h: z.r * 2 }));
-  for (let tries = 0; w.walls.length < 26 && tries < 2000; tries++) {
-    const long = 160 + rand(w) * 340;
-    const thick = 36 + rand(w) * 30;
-    const horizontal = rand(w) < 0.5;
-    const ww = horizontal ? long : thick;
-    const hh = horizontal ? thick : long;
-    const r: Rect = { x: 100 + rand(w) * (s - 200 - ww), y: 100 + rand(w) * (s - 200 - hh), w: ww, h: hh };
-    if (w.walls.some((o) => rectsOverlap(o, r, 120)) || keepClear.some((o) => rectsOverlap(o, r))) continue;
-    w.walls.push({ ...r, built: false, expiresAt: Infinity });
-  }
-  for (let tries = 0; w.crates.length < WORLD.crateCount && tries < 4000; tries++) {
-    const r: Rect = { x: 60 + rand(w) * (s - 120 - CRATE_SIZE), y: 60 + rand(w) * (s - 120 - CRATE_SIZE), w: CRATE_SIZE, h: CRATE_SIZE };
-    if (w.walls.some((o) => rectsOverlap(o, r, 60)) || w.crates.some((c) => rectsOverlap(crateRect(c), r, 40))) continue;
-    w.crates.push({ id: newId(w), x: r.x, y: r.y, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null });
-  }
-  return w;
-}
-
-const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
-const solidRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
 
 function spawnPoint(w: World, team: Team): { x: number; y: number } {
   const s = WORLD.size, r = WORLD.playerRadius;

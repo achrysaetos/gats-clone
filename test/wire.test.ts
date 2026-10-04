@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
-import { createWorld, snapshotFor, step } from '../src/shared/sim.ts';
+import { snapshotFor, step } from '../src/shared/sim.ts';
+import { createWorld } from '../src/shared/sim/world.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { press, spawnAt, TICK_MS } from './helpers.ts';
 

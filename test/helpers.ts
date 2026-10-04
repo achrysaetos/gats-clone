@@ -1,6 +1,7 @@
 import type { ModeId, PerkId } from '../src/shared/defs.ts';
 import type { InputState, Loadout, Team } from '../src/shared/protocol.ts';
-import { addPlayer, choosePerk, createWorld, IDLE_INPUT, pendingTier, setInput, step, type Player, type World } from '../src/shared/sim.ts';
+import { addPlayer, choosePerk, pendingTier, setInput, step } from '../src/shared/sim.ts';
+import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
 
 export const TICK_MS = 1000 / 30;
 export const PISTOL: Loadout = { weapon: 'pistol', armor: 'none', color: 'red' };
