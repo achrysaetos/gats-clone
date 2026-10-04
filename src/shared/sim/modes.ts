@@ -30,10 +30,15 @@ function topKiller(w: World, eligible: (p: Player) => boolean = () => true): Pla
 
 const teamWin = (team: 'red' | 'blue'): RoundWinner => ({ name: TEAM_NAME[team], id: null, note: null });
 
-function teamAtLeast(w: World, target: number): RoundWinner | null {
+const teamKills = (w: World, team: Team) => [...w.players.values()].reduce((sum, p) => sum + (p.team === team ? p.kills : 0), 0);
+
+/** The first team to the target, or once the map's time is up the team ahead, on kills if the score is level. A dead heat crowns nobody. */
+function teamWinner(w: World, target: number): RoundWinner | null {
   if (w.teamScore.red >= target) return teamWin('red');
   if (w.teamScore.blue >= target) return teamWin('blue');
-  return null;
+  if (w.now < w.mapChangeAt) return null;
+  const lead = w.teamScore.red - w.teamScore.blue || teamKills(w, 'red') - teamKills(w, 'blue');
+  return lead === 0 ? null : { ...teamWin(lead > 0 ? 'red' : 'blue'), note: 'Time ran out' };
 }
 
 /** `present` is the one team standing on the zone, or null when it is empty. Another team's partial capture drains before a capture
@@ -85,13 +90,13 @@ export const MODES: Record<ModeId, ModeRules> = {
     assignTeam: smallerTeam,
     onKill: (w, killer) => { if (killer.team) w.teamScore[killer.team] += 1; },
     tick: () => {},
-    winner: (w) => teamAtLeast(w, WORLD.tdmWinScore),
+    winner: (w) => teamWinner(w, WORLD.tdmWinScore),
   },
   DOM: {
     assignTeam: smallerTeam,
     onKill: () => {},
     tick: tickZones,
-    winner: (w) => teamAtLeast(w, WORLD.domWinScore),
+    winner: (w) => teamWinner(w, WORLD.domWinScore),
   },
 };
 

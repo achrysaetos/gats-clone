@@ -109,6 +109,24 @@ test('FFA: a timer finish with tied kills goes to the player with fewer deaths',
   assert.equal(over.leaderboard[0]!.id, b!.id, 'the leaderboard breaks the tie the same way');
 });
 
+test('TDM: when the time limit runs out the team ahead wins, on kills if the score is level, and a dead heat starts a fresh round', () => {
+  const finish = (red: number, blue: number, redKills: number, blueKills: number) => {
+    const w = createWorld('TDM', 1, ROTATION.TDM[0]);
+    const [r, b] = [addPlayer(w, 'r', PISTOL, { team: 'red' }), addPlayer(w, 'b', PISTOL, { team: 'blue' })];
+    r.kills = redKills;
+    b.kills = blueKills;
+    w.teamScore = { red, blue };
+    run(w, MAP_MS.TDM - 1000);
+    assert.equal(w.match.k, 'playing', 'the round runs to the limit');
+    run(w, 1000 + TICK_MS);
+    return { w, winner: snapshotFor(w, r.id).match.winner };
+  };
+  assert.deepEqual(finish(30, 34, 30, 34).winner, { name: 'Blue team', id: null, note: 'Time ran out' });
+  assert.equal(finish(30, 30, 12, 9).winner?.name, 'Red team', 'level on score, red has more kills');
+  const draw = finish(30, 30, 9, 9);
+  assert.deepEqual([draw.w.match.k, draw.winner, draw.w.map, draw.w.teamScore], ['playing', null, ROTATION.TDM[1], { red: 0, blue: 0 }]);
+});
+
 test('FFA: a timer finish with no kills starts a fresh round on the next map without a winner', () => {
   const [first, second] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);

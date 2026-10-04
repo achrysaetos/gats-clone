@@ -43,8 +43,10 @@ export const feedMentions = (kill: { killerId: number | null; victimId: number }
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 
+const clock = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 /** An FFA round's length as m:ss. */
-export const FFA_ROUND = `${Math.floor(MAP_MS.FFA / 60_000)}:${String(Math.floor(MAP_MS.FFA / 1000) % 60).padStart(2, '0')}`;
+export const FFA_ROUND = clock(MAP_MS.FFA);
+const TDM_GOAL = `first to ${WORLD.tdmWinScore} kills or most in ${clock(MAP_MS.TDM)}`;
 const FFA_GOAL = `most kills in ${FFA_ROUND} · first player to ${WORLD.ffaWinKills} ends it`;
 
 export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: string } {
@@ -55,8 +57,8 @@ export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: 
       return { banner: `Free for all: ${FFA_GOAL}`, line: `FFA · ${FFA_GOAL}` };
     case 'TDM':
       return {
-        banner: `Team Deathmatch: you are ${side.toUpperCase()}, first to ${WORLD.tdmWinScore} kills`,
-        line: `TDM · ${Side} team · first to ${WORLD.tdmWinScore} kills`,
+        banner: `Team Deathmatch: you are ${side.toUpperCase()}, ${TDM_GOAL}`,
+        line: `TDM · ${Side} team · ${TDM_GOAL}`,
       };
     case 'DOM':
       return {

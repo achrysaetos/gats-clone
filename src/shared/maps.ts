@@ -115,8 +115,8 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
   DOM: ['citadel', 'causeway', 'oldtown', 'boneyard'],
 };
 
-/** How long a map lasts; every mode changes map when a round restarts. An FFA round that nobody wins on kills ends when this runs out. */
-export const MAP_MS: Record<ModeId, number> = { FFA: 6 * 60_000, TDM: Infinity, DOM: Infinity };
+/** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
+export const MAP_MS: Record<ModeId, number> = { FFA: 6 * 60_000, TDM: 10 * 60_000, DOM: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
 export function nextMap(mode: ModeId, current: MapId): MapId {
