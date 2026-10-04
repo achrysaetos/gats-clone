@@ -6,7 +6,7 @@ import { toggleMute } from './chatmute.ts';
 import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { aimSpread, killOf, lossOf, selfOf } from './derive.ts';
-import { addFeedback, NO_FEEDBACK } from './feedback.ts';
+import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
@@ -73,7 +73,12 @@ let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, takeFrameCosts: () => frameCosts.splice(0), benchFrames } });
+const liveNumbers = () => {
+  const s = drawnSessionOf(state);
+  const now = performance.now();
+  return s ? s.feedback.numbers.filter((n) => now - n.born < NUMBER_MS).map((n) => ({ victim: n.victim, amount: n.amount, height: numberHeight(n, now) })) : [];
+};
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, takeFrameCosts: () => frameCosts.splice(0), benchFrames } });
 
 /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
 function benchFrames(n: number): number[] {
