@@ -100,6 +100,25 @@ test('a lag-compensated blast round bursts on the victim where the shooter saw t
   assert.ok(lost > GUNS.thunderclap.damage + GUNS.thunderclap.blast!.damage * 0.9, `took the round and the burst around the rewound pose (lost ${lost})`);
 });
 
+test('a blast hurts its owner for half, never a teammate, and a self-kill earns nothing', () => {
+  const w = emptyWorld('TDM');
+  const owner = spawnAt(w, 500, 500, { team: 'red' });
+  const mate = spawnAt(w, 540, 540, { team: 'red' });
+  explode(w, 500, 540, 100, 40, owner, 'Grenade');
+  assert.ok(Math.abs(WORLD.baseHp - hpOf(owner) - 40 * (1 - (40 - WORLD.playerRadius) / 100) * 0.5) < 1e-9, 'half what an enemy there would take');
+  assert.equal(hpOf(mate), WORLD.baseHp, 'a teammate takes nothing');
+  const shooter = spawnAt(w, 300, 900, { team: 'red' });
+  equip(shooter, 'artillery');
+  w.walls.push({ x: 340, y: 800, w: 40, h: 200, built: false, expiresAt: Infinity });
+  const before = hpOf(shooter);
+  pressAndCollect(w, shooter, 300);
+  assert.ok(hpOf(shooter) < before, 'firing artillery into a wall at point blank hurts the shooter');
+  if (owner.life.k === 'alive') owner.life.hp = 1;
+  explode(w, 500, 500, 100, 40, owner, 'Grenade');
+  assert.equal(owner.life.k, 'dead');
+  assert.deepEqual([owner.kills, owner.score, w.teamScore.red], [0, 0, 0], 'no kill, score or team point for blowing yourself up');
+});
+
 test('a silenced gun fires without revealing the shooter, like the silencer perk', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);

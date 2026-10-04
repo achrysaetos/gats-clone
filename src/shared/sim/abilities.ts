@@ -39,7 +39,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, enemies);
     p.x = x;
     p.y = y;
-    if (victim) damagePlayer(w, victim, KNIFE_DAMAGE, { attacker: p, label: 'Knife', piercing: true, bullet: false, fromX: p.x, fromY: p.y });
+    if (victim) damagePlayer(w, victim, KNIFE_DAMAGE, { attacker: p, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y });
     w.events.push({ e: 'slash', x: p.x, y: p.y, angle: p.angle, owner: p.id });
     return true;
   },
@@ -101,7 +101,7 @@ export function tickThrown(w: World, dt: number) {
         if (w.now >= t.expiresAt) break;
         for (const p of w.players.values()) {
           if (dist2(p.x, p.y, t.x, t.y) < GAS_RADIUS ** 2) {
-            damagePlayer(w, p, 14 * dt, { attacker: owner, label: 'Gas', piercing: true, bullet: false, fromX: t.x, fromY: t.y });
+            damagePlayer(w, p, 14 * dt, { attacker: owner, label: 'Gas', piercing: true, via: 'gas', fromX: t.x, fromY: t.y });
           }
         }
         keep.push(t);
