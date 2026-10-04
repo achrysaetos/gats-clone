@@ -15,6 +15,8 @@ Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats ar
 
 Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM every body wears its team color.
 
+Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). TDM and DOM load the next map when a round restarts. FFA has no round end, so it changes map every 8 minutes and announces the next map 15 seconds ahead.
+
 | Input | Action |
 |---|---|
 | WASD | Move |
@@ -31,10 +33,11 @@ At 100, 250 and 450 points you pick an attachment, then a survival perk, then an
 ## Layout
 
 - `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
+- `src/shared/maps.ts` holds the map layouts and each mode's rotation. `test/maps.test.ts` checks that every map keeps walls in bounds, keeps spawns and zones clear, can be walked end to end, and gives both teams the same walk to the DOM zones.
 - `src/shared/protocol.ts` defines the wire messages and parses client input.
 - `src/shared/wire.ts` encodes snapshots per connection: it rounds numbers and omits crates, leaderboard, zones and match while they are unchanged. The client rebuilds full snapshots from the last one it received.
 - `src/shared/sim.ts` is the deterministic game simulation's entry point. `step` advances the world one tick, and the player commands add, remove, respawn and steer players. The rest lives in `src/shared/sim/`, one module per domain:
-  - `world.ts` holds the world and player types, the seeded random source and map generation.
+  - `world.ts` holds the world and player types, the seeded random source, map loading and spawn points.
   - `movement.ts` holds the collision geometry and player motion that the client also runs for prediction.
   - `stats.ts` holds perks, levels and score, and the effective stats they produce.
   - `combat.ts` holds bullets, damage, kills and lag compensation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to `MAX_REWIND_MS` back, so players hit what they aim at on screen.
@@ -59,7 +62,7 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
 
-`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ.
+`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `aa8ebd80e99333e2b558414d59bc8171721de8dd510dac158dbfa71ffc87a0f6`.
 
 `node scripts/unused-exports.ts` lists every export that no file in `src/`, `test/`, `scripts/` or the verify scripts imports, and says whether its own module still uses it.
 
