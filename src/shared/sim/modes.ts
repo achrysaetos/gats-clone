@@ -122,6 +122,8 @@ export function tickMatch(w: World, dtMs: number) {
     w.teamScore = { red: 0, blue: 0 };
     for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
     for (const p of w.players.values()) {
+      if (p.life.k === 'alive') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+      p.lifeKills = 0;
       resetProgress(p);
       p.kills = 0;
       p.deaths = 0;

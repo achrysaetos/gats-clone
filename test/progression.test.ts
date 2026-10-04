@@ -157,6 +157,28 @@ test('a round restart resets level, perks, ability and gun along with score', ()
   assert.deepEqual([view.hp, view.armor, snap.self.ammo, snap.self.reloading], [WORLD.baseHp, view.maxArmor, GUNS.pistol.mag, false], 'a fresh life');
 });
 
+test('a round restart records each survivor\'s life so far, and their next life counts only its own kills', () => {
+  const w = emptyWorld('TDM');
+  const a = spawnAt(w, 500, 500, { team: 'red', name: 'Survivor' });
+  const victim = spawnAt(w, 700, 500, { team: 'blue', name: 'Victim' });
+  a.lifeKills = 3;
+  a.score = 450;
+  w.teamScore.red = WORLD.tdmWinScore;
+  run(w, WORLD.roundRestartMs + 100);
+  assert.equal(w.match.k, 'playing');
+  const records = w.lifeRecords.splice(0);
+  assert.deepEqual(records.find((r) => r.id === a.id), { id: a.id, name: 'Survivor', kills: 3, score: 450, died: false });
+  assert.deepEqual(records.find((r) => r.id === victim.id), { id: victim.id, name: 'Victim', kills: 0, score: 0, died: false });
+  Object.assign(w, { walls: [], crates: [] });
+  Object.assign(a, { x: 500, y: 500 });
+  Object.assign(victim, { x: 700, y: 500 });
+  if (victim.life.k === 'alive') victim.life.hp = 1;
+  shootOnce(w, a, 0);
+  assert.equal(victim.life.k, 'dead');
+  damagePlayer(w, a, 1000, { attacker: null, team: null, label: 'test', piercing: true, via: 'gas', fromX: 0, fromY: 0 });
+  assert.equal(w.lifeRecords.find((r) => r.id === a.id)?.kills, 1, 'the life after the restart holds one kill, not four');
+});
+
 test('a hurt, half-empty survivor starts the next round at full health, armor and ammo', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'red', loadout: { armor: 'medium' } });
