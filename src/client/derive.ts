@@ -45,6 +45,9 @@ export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
 
 export const OBJECTIVE_MS = 4000;
 
+export const mapNotice = (match: Pick<MatchView, 'nextMap' | 'mapChangeIn'>): string | null =>
+  match.mapChangeIn > 0 ? `Next map: ${match.nextMap} in ${seconds(match.mapChangeIn)}s` : null;
+
 export const objectiveVisible = (phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
   phase === 'playing' && match.winner === null && msSincePlaying < OBJECTIVE_MS;
 

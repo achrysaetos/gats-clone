@@ -2,7 +2,7 @@ import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, PERK_INFO, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier, type WeaponId } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
-import { feedMentions, levelProgress, objectiveFor } from './derive.ts';
+import { feedMentions, levelProgress, mapNotice, objectiveFor } from './derive.ts';
 import { HITMARKER_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { PALETTE, TEAM_COLORS } from './palette.ts';
@@ -290,7 +290,7 @@ function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
   text(ctx, `K ${snap.self.kills}  D ${snap.self.deaths}`, bx + barW / 2, 22, TYPE.label, MUTED, 'center', 600);
   text(ctx, lp.nextAt === null ? `${me.score} · max` : `${me.score} / ${lp.nextAt}`, bx + barW, 22, TYPE.label, HUD_INK, 'right', 700);
   bar(ctx, bx, 34, barW, 8, lp.frac, PALETTE.gold);
-  const line = objectiveFor(snap.match.mode, me.team).line;
+  const line = `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team).line}`;
   setFont(ctx, 600, TYPE.label + 1);
   const dot = me.team ? 14 : 0;
   const lw = ctx.measureText(line).width + 20 + dot;
@@ -303,6 +303,13 @@ function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
     ctx.fill();
   }
   text(ctx, line, lx + 10 + dot, 69, TYPE.label + 1, HUD_INK, 'left');
+  const notice = mapNotice(snap.match);
+  if (!notice) return;
+  setFont(ctx, 700, TYPE.label + 1);
+  const nw = ctx.measureText(notice).width + 20;
+  const nx = compact ? x - 10 : w / 2 - nw / 2;
+  panel(ctx, nx, 84, nw, 22);
+  text(ctx, notice, nx + 10, 95, TYPE.label + 1, PALETTE.gold, 'left', 700);
 }
 
 function drawVitals({ ctx, w, h, snap, me }: Hud) {
