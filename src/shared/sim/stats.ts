@@ -83,6 +83,9 @@ export function pendingPick(p: Player): PendingPick | null {
   return null;
 }
 
+/** A stage-2 gun marks its holder for every enemy, with a bounty on their head. */
+export const isHunted = (p: Player): boolean => GUNS[p.gun].stage === 2;
+
 export function abilityOf(p: Player): AbilityId | null {
   return p.perks[3] ?? null;
 }
@@ -118,6 +121,7 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   p.life.ammo = effectiveStats(p).mag;
   p.life.reloadUntil = null;
   p.life.burstLeft = 0;
+  if (isHunted(p)) w.events.push({ e: 'hunted', id: p.id, name: p.name });
   return true;
 }
 

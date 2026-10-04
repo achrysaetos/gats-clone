@@ -40,6 +40,8 @@ export type PlayerView = {
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;
   armorTier: ArmorId;
+  /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
+  hunted: boolean;
 };
 
 /** `gun` is null for shrapnel. */
@@ -72,7 +74,8 @@ export type SelfView = {
 export type DamageKind = 'player' | 'crate';
 
 export type GameEvent =
-  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string }
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean }
+  | { e: 'hunted'; id: number; name: string }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
@@ -93,7 +96,7 @@ export type Snapshot = {
   crates: CrateView[];
   thrown: ThrownView[];
   zones: ZoneView[];
-  minimap: { x: number; y: number; team: Team }[];
+  minimap: { x: number; y: number; team: Team; hunted: boolean }[];
   leaderboard: LeaderRow[];
   match: MatchView;
   events: GameEvent[];

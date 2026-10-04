@@ -1,7 +1,7 @@
 import { ARMORS, WORLD } from '../defs.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, circleHitsRect, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
-import { addScore, effectiveStats } from './stats.ts';
+import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, sameTeam, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
@@ -39,14 +39,15 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
 }
 
 function kill(w: World, victim: Player, killer: Player | null, label: string) {
+  const bounty = killer !== null && isHunted(victim);
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
-  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label });
+  w.events.push({ e: 'kill', killer: killer?.name ?? '', victim: victim.name, killerId: killer?.id ?? null, victimId: victim.id, weapon: label, bounty });
   if (!killer) return;
   killer.kills++;
   killer.lifeKills++;
-  addScore(w, killer, WORLD.killScore);
+  addScore(w, killer, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
   if (w.match.k === 'playing') MODES[w.mode].onKill(w, killer, victim);
 }
 

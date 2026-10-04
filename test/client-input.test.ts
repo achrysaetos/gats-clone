@@ -69,7 +69,7 @@ test('level progress tracks thresholds and caps at max level', () => {
 
 test('killer lookup and kill-feed highlight go by player id, so same-named players never get confused', () => {
   const kill = (killer: string, killerId: number | null, victim: string, victimId: number): Extract<GameEvent, { e: 'kill' }> =>
-    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG' });
+    ({ e: 'kill', killer, killerId, victim, victimId, weapon: 'SMG', bounty: false });
   const events = [kill('Ann', 5, 'Alex', 2), kill('Bo', 6, 'Alex', 3)];
   assert.equal(killerOf(events, 3), 'Bo', 'the second Alex was killed by Bo, not Ann');
   assert.equal(killerOf(events, 2), 'Ann');

@@ -68,9 +68,9 @@ function makeWorld(mode: ModeId) {
   const bots: Bot[] = Array.from({ length: 6 }, (_, i): Bot => ({
     id: 100 + i, name: ['Ash', 'Birch', 'Cedar', 'Dune', 'Ember', 'Frost'][i]!, x: 0, y: 0, angle: 0,
     hp: 100, maxHp: 100, armor: 30 * (i % 4), maxArmor: 30 * (i % 4),
-    color: (['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const)[i]!, gun: (['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const)[i]!,
+    color: (['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const)[i]!, gun: (['pistol', 'heavySmg', 'shotgun', 'battleRifle', 'sniper', 'juggernaut'] as const)[i]!,
     team: teams ? (i % 2 ? 'blue' : 'red') : null, alive: true, hidden: i === 4, shield: i === 2, dashing: false,
-    score: 50 * i, level: 1, armorTier: ARMOR_IDS[i % 4]!, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
+    score: 50 * i, level: 1, armorTier: ARMOR_IDS[i % 4]!, hunted: i === 5, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
   }));
   const crates = Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, x: 1100 + (i % 4) * 260, y: 1050 + Math.floor(i / 4) * 450, hp: WORLD.crateHp * ((i % 3) + 1) / 3, size: 50 }));
   const zones: ZoneView[] = mode === 'DOM'
@@ -138,7 +138,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         return;
       case 'chat': {
         const cmd = msg.text;
-        if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, killerId: 104, victimId: myId, weapon: 'Bolt-action' }); }
+        if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, killerId: 104, victimId: myId, weapon: 'Bolt-action', bounty: false }); }
         else if (cmd === '/level') pending = !perks[2] ? { level: 3, k: 'perk', tier: 2 } : { level: 4, k: 'perk', tier: 3 };
         else if (cmd === '/evolve') pending = { level: GUNS[gun].stage === 0 ? 2 : 5, k: 'evolve' };
         else if (cmd === '/win') winnerUntil = Date.now() + WORLD.roundRestartMs;
@@ -202,7 +202,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         if (hit) {
           events.push({ e: 'dmg', attacker: myId, victim: hit.id, amount: weapon.damage, x: hit.x, y: hit.y, kind: 'player' });
           hit.hp -= weapon.damage;
-          if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, killerId: myId, victimId: hit.id, weapon: weapon.name }); }
+          if (hit.hp <= 0) { hit.hp = hit.maxHp; me.score += WORLD.killScore; me.kills++; events.push({ e: 'kill', killer: name, victim: hit.name, killerId: myId, victimId: hit.id, weapon: weapon.name, bounty: hit.hunted }); }
           return false;
         }
       }
@@ -219,13 +219,13 @@ function serve(ws: WebSocket, mode: ModeId) {
     }).concat(clouds);
     if (me.alive && me.hp < 100) me.hp = Math.min(100, me.hp + WORLD.regenPerSec * DT);
     if (w.tick % 90 === 0 && me.alive) { me.hp = Math.max(1, me.hp - 15); events.push({ e: 'dmg', attacker: 101, victim: myId, amount: 15, x: me.x, y: me.y, kind: 'player' }); }
-    if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'SMG' });
+    if (w.tick % 150 === 0) events.push({ e: 'kill', killer: 'Birch', victim: 'Cedar', killerId: 101, victimId: 102, weapon: 'Juggernaut', bounty: true });
 
     const selfView: PlayerView = {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,
       armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, gun,
       team: mode === 'FFA' ? null : 'red', alive: me.alive, hidden: false, shield: perks[2] === 'shield', dashing: me.dashUntil > now,
-      score: me.score, level: 1, armorTier: loadout.armor,
+      score: me.score, level: 1, armorTier: loadout.armor, hunted: GUNS[gun].stage === 2,
     };
     const players: PlayerView[] = [selfView, ...w.bots.map(({ phase, orbit, cx, cy, cooldown, ...p }) => p)];
     const winner = winnerUntil > now ? (mode === 'FFA' ? name : 'Red team') : null;
@@ -239,7 +239,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       players,
       bullets: bullets.map(({ life, ...b }) => b),
       crates: w.crates, thrown, zones: w.zones,
-      minimap: w.bots.filter((b) => b.id % 2).map((b) => ({ x: b.x, y: b.y, team: b.team })),
+      minimap: w.bots.filter((b) => b.id % 2).map((b) => ({ x: b.x, y: b.y, team: b.team, hunted: b.hunted })),
       leaderboard: players.map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team })),
       match: { mode, map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: Math.max(0, winnerUntil - now), teamScore: { red: 23, blue: 31 }, winner, restartIn: Math.max(0, winnerUntil - now) },
       events,

@@ -7,7 +7,7 @@ import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/pr
 const ME = 'Me';
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
   id, name: id === 1 ? ME : `p${id}`, x: 100 * id, y: 0, angle: 0, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', gun: 'pistol',
-  team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none', ...over,
+  team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none', hunted: false, ...over,
 });
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
@@ -21,7 +21,7 @@ const ids = (prev: Snapshot | null, next: Snapshot) => soundsFor(prev, next).map
 
 test('kill-confirm plays only when you are the killer, matched by id not name', () => {
   const kill = (killerId: number, victimId: number, killer = `p${killerId}`): GameEvent =>
-    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol' });
+    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol', bounty: false });
   assert.deepEqual(ids(snap(), snap({ events: [kill(1, 2)] })), ['kill']);
   assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3)] })), [], 'someone else scoring a kill is silent');
   assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3, ME)] })), [], 'another player sharing my name scoring a kill is silent');
