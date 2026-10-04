@@ -110,7 +110,9 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     }
     life.ammo--;
     life.burstLeft = life.ammo > 0 ? life.burstLeft - 1 : 0;
-    life.nextFireAt = w.now + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
+    // Carry the part of the interval that fell between ticks, so a held trigger keeps the gun's rate rather than the tick's.
+    const from = w.now - life.nextFireAt < dtMs ? life.nextFireAt : w.now;
+    life.nextFireAt = from + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
     const muzzle = WORLD.playerRadius + 4;
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, MAX_REWIND_MS);
     for (let i = 0; i < gun.pellets; i++) {

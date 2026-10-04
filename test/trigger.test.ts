@@ -78,3 +78,13 @@ test('input parser keeps shots as a non-negative integer and defaults it when ab
   assert.equal(parsed({}), 0);
   assert.equal(parsed({ shots: 'many' }), null);
 });
+
+test('a held automatic fires at its own rate, not rounded up to the tick', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500, { loadout: { weapon: 'lmg' } });
+  assert.notEqual(GUNS.lmg.fireMs % TICK_MS, 0, 'the interval falls between ticks');
+  const start = ammoOf(p);
+  press(w, p, { fire: true, shots: 1 });
+  run(w, 3000);
+  assert.ok(Math.abs(start - ammoOf(p) - 3000 / GUNS.lmg.fireMs) <= 1, `${start - ammoOf(p)} shots in 3s at ${GUNS.lmg.fireMs}ms`);
+});
