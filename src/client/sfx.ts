@@ -11,7 +11,7 @@ type Timing = { ms: number; gain: number; delayMs?: number };
 export type Layer =
   | ({ src: 'tone'; wave: Wave; pitchHz: readonly [number, number] } & Timing)
   | ({ src: 'noise'; filter: 'lowpass' | 'highpass' | 'bandpass'; q: number; cutoffHz: readonly [number, number] } & Timing);
-export type Recipe = readonly Layer[];
+type Recipe = readonly Layer[];
 
 const crack = (cutoffHz: number, ms: number, gain: number): Layer => ({ src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [cutoffHz, cutoffHz * 0.4], ms, gain });
 const thump = (pitchHz: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [pitchHz, pitchHz * 0.35], ms, gain });

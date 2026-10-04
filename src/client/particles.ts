@@ -1,7 +1,7 @@
-export type ParticleShape = 'chip' | 'spark' | 'smoke';
+type ParticleShape = 'chip' | 'spark' | 'smoke';
 
 /** Launch conditions only: position at any time follows from them, so redrawing a frame never advances anything. */
-export type Particle = {
+type Particle = {
   x: number; y: number; vx: number; vy: number;
   drag: number; born: number; life: number;
   size: number; grow: number; color: string; shape: ParticleShape;
@@ -17,7 +17,7 @@ export function createPool(capacity = PARTICLE_CAP): ParticlePool {
   return { slots: Array.from({ length: capacity }, deadParticle), next: 0 };
 }
 
-export function emit(pool: ParticlePool, p: Particle) {
+function emit(pool: ParticlePool, p: Particle) {
   Object.assign(pool.slots[pool.next]!, p);
   pool.next = (pool.next + 1) % pool.slots.length;
 }

@@ -7,8 +7,8 @@ const POLICY_VIOLATION = 1008;
 export type Retry = { attempt: number; startedAt: number; nextAt: number };
 
 /** Which job a closing socket held in the current state. `stale` means the client already let go of it, as on a deliberate leave. */
-export type SocketRole = 'connecting' | 'session' | 'dial' | 'stale';
-export type CloseVerdict = 'connect-failed' | 'reconnect' | 'drop' | 'retry-failed' | 'ignore';
+type SocketRole = 'connecting' | 'session' | 'dial' | 'stale';
+type CloseVerdict = 'connect-failed' | 'reconnect' | 'drop' | 'retry-failed' | 'ignore';
 
 export function nextDelay(attempt: number, rand: number): number {
   const ceiling = Math.min(BACKOFF.capMs, BACKOFF.firstMs * 2 ** (attempt - 1));

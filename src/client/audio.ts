@@ -7,7 +7,7 @@ const MASTER_GAIN = 0.5;
 const MAX_NOISE_OFFSET_S = 0.5;
 const MUTE_KEY = 'skirmish.muted';
 
-export type Audio = {
+type Audio = {
   /** Browsers start an AudioContext suspended until a user gesture, so call this from one. */
   unlock(): void;
   play(cues: readonly SoundCue[], listener: Point, viewRadius: number): void;

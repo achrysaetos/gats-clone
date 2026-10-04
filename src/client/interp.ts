@@ -4,7 +4,7 @@ import type { Snapshot } from '../shared/protocol.ts';
 export const TICK_MS = 1000 / WORLD.tickHz;
 export const INTERP_DELAY_MS = 3 * TICK_MS;
 export const MAX_EXTRAPOLATE_MS = 100;
-export const TELEPORT_DIST = 250;
+const TELEPORT_DIST = 250;
 const KEEP_MS = 1000;
 const CLOCK_CATCH_UP_RATE = 0.1;
 const CLOCK_FALL_BACK_RATE = 0.005;
@@ -43,7 +43,7 @@ export function lerpAngle(a: number, b: number, t: number): number {
 
 type Positioned = { id: number; x: number; y: number };
 
-export function interpolateById<T extends Positioned>(
+function interpolateById<T extends Positioned>(
   prev: readonly T[], next: readonly T[], t: number, extra?: (a: T, b: T, t: number) => Partial<T>,
 ): T[] {
   const before = new Map(prev.map((e) => [e.id, e]));

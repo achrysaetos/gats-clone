@@ -9,7 +9,7 @@ export type BotMemory = {
   shots: number;
 };
 
-export type Engagement = { id: number; x: number; y: number; bearing: number; acquiredTick: number; fireAtTick: number; aimErrRad: number };
+type Engagement = { id: number; x: number; y: number; bearing: number; acquiredTick: number; fireAtTick: number; aimErrRad: number };
 
 const BOT_AIM = {
   reactionMs: [250, 400],
@@ -22,7 +22,7 @@ const BOT_AIM = {
 
 const TICK_MS = 1000 / WORLD.tickHz;
 
-export type BotDecision = { input: InputState; perk: { tier: Tier; perk: PerkId } | null; mem: BotMemory };
+type BotDecision = { input: InputState; perk: { tier: Tier; perk: PerkId } | null; mem: BotMemory };
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 

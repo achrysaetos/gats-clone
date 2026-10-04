@@ -25,7 +25,7 @@ function spawnPoint(w: World, team: Team): { x: number; y: number } {
   return { x: s / 2, y: s / 2 };
 }
 
-export type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
+type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
 
 function freshLife(p: Player, now: number): Life {
   const s = effectiveStats(p);

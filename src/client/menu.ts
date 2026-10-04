@@ -12,7 +12,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   return node;
 }
 
-export type LoadoutPicker = { refresh(): void };
+type LoadoutPicker = { refresh(): void };
 
 export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void): LoadoutPicker {
   const weaponButtons = WEAPON_IDS.map((id) => {

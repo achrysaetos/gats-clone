@@ -1,6 +1,6 @@
 import type { Action } from './input.ts';
 
-export type Stick = { id: number; ox: number; oy: number; x: number; y: number };
+type Stick = { id: number; ox: number; oy: number; x: number; y: number };
 export type Sticks = { move: Stick | null; aim: Stick | null };
 
 export const NO_STICKS: Sticks = { move: null, aim: null };

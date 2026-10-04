@@ -2,7 +2,7 @@ import { LEVEL_SCORES, WORLD, type ModeId } from '../shared/defs.ts';
 import type { GameEvent, LeaderRow, MatchView, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
 import type { ClientState } from './state.ts';
 
-export type LevelProgress = { displayLevel: number; frac: number; nextAt: number | null };
+type LevelProgress = { displayLevel: number; frac: number; nextAt: number | null };
 
 export function levelProgress(serverLevel: number, score: number): LevelProgress {
   const from = LEVEL_SCORES[serverLevel] ?? 0;

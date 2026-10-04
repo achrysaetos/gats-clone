@@ -7,7 +7,7 @@ type PerkMods = {
   piercing?: true; silenced?: true; shield?: true; thermal?: true; ghillie?: true;
 };
 
-export const PERK_MODS: Record<PerkId, PerkMods> = {
+const PERK_MODS: Record<PerkId, PerkMods> = {
   bipod: { stillSpreadMul: 0.5 },
   optics: { viewMul: 1.3 },
   thermal: { thermal: true },
@@ -24,7 +24,7 @@ export const PERK_MODS: Record<PerkId, PerkMods> = {
   grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {},
 };
 
-export type Stats = {
+type Stats = {
   speed: number; maxHp: number; maxArmor: number; mag: number; range: number; spread: number; regenPerSec: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };

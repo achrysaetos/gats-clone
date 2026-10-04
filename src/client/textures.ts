@@ -5,7 +5,7 @@ export const SLAB = 100;
 const SHADOW_OFFSET = { x: 5, y: 7 };
 
 /** Deterministic PRNG, so the floor and crate grain look the same on every load. */
-export function seededRandom(seed: number): () => number {
+function seededRandom(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -21,7 +21,7 @@ export function slabLevels(seed: number, count: number, tones: number, plainShar
   return Array.from({ length: count }, () => (rand() < plainShare ? 0 : 1 + Math.floor(rand() * (tones - 1))));
 }
 
-export type CrateDamage = 0 | 1 | 2;
+type CrateDamage = 0 | 1 | 2;
 export const crateDamage = (hpFrac: number): CrateDamage => (hpFrac > 0.67 ? 0 : hpFrac > 0.34 ? 1 : 2);
 
 function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {

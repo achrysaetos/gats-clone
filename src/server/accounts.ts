@@ -5,10 +5,10 @@ import { promisify } from 'node:util';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
-export type Stats = { kills: number; deaths: number; score: number; games: number; best: number };
-export type StatsRow = Stats & { name: string };
+type Stats = { kills: number; deaths: number; score: number; games: number; best: number };
+type StatsRow = Stats & { name: string };
 type Account = { name: string; salt: string; hash: string; stats: Stats };
-export type Session = { token: string; name: string };
+type Session = { token: string; name: string };
 
 export type Accounts = {
   register(name: string, password: string): Promise<Session | null>;

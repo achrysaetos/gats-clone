@@ -48,7 +48,7 @@ export function segmentEntersRectAt(px: number, py: number, dx: number, dy: numb
   return t0;
 }
 
-export function resolveCircle(solids: readonly Rect[], nx: number, ny: number): { x: number; y: number } {
+function resolveCircle(solids: readonly Rect[], nx: number, ny: number): { x: number; y: number } {
   const r = WORLD.playerRadius;
   let x = clamp(nx, r, WORLD.size - r), y = clamp(ny, r, WORLD.size - r);
   for (const b of solids) {

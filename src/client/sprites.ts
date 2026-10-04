@@ -7,7 +7,7 @@ type Point = readonly [x: number, y: number];
 const TONES = ['#2a2d34', '#4a505c', '#7b8494'] as const;
 const OUTLINE = 0.16;
 
-export const GUN_PARTS: Record<WeaponId, readonly Part[]> = {
+const GUN_PARTS: Record<WeaponId, readonly Part[]> = {
   pistol: [
     { x: 0.55, y: -0.17, w: 0.55, h: 0.34, tone: 1 },
     { x: 1.0, y: -0.11, w: 0.45, h: 0.22, tone: 0 },

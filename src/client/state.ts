@@ -15,9 +15,9 @@ export type Effect =
 
 export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200 };
 
-export type FeedLine = { killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; at: number };
+type FeedLine = { killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
-export type TrailPoint = { x: number; y: number; at: number };
+type TrailPoint = { x: number; y: number; at: number };
 
 /** Everything needed to join the same room again as the same player. */
 export type Rejoin = { room: string; name: string; loadout: Loadout; token: string | undefined };
@@ -43,7 +43,7 @@ export type Session = {
   particles: ParticlePool;
 };
 
-export type MenuStatus =
+type MenuStatus =
   | { kind: 'idle' }
   | { kind: 'connecting'; ws: WebSocket; rejoin: Rejoin }
   | { kind: 'error'; message: string };

@@ -13,7 +13,7 @@ const TICK_MS = 1000 / WORLD.tickHz;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
-export type DamageSource = { attacker: Player | null; label: string; piercing: boolean; fromX: number; fromY: number };
+type DamageSource = { attacker: Player | null; label: string; piercing: boolean; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k !== 'alive') return;

@@ -61,6 +61,8 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ.
 
+`node scripts/unused-exports.ts` lists every export that no file in `src/`, `test/`, `scripts/` or the verify scripts imports, and says whether its own module still uses it.
+
 `node scripts/mock-server.ts 8787` with `node scripts/drive.ts http://localhost:8787 ./shots` is only a render check. Its fake server forces UI states (perk panels, death, the winner banner) so you can screenshot them, and proves nothing about gameplay. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field. `node scripts/measure-lag-aim.ts [seconds] [lag:jitter ...]` starts a bot-free server, has headless Chrome tap the pistol at where it draws a scripted strafing target, and prints hit rate and damage per minute at each simulated latency.
 
 ## Deploy

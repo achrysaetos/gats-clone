@@ -2,7 +2,7 @@ import { ARMOR_IDS, COLOR_IDS, MODE_IDS, WEAPON_IDS, type ModeId } from '../shar
 import { parseLoadout, type Loadout } from '../shared/protocol.ts';
 
 export type ServerInfo = { id: string; mode: ModeId; players: number; humans: number };
-export type Stats = { name: string; kills: number; deaths: number; score: number; games: number; best: number };
+type Stats = { name: string; kills: number; deaths: number; score: number; games: number; best: number };
 export type Account = { token: string; name: string };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
