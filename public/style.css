@@ -49,6 +49,8 @@ html, body {
   display: block;
   cursor: crosshair;
 }
+/* The canvas draws its own reticle while you play. */
+#game.aiming { cursor: none; }
 
 h1, h2, p { margin: 0; }
 h2 {

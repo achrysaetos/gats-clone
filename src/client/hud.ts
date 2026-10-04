@@ -45,7 +45,8 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
   ctx.globalAlpha = 1;
 }
 
-export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera, snap: Snapshot, s: Session, now: number, crosshair: Point) {
+/** `spread` is your current aim spread, or null when no reticle should be drawn. */
+export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera, snap: Snapshot, s: Session, now: number, crosshair: Point, spread: number | null) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   hudFont = '';
   const { w, h } = cam;
@@ -64,6 +65,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   if (me?.alive) drawVitals(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
+  if (spread !== null) drawReticle(hud, crosshair, spread);
   drawHitmarker(hud, crosshair);
   drawAssist(hud, crosshair);
 }
@@ -188,6 +190,40 @@ function drawRingBurst(ctx: CanvasRenderingContext2D, at: Point, color: string, 
     ctx.arc(at.x, at.y, 24 + 130 * (1 - (1 - k) ** 3), 0, TAU);
     ctx.stroke();
   }
+}
+
+const RETICLE = { minGap: 5, maxGap: 90, tick: 8 } as const;
+
+/** Ticks sit where the spread cone crosses the cursor's distance, so the reticle opens up with spread and closes with Grip or a planted Bipod. */
+export const reticleGap = (spread: number, distPx: number): number =>
+  Math.min(RETICLE.maxGap, Math.max(RETICLE.minGap, Math.tan(spread) * distPx));
+
+function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
+  const gap = reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y));
+  ctx.lineCap = 'round';
+  for (const [width, color] of [[4.5, 'rgba(0,0,0,0.55)'], [2, '#ffffff']] as const) {
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(at.x + dx * gap, at.y + dy * gap);
+      ctx.lineTo(at.x + dx * (gap + RETICLE.tick), at.y + dy * (gap + RETICLE.tick));
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(at.x - 1, at.y - 1, 2, 2);
+  if (!snap.self.reloading) return;
+  const r = gap + RETICLE.tick + 6;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.arc(at.x, at.y, r, 0, TAU);
+  ctx.stroke();
+  ctx.strokeStyle = PALETTE.gold;
+  ctx.beginPath();
+  ctx.arc(at.x, at.y, r, -Math.PI / 2, -Math.PI / 2 + snap.self.reloadFrac * TAU);
+  ctx.stroke();
 }
 
 function drawHitmarker({ ctx, s, now }: Hud, at: Point) {

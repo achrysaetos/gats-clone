@@ -5,7 +5,7 @@ import { fetchServers, loadLoadout, loadMuted, loadName, saveLoadout, saveMuted,
 import { toggleMute } from './chatmute.ts';
 import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { killOf, lossOf, selfOf } from './derive.ts';
+import { aimSpread, killOf, lossOf, selfOf } from './derive.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
 import { drawHud, drawSticks } from './hud.ts';
@@ -57,6 +57,9 @@ const held = new Set<Action>();
 let firing = false;
 let touchWasAiming = false;
 const mouse = { x: 0, y: 0 };
+/** Set by the first real mouse move; touch play never draws the mouse reticle. */
+let mouseAiming = false;
+const MOVES: readonly Action[] = ['up', 'down', 'left', 'right'];
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
 let trauma = 0;
@@ -96,6 +99,7 @@ function setState(next: ClientState) {
   state = next;
   menuEl.hidden = next.phase !== 'menu';
   hudEl.hidden = next.phase === 'menu';
+  canvas.classList.toggle('aiming', next.phase === 'playing');
   reconnectEl.hidden = next.phase !== 'reconnecting';
   clearTimeout(retryTimer);
   if (next.phase === 'reconnecting') {
@@ -375,7 +379,9 @@ function drawFrame(now: number) {
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId });
-  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse);
+  const moving = MOVES.some((a) => held.has(a));
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive ? aimSpread(me.gun, snap.self.perks, !moving) : null;
+  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
 }
@@ -441,7 +447,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   button.addEventListener('pointerdown', (e) => { e.preventDefault(); held.add(action); });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
-window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   firing = true;
