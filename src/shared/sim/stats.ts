@@ -117,7 +117,7 @@ export function resetProgress(p: Player) {
 export function choosePick(w: World, id: number, level: number, option: PickOption): boolean {
   const p = w.players.get(id);
   const pending = p && pendingPick(p);
-  if (!p || p.life.k !== 'alive' || pending?.level !== level || !pickOptions(pending, p.gun).includes(option)) return false;
+  if (!p || p.life.k !== 'alive' || w.match.k === 'over' || pending?.level !== level || !pickOptions(pending, p.gun).includes(option)) return false;
   if (pending.k === 'perk') {
     if (!isPerkOfTier(pending.tier, option)) return false;
     const before = effectiveStats(p).maxHp;

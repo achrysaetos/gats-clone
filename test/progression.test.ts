@@ -51,6 +51,17 @@ test('picks open in ladder order: perk, evolve, perk, ability, evolve', () => {
   assert.equal(gunOf(w, a), 'hailstorm', 'pistol, then machine pistol, then its second branch');
 });
 
+test('no pick is offered or taken during the round-end ceasefire, since the restart wipes it', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  a.level = 1;
+  assert.deepEqual(pendingOf(w, a), { level: 1, k: 'perk', tier: 1 }, 'open while the round plays');
+  w.match = { k: 'over', winner: { name: a.name, id: a.id, note: null }, restartAt: w.now + WORLD.roundRestartMs };
+  assert.equal(pendingOf(w, a), null, 'the dock has nothing to show');
+  assert.equal(choosePick(w, a.id, 1, 'grip'), false, 'a pick sent from an older snapshot is refused');
+  assert.deepEqual(a.perks, {});
+});
+
 test('a stale, duplicate or foreign pick changes nothing', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);

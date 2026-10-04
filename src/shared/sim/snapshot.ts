@@ -51,7 +51,8 @@ function selfView(w: World, p: Player): SelfView {
       ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / GUNS[p.gun].reloadMs))
       : 0,
     perks: { ...p.perks },
-    pending: pendingPick(p),
+    // The restart wipes every pick, so none is offered during the round-end ceasefire.
+    pending: w.match.k === 'over' ? null : pendingPick(p),
     ability,
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
