@@ -19,8 +19,8 @@ export type Life =
     lastMoveAt: number;
     dash: Dash | null;
     pressUntil: number;
-    /** Health and armor each attacker has taken off this life, for assists. */
-    damageBy: Map<number, number>;
+    /** Health and armor each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
+    hits: { by: number; at: number; dealt: number }[];
   }
   | { k: 'dead'; respawnAt: number };
 

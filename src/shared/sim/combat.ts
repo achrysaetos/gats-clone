@@ -19,6 +19,7 @@ const OWN_BLAST_SHARE = 0.5;
 const ASSIST_SHARE = 0.3;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
+const SELF_KILL_CREDIT_MS = 10_000;
 
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
 type Culprit = { attacker: Player | null; team: Team; label: string };
@@ -46,17 +47,27 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   life.hp -= amount;
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp) - life.armor;
-  if (a && a.id !== victim.id) life.damageBy.set(a.id, (life.damageBy.get(a.id) ?? 0) + dealt);
+  if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
 
-/** A player finished by their own blast gives the kill to whoever hurt them most, so blowing yourself up never denies a kill or bounty. */
+/** Damage taken from each attacker since `since`. */
+function damageSince(hits: readonly { by: number; at: number; dealt: number }[], since: number): Map<number, number> {
+  const by = new Map<number, number>();
+  for (const h of hits) if (h.at >= since) by.set(h.by, (by.get(h.by) ?? 0) + h.dealt);
+  return by;
+}
+
+/**
+ * A player finished by their own blast gives the kill to whoever hurt them most lately, so blowing yourself up mid-fight never denies a kill or bounty.
+ * Only recent damage counts: an old fight the player has long healed from did not set up this death.
+ */
 function creditFor(w: World, victim: Player, killer: Player | null): Player | null {
   if (killer?.id !== victim.id) return killer;
   if (victim.life.k !== 'alive') return null;
   let top: Player | null = null, most = 0;
-  for (const [id, dealt] of victim.life.damageBy) {
+  for (const [id, dealt] of damageSince(victim.life.hits, w.now - SELF_KILL_CREDIT_MS)) {
     const p = w.players.get(id);
     if (p && dealt > most) { top = p; most = dealt; }
   }
@@ -86,7 +97,7 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
 function assistersOf(w: World, victim: Player, killer: Player | null): Player[] {
   if (victim.life.k !== 'alive') return [];
   const enough = ASSIST_SHARE * effectiveStats(victim).maxHp;
-  return [...victim.life.damageBy]
+  return [...damageSince(victim.life.hits, -Infinity)]
     .filter(([id, dealt]) => id !== killer?.id && dealt >= enough)
     .flatMap(([id]) => {
       const p = w.players.get(id);

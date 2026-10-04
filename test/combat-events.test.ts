@@ -5,7 +5,7 @@ import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, press, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = GUNS.pistol.damage;
 
@@ -112,6 +112,28 @@ test('a player finished by their own blast gives the kill, bounty and team point
   assert.deepEqual({ killerId: kill.killerId, bounty: kill.bounty }, { killerId: most.id, bounty: true });
   assert.deepEqual({ kills: most.kills, score: most.score, red: w.teamScore.red }, { kills: 1, score: WORLD.killScore + WORLD.bountyScore, red: 1 });
   assert.deepEqual({ kills: less.kills, victimKills: victim.kills }, { kills: 0, victimKills: 0 });
+});
+
+test('a self-inflicted death credits only damage from the last few seconds, not a fight long healed from', () => {
+  const blowUp = (hurtRecently: boolean) => {
+    const w = emptyWorld();
+    const old = spawnAt(w, 300, 300, { name: 'Old' });
+    const recent = spawnAt(w, 300, 900, { name: 'Recent' });
+    const victim = spawnAt(w, 900, 900);
+    const hurt = (by: Player, amount: number) => damagePlayer(w, victim, amount, { attacker: by, team: null, label: 'test', piercing: true, via: 'bullet', fromX: by.x, fromY: by.y });
+    hurt(old, 80);
+    run(w, 30_000);
+    if (hurtRecently) hurt(recent, 5);
+    w.events = [];
+    explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Thunderclap' });
+    const kill = w.events.find((e) => e.e === 'kill');
+    assert.ok(kill?.e === 'kill');
+    return { killer: kill.killerId, old, recent, victim };
+  };
+  const mixed = blowUp(true);
+  assert.equal(mixed.killer, mixed.recent.id, 'the recent 5 damage outweighs 80 dealt half a minute ago');
+  const healed = blowUp(false);
+  assert.deepEqual([healed.killer, healed.old.kills], [healed.victim.id, 0], 'a fight half a minute ago credits nobody');
 });
 
 test('a player who blows themselves up untouched credits nobody', () => {
