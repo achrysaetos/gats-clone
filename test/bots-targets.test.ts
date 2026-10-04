@@ -1,11 +1,15 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { step } from '../src/shared/sim.ts';
+import type { WallView } from '../src/shared/protocol.ts';
+import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { emptyWorld, equip, spawnAt, TICK_MS } from './helpers.ts';
+
+const CRATE = 40;
+const addCrate = (w: World, cx: number, cy: number) => w.crates.push({ id: 9000 + w.crates.length, x: cx - CRATE / 2, y: cy - CRATE / 2, size: CRATE, hp: 40, respawnAt: null });
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
 
@@ -50,4 +54,47 @@ test('a bot chases the nearer of two hunted markers', () => {
   equip(spawnAt(w, 2900, 2900), 'executioner');
   const input = think(w, bot.id, 1, 1);
   assert.ok(input.left && !input.right && !input.down, 'heads left to the marker 1300px away, not the one 1980px away');
+});
+
+test('a bot with nobody in view shoots a crate in the clear and scores for it', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  addCrate(w, 1300, 1000);
+  const r = seeded(1);
+  let mem = newBotMemory(r);
+  for (let i = 0; i < 90; i++) {
+    const d = botThink(snapshotFor(w, bot.id), [], mem, r);
+    mem = d.mem;
+    setInput(w, bot.id, i + 1, d.input);
+    step(w, TICK_MS);
+  }
+  assert.ok(bot.score > 0, `scored ${bot.score} from the crate`);
+});
+
+test('a bot holds fire at a crate behind a wall', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000);
+  addCrate(w, 1300, 1000);
+  const wall: WallView = { x: 1130, y: 900, w: 40, h: 200, built: false };
+  const r = seeded(1);
+  assert.ok(!botThink(snapshotFor(w, bot.id), [wall], newBotMemory(r), r).input.fire, 'no shots into the wall');
+});
+
+test('a bot keeps half a magazine for enemies instead of emptying it into crates', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  addCrate(w, 1300, 1000);
+  if (bot.life.k === 'alive') bot.life.ammo = 5;
+  const r = seeded(1);
+  const input = botThink(snapshotFor(w, bot.id), [], newBotMemory(r), r).input;
+  assert.ok(!input.fire && input.reload, 'reloads rather than shooting the crate');
+});
+
+test('a bot fights an enemy in view before shooting crates', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  addCrate(w, 1300, 1000);
+  spawnAt(w, 1000, 1350);
+  const angle = think(w, bot.id, 1, 20).angle;
+  assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `aims down at the enemy, angle ${angle.toFixed(2)}`);
 });

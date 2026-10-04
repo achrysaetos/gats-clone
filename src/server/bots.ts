@@ -1,5 +1,5 @@
 import { ARMOR_IDS, COLOR_IDS, GUNS, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type PickOption } from '../shared/defs.ts';
-import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
+import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type CrateView, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
 export type BotMemory = {
@@ -115,6 +115,12 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     next.engaged = null;
     const bounty = snap.zones.length === 0 ? nearest(me, snap.minimap.filter((m) => m.hunted)) : null;
     if (bounty) { goX = bounty.x; goY = bounty.y; }
+    const crate = snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading ? crateInSight(me, snap.crates, walls, range * 0.95, snap.self.viewRadius) : null;
+    if (crate) {
+      angle = Math.atan2(crate.y - me.y, crate.x - me.x);
+      aimDist = Math.hypot(crate.x - me.x, crate.y - me.y);
+      fire = true;
+    }
   }
   const situation: Situation = {
     threat, hurting,
@@ -127,7 +133,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   const dead = 30;
   const input: InputState = {
     up: my < -dead, down: my > dead, left: mx < -dead, right: mx > dead,
-    angle, fire, shots: next.shots, reload: !enemy && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
+    angle, fire, shots: next.shots, reload: !enemy && !fire && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
   };
   return { input, pick: choice, mem: next };
 }
@@ -172,6 +178,17 @@ function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly Wal
     && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
     && !walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null));
   return nearest(me, visible.filter((p) => p.hunted)) ?? nearest(me, visible);
+}
+
+/** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score. */
+function crateInSight(me: PlayerView, crates: readonly CrateView[], walls: readonly WallView[], range: number, viewRadius: number): { x: number; y: number } | null {
+  const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
+  const rect = (c: CrateView) => ({ x: c.x, y: c.y, w: c.size, h: c.size });
+  const centres = crates.map((c) => ({ id: c.id, x: c.x + c.size / 2, y: c.y + c.size / 2 }));
+  const open = centres.filter((c) => Math.abs(c.x - me.x) <= sight.halfW && Math.abs(c.y - me.y) <= sight.halfH
+    && Math.hypot(c.x - me.x, c.y - me.y) <= range
+    && ![...walls, ...crates.filter((o) => o.id !== c.id).map(rect)].some((b) => segmentEntersRectAt(me.x, me.y, c.x - me.x, c.y - me.y, b) !== null));
+  return nearest(me, open);
 }
 
 const BOT_NAMES = [
