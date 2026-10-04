@@ -176,7 +176,7 @@ test('DOM zone capture scores for the team, declares a winner, then resets', () 
 
   for (let t = 0; t < 300_000 && w.match.k === 'playing'; t += TICK_MS) step(w, TICK_MS);
   const match = snapshotFor(w, p.id).match;
-  assert.equal(match.winner, 'Red team');
+  assert.equal(match.winner?.name, 'Red team');
   assert.ok(match.teamScore.red >= WORLD.domWinScore);
 
   run(w, WORLD.roundRestartMs + 100);
@@ -216,7 +216,7 @@ test('TDM team reaching tdmWinScore kills wins', () => {
     shootUntilDead(w, a, v);
     w.players.delete(v.id);
   }
-  assert.equal(snapshotFor(w, a.id).match.winner, 'Blue team');
+  assert.equal(snapshotFor(w, a.id).match.winner?.name, 'Blue team');
 });
 
 test('destroying a crate awards crateScore and it respawns later', () => {

@@ -22,7 +22,7 @@ test('nobody can deal damage after the round is over', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 1000, 1000, { team: 'red' });
   const b = spawnAt(w, 1200, 1000, { team: 'blue' });
-  w.match = { k: 'over', winner: 'red', restartAt: w.now + WORLD.roundRestartMs };
+  w.match = { k: 'over', winner: { name: 'Red team', id: null, note: null }, restartAt: w.now + WORLD.roundRestartMs };
   const before = hpOf(b);
   shootOnce(w, a, 0, 400);
   assert.equal(hpOf(b), before, 'the losing team is not shot during the end-of-round banner');

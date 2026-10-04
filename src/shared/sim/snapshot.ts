@@ -63,8 +63,15 @@ function selfView(w: World, p: Player): SelfView {
   };
 }
 
+const LEADERBOARD_ROWS = 10;
+
+/** The top rows, keeping a round's winner on the board when they rank below it, so the podium can put them first. */
 function leaderboard(w: World): LeaderRow[] {
-  return rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, team: p.team }))).slice(0, 10);
+  const ranked = rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team })));
+  const top = ranked.slice(0, LEADERBOARD_ROWS);
+  const winnerId = w.match.k === 'over' ? w.match.winner.id : null;
+  const winner = ranked.find((r) => r.id === winnerId);
+  return winner && !top.includes(winner) ? [...top.slice(0, -1), winner] : top;
 }
 
 function matchView(w: World): MatchView {

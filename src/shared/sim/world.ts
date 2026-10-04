@@ -1,5 +1,5 @@
 import { PERK_TIERS, WORLD, type Blast, type GunId, type ModeId, type PlayerKind, type Tier } from '../defs.ts';
-import type { Dash, GameEvent, InputState, Loadout, Team } from '../protocol.ts';
+import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type MapId } from '../maps.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 
@@ -77,7 +77,7 @@ export type Thrown =
 
 export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
-export type Match = { k: 'playing' } | { k: 'over'; winner: string; restartAt: number };
+export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restartAt: number };
 
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 

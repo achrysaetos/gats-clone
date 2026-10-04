@@ -228,7 +228,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       score: me.score, level: 1, armorTier: loadout.armor, kind: 'human', hunted: GUNS[gun].stage === 2,
     };
     const players: PlayerView[] = [selfView, ...w.bots.map(({ phase, orbit, cx, cy, cooldown, ...p }) => p)];
-    const winner = winnerUntil > now ? (mode === 'FFA' ? name : 'Red team') : null;
+    const winner = winnerUntil > now ? (mode === 'FFA' ? { name, id: myId, note: null } : { name: 'Red team', id: null, note: null }) : null;
     out({
       t: 'snap', tick: w.tick, ackSeq,
       self: {
@@ -240,7 +240,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       bullets: bullets.map(({ life, ...b }) => b),
       crates: w.crates, thrown, zones: w.zones,
       minimap: w.bots.filter((b) => b.id % 2).map((b) => ({ x: b.x, y: b.y, team: b.team, pingAge: b.hunted ? now % 2500 : null })),
-      leaderboard: players.map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.id === myId ? me.kills : 0, team: p.team })),
+      leaderboard: players.map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.id === myId ? me.kills : 0, deaths: p.id === myId ? me.deaths : 0, team: p.team })),
       match: { mode, map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: Math.max(0, winnerUntil - now), teamScore: { red: 23, blue: 31 }, winner, restartIn: Math.max(0, winnerUntil - now) },
       events,
     });

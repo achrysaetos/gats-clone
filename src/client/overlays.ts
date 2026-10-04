@@ -148,13 +148,16 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const renderBanner = (snap: Snapshot) => {
     const { winner, restartIn } = snap.match;
     const { rows: podium, score: teamLine } = roundPodium(snap.match, snap.leaderboard, PODIUM_SIZE);
-    const key = winner === null ? '' : `${winner}|${teamLine}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
+    const key = winner === null ? '' : `${winner.name}|${winner.note}|${teamLine}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
     if (key === keys.banner) return;
     keys.banner = key;
     banner.hidden = winner === null;
     if (winner === null) return;
     const h = document.createElement('h2');
-    h.textContent = `${winner} wins the round`;
+    h.textContent = `${winner.name} wins the round`;
+    const note = document.createElement('p');
+    note.textContent = winner.note ?? '';
+    note.hidden = winner.note === null;
     const teamScore = document.createElement('p');
     teamScore.className = 'team-score';
     teamScore.textContent = teamLine ?? '';
@@ -173,7 +176,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     }));
     const p = document.createElement('p');
     p.textContent = `Next round in ${seconds(restartIn)}s`;
-    banner.replaceChildren(h, teamScore, list, p);
+    banner.replaceChildren(h, note, teamScore, list, p);
   };
 
   const renderObjective = (state: ClientState, snap: Snapshot, now: number) => {

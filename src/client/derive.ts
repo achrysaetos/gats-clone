@@ -131,9 +131,13 @@ export const objectiveVisible =(phase: ClientState['phase'], match: Pick<MatchVi
 
 export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow[] => rankRows(rows).slice(0, count);
 
-/** The round-end podium: the winning team's best in team modes, with the final team score; everyone's best in FFA. */
+/** The round-end podium: the winning team's best in team modes, with the final team score; in FFA the winner, then everyone else's best. */
 export function roundPodium(match: MatchView, rows: readonly LeaderRow[], count: number): { rows: LeaderRow[]; score: string | null } {
-  if (match.mode === 'FFA') return { rows: topScorers(rows, count), score: null };
+  if (match.mode === 'FFA') {
+    const ranked = rankRows(rows);
+    const winner = ranked.find((r) => r.id === match.winner?.id);
+    return { rows: (winner ? [winner, ...ranked.filter((r) => r !== winner)] : ranked).slice(0, count), score: null };
+  }
   const { red, blue } = match.teamScore;
   const won: Team = red >= blue ? 'red' : 'blue';
   return { rows: topScorers(rows.filter((r) => r.team === won), count), score: `Red ${red} · Blue ${blue}` };

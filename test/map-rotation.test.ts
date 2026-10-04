@@ -76,8 +76,8 @@ test('FFA: the first human to the kill target wins the round, and the next round
   leader!.kills = WORLD.ffaWinKills;
   run(w, TICK_MS);
   const over = snapshotFor(w, viewer!.id);
-  assert.equal(over.match.winner, leader!.name);
-  assert.deepEqual(over.leaderboard[0], { id: leader!.id, name: leader!.name, score: leader!.score, kills: WORLD.ffaWinKills, team: null }, 'the leaderboard ranks by kills');
+  assert.equal(over.match.winner?.name, leader!.name);
+  assert.deepEqual(over.leaderboard[0], { id: leader!.id, name: leader!.name, score: leader!.score, kills: WORLD.ffaWinKills, deaths: 0, team: null }, 'the leaderboard ranks by kills');
   assert.equal(w.map, first, 'the map holds during the end-of-round banner');
   run(w, WORLD.roundRestartMs + 100);
   assert.deepEqual([w.match.k, w.map, leader!.kills], ['playing', second, 0]);
@@ -92,7 +92,7 @@ test('FFA: a bot at the kill target does not end the round', () => {
   run(w, MAP_MS.FFA - 1000);
   assert.equal(w.match.k, 'playing', 'the round runs to the timer');
   run(w, 1000 + TICK_MS);
-  assert.equal(snapshotFor(w, bot.id).match.winner, bot.name, 'the bot wins on the timer');
+  assert.equal(snapshotFor(w, bot.id).match.winner?.name, bot.name, 'the bot wins on the timer');
 });
 
 test('FFA: a timer finish with tied kills goes to the player with fewer deaths', () => {
@@ -104,7 +104,21 @@ test('FFA: a timer finish with tied kills goes to the player with fewer deaths',
   b!.kills = 6;
   b!.deaths = 2;
   run(w, MAP_MS.FFA + TICK_MS);
-  assert.equal(snapshotFor(w, b!.id).match.winner, b!.name);
+  const over = snapshotFor(w, b!.id);
+  assert.equal(over.match.winner?.name, b!.name);
+  assert.equal(over.leaderboard[0]!.id, b!.id, 'the leaderboard breaks the tie the same way');
+});
+
+test('FFA: a human reaching the kill target behind a bot wins, says why, and keeps a place on the board', () => {
+  const w = createWorld('FFA', 1, ROTATION.FFA[0]);
+  for (let i = 0; i < 12; i++) addPlayer(w, `bot${i}`, PISTOL).kills = 30 + i;
+  const human = addPlayer(w, 'Kestrel', PISTOL, { kind: 'human' });
+  human.kills = WORLD.ffaWinKills;
+  run(w, TICK_MS);
+  const over = snapshotFor(w, human.id);
+  assert.deepEqual(over.match.winner, { name: 'Kestrel', id: human.id, note: `Kestrel reached ${WORLD.ffaWinKills} kills` });
+  assert.equal(over.leaderboard.length, 10);
+  assert.ok(over.leaderboard.some((r) => r.id === human.id), 'the winner is on the board though eleven players out-killed them');
 });
 
 test('FFA: when the map timer runs out, the player with the most kills wins the round', () => {
@@ -115,7 +129,7 @@ test('FFA: when the map timer runs out, the player with the most kills wins the 
   a!.kills = 4;
   b!.kills = 7;
   run(w, MAP_MS.FFA + TICK_MS);
-  assert.equal(snapshotFor(w, viewer!.id).match.winner, b!.name);
+  assert.equal(snapshotFor(w, viewer!.id).match.winner?.name, b!.name);
   assert.equal(w.map, first);
   run(w, WORLD.roundRestartMs + 100);
   assert.equal(w.map, second);

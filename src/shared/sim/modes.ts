@@ -1,5 +1,5 @@
 import { WORLD, type ModeId } from '../defs.ts';
-import type { Team } from '../protocol.ts';
+import { byRank, type RoundWinner, type Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
@@ -12,7 +12,7 @@ export type ModeRules = {
   assignTeam(w: World): Team;
   onKill(w: World, killer: Player, victim: Player): void;
   tick(w: World, dtMs: number): void;
-  winner(w: World): string | null;
+  winner(w: World): RoundWinner | null;
 };
 
 const TEAM_NAME = { red: 'Red team', blue: 'Blue team' } as const;
@@ -23,19 +23,16 @@ function smallerTeam(w: World): Team {
   return red <= blue ? 'red' : 'blue';
 }
 
-/** Most kills, then fewest deaths, among players with at least one kill. */
+/** The first in leaderboard order among players with at least one kill. */
 function topKiller(w: World, eligible: (p: Player) => boolean = () => true): Player | null {
-  let top: Player | null = null;
-  for (const p of w.players.values()) {
-    if (p.kills === 0 || !eligible(p)) continue;
-    if (!top || p.kills > top.kills || (p.kills === top.kills && p.deaths < top.deaths)) top = p;
-  }
-  return top;
+  return [...w.players.values()].filter((p) => p.kills > 0 && eligible(p)).sort(byRank)[0] ?? null;
 }
 
-function teamAtLeast(w: World, target: number): string | null {
-  if (w.teamScore.red >= target) return TEAM_NAME.red;
-  if (w.teamScore.blue >= target) return TEAM_NAME.blue;
+const teamWin = (team: 'red' | 'blue'): RoundWinner => ({ name: TEAM_NAME[team], id: null, note: null });
+
+function teamAtLeast(w: World, target: number): RoundWinner | null {
+  if (w.teamScore.red >= target) return teamWin('red');
+  if (w.teamScore.blue >= target) return teamWin('blue');
   return null;
 }
 
@@ -77,8 +74,11 @@ export const MODES: Record<ModeId, ModeRules> = {
     // Bots out-kill humans, so a bot reaching the target would end most rounds before a person could; bots win only on the timer.
     winner: (w) => {
       const human = topKiller(w, (p) => p.kind === 'human');
-      if (human && human.kills >= WORLD.ffaWinKills) return human.name;
-      return w.now >= w.mapChangeAt ? topKiller(w)?.name ?? null : null;
+      if (human && human.kills >= WORLD.ffaWinKills) {
+        return { name: human.name, id: human.id, note: topKiller(w) === human ? null : `${human.name} reached ${WORLD.ffaWinKills} kills` };
+      }
+      const top = w.now >= w.mapChangeAt ? topKiller(w) : null;
+      return top && { name: top.name, id: top.id, note: null };
     },
   },
   TDM: {

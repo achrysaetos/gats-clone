@@ -230,7 +230,7 @@ const done = () => wanted.every((t) => captured.has(t)) && earlyChecked && respa
 while (Date.now() < end && !done()) {
   await onEvents();
   const snap = st.last, self = me();
-  if (snap?.match.winner) { await setKeys([]); await capture('round-banner', 600, `${snap.match.winner} wins`); roundOver = true; await sleep(300); continue; }
+  if (snap?.match.winner) { await setKeys([]); await capture('round-banner', 600, `${snap.match.winner.name} wins`); roundOver = true; await sleep(300); continue; }
   if (roundOver && self?.alive && !checkedNextRound) {
     checkedNextRound = true;
     expect('the next round introduces itself with the objective banner', await until(async () => js(`!document.getElementById('objective').hidden`), 1500));

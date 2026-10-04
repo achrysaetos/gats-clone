@@ -90,11 +90,15 @@ export type GameEvent =
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
 
-/** `kills` counts this round only and every mode ranks on it; `score` is the current life's, which a death resets. */
-export type LeaderRow = { id: number; name: string; score: number; kills: number; team: Team };
+/** `kills` and `deaths` count this round only and every mode ranks on them; `score` is the current life's, which a death resets. */
+export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team };
+/** Most round kills first, then fewest deaths. The FFA timer crowns whoever this puts first, so the leaderboard and the winner agree. */
+export const byRank = (a: { kills: number; deaths: number }, b: { kills: number; deaths: number }): number => b.kills - a.kills || a.deaths - b.deaths;
+export const rankRows = (rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort(byRank);
+/** `id` is the winning player's, null for a team. `note` says why they won when the ranking does not, such as a human reaching the FFA kill target behind a bot. */
+export type RoundWinner = { name: string; id: number | null; note: string | null };
 /** `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise. */
-export const rankRows = (rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort((a, b) => b.kills - a.kills);
-export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
+export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: RoundWinner | null; restartIn: number };
 
 export type Snapshot = {
   t: 'snap';

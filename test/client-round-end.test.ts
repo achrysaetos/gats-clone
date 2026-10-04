@@ -6,17 +6,17 @@ import type { LeaderRow } from '../src/shared/protocol.ts';
 
 test('the objective banner never shows while the round is over', () => {
   assert.equal(objectiveVisible('playing', { winner: null }, 0), true, 'shows right after spawning');
-  assert.equal(objectiveVisible('playing', { winner: 'Red team' }, 0), false, 'hidden under the win banner');
+  assert.equal(objectiveVisible('playing', { winner: { name: 'Red team', id: null, note: null } }, 0), false, 'hidden under the win banner');
   assert.equal(objectiveVisible('playing', { winner: null }, OBJECTIVE_MS), false, 'fades after its time');
   assert.equal(objectiveVisible('dead', { winner: null }, 0), false, 'hidden on the death screen');
 });
 
 test('the round summary lists the top three by round kills, whatever their current life\'s score', () => {
   const rows: LeaderRow[] = [
-    { id: 1, name: 'Ann', score: 40, kills: 9, team: null },
-    { id: 2, name: 'Bo', score: 90, kills: 3, team: null },
-    { id: 3, name: 'Cy', score: 10, kills: 1, team: null },
-    { id: 4, name: 'Di', score: 65, kills: 5, team: null },
+    { id: 1, name: 'Ann', score: 40, kills: 9, deaths: 0, team: null },
+    { id: 2, name: 'Bo', score: 90, kills: 3, deaths: 0, team: null },
+    { id: 3, name: 'Cy', score: 10, kills: 1, deaths: 0, team: null },
+    { id: 4, name: 'Di', score: 65, kills: 5, deaths: 0, team: null },
   ];
   assert.deepEqual(topScorers(rows, 3).map((r) => [r.name, r.kills]), [['Ann', 9], ['Di', 5], ['Bo', 3]]);
   assert.deepEqual(topScorers(rows.slice(0, 2), 3).map((r) => r.name), ['Ann', 'Bo'], 'fewer players than places lists them all');
@@ -30,7 +30,7 @@ test('the objective banner introduces each round once, not every respawn', () =>
   assert.equal(nextObjectiveSeen(dead, 'playing', ffa, null, 12000).at, 1000, 'a respawn into the same round keeps the old time, so it stays hidden');
   assert.equal(nextObjectiveSeen(join, 'playing', { ...ffa, map: 'Old Town' }, null, 12000).at, 12000, 'a new map introduces itself');
   assert.equal(nextObjectiveSeen(join, 'playing', { ...ffa, mode: 'TDM' }, 'red', 12000).at, 12000, 'so does a new mode or team');
-  const over = nextObjectiveSeen(join, 'playing', { ...ffa, winner: 'Ann' }, null, 20000);
+  const over = nextObjectiveSeen(join, 'playing', { ...ffa, winner: { name: 'Ann', id: 1, note: null } }, null, 20000);
   assert.equal(nextObjectiveSeen(over, 'playing', ffa, null, 28000).at, 28000, 'the next round on the same map is introduced again');
 });
 
@@ -43,15 +43,33 @@ test('the death screen ignores clicks until a held trigger has had time to let g
 
 test('a team round podium lists the winning team with the final team score; FFA lists everyone', () => {
   const rows: LeaderRow[] = [
-    { id: 1, name: 'Tansy', score: 0, kills: 9, team: 'blue' },
-    { id: 2, name: 'Flint', score: 0, kills: 7, team: 'blue' },
-    { id: 3, name: 'Ivy', score: 0, kills: 5, team: 'red' },
-    { id: 4, name: 'Nova', score: 0, kills: 3, team: 'red' },
+    { id: 1, name: 'Tansy', score: 0, kills: 9, deaths: 0, team: 'blue' },
+    { id: 2, name: 'Flint', score: 0, kills: 7, deaths: 0, team: 'blue' },
+    { id: 3, name: 'Ivy', score: 0, kills: 5, deaths: 0, team: 'red' },
+    { id: 4, name: 'Nova', score: 0, kills: 3, deaths: 0, team: 'red' },
   ];
-  const match = { mode: 'TDM', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 50, blue: 44 }, winner: 'Red team', restartIn: 8000 } as const;
+  const match = { mode: 'TDM', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 50, blue: 44 }, winner: { name: 'Red team', id: null, note: null }, restartIn: 8000 } as const;
   const team = roundPodium(match, rows, 3);
   assert.deepEqual(team.rows.map((r) => r.name), ['Ivy', 'Nova']);
   assert.equal(team.score, 'Red 50 · Blue 44');
-  const ffa = roundPodium({ ...match, mode: 'FFA', winner: 'Tansy' }, rows.map((r) => ({ ...r, team: null })), 3);
+  const ffa = roundPodium({ ...match, mode: 'FFA', winner: { name: 'Tansy', id: 1, note: null } }, rows.map((r) => ({ ...r, team: null })), 3);
   assert.deepEqual([ffa.rows.map((r) => r.name), ffa.score], [['Tansy', 'Flint', 'Ivy'], null]);
+});
+
+test('an FFA podium puts the round winner first even when a bot out-killed them', () => {
+  const rows: LeaderRow[] = [
+    { id: 1, name: 'Pike', score: 0, kills: 37, deaths: 4, team: null },
+    { id: 2, name: 'Juno', score: 0, kills: 25, deaths: 9, team: null },
+    { id: 3, name: 'Kestrel', score: 0, kills: 20, deaths: 2, team: null },
+  ];
+  const match = { mode: 'FFA', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: { name: 'Kestrel', id: 3, note: 'Kestrel reached 20 kills' }, restartIn: 8000 } as const;
+  assert.deepEqual(roundPodium(match, rows, 3).rows.map((r) => r.name), ['Kestrel', 'Pike', 'Juno']);
+});
+
+test('the leaderboard breaks a kill tie on fewer deaths', () => {
+  const rows: LeaderRow[] = [
+    { id: 1, name: 'Ann', score: 0, kills: 6, deaths: 4, team: null },
+    { id: 2, name: 'Bo', score: 0, kills: 6, deaths: 2, team: null },
+  ];
+  assert.deepEqual(topScorers(rows, 2).map((r) => r.name), ['Bo', 'Ann']);
 });

@@ -189,7 +189,7 @@ for (const mode of ['TDM', 'DOM'] as const) {
     ace.score = 0;
     const board = snapshotFor(w, ace.id).leaderboard;
     assert.equal(board.length, 10);
-    assert.deepEqual(board[0], { id: ace.id, name: ace.name, score: 0, kills: 7, team: ace.team });
+    assert.deepEqual(board[0], { id: ace.id, name: ace.name, score: 0, kills: 7, deaths: 0, team: ace.team });
     assert.deepEqual(board.map((r) => r.kills), [...board.map((r) => r.kills)].sort((a, b) => b - a));
   });
 }
