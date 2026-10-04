@@ -46,7 +46,7 @@ const BASE_BULLET = { r: 1.6, color: '#25211c' };
 const BASE_LOOK: GunLook = { length: 1, width: 1, barrels: 1, accent: '#7b8494', bullet: BASE_BULLET };
 
 export const GUNS: Record<GunId, GunDef> = {
-  pistol: { name: 'Pistol', desc: 'Reliable sidearm', base: 'pistol', stage: 0, from: null, damage: 22, fireMs: 220, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1100, moveMul: 1.0, auto: false, look: BASE_LOOK },
+  pistol: { name: 'Pistol', desc: 'Reliable sidearm', base: 'pistol', stage: 0, from: null, damage: 27, fireMs: 220, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1100, moveMul: 1.0, auto: false, look: BASE_LOOK },
   handCannon: { name: 'Hand Cannon', desc: 'Heavy single shots', base: 'pistol', stage: 1, from: 'pistol', damage: 38, fireMs: 420, pellets: 1, spread: 0.03, range: 780, bulletSpeed: 1650, mag: 8, reloadMs: 1300, moveMul: 0.98, auto: false,
     look: { length: 1.2, width: 1.3, barrels: 1, accent: '#c8553d', bullet: { r: 2.6, color: '#7a2e1f' } } },
   machinePistol: { name: 'Machine Pistol', desc: 'Three-round bursts', base: 'pistol', stage: 1, from: 'pistol', damage: 19, fireMs: 430, pellets: 1, spread: 0.06, range: 650, bulletSpeed: 1500, mag: 18, reloadMs: 1200, moveMul: 1.0, auto: false, burst: { count: 3, gapMs: 60 },

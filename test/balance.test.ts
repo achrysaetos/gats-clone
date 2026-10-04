@@ -6,6 +6,7 @@ import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/si
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
+import { ROTATION, type MapId } from '../src/shared/maps.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { emptyWorld, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -37,9 +38,9 @@ test('bolt-action hits to kill rise with armor: none 1, light 2, medium 2, heavy
   assert.deepEqual(ARMOR_IDS.map(shotsToKill), [1, 2, 2, 3]);
 });
 
-/** The level each bot life ended at, over one fixed-seed FFA room of bots, so a ladder or bot change that stalls progression shows up. */
-function botLifeLevels(minutes: number): number[] {
-  const w = createWorld('FFA', 1, 'boneyard');
+/** The level each bot life ended at in a fixed-seed FFA room of bots, so a ladder or bot change that stalls progression shows up. */
+function botLifeLevels(seed: number, map: MapId, minutes: number): number[] {
+  const w = createWorld('FFA', seed, map);
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
@@ -60,7 +61,8 @@ function botLifeLevels(minutes: number): number[] {
 }
 
 test('in a room of bots, a fair share of lives reach the first evolve, the ability tier and the hunted evolve', () => {
-  const levels = botLifeLevels(6);
+  // One room gives ~250 lives, about five of them hunted, so a small sample flips on unrelated balance tweaks; ten rooms (~800 lives) hold within a point.
+  const levels = Array.from({ length: 10 }, (_, i) => botLifeLevels(i + 1, ROTATION.FFA[i % ROTATION.FFA.length]!, 2)).flat();
   const reach = (level: number) => levels.filter((l) => l >= level).length / levels.length;
   const [firstEvolve, hunted] = LEVELS.flatMap((l, i) => (l.pick?.k === 'evolve' ? [reach(i)] : []));
   const ability = reach(LEVELS.findIndex((l) => l.pick?.k === 'perk' && l.pick.tier === 3));
