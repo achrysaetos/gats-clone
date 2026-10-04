@@ -1,6 +1,7 @@
 import { PERK_TIERS, WORLD, type ModeId, type PlayerKind, type Tier } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, Team } from '../protocol.ts';
-import { rectsOverlap, type Rect } from './movement.ts';
+import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type MapId } from '../maps.ts';
+import { circleHitsRect, dist2, type Rect } from './movement.ts';
 
 export type Wall = Rect & { built: boolean; expiresAt: number };
 
@@ -70,6 +71,9 @@ type PoseFrame = { at: number; poses: ReadonlyMap<number, Pose>; walls: readonly
 
 export type World = {
   mode: ModeId;
+  map: MapId;
+  /** When the next map in the rotation loads. */
+  mapChangeAt: number;
   now: number;
   tick: number;
   rng: number;
@@ -93,9 +97,6 @@ export const IDLE_INPUT: InputState = {
   up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0,
 };
 
-const CRATE_SIZE = 44;
-const ZONE_RADIUS = 180;
-
 function mulberry32(state: number): number {
   let t = state;
   t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -113,39 +114,47 @@ export const newId = (w: World) => w.nextId++;
 export const sameTeam = (a: Player, b: Player) => a.team !== null && a.team === b.team;
 export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b);
 
-function zoneLayout(mode: ModeId): Zone[] {
-  if (mode !== 'DOM') return [];
-  const s = WORLD.size;
-  return [[0.2, 0.5], [0.5, 0.5], [0.8, 0.5]].map(([fx, fy], id) => ({
-    id, x: s * fx, y: s * fy, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0,
-  }));
+export function createWorld(mode: ModeId, seed: number, map: MapId): World {
+  const w: World = {
+    mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
+    players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
+    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [], history: [],
+  };
+  loadMap(w, map);
+  return w;
 }
 
-export function createWorld(mode: ModeId, seed: number): World {
-  const w: World = {
-    mode, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
-    zones: zoneLayout(mode), teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [], history: [],
-  };
-  const s = WORLD.size;
-  const keepClear: Rect[] = w.zones.map((z) => ({ x: z.x - z.r, y: z.y - z.r, w: z.r * 2, h: z.r * 2 }));
-  for (let tries = 0; w.walls.length < 26 && tries < 2000; tries++) {
-    const long = 160 + rand(w) * 340;
-    const thick = 36 + rand(w) * 30;
-    const horizontal = rand(w) < 0.5;
-    const ww = horizontal ? long : thick;
-    const hh = horizontal ? thick : long;
-    const r: Rect = { x: 100 + rand(w) * (s - 200 - ww), y: 100 + rand(w) * (s - 200 - hh), w: ww, h: hh };
-    if (w.walls.some((o) => rectsOverlap(o, r, 120)) || keepClear.some((o) => rectsOverlap(o, r))) continue;
-    w.walls.push({ ...r, built: false, expiresAt: Infinity });
-  }
-  for (let tries = 0; w.crates.length < WORLD.crateCount && tries < 4000; tries++) {
-    const r: Rect = { x: 60 + rand(w) * (s - 120 - CRATE_SIZE), y: 60 + rand(w) * (s - 120 - CRATE_SIZE), w: CRATE_SIZE, h: CRATE_SIZE };
-    if (w.walls.some((o) => rectsOverlap(o, r, 60)) || w.crates.some((c) => rectsOverlap(crateRect(c), r, 40))) continue;
-    w.crates.push({ id: newId(w), x: r.x, y: r.y, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null });
-  }
-  return w;
+/** Replaces the layout and everything in flight; players stay where they are. */
+export function loadMap(w: World, map: MapId) {
+  const def = MAPS[map];
+  w.map = map;
+  w.mapChangeAt = w.now + MAP_MS[w.mode];
+  w.walls = def.walls.map((r) => ({ ...r, built: false, expiresAt: Infinity }));
+  w.wallsVersion++;
+  w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
+  w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0 })) : [];
+  w.bullets = [];
+  w.thrown = [];
+  w.history = [];
 }
 
 export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 export const solidRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
+
+const SPAWN_CLEARANCE = 10;
+const SPAWN_ENEMY_DIST = 400;
+
+export function spawnPoint(w: World, team: Team): Pose {
+  const regions = MAPS[w.map].spawns[team ?? 'ffa'];
+  const solids = solidRects(w);
+  for (let i = 0; i < 200; i++) {
+    const r = regions[Math.floor(rand(w) * regions.length)];
+    const x = r.x + rand(w) * r.w, y = r.y + rand(w) * r.h;
+    if (solids.some((b) => circleHitsRect(x, y, WORLD.playerRadius + SPAWN_CLEARANCE, b))) continue;
+    const tooClose = [...w.players.values()].some((p) => p.life.k === 'alive' && (team === null || p.team !== team) && dist2(p.x, p.y, x, y) < SPAWN_ENEMY_DIST ** 2);
+    if (tooClose && i < 150) continue;
+    return { x, y };
+  }
+  const fallback = regions[0];
+  return { x: fallback.x + fallback.w / 2, y: fallback.y + fallback.h / 2 };
+}

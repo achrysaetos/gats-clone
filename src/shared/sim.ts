@@ -3,27 +3,12 @@ import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
-import { circleHitsRect, clamp, dist2, moveStep } from './sim/movement.ts';
+import { clamp, moveStep } from './sim/movement.ts';
 import { abilityOf, effectiveStats, resetProgress } from './sim/stats.ts';
-import { IDLE_INPUT, newId, rand, solidRects, type Bullet, type Life, type Player, type World } from './sim/world.ts';
+import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Life, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const PRESS_GRACE_MS = 100;
-
-function spawnPoint(w: World, team: Team): { x: number; y: number } {
-  const s = WORLD.size, r = WORLD.playerRadius;
-  const [lo, hi] = team === 'red' ? [0.05, 0.3] : team === 'blue' ? [0.7, 0.95] : [0.05, 0.95];
-  const solids = solidRects(w);
-  for (let i = 0; i < 200; i++) {
-    const x = s * (lo + rand(w) * (hi - lo));
-    const y = s * (0.05 + rand(w) * 0.9);
-    if (solids.some((b) => circleHitsRect(x, y, r + 10, b))) continue;
-    const tooClose = [...w.players.values()].some((p) => p.life.k === 'alive' && (team === null || p.team !== team) && dist2(p.x, p.y, x, y) < 400 * 400);
-    if (tooClose && i < 150) continue;
-    return { x, y };
-  }
-  return { x: s / 2, y: s / 2 };
-}
 
 type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
 

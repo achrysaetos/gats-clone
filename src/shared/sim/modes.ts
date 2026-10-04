@@ -2,7 +2,8 @@ import { WORLD, type ModeId } from '../defs.ts';
 import type { Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
 import { resetProgress } from './stats.ts';
-import type { Player, World } from './world.ts';
+import { nextMap } from '../maps.ts';
+import { loadMap, spawnPoint, type Player, type World } from './world.ts';
 
 const ZONE_CAPTURE_MS = 3000;
 const ZONE_POINTS_PER_SEC = 5;
@@ -69,8 +70,20 @@ export const MODES: Record<ModeId, ModeRules> = {
   },
 };
 
+function changeMap(w: World) {
+  loadMap(w, nextMap(w.mode, w.map));
+  for (const p of w.players.values()) {
+    if (p.life.k !== 'alive') continue;
+    const at = spawnPoint(w, p.team);
+    p.x = at.x;
+    p.y = at.y;
+    p.life.dash = null;
+  }
+}
+
 export function tickMatch(w: World, dtMs: number) {
   const rules = MODES[w.mode];
+  if (w.now >= w.mapChangeAt) changeMap(w);
   if (w.match.k === 'over') {
     if (w.now < w.match.restartAt) return;
     w.match = { k: 'playing' };
@@ -81,5 +94,8 @@ export function tickMatch(w: World, dtMs: number) {
   }
   rules.tick(w, dtMs);
   const winner = rules.winner(w);
-  if (winner) w.match = { k: 'over', winner, restartAt: w.now + WORLD.roundRestartMs };
+  if (winner) {
+    w.match = { k: 'over', winner, restartAt: w.now + WORLD.roundRestartMs };
+    w.mapChangeAt = w.match.restartAt;
+  }
 }

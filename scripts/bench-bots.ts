@@ -74,7 +74,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
 type Tally = { lives: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number };
 
 function simulate(seed: number, style: HumanStyle): Tally {
-  const w: World = createWorld('FFA', seed);
+  const w: World = createWorld('FFA', seed, 'boneyard');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers - 1; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));

@@ -1,4 +1,5 @@
 import type { ModeId, PerkId } from '../src/shared/defs.ts';
+import { ROTATION } from '../src/shared/maps.ts';
 import type { InputState, Loadout, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
 import { choosePerk, pendingTier } from '../src/shared/sim/stats.ts';
@@ -8,7 +9,7 @@ export const TICK_MS = 1000 / 30;
 export const PISTOL: Loadout = { weapon: 'pistol', armor: 'none', color: 'red' };
 
 export function emptyWorld(mode: ModeId = 'FFA'): World {
-  const w = createWorld(mode, 1);
+  const w = createWorld(mode, 1, ROTATION[mode][0]);
   w.walls = [];
   w.crates = [];
   return w;

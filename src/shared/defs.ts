@@ -94,7 +94,6 @@ export const WORLD = {
   regenPerSec: 5,
   tickHz: 30,
   viewRadius: 900,
-  crateCount: 40,
   crateHp: 40,
   crateScore: 10,
   killScore: 100,

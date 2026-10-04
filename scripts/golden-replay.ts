@@ -3,6 +3,7 @@
 // Replays fixed-seed matches and hashes every snapshot; a behavior-preserving sim refactor must keep the hash.
 import { createHash } from 'node:crypto';
 import { MODE_IDS, PERK_TIERS, WORLD } from '../src/shared/defs.ts';
+import { MAP_NOTICE_MS, ROTATION } from '../src/shared/maps.ts';
 import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -15,7 +16,7 @@ const SEEDS = [7, 8];
 const TICK_MS = 1000 / WORLD.tickHz;
 
 const hash = createHash('sha256');
-const seen = { kills: 0, slashes: 0, booms: 0, rewoundShots: 0, abilityUses: {} as Record<string, number>, roundsOver: 0, perks: 0, respawns: 0 };
+const seen = { kills: 0, slashes: 0, booms: 0, rewoundShots: 0, abilityUses: {} as Record<string, number>, roundsOver: 0, mapChanges: 0, perks: 0, respawns: 0 };
 
 function nearestEnemy(w: World, me: Player): Player | null {
   let best: Player | null = null, bestD = Infinity;
@@ -60,7 +61,7 @@ let worldIndex = 0;
 for (const mode of MODE_IDS) {
   for (const seed of SEEDS) {
     worldIndex++;
-    const w = createWorld(mode, seed);
+    const w = createWorld(mode, seed, ROTATION[mode][0]);
     const r = () => rand(w);
     const bots = new Map<number, BotMemory>();
     const addBot = (name: string) => bots.set(addPlayer(w, name, randomLoadout(r)).id, newBotMemory(r));
@@ -101,14 +102,17 @@ for (const mode of MODE_IDS) {
       }
       if (tick === 2500 && mode === 'TDM') w.teamScore.blue = WORLD.tdmWinScore - 1;
       if (tick === 2500 && mode === 'DOM') w.teamScore.red = WORLD.domWinScore - 5;
+      if (tick === 2500 && mode === 'FFA') w.mapChangeAt = w.now + MAP_NOTICE_MS;
       const readyAt = [...w.players.values()].map((p) => p.abilityReadyAt);
       const wasOver = w.match.k === 'over';
+      const mapBefore = w.map;
       step(w, TICK_MS);
       [...w.players.values()].forEach((p, i) => {
         const used = abilityOf(p);
         if (used && p.abilityReadyAt !== readyAt[i]) seen.abilityUses[used] = (seen.abilityUses[used] ?? 0) + 1;
       });
       if (!wasOver && w.match.k === 'over') seen.roundsOver++;
+      if (w.map !== mapBefore) seen.mapChanges++;
       for (const e of w.events) {
         if (e.e === 'kill') seen.kills++;
         else if (e.e === 'slash') seen.slashes++;

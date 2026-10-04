@@ -3,6 +3,7 @@ import type {
   BulletView, CrateView, GameEvent, LeaderRow, MatchView, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
 } from '../protocol.ts';
 import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, pendingTier } from './stats.ts';
@@ -67,8 +68,12 @@ function leaderboard(w: World): LeaderRow[] {
 }
 
 function matchView(w: World): MatchView {
+  const untilChange = w.mapChangeAt - w.now;
   return {
     mode: w.mode,
+    map: MAPS[w.map].name,
+    nextMap: MAPS[nextMap(w.mode, w.map)].name,
+    mapChangeIn: untilChange <= MAP_NOTICE_MS ? Math.max(0, untilChange) : 0,
     teamScore: { red: Math.floor(w.teamScore.red), blue: Math.floor(w.teamScore.blue) },
     winner: w.match.k === 'over' ? w.match.winner : null,
     restartIn: w.match.k === 'over' ? Math.max(0, w.match.restartAt - w.now) : 0,

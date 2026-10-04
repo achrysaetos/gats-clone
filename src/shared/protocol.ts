@@ -78,7 +78,8 @@ export type GameEvent =
   | { e: 'slash'; x: number; y: number; angle: number; owner: number };
 
 export type LeaderRow = { id: number; name: string; score: number; team: Team };
-export type MatchView = { mode: ModeId; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
+/** `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise. */
+export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
 
 export type Snapshot = {
   t: 'snap';

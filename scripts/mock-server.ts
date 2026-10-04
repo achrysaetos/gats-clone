@@ -229,7 +229,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       crates: w.crates, thrown, zones: w.zones,
       minimap: w.bots.filter((b) => b.id % 2).map((b) => ({ x: b.x, y: b.y, team: b.team })),
       leaderboard: players.map((p) => ({ id: p.id, name: p.name, score: p.score, team: p.team })),
-      match: { mode, teamScore: { red: 23, blue: 31 }, winner, restartIn: Math.max(0, winnerUntil - now) },
+      match: { mode, map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: Math.max(0, winnerUntil - now), teamScore: { red: 23, blue: 31 }, winner, restartIn: Math.max(0, winnerUntil - now) },
       events,
     });
     events = [];

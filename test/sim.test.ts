@@ -291,14 +291,6 @@ test('minimap always shows teammates', () => {
   assert.deepEqual(snapshotFor(w, me.id).minimap.map((m) => m.team), ['red']);
 });
 
-test('same seed builds the same map', () => {
-  const a = createWorld('FFA', 7), b = createWorld('FFA', 7), c = createWorld('FFA', 8);
-  assert.deepEqual(a.walls, b.walls);
-  assert.deepEqual(a.crates, b.crates);
-  assert.notDeepEqual(a.walls, c.walls);
-  assert.equal(a.crates.length, WORLD.crateCount);
-});
-
 test('players collide with walls and map edges', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
@@ -312,7 +304,7 @@ test('players collide with walls and map edges', () => {
 });
 
 test('bots fighting each other produce a kill within 60 simulated seconds', () => {
-  const w = createWorld('FFA', 3);
+  const w = createWorld('FFA', 3, 'boneyard');
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
@@ -330,7 +322,7 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
 });
 
 test('snapshots report the armor tier picked and how far through a reload the player is', () => {
-  const w = createWorld('FFA', 1);
+  const w = createWorld('FFA', 1, 'boneyard');
   w.walls = []; w.crates = [];
   const p = addPlayer(w, 'Tank', { weapon: 'lmg', armor: 'medium', color: 'red' }, { at: { x: 1000, y: 1000 } });
   assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.armorTier, 'medium', 'tier comes from the loadout, not reverse-engineered from points');

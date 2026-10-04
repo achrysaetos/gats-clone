@@ -1,6 +1,8 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-balance.ts [worlds=8] [minutes=5] [mode=FFA]
-import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
+// Worlds take the mode's maps in rotation order, one map per world.
+import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, WEAPONS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
+import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePerk, levelForScore } from '../src/shared/sim/stats.ts';
@@ -22,13 +24,17 @@ const pct = (n: number, total: number) => `${((100 * n) / Math.max(1, total)).to
 const tally = <K extends string>(m: Map<K, number>, k: K) => m.set(k, (m.get(k) ?? 0) + 1);
 
 const killsBy = new Map<string, number>();
+const killsByMap = new Map<MapId, Map<string, number>>();
 const deathsByArmor = new Map<ArmorId, number>();
 const livesByArmor = new Map<ArmorId, number>();
 const lifeMs: number[] = [];
 const lifeTiers: number[] = [];
 
 for (let seed = 1; seed <= worlds; seed++) {
-  const w = createWorld(mode, seed);
+  const map = ROTATION[mode][(seed - 1) % ROTATION[mode].length];
+  const w = createWorld(mode, seed, map);
+  const mapKills = killsByMap.get(map) ?? new Map<string, number>();
+  killsByMap.set(map, mapKills);
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   const bornAt = new Map<number, number>();
@@ -54,6 +60,7 @@ for (let seed = 1; seed <= worlds; seed++) {
     for (const e of w.events) {
       if (e.e !== 'kill') continue;
       tally(killsBy, e.weapon);
+      tally(mapKills, e.weapon);
       tally(deathsByArmor, w.players.get(e.victimId)!.loadout.armor);
       lifeMs.push(w.now - (bornAt.get(e.victimId) ?? 0));
     }
@@ -65,6 +72,11 @@ const totalKills = [...killsBy.values()].reduce((a, b) => a + b, 0);
 console.log(`bench ${mode}: ${worlds} worlds x ${minutes} min, ${WORLD.minPlayers} bots each, ${totalKills} kills`);
 console.log('\nkill share by weapon (bots pick weapons uniformly, so even is 16.7%)');
 for (const [label, n] of [...killsBy].sort((a, b) => b[1] - a[1])) console.log(`  ${label.padEnd(12)} ${String(n).padStart(5)}  ${pct(n, totalKills)}`);
+console.log('\nkill share by weapon per map');
+for (const [map, kills] of killsByMap) {
+  const total = [...kills.values()].reduce((a, b) => a + b, 0);
+  console.log(`  ${MAPS[map].name.padEnd(10)} ${String(total).padStart(5)} kills  ${WEAPON_IDS.map((id) => `${id} ${pct(kills.get(WEAPONS[id].name) ?? 0, total)}`).join('  ')}`);
+}
 console.log('\ndeaths per life started, by armor');
 for (const a of ARMOR_IDS) console.log(`  ${a.padEnd(8)} ${pct(deathsByArmor.get(a) ?? 0, livesByArmor.get(a) ?? 0)} of ${livesByArmor.get(a) ?? 0} lives`);
 console.log(`\nlife length: median ${(median(lifeMs) / 1000).toFixed(1)}s over ${lifeMs.length} deaths`);
@@ -74,7 +86,7 @@ for (const tier of [1, 2, 3]) console.log(`  tier ${tier}: ${pct(lifeTiers.filte
 const DUEL_SEEDS = 25;
 const DUEL_CAP_MS = 15_000;
 function timeToKill(weapon: WeaponId, armor: ArmorId, range: number, seed: number): number {
-  const w = createWorld('FFA', seed);
+  const w = createWorld('FFA', seed, 'boneyard');
   w.walls = [];
   w.crates = [];
   const shooter = addPlayer(w, 'shooter', { weapon, armor: 'none', color: 'red' }, { at: { x: 500, y: 1500 } });

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { ROTATION } from '../src/shared/maps.ts';
 import { createWorld } from '../src/shared/sim/world.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { press, spawnAt, TICK_MS } from './helpers.ts';
@@ -12,7 +13,7 @@ const fullForm = (snap: Snapshot): Snapshot => JSON.parse(makeSnapshotEncoder()(
 
 test('omitting unchanged crates, leaderboard, zones and match reconstructs the same state as full snapshots', () => {
   for (const mode of ['FFA', 'DOM'] as const) {
-    const w = createWorld(mode, 3);
+    const w = createWorld(mode, 3, ROTATION[mode][0]);
     const p = spawnAt(w, 1500, 1500, { name: 'Mover' });
     spawnAt(w, 1400, 1400, { name: 'Other', team: mode === 'DOM' ? 'blue' : null });
     const encode = makeSnapshotEncoder();
@@ -37,7 +38,7 @@ test('omitting unchanged crates, leaderboard, zones and match reconstructs the s
 });
 
 test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and integers exact', () => {
-  const w = createWorld('FFA', 3);
+  const w = createWorld('FFA', 3, 'boneyard');
   const p = spawnAt(w, 1500.123456, 1500.987654);
   p.angle = 1.23456789;
   const snap = snapshotFor(w, p.id);
@@ -52,7 +53,7 @@ test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and inte
 });
 
 test('a client that never received a sticky field cannot rebuild the snapshot', () => {
-  const w = createWorld('FFA', 3);
+  const w = createWorld('FFA', 3, 'boneyard');
   const p = spawnAt(w, 1500, 1500);
   const { crates: _, ...wire } = snapshotFor(w, p.id);
   assert.equal(fillSnapshot(wire, null), null);

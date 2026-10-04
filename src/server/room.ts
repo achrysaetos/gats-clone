@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
+import { ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
@@ -31,7 +32,7 @@ export type Room = {
 };
 
 export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator()): Room {
-  const world = createWorld(mode, seed);
+  const world = createWorld(mode, seed, ROTATION[mode][0]);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
   const clients = new Map<WebSocket, Client>();
