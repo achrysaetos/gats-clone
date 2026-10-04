@@ -2,7 +2,7 @@ import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, t
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
-import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
+import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, seconds } from './derive.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
@@ -147,14 +147,18 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
 
   const renderBanner = (snap: Snapshot) => {
     const { winner, restartIn } = snap.match;
-    const podium = topScorers(snap.leaderboard, PODIUM_SIZE);
-    const key = winner === null ? '' : `${winner}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
+    const { rows: podium, score: teamLine } = roundPodium(snap.match, snap.leaderboard, PODIUM_SIZE);
+    const key = winner === null ? '' : `${winner}|${teamLine}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
     if (key === keys.banner) return;
     keys.banner = key;
     banner.hidden = winner === null;
     if (winner === null) return;
     const h = document.createElement('h2');
     h.textContent = `${winner} wins the round`;
+    const teamScore = document.createElement('p');
+    teamScore.className = 'team-score';
+    teamScore.textContent = teamLine ?? '';
+    teamScore.hidden = teamLine === null;
     const list = document.createElement('ol');
     list.className = 'podium';
     list.append(...podium.map((r) => {
@@ -169,7 +173,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     }));
     const p = document.createElement('p');
     p.textContent = `Next round in ${seconds(restartIn)}s`;
-    banner.replaceChildren(h, list, p);
+    banner.replaceChildren(h, teamScore, list, p);
   };
 
   const renderObjective = (state: ClientState, snap: Snapshot, now: number) => {

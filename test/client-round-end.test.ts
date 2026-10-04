@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEATH_ARM_MS, deathScreenArmed, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveVisible, topScorers } from '../src/client/derive.ts';
+import { DEATH_ARM_MS, deathScreenArmed, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveVisible, roundPodium, topScorers } from '../src/client/derive.ts';
 import type { LeaderRow } from '../src/shared/protocol.ts';
 
 test('the objective banner never shows while the round is over', () => {
@@ -39,4 +39,19 @@ test('the death screen ignores clicks until a held trigger has had time to let g
   assert.equal(deathScreenArmed(1000, 1000 + DEATH_ARM_MS - 1), false, 'not just before the delay ends');
   assert.equal(deathScreenArmed(1000, 1000 + DEATH_ARM_MS), true, 'armed once the delay has passed');
   assert.ok(DEATH_ARM_MS >= 500, 'long enough to outlast a spammed trigger');
+});
+
+test('a team round podium lists the winning team with the final team score; FFA lists everyone', () => {
+  const rows: LeaderRow[] = [
+    { id: 1, name: 'Tansy', score: 0, kills: 9, team: 'blue' },
+    { id: 2, name: 'Flint', score: 0, kills: 7, team: 'blue' },
+    { id: 3, name: 'Ivy', score: 0, kills: 5, team: 'red' },
+    { id: 4, name: 'Nova', score: 0, kills: 3, team: 'red' },
+  ];
+  const match = { mode: 'TDM', map: 'Boneyard', nextMap: 'Causeway', mapChangeIn: 0, teamScore: { red: 50, blue: 44 }, winner: 'Red team', restartIn: 8000 } as const;
+  const team = roundPodium(match, rows, 3);
+  assert.deepEqual(team.rows.map((r) => r.name), ['Ivy', 'Nova']);
+  assert.equal(team.score, 'Red 50 · Blue 44');
+  const ffa = roundPodium({ ...match, mode: 'FFA', winner: 'Tansy' }, rows.map((r) => ({ ...r, team: null })), 3);
+  assert.deepEqual([ffa.rows.map((r) => r.name), ffa.score], [['Tansy', 'Flint', 'Ivy'], null]);
 });
