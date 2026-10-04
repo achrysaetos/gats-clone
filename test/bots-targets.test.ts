@@ -98,3 +98,30 @@ test('a bot fights an enemy in view before shooting crates', () => {
   const angle = think(w, bot.id, 1, 20).angle;
   assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `aims down at the enemy, angle ${angle.toFixed(2)}`);
 });
+
+test('a bot aims at the highest-level enemy in view over a nearer fresh one', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    spawnAt(w, 1200, 1000);
+    spawnAt(w, 1000, 1400).level = 3;
+    const angle = think(w, bot.id, seed, 20).angle;
+    assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the level-3 enemy, angle ${angle.toFixed(2)}`);
+  }
+});
+
+test('a bot with nobody in view heads for gunfire on its minimap, the hunted first', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1500, 1500);
+    spawnAt(w, 100, 100).revealedUntil = w.now + 10_000;
+    const input = think(w, bot.id, seed, 1);
+    assert.ok(input.left && input.up, `seed ${seed}: moves toward the shooter at (100, 100)`);
+  }
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1500, 1500);
+  spawnAt(w, 400, 1500).revealedUntil = w.now + 10_000;
+  equip(spawnAt(w, 2900, 2900), 'executioner');
+  const input = think(w, bot.id, 1, 1);
+  assert.ok(input.right && input.down, 'passes over a nearer shooter for the hunted one');
+});

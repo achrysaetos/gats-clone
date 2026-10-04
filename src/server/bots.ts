@@ -142,8 +142,10 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     next.engaged = engaged;
   } else {
     next.engaged = null;
-    const bounty = snap.zones.length === 0 ? nearest(me, snap.minimap.filter((m) => m.hunted)) : null;
-    if (bounty) { goX = bounty.x; goY = bounty.y; }
+    // The minimap shows enemies who fired lately, so an idle bot heads for the shooting, the hunted first.
+    const heard = snap.minimap.filter((m) => me.team === null || m.team !== me.team);
+    const lead = snap.zones.length === 0 ? nearest(me, heard.filter((m) => m.hunted)) ?? nearest(me, heard) : null;
+    if (lead) { goX = lead.x; goY = lead.y; }
     const crate = snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading ? crateInSight(me, snap.crates, walls, range * 0.95, snap.self.viewRadius) : null;
     if (crate) {
       angle = Math.atan2(crate.y - me.y, crate.x - me.x);
@@ -209,13 +211,15 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
 const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
   xs.reduce<T | null>((best, x) => (best && Math.hypot(best.x - me.x, best.y - me.y) <= Math.hypot(x.x - me.x, x.y - me.y) ? best : x), null);
 
-/** The nearest hunted enemy in sight, for the bounty, else the nearest enemy in sight. */
+/** The nearest of the most dangerous enemies in sight: hunted first, then highest level, so bots in view of a leader all turn on it. */
 function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
   const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
   const visible = players.filter((p) => p.id !== me.id && p.alive && (me.team === null || p.team !== me.team)
     && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
     && !walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null));
-  return nearest(me, visible.filter((p) => p.hunted)) ?? nearest(me, visible);
+  const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.level);
+  const top = Math.max(...visible.map(danger));
+  return nearest(me, visible.filter((p) => danger(p) === top));
 }
 
 /** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score. */
