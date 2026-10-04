@@ -90,14 +90,16 @@ export const MODES: Record<ModeId, ModeRules> = {
   },
 };
 
+/** Everyone leaves the old map before anyone is placed, so each spawn keeps clear of the players already on the new map, not of where the rest stood on the old one. */
 function changeMap(w: World) {
   loadMap(w, nextMap(w.mode, w.map));
-  for (const p of w.players.values()) {
-    if (p.life.k !== 'alive') continue;
+  const alive = [...w.players.values()].filter((p) => p.life.k === 'alive');
+  for (const p of alive) { p.x = -Infinity; p.y = -Infinity; }
+  for (const p of alive) {
     const at = spawnPoint(w, p.team);
     p.x = at.x;
     p.y = at.y;
-    p.life.dash = null;
+    if (p.life.k === 'alive') p.life.dash = null;
   }
 }
 

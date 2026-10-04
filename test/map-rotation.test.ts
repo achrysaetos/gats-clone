@@ -100,6 +100,19 @@ test('FFA: when the map timer runs out, the player with the most kills wins the 
   assert.equal(w.map, second);
 });
 
+test('a map change places players apart on the new map, not apart from where the others stood on the old one', () => {
+  const close: string[] = [];
+  for (let seed = 1; seed <= 60; seed++) {
+    const w = createWorld('FFA', seed, ROTATION.FFA[0]);
+    for (let i = 0; i < 8; i++) addPlayer(w, `p${i}`, PISTOL);
+    w.mapChangeAt = w.now;
+    run(w, TICK_MS);
+    const ps = [...w.players.values()];
+    close.push(...ps.flatMap((a, i) => ps.slice(i + 1).filter((b) => Math.hypot(a.x - b.x, a.y - b.y) < 200).map((b) => `seed ${seed}: ${a.name}-${b.name}`)));
+  }
+  assert.deepEqual(close, [], 'eight players fit the FFA spawns with nobody on top of anyone');
+});
+
 function fakeSocket() {
   const sent: ServerMsg[] = [];
   const ws = Object.assign(new EventEmitter(), {
