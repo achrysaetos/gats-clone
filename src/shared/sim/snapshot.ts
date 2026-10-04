@@ -133,7 +133,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
-  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || inView(e.x, e.y, 300));
+  // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life'
+    || (inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),

@@ -122,3 +122,15 @@ test('in a run only bites hurt the squad: a blast at a player\'s own feet leaves
   explode(w, X, Y, 130, 90, { attacker: p, team: p.team, label: 'test' });
   assert.equal(hpOf(p), before);
 });
+
+test('a shotgun blast into one zombie reads as one hit marker carrying all its pellets', () => {
+  const w = nightWorld();
+  const p = spawnAt(w, X, Y, { loadout: { weapon: 'shotgun' } });
+  const z = addZombie(w, 'brute', X, Y + 60, 10_000);
+  press(w, p, { angle: DOWN, fire: true, shots: p.input.shots + 1 });
+  run(w, TICK_MS);
+  const marks = w.events.filter((e) => e.e === 'dmg' && e.victim === z.id);
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0]!.e === 'dmg' && marks[0]!.amount, 10_000 - z.hp);
+  assert.ok(10_000 - z.hp > GUNS.shotgun.damage, 'more than one pellet landed');
+});

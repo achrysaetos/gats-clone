@@ -244,7 +244,7 @@ export type ZombieKind = (typeof ZOMBIE_KINDS)[number];
 export const ZOMBIES: Record<ZombieKind, {
   name: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; score: number; scrap: number; firstNight: number;
 }> = {
-  walker: { name: 'Walker', hp: 60, speed: 120, radius: 16, damage: 10, attackMs: 900, buildingDamageMul: 1, score: 10, scrap: 2, firstNight: 1 },
+  walker: { name: 'Walker', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 1, score: 10, scrap: 2, firstNight: 1 },
   brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 3, score: 60, scrap: 10, firstNight: 3 },
 };
 
@@ -257,7 +257,7 @@ export const BUILDINGS: Record<BuildingKind, { name: string; cost: number; hp: n
 export const ZOM = {
   /** One grid cell in px; a wall fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
-  coreHp: 2000,
+  coreHp: 4000,
   /** Half the side of the square core at the map's center. */
   coreHalf: 50,
   dayMs: 40_000,
@@ -284,10 +284,11 @@ export const ZOM = {
   biteReach: 10,
   /** What walking through a wall cell costs the flow field, in orthogonal steps; high enough that the horde takes any open way round. */
   wallCostCells: 40,
-  spawnGapMs: (night: number) => Math.max(120, 700 - 50 * night),
-  waveSize: (night: number, humans: number) => Math.round((10 + 8 * night + night * night) * (1 + 0.25 * Math.max(0, humans - 1))),
+  spawnGapMs: (night: number) => Math.max(150, 900 - 50 * night),
+  /** A squad of four bots meets the base wave; a human, with triple health and better aim than a bot, counts for one and a half. */
+  waveSize: (night: number, squad: { humans: number; bots: number }) => Math.max(1, Math.round(((8 + 6 * night + 0.8 * night * night) * (squad.bots + 1.5 * squad.humans)) / 4)),
   /** Brutes join from their first night and make up a growing share after. */
-  share: (kind: ZombieKind, night: number) => (night < ZOMBIES[kind].firstNight ? 0 : kind === 'walker' ? 1 : 0.06 * (night - ZOMBIES[kind].firstNight + 1)),
-  nightMul: (night: number) => ({ hp: 1 + 0.15 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
+  share: (kind: ZombieKind, night: number) => (night < ZOMBIES[kind].firstNight ? 0 : kind === 'walker' ? 1 : 0.05 * (night - ZOMBIES[kind].firstNight + 1)),
+  nightMul: (night: number) => ({ hp: 1 + 0.1 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
   restartMs: 20_000,
 } as const;

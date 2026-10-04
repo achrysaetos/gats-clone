@@ -148,7 +148,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const r = ZOMBIES[z.kind].radius;
     const d = Math.sqrt(dist2(z.x, z.y, x, y));
     if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
-    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker);
+    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker, false);
   }
 }
 

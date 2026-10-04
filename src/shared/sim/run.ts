@@ -5,7 +5,11 @@ import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { cellRect, coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
 
-const humans = (w: World) => [...w.players.values()].filter((p) => p.kind === 'human').length;
+function squadOf(w: World) {
+  const squad = { humans: 0, bots: 0 };
+  for (const p of w.players.values()) squad[p.kind === 'human' ? 'humans' : 'bots']++;
+  return squad;
+}
 
 export const zombieMaxHp = (kind: ZombieKind, night: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp;
 
@@ -114,13 +118,24 @@ export function demolish(w: World, id: number, cx: number, cy: number): boolean 
   return true;
 }
 
-/** A zombie's death pays its killer score toward the gun ladder and the squad scrap for walls. */
-export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null) {
+/** One hit marker per zombie and attacker a tick, so a shotgun's pellets in one zombie read as one hit. */
+function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
+  const same = w.events.find((e) => e.e === 'dmg' && e.kind === 'zombie' && e.victim === z.id && e.attacker === attacker);
+  const amount = Math.round(((same?.e === 'dmg' ? same.amount : 0) + dealt) * 10) / 10;
+  if (same?.e === 'dmg') same.amount = amount;
+  else w.events.push({ e: 'dmg', attacker, victim: z.id, amount, x: z.x, y: z.y, kind: 'zombie' });
+}
+
+/**
+ * A zombie's death pays its killer score toward the gun ladder and the squad scrap for walls.
+ * `marked` sends the hit to the client; a blast leaves it off, since its boom already shows and a crowd would fill the snapshot with hits.
+ */
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, marked = true) {
   const run = w.run;
   if (!run || z.hp <= 0) return;
   const dealt = Math.min(z.hp, amount);
   z.hp -= amount;
-  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: z.id, amount: Math.round(dealt * 10) / 10, x: z.x, y: z.y, kind: 'zombie' });
+  if (marked) markHit(w, z, dealt, attacker?.id ?? null);
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
   w.zombies = w.zombies.filter((o) => o !== z);
@@ -136,7 +151,7 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
 function buildWave(w: World, night: number): ZombieKind[] {
   const shares = ZOMBIE_KINDS.map((kind) => ZOM.share(kind, night));
   const total = shares.reduce((a, b) => a + b, 0);
-  return Array.from({ length: ZOM.waveSize(night, humans(w)) }, () => {
+  return Array.from({ length: ZOM.waveSize(night, squadOf(w)) }, () => {
     let roll = rand(w) * total;
     return ZOMBIE_KINDS.find((_, i) => (roll -= shares[i]!) < 0) ?? 'walker';
   });

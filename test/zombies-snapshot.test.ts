@@ -33,7 +33,7 @@ test('the run view times the night by its wave and reports the run once the core
   const night = snapshotFor(w, p.id).run!;
   assert.equal(night.phase, 'night');
   assert.equal(night.phaseEndsAt, null);
-  assert.equal(night.waveLeft, ZOM.waveSize(1, 0));
+  assert.equal(night.waveLeft, ZOM.waveSize(1, { humans: 0, bots: 1 }));
   w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
   w.run!.core.hp = 0;
   step(w, TICK_MS);
@@ -88,4 +88,16 @@ test('the wire omits unchanged walls and run, rebuilds them, and keeps a snapsho
   assert.ok(snapshotFor(w, p.id).zombies!.length >= 190, 'nearly the whole horde is in view');
   const steady = Math.max(...sizes.slice(1));
   assert.ok(steady < 6000, `${steady} bytes per snapshot`);
+});
+
+test('each squad player hears only of their own hits on zombies', () => {
+  const w = zomWorld();
+  const a = spawnAt(w, 1380, 1500);
+  const b = spawnAt(w, 1380, 1560);
+  w.events = [
+    { e: 'dmg', attacker: a.id, victim: 99, amount: 5, x: 1400, y: 1600, kind: 'zombie' },
+    { e: 'dmg', attacker: b.id, victim: 98, amount: 5, x: 1400, y: 1600, kind: 'zombie' },
+  ];
+  const victims = (id: number) => snapshotFor(w, id).events.map((e) => e.e === 'dmg' && e.victim);
+  assert.deepEqual([victims(a.id), victims(b.id)], [[99], [98]]);
 });

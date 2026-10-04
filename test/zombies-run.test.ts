@@ -26,11 +26,12 @@ test('a run opens on a day with the starting scrap and a whole core, and night f
 test('the night trickles its wave in from the horde edges and stays dark until the whole wave is spawned and dead', () => {
   const w = zomWorld();
   w.run!.core.hp = 1e9;
+  for (let i = 0; i < 4; i++) spawnAt(w, 1380, 1450 + i * 30, { kind: i === 0 ? 'human' : 'bot' });
   run(w, ZOM.dayMs + TICK_MS);
   const night = w.run!.phase;
   assert.ok(night.k === 'night');
   const wave = night.toSpawn.length + w.zombies.length;
-  assert.equal(wave, ZOM.waveSize(1, 0));
+  assert.equal(wave, ZOM.waveSize(1, { humans: 1, bots: 3 }));
   const horde = MAPS.outpost.siege!.horde;
   const seen = new Set<number>();
   for (let t = 0; t < 1000; t += TICK_MS) {
