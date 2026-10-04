@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, mute, restart, reconnect and expire on request.
+// Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, mute, loadout (before join), restart, reconnect and expire on request.
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { WEAPONS, type WeaponId } from '../../../../src/shared/defs.ts';
+import { WEAPON_IDS, WEAPONS, type WeaponId } from '../../../../src/shared/defs.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
@@ -83,6 +83,7 @@ const ensureAlive = async () => {
 const humansIn = async (room: string) => ((await (await fetch(`${BASE}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === room)?.humans;
 
 let humansBefore = 0;
+let pickedWeapon: WeaponId | null = null;
 const observerChat: { from: string; text: string }[] = [];
 let observerBoard: string[] = [];
 const openObserver = () => {
@@ -159,9 +160,25 @@ const STEPS: Record<string, () => Promise<void>> = {
     if (signedIn) expect('server accepts the stored session (welcome.account)', welcomed()?.account === signedIn, `account ${welcomed()?.account}`);
     expect('menu hidden and HUD shown', await until(async () => js(`document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
     expect('own player present in snapshots', await until(() => !!me()));
+    if (pickedWeapon) expect('joined player carries the picked weapon (server snapshot)', me()?.weapon === pickedWeapon, `weapon ${me()?.weapon}`);
     expect('server human count in ffa rises by one', await until(async () => (await humansIn('ffa')) === humansBefore + 1), `baseline ${humansBefore} incl. observer`);
     expect('observer leaderboard lists the player', await until(() => observerBoard.includes(NAME)));
     await shot('joined');
+  },
+  async loadout() {
+    const index = 2;
+    const weapon = WEAPON_IDS[index]!;
+    const [x, y] = await js(`(() => { const b = document.querySelectorAll('#loadout-menu .weapon')[${index}]; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+    await mouse('mousePressed', x, y);
+    await mouse('mouseReleased', x, y);
+    for (const picker of ['loadout-menu', 'loadout-death']) {
+      const pressed = await js(`[...document.querySelectorAll('#${picker} .weapon')].map(b => b.getAttribute('aria-pressed')).join(',')`);
+      expect(`#${picker} marks only the ${weapon} tile pressed`, pressed === WEAPON_IDS.map((_, i) => String(i === index)).join(','), `aria-pressed ${pressed}`);
+    }
+    const saved = await js(`localStorage.getItem('skirmish.loadout')`);
+    expect(`picked weapon saved in localStorage`, JSON.parse(saved ?? 'null')?.weapon === weapon, `skirmish.loadout ${saved}`);
+    pickedWeapon = weapon;
+    await shot('loadout-picked');
   },
   async move() {
     await ensureAlive();
