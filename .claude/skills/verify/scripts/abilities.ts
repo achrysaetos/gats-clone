@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node abilities.ts <run-dir> [knife] [dash]   Earns the ability tier in TDM, then uses each ability named (default both).
+// Usage: node abilities.ts <run-dir> [knife] [dash]   Earns the ability pick in TDM, then uses each ability named (default both).
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';

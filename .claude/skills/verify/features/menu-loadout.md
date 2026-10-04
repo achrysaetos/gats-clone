@@ -36,4 +36,4 @@ Preconditions:
 
 - `#servers` re-renders on a timer. Query it fresh before every click.
 - At laptop heights the `Server` list sits under the sticky `Play` bar until the menu scrolls. The first room is selected by default, so `Play` works without scrolling.
-- The selected tile carries `aria-pressed="true"` (`src/client/menu.ts`), so the pick is checkable in the DOM. The real proof is still the joined player's `weapon` in a server snapshot.
+- The selected tile carries `aria-pressed="true"` (`src/client/menu.ts`), so the pick is checkable in the DOM. The real proof is still the joined player's `gun` in a server snapshot, which equals the picked class until the gun evolves.
