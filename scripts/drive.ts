@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /**
  *   node scripts/mock-server.ts 8787 &
- *   node scripts/drive.ts http://localhost:8787 <out-dir>
+ *   DESKTOP=1920x1080 node scripts/drive.ts http://localhost:8787 <out-dir>   (DESKTOP defaults to 1280x800)
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
