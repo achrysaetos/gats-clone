@@ -1,4 +1,4 @@
-import { ARMOR_IDS, COLOR_IDS, GUNS, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type PickOption } from '../shared/defs.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type CrateView, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
@@ -48,6 +48,23 @@ type BotDecision = { input: InputState; pick: { level: number; option: PickOptio
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
+/**
+ * How much a bot wants each perk; unlisted perks and every evolution weigh 1.
+ * Bots never stand still, so bipod and ghillie do nothing for them, and they only fire inside their gun's base range, so long range does nothing either.
+ */
+const PERK_WEIGHT: Partial<Record<PerkId, number>> = { bipod: 0, ghillie: 0, longRange: 0, optics: 0.5 };
+const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = {
+  sniper: { optics: 3, grip: 0 },
+  smg: { grip: 2 },
+  lmg: { grip: 2 },
+};
+
+function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {
+  const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : 1);
+  let roll = rand() * options.reduce((sum, o) => sum + weight(o), 0);
+  return options.find((o) => (roll -= weight(o)) < 0) ?? pick(options, rand);
+}
+
 export function newBotMemory(rand: () => number): BotMemory {
   return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0, hitTick: -Infinity };
 }
@@ -62,7 +79,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0 }, pick: null, mem };
   }
   const pending = snap.self.pending;
-  const choice = pending ? { level: pending.level, option: pick(pickOptions(pending, me.gun), rand) } : null;
+  const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, rand) } : null;
 
   let next = { ...mem };
   const moved = Math.hypot(me.x - mem.lastX, me.y - mem.lastY);
