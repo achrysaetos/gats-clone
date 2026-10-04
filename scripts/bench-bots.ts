@@ -1,6 +1,6 @@
 /// <reference types="node" />
-// Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10]
-import { GUNS, pickOptions, WORLD } from '../src/shared/defs.ts';
+// Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10] [abilityMinutes=3]
+import { GUNS, PERK_TIERS, pickOptions, WORLD, type AbilityId } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
@@ -11,6 +11,7 @@ import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/se
 
 const minutes = Number(process.argv[2] ?? 10);
 const seeds = Number(process.argv[3] ?? 10);
+const abilityMinutes = Number(process.argv[4] ?? 3);
 const TICK_MS = 1000 / WORLD.tickHz;
 const HUMAN_LOADOUT: Loadout = { weapon: 'assault', armor: 'medium', color: 'blue' };
 const HUMAN_REACTION_MS = [220, 380] as const;
@@ -133,5 +134,55 @@ for (const style of ['idle', 'strafe'] as const) {
     `K/D ${(all.kills / Math.max(1, all.deaths)).toFixed(2)}`,
     `bot-on-bot kills/min ${(all.botOnBotKills / simMinutes).toFixed(1)}`,
     `(${simMinutes} sim minutes)`,
+  ].join('  '));
+}
+
+const ABILITY_KILL_LABEL: Partial<Record<AbilityId, string>> = { grenade: 'Grenade', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Land mine', knife: 'Knife' };
+
+/** Every bot carries `ability` from spawn, so the rule that fires it is measured without waiting for bots to reach tier 3. */
+function abilityArena(ability: AbilityId, seed: number): { uses: number; kills: number; deaths: number } {
+  const w: World = createWorld('FFA', seed, 'boneyard');
+  const r = () => rand(w);
+  const bots = new Map<number, BotMemory>();
+  for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
+  let uses = 0, kills = 0, deaths = 0;
+  const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
+  for (let t = 0; t < ticks; t++) {
+    const walls = wallViews(w);
+    const readyAt = new Map<number, number>();
+    for (const [id, mem] of bots) {
+      const p = w.players.get(id)!;
+      p.perks[3] = ability;
+      readyAt.set(id, p.abilityReadyAt);
+      const d = botThink(snapshotFor(w, id), walls, mem, r);
+      bots.set(id, d.mem);
+      setInput(w, id, w.tick, d.input);
+      if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
+    }
+    step(w, TICK_MS);
+    for (const [id, at] of readyAt) if (w.players.get(id)!.abilityReadyAt > at) uses++;
+    for (const e of w.events) {
+      if (e.e !== 'kill') continue;
+      deaths++;
+      if (e.weapon === ABILITY_KILL_LABEL[ability]) kills++;
+    }
+  }
+  return { uses, kills, deaths };
+}
+
+console.log(`\nability arena: ${WORLD.minPlayers} bots all holding one ability, ${abilityMinutes} min x ${seeds} seeds`);
+for (const ability of PERK_TIERS[3]) {
+  let uses = 0, kills = 0, deaths = 0;
+  for (let seed = 1; seed <= seeds; seed++) {
+    const a = abilityArena(ability, seed);
+    uses += a.uses; kills += a.kills; deaths += a.deaths;
+  }
+  const simMinutes = abilityMinutes * seeds;
+  console.log([
+    `  ${ability.padEnd(12)}`,
+    `uses/min ${(uses / simMinutes).toFixed(1).padStart(5)}`,
+    `ability kills/min ${(kills / simMinutes).toFixed(2).padStart(5)}`,
+    `share of kills ${((100 * kills) / Math.max(1, deaths)).toFixed(1).padStart(5)}%`,
+    `deaths/min ${(deaths / simMinutes).toFixed(1)}`,
   ].join('  '));
 }
