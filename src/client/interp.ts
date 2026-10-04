@@ -1,5 +1,5 @@
 import { WORLD } from '../shared/defs.ts';
-import { INTERP_DELAY_MS, type Snapshot } from '../shared/protocol.ts';
+import { INTERP_DELAY_MS, type Snapshot, type ZombieView } from '../shared/protocol.ts';
 
 export const TICK_MS = 1000 / WORLD.tickHz;
 export const MAX_EXTRAPOLATE_MS = 100;
@@ -55,6 +55,15 @@ function interpolateById<T extends Positioned>(
   });
 }
 
+function interpolateZombies(prev: readonly ZombieView[] | undefined, next: readonly ZombieView[] | undefined, t: number): ZombieView[] | undefined {
+  if (!prev || !next) return next as ZombieView[] | undefined;
+  const before = new Map(prev.map((z) => [z[0], z]));
+  return next.map((z) => {
+    const a = before.get(z[0]);
+    return a ? [z[0], z[1], lerp(a[2], z[2], t), lerp(a[3], z[3], t), z[4]] : z;
+  });
+}
+
 export function sampleAt(snaps: readonly Snapshot[], at: number): Snapshot | null {
   const newest = snaps[snaps.length - 1];
   if (!newest) return null;
@@ -71,11 +80,12 @@ export function sampleAt(snaps: readonly Snapshot[], at: number): Snapshot | nul
     ...withSelf(newest, players, b),
     bullets: interpolateById(a.bullets, b.bullets, t),
     thrown: interpolateById(a.thrown, b.thrown, Math.min(t, 1)),
+    zombies: interpolateZombies(a.zombies, b.zombies, t),
   };
 }
 
 function withSelf(newest: Snapshot, others: Snapshot['players'], at: Snapshot): Snapshot {
   const self = newest.players.find((p) => p.id === newest.self.id);
   const players = others.filter((p) => p.id !== newest.self.id);
-  return { ...newest, bullets: at.bullets, thrown: at.thrown, players: self ? [...players, self] : players };
+  return { ...newest, bullets: at.bullets, thrown: at.thrown, zombies: at.zombies, players: self ? [...players, self] : players };
 }

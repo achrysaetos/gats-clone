@@ -130,3 +130,15 @@ test('angles turn the short way across the wrap', () => {
   const p = between([player(2, 0, 0, a)], [player(2, 0, 0, b)]).players[0]!;
   assert.ok(Math.abs(Math.cos(p.angle) + 1) < 1e-9, 'should face west, not swing through east');
 });
+
+test('zombies glide between snapshots like players, and a fresh one appears where it spawned', () => {
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 10; tick++) {
+    const horde: NonNullable<Snapshot['zombies']> = [[50, 0, tick * 4, 100, 10]];
+    if (tick >= 7) horde.push([51, 1, 900, 900, 10]);
+    buf = pushSnap(buf, { ...walking(tick), zombies: horde }, tick * TICK_MS);
+  }
+  const drawn = drawnAt(buf, 10 * TICK_MS + TICK_MS / 2)?.zombies;
+  assert.ok(Math.abs(drawn![0]![2] - 30) < 1e-9, `walker drawn between ticks 7 and 8 (x=${drawn![0]![2]})`);
+  assert.deepEqual(drawn![1], [51, 1, 900, 900, 10]);
+});
