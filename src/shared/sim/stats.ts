@@ -5,7 +5,7 @@ import type { Life, PerkOfTier, Player, World } from './world.ts';
 
 type PerkMods = {
   spreadMul?: number; stillSpreadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
-  maxHpAdd?: number; regenMul?: number; viewMul?: number;
+  maxHpAdd?: number; regenMul?: number; regenDelayMul?: number; viewMul?: number;
   piercing?: true; silenced?: true; shield?: true; thermal?: true; ghillie?: true;
 };
 
@@ -21,13 +21,13 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   lightweight: { speedMul: 1.1 },
   longRange: { rangeMul: 1.4 },
   shield: { shield: true },
-  thickSkin: { maxHpAdd: 30 },
-  firstAid: { regenMul: 3 },
+  thickSkin: { maxHpAdd: 40 },
+  firstAid: { regenMul: 3, regenDelayMul: 0.4 },
   grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {},
 };
 
 type Stats = {
-  speed: number; maxHp: number; maxArmor: number; mag: number; range: number; spread: number; regenPerSec: number;
+  speed: number; maxHp: number; maxArmor: number; mag: number; range: number; spread: number; regenPerSec: number; regenDelayMs: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
@@ -42,6 +42,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     range: weapon.range,
     spread: weapon.spread,
     regenPerSec: WORLD.regenPerSec,
+    regenDelayMs: WORLD.regenDelayMs,
     viewRadius: WORLD.viewRadius,
     piercing: false, silenced: weapon.silenced ?? false, shield: false, thermal: false, ghillie: false,
   };
@@ -54,6 +55,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     s.speed *= m.speedMul ?? 1;
     s.maxHp += m.maxHpAdd ?? 0;
     s.regenPerSec *= m.regenMul ?? 1;
+    s.regenDelayMs *= m.regenDelayMul ?? 1;
     s.viewRadius *= m.viewMul ?? 1;
     s.piercing ||= m.piercing ?? false;
     s.silenced ||= m.silenced ?? false;

@@ -76,7 +76,7 @@ test('extended mag enlarges the magazine', () => {
   assert.equal(snapshotFor(w, a.id).self.mag, Math.round(GUNS.pistol.mag * 1.5));
 });
 
-test('a shield blocks 35% of bullets from within 40 degrees of its facing, and nothing else', () => {
+test('a shield blocks 33% of bullets from within 40 degrees of its facing, and nothing else', () => {
   const lostTo = (facingOff: number, hit: 'bullet' | 'blast') => {
     const w = emptyWorld();
     const a = spawnAt(w, 500, 500);
@@ -89,8 +89,8 @@ test('a shield blocks 35% of bullets from within 40 degrees of its facing, and n
     return Math.round((WORLD.baseHp - hpOf(v)) * 1e6) / 1e6;
   };
   const deg = Math.PI / 180;
-  assert.equal(lostTo(0, 'bullet'), PISTOL_DMG * (1 - 0.35), 'head on');
-  assert.equal(lostTo(35 * deg, 'bullet'), PISTOL_DMG * (1 - 0.35), 'inside the arc');
+  assert.equal(lostTo(0, 'bullet'), PISTOL_DMG * 0.67, 'head on');
+  assert.equal(lostTo(35 * deg, 'bullet'), PISTOL_DMG * 0.67, 'inside the arc');
   assert.equal(lostTo(50 * deg, 'bullet'), PISTOL_DMG, 'outside the arc');
   assert.equal(lostTo(0, 'blast'), 50 * (1 - (60 - WORLD.playerRadius) / 100), 'a blast in front is not blocked');
 });

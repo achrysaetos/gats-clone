@@ -107,7 +107,7 @@ test('a max-health perk keeps the share of health you had, not a free heal', () 
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   if (a.life.k === 'alive') a.life.hp = WORLD.baseHp / 2;
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
-  assert.equal(hpOf(a), (WORLD.baseHp + 30) / 2);
+  assert.equal(hpOf(a), (WORLD.baseHp + 40) / 2);
 });
 
 test('score is multiplied while your level trails the other living players\' average, and never when alone', () => {
@@ -148,7 +148,7 @@ test('a round restart resets level, perks, ability and gun along with score', ()
   assert.equal(w.match.k, 'over');
   run(w, WORLD.roundRestartMs - 200);
   if (a.life.k === 'alive') a.life.lastDamageAt = w.now;
-  assert.deepEqual([hpOf(a), snapshotFor(w, a.id).self.ammo], [WORLD.baseHp + 30, 18], 'thick skin health and an extended magazine before the restart');
+  assert.deepEqual([hpOf(a), snapshotFor(w, a.id).self.ammo], [WORLD.baseHp + 40, 18], 'thick skin health and an extended magazine before the restart');
   run(w, 300);
   const snap = snapshotFor(w, a.id);
   const view = snap.players.find((p) => p.id === a.id)!;
