@@ -70,6 +70,13 @@ test('moments that land together queue, so at most two callouts share the screen
   }
 });
 
+test('dying clears pending callouts, so none play over the death card', () => {
+  const evolved = moments(snap({ me: { gun: 'skirmisher' } }), snap({ me: { gun: 'phantom' } }));
+  assert.equal(evolved.callouts.length, 2);
+  const dead = addMoments(evolved, snap({ me: { gun: 'phantom' } }), snap({ me: { gun: 'phantom', alive: false } }), 1100);
+  assert.deepEqual(dead.callouts, []);
+});
+
 test('an off-screen hunted mark gets an edge marker on its bearing; an on-screen one gets none', () => {
   const center = { x: 640, y: 400 };
   assert.equal(edgePoint(center, { x: 900, y: 100 }, 1280, 800, 30), null, 'inside the screen');

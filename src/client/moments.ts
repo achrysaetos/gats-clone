@@ -22,6 +22,7 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
   const announce = (c: Omit<Callout, 'born'>) => callouts.push({ ...c, born: Math.max(now, (callouts.at(-1)?.born ?? -Infinity) + CALLOUT_STAGGER_MS) });
   const popups = m.popups.filter((p) => now - p.born < POPUP_MS);
   const me = selfOf(next);
+  if (!me?.alive) return { callouts: [], popups };
   const was = prev && selfOf(prev);
   const life = me?.alive && was?.alive ? { me, was } : null;
   if (life && GUNS[life.me.gun].stage > GUNS[life.was.gun].stage) {
