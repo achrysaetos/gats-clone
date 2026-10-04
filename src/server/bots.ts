@@ -1,5 +1,5 @@
-import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
-import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, ZOM, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
+import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Loadout, type PlayerView, type RunView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
 
@@ -75,6 +75,8 @@ const reached = (me: PlayerView, p: { x: number; y: number }) => Math.abs(p.x - 
 
 type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
 
+const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };
+
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
 /**
@@ -100,11 +102,17 @@ export function randomLoadout(rand: () => number): Loadout {
 
 export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMemory, rand: () => number): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
+  if (me?.downed && snap.run) {
+    const core = snap.run.core;
+    const input = { ...IDLE_BOT_INPUT, shots: mem.shots, up: core.y < me.y - DEAD_ZONE, down: core.y > me.y + DEAD_ZONE, left: core.x < me.x - DEAD_ZONE, right: core.x > me.x + DEAD_ZONE };
+    return { input, pick: null, mem };
+  }
   if (!me || !me.alive) {
-    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0, use: false }, pick: null, mem };
+    return { input: { ...IDLE_BOT_INPUT, shots: mem.shots }, pick: null, mem };
   }
   const pending = snap.self.pending;
   const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, rand) } : null;
+  if (snap.run) return { ...siegeThink(snap, snap.run, me, walls, mem, rand), pick: choice };
 
   let next = { ...mem };
   const moved = Math.hypot(me.x - mem.lastX, me.y - mem.lastY);
@@ -138,7 +146,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   if (enemy) {
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
     const tracked = mem.engaged?.id === enemy.id ? mem.engaged : null;
-    const engaged = engage(tracked, enemy, me, snap.tick, rand);
+    const engaged = engage(tracked, enemy, sharpnessAgainst(enemy), me, snap.tick, rand);
     const velPerTick = tracked ? { x: enemy.x - tracked.x, y: enemy.y - tracked.y } : { x: 0, y: 0 };
     const flightTicks = (d / weapon.bulletSpeed) * WORLD.tickHz;
     const aimX = enemy.x + velPerTick.x * flightTicks, aimY = enemy.y + velPerTick.y * flightTicks;
@@ -201,9 +209,9 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
 const gaussian = (rand: () => number) => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
 const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
-function engage(prev: Engagement | null, enemy: PlayerView, me: PlayerView, tick: number, rand: () => number): Engagement {
+function engage(prev: Engagement | null, enemy: { id: number; x: number; y: number }, sharpness: (typeof SHARPNESS)[number], me: PlayerView, tick: number, rand: () => number): Engagement {
   const bearing = Math.atan2(enemy.y - me.y, enemy.x - me.x);
-  const { aimMul, reactionMul } = sharpnessAgainst(enemy);
+  const { aimMul, reactionMul } = sharpness;
   const [fastest, slowest] = BOT_AIM.reactionMs.map((ms) => ms * reactionMul);
   const acquiredTick = prev?.acquiredTick ?? tick;
   const fireAtTick = prev?.fireAtTick ?? tick + Math.round((fastest + rand() * (slowest - fastest)) / TICK_MS);
@@ -309,4 +317,84 @@ const BOT_NAMES = [
 export function botName(taken: ReadonlySet<string>, rand: () => number): string {
   const free = BOT_NAMES.filter((n) => !taken.has(n));
   return free.length ? pick(free, rand) : `${pick(BOT_NAMES, rand)} ${Math.floor(rand() * 90) + 10}`;
+}
+
+/** What a squad bot sees in a zombies run. */
+type Watch = {
+  me: PlayerView;
+  core: { x: number; y: number };
+  zombie: { id: number; x: number; y: number; d: number } | null;
+  downed: PlayerView | null;
+  damagedWall: { x: number; y: number } | null;
+};
+
+/** Where a squad bot heads and whether it holds use when it gets there. */
+type Errand = { x: number; y: number; use: boolean };
+
+/** How far from the core a squad bot will wander, and how close a zombie must be before it stops mending walls. */
+const GUARD_RADIUS = 550;
+const POST_RADIUS = 320;
+const BUSY_ZOMBIE_PX = 300;
+const KITE_PX = 140;
+const STICKY_TARGET = 1.5;
+
+/** A squad bot's errands, first match wins: get a downed squadmate up, mend a wall while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
+const SIEGE_RULES: readonly ((s: Watch) => Errand | null)[] = [
+  (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 },
+  (s) => s.damagedWall && (!s.zombie || s.zombie.d > BUSY_ZOMBIE_PX)
+    ? { ...s.damagedWall, use: Math.hypot(s.damagedWall.x - s.me.x, s.damagedWall.y - s.me.y) <= ZOM.reachPx - 60 }
+    : null,
+  (s) => {
+    const post = { x: s.core.x + Math.cos(s.me.id) * POST_RADIUS, y: s.core.y + Math.sin(s.me.id) * POST_RADIUS };
+    if (!s.zombie || s.zombie.d > KITE_PX) return { ...post, use: false };
+    // Back away from the zombie, or sidestep it where backing away would leave the guard ring.
+    const away = Math.atan2(s.me.y - s.zombie.y, s.me.x - s.zombie.x);
+    const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
+    return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? { ...post, use: false };
+  },
+];
+
+function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonly WallView[], mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
+  const sight = viewExtents(snap.self.viewRadius, VIEW_ASPECT.max);
+  const zombies = (snap.zombies ?? [])
+    .map(([id, , x, y]) => ({ id, x, y, d: Math.hypot(x - me.x, y - me.y) }))
+    .filter((z) => Math.abs(z.x - me.x) <= sight.halfW && Math.abs(z.y - me.y) <= sight.halfH
+      && !walls.some((r) => segmentEntersRectAt(me.x, me.y, z.x - me.x, z.y - me.y, r) !== null));
+  const closest = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
+  // Switching targets restarts the reaction delay, so a bot stays on the zombie it is shooting until another is much closer.
+  const held = zombies.find((z) => z.id === mem.engaged?.id);
+  const zombie = held && closest && held.d <= closest.d * STICKY_TARGET ? held : closest;
+  const down = snap.players.filter((p) => p.downed && p.id !== me.id);
+  const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
+  const damaged = (snap.buildings ?? [])
+    .filter((b) => b.hp < 10)
+    .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
+    .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
+  const watch: Watch = { me, core: run.core, zombie, downed, damagedWall: nearest(me, damaged) };
+  const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
+
+  const next = { ...mem };
+  let angle = Math.atan2(errand.y - me.y, errand.x - me.x), aimDist = 300, fire = false;
+  let threat: Situation['threat'] = null;
+  if (zombie) {
+    const engaged = engage(mem.engaged?.id === zombie.id ? mem.engaged : null, zombie, SHARPNESS[0]!, me, snap.tick, rand);
+    angle = Math.atan2(zombie.y - me.y, zombie.x - me.x) + engaged.aimErrRad;
+    aimDist = zombie.d;
+    const reacted = snap.tick >= engaged.fireAtTick;
+    fire = reacted && zombie.d < GUNS[me.gun].range * 0.95;
+    if (reacted) threat = { d: zombie.d };
+    next.engaged = engaged;
+  } else next.engaged = null;
+  if (snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id)) next.hitTick = snap.tick;
+  const situation: Situation = { threat, hurting: me.hp < me.maxHp * HURTING_HP_FRAC, underFire: snap.tick - next.hitTick <= UNDER_FIRE_TICKS, onContestedZone: false };
+  const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
+  const ability = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation);
+  if (fire) next.shots++;
+  const mx = errand.x - me.x, my = errand.y - me.y;
+  const still = errand.use;
+  const input: InputState = {
+    up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
+    angle, fire, shots: next.shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist, use: errand.use,
+  };
+  return { input, mem: next };
 }
