@@ -34,7 +34,7 @@ after(async () => {
   await rm(siteDir, { recursive: true, force: true });
 });
 
-type Conn = { ws: WebSocket; msgs: ServerMsg[]; waitFor<T extends ServerMsg>(pred: (m: ServerMsg) => m is T, ms?: number): Promise<T> };
+type Conn = { ws: WebSocket; msgs: ServerMsg[]; waitFor<T extends ServerMsg>(pred: (m: ServerMsg) => m is T, ms?: number, label?: string): Promise<T> };
 
 async function connect(room: string): Promise<Conn> {
   const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=${room}`);
@@ -48,7 +48,7 @@ async function connect(room: string): Promise<Conn> {
   await new Promise((ok, fail) => { ws.once('open', ok); ws.once('error', fail); });
   return {
     ws, msgs,
-    waitFor(pred, ms = 5000) {
+    waitFor(pred, ms = 5000, label = 'message') {
       return new Promise((ok, fail) => {
         let from = 0;
         const settle = (err: Error | null, m?: ServerMsg) => {
@@ -60,7 +60,7 @@ async function connect(room: string): Promise<Conn> {
           for (; from < msgs.length; from++) if (pred(msgs[from])) { settle(null, msgs[from]); return; }
           if (closed) settle(new Error('socket closed while waiting'));
         };
-        const timer = setTimeout(() => settle(new Error('timed out waiting for message')), ms);
+        const timer = setTimeout(() => settle(new Error(`timed out waiting for ${label}`)), ms);
         waiters.add(check);
         check();
       });
@@ -99,11 +99,11 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   for (const [room, mode] of [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM']] as const) {
     const c = await connect(room);
     send(c, { t: 'join', name: 'ignored', loadout: LOADOUT, token });
-    const welcome = await c.waitFor((m): m is Extract<ServerMsg, { t: 'welcome' }> => m.t === 'welcome');
+    const welcome = await c.waitFor((m): m is Extract<ServerMsg, { t: 'welcome' }> => m.t === 'welcome', 5000, 'welcome');
     assert.equal(welcome.mode, mode);
     assert.equal(welcome.worldSize, WORLD.size);
     assert.ok(welcome.walls.length > 0);
-    const snap = await c.waitFor(isSnap);
+    const snap = await c.waitFor(isSnap, 5000, 'first snapshot');
     assert.equal(snap.self.id, welcome.id);
     assert.equal(snap.match.mode, mode);
     assert.ok(snap.players.some((p) => p.id === welcome.id && p.name === 'Tester'), 'token names the player');
@@ -115,33 +115,39 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   for (const s of servers) assert.equal(s.players, WORLD.minPlayers, 'bots fill the room to minPlayers');
 
   const ffa = conns.ffa;
-  const start = await ffa.waitFor((m): m is Snapshot => isSnap(m) && m.players.some((p) => p.id === m.self.id && p.alive));
+  // At 8x speed the bots, which hunt humans first, can kill the tester before it moves; it respawns the way the death screen would.
+  const start = await ffa.waitFor((m): m is Snapshot => {
+    if (!isSnap(m)) return false;
+    if (!m.self.alive && m.self.respawnIn === 0) send(ffa, { t: 'respawn', loadout: LOADOUT });
+    return m.players.some((p) => p.id === m.self.id && p.alive);
+  }, 5000, 'tester alive in FFA');
   const me0 = start.players.find((p) => p.id === start.self.id)!;
   const towardCenter = me0.x < WORLD.size / 2 ? { right: true } : { left: true };
   send(ffa, { t: 'input', seq: 1, input: { up: false, down: false, left: false, right: false, ...towardCenter, angle: 0, fire: false, reload: false, ability: false, aimDist: 0 } });
   const moved = await ffa.waitFor((m): m is Snapshot => {
     if (!isSnap(m) || m.ackSeq < 1) return false;
+    if (!m.self.alive && m.self.respawnIn === 0) send(ffa, { t: 'respawn', loadout: LOADOUT });
     const me = m.players.find((p) => p.id === m.self.id);
     return !!me && me.alive && Math.abs(me.x - me0.x) > 5;
-  });
+  }, 5000, 'tester moved');
   assert.equal(moved.ackSeq, 1);
 
   await Promise.any(Object.values(conns).map((c) =>
-    c.waitFor((m): m is Snapshot => isSnap(m) && m.events.some((e) => e.e === 'kill'), (60_000 / STEPS_PER_TICK) + 2000)));
+    c.waitFor((m): m is Snapshot => isSnap(m) && m.events.some((e) => e.e === 'kill'), (60_000 / STEPS_PER_TICK) + 2000, 'a bot kill')));
 
   const tdm = conns.tdm;
   send(tdm, { t: 'chat', text: '  hello team  ' });
-  const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat');
+  const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat', 5000, 'chat echo');
   assert.equal(chat.from, 'Tester');
   assert.equal(chat.text, 'hello team');
   assert.ok(chat.team === 'red' || chat.team === 'blue', 'team echoed in TDM');
   send(tdm, { t: 'chat', text: 'spam' });
-  await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Slow down');
+  await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Slow down', 5000, 'Slow down');
   assert.ok(!tdm.msgs.some((m) => m.t === 'chat' && m.text === 'spam'), 'rate-limited chat not broadcast');
 
   send(ffa, { t: 'input', seq: 'nope' });
   ffa.ws.send('{not json');
-  await ffa.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Bad message');
+  await ffa.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Bad message', 5000, 'Bad message');
 
   for (const c of Object.values(conns)) c.ws.close();
   await waitUntil(async () => {
