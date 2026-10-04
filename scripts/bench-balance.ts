@@ -149,8 +149,15 @@ for (const base of WEAPON_IDS) {
 const TIER2 = ['none', ...PERK_TIERS[2]] as const;
 type Tier2 = (typeof TIER2)[number];
 const PERK_DUEL_RANGE = 250;
+/** Both duelists lose `hpLoss` health, as from a grenade or an earlier fight, then wait `gapMs` before facing off. */
+type PerkScenario = { label: string; hpLoss: number; gapMs: number };
+const PERK_SCENARIOS: readonly PerkScenario[] = [
+  { label: 'head-on: both at full health', hpLoss: 0, gapMs: 0 },
+  { label: 'burst: both just took 60 damage the shield cannot block', hpLoss: 60, gapMs: 0 },
+  { label: 'second fight: both took 60 damage in a fight that ended 5s before', hpLoss: 60, gapMs: 5000 },
+];
 /** 1 when `first` wins, 0 when `second` does, 0.5 for a trade or a stalemate. `swap` puts `second` on the left and first in tick order. */
-function perkDuel(weapon: WeaponId, first: Tier2, second: Tier2, seed: number, swap: boolean): number {
+function perkDuel(weapon: WeaponId, first: Tier2, second: Tier2, seed: number, swap: boolean, s: PerkScenario): number {
   const w = createWorld('FFA', seed, 'boneyard');
   w.walls = [];
   w.crates = [];
@@ -159,8 +166,9 @@ function perkDuel(weapon: WeaponId, first: Tier2, second: Tier2, seed: number, s
   const [a, b] = swap ? [right, left] : [left, right];
   for (const [p, perk] of [[a, first], [b, second]] as const) {
     if (perk !== 'none') p.perks[2] = perk;
-    if (p.life.k === 'alive') p.life.hp = effectiveStats(p).maxHp;
+    if (p.life.k === 'alive') { p.life.hp = effectiveStats(p).maxHp - s.hpLoss; if (s.hpLoss > 0) p.life.lastDamageAt = w.now; }
   }
+  for (let t = 0; t < s.gapMs; t += TICK_MS) step(w, TICK_MS);
   for (let t = 0, shots = 1; t < DUEL_CAP_MS; t += TICK_MS, shots++) {
     setInput(w, a.id, shots, { ...IDLE_INPUT, angle: Math.atan2(b.y - a.y, b.x - a.x), fire: true, shots });
     setInput(w, b.id, shots, { ...IDLE_INPUT, angle: Math.atan2(a.y - b.y, a.x - b.x), fire: true, shots });
@@ -170,12 +178,18 @@ function perkDuel(weapon: WeaponId, first: Tier2, second: Tier2, seed: number, s
   }
   return 0.5;
 }
-const perkWinShare = (weapon: WeaponId, first: Tier2, second: Tier2) => {
+const perkWinShare = (weapon: WeaponId, first: Tier2, second: Tier2, s: PerkScenario) => {
   let wins = 0;
-  for (let seed = 1; seed <= DUEL_SEEDS; seed++) wins += perkDuel(weapon, first, second, seed, false) + perkDuel(weapon, first, second, seed, true);
+  for (let seed = 1; seed <= DUEL_SEEDS; seed++) wins += perkDuel(weapon, first, second, seed, false, s) + perkDuel(weapon, first, second, seed, true, s);
   return wins / (2 * DUEL_SEEDS);
 };
 const PAIRS = TIER2.flatMap((x, i) => TIER2.slice(i + 1).map((y) => [x, y] as const));
-console.log(`\nperk duel: share of straight duels the first tier-2 pick wins, same class gun and no armor on both, facing at ${PERK_DUEL_RANGE}px (${DUEL_SEEDS} seeds x both sides; a trade counts half)`);
-console.log(`  ${'weapon'.padEnd(12)}${PAIRS.map(([x, y]) => `${x}>${y}`.padStart(20)).join('')}`);
-for (const weapon of WEAPON_IDS) console.log(`  ${weapon.padEnd(12)}${PAIRS.map(([x, y]) => `${(perkWinShare(weapon, x, y) * 100).toFixed(0)}%`.padStart(20)).join('')}`);
+console.log(`\nperk duel: share of duels the first tier-2 pick wins, same class gun and no armor on both, ${PERK_DUEL_RANGE}px apart (${DUEL_SEEDS} seeds x both sides; a trade counts half)`);
+for (const s of PERK_SCENARIOS) {
+  console.log(`  ${s.label}`);
+  console.log(`  ${'weapon'.padEnd(12)}${PAIRS.map(([x, y]) => `${x}>${y}`.padStart(20)).join('')}`);
+  const shares = WEAPON_IDS.map((weapon) => PAIRS.map(([x, y]) => perkWinShare(weapon, x, y, s)));
+  const row = (label: string, cells: number[]) => console.log(`  ${label.padEnd(12)}${cells.map((c) => `${(c * 100).toFixed(0)}%`.padStart(20)).join('')}`);
+  WEAPON_IDS.forEach((weapon, i) => row(weapon, shares[i]!));
+  row('mean', PAIRS.map((_, j) => shares.reduce((sum, r) => sum + r[j]!, 0) / shares.length));
+}
