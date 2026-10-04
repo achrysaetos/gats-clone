@@ -1,9 +1,10 @@
-import type { DamageKind, Team, WallView } from '../shared/protocol.ts';
+import type { DamageKind, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { Feedback } from './feedback.ts';
 import type { SnapBuffer } from './interp.ts';
 import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
 import type { Prediction } from './predict.ts';
+import type { Retry } from './reconnect.ts';
 
 export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
@@ -18,8 +19,12 @@ export type FeedLine = { killer: string; victim: string; killerId: number | null
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 export type TrailPoint = { x: number; y: number; at: number };
 
+/** Everything needed to join the same room again as the same player. */
+export type Rejoin = { room: string; name: string; loadout: Loadout; token: string | undefined };
+
 export type Session = {
   ws: WebSocket;
+  rejoin: Rejoin;
   myId: number;
   worldSize: number;
   walls: WallView[];
@@ -40,10 +45,11 @@ export type Session = {
 
 export type MenuStatus =
   | { kind: 'idle' }
-  | { kind: 'connecting'; ws: WebSocket }
+  | { kind: 'connecting'; ws: WebSocket; rejoin: Rejoin }
   | { kind: 'error'; message: string };
 
 export type ClientState =
   | { phase: 'menu'; status: MenuStatus }
   | { phase: 'playing'; s: Session }
-  | { phase: 'dead'; s: Session; killer: string | null };
+  | { phase: 'dead'; s: Session; killer: string | null }
+  | { phase: 'reconnecting'; s: Session; rejoin: Rejoin; retry: Retry; dial: WebSocket | null };

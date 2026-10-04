@@ -1,5 +1,5 @@
 import { PERK_TIERS, WORLD } from '../shared/defs.ts';
-import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
+import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadName, saveLoadout, saveName, type ServerInfo } from './api.ts';
 import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
@@ -21,11 +21,14 @@ import { createPool } from './particles.ts';
 import { bodyColor, drawBackdrop, drawWorld, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
-import { EFFECT_LIFE_MS, type ClientState, type Session } from './state.ts';
+import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
+import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SESSION_EXPIRED = 'Session expired, log in again.';
+const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
+const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
@@ -34,6 +37,7 @@ const ctx = canvas.getContext('2d')!;
 const menuEl = $('menu');
 const hudEl = $('hud');
 const statusEl = $('menu-status');
+const reconnectEl = $('reconnect');
 const playBtn = $<HTMLButtonElement>('play');
 const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
@@ -45,6 +49,7 @@ let selectedRoom: string | null = null;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
 let viewTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
 const held = new Set<Action>();
 let firing = false;
 let touchWasAiming = false;
@@ -75,7 +80,9 @@ function benchFrames(n: number): number[] {
   });
 }
 
-const sessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
+/** The session whose socket is live. While reconnecting the old session is only drawn, never sent to. */
+const sessionOf = (st: ClientState): Session | null => (st.phase === 'playing' || st.phase === 'dead' ? st.s : null);
+const drawnSessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
 function send(ws: WebSocket, msg: ClientMsg) {
   const data = JSON.stringify(msg);
@@ -86,6 +93,12 @@ function setState(next: ClientState) {
   state = next;
   menuEl.hidden = next.phase !== 'menu';
   hudEl.hidden = next.phase === 'menu';
+  reconnectEl.hidden = next.phase !== 'reconnecting';
+  clearTimeout(retryTimer);
+  if (next.phase === 'reconnecting') {
+    reconnectEl.textContent = `Reconnecting… (attempt ${next.retry.attempt})`;
+    if (!next.dial) retryTimer = setTimeout(redial, next.retry.nextAt - performance.now());
+  }
   if (next.phase === 'menu') {
     overlays.reset();
     held.clear();
@@ -110,14 +123,24 @@ function setLoadout(next: Loadout) {
   for (const p of pickers) p.refresh();
 }
 
-function connect(room: string) {
-  const name = cleanName(nameInput.value);
+function play(room: string) {
   saveName(nameInput.value);
+  const rejoin: Rejoin = { room, name: cleanName(nameInput.value), loadout, token: account.current()?.token };
+  setState({ phase: 'menu', status: { kind: 'connecting', ws: dial(rejoin), rejoin } });
+}
+
+function redial() {
+  if (state.phase !== 'reconnecting' || state.dial) return;
+  const ws = dial(state.rejoin);
+  setState({ ...state, dial: ws });
+  setTimeout(() => { if (state.phase === 'reconnecting' && state.dial === ws) ws.close(); }, DIAL_TIMEOUT_MS);
+}
+
+function dial(rejoin: Rejoin): WebSocket {
+  const { room, name, token } = rejoin;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
-  const token = account.current()?.token;
-  setState({ phase: 'menu', status: { kind: 'connecting', ws } });
-  ws.onopen = () => send(ws, { t: 'join', name, loadout, token, aspect: viewAspect(view.w, view.h) });
+  ws.onopen = () => send(ws, { t: 'join', name, loadout: rejoin.loadout, token, aspect: viewAspect(view.w, view.h) });
   ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
     if (!msg) return;
@@ -127,10 +150,33 @@ function connect(room: string) {
       sessionOf(state)?.chat.push({ from: '', text: SESSION_EXPIRED, team: null, at: performance.now() });
     }
   });
-  ws.onclose = () => {
-    const ours = sessionOf(state)?.ws === ws || (state.phase === 'menu' && state.status.kind === 'connecting' && state.status.ws === ws);
-    if (ours) setState({ phase: 'menu', status: { kind: 'error', message: 'Disconnected from server.' } });
-  };
+  ws.onclose = (ev) => onClose(ws, ev.code);
+  return ws;
+}
+
+function onClose(ws: WebSocket, code: number) {
+  const now = performance.now();
+  switch (closeVerdict(socketRole(state, ws), code)) {
+    case 'connect-failed':
+    case 'drop':
+      return setState({ phase: 'menu', status: { kind: 'error', message: 'Disconnected from server.' } });
+    case 'reconnect':
+      if (state.phase !== 'playing' && state.phase !== 'dead') return;
+      return setState({ phase: 'reconnecting', s: state.s, rejoin: { ...state.s.rejoin, loadout }, retry: startRetry(now, Math.random()), dial: null });
+    case 'retry-failed': {
+      if (state.phase !== 'reconnecting') return;
+      const retry = retryAfterFailure(state.retry, now, Math.random());
+      return setState(retry ? { ...state, retry, dial: null } : { phase: 'menu', status: { kind: 'error', message: LOST_CONNECTION } });
+    }
+    case 'ignore': return;
+  }
+}
+
+/** A deliberate leave lets go of every socket first, so their close events find nothing to reconnect. */
+function leave() {
+  const ws = state.phase === 'menu' ? (state.status.kind === 'connecting' ? state.status.ws : null) : state.phase === 'reconnecting' ? state.dial : state.s.ws;
+  setState({ phase: 'menu', status: { kind: 'idle' } });
+  ws?.close();
 }
 
 function parseServerMsg(data: unknown): ServerMsg | null {
@@ -145,20 +191,17 @@ function parseServerMsg(data: unknown): ServerMsg | null {
 
 function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   const now = performance.now();
-  if (state.phase === 'menu') {
-    if (state.status.kind !== 'connecting' || state.status.ws !== ws) return;
+  if (state.phase === 'menu' || state.phase === 'reconnecting') {
+    const pending = state.phase === 'reconnecting' ? (state.dial === ws ? state : null) : state.status.kind === 'connecting' && state.status.ws === ws ? state.status : null;
+    if (!pending) return;
     if (msg.t === 'error') {
-      ws.close();
       setState({ phase: 'menu', status: { kind: 'error', message: msg.message } });
+      ws.close();
     } else if (msg.t === 'welcome') {
-      setState({
-        phase: 'playing',
-        s: {
-          ws, myId: msg.id, worldSize: msg.worldSize, walls: msg.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
-          lastSelf: { x: msg.worldSize / 2, y: msg.worldSize / 2 },
-          effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null, particles: createPool(),
-        },
-      });
+      const resumed = state.phase === 'reconnecting' ? state.s : null;
+      const s = newSession(ws, pending.rejoin, msg);
+      if (resumed) s.chat = [...resumed.chat, { from: '', text: 'Reconnected.', team: null, at: now }];
+      setState({ phase: 'playing', s });
     }
     return;
   }
@@ -174,6 +217,14 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
     case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
   }
+}
+
+function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; walls: WallView[] }): Session {
+  return {
+    ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
+    lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
+    effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null, particles: createPool(),
+  };
 }
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
@@ -286,7 +337,7 @@ function frame(now: number) {
 }
 
 function drawFrame(now: number) {
-  const s = sessionOf(state);
+  const s = drawnSessionOf(state);
   const latest = s && newestSnap(s.snaps);
   const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
   if (!s || !interpolated || !latest) {
@@ -419,7 +470,11 @@ nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) connect(selectedRoom);
+  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
+});
+window.addEventListener('pagehide', leave);
+window.addEventListener('online', () => {
+  if (state.phase === 'reconnecting' && !state.dial) setState({ ...state, retry: retryNow(state.retry, performance.now()) });
 });
 setInterval(() => void pollServers(), SERVER_POLL_MS);
 

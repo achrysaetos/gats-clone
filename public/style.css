@@ -349,6 +349,24 @@ kbd {
   100% { opacity: 0; }
 }
 
+.reconnect {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 14px 22px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--edge), 0 24px 60px -16px rgba(0, 0, 0, 0.8), 0 0 0 100vmax rgba(12, 13, 16, 0.45);
+  font-size: var(--t-title);
+  font-weight: 700;
+  text-align: center;
+}
+
 .death {
   position: absolute;
   inset: 0;
