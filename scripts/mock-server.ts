@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, PERK_TIERS, GUNS, WORLD, type AbilityId, type ModeId, type Tier } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, EVOLUTIONS, GUNS, isPerkId, PERK_TIERS, WORLD, type AbilityId, type GunId, type ModeId, type PendingPick } from '../src/shared/defs.ts';
 import {
   parseClientMsg, type BulletView, type GameEvent, type InputState, type Loadout, type PlayerView, type ServerMsg,
   type Snapshot, type ThrownView, type WallView, type ZoneView,
@@ -96,7 +96,8 @@ function serve(ws: WebSocket, mode: ModeId) {
   let ackSeq = 0;
   const me = { x: 1500, y: 1350, hp: 100, alive: true, score: 90, kills: 0, deaths: 0, respawnAt: 0, ammo: 12, reloadUntil: 0, fireAt: 0, abilityAt: 0, dashUntil: 0 };
   const perks: Snapshot['self']['perks'] = {};
-  let pendingTier: Tier | null = 1;
+  let pending: PendingPick | null = { level: 1, k: 'perk', tier: 1 };
+  let gun: GunId = 'pistol';
   let ability: AbilityId | null = null;
   let winnerUntil = 0;
   let bullets: (BulletView & { life: number })[] = [];
@@ -111,24 +112,35 @@ function serve(ws: WebSocket, mode: ModeId) {
       case 'join':
         loadout = msg.loadout;
         name = msg.name;
-        me.ammo = GUNS[loadout.weapon].mag;
+        gun = loadout.weapon;
+        me.ammo = GUNS[gun].mag;
         out({ t: 'welcome', id: myId, mode, worldSize: SIZE, walls: w.walls, account: msg.token?.startsWith('mock-') ? msg.token.slice('mock-'.length) : null });
         out({ t: 'chat', from: 'Ash', text: 'gl hf', team: w.bots[0]!.team });
         return;
       case 'input': input = msg.input; ackSeq = msg.seq; return;
-      case 'perk':
-        if (msg.tier !== pendingTier) return;
-        perks[msg.tier] = msg.perk;
-        if (msg.tier === 3) ability = PERK_TIERS[3].find((p) => p === msg.perk) ?? null;
-        pendingTier = null;
+      case 'pick': {
+        if (msg.level !== pending?.level) return;
+        const option = msg.option;
+        if (pending.k === 'evolve') {
+          const next = EVOLUTIONS[gun].find((g) => g === option);
+          if (next) { gun = next; me.ammo = GUNS[gun].mag; pending = null; }
+          return;
+        }
+        if (!isPerkId(option)) return;
+        if (pending.tier === 1) perks[1] = PERK_TIERS[1].find((p) => p === option);
+        if (pending.tier === 2) perks[2] = PERK_TIERS[2].find((p) => p === option);
+        if (pending.tier === 3) { perks[3] = PERK_TIERS[3].find((p) => p === option); ability = perks[3] ?? null; }
+        pending = null;
         return;
+      }
       case 'respawn':
-        if (!me.alive && Date.now() >= me.respawnAt) { loadout = msg.loadout; Object.assign(me, { alive: true, hp: 100, x: 1500, y: 1350, ammo: GUNS[loadout.weapon].mag }); }
+        if (!me.alive && Date.now() >= me.respawnAt) { loadout = msg.loadout; gun = loadout.weapon; Object.assign(me, { alive: true, hp: 100, x: 1500, y: 1350, ammo: GUNS[gun].mag }); }
         return;
       case 'chat': {
         const cmd = msg.text;
         if (cmd === '/die') { me.alive = false; me.deaths++; me.respawnAt = Date.now() + WORLD.respawnMs; events.push({ e: 'kill', killer: 'Ember', victim: name, killerId: 104, victimId: myId, weapon: 'Bolt-action' }); }
-        else if (cmd === '/level') pendingTier = !perks[2] ? 2 : 3;
+        else if (cmd === '/level') pending = !perks[2] ? { level: 3, k: 'perk', tier: 2 } : { level: 4, k: 'perk', tier: 3 };
+        else if (cmd === '/evolve') pending = { level: GUNS[gun].stage === 0 ? 2 : 5, k: 'evolve' };
         else if (cmd === '/win') winnerUntil = Date.now() + WORLD.roundRestartMs;
         else if (cmd === '/walls') { w.walls.push({ x: me.x + 60, y: me.y - 60, w: 30, h: 120, built: true }); out({ t: 'walls', walls: w.walls }); }
         else out({ t: 'chat', from: name, text: cmd, team: mode === 'FFA' ? null : 'red' });
@@ -141,7 +153,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     if (!loadout) return;
     const now = Date.now();
     w.tick++;
-    const weapon = GUNS[loadout.weapon];
+    const weapon = GUNS[gun];
     const speed = WORLD.baseSpeed * ARMORS[loadout.armor].speedMul * weapon.moveMul * (me.dashUntil > now ? 2.4 : 1);
     if (me.alive && input) {
       const dx = Number(input.right) - Number(input.left);
@@ -157,9 +169,9 @@ function serve(ws: WebSocket, mode: ModeId) {
         if (me.ammo === 0) me.reloadUntil = now + weapon.reloadMs;
         for (let p = 0; p < weapon.pellets; p++) {
           const a = input.angle + (Math.random() - 0.5) * weapon.spread;
-          bullets.push({ id: w.bulletId++, x: me.x + Math.cos(a) * 40, y: me.y + Math.sin(a) * 40, vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed, owner: myId, gun: loadout.weapon, life: weapon.range / weapon.bulletSpeed });
+          bullets.push({ id: w.bulletId++, x: me.x + Math.cos(a) * 40, y: me.y + Math.sin(a) * 40, vx: Math.cos(a) * weapon.bulletSpeed, vy: Math.sin(a) * weapon.bulletSpeed, owner: myId, gun, life: weapon.range / weapon.bulletSpeed });
         }
-        events.push({ e: 'shot', x: me.x, y: me.y, angle: input.angle, silenced: false, owner: myId, gun: loadout.weapon });
+        events.push({ e: 'shot', x: me.x, y: me.y, angle: input.angle, silenced: false, owner: myId, gun });
       }
       if (input.ability && ability && now >= me.abilityAt) {
         me.abilityAt = now + ABILITY_COOLDOWN_MS[ability];
@@ -211,7 +223,7 @@ function serve(ws: WebSocket, mode: ModeId) {
 
     const selfView: PlayerView = {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,
-      armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, gun: loadout.weapon,
+      armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, gun,
       team: mode === 'FFA' ? null : 'red', alive: me.alive, hidden: false, shield: perks[2] === 'shield', dashing: me.dashUntil > now,
       score: me.score, level: 1, armorTier: loadout.armor,
     };
@@ -220,7 +232,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     out({
       t: 'snap', tick: w.tick, ackSeq,
       self: {
-        id: myId, ammo: me.ammo, mag: weapon.mag, speed: WORLD.baseSpeed * weapon.moveMul, reloading: me.reloadUntil > 0, reloadFrac: 0, perks: { ...perks }, pendingTier,
+        id: myId, ammo: me.ammo, mag: weapon.mag, speed: WORLD.baseSpeed * weapon.moveMul, reloading: me.reloadUntil > 0, reloadFrac: 0, perks: { ...perks }, pending,
         ability, abilityReadyIn: Math.max(0, me.abilityAt - now), alive: me.alive, dash: null, respawnIn: me.alive ? 0 : Math.max(0, me.respawnAt - now),
         kills: me.kills, deaths: me.deaths, viewRadius: perks[1] === 'optics' ? 1100 : WORLD.viewRadius,
       },

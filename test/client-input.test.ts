@@ -62,8 +62,8 @@ test('the camera shows the view radius across and only the height the screen sha
 
 test('level progress tracks thresholds and caps at max level', () => {
   assert.deepEqual(levelProgress(0, 0), { displayLevel: 1, frac: 0, nextAt: 100 });
-  assert.deepEqual(levelProgress(1, 175), { displayLevel: 2, frac: 0.5, nextAt: 250 });
-  assert.deepEqual(levelProgress(3, 5000), { displayLevel: 4, frac: 1, nextAt: null });
+  assert.deepEqual(levelProgress(1, 150), { displayLevel: 2, frac: 0.5, nextAt: 200 });
+  assert.deepEqual(levelProgress(5, 5000), { displayLevel: 6, frac: 1, nextAt: null });
 });
 
 

@@ -4,7 +4,7 @@ import { ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
-import { choosePerk } from '../shared/sim/stats.ts';
+import { choosePick } from '../shared/sim/stats.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
@@ -90,7 +90,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'join': return;
       case 'view': client.aspect = msg.aspect; return;
       case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt); return;
-      case 'perk': choosePerk(world, id, msg.tier, msg.perk); return;
+      case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
       case 'chat': {
         const now = Date.now();
@@ -120,7 +120,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const d = botThink(snapshotFor(world, id), walls, mem, botRand);
       bots.set(id, d.mem);
       setInput(world, id, world.tick, d.input);
-      if (d.perk) choosePerk(world, id, d.perk.tier, d.perk.perk);
+      if (d.pick) choosePick(world, id, d.pick.level, d.pick.option);
       if (canRespawn(world, id)) respawn(world, id, randomLoadout(botRand));
     }
   }

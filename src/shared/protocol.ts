@@ -1,6 +1,6 @@
 import {
-  ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS,
-  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PerkId, type Tier, type WeaponId,
+  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type Tier, type WeaponId,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -28,7 +28,8 @@ export type ClientMsg =
   | { t: 'view'; aspect: number }
   /** `viewAt` is the server time of the world the client was drawing when it sampled `input`, so the server can judge its shots against that world. */
   | { t: 'input'; seq: number; input: InputState; viewAt: number | null }
-  | { t: 'perk'; tier: Tier; perk: PerkId }
+  /** `level` names the pending pick being answered, so a pick sent twice, or after the next one opened, is ignored. */
+  | { t: 'pick'; level: number; option: PickOption }
   | { t: 'chat'; text: string }
   | { t: 'respawn'; loadout: Loadout };
 
@@ -58,7 +59,7 @@ export type SelfView = {
   /** Move speed without a dash, for predicting the local player's movement. */
   speed: number;
   perks: Partial<Record<Tier, PerkId>>;
-  pendingTier: Tier | null;
+  pending: PendingPick | null;
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
@@ -160,10 +161,10 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const seq = num(v.seq, 0, Number.MAX_SAFE_INTEGER);
       return input && seq !== null ? { t: 'input', seq, input, viewAt: num(v.viewAt, 0, Number.MAX_SAFE_INTEGER) } : null;
     }
-    case 'perk': {
-      const tier = v.tier;
-      if (tier !== 1 && tier !== 2 && tier !== 3) return null;
-      return oneOf(PERK_TIERS[tier], v.perk) ? { t: 'perk', tier, perk: v.perk } : null;
+    case 'pick': {
+      const level = v.level;
+      if (typeof level !== 'number' || !Number.isInteger(level) || level < 1 || level >= LEVELS.length) return null;
+      return oneOf(PICK_OPTIONS, v.option) ? { t: 'pick', level, option: v.option } : null;
     }
     case 'chat':
       return typeof v.text === 'string' && v.text.trim() ? { t: 'chat', text: v.text.trim().slice(0, 120) } : null;

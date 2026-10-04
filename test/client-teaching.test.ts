@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LEVEL_SCORES, WORLD } from '../src/shared/defs.ts';
+import { WORLD } from '../src/shared/defs.ts';
 import type { Snapshot, ThrownKind } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { BLAST_RADIUS } from '../src/shared/sim/abilities.ts';
@@ -12,10 +12,11 @@ import { drawWorld } from '../src/client/render.ts';
 import type { Session } from '../src/client/state.ts';
 import { emptyWorld, hpOf, spawnAt, TICK_MS } from './helpers.ts';
 
-test('an empty ability slot says the score that unlocks it, from LEVEL_SCORES', () => {
-  assert.deepEqual(abilityHint(null), ['Unlocks', `at ${LEVEL_SCORES[3]}`]);
-  assert.deepEqual(abilityHint(2), ['Unlocks', `at ${LEVEL_SCORES[3]}`]);
-  assert.deepEqual(abilityHint(3), ['Pick an', 'ability'], 'once the ability tier is pending, the slot points at the perk dock');
+test('an empty ability slot says the score that unlocks it, from the level ladder', () => {
+  assert.deepEqual(abilityHint(null), ['Unlocks', 'at 500']);
+  assert.deepEqual(abilityHint({ level: 2, k: 'evolve' }), ['Unlocks', 'at 500']);
+  assert.deepEqual(abilityHint({ level: 3, k: 'perk', tier: 2 }), ['Unlocks', 'at 500']);
+  assert.deepEqual(abilityHint({ level: 4, k: 'perk', tier: 3 }), ['Pick an', 'ability'], 'once the ability tier is pending, the slot points at the perk dock');
 });
 
 type Arc = { x: number; y: number; r: number };

@@ -1,11 +1,11 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-balance.ts [worlds=8] [minutes=5] [mode=FFA]
 // Worlds take the mode's maps in rotation order, one map per world.
-import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, GUNS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
+import { ARMOR_IDS, LEVELS, MODE_IDS, WEAPON_IDS, GUNS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePerk, levelForScore } from '../src/shared/sim/stats.ts';
+import { choosePick, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
@@ -28,7 +28,7 @@ const killsByMap = new Map<MapId, Map<string, number>>();
 const deathsByArmor = new Map<ArmorId, number>();
 const livesByArmor = new Map<ArmorId, number>();
 const lifeMs: number[] = [];
-const lifeTiers: number[] = [];
+const lifeLevels: number[] = [];
 
 for (let seed = 1; seed <= worlds; seed++) {
   const map = ROTATION[mode][(seed - 1) % ROTATION[mode].length];
@@ -50,7 +50,7 @@ for (let seed = 1; seed <= worlds; seed++) {
       const d = botThink(snapshotFor(w, id), walls, mem, r);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
-      if (d.perk) choosePerk(w, id, d.perk.tier, d.perk.perk);
+      if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
       if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) {
         bornAt.set(id, w.now);
         tally(livesByArmor, w.players.get(id)!.loadout.armor);
@@ -64,7 +64,7 @@ for (let seed = 1; seed <= worlds; seed++) {
       tally(deathsByArmor, w.players.get(e.victimId)!.loadout.armor);
       lifeMs.push(w.now - (bornAt.get(e.victimId) ?? 0));
     }
-    for (const rec of w.lifeRecords.splice(0)) lifeTiers.push(levelForScore(rec.score));
+    for (const rec of w.lifeRecords.splice(0)) lifeLevels.push(levelForScore(rec.score));
   }
 }
 
@@ -80,8 +80,10 @@ for (const [map, kills] of killsByMap) {
 console.log('\ndeaths per life started, by armor');
 for (const a of ARMOR_IDS) console.log(`  ${a.padEnd(8)} ${pct(deathsByArmor.get(a) ?? 0, livesByArmor.get(a) ?? 0)} of ${livesByArmor.get(a) ?? 0} lives`);
 console.log(`\nlife length: median ${(median(lifeMs) / 1000).toFixed(1)}s over ${lifeMs.length} deaths`);
-console.log(`tier reached per life (thresholds ${LEVEL_SCORES.join('/')}):`);
-for (const tier of [1, 2, 3]) console.log(`  tier ${tier}: ${pct(lifeTiers.filter((t) => t >= tier).length, lifeTiers.length)}`);
+console.log(`level reached per life (thresholds ${LEVELS.map((l) => l.score).join('/')}):`);
+LEVELS.forEach((l, level) => {
+  if (l.pick) console.log(`  level ${level} (${l.pick.k === 'perk' ? `tier ${l.pick.tier} perk` : 'evolve'}): ${pct(lifeLevels.filter((t) => t >= level).length, lifeLevels.length)}`);
+});
 
 const DUEL_SEEDS = 25;
 const DUEL_CAP_MS = 15_000;

@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, GUN_IDS, GUNS, PERK_INFO, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { feedMentions, levelProgress, mapNotice, objectiveFor } from './derive.ts';
@@ -364,7 +364,7 @@ function drawVitals({ ctx, w, h, snap, me }: Hud) {
     strokeIcon(ctx, PERK_ICONS[self.ability], ax, ay - 6, 20, ready ? PALETTE.gold : MUTED, 2.2);
     text(ctx, ready ? 'SPACE' : `${(self.abilityReadyIn / 1000).toFixed(1)}s`, ax, ay + 14, TYPE.micro, ready ? PALETTE.gold : HUD_INK, 'center', 800);
   } else {
-    const [top, bottom] = abilityHint(self.pendingTier);
+    const [top, bottom] = abilityHint(self.pending);
     text(ctx, top, ax, ay - 6, TYPE.micro, MUTED, 'center', 600);
     text(ctx, bottom, ax, ay + 8, TYPE.micro, MUTED, 'center', 600);
   }
@@ -383,6 +383,7 @@ function drawVitals({ ctx, w, h, snap, me }: Hud) {
 }
 
 const ABILITY_TIER: Tier = 3;
+const ABILITY_SCORE = LEVELS.find((l) => l.pick?.k === 'perk' && l.pick.tier === ABILITY_TIER)?.score;
 
-export const abilityHint = (pendingTier: Tier | null): [string, string] =>
-  pendingTier === ABILITY_TIER ? ['Pick an', 'ability'] : ['Unlocks', `at ${LEVEL_SCORES[ABILITY_TIER]}`];
+export const abilityHint = (pending: PendingPick | null): [string, string] =>
+  pending?.k === 'perk' && pending.tier === ABILITY_TIER ? ['Pick an', 'ability'] : ['Unlocks', `at ${ABILITY_SCORE}`];

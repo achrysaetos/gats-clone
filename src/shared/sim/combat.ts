@@ -46,7 +46,7 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   if (!killer) return;
   killer.kills++;
   killer.lifeKills++;
-  addScore(killer, WORLD.killScore);
+  addScore(w, killer, WORLD.killScore);
   if (w.match.k === 'playing') MODES[w.mode].onKill(w, killer, victim);
 }
 
@@ -59,7 +59,7 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   if (c.hp > 0) return;
   c.respawnAt = w.now + CRATE_RESPAWN_MS;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
-  if (attacker) addScore(attacker, WORLD.crateScore);
+  if (attacker) addScore(w, attacker, WORLD.crateScore);
 }
 
 export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, owner: Player | null, label: string) {

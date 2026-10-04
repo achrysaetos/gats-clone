@@ -6,7 +6,7 @@ import { VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, pendingTier } from './stats.ts';
+import { abilityOf, effectiveStats, pendingPick } from './stats.ts';
 import { isEnemy, sameTeam, type Player, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
@@ -48,7 +48,7 @@ function selfView(w: World, p: Player): SelfView {
       ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / GUNS[p.gun].reloadMs))
       : 0,
     perks: { ...p.perks },
-    pendingTier: pendingTier(p),
+    pending: pendingPick(p),
     ability,
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',

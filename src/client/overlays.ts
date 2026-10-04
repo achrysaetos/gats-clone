@@ -1,11 +1,13 @@
-import { PERK_INFO, PERK_TIERS, type PerkId, type Tier } from '../shared/defs.ts';
+import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
+import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
 import { OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
+import { drawSilhouette } from './sprites.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 
 const CHAT_VISIBLE_MS = 15000;
@@ -20,7 +22,7 @@ const PERK_SHORT: Record<PerkId, string> = {
 const CHAT_LINES = 8;
 const PODIUM_SIZE = 3;
 
-export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => void, onToggleMute: (name: string) => void) {
+export function createOverlays(onPick: (slot: number) => void, onRespawn: () => void, onToggleMute: (name: string) => void) {
   const perkPanel = $('perk-panel');
   const chatLog = $('chat-log');
   const chatInput = $<HTMLInputElement>('chat-input');
@@ -35,37 +37,55 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
   let lastPhase: ClientState['phase'] = 'menu';
   let objectiveAt = -Infinity;
 
-  const renderPerks = (tier: Tier | null) => {
-    const key = String(tier);
+  const perkTile = (perk: PerkId) => {
+    const { name, desc } = PERK_INFO[perk];
+    const icon = iconSvg(PERK_ICONS[perk], 'perk-icon');
+    const label = document.createElement('b');
+    label.textContent = PERK_SHORT[perk];
+    const tip = document.createElement('span');
+    tip.className = 'perk-tip';
+    const tipName = document.createElement('strong');
+    tipName.textContent = name;
+    tip.append(tipName, desc);
+    return { className: 'perk', aria: `${name}: ${desc}`, parts: [icon, label, tip] };
+  };
+
+  const gunTile = (gun: GunId) => {
+    const { name, desc } = GUNS[gun];
+    const art = document.createElement('canvas');
+    art.width = 216;
+    art.height = 68;
+    drawSilhouette(art, gun, GUNS[gun].look.accent);
+    const label = document.createElement('b');
+    label.textContent = name;
+    const detail = document.createElement('small');
+    detail.textContent = desc;
+    return { className: 'perk evolve', aria: `${name}: ${desc}`, parts: [art, label, detail] };
+  };
+
+  const renderPick = (pending: PendingPick | null, gun: GunId) => {
+    const key = pending ? `${pending.level}|${gun}` : '';
     if (key === keys.perk) return;
     keys.perk = key;
-    perkPanel.hidden = tier === null;
-    if (tier === null) return;
-    const perks = PERK_TIERS[tier];
+    perkPanel.hidden = pending === null;
+    if (pending === null) return;
+    const options = pickOptions(pending, gun);
     const title = document.createElement('h2');
     const hint = document.createElement('span');
-    hint.textContent = ` · press 1-${perkKeyLabel(perks.length - 1)} or click`;
-    title.append(`Level up · tier ${tier} perk`, hint);
+    hint.textContent = ` · press 1-${perkKeyLabel(options.length - 1)} or click`;
+    title.append(pending.k === 'perk' ? `Level up · tier ${pending.tier} perk` : `Level up · evolve your ${GUNS[gun].name}`, hint);
     const list = document.createElement('div');
     list.className = 'perk-list';
-    perks.forEach((perk, slot) => {
-      const { name, desc } = PERK_INFO[perk];
+    options.forEach((option, slot) => {
+      const tile = isPerkId(option) ? perkTile(option) : gunTile(option);
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'perk';
-      b.setAttribute('aria-label', `${name}: ${desc}`);
+      b.className = tile.className;
+      b.setAttribute('aria-label', tile.aria);
       const kbd = document.createElement('kbd');
       kbd.textContent = perkKeyLabel(slot);
-      const icon = iconSvg(PERK_ICONS[perk], 'perk-icon');
-      const label = document.createElement('b');
-      label.textContent = PERK_SHORT[perk];
-      const tip = document.createElement('span');
-      tip.className = 'perk-tip';
-      const tipName = document.createElement('strong');
-      tipName.textContent = name;
-      tip.append(tipName, desc);
-      b.append(kbd, icon, label, tip);
-      b.onclick = () => onPerk(slot);
+      b.append(kbd, ...tile.parts);
+      b.onclick = () => onPick(slot);
       list.append(b);
     });
     perkPanel.replaceChildren(title, list);
@@ -184,8 +204,9 @@ export function createOverlays(onPerk: (slot: number) => void, onRespawn: () => 
       return text;
     },
     update(state: ClientState, s: Session, snap: Snapshot, now: number, muted: MutedNames) {
-      const pending = snap.self.pendingTier;
-      renderPerks(state.phase === 'playing' && pending !== s.perkSentFor ? pending : null);
+      const pending = snap.self.pending;
+      const gun = selfOf(snap)?.gun;
+      renderPick(state.phase === 'playing' && gun && pending?.level !== s.pickSentFor ? pending : null, gun ?? 'pistol');
       const selfName = snap.players.find((p) => p.id === snap.self.id)?.name ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.name;
       renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
       renderBanner(snap);

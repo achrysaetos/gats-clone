@@ -1,8 +1,8 @@
-import type { GunId, ModeId, PerkId } from '../src/shared/defs.ts';
+import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { InputState, Loadout, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
-import { choosePerk, effectiveStats, pendingTier } from '../src/shared/sim/stats.ts';
+import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
 
 export const TICK_MS = 1000 / 30;
@@ -35,12 +35,19 @@ export function shootOnce(w: World, p: Player, angle: number, ms = 500) {
   run(w, ms);
 }
 
+/** Picks each perk in ladder order, taking the first evolution whenever one is in the way, then hands back the class gun so its shots still deal class damage. */
 export function grantPerks(w: World, p: Player, perks: PerkId[]) {
-  p.level = 3;
+  p.level = LEVELS.length - 1;
   for (const perk of perks) {
-    const tier = pendingTier(p);
-    if (!tier || !choosePerk(w, p.id, tier, perk)) throw new Error(`could not choose ${perk}`);
+    for (let pending = pendingPick(p); pending?.k === 'evolve'; pending = pendingPick(p)) {
+      const next = EVOLUTIONS[p.gun][0];
+      if (!next || !choosePick(w, p.id, pending.level, next)) throw new Error(`could not evolve ${p.gun}`);
+    }
+    const pending = pendingPick(p);
+    if (!pending || !choosePick(w, p.id, pending.level, perk)) throw new Error(`could not choose ${perk}`);
   }
+  p.gun = p.loadout.weapon;
+  if (p.life.k === 'alive') p.life.ammo = Math.min(p.life.ammo, effectiveStats(p).mag);
 }
 
 /** Hands `p` an evolved gun with a full magazine, skipping the score it would take to evolve into it. */

@@ -1,11 +1,11 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10]
-import { PERK_TIERS, GUNS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePerk } from '../src/shared/sim/stats.ts';
+import { choosePick, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
@@ -89,14 +89,15 @@ function simulate(seed: number, style: HumanStyle): Tally {
       const d = botThink(snapshotFor(w, id), walls, mem, r);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
-      if (d.perk) choosePerk(w, id, d.perk.tier, d.perk.perk);
+      if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
       if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
     }
     const snap = snapshotFor(w, human.id, w.events, HUMAN_VIEW_ASPECT);
     const h = humanThink(snap, walls, mind, style, r);
     mind = h.mind;
     setInput(w, human.id, w.tick, h.input);
-    if (snap.self.pendingTier) choosePerk(w, human.id, snap.self.pendingTier, PERK_TIERS[snap.self.pendingTier][0]);
+    const pending = pendingPick(human);
+    if (pending) choosePick(w, human.id, pending.level, pickOptions(pending, human.gun)[0]!);
     if (canRespawn(w, human.id) && respawn(w, human.id, HUMAN_LOADOUT)) bornAt = w.now;
     step(w, TICK_MS);
     for (const e of w.events) {

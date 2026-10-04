@@ -74,7 +74,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     }
   }
   if (next.self.reloading && !prev.self.reloading) mine('reload');
-  if (next.self.pendingTier !== null && next.self.pendingTier !== prev.self.pendingTier) mine('levelup');
+  if (next.self.pending !== null && next.self.pending.level !== prev.self.pending?.level) mine('levelup');
   if (!next.self.alive && prev.self.alive) mine('death');
   return cues;
 }

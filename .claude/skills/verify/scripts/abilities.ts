@@ -127,9 +127,9 @@ async function earnAbility(ability: AbilityId): Promise<boolean> {
     const self = selfView();
     if (self?.ability === ability) return true;
     if (self?.ability) { await sleep(500); continue; }
-    const tier = self?.pendingTier;
-    const slot = tier === 3 ? PERK_TIERS[3].indexOf(ability) : 0;
-    if (tier) await tap(`Digit${slot + 1}`, String(slot + 1), 49 + slot);
+    const pending = self?.pending;
+    const slot = pending?.k === 'perk' && pending.tier === 3 ? PERK_TIERS[3].indexOf(ability) : 0;
+    if (pending) await tap(`Digit${slot + 1}`, String(slot + 1), 49 + slot);
     else await shootNearest();
     await sleep(120);
   }

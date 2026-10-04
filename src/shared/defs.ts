@@ -195,7 +195,21 @@ export type PlayerKind = (typeof PLAYER_KINDS)[number];
 /** Humans carry triple health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
 export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 3, bot: 1 };
 
-export const LEVEL_SCORES = [0, 100, 250, 450] as const;
+export type Pick = { k: 'perk'; tier: Tier } | { k: 'evolve' };
+export type PendingPick = { level: number } & Pick;
+export type PickOption = PerkId | GunId;
+
+/** The score each level needs and what reaching it lets you pick. */
+export const LEVELS = [
+  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 200, pick: { k: 'evolve' } },
+  { score: 350, pick: { k: 'perk', tier: 2 } }, { score: 500, pick: { k: 'perk', tier: 3 } }, { score: 700, pick: { k: 'evolve' } },
+] as const satisfies readonly { score: number; pick: Pick | null }[];
+
+export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] => (pick.k === 'perk' ? PERK_TIERS[pick.tier] : EVOLUTIONS[gun]);
+
+export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(PERK_INFO, option);
+
+export const PICK_OPTIONS: readonly PickOption[] = [...PERK_TIERS[1], ...PERK_TIERS[2], ...PERK_TIERS[3], ...GUN_IDS];
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
@@ -212,6 +226,10 @@ export const WORLD = {
   crateHp: 40,
   crateScore: 10,
   killScore: 100,
+  /** Paid on top of the kill score for killing a hunted player. */
+  bountyScore: 200,
+  /** Score multiplier while your level trails the other living players' average. */
+  catchUpMul: 1.5,
   respawnMs: 3000,
   domWinScore: 1000,
   tdmWinScore: 50,

@@ -24,11 +24,11 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | Left click | Fire |
 | R | Reload |
 | Space | Use ability |
-| 1-9, 0 | Pick a perk (or click its tile) |
+| 1-9, 0 | Pick a perk or an evolution (or click its tile) |
 | Enter | Chat |
 | M | Mute sound |
 
-At 100, 250 and 450 points you pick an attachment, then a survival perk, then an ability.
+Points in one life raise your level. At 100, 350 and 500 points you pick an attachment, a survival perk and an ability. At 200 and 700 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times.
 
 ## Layout
 
@@ -62,7 +62,7 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
 
-`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `2a9c8be5137c3f00880be1eeeb78824723fbcefc087332e8205940716a4939b4`.
+`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `e16f3fd75d82cf12baf83ef0a9e1aa5c651bbfddeae0656babe982cda7c3ddfc`.
 
 `node scripts/unused-exports.ts` lists every export that no file in `src/`, `test/`, `scripts/` or the verify scripts imports, and says whether its own module still uses it.
 

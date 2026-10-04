@@ -39,7 +39,8 @@ export type Session = {
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;
-  perkSentFor: number | null;
+  /** The level whose pick was sent and not yet confirmed by a snapshot. */
+  pickSentFor: number | null;
   particles: ParticlePool;
 };
 

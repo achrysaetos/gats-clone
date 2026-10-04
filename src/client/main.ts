@@ -1,4 +1,4 @@
-import { PERK_TIERS, WORLD } from '../shared/defs.ts';
+import { pickOptions, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -225,7 +225,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), perkSentFor: null, particles: createPool(),
+    effects: [], pendingFx: [], feedback: NO_FEEDBACK, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
   };
 }
 
@@ -249,7 +249,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
   for (const ev of snap.events) if (ev.e === 'kill') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
-  if (snap.self.pendingTier !== s.perkSentFor) s.perkSentFor = null;
+  if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
   const dead = !snap.self.alive;
   if (dead && state.phase === 'playing') setState({ phase: 'dead', s, killer: killerOf(snap.events, s.myId) });
@@ -290,14 +290,16 @@ setInterval(() => {
   s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solids, latest?.self.speed ?? 0, performance.now());
 }, INPUT_MS);
 
-function pickPerk(slot: number) {
+function pick(slot: number) {
   const s = sessionOf(state);
-  const tier = s && newestSnap(s.snaps)?.self.pendingTier;
-  if (!s || !tier || s.perkSentFor === tier) return;
-  const perk = PERK_TIERS[tier][slot];
-  if (!perk) return;
-  send(s.ws, { t: 'perk', tier, perk });
-  s.perkSentFor = tier;
+  const snap = s && newestSnap(s.snaps);
+  const pending = snap?.self.pending;
+  const gun = snap && selfOf(snap)?.gun;
+  if (!s || !pending || !gun || s.pickSentFor === pending.level) return;
+  const option = pickOptions(pending, gun)[slot];
+  if (!option) return;
+  send(s.ws, { t: 'pick', level: pending.level, option });
+  s.pickSentFor = pending.level;
   playClick(s);
 }
 
@@ -402,7 +404,7 @@ function onKeyDown(e: KeyboardEvent) {
   }
   const slot = perkSlotForKey(e.code);
   if (slot !== null) {
-    pickPerk(slot);
+    pick(slot);
     return;
   }
   const action = actionForKey(e.code);
@@ -468,7 +470,7 @@ function toggleMuted(name: string) {
   renderMuted($('muted'), muted, toggleMuted);
 }
 
-const overlays = createOverlays(pickPerk, respawn, toggleMuted);
+const overlays = createOverlays(pick, respawn, toggleMuted);
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),

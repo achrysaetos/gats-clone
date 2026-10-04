@@ -12,7 +12,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
   t: 'snap', tick: 1, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pendingTier: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0 }, events: o.events ?? [],
 });
@@ -54,12 +54,12 @@ test('a knife slash makes a slash sound at the strike point, flagged self only f
   assert.deepEqual(cues.map((c) => [c.id, c.self, c.x]), [['slash', false, 300], ['slash', true, 120]]);
 });
 
-test('level-up plays once per newly pending tier', () => {
-  const t = (pendingTier: 1 | 2 | null) => snap({ self: { pendingTier } });
+test('level-up plays once per newly pending pick', () => {
+  const t = (level: 1 | 2 | null) => snap({ self: { pending: level === null ? null : level === 1 ? { level, k: 'perk', tier: 1 } : { level, k: 'evolve' } } });
   assert.deepEqual(ids(t(null), t(1)), ['levelup']);
   assert.deepEqual(ids(t(1), t(1)), [], 'a tier still waiting for a pick does not replay');
-  assert.deepEqual(ids(t(1), t(null)), [], 'picking the perk is silent');
-  assert.deepEqual(ids(t(1), t(2)), ['levelup'], 'the next tier arriving before a pick still announces itself');
+  assert.deepEqual(ids(t(1), t(null)), [], 'picking is silent');
+  assert.deepEqual(ids(t(1), t(2)), ['levelup'], 'the next pick opening right after one is made still announces itself');
 });
 
 test('reload plays when reloading starts, not while it continues', () => {
@@ -86,5 +86,5 @@ test('the hit sound plays once per snapshot only when you damage another player'
 });
 
 test('the first snapshot of a session derives no state-transition sounds', () => {
-  assert.deepEqual(ids(null, snap({ self: { pendingTier: 1, reloading: true } })), []);
+  assert.deepEqual(ids(null, snap({ self: { pending: { level: 1, k: 'perk', tier: 1 }, reloading: true } })), []);
 });

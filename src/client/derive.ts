@@ -1,12 +1,12 @@
-import { LEVEL_SCORES, WORLD, type ModeId } from '../shared/defs.ts';
+import { LEVELS, WORLD, type ModeId } from '../shared/defs.ts';
 import type { GameEvent, LeaderRow, MatchView, PlayerView, Snapshot, Team } from '../shared/protocol.ts';
 import type { ClientState } from './state.ts';
 
 type LevelProgress = { displayLevel: number; frac: number; nextAt: number | null };
 
 export function levelProgress(serverLevel: number, score: number): LevelProgress {
-  const from = LEVEL_SCORES[serverLevel] ?? 0;
-  const to = LEVEL_SCORES[serverLevel + 1];
+  const from = LEVELS[serverLevel]?.score ?? 0;
+  const to = LEVELS[serverLevel + 1]?.score;
   const displayLevel = serverLevel + 1;
   if (to === undefined) return { displayLevel, frac: 1, nextAt: null };
   return { displayLevel, frac: Math.min(1, Math.max(0, (score - from) / (to - from))), nextAt: to };

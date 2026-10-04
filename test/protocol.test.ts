@@ -14,8 +14,13 @@ test('parseClientMsg rejects malformed frames', () => {
     { t: 'input', seq: 1, input: { ...input, angle: 'up' } },
     { t: 'input', seq: 'one', input },
     { t: 'input', seq: 1 },
-    { t: 'perk', tier: 1, perk: 'dash' },
-    { t: 'perk', tier: 4, perk: 'dash' },
+    { t: 'perk', tier: 3, perk: 'dash' },
+    { t: 'pick', level: 0, option: 'dash' },
+    { t: 'pick', level: 6, option: 'dash' },
+    { t: 'pick', level: 2.5, option: 'handCannon' },
+    { t: 'pick', level: '2', option: 'handCannon' },
+    { t: 'pick', level: 2, option: 'railgun' },
+    { t: 'pick', level: 2 },
     { t: 'join', name: 'x', loadout: { ...loadout, weapon: 'railgun' } },
     { t: 'join', name: 'x' },
     { t: 'chat', text: '   ' },
@@ -29,7 +34,8 @@ test('parseClientMsg rejects malformed frames', () => {
 });
 
 test('parseClientMsg accepts well-formed frames and clamps or cleans fields', () => {
-  assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'perk', tier: 3, perk: 'dash' })), { t: 'perk', tier: 3, perk: 'dash' });
+  assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'pick', level: 4, option: 'dash' })), { t: 'pick', level: 4, option: 'dash' });
+  assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'pick', level: 5, option: 'railSlug', extra: 1 })), { t: 'pick', level: 5, option: 'railSlug' });
   const join = parseClientMsg(JSON.stringify({ t: 'join', name: '<b>Ace</b>!!', loadout }));
   assert.deepEqual(join, { t: 'join', name: 'bAceb', loadout, token: undefined, aspect: VIEW_ASPECT.max });
   const inp = parseClientMsg(JSON.stringify({ t: 'input', seq: 5, input: { ...input, aimDist: 99999 } }));
