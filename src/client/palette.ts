@@ -29,7 +29,6 @@ export const PALETTE = {
   hpGood: '#30a46c',
   hpBad: '#e5484d',
   armor: '#5b8def',
-  steel: '#6c7482',
   steelLight: '#a5adbb',
   shield: 'rgba(110, 180, 255, 0.9)',
   gas: 'rgba(132, 186, 64, 0.16)',
@@ -40,8 +39,8 @@ export const PALETTE = {
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };
 
-/** Steel band width inside the body outline, in world units: the heavier the armor, the thicker the band. */
-export const ARMOR_BAND: Record<ArmorId, number> = { none: 0, light: 3.5, medium: 5.5, heavy: 7.5 };
+/** Armor band width inside the body outline, in world units: the heavier the armor, the thicker the band. */
+export const ARMOR_BAND: Record<ArmorId, number> = { none: 0, light: 4.5, medium: 7, heavy: 9.5 };
 
 export function shade(hex: string, f: number): string {
   const v = parseInt(hex.slice(1), 16);

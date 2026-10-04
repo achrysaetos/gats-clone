@@ -410,10 +410,11 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   }
   ctx.rotate(p.angle);
   drawGun(ctx, p.weapon, R);
+  ctx.rotate(-p.angle);
   const band = ARMOR_BAND[p.armorTier];
   ctx.beginPath();
   ctx.arc(0, 0, R, 0, TAU);
-  ctx.fillStyle = band ? PALETTE.steel : color;
+  ctx.fillStyle = band ? shade(color, 0.5) : color;
   ctx.fill();
   if (band) {
     ctx.beginPath();
@@ -437,6 +438,15 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.lineWidth = look.self ? 4 : 3;
   ctx.strokeStyle = look.self ? '#ffffff' : INK;
   ctx.stroke();
+  if (look.flash > 0) {
+    ctx.globalAlpha = look.flash * 0.85;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, TAU);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.globalAlpha = p.hidden ? 0.25 : 1;
+  }
+  ctx.rotate(p.angle);
   const hand = shade(color, 0.85);
   for (const [hx, hy] of GRIPS[p.weapon]) {
     ctx.beginPath();
@@ -446,14 +456,6 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = INK;
     ctx.stroke();
-  }
-  if (look.flash > 0) {
-    ctx.globalAlpha = look.flash * 0.85;
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, TAU);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.globalAlpha = p.hidden ? 0.25 : 1;
   }
   ctx.rotate(-p.angle);
   if (look.friendly) {
