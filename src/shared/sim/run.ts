@@ -1,9 +1,9 @@
-import { BUILDINGS, ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
+import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { tickHorde } from './horde.ts';
-import { circleHitsRect, dist2 } from './movement.ts';
+import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
+import { cellRect, coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
 
 const humans = (w: World) => [...w.players.values()].filter((p) => p.kind === 'human').length;
 
@@ -60,6 +60,58 @@ function tickSquad(w: World, run: Run, dtMs: number) {
   const revivers = new Set<Player>();
   for (const p of w.players.values()) tickDowned(w, run, p, dtMs, revivers);
   for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) repair(w, run, p, dtMs);
+}
+
+/** Why a wall cannot go up, or null once it has. */
+export type BuildRefusal = 'notDay' | 'farFromCore' | 'outOfReach' | 'cover' | 'core' | 'body' | 'taken' | 'scrap';
+
+const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
+
+function buildRefusal(w: World, run: Run, p: Player, cx: number, cy: number): BuildRefusal | null {
+  const core = coreRect(w);
+  if (run.phase.k !== 'day' || p.life.k !== 'alive' || !core) return 'notDay';
+  const at = cellCenter(cx, cy);
+  if (dist2(at.x, at.y, core.x + core.w / 2, core.y + core.h / 2) > ZOM.buildRadius ** 2) return 'farFromCore';
+  if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return 'outOfReach';
+  const cell = cellRect(cx, cy);
+  if (coverRects(w).some((r) => rectsOverlap(r, cell))) return 'cover';
+  if (rectsOverlap(core, cell)) return 'core';
+  const bodies = [
+    ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
+    ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
+  ];
+  if (bodies.some((b) => circleHitsRect(b.x, b.y, b.r, cell))) return 'body';
+  if (w.buildings.some((b) => b.cx === cx && b.cy === cy)) return 'taken';
+  if (run.scrap < BUILDINGS.wall.cost) return 'scrap';
+  return null;
+}
+
+/** Puts a wall on cell (`cx`, `cy`) for the squad's scrap: by day, near the core, in the builder's reach, on clear ground. */
+export function build(w: World, id: number, cx: number, cy: number): BuildRefusal | null {
+  const p = w.players.get(id);
+  const run = w.run;
+  if (!p || !run) return 'notDay';
+  const refusal = buildRefusal(w, run, p, cx, cy);
+  if (refusal) return refusal;
+  run.scrap -= BUILDINGS.wall.cost;
+  w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });
+  w.buildingsVersion++;
+  statsFor(run, p).built++;
+  return null;
+}
+
+/** Takes down a squad wall by day for part of its cost back. */
+export function demolish(w: World, id: number, cx: number, cy: number): boolean {
+  const p = w.players.get(id);
+  const run = w.run;
+  const wall = w.buildings.find((b) => b.cx === cx && b.cy === cy);
+  if (!p || !run || !wall || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
+  const at = cellCenter(cx, cy);
+  if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return false;
+  w.buildings = w.buildings.filter((b) => b !== wall);
+  w.buildingsVersion++;
+  run.scrap += Math.floor(BUILDINGS[wall.kind].cost * ZOM.demolishRefund);
+  return true;
 }
 
 /** A zombie's death pays its killer score toward the gun ladder and the squad scrap for walls. */

@@ -1,5 +1,5 @@
 import {
-  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD,
+  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind,
 } from './defs.ts';
 
@@ -36,7 +36,10 @@ export type ClientMsg =
   /** `level` names the pending pick being answered, so a pick sent twice, or after the next one opened, is ignored. */
   | { t: 'pick'; level: number; option: PickOption }
   | { t: 'chat'; text: string }
-  | { t: 'respawn'; loadout: Loadout };
+  | { t: 'respawn'; loadout: Loadout }
+  /** Zombies: put a wall on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. */
+  | { t: 'build'; cx: number; cy: number }
+  | { t: 'demolish'; cx: number; cy: number };
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
@@ -158,6 +161,8 @@ export function cleanName(v: unknown): string {
   return s || 'Unnamed';
 }
 
+const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < WORLD.size / ZOM.cell ? v : null);
+
 const parseAspect = (v: unknown): number => num(v, VIEW_ASPECT.min, VIEW_ASPECT.max) ?? VIEW_ASPECT.max;
 
 function parseInput(v: unknown): InputState | null {
@@ -200,6 +205,11 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'respawn': {
       const loadout = parseLoadout(v.loadout);
       return loadout ? { t: 'respawn', loadout } : null;
+    }
+    case 'build':
+    case 'demolish': {
+      const cx = gridCell(v.cx), cy = gridCell(v.cy);
+      return cx === null || cy === null ? null : { t: v.t, cx, cy };
     }
     default:
       return null;

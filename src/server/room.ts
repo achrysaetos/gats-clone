@@ -4,6 +4,7 @@ import { ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
+import { build, demolish } from '../shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { choosePick } from '../shared/sim/stats.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
@@ -115,6 +116,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt, rewindCapMs); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
+      case 'build': build(world, id, msg.cx, msg.cy); return;
+      case 'demolish': demolish(world, id, msg.cx, msg.cy); return;
       case 'chat': {
         const now = Date.now();
         if (now - client.lastChatAt < CHAT_INTERVAL_MS) { send(client.ws, { t: 'error', message: 'Slow down' }); return; }
