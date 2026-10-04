@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { WORLD, type ModeId, type PlayerKind } from '../shared/defs.ts';
+import { WORLD, ZOM, type ModeId, type PlayerKind } from '../shared/defs.ts';
 import { ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
@@ -7,6 +7,7 @@ import { rewindCapFor } from '../shared/sim/combat.ts';
 import { build, demolish } from '../shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { choosePick } from '../shared/sim/stats.ts';
+import { MODES } from '../shared/sim/modes.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
@@ -51,9 +52,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   const names = () => [...world.players.values()].map((pl) => pl.name);
   const registered = (name: string) => accounts.stats(name) !== null;
 
+  const humanCap = mode === 'ZOM' ? ZOM.squadSize : limits.humansPerRoom;
+
   function botTargets(): [Team, number][] {
     const humans = (team: Team) => [...world.players.values()].filter((p) => p.kind === 'human' && p.team === team).length;
     if (mode === 'FFA') return [[null, Math.max(0, limits.minPlayers - humans(null))]];
+    if (mode === 'ZOM') return [['red', Math.max(0, ZOM.squadSize - humans('red'))]];
     const seats = botSeats({ red: humans('red'), blue: humans('blue') }, limits.minPlayers, BOTS_PER_HUMAN, limits.humansPerRoom);
     return [['red', seats.red], ['blue', seats.blue]];
   }
@@ -75,7 +79,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   /** Humans split evenly first, so a lone pair lands on opposite sides; balanceBots then evens the sides out with bots. */
   function teamForHuman(): Team {
-    if (mode === 'FFA') return null;
+    if (mode === 'FFA' || mode === 'ZOM') return MODES[mode].assignTeam(world);
     const count = (team: Team, kind?: PlayerKind) => [...world.players.values()].filter((p) => p.team === team && (kind === undefined || p.kind === kind)).length;
     const redHumans = count('red', 'human'), blueHumans = count('blue', 'human');
     if (redHumans !== blueHumans) return redHumans < blueHumans ? 'red' : 'blue';
@@ -94,7 +98,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function handle(client: Client, msg: ClientMsg, rewindCapMs: number) {
     if (client.k === 'lobby') {
       if (msg.t !== 'join') return;
-      if (joined().length >= limits.humansPerRoom) {
+      if (joined().length >= humanCap) {
         send(client.ws, { t: 'error', message: 'Room full' });
         client.ws.close(1013, 'room full');
         return;

@@ -20,7 +20,7 @@ function sidesWith(room: Room, humans: number) {
   return { redHumans: tally('red', 'human'), blueHumans: tally('blue', 'human'), red: tally('red'), blue: tally('blue') };
 }
 
-for (const mode of MODE_IDS.filter((m) => m !== 'FFA')) {
+for (const mode of MODE_IDS.filter((m) => m === 'TDM' || m === 'DOM')) {
   test(`${mode}: two humans land on opposite teams`, () => {
     const s = sidesWith(createRoom('r', mode, 1, accounts), 2);
     assert.deepEqual({ red: s.redHumans, blue: s.blueHumans }, { red: 1, blue: 1 });

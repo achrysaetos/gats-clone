@@ -1,3 +1,4 @@
+import { randomBytes, randomInt } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -81,6 +82,13 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
 }
 
 type AuthLimiter = (key: string, now: number) => boolean;
+
+const SQUAD_CODE_CHARS = 'abcdefghijklmnopqrstuvwxyz234567';
+/** `z-` and six base-32 characters from the system's secure random source. */
+const squadCode = () => `z-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
+
+/** The rooms anyone may list, and the private squads only their code reaches. */
+type Rooms = { all: Map<string, Room>; openSquad(): string | null };
 type IpOf = (req: IncomingMessage) => string;
 
 const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
@@ -91,11 +99,16 @@ const forwardedIp: IpOf = (req) => {
   return last || socketIp(req);
 };
 
-async function route(req: IncomingMessage, res: ServerResponse, rooms: Map<string, Room>, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, ipOf: IpOf) {
+async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
-  if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.size });
-  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.values()].map((r) => r.info()));
+  if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size });
+  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM'));
+  if (req.method === 'POST' && path === '/api/squads') {
+    if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many squads. Try again in a minute.' });
+    const room = rooms.openSquad();
+    return room ? json(res, 200, { room }) : json(res, 503, { error: 'Every squad slot is taken. Try again soon.' });
+  }
   if (req.method === 'GET' && path === '/api/leaderboard') return json(res, 200, accounts.leaderboard(20));
   if (req.method === 'GET' && path.startsWith('/api/stats/')) {
     let name: string;
@@ -127,12 +140,33 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const accounts = await openAccounts(opts.dataDir, limits.sessionMs);
   const moderator = await loadModerator(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
-  const rooms = new Map<string, Room>(
-    ROOM_MODES.map(([id, mode], i) => [id, createRoom(id, mode, 1000 + i, accounts, opts.stepsPerTick ?? 1, limits, moderator)]),
-  );
+  const allowSquad = makeKeyedLimiter(limits.squadsPerMin / 60, limits.squadsPerMin);
+  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator);
+  const rooms = new Map<string, Room>(ROOM_MODES.map(([id, mode], i) => [id, newRoom(id, mode, 1000 + i)]));
+  /** When each squad room last had a human in it; one empty for `squadIdleMs` closes. */
+  const squadSeenAt = new Map<string, number>();
+  const openSquad = (): string | null => {
+    if (squadSeenAt.size >= limits.squadRooms) return null;
+    let id = squadCode();
+    while (rooms.has(id)) id = squadCode();
+    rooms.set(id, newRoom(id, 'ZOM', randomInt(2 ** 31)));
+    squadSeenAt.set(id, Date.now());
+    return id;
+  };
+  const closeIdleSquads = (now: number) => {
+    for (const [id, seenAt] of squadSeenAt) {
+      const room = rooms.get(id)!;
+      if (room.info().humans > 0) squadSeenAt.set(id, now);
+      else if (now - seenAt >= limits.squadIdleMs) {
+        room.close();
+        rooms.delete(id);
+        squadSeenAt.delete(id);
+      }
+    }
+  };
 
   const http = createServer((req, res) => {
-    route(req, res, rooms, accounts, publicDir, allowAuth, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad }, accounts, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -169,6 +203,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       for (const r of rooms.values()) r.tick();
       nextTickAt += TICK_MS;
     }
+    closeIdleSquads(Date.now());
     timer = setTimeout(loop, nextTickAt - performance.now());
   };
   loop();
