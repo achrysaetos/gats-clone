@@ -49,9 +49,11 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
   const far = spawnAt(w, 2700, 2700);
   a.level = 5;
   for (const [level, option] of [[1, 'grip'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
-  assert.deepEqual(snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'), [], 'stage 1 is not hunted');
+  const shipped = () => { step(w, TICK_MS); return snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'); };
+  assert.deepEqual(shipped(), [], 'stage 1 is not hunted');
   assert.ok(choosePick(w, a.id, 5, 'thunderclap'));
-  assert.deepEqual(snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'), [{ e: 'hunted', id: a.id, name: 'Kestrel' }]);
+  assert.deepEqual(shipped(), [{ e: 'hunted', id: a.id, name: 'Kestrel' }], 'the tick after the pick ships the announcement');
+  assert.deepEqual(shipped(), [], 'announced once');
 });
 
 test('a hunted player cannot vanish in a ghillie suit', () => {

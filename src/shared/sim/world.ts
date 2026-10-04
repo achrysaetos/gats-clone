@@ -95,6 +95,8 @@ export type World = {
   teamScore: { red: number; blue: number };
   match: Match;
   events: GameEvent[];
+  /** Events raised between ticks, such as by a pick; the next step ships them. */
+  queuedEvents: GameEvent[];
   lifeRecords: LifeRecord[];
   /** Recent player positions, oldest first, so a shot can be judged against the world its shooter saw. */
   history: PoseFrame[];
@@ -125,7 +127,7 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
-    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], lifeRecords: [], history: [],
+    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], history: [],
   };
   loadMap(w, map);
   return w;

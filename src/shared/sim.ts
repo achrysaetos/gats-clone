@@ -138,7 +138,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 }
 
 export function step(w: World, dtMs: number): void {
-  w.events = [];
+  w.events = w.queuedEvents;
+  w.queuedEvents = [];
   w.now += dtMs;
   w.tick++;
   const dt = dtMs / 1000;

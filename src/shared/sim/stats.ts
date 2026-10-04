@@ -120,7 +120,7 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   p.life.ammo = effectiveStats(p).mag;
   p.life.reloadUntil = null;
   p.life.burstLeft = 0;
-  if (isHunted(p)) w.events.push({ e: 'hunted', id: p.id, name: p.name });
+  if (isHunted(p)) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
   return true;
 }
 
