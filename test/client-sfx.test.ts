@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUN_IDS, GUNS } from '../src/shared/defs.ts';
 import { SOUNDS, soundsFor } from '../src/client/sfx.ts';
-import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
+import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -109,4 +109,46 @@ test('the hit sound plays once per snapshot only when you damage another player'
 
 test('the first snapshot of a session derives no state-transition sounds', () => {
   assert.deepEqual(ids(null, snap({ self: { pending: { level: 1, k: 'perk', tier: 1 }, reloading: true } })), []);
+});
+
+const run = (over: Partial<RunView> = {}): RunView => ({
+  phase: 'day', night: 1, phaseEndsAt: 40_000, scrap: 100, core: { x: 1500, y: 1500, hp: 4000, maxHp: 4000 }, aliveZombies: 0, waveLeft: 0, report: null, ...over,
+});
+const squad = (r: RunView, o: Parameters<typeof snap>[0] & { buildings?: BuildingView[] } = {}): Snapshot => ({ ...snap(o), run: r, buildings: o.buildings ?? [], zombies: [] });
+
+test('the night opens on a horn and closes on a dawn chime', () => {
+  const night = run({ phase: 'night', phaseEndsAt: null, waveLeft: 20 });
+  assert.deepEqual(ids(squad(run()), squad(night)), ['horn']);
+  assert.deepEqual(ids(squad(night), squad(run({ night: 2 }))), ['chime']);
+  assert.deepEqual(ids(squad(run()), squad(run())), [], 'a quiet day stays quiet');
+});
+
+test('the core sounds once per hundred health it loses, not on every bite', () => {
+  const core = (hp: number) => squad(run({ phase: 'night', phaseEndsAt: null, core: { x: 1500, y: 1500, hp, maxHp: 4000 } }));
+  assert.deepEqual(ids(core(4000), core(3992)), ['coreHit'], 'the first bite crosses below 4000');
+  assert.deepEqual(ids(core(3992), core(3950)), [], 'more bites in the same hundred are silent');
+  assert.deepEqual(ids(core(3905), core(3890)), ['coreHit']);
+});
+
+test('walls clack up, thud when bitten and crumble when they fall', () => {
+  const wall = (cx: number, hp = 10): BuildingView => ({ kind: 'wall', cx, cy: 30, hp });
+  const night = run({ phase: 'night', phaseEndsAt: null });
+  assert.deepEqual(ids(squad(run()), squad(run(), { buildings: [wall(26)] })), ['wallUp']);
+  const bitten: GameEvent[] = [1, 2].map(() => ({ e: 'dmg', attacker: null, victim: 9, amount: 8, x: 1325, y: 1525, kind: 'building' }));
+  assert.deepEqual(ids(squad(night, { buildings: [wall(26)] }), squad(night, { buildings: [wall(26, 9)], events: bitten })), ['wallHit'], 'one thud however many bites land together');
+  assert.deepEqual(ids(squad(night, { buildings: [wall(26), wall(27)] }), squad(night, { buildings: [wall(27)] })), ['wallDown']);
+});
+
+test('a zombie bite crunches, your own zombie kills splat, and going down or getting up has its own sound', () => {
+  const bite: GameEvent = { e: 'dmg', attacker: null, victim: 1, amount: 8, x: 100, y: 0, kind: 'player' };
+  assert.deepEqual(ids(squad(run(), { me: { hp: 100 } }), squad(run(), { me: { hp: 92 }, events: [bite] })), ['bite', 'hurt']);
+  const zkill = (by: number | null): GameEvent => ({ e: 'zkill', id: 50, kind: 'walker', x: 300, y: 0, by });
+  assert.deepEqual(ids(null, squad(run(), { events: [zkill(1)] })), ['splat']);
+  assert.deepEqual(ids(null, squad(run(), { events: [zkill(2)] })), [], 'a squadmate\'s kill is theirs to hear');
+  const life = (k: 'downed' | 'revived' | 'bledOut', id: number, by: number | null = null): GameEvent => ({ e: 'life', id, name: 'n', k, by });
+  const down = { alive: false, hp: 0, downed: { revive: 0, bleedOutAt: 9e9 } };
+  assert.deepEqual(ids(squad(run()), squad(run(), { me: down, events: [life('downed', 1)] })), ['downed'], 'going down is not the death sound');
+  assert.deepEqual(ids(null, squad(run(), { events: [life('revived', 2, 1)] })), ['revived'], 'you got a squadmate up');
+  assert.deepEqual(ids(null, squad(run(), { events: [life('revived', 3, 2)] })), [], 'someone else\'s revive');
+  assert.deepEqual(ids(squad(run(), { me: down }), squad(run(), { me: { alive: false, hp: 0 }, events: [life('bledOut', 1)] })), ['death']);
 });

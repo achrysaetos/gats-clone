@@ -10,8 +10,12 @@ const dmg = (attacker: number | null, victim: number, amount: number, kind: Dama
 const kill = (killerId: number, victimId: number, assisters: number[] = []): GameEvent => ({ e: 'kill', killer: 'k', victim: 'v', killerId, victimId, weapon: 'Pistol', bounty: false, assisters });
 const apply = (events: GameEvent[], now = 1000, fb: Feedback = NO_FEEDBACK, players: { id: number; x: number; y: number }[] = []) => addFeedback(fb, events, players, ME, 100, now);
 
-test('the hitmarker shows only for damage you deal to a player', () => {
+test('the hitmarker shows only for damage you deal to a player or a zombie', () => {
   assert.deepEqual(apply([dmg(ME, 2, 20)]).hitmarker, { born: 1000, kill: false });
+  assert.deepEqual(apply([dmg(ME, 60, 20, 'zombie')]).hitmarker, { born: 1000, kill: false });
+  assert.deepEqual(apply([{ e: 'zkill', id: 60, kind: 'walker', x: 0, y: 0, by: ME }]).hitmarker, { born: 1000, kill: true }, 'your zombie kill');
+  assert.equal(apply([{ e: 'zkill', id: 60, kind: 'walker', x: 0, y: 0, by: 3 }]).hitmarker, null, 'a squadmate\'s zombie kill');
+  assert.equal(apply([dmg(null, 50, 20, 'building')]).hitmarker, null, 'a zombie biting a wall');
   assert.equal(apply([dmg(3, 2, 20)]).hitmarker, null, 'someone else hitting someone');
   assert.equal(apply([dmg(ME, 50, 20, 'crate')]).hitmarker, null, 'hitting a crate');
   assert.equal(apply([dmg(2, ME, 20)]).hitmarker, null, 'being hit');

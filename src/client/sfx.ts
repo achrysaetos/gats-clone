@@ -1,10 +1,11 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type GunId, type WeaponId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click';
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
+  | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived';
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
@@ -80,7 +81,28 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   perk: [{ src: 'tone', wave: 'triangle', pitchHz: [660, 660], ms: 60, gain: 0.22 }, { src: 'tone', wave: 'triangle', pitchHz: [990, 990], ms: 90, gain: 0.22, delayMs: 60 }],
   bounty: [note(988, 0, 80, 0.22), note(1319, 80, 320, 0.24), { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [7000, 7000], ms: 200, gain: 0.1, delayMs: 80 }],
   click: [{ src: 'tone', wave: 'square', pitchHz: [1800, 1800], ms: 18, gain: 0.15 }],
+  bite: [{ src: 'noise', filter: 'bandpass', q: 1.4, cutoffHz: [900, 260], ms: 130, gain: 0.5 }, { src: 'tone', wave: 'sawtooth', pitchHz: [150, 60], ms: 110, gain: 0.22 }],
+  splat: [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [700, 180], ms: 110, gain: 0.35 }, { src: 'tone', wave: 'triangle', pitchHz: [210, 70], ms: 90, gain: 0.25 }],
+  wallHit: [thump(150, 90, 0.4), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1400, 300], ms: 80, gain: 0.3 }],
+  wallUp: [thump(320, 50, 0.45), thump(240, 70, 0.45), { ...thump(240, 70, 0.4), delayMs: 80 }],
+  wallDown: [{ src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [1500, 90], ms: 480, gain: 0.6 }, thump(85, 300, 0.55)],
+  coreHit: [{ src: 'tone', wave: 'square', pitchHz: [240, 190], ms: 130, gain: 0.16 }, thump(95, 160, 0.5)],
+  horn: [
+    { src: 'tone', wave: 'sawtooth', pitchHz: [110, 98], ms: 1300, gain: 0.22 },
+    { src: 'tone', wave: 'triangle', pitchHz: [165, 147], ms: 1300, gain: 0.2 },
+    { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [400, 120], ms: 900, gain: 0.15 },
+  ],
+  chime: [
+    { src: 'tone', wave: 'triangle', pitchHz: [659, 659], ms: 420, gain: 0.22 },
+    { src: 'tone', wave: 'triangle', pitchHz: [880, 880], ms: 420, gain: 0.22, delayMs: 140 },
+    { src: 'tone', wave: 'triangle', pitchHz: [1175, 1175], ms: 700, gain: 0.24, delayMs: 280 },
+  ],
+  downed: [{ src: 'tone', wave: 'sawtooth', pitchHz: [330, 110], ms: 650, gain: 0.3 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [700, 120], ms: 400, gain: 0.25 }],
+  revived: [note(523, 0, 110, 0.2), note(784, 100, 260, 0.22)],
 };
+
+/** Each 100 hp the core loses sounds once, so a crowd chewing on it reads as a steady alarm rather than a buzz. */
+const CORE_HIT_STEP = 100;
 
 export type SoundCue = { x: number; y: number; self: boolean; gain: number }
   & ({ id: 'hurt'; damageFrac: number } | { id: Exclude<SoundId, 'hurt'> });
@@ -96,7 +118,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         cues.push({ id: ev.silenced ? 'shot:silenced' : `shot:${ev.gun}`, x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 });
         break;
       case 'dmg': {
-        const iHitSomeone = ev.kind === 'player' && ev.attacker === next.self.id && ev.victim !== next.self.id;
+        const iHitSomeone = (ev.kind === 'player' || ev.kind === 'zombie') && ev.attacker === next.self.id && ev.victim !== next.self.id;
         if (iHitSomeone && !cues.some((c) => c.id === 'hit')) mine('hit');
         break;
       }
@@ -105,9 +127,33 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       case 'kill':
         if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(ev.bounty ? 'bounty' : 'kill');
         break;
+      case 'zkill':
+        if (ev.by === next.self.id) cues.push({ id: 'splat', x: ev.x, y: ev.y, self: true, gain: 1 });
+        break;
+      case 'life':
+        if (ev.id === next.self.id && ev.k !== 'revived') mine(ev.k === 'downed' ? 'downed' : 'death');
+        else if (ev.k === 'revived' && (ev.id === next.self.id || ev.by === next.self.id)) mine('revived');
+        break;
     }
   }
+  for (const ev of next.events) {
+    if (ev.e !== 'dmg') continue;
+    if (ev.kind === 'building' && !cues.some((c) => c.id === 'wallHit')) cues.push({ id: 'wallHit', x: ev.x, y: ev.y, self: false, gain: 1 });
+    if (ev.kind === 'player' && ev.victim === next.self.id && ev.attacker === null && next.run && !cues.some((c) => c.id === 'bite')) mine('bite');
+  }
   if (!prev) return cues;
+  const run = next.run, ran = prev.run;
+  if (run && ran) {
+    if (ran.phase === 'day' && run.phase === 'night') mine('horn');
+    if (ran.phase === 'night' && run.phase === 'day') mine('chime');
+    if (run.phase !== 'over' && Math.floor(run.core.hp / CORE_HIT_STEP) < Math.floor(ran.core.hp / CORE_HIT_STEP)) cues.push({ id: 'coreHit', ...at, self: true, gain: 0.7 });
+    const cells = (b: Snapshot['buildings']) => new Set((b ?? []).map((w) => `${w.cx},${w.cy}`));
+    const had = cells(prev.buildings), has = cells(next.buildings);
+    const up = (next.buildings ?? []).find((w) => !had.has(`${w.cx},${w.cy}`));
+    const down = (prev.buildings ?? []).find((w) => !has.has(`${w.cx},${w.cy}`));
+    if (up) cues.push({ id: 'wallUp', x: (up.cx + 0.5) * ZOM.cell, y: (up.cy + 0.5) * ZOM.cell, self: false, gain: 1 });
+    if (down && run.phase !== 'over') cues.push({ id: 'wallDown', x: (down.cx + 0.5) * ZOM.cell, y: (down.cy + 0.5) * ZOM.cell, self: false, gain: 1 });
+  }
   const was = selfOf(prev);
   if (was?.alive && me?.alive) {
     const damage = was.hp + was.armor - (me.hp + me.armor);
@@ -120,6 +166,6 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   }
   if (next.self.reloading && !prev.self.reloading) mine('reload');
   if (next.self.pending !== null && next.self.pending.level !== prev.self.pending?.level) mine('levelup');
-  if (!next.self.alive && prev.self.alive) mine('death');
+  if (!next.self.alive && prev.self.alive && !me?.downed) mine('death');
   return cues;
 }

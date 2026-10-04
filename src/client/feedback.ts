@@ -64,13 +64,13 @@ export function addFeedback(fb: Feedback, events: readonly GameEvent[], players:
       numbers = recent
         ? numbers.map((n) => (n === recent ? { ...n, amount: n.amount + ev.amount, x: ev.x, y: ev.y, born: now, lift: Math.min(NUMBER_MAX_LIFT, numberHeight(n, now)) } : n))
         : [...numbers, { victim: ev.victim, kind: ev.kind, x: ev.x, y: ev.y, amount: ev.amount, born: now, lift: liftOver(numbers, ev.victim, now) }];
-      if (ev.kind === 'player' && !hitmarker?.kill) hitmarker = { born: now, kill: false };
+      if ((ev.kind === 'player' || ev.kind === 'zombie') && !hitmarker?.kill) hitmarker = { born: now, kill: false };
     } else if (ev.e === 'dmg' && ev.victim === myId && ev.kind === 'player') {
       const prior = hurt ? hurt.strength * (1 - (now - hurt.born) / HURT_MS) : 0;
       hurt = { born: now, strength: Math.min(1, prior + ev.amount / myMaxHp) };
       const from = players.find((p) => p.id === ev.attacker && p.id !== myId) ?? ev;
       if (me && (from.x !== me.x || from.y !== me.y)) arcs = addArc(arcs, Math.atan2(from.y - me.y, from.x - me.x), ev.amount / myMaxHp, now);
-    } else if (ev.e === 'kill' && ev.killerId === myId && ev.victimId !== myId) {
+    } else if ((ev.e === 'kill' && ev.killerId === myId && ev.victimId !== myId) || (ev.e === 'zkill' && ev.by === myId)) {
       hitmarker = { born: now, kill: true };
     } else if (ev.e === 'kill' && ev.assisters.includes(myId)) {
       assist = { born: now };
