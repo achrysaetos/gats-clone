@@ -68,6 +68,27 @@ test('a press during a reload is held and fires once the reload ends', () => {
   assert.equal(ammoOf(p), GUNS.pistol.mag - 1, 'the press fired the first round of the fresh magazine');
 });
 
+test('a press on the tick the reload starts is held until the reload ends', () => {
+  const lastRound = emptyWorld();
+  const a = spawnAt(lastRound, 500, 500);
+  if (a.life.k === 'alive') a.life.ammo = 1;
+  press(lastRound, a, { shots: a.input.shots + 1 });
+  step(lastRound, TICK_MS);
+  press(lastRound, a, { shots: a.input.shots + 1 });
+  run(lastRound, GUNS.pistol.reloadMs + GUNS.pistol.fireMs);
+  assert.equal(ammoOf(a), GUNS.pistol.mag - 1, 'a press the tick after the last round fires once the magazine is back');
+
+  const manual = emptyWorld();
+  const b = spawnAt(manual, 500, 500);
+  if (b.life.k === 'alive') b.life.ammo = 5;
+  run(manual, 300);
+  press(manual, b, { reload: true, shots: b.input.shots + 1 });
+  step(manual, TICK_MS);
+  press(manual, b, {});
+  run(manual, GUNS.pistol.reloadMs + GUNS.pistol.fireMs);
+  assert.equal(ammoOf(b), GUNS.pistol.mag - 1, 'a click sent with the reload key fires once the reload ends');
+});
+
 test('a press during a burst fires the next burst once the burst and its cooldown end', () => {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);

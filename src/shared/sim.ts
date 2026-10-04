@@ -74,10 +74,6 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const life = p.life;
   if (life.k !== 'alive') return;
   const gun = GUNS[p.gun];
-  if (pressed) {
-    const cooledAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
-    life.pressUntil = Math.max(w.now, cooledAt, life.reloadUntil ?? 0) + PRESS_GRACE_MS;
-  }
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
@@ -95,6 +91,11 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (life.reloadUntil === null && (life.ammo <= 0 || (inp.reload && life.ammo < stats.mag))) {
     life.reloadUntil = w.now + GUNS[p.gun].reloadMs;
     life.burstLeft = 0;
+  }
+  // After the reload check, so a press that lands as the reload starts waits for it rather than expiring under it.
+  if (pressed) {
+    const cooledAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
+    life.pressUntil = Math.max(w.now, cooledAt, life.reloadUntil ?? 0) + PRESS_GRACE_MS;
   }
 
   const armed = w.match.k === 'playing';
