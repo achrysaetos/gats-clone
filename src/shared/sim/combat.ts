@@ -65,7 +65,6 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   MODES[w.mode].onKill(w, credited, victim);
 }
 
-/** Living players other than the killer who took at least ASSIST_SHARE of the victim's max health off this life. */
 function assistersOf(w: World, victim: Player, killer: Player | null): Player[] {
   if (victim.life.k !== 'alive') return [];
   const enough = ASSIST_SHARE * effectiveStats(victim).maxHp;

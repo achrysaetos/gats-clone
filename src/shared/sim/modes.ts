@@ -23,7 +23,6 @@ function smallerTeam(w: World): Team {
   return red <= blue ? 'red' : 'blue';
 }
 
-/** The player with the most kills this round, or null before anyone has one. */
 function topKiller(w: World): Player | null {
   let top: Player | null = null;
   for (const p of w.players.values()) if (p.kills > (top?.kills ?? 0)) top = p;
