@@ -520,7 +520,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.stroke();
   ctx.rotate(-p.angle);
   const { stage } = GUNS[p.gun];
-  if (p.hunted) drawHuntedMark(ctx, look.now);
+  if (p.hunted && !look.self) drawHuntedMark(ctx, look.now);
   if (stage !== 0) drawTierMark(ctx, stage, look.friendly ? -R - 34 : -R - 12);
   ctx.globalAlpha = p.hidden ? 0.25 : 1;
   if (look.friendly) {

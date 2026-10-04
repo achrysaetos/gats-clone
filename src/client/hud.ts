@@ -581,6 +581,19 @@ function drawVitals({ ctx, w, h, snap, me }: Hud) {
     text(ctx, name, cx + 26, y - 18, TYPE.label, HUD_INK);
     cx += tw + SPACE.sm - 2;
   }
+  if (me.hunted) drawHuntedBadge(ctx, x + pw, cx > x + pw - HUNTED_BADGE_W ? y - 58 : y - 30);
+}
+
+const HUNTED_BADGE_W = 84;
+
+function drawHuntedBadge(ctx: CanvasRenderingContext2D, right: number, top: number) {
+  const x = right - HUNTED_BADGE_W;
+  ctx.beginPath();
+  ctx.roundRect(x, top, HUNTED_BADGE_W, 24, PANEL_RADIUS);
+  ctx.fillStyle = PALETTE.hunted;
+  ctx.fill();
+  strokeIcon(ctx, UI_ICONS.target, x + 14, top + 12, 14, '#ffffff', 2.4);
+  text(ctx, 'HUNTED', x + 26, top + 12, TYPE.label, '#ffffff', 'left', 850);
 }
 
 function drawStagePips(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {

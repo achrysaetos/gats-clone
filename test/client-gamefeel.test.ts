@@ -8,6 +8,9 @@ import { approachAlpha, drawHud, PANEL_ALPHA } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import type { Session } from '../src/client/state.ts';
+import { createPool } from '../src/client/particles.ts';
+import { PALETTE } from '../src/client/palette.ts';
+import { drawWorld } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -102,6 +105,41 @@ test('the kill feed spells out an evolved gun in its accent color and keeps the 
   assert.deepEqual(evolved.filter((d) => d.text === 'Hornet').map((d) => d.color), [GUNS.hornet.look.accent]);
   const base = hudTexts(snap(), { feed: [line('SMG')] });
   assert.equal(base.some((d) => d.text === 'SMG'), false, 'a class gun is drawn as its icon, not its name');
+});
+
+test('holding a stage-2 gun shows a HUNTED badge on your HUD', () => {
+  assert.equal(hudTexts(snap({ me: { gun: 'phantom', hunted: true } })).filter((d) => d.text === 'HUNTED').length, 1);
+  assert.equal(hudTexts(snap({ me: { gun: 'skirmisher' } })).some((d) => d.text === 'HUNTED'), false);
+});
+
+/** Draws the world into a recording context and returns the stroke color of every stroke. */
+function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[] {
+  const strokes: unknown[] = [];
+  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop === 'stroke') return () => strokes.push(target.strokeStyle);
+      if (prop === 'measureText') return () => ({ width: 0 });
+      if (typeof prop === 'string' && prop.startsWith('create')) return () => ({ addColorStop() {} });
+      return () => {};
+    },
+    set(target, prop, value) { target[prop] = value; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
+  const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), effects: [], particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
+  drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
+  return strokes;
+}
+
+test('the hunted brackets mark hunted enemies but not yourself', () => {
+  assert.equal(worldStrokes(snap({ me: { gun: 'phantom', hunted: true } })).includes(PALETTE.hunted), false, 'no brackets on you');
+  assert.equal(worldStrokes(snap({ players: [player(2, { gun: 'phantom', hunted: true })] })).includes(PALETTE.hunted), true, 'brackets on a hunted enemy');
+});
+
+test('while you wait to respawn, your killer wears a red ring', () => {
+  const frame = snap({ me: { alive: false }, players: [player(2)] });
+  assert.equal(worldStrokes(frame).includes(PALETTE.hunted), false);
+  assert.equal(worldStrokes(frame, 2).includes(PALETTE.hunted), true);
 });
 
 test('the death screen names the killer\'s gun and what the life had earned', () => {
