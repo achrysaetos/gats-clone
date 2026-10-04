@@ -59,6 +59,8 @@ let selectedRoom: string | null = null;
 /** The squad from an invite link or the one this page started, listed beside the public rooms. */
 let squad: string | null = null;
 let squadBusy = false;
+/** An invite link scrolls the menu to its squad once the room list above it has loaded. */
+let revealSquad = false;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
 let viewTimer: ReturnType<typeof setTimeout> | undefined;
@@ -529,6 +531,10 @@ async function pollServers() {
   }
   if (servers && selectedRoom !== squad && !servers.some((sv) => sv.id === selectedRoom)) selectedRoom = servers[0]?.id ?? null;
   showServers();
+  if (revealSquad && state.phase === 'menu') {
+    revealSquad = false;
+    squadEl.scrollIntoView({ block: 'center' });
+  }
 }
 
 let squadKey = '';
@@ -601,8 +607,8 @@ if (invited === 'bad') {
   state = { phase: 'menu', status: { kind: 'error', message: BAD_INVITE } };
 } else if (invited) {
   squad = selectedRoom = invited;
+  revealSquad = true;
 }
 resize();
 setState(state);
-if (invited && invited !== 'bad') squadEl.scrollIntoView({ block: 'center' });
 requestAnimationFrame(frame);
