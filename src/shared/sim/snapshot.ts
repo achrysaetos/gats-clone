@@ -33,7 +33,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
-    score: p.score, level: p.level, armorTier: p.loadout.armor, hunted: huntedFor(me, p),
+    score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(me, p),
   };
 }
 
