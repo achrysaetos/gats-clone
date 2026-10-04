@@ -28,8 +28,9 @@ Each feature file starts with an H1 and one paragraph on the user-visible behavi
 
 ## Features
 
-- [Menu and loadout](./menu-loadout.md) covers the room list, weapon, color and armor pickers, and phone layout.
-- [Accounts and stats](./accounts.md) covers register, login, the token, and server-side stats.
-- [Joining and playing](./join-play.md) covers joining a room, moving, firing, and leaving.
-- [Chat](./chat.md) covers sending a message and other players receiving it.
-- [Progression, death and modes](./progression-death-modes.md) covers perks, abilities, the death screen, respawn, and TDM and DOM scoring.
+- [Menu and loadout](./menu-loadout.md) covers the room list, weapon, color and armor pickers, phone layout, the privacy link and the muted panel.
+- [Accounts and stats](./accounts.md) covers register, login, the token, server-side stats, the leaderboard and error codes.
+- [Joining and playing](./join-play.md) covers joining a room, moving, firing, leaving, the duel, reconnect, the view rectangle and lag compensation.
+- [Chat](./chat.md) covers sending and receiving, the rate limit, word masking, renaming blocked names, and mute.
+- [Progression, death and modes](./progression-death-modes.md) covers perks, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
+- [Map rotation](./maps.md) covers the four maps, per-mode rotation and the next-map notice.
