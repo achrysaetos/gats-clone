@@ -66,3 +66,16 @@ test('a squad bot mends a damaged wall near the core while no zombie is close', 
   assert.ok(w.run!.scrap < ZOM.startScrap, 'for scrap');
   assert.equal(w.buildings.length, 1, 'and builds nothing new');
 });
+
+test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing', () => {
+  const w = nightWorld();
+  const bot = spawnAt(w, CORE.x, CORE.y + 320, { loadout: { weapon: 'smg' } });
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    w.zombies.push({ id: newId(w), kind: 'brute', x: bot.x + Math.cos(a) * (90 + (i % 3) * 15), y: bot.y + Math.sin(a) * (90 + (i % 3) * 15), hp: 1e9, attackAt: Infinity });
+  }
+  const shots = () => w.events.filter((e) => e.e === 'shot').length;
+  let fired = 0;
+  play(w, [bot], 3000, () => { fired += shots(); bot.life.k === 'alive' && (bot.life.hp = 1e9); return false; });
+  assert.ok(fired > 20, `${fired} shots in 3s`);
+});
