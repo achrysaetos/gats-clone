@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { aimSpread, deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
-import { addMoments, CALLOUT_MS, NO_MOMENTS } from '../src/client/moments.ts';
+import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, NO_MOMENTS } from '../src/client/moments.ts';
 import { approachAlpha, drawHud, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
@@ -56,6 +56,17 @@ test('a bounty kill gets a gold callout, and moments expire', () => {
   assert.deepEqual(m.callouts.map((c) => c.title), [`BOUNTY +${WORLD.bountyScore}`]);
   assert.deepEqual(m.popups.map((p) => [p.x, p.y]), [[300, 200]], 'without a blow this snapshot, the victim\'s last position');
   assert.deepEqual(addMoments(m, prev, prev, 1000 + CALLOUT_MS), NO_MOMENTS);
+});
+
+test('moments that land together queue, so at most two callouts share the screen', () => {
+  const prev = snap({ me: { gun: 'skirmisher', score: 0 }, players: [player(7, { x: 300, y: 200 })] });
+  const next = snap({ me: { gun: 'phantom', score: 300 }, events: [kill({ killer: 'p1', killerId: 1, victim: 'Atlas', victimId: 7, bounty: true })] });
+  const borns = moments(prev, next).callouts.map((c) => c.born);
+  assert.equal(borns.length, 3);
+  assert.deepEqual(borns, [1000, 1000 + CALLOUT_STAGGER_MS, 1000 + 2 * CALLOUT_STAGGER_MS]);
+  for (let t = 1000; t < 1000 + 3 * CALLOUT_MS; t += 50) {
+    assert.ok(borns.filter((b) => t >= b && t - b < CALLOUT_MS).length <= 2, `at most two on screen at ${t}`);
+  }
 });
 
 test('an off-screen hunted mark gets an edge marker on its bearing; an on-screen one gets none', () => {

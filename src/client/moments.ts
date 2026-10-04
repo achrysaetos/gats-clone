@@ -12,24 +12,27 @@ export const NO_MOMENTS: Moments = { callouts: [], popups: [] };
 export const CALLOUT_MS = 2400;
 export const RING_MS = 700;
 export const POPUP_MS = 1100;
+/** Moments that land together queue this far apart, so at most two callouts share the screen and none reaches the player. */
+export const CALLOUT_STAGGER_MS = 1200;
 
 const HUNTED_LINE = `Every enemy sees you on the minimap. Your killer earns +${WORLD.bountyScore}.`;
 
 export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, now: number): Moments {
   const callouts = m.callouts.filter((c) => now - c.born < CALLOUT_MS);
+  const announce = (c: Omit<Callout, 'born'>) => callouts.push({ ...c, born: Math.max(now, (callouts.at(-1)?.born ?? -Infinity) + CALLOUT_STAGGER_MS) });
   const popups = m.popups.filter((p) => now - p.born < POPUP_MS);
   const me = selfOf(next);
   const was = prev && selfOf(prev);
   const life = me?.alive && was?.alive ? { me, was } : null;
   if (life && GUNS[life.me.gun].stage > GUNS[life.was.gun].stage) {
     const gun = GUNS[life.me.gun];
-    callouts.push({ title: gun.name, line: `Evolved · ${gun.desc}`, color: gun.look.accent, ring: true, born: now });
-    if (gun.stage === 2) callouts.push({ title: 'You are HUNTED', line: HUNTED_LINE, color: PALETTE.hunted, ring: false, born: now });
+    announce({ title: gun.name, line: `Evolved · ${gun.desc}`, color: gun.look.accent, ring: true });
+    if (gun.stage === 2) announce({ title: 'You are HUNTED', line: HUNTED_LINE, color: PALETTE.hunted, ring: false });
   }
   const kills = next.events.filter((ev): ev is KillEvent => ev.e === 'kill' && ev.killerId === next.self.id && ev.victimId !== next.self.id);
   const earned = life ? life.me.score - life.was.score : 0;
   for (const ev of kills) {
-    if (ev.bounty) callouts.push({ title: `BOUNTY +${WORLD.bountyScore}`, line: `${ev.victim} was hunted`, color: PALETTE.gold, ring: false, born: now });
+    if (ev.bounty) announce({ title: `BOUNTY +${WORLD.bountyScore}`, line: `${ev.victim} was hunted`, color: PALETTE.gold, ring: false });
     const at = fallOf(prev, next, ev.victimId);
     if (at && earned > 0) popups.push({ ...at, amount: Math.round(earned / kills.length), born: now });
   }
