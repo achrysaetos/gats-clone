@@ -168,7 +168,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   optics: { name: 'Optics', desc: 'See further' },
   thermal: { name: 'Thermal', desc: 'Reveal hidden enemies' },
   ghillie: { name: 'Ghillie suit', desc: 'Nearly invisible while still' },
-  piercing: { name: 'Armor piercing', desc: 'Bullets ignore armor' },
+  piercing: { name: 'AP rounds', desc: 'Bullets ignore armor' },
   extended: { name: 'Extended mag', desc: '+50% magazine' },
   grip: { name: 'Grip', desc: '-40% spread' },
   silencer: { name: 'Silencer', desc: 'Firing does not reveal you on the minimap' },
