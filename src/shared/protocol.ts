@@ -1,6 +1,6 @@
 import {
   ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD,
-  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -87,7 +87,9 @@ export type GameEvent =
   | { e: 'impact'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
-  | { e: 'slash'; x: number; y: number; angle: number; owner: number };
+  | { e: 'slash'; x: number; y: number; angle: number; owner: number }
+  /** A zombie died; `by` is the squad player credited, null for none. */
+  | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };

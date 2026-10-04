@@ -1,7 +1,8 @@
-import { ARMORS, HP_MULTIPLIER, WORLD } from '../defs.ts';
+import { ARMORS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
+import { damageZombie } from './run.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
@@ -140,9 +141,15 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     if (d >= radius || sheltered(view.walls, x, y, nx, ny)) continue;
     damageCrate(w, c, maxDamage * (1 - d / radius), by.attacker);
   }
+  for (const z of w.zombies) {
+    const r = ZOMBIES[z.kind].radius;
+    const d = Math.sqrt(dist2(z.x, z.y, x, y));
+    if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
+    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker);
+  }
 }
 
-type BulletHit = { t: number | null; victim: Player | null; apply: (x: number, y: number) => void };
+type BulletHit = { t: number | null; victim: { id: number } | null; apply: (x: number, y: number) => void };
 
 /** Backs the blast off the surface it struck, so the wall it hit does not shelter the side the bullet came from. */
 const BLAST_STANDOFF = 2;
@@ -175,6 +182,12 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
           apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y }),
         }] : [];
       }),
+    // Zombies are judged where they stand now, even for a rewound shot: they are slow, and they keep no pose history.
+    ...w.zombies
+      .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
+      .map((z) => ({
+        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.damage, owner),
+      })),
   ];
   const hits = candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
   for (const hit of hits) {

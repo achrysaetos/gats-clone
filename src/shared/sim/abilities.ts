@@ -1,5 +1,6 @@
-import { WORLD, type AbilityId } from '../defs.ts';
+import { WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
 import { damagePlayer, explode } from './combat.ts';
+import { damageZombie } from './run.ts';
 import { circleHitsRect, clamp, dist2, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
 import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 
@@ -35,11 +36,16 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     return true;
   },
   knife: (w, p) => {
-    const enemies = [...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v));
-    const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, enemies);
+    const targets = [
+      ...[...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v)).map((v) => ({
+        x: v.x, y: v.y, strike: () => damagePlayer(w, v, KNIFE_DAMAGE, { attacker: p, team: p.team, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y }),
+      })),
+      ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => damageZombie(w, z, KNIFE_DAMAGE, p) })),
+    ];
+    const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, targets);
     p.x = x;
     p.y = y;
-    if (victim) damagePlayer(w, victim, KNIFE_DAMAGE, { attacker: p, team: p.team, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y });
+    victim?.strike();
     w.events.push({ e: 'slash', x: p.x, y: p.y, angle: p.angle, owner: p.id });
     return true;
   },
@@ -91,9 +97,9 @@ export function tickThrown(w: World, dt: number) {
       }
       case 'landMine': {
         if (w.now >= t.expiresAt || owner?.life.k !== 'alive') break;
-        const tripped = w.now >= t.armedAt && [...w.players.values()].some(
+        const tripped = w.now >= t.armedAt && ([...w.players.values()].some(
           (p) => p.life.k === 'alive' && isEnemy(owner, p) && dist2(p.x, p.y, t.x, t.y) < (WORLD.playerRadius + 30) ** 2,
-        );
+        ) || w.zombies.some((z) => dist2(z.x, z.y, t.x, t.y) < (ZOMBIES[z.kind].radius + 30) ** 2));
         if (tripped) explode(w, t.x, t.y, 130, 90, { ...by, label: 'Land mine' });
         else keep.push(t);
         break;
@@ -105,6 +111,7 @@ export function tickThrown(w: World, dt: number) {
             damagePlayer(w, p, 14 * dt, { ...by, label: 'Gas', piercing: true, via: 'gas', fromX: t.x, fromY: t.y });
           }
         }
+        for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < GAS_RADIUS ** 2) damageZombie(w, z, 14 * dt, owner);
         keep.push(t);
         break;
       }

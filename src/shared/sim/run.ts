@@ -2,8 +2,8 @@ import { ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { tickHorde } from './horde.ts';
 import { circleHitsRect } from './movement.ts';
-import { freshLife, resetProgress } from './stats.ts';
-import { loadMap, newId, newRun, rand, solidRects, spawnPoint, type Player, type Run, type RunStats, type World } from './world.ts';
+import { addScore, freshLife, resetProgress } from './stats.ts';
+import { loadMap, newId, newRun, rand, solidRects, spawnPoint, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
 
 const humans = (w: World) => [...w.players.values()].filter((p) => p.kind === 'human').length;
 
@@ -13,6 +13,24 @@ export function statsFor(run: Run, p: Player): RunStats {
   let s = run.stats.get(p.id);
   if (!s) run.stats.set(p.id, (s = { name: p.name, kills: 0, revives: 0, built: 0 }));
   return s;
+}
+
+/** A zombie's death pays its killer score toward the gun ladder and the squad scrap for walls. */
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null) {
+  const run = w.run;
+  if (!run || z.hp <= 0) return;
+  const dealt = Math.min(z.hp, amount);
+  z.hp -= amount;
+  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: z.id, amount: Math.round(dealt * 10) / 10, x: z.x, y: z.y, kind: 'zombie' });
+  if (z.hp > 0) return;
+  const def = ZOMBIES[z.kind];
+  w.zombies = w.zombies.filter((o) => o !== z);
+  run.scrap += def.scrap;
+  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: attacker?.id ?? null });
+  if (!attacker) return;
+  attacker.kills++;
+  statsFor(run, attacker).kills++;
+  addScore(w, attacker, def.score);
 }
 
 /** The night's zombies in spawn order, each kind drawn by its share of the night. */
