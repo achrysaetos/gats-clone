@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictInput, reconcile, solidsOf, startsDash, type Prediction } from '../src/client/predict.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
-import { setInput, snapshotFor, step, wallViews } from '../src/shared/sim.ts';
+import { setInput, step } from '../src/shared/sim.ts';
 import type { Motion, Rect } from '../src/shared/sim/movement.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 

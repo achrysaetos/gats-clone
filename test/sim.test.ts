@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ABILITY_COOLDOWN_MS, ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
-import { addPlayer, canRespawn, respawn, setInput, snapshotFor, step, wallViews } from '../src/shared/sim.ts';
+import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePerk } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';

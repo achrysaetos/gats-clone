@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WEAPONS, WORLD, type WeaponId } from '../src/shared/defs.ts';
 import type { WallView } from '../src/shared/protocol.ts';
-import { snapshotFor, step } from '../src/shared/sim.ts';
+import { step } from '../src/shared/sim.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botName, botThink, newBotMemory } from '../src/server/bots.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 

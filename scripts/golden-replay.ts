@@ -4,7 +4,8 @@
 import { createHash } from 'node:crypto';
 import { MODE_IDS, PERK_TIERS, WORLD } from '../src/shared/defs.ts';
 import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
-import { addPlayer, canRespawn, removePlayer, respawn, setInput, snapshotFor, step, wallViews } from '../src/shared/sim.ts';
+import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../src/shared/sim.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { abilityOf, choosePerk, pendingTier } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';

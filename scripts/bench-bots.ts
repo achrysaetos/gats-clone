@@ -2,8 +2,9 @@
 // Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10]
 import { PERK_TIERS, WEAPONS, WORLD } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
-import { addPlayer, canRespawn, respawn, setInput, snapshotFor, step, wallViews } from '../src/shared/sim.ts';
+import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePerk } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';

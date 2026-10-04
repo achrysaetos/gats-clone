@@ -1,7 +1,8 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-balance.ts [worlds=8] [minutes=5] [mode=FFA]
 import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
-import { addPlayer, canRespawn, respawn, setInput, snapshotFor, step, wallViews } from '../src/shared/sim.ts';
+import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePerk, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';

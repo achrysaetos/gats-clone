@@ -33,7 +33,14 @@ At 100, 250 and 450 points you pick an attachment, then a survival perk, then an
 - `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
 - `src/shared/protocol.ts` defines the wire messages and parses client input.
 - `src/shared/wire.ts` encodes snapshots per connection: it rounds numbers and omits crates, leaderboard, zones and match while they are unchanged. The client rebuilds full snapshots from the last one it received.
-- `src/shared/sim.ts` is the deterministic game simulation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to `MAX_REWIND_MS` back, so players hit what they aim at on screen.
+- `src/shared/sim.ts` is the deterministic game simulation's entry point. `step` advances the world one tick, and the player commands add, remove, respawn and steer players. The rest lives in `src/shared/sim/`, one module per domain:
+  - `world.ts` holds the world and player types, the seeded random source and map generation.
+  - `movement.ts` holds the collision geometry and player motion that the client also runs for prediction.
+  - `stats.ts` holds perks, levels and score, and the effective stats they produce.
+  - `combat.ts` holds bullets, damage, kills and lag compensation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to `MAX_REWIND_MS` back, so players hit what they aim at on screen.
+  - `abilities.ts` holds the tier 3 abilities and the grenades, mines and gas they leave behind.
+  - `modes.ts` holds the FFA, TDM and DOM rules and the round cycle.
+  - `snapshot.ts` builds each player's culled view of the world.
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
 - `src/client/` contains the browser client.
 
@@ -52,7 +59,7 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
 
-`node scripts/golden-replay.ts [hash]` guards refactors of the simulation. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ.
+`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ.
 
 `node scripts/mock-server.ts 8787` with `node scripts/drive.ts http://localhost:8787 ./shots` is only a render check. Its fake server forces UI states (perk panels, death, the winner banner) so you can screenshot them, and proves nothing about gameplay. `node scripts/measure-bandwidth.ts [humans] [seconds] [room]` starts an isolated server, joins that many scripted clients, and prints bytes per second per client, snapshot arrival gaps and bytes per snapshot field. `node scripts/measure-lag-aim.ts [seconds] [lag:jitter ...]` starts a bot-free server, has headless Chrome tap the pistol at where it draws a scripted strafing target, and prints hit rate and damage per minute at each simulated latency.
 
