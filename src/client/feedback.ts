@@ -1,6 +1,7 @@
 import type { DamageKind, GameEvent } from '../shared/protocol.ts';
 
-export type DamageNumber = { victim: number; kind: DamageKind; x: number; y: number; amount: number; born: number };
+/** `slot` lifts a number above the ones still floating over the same victim. */
+export type DamageNumber = { victim: number; kind: DamageKind; x: number; y: number; amount: number; born: number; slot: number };
 
 /** `angle` points from you toward where the damage came from. */
 export type HurtArc = { angle: number; strength: number; born: number };
@@ -24,6 +25,13 @@ const MERGE_MS = 300;
 /** Hits from within this angle of a fresh arc refresh it, so a stream of bullets from one gun draws one arc. */
 const ARC_MERGE_RAD = 0.45;
 
+function freeSlot(numbers: readonly DamageNumber[], victim: number): number {
+  const taken = new Set(numbers.filter((n) => n.victim === victim).map((n) => n.slot));
+  let slot = 0;
+  while (taken.has(slot)) slot++;
+  return slot;
+}
+
 type Placed = { id: number; x: number; y: number };
 
 const angleGap = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
@@ -46,10 +54,10 @@ export function addFeedback(fb: Feedback, events: readonly GameEvent[], players:
   const me = players.find((p) => p.id === myId);
   for (const ev of events) {
     if (ev.e === 'dmg' && ev.attacker === myId && ev.victim !== myId) {
-      const recent = numbers.find((n) => n.victim === ev.victim && n.kind === ev.kind && now - n.born < MERGE_MS);
+      const recent = numbers.find((n) => n.victim === ev.victim && now - n.born < MERGE_MS);
       numbers = recent
         ? numbers.map((n) => (n === recent ? { ...n, amount: n.amount + ev.amount, x: ev.x, y: ev.y, born: now } : n))
-        : [...numbers, { victim: ev.victim, kind: ev.kind, x: ev.x, y: ev.y, amount: ev.amount, born: now }];
+        : [...numbers, { victim: ev.victim, kind: ev.kind, x: ev.x, y: ev.y, amount: ev.amount, born: now, slot: freeSlot(numbers, ev.victim) }];
       if (ev.kind === 'player' && !hitmarker?.kill) hitmarker = { born: now, kill: false };
     } else if (ev.e === 'dmg' && ev.victim === myId && ev.kind === 'player') {
       const prior = hurt ? hurt.strength * (1 - (now - hurt.born) / HURT_MS) : 0;

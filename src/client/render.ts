@@ -596,6 +596,8 @@ function drawLabel(ctx: CanvasRenderingContext2D, p: PlayerView, self: boolean) 
   }
 }
 
+const NUMBER_STACK = 30;
+
 function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly DamageNumber[], now: number) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -607,7 +609,7 @@ function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly Dama
     ctx.globalAlpha = 1 - k * k;
     ctx.font = `800 ${player ? 26 : 18}px system-ui, sans-serif`;
     const label = String(Math.max(1, Math.round(n.amount)));
-    const y = n.y - R - 24 - 46 * k;
+    const y = n.y - R - 24 - NUMBER_STACK * n.slot - 46 * k;
     ctx.lineWidth = 5;
     ctx.strokeStyle = INK;
     ctx.strokeText(label, n.x, y);
