@@ -1,6 +1,6 @@
 import {
   ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS,
-  type AbilityId, type ArmorId, type ColorId, type ModeId, type PerkId, type Tier, type WeaponId,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PerkId, type Tier, type WeaponId,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -35,7 +35,7 @@ export type ClientMsg =
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
   hp: number; maxHp: number; armor: number; maxArmor: number;
-  color: ColorId; weapon: WeaponId; team: Team;
+  color: ColorId; gun: GunId; team: Team;
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;
   armorTier: ArmorId;

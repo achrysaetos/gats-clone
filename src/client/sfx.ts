@@ -1,4 +1,4 @@
-import type { WeaponId } from '../shared/defs.ts';
+import { GUNS, type WeaponId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 
@@ -50,7 +50,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   for (const ev of next.events) {
     switch (ev.e) {
       case 'shot': {
-        const weapon = next.players.find((p) => p.id === ev.owner)?.weapon ?? 'pistol';
+        const weapon = GUNS[next.players.find((p) => p.id === ev.owner)?.gun ?? 'pistol'].base;
         cues.push({ id: ev.silenced ? 'shot:silenced' : `shot:${weapon}`, x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 });
         break;
       }

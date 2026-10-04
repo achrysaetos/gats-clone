@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePerk } from '../src/shared/sim/stats.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
@@ -30,7 +30,7 @@ test('a round restart resets level, perks and ability along with score', () => {
   const a = spawnAt(w, 500, 500, { team: 'red' });
   grantPerks(w, a, ['extended', 'thickSkin', 'dash']);
   press(w, a, { reload: true });
-  run(w, WEAPONS.pistol.reloadMs + 100);
+  run(w, GUNS.pistol.reloadMs + 100);
   press(w, a, {});
   a.score = 450;
   w.teamScore.red = WORLD.tdmWinScore;

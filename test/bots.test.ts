@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WEAPONS, WORLD, type WeaponId } from '../src/shared/defs.ts';
+import { GUNS, WORLD, type WeaponId } from '../src/shared/defs.ts';
 import type { WallView } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -26,7 +26,7 @@ function watch(opts: { seed: number; ticks: number; weapon?: WeaponId; targetAt:
   for (let i = 0; i < opts.ticks; i++) {
     const d = botThink(snapshotFor(w, bot.id), opts.walls?.(i) ?? [], mem, r);
     mem = d.mem;
-    const flight = Math.hypot(target.x - bot.x, target.y - bot.y) / WEAPONS[bot.loadout.weapon].bulletSpeed;
+    const flight = Math.hypot(target.x - bot.x, target.y - bot.y) / GUNS[bot.loadout.weapon].bulletSpeed;
     const leadAngle = Math.atan2(target.y + vel.y * flight - bot.y, target.x + vel.x * flight - bot.x);
     looks.push({ tick: i, angle: d.input.angle, fire: d.input.fire, bearing: Math.atan2(target.y - bot.y, target.x - bot.x), leadAngle });
     target.x += vel.x * TICK_MS / 1000;

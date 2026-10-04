@@ -1,4 +1,4 @@
-import { ABILITY_COOLDOWN_MS, WEAPONS, WORLD, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, WORLD, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
@@ -23,7 +23,7 @@ function freshLife(p: Player, now: number): Life {
 export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPlayerOpts = {}): Player {
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
-    id: newId(w), name, kind: opts.kind ?? 'bot', loadout, team, x: 0, y: 0, angle: 0,
+    id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, abilityReadyAt: 0,
   };
@@ -95,10 +95,10 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   if (life.reloadUntil !== null && w.now >= life.reloadUntil) { life.ammo = stats.mag; life.reloadUntil = null; }
   if (life.reloadUntil === null && (life.ammo <= 0 || (inp.reload && life.ammo < stats.mag))) {
-    life.reloadUntil = w.now + WEAPONS[p.loadout.weapon].reloadMs;
+    life.reloadUntil = w.now + GUNS[p.gun].reloadMs;
   }
 
-  const weapon = WEAPONS[p.loadout.weapon];
+  const weapon = GUNS[p.gun];
   const armed = w.match.k === 'playing';
   const wantsShot = w.now <= life.pressUntil || (weapon.auto && inp.fire);
   if (armed && wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {

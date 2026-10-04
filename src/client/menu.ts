@@ -1,4 +1,4 @@
-import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, WEAPONS, WEAPON_IDS } from '../shared/defs.ts';
+import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS } from '../shared/defs.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
 import type { MutedNames } from './chatmute.ts';
@@ -17,7 +17,7 @@ type LoadoutPicker = { refresh(): void };
 
 export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void): LoadoutPicker {
   const weaponButtons = WEAPON_IDS.map((id) => {
-    const w = WEAPONS[id];
+    const w = GUNS[id];
     const art = el('canvas', { width: 120, height: 48, className: 'gun-art' });
     const b = el('button', { type: 'button', className: 'tile weapon', title: w.name },
       art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`));

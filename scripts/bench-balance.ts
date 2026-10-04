@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-balance.ts [worlds=8] [minutes=5] [mode=FFA]
 // Worlds take the mode's maps in rotation order, one map per world.
-import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, WEAPONS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
+import { ARMOR_IDS, LEVEL_SCORES, MODE_IDS, WEAPON_IDS, GUNS, WORLD, type ArmorId, type ModeId, type WeaponId } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -75,7 +75,7 @@ for (const [label, n] of [...killsBy].sort((a, b) => b[1] - a[1])) console.log(`
 console.log('\nkill share by weapon per map');
 for (const [map, kills] of killsByMap) {
   const total = [...kills.values()].reduce((a, b) => a + b, 0);
-  console.log(`  ${MAPS[map].name.padEnd(10)} ${String(total).padStart(5)} kills  ${WEAPON_IDS.map((id) => `${id} ${pct(kills.get(WEAPONS[id].name) ?? 0, total)}`).join('  ')}`);
+  console.log(`  ${MAPS[map].name.padEnd(10)} ${String(total).padStart(5)} kills  ${WEAPON_IDS.map((id) => `${id} ${pct(kills.get(GUNS[id].name) ?? 0, total)}`).join('  ')}`);
 }
 console.log('\ndeaths per life started, by armor');
 for (const a of ARMOR_IDS) console.log(`  ${a.padEnd(8)} ${pct(deathsByArmor.get(a) ?? 0, livesByArmor.get(a) ?? 0)} of ${livesByArmor.get(a) ?? 0} lives`);

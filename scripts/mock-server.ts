@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type ModeId, type Tier } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, PERK_TIERS, GUNS, WORLD, type AbilityId, type ModeId, type Tier } from '../src/shared/defs.ts';
 import {
   parseClientMsg, type BulletView, type GameEvent, type InputState, type Loadout, type PlayerView, type ServerMsg,
   type Snapshot, type ThrownView, type WallView, type ZoneView,
@@ -68,7 +68,7 @@ function makeWorld(mode: ModeId) {
   const bots: Bot[] = Array.from({ length: 6 }, (_, i): Bot => ({
     id: 100 + i, name: ['Ash', 'Birch', 'Cedar', 'Dune', 'Ember', 'Frost'][i]!, x: 0, y: 0, angle: 0,
     hp: 100, maxHp: 100, armor: 30 * (i % 4), maxArmor: 30 * (i % 4),
-    color: (['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const)[i]!, weapon: (['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const)[i]!,
+    color: (['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const)[i]!, gun: (['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const)[i]!,
     team: teams ? (i % 2 ? 'blue' : 'red') : null, alive: true, hidden: i === 4, shield: i === 2, dashing: false,
     score: 50 * i, level: 1, armorTier: ARMOR_IDS[i % 4]!, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
   }));
@@ -111,7 +111,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       case 'join':
         loadout = msg.loadout;
         name = msg.name;
-        me.ammo = WEAPONS[loadout.weapon].mag;
+        me.ammo = GUNS[loadout.weapon].mag;
         out({ t: 'welcome', id: myId, mode, worldSize: SIZE, walls: w.walls, account: msg.token?.startsWith('mock-') ? msg.token.slice('mock-'.length) : null });
         out({ t: 'chat', from: 'Ash', text: 'gl hf', team: w.bots[0]!.team });
         return;
@@ -123,7 +123,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         pendingTier = null;
         return;
       case 'respawn':
-        if (!me.alive && Date.now() >= me.respawnAt) { loadout = msg.loadout; Object.assign(me, { alive: true, hp: 100, x: 1500, y: 1350, ammo: WEAPONS[loadout.weapon].mag }); }
+        if (!me.alive && Date.now() >= me.respawnAt) { loadout = msg.loadout; Object.assign(me, { alive: true, hp: 100, x: 1500, y: 1350, ammo: GUNS[loadout.weapon].mag }); }
         return;
       case 'chat': {
         const cmd = msg.text;
@@ -141,7 +141,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     if (!loadout) return;
     const now = Date.now();
     w.tick++;
-    const weapon = WEAPONS[loadout.weapon];
+    const weapon = GUNS[loadout.weapon];
     const speed = WORLD.baseSpeed * ARMORS[loadout.armor].speedMul * weapon.moveMul * (me.dashUntil > now ? 2.4 : 1);
     if (me.alive && input) {
       const dx = Number(input.right) - Number(input.left);
@@ -211,7 +211,7 @@ function serve(ws: WebSocket, mode: ModeId) {
 
     const selfView: PlayerView = {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,
-      armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, weapon: loadout.weapon,
+      armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, gun: loadout.weapon,
       team: mode === 'FFA' ? null : 'red', alive: me.alive, hidden: false, shield: perks[2] === 'shield', dashing: me.dashUntil > now,
       score: me.score, level: 1, armorTier: loadout.armor,
     };

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10]
-import { PERK_TIERS, WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { PERK_TIERS, GUNS, WORLD } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
@@ -50,14 +50,14 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
     }
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
     const vel = next.seen?.id === enemy.id ? { x: enemy.x - next.seen.x, y: enemy.y - next.seen.y } : { x: 0, y: 0 };
-    const flightTicks = (d / WEAPONS[me.weapon].bulletSpeed) * WORLD.tickHz * HUMAN_LEAD;
+    const flightTicks = (d / GUNS[me.gun].bulletSpeed) * WORLD.tickHz * HUMAN_LEAD;
     const bearing = Math.atan2(enemy.y - me.y, enemy.x - me.x);
     const angularSpeed = next.seen?.id === enemy.id ? Math.abs(Math.atan2(Math.sin(bearing - Math.atan2(next.seen.y - me.y, next.seen.x - me.x)), Math.cos(bearing - Math.atan2(next.seen.y - me.y, next.seen.x - me.x)))) * WORLD.tickHz : 0;
     const sigma = HUMAN_AIM_SIGMA + HUMAN_AIM_SIGMA_PER_RAD_PER_SEC * angularSpeed;
     next.aimErr = next.aimErr * HUMAN_AIM_CORRELATION + Math.sqrt(1 - HUMAN_AIM_CORRELATION ** 2) * sigma * gaussian(r);
     angle = Math.atan2(enemy.y + vel.y * flightTicks - me.y, enemy.x + vel.x * flightTicks - me.x) + next.aimErr;
     aimDist = d;
-    fire = snap.tick >= next.fireAtTick && d < WEAPONS[me.weapon].range * 0.95;
+    fire = snap.tick >= next.fireAtTick && d < GUNS[me.gun].range * 0.95;
     moveAngle = Math.atan2(enemy.y - me.y, enemy.x - me.x) + (Math.PI / 2) * next.strafe;
   } else {
     next.target = null;

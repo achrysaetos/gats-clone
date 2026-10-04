@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITY_COOLDOWN_MS, ARMORS, WEAPONS, WORLD } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePerk } from '../src/shared/sim/stats.ts';
@@ -9,7 +9,7 @@ import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/se
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
-const PISTOL_DMG = WEAPONS.pistol.damage;
+const PISTOL_DMG = GUNS.pistol.damage;
 
 test('armor absorbs its tier\'s share of a hit and depletes', () => {
   const w = emptyWorld();
@@ -79,9 +79,9 @@ test('kills award killScore and unlock perk tiers at thresholds', () => {
 test('extended mag enlarges the magazine', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  assert.equal(snapshotFor(w, a.id).self.mag, WEAPONS.pistol.mag);
+  assert.equal(snapshotFor(w, a.id).self.mag, GUNS.pistol.mag);
   grantPerks(w, a, ['extended']);
-  assert.equal(snapshotFor(w, a.id).self.mag, Math.round(WEAPONS.pistol.mag * 1.5));
+  assert.equal(snapshotFor(w, a.id).self.mag, Math.round(GUNS.pistol.mag * 1.5));
 });
 
 test('lightweight moves 10% faster', () => {
@@ -330,7 +330,7 @@ test('snapshots report the armor tier picked and how far through a reload the pl
   press(w, p, { fire: true, shots: p.input.shots + 1 });
   step(w, 1000 / 30);
   press(w, p, { reload: true });
-  for (let t = 0; t < WEAPONS.lmg.reloadMs / 2; t += 1000 / 30) step(w, 1000 / 30);
+  for (let t = 0; t < GUNS.lmg.reloadMs / 2; t += 1000 / 30) step(w, 1000 / 30);
   const frac = snapshotFor(w, p.id).self.reloadFrac;
   assert.ok(frac > 0.4 && frac < 0.6, `halfway through the reload reads about 0.5, got ${frac}`);
 });

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WEAPONS } from '../src/shared/defs.ts';
+import { GUNS } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { respawn, step } from '../src/shared/sim.ts';
 import { emptyWorld, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -14,7 +14,7 @@ test('presses released before the next input sample still fire on a semi-auto we
   const start = ammoOf(p);
   for (let i = 1; i <= 6; i++) {
     press(w, p, { fire: false, shots: i });
-    run(w, WEAPONS.pistol.fireMs + 20);
+    run(w, GUNS.pistol.fireMs + 20);
   }
   assert.equal(start - ammoOf(p), 6, 'every tap spaced past the cooldown fires');
 });
@@ -24,7 +24,7 @@ test('six presses inside one sample on a ready semi-auto fire exactly the one sh
   const p = spawnAt(w, 500, 500);
   const start = ammoOf(p);
   press(w, p, { fire: false, shots: 6 });
-  run(w, WEAPONS.pistol.fireMs - 10);
+  run(w, GUNS.pistol.fireMs - 10);
   assert.equal(start - ammoOf(p), 1);
   run(w, 1000);
   assert.equal(start - ammoOf(p), 1, 'stale presses do not fire later on their own');
@@ -36,7 +36,7 @@ test('a press landing just before the cooldown ends fires as soon as the weapon 
   const start = ammoOf(p);
   press(w, p, { shots: 1 });
   step(w, TICK_MS);
-  run(w, WEAPONS.pistol.fireMs - 2 * TICK_MS);
+  run(w, GUNS.pistol.fireMs - 2 * TICK_MS);
   press(w, p, { shots: 2 });
   run(w, 3 * TICK_MS);
   assert.equal(start - ammoOf(p), 2);
@@ -50,7 +50,7 @@ test('a tap on an automatic weapon fires one shot; holding keeps firing', () => 
   run(w, 300);
   assert.equal(start - ammoOf(p), 1);
   press(w, p, { fire: true, shots: 2 });
-  run(w, 10 * WEAPONS.smg.fireMs);
+  run(w, 10 * GUNS.smg.fireMs);
   assert.ok(start - ammoOf(p) >= 9, `held fire kept shooting (${start - ammoOf(p)} shots)`);
 });
 

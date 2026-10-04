@@ -1,4 +1,4 @@
-import { ARMOR_IDS, COLOR_IDS, PERK_TIERS, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, PERK_TIERS, WEAPON_IDS, WORLD, type PerkId, type Tier } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
@@ -58,7 +58,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   next.lastY = me.y;
 
   const enemy = nearestVisibleEnemy(me, snap.players, walls, snap.self.viewRadius);
-  const weapon = WEAPONS[me.weapon];
+  const weapon = GUNS[me.gun];
   const range = weapon.range;
   let goX = next.targetX, goY = next.targetY;
   let angle = Math.atan2(goY - me.y, goX - me.x);

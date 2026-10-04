@@ -5,7 +5,7 @@ import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes } from './effects.ts';
 import { NUMBER_MS, type DamageNumber } from './feedback.ts';
 import { ARMOR_BAND, INK, PALETTE, shade, TEAM_COLORS, teamColor } from './palette.ts';
-import { drawGun, GRIPS } from './sprites.ts';
+import { drawGun, gripsOf } from './sprites.ts';
 import type { Session } from './state.ts';
 import { crateDamage, crateSprite, floorCracks, PLAYER_SHADOW, SLAB, slabLevels, WALL_SHADOW } from './textures.ts';
 
@@ -415,7 +415,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.stroke();
   }
   ctx.rotate(p.angle);
-  drawGun(ctx, p.weapon, R);
+  drawGun(ctx, p.gun, R);
   ctx.rotate(-p.angle);
   const band = ARMOR_BAND[p.armorTier];
   ctx.beginPath();
@@ -454,7 +454,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   }
   ctx.rotate(p.angle);
   ctx.beginPath();
-  for (const [hx, hy] of GRIPS[p.weapon]) {
+  for (const [hx, hy] of gripsOf(p.gun)) {
     ctx.moveTo(hx * R + HAND_R, hy * R);
     ctx.arc(hx * R, hy * R, HAND_R, 0, TAU);
   }

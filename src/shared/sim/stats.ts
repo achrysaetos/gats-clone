@@ -1,4 +1,4 @@
-import { ARMORS, HP_MULTIPLIER, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type PerkId, type Tier } from '../defs.ts';
+import { ARMORS, HP_MULTIPLIER, GUNS, LEVEL_SCORES, PERK_TIERS, WORLD, type AbilityId, type PerkId, type Tier } from '../defs.ts';
 import type { PerkOfTier, Player, World } from './world.ts';
 
 type PerkMods = {
@@ -30,7 +30,7 @@ type Stats = {
 };
 
 export function effectiveStats(p: Player, still = false): Stats {
-  const weapon = WEAPONS[p.loadout.weapon];
+  const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
   const s: Stats = {
     speed: WORLD.baseSpeed * weapon.moveMul * armor.speedMul,
@@ -83,6 +83,7 @@ export function resetProgress(p: Player) {
   p.score = 0;
   p.level = 0;
   p.perks = {};
+  p.gun = p.loadout.weapon;
   p.abilityReadyAt = 0;
   if (p.life.k !== 'alive') return;
   const s = effectiveStats(p);

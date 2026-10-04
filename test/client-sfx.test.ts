@@ -6,7 +6,7 @@ import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/pr
 
 const ME = 'Me';
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
-  id, name: id === 1 ? ME : `p${id}`, x: 100 * id, y: 0, angle: 0, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', weapon: 'pistol',
+  id, name: id === 1 ? ME : `p${id}`, x: 100 * id, y: 0, angle: 0, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', gun: 'pistol',
   team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none', ...over,
 });
 
@@ -38,8 +38,8 @@ test('hurt plays on damage, including armor-absorbed hits, and never on regen or
 });
 
 test('a shot sounds like the shooter\'s weapon and is flagged self only for your own shots', () => {
-  const players = [player(2, { weapon: 'sniper' })];
-  const shots = soundsFor(null, snap({ players, me: { weapon: 'smg' }, events: [
+  const players = [player(2, { gun: 'sniper' })];
+  const shots = soundsFor(null, snap({ players, me: { gun: 'smg' }, events: [
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: false, owner: 2 },
     { e: 'shot', x: 100, y: 0, angle: 0, silenced: false, owner: 1 },
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2 },

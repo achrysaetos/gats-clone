@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, PERK_INFO, WEAPON_IDS, WEAPONS, WORLD, type PerkId, type Tier, type WeaponId } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, LEVEL_SCORES, GUN_IDS, GUNS, PERK_INFO, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { feedMentions, levelProgress, mapNotice, objectiveFor } from './derive.ts';
@@ -23,7 +23,7 @@ const HURT_BANDS = 12;
 
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number };
 
-const WEAPON_BY_NAME = new Map<string, WeaponId>(WEAPON_IDS.map((id) => [WEAPONS[id].name, id]));
+const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((id) => [GUNS[id].name, id]));
 const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id, info]) => [info.name, id as PerkId]));
 
 export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
@@ -153,11 +153,11 @@ function caps(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, co
 const FEED_ICON_W = 34;
 
 function drawFeedWeapon(ctx: CanvasRenderingContext2D, label: string, x: number, y: number): number {
-  const weapon = WEAPON_BY_NAME.get(label);
-  if (weapon) {
+  const gun = GUN_BY_NAME.get(label);
+  if (gun) {
     ctx.save();
     ctx.translate(x - 4, y);
-    drawGun(ctx, weapon, 10, MUTED);
+    drawGun(ctx, gun, 10, MUTED);
     ctx.restore();
     return FEED_ICON_W;
   }
@@ -178,7 +178,7 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
     setFont(ctx, 700, TYPE.body);
     const kw = f.killer ? ctx.measureText(f.killer).width : 0;
     const vw = ctx.measureText(f.victim).width;
-    const ww = WEAPON_BY_NAME.has(f.weapon) ? FEED_ICON_W : 40;
+    const ww = GUN_BY_NAME.has(f.weapon) ? FEED_ICON_W : 40;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
     const mine = feedMentions(f, s.myId);
     panel(ctx, 12, y - 12, kw + vw + ww + SPACE.lg * 2, 24, mine ? PALETTE.gold : undefined);
@@ -331,9 +331,9 @@ function drawVitals({ ctx, w, h, snap, me }: Hud) {
 
   ctx.save();
   ctx.translate(x + 10, y + 62);
-  drawGun(ctx, me.weapon, 11, MUTED);
+  drawGun(ctx, me.gun, 11, MUTED);
   ctx.restore();
-  caps(ctx, WEAPONS[me.weapon].name, x + 46, y + 62);
+  caps(ctx, GUNS[me.gun].name, x + 46, y + 62);
   const ammoRight = barX + barW;
   if (self.reloading) {
     text(ctx, 'Reloading', ammoRight, y + 56, TYPE.label, PALETTE.gold, 'right', 800);

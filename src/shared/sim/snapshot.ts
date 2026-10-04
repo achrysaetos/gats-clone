@@ -1,4 +1,4 @@
-import { WEAPONS, WORLD } from '../defs.ts';
+import { GUNS, WORLD } from '../defs.ts';
 import type {
   BulletView, CrateView, GameEvent, LeaderRow, MatchView, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
 } from '../protocol.ts';
@@ -28,7 +28,7 @@ function playerView(w: World, p: Player): PlayerView {
     id: p.id, name: p.name, x: p.x, y: p.y, angle: p.angle,
     hp: alive ? Math.ceil(life.hp) : 0, maxHp: stats.maxHp,
     armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
-    color: p.loadout.color, weapon: p.loadout.weapon, team: p.team,
+    color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor,
   };
@@ -45,7 +45,7 @@ function selfView(w: World, p: Player): SelfView {
     speed: stats.speed,
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
-      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / WEAPONS[p.loadout.weapon].reloadMs))
+      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / GUNS[p.gun].reloadMs))
       : 0,
     perks: { ...p.perks },
     pendingTier: pendingTier(p),
