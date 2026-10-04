@@ -56,7 +56,7 @@ function selfView(w: World, p: Player): SelfView {
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
     dash: life.k === 'alive' ? life.dash : null,
-    respawnIn: life.k === 'dead' ? Math.max(0, life.respawnAt - w.now) : 0,
+    respawnIn: life.k === 'dead' ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,
     deaths: p.deaths,
     viewRadius: stats.viewRadius,
