@@ -29,8 +29,7 @@ test('a bot never takes a perk that does nothing for a bot', () => {
   }
 });
 
-test('a sniper bot favors optics more than an smg bot does', () => {
-  const sniper = tierOnePicks('sniper', 300).get('optics') ?? 0;
-  const smg = tierOnePicks('smg', 300).get('optics') ?? 0;
-  assert.ok(sniper > 2 * smg, `sniper took optics ${sniper} times, smg ${smg}`);
+test('a bolt-action bot never takes grip, which an smg bot does', () => {
+  assert.equal(tierOnePicks('sniper', 300).get('grip') ?? 0, 0, 'sniper took grip');
+  assert.ok((tierOnePicks('smg', 300).get('grip') ?? 0) > 0, 'smg never took grip');
 });

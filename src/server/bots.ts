@@ -49,15 +49,11 @@ type BotDecision = { input: InputState; pick: { level: number; option: PickOptio
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
 /**
- * How much a bot wants each perk; unlisted perks and every evolution weigh 1.
- * Bots never stand still, so bipod and ghillie do nothing for them, and they only fire inside their gun's base range, so long range does nothing either.
+ * Perks that do nothing for a bot, which every other perk and every evolution outweighs.
+ * Bots never stand still, so bipod and ghillie never apply; they fire only inside their gun's base range, so long range never helps; a bolt-action barely spreads, so grip is wasted on it.
  */
-const PERK_WEIGHT: Partial<Record<PerkId, number>> = { bipod: 0, ghillie: 0, longRange: 0, optics: 0.5 };
-const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = {
-  sniper: { optics: 3, grip: 0 },
-  smg: { grip: 2 },
-  lmg: { grip: 2 },
-};
+const PERK_WEIGHT: Partial<Record<PerkId, number>> = { bipod: 0, ghillie: 0, longRange: 0 };
+const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { sniper: { grip: 0 } };
 
 function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {
   const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : 1);
