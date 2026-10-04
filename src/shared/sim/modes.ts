@@ -23,9 +23,13 @@ function smallerTeam(w: World): Team {
   return red <= blue ? 'red' : 'blue';
 }
 
-function topKiller(w: World): Player | null {
+/** Most kills, then fewest deaths, among players with at least one kill. */
+function topKiller(w: World, eligible: (p: Player) => boolean = () => true): Player | null {
   let top: Player | null = null;
-  for (const p of w.players.values()) if (p.kills > (top?.kills ?? 0)) top = p;
+  for (const p of w.players.values()) {
+    if (p.kills === 0 || !eligible(p)) continue;
+    if (!top || p.kills > top.kills || (p.kills === top.kills && p.deaths < top.deaths)) top = p;
+  }
   return top;
 }
 
@@ -70,9 +74,11 @@ export const MODES: Record<ModeId, ModeRules> = {
     assignTeam: () => null,
     onKill: () => {},
     tick: () => {},
+    // Bots out-kill humans, so a bot reaching the target would end most rounds before a person could; bots win only on the timer.
     winner: (w) => {
-      const top = topKiller(w);
-      return top && (top.kills >= WORLD.ffaWinKills || w.now >= w.mapChangeAt) ? top.name : null;
+      const human = topKiller(w, (p) => p.kind === 'human');
+      if (human && human.kills >= WORLD.ffaWinKills) return human.name;
+      return w.now >= w.mapChangeAt ? topKiller(w)?.name ?? null : null;
     },
   },
   TDM: {

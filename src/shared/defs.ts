@@ -232,7 +232,7 @@ export const WORLD = {
   respawnMs: 3000,
   domWinScore: 1000,
   tdmWinScore: 50,
-  /** The top bot in a full FFA room reaches this in about 4 minutes (median of 8 bench worlds at 3.8 kills per bot per minute), inside the 8-minute map timer. */
+  /** A human who reaches this ends the FFA round early; otherwise the round runs until MAP_MS.FFA and the top killer, bot or human, wins. */
   ffaWinKills: 20,
   roundRestartMs: 8000,
   minPlayers: 10,

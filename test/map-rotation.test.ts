@@ -63,11 +63,12 @@ test('FFA announces the next map, then loads it on a timer and moves everyone in
   assertStandingInSpawns(w, second);
 });
 
-test('FFA: the first to the kill target wins the round, and the next round starts on the next map with kills reset', () => {
+test('FFA: the first human to the kill target wins the round, and the next round starts on the next map with kills reset', () => {
   const [first, second] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);
   populate(w);
-  const [leader, viewer] = [...w.players.values()];
+  const viewer = [...w.players.values()][0];
+  const leader = addPlayer(w, 'Human', PISTOL, { kind: 'human' });
   leader!.kills = WORLD.ffaWinKills - 1;
   viewer!.score = 500;
   run(w, TICK_MS);
@@ -81,6 +82,29 @@ test('FFA: the first to the kill target wins the round, and the next round start
   run(w, WORLD.roundRestartMs + 100);
   assert.deepEqual([w.match.k, w.map, leader!.kills], ['playing', second, 0]);
   assertStandingInSpawns(w, second);
+});
+
+test('FFA: a bot at the kill target does not end the round', () => {
+  const w = createWorld('FFA', 1, ROTATION.FFA[0]);
+  populate(w);
+  const bot = [...w.players.values()][0]!;
+  bot.kills = WORLD.ffaWinKills + 5;
+  run(w, MAP_MS.FFA - 1000);
+  assert.equal(w.match.k, 'playing', 'the round runs to the timer');
+  run(w, 1000 + TICK_MS);
+  assert.equal(snapshotFor(w, bot.id).match.winner, bot.name, 'the bot wins on the timer');
+});
+
+test('FFA: a timer finish with tied kills goes to the player with fewer deaths', () => {
+  const w = createWorld('FFA', 1, ROTATION.FFA[0]);
+  populate(w);
+  const [a, b] = [...w.players.values()];
+  a!.kills = 6;
+  a!.deaths = 4;
+  b!.kills = 6;
+  b!.deaths = 2;
+  run(w, MAP_MS.FFA + TICK_MS);
+  assert.equal(snapshotFor(w, b!.id).match.winner, b!.name);
 });
 
 test('FFA: when the map timer runs out, the player with the most kills wins the round', () => {

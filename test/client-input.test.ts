@@ -81,7 +81,7 @@ test('killer lookup and kill-feed highlight go by player id, so same-named playe
 });
 
 test('the objective names the mode, your team and the win condition from WORLD', () => {
-  assert.equal(objectiveFor('FFA', null).banner, `Free for all: first to ${WORLD.ffaWinKills} kills`);
+  assert.equal(objectiveFor('FFA', null).banner, `Free for all: most kills in 6:00 · first player to ${WORLD.ffaWinKills} ends it`);
   assert.equal(objectiveFor('TDM', 'red').banner, `Team Deathmatch: you are RED, first to ${WORLD.tdmWinScore} kills`);
   assert.equal(objectiveFor('DOM', 'blue').banner, `Domination: you are BLUE, hold A B C, first to ${WORLD.domWinScore}`);
   assert.equal(objectiveFor('TDM', 'blue').line, `TDM · Blue team · first to ${WORLD.tdmWinScore} kills`);

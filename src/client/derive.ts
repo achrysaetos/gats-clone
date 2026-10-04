@@ -1,4 +1,5 @@
 import { GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type ModeId, type PerkId, type Tier } from '../shared/defs.ts';
+import { MAP_MS } from '../shared/maps.ts';
 import { rankRows, type GameEvent, type LeaderRow, type MatchView, type PlayerView, type Snapshot, type Team } from '../shared/protocol.ts';
 import type { ClientState } from './state.ts';
 
@@ -42,12 +43,15 @@ export const feedMentions = (kill: { killerId: number | null; victimId: number }
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 
+const clock = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+export const FFA_GOAL = `Most kills in ${clock(MAP_MS.FFA)} · first player to ${WORLD.ffaWinKills} ends it`;
+
 export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: string } {
   const side = team ?? 'no';
   const Side = side[0]!.toUpperCase() + side.slice(1);
   switch (mode) {
     case 'FFA':
-      return { banner: `Free for all: first to ${WORLD.ffaWinKills} kills`, line: `FFA · first to ${WORLD.ffaWinKills} kills` };
+      return { banner: `Free for all: ${FFA_GOAL.toLowerCase()}`, line: `FFA · ${FFA_GOAL.toLowerCase()}` };
     case 'TDM':
       return {
         banner: `Team Deathmatch: you are ${side.toUpperCase()}, first to ${WORLD.tdmWinScore} kills`,

@@ -2,7 +2,7 @@ import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
-import { clearOfRects, edgePoint, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers, type Rect } from './derive.ts';
+import { clearOfRects, edgePoint, FFA_GOAL, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
@@ -387,7 +387,7 @@ function drawLeaderboard(hud: Hud, compact: boolean) {
     text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
     y += 30;
   } else {
-    text(ctx, `First to ${WORLD.ffaWinKills} kills`, x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
+    text(ctx, FFA_GOAL, x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
     y += 18;
   }
   rows.forEach((r, i) => {
