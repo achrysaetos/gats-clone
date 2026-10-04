@@ -111,14 +111,14 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
     if (!isPerkOfTier(pending.tier, option)) return false;
     const before = effectiveStats(p).maxHp;
     setPerk(p.perks, pending.tier, option);
-    p.life.hp += effectiveStats(p).maxHp - before;
+    p.life.hp *= effectiveStats(p).maxHp / before;
     return true;
   }
   const gun = GUN_IDS.find((g) => g === option);
   if (!gun) return false;
+  const oldMag = effectiveStats(p).mag;
   p.gun = gun;
-  p.life.ammo = effectiveStats(p).mag;
-  p.life.reloadUntil = null;
+  p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
   if (isHunted(p)) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
   return true;

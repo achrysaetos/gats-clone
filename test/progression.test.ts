@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
+import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
@@ -67,18 +68,45 @@ test('a stale, duplicate or foreign pick changes nothing', () => {
   assert.equal(pendingOf(w, a), null);
 });
 
-test('evolving swaps in the new gun with its own stats and a full magazine', () => {
+test('evolving swaps in the new gun with its own stats and keeps the loaded share of the magazine', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const target = spawnAt(w, 750, 500);
   a.level = 2;
-  shootOnce(w, a, Math.PI);
+  for (let i = 0; i < 6; i++) shootOnce(w, a, Math.PI, GUNS.pistol.fireMs);
   assert.ok(choosePick(w, a.id, 1, 'grip'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   const self = snapshotFor(w, a.id).self;
-  assert.deepEqual([self.ammo, self.mag], [GUNS.handCannon.mag, GUNS.handCannon.mag]);
+  assert.deepEqual([self.ammo, self.mag], [GUNS.handCannon.mag / 2, GUNS.handCannon.mag], 'half a pistol magazine becomes half a hand cannon magazine');
   shootOnce(w, a, 0);
   assert.equal(WORLD.baseHp - hpOf(target), GUNS.handCannon.damage);
+});
+
+test('evolving during a reload neither finishes nor cancels it', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  a.level = 2;
+  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  shootOnce(w, a, 0, GUNS.pistol.fireMs);
+  press(w, a, { reload: true });
+  step(w, TICK_MS);
+  press(w, a, {});
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  const mid = snapshotFor(w, a.id).self;
+  assert.deepEqual([mid.reloading, mid.ammo], [true, Math.round((GUNS.handCannon.mag * (GUNS.pistol.mag - 1)) / GUNS.pistol.mag)]);
+  run(w, GUNS.pistol.reloadMs + 100);
+  assert.deepEqual([snapshotFor(w, a.id).self.reloading, snapshotFor(w, a.id).self.ammo], [false, GUNS.handCannon.mag], 'the reload completes into the new magazine');
+});
+
+test('a max-health perk keeps the share of health you had, not a free heal', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  a.level = 3;
+  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  if (a.life.k === 'alive') a.life.hp = WORLD.baseHp / 2;
+  assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
+  assert.equal(hpOf(a), (WORLD.baseHp + 30) / 2);
 });
 
 test('score is multiplied while your level trails the other living players\' average, and never when alone', () => {
