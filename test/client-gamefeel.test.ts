@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
-import { aimSpread, deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
+import { deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
+import { spreadFor } from '../src/shared/sim/stats.ts';
 import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, NO_MOMENTS } from '../src/client/moments.ts';
 import { approachAlpha, drawHud, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
@@ -160,11 +161,11 @@ test('while you wait to respawn, your killer wears a red ring', () => {
 });
 
 test('the reticle spread follows the gun, Grip always, and Bipod only while standing still', () => {
-  assert.equal(aimSpread('smg', {}, false), GUNS.smg.spread);
-  assert.ok(Math.abs(aimSpread('smg', { 2: 'grip' }, false) - GUNS.smg.spread * 0.6) < 1e-12, 'grip narrows it');
-  assert.equal(aimSpread('smg', { 1: 'bipod' }, false), GUNS.smg.spread, 'bipod does nothing on the move');
-  assert.ok(Math.abs(aimSpread('smg', { 1: 'bipod' }, true) - GUNS.smg.spread * 0.5) < 1e-12, 'bipod halves it standing still');
-  assert.ok(aimSpread('shotgun', {}, true) > aimSpread('sniper', {}, true), 'a shotgun reticle is wider than a sniper\'s');
+  assert.equal(spreadFor('smg', {}, false), GUNS.smg.spread);
+  assert.ok(Math.abs(spreadFor('smg', { 2: 'grip' }, false) - GUNS.smg.spread * 0.6) < 1e-12, 'grip narrows it');
+  assert.equal(spreadFor('smg', { 1: 'bipod' }, false), GUNS.smg.spread, 'bipod does nothing on the move');
+  assert.ok(Math.abs(spreadFor('smg', { 1: 'bipod' }, true) - GUNS.smg.spread * 0.5) < 1e-12, 'bipod halves it standing still');
+  assert.ok(spreadFor('shotgun', {}, true) > spreadFor('sniper', {}, true), 'a shotgun reticle is wider than a sniper\'s');
 });
 
 test('the reticle opens with the spread cone at the cursor distance, within readable bounds', () => {

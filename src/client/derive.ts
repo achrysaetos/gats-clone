@@ -61,18 +61,8 @@ export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: 
   }
 }
 
-/** Mirrors the spread perks in src/shared/sim/stats.ts, which keeps its table private; SelfView carries no spread. */
-const SPREAD_PERKS: Partial<Record<PerkId, { always?: number; still?: number }>> = { grip: { always: 0.6 }, bipod: { still: 0.5 } };
 
 /** The half-angle, in radians, a shot can stray from the aim right now. */
-export function aimSpread(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean): number {
-  let spread = GUNS[gun].spread;
-  for (const perk of Object.values(perks)) {
-    const m = SPREAD_PERKS[perk];
-    spread *= (m?.always ?? 1) * (still ? m?.still ?? 1 : 1);
-  }
-  return spread;
-}
 
 type Pt = { x: number; y: number };
 

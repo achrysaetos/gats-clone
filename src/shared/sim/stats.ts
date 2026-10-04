@@ -1,5 +1,5 @@
 import {
-  ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type PendingPick, type PerkId, type PickOption, type Tier,
+  ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type GunId, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import type { Life, PerkOfTier, Player, World } from './world.ts';
 
@@ -31,6 +31,13 @@ type Stats = {
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
+/** Spread after Grip and Bipod; the client's reticle reads the same numbers. */
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean): number {
+  let spread = GUNS[gun].spread;
+  for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (still ? PERK_MODS[perk].stillSpreadMul ?? 1 : 1);
+  return spread;
+}
+
 export function effectiveStats(p: Player, still = false): Stats {
   const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
@@ -40,7 +47,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     maxArmor: armor.points,
     mag: weapon.mag,
     range: weapon.range,
-    spread: weapon.spread,
+    spread: spreadFor(p.gun, p.perks, still),
     regenPerSec: WORLD.regenPerSec,
     regenDelayMs: WORLD.regenDelayMs,
     viewRadius: WORLD.viewRadius,
@@ -48,8 +55,6 @@ export function effectiveStats(p: Player, still = false): Stats {
   };
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
-    s.spread *= m.spreadMul ?? 1;
-    if (still) s.spread *= m.stillSpreadMul ?? 1;
     s.mag = Math.round(s.mag * (m.magMul ?? 1));
     s.range *= m.rangeMul ?? 1;
     s.speed *= m.speedMul ?? 1;

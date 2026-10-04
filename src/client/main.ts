@@ -5,7 +5,8 @@ import { fetchServers, loadLoadout, loadMuted, loadName, saveLoadout, saveMuted,
 import { toggleMute } from './chatmute.ts';
 import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { aimSpread, killOf, lossOf, selfOf } from './derive.ts';
+import { killOf, lossOf, selfOf } from './derive.ts';
+import { spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
 import { drawHud, drawSticks } from './hud.ts';
@@ -385,7 +386,7 @@ function drawFrame(now: number) {
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId });
   const moving = MOVES.some((a) => held.has(a));
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive ? aimSpread(me.gun, snap.self.perks, !moving) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive ? spreadFor(me.gun, snap.self.perks, !moving) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
