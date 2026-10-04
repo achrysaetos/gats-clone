@@ -13,7 +13,7 @@ function squadOf(w: World) {
 
 export const zombieMaxHp = (kind: ZombieKind, night: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp;
 
-export function statsFor(run: Run, p: Player): RunStats {
+function statsFor(run: Run, p: Player): RunStats {
   let s = run.stats.get(p.id);
   if (!s) run.stats.set(p.id, (s = { name: p.name, kills: 0, revives: 0, built: 0 }));
   return s;

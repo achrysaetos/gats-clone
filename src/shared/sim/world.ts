@@ -89,7 +89,7 @@ export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: n
 /** A wall the squad built, filling grid cell (`cx`, `cy`). */
 export type Building = { id: number; kind: BuildingKind; cx: number; cy: number; hp: number };
 
-export type RunPhase =
+type RunPhase =
   | { k: 'day'; endsAt: number }
   /** Ends once `toSpawn` is empty and every zombie is dead. */
   | { k: 'night'; toSpawn: ZombieKind[]; nextSpawnAt: number }
@@ -98,7 +98,7 @@ export type RunPhase =
 export type RunStats = { name: string; kills: number; revives: number; built: number };
 
 /** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
-export type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
+type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
 
 /** One zombies run, from the first dawn to the core's fall. */
 export type Run = {

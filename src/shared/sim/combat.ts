@@ -25,7 +25,7 @@ const SELF_KILL_CREDIT_MS = 10_000;
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
 type Culprit = { attacker: Player | null; team: Team; label: string };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
-export type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number };
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k !== 'alive' || w.match.k === 'over') return;

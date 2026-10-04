@@ -4,13 +4,13 @@ import { clamp, dist2, rectsOverlap, segmentEntersRectAt, slide, type Rect } fro
 import { cellRect, coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
 /** Cells per side of the grid the flow field and the squad's walls share. */
-export const GRID = WORLD.size / ZOM.cell;
+const GRID = WORLD.size / ZOM.cell;
 const UNREACHABLE = 0xffff;
 const ORTH = 10, DIAG = 14;
 const WALL_COST = ZOM.wallCostCells * ORTH;
 const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 
-export const cellAt = (x: number, y: number) =>
+const cellAt = (x: number, y: number) =>
   clamp(Math.floor(y / ZOM.cell), 0, GRID - 1) * GRID + clamp(Math.floor(x / ZOM.cell), 0, GRID - 1);
 
 function cellsUnder(r: Rect, mark: (c: number) => void) {
@@ -84,7 +84,7 @@ function buildFlow(w: World, core: Rect): Uint16Array {
   }
 }
 
-export function flowFor(w: World, run: Run, core: Rect): Uint16Array {
+function flowFor(w: World, run: Run, core: Rect): Uint16Array {
   const f = run.flow;
   if (f && f.wallsVersion === w.wallsVersion && f.buildingsVersion === w.buildingsVersion) return f.cost;
   run.flow = { wallsVersion: w.wallsVersion, buildingsVersion: w.buildingsVersion, cost: buildFlow(w, core) };
