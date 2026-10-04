@@ -185,6 +185,29 @@ test('DOM zone capture scores for the team, declares a winner, then resets', () 
   assert.ok(after.teamScore.red < 10, `scores reset (${after.teamScore.red})`);
 });
 
+test("DOM: an owner standing alone drains an attacker's partial capture, and a held zone turns neutral before it flips", () => {
+  const w = emptyWorld('DOM');
+  const zone = w.zones[0]!;
+  zone.owner = 'red';
+  const attacker = spawnAt(w, zone.x, zone.y, { team: 'blue' });
+  run(w, 1500);
+  assert.deepEqual([zone.owner, zone.capturing], ['red', 'blue']);
+  const partial = zone.progress;
+  attacker.x = zone.x + 2 * zone.r;
+  const owner = spawnAt(w, zone.x, zone.y, { team: 'red' });
+  run(w, 1000);
+  assert.ok(zone.progress < partial - 0.25, `the owner pushed the capture back (${partial.toFixed(2)} -> ${zone.progress.toFixed(2)})`);
+  run(w, 1000);
+  assert.deepEqual([zone.owner, zone.capturing, zone.progress], ['red', null, 0]);
+
+  owner.x = zone.x + 2 * zone.r;
+  attacker.x = zone.x;
+  run(w, 3100);
+  assert.deepEqual([zone.owner, zone.capturing], [null, 'blue'], 'one full capture only neutralizes');
+  run(w, 3100);
+  assert.equal(zone.owner, 'blue', 'a second takes it');
+});
+
 test('TDM team reaching tdmWinScore kills wins', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'blue' });

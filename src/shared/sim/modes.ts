@@ -3,7 +3,7 @@ import type { Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
-import { loadMap, spawnPoint, type Player, type World } from './world.ts';
+import { loadMap, spawnPoint, type Player, type World, type Zone } from './world.ts';
 
 const ZONE_CAPTURE_MS = 3000;
 const ZONE_POINTS_PER_SEC = 5;
@@ -29,6 +29,23 @@ function teamAtLeast(w: World, target: number): string | null {
   return null;
 }
 
+/** `present` is the one team standing on the zone, or null when it is empty. Another team's partial capture drains before a capture
+ * starts, and an enemy-owned zone turns neutral before it can be taken. */
+function tickZone(z: Zone, present: Team, step: number) {
+  if (!present || (z.capturing !== null && z.capturing !== present)) {
+    z.progress = Math.max(0, z.progress - step);
+    if (z.progress === 0) z.capturing = null;
+    return;
+  }
+  if (present === z.owner) return;
+  z.capturing = present;
+  z.progress += step;
+  if (z.progress < 1) return;
+  z.progress = 0;
+  z.owner = z.owner === null ? present : null;
+  if (z.owner === present) z.capturing = null;
+}
+
 function tickZones(w: World, dtMs: number) {
   for (const z of w.zones) {
     let red = 0, blue = 0;
@@ -37,14 +54,7 @@ function tickZones(w: World, dtMs: number) {
       if (p.team === 'red') red++; else if (p.team === 'blue') blue++;
     }
     const present: Team = red > 0 && blue === 0 ? 'red' : blue > 0 && red === 0 ? 'blue' : null;
-    if (present && present !== z.owner) {
-      if (z.capturing !== present) { z.capturing = present; z.progress = 0; }
-      z.progress += dtMs / ZONE_CAPTURE_MS;
-      if (z.progress >= 1) { z.owner = present; z.capturing = null; z.progress = 0; }
-    } else if (!present && red + blue === 0) {
-      z.progress = Math.max(0, z.progress - dtMs / ZONE_CAPTURE_MS);
-      if (z.progress === 0) z.capturing = null;
-    }
+    if (present || red + blue === 0) tickZone(z, present, dtMs / ZONE_CAPTURE_MS);
     if (z.owner) w.teamScore[z.owner] += (ZONE_POINTS_PER_SEC * dtMs) / 1000;
   }
 }
