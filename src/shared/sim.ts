@@ -1,7 +1,4 @@
-import {
-  ABILITY_COOLDOWN_MS, ARMORS, HP_MULTIPLIER, LEVEL_SCORES, PERK_TIERS, WEAPONS, WORLD, type AbilityId, type ModeId, type PerkId,
-  type PlayerKind, type Tier,
-} from './defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMORS, WEAPONS, WORLD, type AbilityId, type ModeId, type PlayerKind } from './defs.ts';
 import {
   VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents, type BulletView, type CrateView, type GameEvent, type InputState, type LeaderRow,
   type Loadout, type MatchView, type PlayerView, type SelfView, type Snapshot, type Team, type ThrownKind, type ThrownView,
@@ -10,9 +7,10 @@ import {
 import {
   angleDiff, circleHitsRect, clamp, dist2, MAX_SUBSTEP, moveStep, segmentEntersCircleAt, segmentEntersRectAt, startDash, type Rect,
 } from './sim/movement.ts';
+import { abilityOf, addScore, effectiveStats, pendingTier, resetProgress } from './sim/stats.ts';
 import {
-  crateRect, IDLE_INPUT, isEnemy, newId, rand, sameTeam, solidRects, type Bullet, type Crate, type Life, type PerkOfTier,
-  type Player, type Pose, type Thrown, type Wall, type World,
+  crateRect, IDLE_INPUT, isEnemy, newId, rand, sameTeam, solidRects, type Bullet, type Crate, type Life, type Player, type Pose,
+  type Thrown, type Wall, type World,
 } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
@@ -31,84 +29,6 @@ export const MAX_REWIND_MS = 350;
 const TICK_MS = 1000 / WORLD.tickHz;
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
-
-type PerkMods = {
-  spreadMul?: number; stillSpreadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
-  maxHpAdd?: number; regenMul?: number; viewMul?: number;
-  piercing?: true; silenced?: true; shield?: true; thermal?: true; ghillie?: true;
-};
-
-export const PERK_MODS: Record<PerkId, PerkMods> = {
-  bipod: { stillSpreadMul: 0.5 },
-  optics: { viewMul: 1.3 },
-  thermal: { thermal: true },
-  ghillie: { ghillie: true },
-  piercing: { piercing: true },
-  extended: { magMul: 1.5 },
-  grip: { spreadMul: 0.6 },
-  silencer: { silenced: true },
-  lightweight: { speedMul: 1.1 },
-  longRange: { rangeMul: 1.4 },
-  shield: { shield: true },
-  thickSkin: { maxHpAdd: 30 },
-  firstAid: { regenMul: 3 },
-  grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {},
-};
-
-export type Stats = {
-  speed: number; maxHp: number; maxArmor: number; mag: number; range: number; spread: number; regenPerSec: number;
-  viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
-};
-
-export function effectiveStats(p: Player, still = false): Stats {
-  const weapon = WEAPONS[p.loadout.weapon];
-  const armor = ARMORS[p.loadout.armor];
-  const s: Stats = {
-    speed: WORLD.baseSpeed * weapon.moveMul * armor.speedMul,
-    maxHp: WORLD.baseHp,
-    maxArmor: armor.points,
-    mag: weapon.mag,
-    range: weapon.range,
-    spread: weapon.spread,
-    regenPerSec: WORLD.regenPerSec,
-    viewRadius: WORLD.viewRadius,
-    piercing: false, silenced: false, shield: false, thermal: false, ghillie: false,
-  };
-  for (const perk of Object.values(p.perks)) {
-    const m = PERK_MODS[perk];
-    s.spread *= m.spreadMul ?? 1;
-    if (still) s.spread *= m.stillSpreadMul ?? 1;
-    s.mag = Math.round(s.mag * (m.magMul ?? 1));
-    s.range *= m.rangeMul ?? 1;
-    s.speed *= m.speedMul ?? 1;
-    s.maxHp += m.maxHpAdd ?? 0;
-    s.regenPerSec *= m.regenMul ?? 1;
-    s.viewRadius *= m.viewMul ?? 1;
-    s.piercing ||= m.piercing ?? false;
-    s.silenced ||= m.silenced ?? false;
-    s.shield ||= m.shield ?? false;
-    s.thermal ||= m.thermal ?? false;
-    s.ghillie ||= m.ghillie ?? false;
-  }
-  s.maxHp *= HP_MULTIPLIER[p.kind];
-  s.regenPerSec *= HP_MULTIPLIER[p.kind];
-  return s;
-}
-
-export function levelForScore(score: number): number {
-  let level = 0;
-  LEVEL_SCORES.forEach((threshold, i) => { if (score >= threshold) level = i; });
-  return level;
-}
-
-export function pendingTier(p: Player): Tier | null {
-  for (const tier of [1, 2, 3] as const) if (tier <= p.level && !p.perks[tier]) return tier;
-  return null;
-}
-
-export function abilityOf(p: Player): AbilityId | null {
-  return p.perks[3] ?? null;
-}
 
 export type ModeRules = {
   assignTeam(w: World): Team;
@@ -209,17 +129,6 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   return p;
 }
 
-function resetProgress(p: Player) {
-  p.score = 0;
-  p.level = 0;
-  p.perks = {};
-  p.abilityReadyAt = 0;
-  if (p.life.k !== 'alive') return;
-  const s = effectiveStats(p);
-  p.life.hp = Math.min(p.life.hp, s.maxHp);
-  p.life.ammo = Math.min(p.life.ammo, s.mag);
-}
-
 function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: number }) {
   p.loadout = loadout;
   resetProgress(p);
@@ -243,24 +152,6 @@ export function setInput(w: World, id: number, seq: number, input: InputState, v
   p.seq = seq;
   p.input = input;
   p.viewAt = viewAt;
-}
-
-export function choosePerk<T extends Tier>(w: World, id: number, tier: T, perk: PerkId): boolean {
-  const p = w.players.get(id);
-  if (!p || p.life.k !== 'alive' || pendingTier(p) !== tier) return false;
-  if (!isPerkOfTier(tier, perk)) return false;
-  const before = effectiveStats(p).maxHp;
-  setPerk(p.perks, tier, perk);
-  p.life.hp += effectiveStats(p).maxHp - before;
-  return true;
-}
-
-function isPerkOfTier<T extends Tier>(tier: T, perk: PerkId): perk is PerkOfTier<T> {
-  return PERK_TIERS[tier].some((candidate) => candidate === perk);
-}
-
-function setPerk<T extends Tier>(perks: { [K in T]?: PerkOfTier<K> }, tier: T, perk: PerkOfTier<T>) {
-  perks[tier] = perk;
 }
 
 export function canRespawn(w: World, id: number): boolean {
@@ -310,12 +201,6 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   killer.lifeKills++;
   addScore(killer, WORLD.killScore);
   if (w.match.k === 'playing') MODES[w.mode].onKill(w, killer, victim);
-}
-
-function addScore(p: Player, amount: number) {
-  if (p.life.k !== 'alive') return;
-  p.score += amount;
-  p.level = Math.max(p.level, levelForScore(p.score));
 }
 
 function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null) {

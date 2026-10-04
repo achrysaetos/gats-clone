@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WEAPONS, WORLD } from '../src/shared/defs.ts';
-import { choosePerk, snapshotFor } from '../src/shared/sim.ts';
+import { snapshotFor } from '../src/shared/sim.ts';
+import { choosePerk } from '../src/shared/sim/stats.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 test('four kills and five crates in one life unlock the ability tier', () => {

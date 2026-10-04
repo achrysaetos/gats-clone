@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import WebSocket from 'ws';
 import { WORLD } from '../src/shared/defs.ts';
-import { addPlayer, effectiveStats } from '../src/shared/sim.ts';
+import { addPlayer } from '../src/shared/sim.ts';
+import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { startServer } from '../src/server/main.ts';
 import { PISTOL, emptyWorld, grantPerks } from './helpers.ts';
 
