@@ -34,3 +34,4 @@ Each feature file starts with an H1 and one paragraph on the user-visible behavi
 - [Chat](./chat.md) covers sending and receiving, the rate limit, word masking, renaming blocked names, and mute.
 - [Progression, death and modes](./progression-death-modes.md) covers perks, gun evolution and its callouts, the hunted marker, edge chevrons and bounty, kill popups, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
 - [Map rotation](./maps.md) covers the four maps, per-mode rotation and the next-map notice.
+- [Zombies](./zombies.md) covers squad rooms by code, the day and night run, the horde on the wire, walls, scrap, downs and revives, and the bench. It is server-side only in this phase.

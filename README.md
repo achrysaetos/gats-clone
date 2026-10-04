@@ -13,7 +13,7 @@ Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats ar
 
 ## Play
 
-Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM a team short of humans gets three bots for each human it lacks, since humans carry triple health. In TDM and DOM every body wears its team color.
+Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room, or open a zombies squad (see Zombies below). Bots keep every room at ten players or more. In TDM and DOM a team short of humans gets three bots for each human it lacks, since humans carry triple health. In TDM and DOM every body wears its team color.
 
 Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). Every mode loads the next map when a round restarts. TDM is won at 50 team kills or, after 10 minutes, by the team ahead on score and then on kills. DOM is won at 1000 points. An FFA round runs 6 minutes and goes to the player with the most kills, bot or human, fewest deaths breaking a tie; a human who reaches 20 kills ends it early and leads the podium. A timed round that nobody wins, such as an FFA round with no kills or a dead-even TDM round, restarts at once on the next map. The objective line and the FFA leaderboard count the round's time down. The next map is announced 15 seconds ahead.
 
@@ -30,6 +30,18 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 
 Points in one life raise your level. At 100, 300 and 400 points you pick an attachment, a survival perk and an ability. At 200 and 550 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy minimap pings their position every 2.5 seconds and whenever they fire an unsilenced shot, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill. An attacker who dealt at least 30% of a victim's max health earns a 50-point assist when someone else gets the kill. A player killed by their own blast gives the kill to whoever hurt them most in the last 10 seconds.
 
+### Zombies
+
+Zombies is a co-op mode for a private squad of up to four. `POST /api/squads` opens a squad room and answers `{ "room": "z-xxxxxx" }`; everyone who joins the WebSocket with `?room=<code>` plays in it. Squads stay off the public room list, one address may open six a minute, at most 20 run at once, and a squad closes 30 seconds after its last human leaves. Bots fill the empty seats and give a seat up when a human joins. Humans keep their triple health. The whole squad is one team, and nothing the squad does hurts the squad.
+
+The squad defends a core at the center of the Outpost map. A run opens on a 40-second day. Night follows, and a wave walks in from the four map edges toward the core. The night ends once the whole wave has spawned and died, and the next day starts. Each night's wave is bigger and its zombies tougher, so every run ends when the core falls. The run's score is the night it fell on. A report of the night reached, the run's length and each player's kills, revives and walls built shows for 20 seconds, and then a fresh run starts on a reset map.
+
+Walkers come from the first night and brutes from the third. A brute has far more health and hits walls three times as hard. A zombie bites a squad player it can see within 120 px, else the core once it reaches it, and otherwise follows a flow field to the core that goes round the squad's walls while there is an open way and breaks through the cheapest wall when there is not. Zombie kills pay score up the same level ladder as the versus modes, and each kill adds scrap to the squad's shared bank. A player's level, perks and gun last for the whole run.
+
+By day a player can build a wall on a 50 px grid cell within 600 px of the core and 250 px of themselves, for 20 scrap, on a cell clear of cover, the core, bodies and other walls. A wall can come down by day for half its cost back. Walls block bodies, zombies included, but the squad's bullets and grenades pass over them. Holding use beside a damaged wall repairs it at 80 hp a second for 1 scrap per 20 hp.
+
+A player whose health runs out goes down instead of dying. A downed player crawls, cannot shoot and is ignored by the horde. A squadmate holding use within 70 px for 3 seconds revives them with 40% health. A downed player nobody revives within 25 seconds bleeds out and returns at the core at dawn. Bots fight, revive and repair, and never build.
+
 ## Layout
 
 - `src/shared/defs.ts` holds every tuning number: weapons, armor, perks, cooldowns and world constants.
@@ -42,7 +54,9 @@ Points in one life raise your level. At 100, 300 and 400 points you pick an atta
   - `stats.ts` holds perks, levels and score, and the effective stats they produce.
   - `combat.ts` holds bullets, damage, kills and lag compensation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to the client's measured round trip plus its render delay and never more than `MAX_REWIND_MS` back, so players hit what they aim at on screen.
   - `abilities.ts` holds the tier 3 abilities and the grenades, mines and gas they leave behind.
-  - `modes.ts` holds the FFA, TDM and DOM rules and the round cycle.
+  - `modes.ts` holds the FFA, TDM, DOM and zombies rules and the round cycle.
+  - `run.ts` holds the zombies run: its day, night and restart cycle, waves, downed players, revives, walls and scrap.
+  - `horde.ts` holds the zombies themselves: the flow field to the core, their steps, bites and spacing.
   - `snapshot.ts` builds each player's culled view of the world.
 - `src/server/` contains rooms, bots, accounts and the HTTP and WebSocket server.
 - `src/client/` contains the browser client.
@@ -62,7 +76,9 @@ node .claude/skills/verify/scripts/combat.ts "$RUN" tdm dom
 
 `npm test` runs the simulation, protocol, client and end-to-end server tests. The scripts in `.claude/skills/verify/` prove behavior against a real, isolated server. `launch.sh` builds the client and starts a server with its own port and data dir. `doctor.sh` checks the server and bundle are current. `drive.ts` drives headless Chrome through the menu, login, movement, firing, latency and chat, and `combat.ts` checks objectives and damage in TDM and DOM. Both write `RESULT PASS` or `RESULT FAIL` to `$RUN/evidence/`. `cleanup.sh` stops the server and deletes its data. Set `CHROME` if Chrome is not at the default macOS path. See `.claude/skills/verify/SKILL.md` for details.
 
-`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `e54ee82c52afba41fc8d79f37b12b62a6f3f5f8b58a7ee2d2bcb72500e72413c`.
+`node scripts/golden-replay.ts [hash]` guards refactors of `src/shared/sim.ts` and `src/shared/sim/`. It replays fixed-seed FFA, TDM and DOM matches with bots, scripted human players, abilities, perks, lag-compensated shots and round ends, and prints one SHA-256 hash of every snapshot. Record the hash before you change the simulation's structure. Then pass it as the argument after the change. The script exits with status 1 when the hashes differ. The current hash is `e54ee82c52afba41fc8d79f37b12b62a6f3f5f8b58a7ee2d2bcb72500e72413c`. Zombies runs stay out of the replay so the hash holds; `test/zombies-determinism.test.ts` checks that a bot squad's run replays exactly from its seed.
+
+`node scripts/bench-zombies.ts [seeds] [squad]` plays zombies runs on fixed seeds to the core's fall with a squad of four bots, or with `1` a lone bot-brained player with a human's health. It prints the night each run reached and each night's length and core health, then holds a full horde of 200 zombies on the squad and prints server step time, whole-tick time and snapshot bytes. `node .claude/skills/verify/scripts/zombies.ts "$RUN"` opens a squad on a launched server and plays its first night over `ws`.
 
 `node scripts/unused-exports.ts` lists every export that no file in `src/`, `test/`, `scripts/` or the verify scripts imports, and says whether its own module still uses it.
 

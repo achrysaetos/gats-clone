@@ -5,7 +5,7 @@ description: Drive the Skirmish browser game (top-down multiplayer shooter, Node
 
 # Verify Skirmish
 
-Skirmish is a browser game. The user touches the web page served by `src/server/main.ts`: the menu (loadout, rooms, account) and the canvas game (HUD, chat, death screen). The server also exposes `/api/*` JSON routes and a WebSocket at `/ws?room=<ffa|tdm|dom>`. Bots fill every room, so a single driver always has opponents.
+Skirmish is a browser game. The user touches the web page served by `src/server/main.ts`: the menu (loadout, rooms, account) and the canvas game (HUD, chat, death screen). The server also exposes `/api/*` JSON routes and a WebSocket at `/ws?room=<ffa|tdm|dom>`, or `?room=<code>` for a zombies squad opened with `POST /api/squads`. Bots fill every room, so a single driver always has opponents.
 
 All helpers live in `.claude/skills/verify/scripts/` and take one argument, a run directory you choose. Put it in your session scratchpad, for example `RUN=<scratchpad>/verify-$(date +%s)`. Every instance gets its own port and data dir, so parallel runs never share state. Never drive a server this run did not start, and never touch the user's `data/` directory.
 
