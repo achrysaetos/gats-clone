@@ -22,7 +22,6 @@ const FEED_MS = 6000;
 const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
 
-/** `selfAt` is where your player is drawn on screen. */
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point };
 
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((id) => [GUNS[id].name, id]));
@@ -407,7 +406,6 @@ function drawLeaderboard(hud: Hud, compact: boolean) {
 export const PANEL_ALPHA = { rest: 0.85, covering: 0.3 } as const;
 const PANEL_FADE_MS = 180;
 
-/** Steps a panel's opacity toward see-through while a player is drawn under it, and back once they leave. */
 export function approachAlpha(alpha: number, covering: boolean, dtMs: number): number {
   const target = covering ? PANEL_ALPHA.covering : PANEL_ALPHA.rest;
   const step = (dtMs / PANEL_FADE_MS) * (PANEL_ALPHA.rest - PANEL_ALPHA.covering);
