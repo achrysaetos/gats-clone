@@ -15,7 +15,7 @@ Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats ar
 
 Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM every body wears its team color.
 
-Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). Every mode loads the next map when a round restarts. TDM is won at 50 team kills and DOM at 1000 points. An FFA round goes to the first player to 20 kills, or to the player with the most kills when its 8-minute map timer runs out. The next map is announced 15 seconds ahead.
+Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). Every mode loads the next map when a round restarts. TDM is won at 50 team kills and DOM at 1000 points. An FFA round runs 6 minutes and goes to the player with the most kills, bot or human; a human who reaches 20 kills ends it early. The next map is announced 15 seconds ahead.
 
 | Input | Action |
 |---|---|
@@ -40,7 +40,7 @@ Points in one life raise your level. At 100, 300 and 400 points you pick an atta
   - `world.ts` holds the world and player types, the seeded random source, map loading and spawn points.
   - `movement.ts` holds the collision geometry and player motion that the client also runs for prediction.
   - `stats.ts` holds perks, levels and score, and the effective stats they produce.
-  - `combat.ts` holds bullets, damage, kills and lag compensation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to `MAX_REWIND_MS` back, so players hit what they aim at on screen.
+  - `combat.ts` holds bullets, damage, kills and lag compensation. Each input carries the server time of the world the client was drawing, and a shot first flies through that past, up to the client's measured round trip plus its render delay and never more than `MAX_REWIND_MS` back, so players hit what they aim at on screen.
   - `abilities.ts` holds the tier 3 abilities and the grenades, mines and gas they leave behind.
   - `modes.ts` holds the FFA, TDM and DOM rules and the round cycle.
   - `snapshot.ts` builds each player's culled view of the world.
