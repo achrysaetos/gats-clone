@@ -1,6 +1,6 @@
 import {
   ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS,
-  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type Tier, type WeaponId,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -40,6 +40,7 @@ export type PlayerView = {
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;
   armorTier: ArmorId;
+  kind: PlayerKind;
   /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
   hunted: boolean;
 };

@@ -5,7 +5,7 @@ import { isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type W
 
 const BUILT_WALL_MS = 12000;
 export const GAS_RADIUS = 140;
-const GRENADE_FUSE_MS = 900;
+export const GRENADE_FUSE_MS = 900;
 export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
 const THROW_SPEED = 700;
 
@@ -21,7 +21,7 @@ function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
   };
 }
 
-const KNIFE_DAMAGE = 75;
+const KNIFE_DAMAGE = 50;
 const MAX_MINES = 2;
 
 export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {

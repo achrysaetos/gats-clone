@@ -174,9 +174,9 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   silencer: { name: 'Silencer', desc: 'Firing does not reveal you on the minimap' },
   lightweight: { name: 'Lightweight', desc: '+10% move speed' },
   longRange: { name: 'Long range', desc: '+40% bullet range' },
-  shield: { name: 'Shield', desc: 'Blocks 35% of bullet damage from the front' },
-  thickSkin: { name: 'Thick skin', desc: '+30 max health' },
-  firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster' },
+  shield: { name: 'Shield', desc: 'Blocks 33% of bullet damage from the front' },
+  thickSkin: { name: 'Thick skin', desc: '+40 max health' },
+  firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster, starting 1.6s after a hit' },
   grenade: { name: 'Grenade', desc: 'Thrown explosive' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
@@ -187,7 +187,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
 };
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
-  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 1500, engineer: 10000, dash: 3500,
+  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 10000, dash: 3500,
 };
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
@@ -201,7 +201,7 @@ export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
   { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 200, pick: { k: 'evolve' } },
-  { score: 350, pick: { k: 'perk', tier: 2 } }, { score: 500, pick: { k: 'perk', tier: 3 } }, { score: 700, pick: { k: 'evolve' } },
+  { score: 300, pick: { k: 'perk', tier: 2 } }, { score: 400, pick: { k: 'perk', tier: 3 } }, { score: 550, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] => (pick.k === 'perk' ? PERK_TIERS[pick.tier] : EVOLUTIONS[gun]);

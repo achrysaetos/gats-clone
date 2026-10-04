@@ -1,8 +1,13 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_IDS, GUNS, type ArmorId } from '../src/shared/defs.ts';
-import { emptyWorld, shootOnce, spawnAt } from './helpers.ts';
+import { ARMOR_IDS, GUNS, LEVELS, WORLD, type ArmorId } from '../src/shared/defs.ts';
+import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { choosePick, levelForScore } from '../src/shared/sim/stats.ts';
+import { createWorld, rand } from '../src/shared/sim/world.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { emptyWorld, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 test('a bolt-action hit kills an unarmored full-health player', () => {
   const w = emptyWorld();
@@ -30,6 +35,37 @@ test('bolt-action hits to kill rise with armor: none 1, light 2, medium 2, heavy
     return shots;
   };
   assert.deepEqual(ARMOR_IDS.map(shotsToKill), [1, 2, 2, 3]);
+});
+
+/** The level each bot life ended at, over one fixed-seed FFA room of bots, so a ladder or bot change that stalls progression shows up. */
+function botLifeLevels(minutes: number): number[] {
+  const w = createWorld('FFA', 1, 'boneyard');
+  const r = () => rand(w);
+  const bots = new Map<number, BotMemory>();
+  for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
+  const levels: number[] = [];
+  for (let t = 0; t < minutes * 60_000; t += TICK_MS) {
+    const walls = wallViews(w);
+    for (const [id, mem] of bots) {
+      const d = botThink(snapshotFor(w, id), walls, mem, r);
+      bots.set(id, d.mem);
+      setInput(w, id, w.tick, d.input);
+      if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
+      if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
+    }
+    step(w, TICK_MS);
+    for (const rec of w.lifeRecords.splice(0)) levels.push(levelForScore(rec.score));
+  }
+  return levels;
+}
+
+test('in a room of bots, a fair share of lives reach the first evolve, the ability tier and the hunted evolve', () => {
+  const levels = botLifeLevels(6);
+  const reach = (level: number) => levels.filter((l) => l >= level).length / levels.length;
+  const [firstEvolve, hunted] = LEVELS.flatMap((l, i) => (l.pick?.k === 'evolve' ? [reach(i)] : []));
+  const ability = reach(LEVELS.findIndex((l) => l.pick?.k === 'perk' && l.pick.tier === 3));
+  const shares = `first evolve ${(firstEvolve * 100).toFixed(1)}%, ability ${(ability * 100).toFixed(1)}%, hunted ${(hunted * 100).toFixed(1)}% of ${levels.length} lives`;
+  assert.ok(firstEvolve >= 0.3 && ability >= 0.07 && hunted >= 0.02, shares);
 });
 
 test('no rifle out-damages the SMG at close range', () => {

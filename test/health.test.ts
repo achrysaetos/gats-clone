@@ -9,7 +9,7 @@ import { WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { startServer } from '../src/server/main.ts';
-import { PISTOL, TICK_MS, emptyWorld, grantPerks, press } from './helpers.ts';
+import { PISTOL, TICK_MS, emptyWorld, grantPerks, hpOf, press, run, spawnAt } from './helpers.ts';
 
 test('humans carry triple health and regen, bots keep the base', () => {
   const w = emptyWorld();
@@ -19,7 +19,24 @@ test('humans carry triple health and regen, bots keep the base', () => {
   assert.equal(effectiveStats(bot).maxHp, WORLD.baseHp);
   assert.equal(effectiveStats(human).regenPerSec / effectiveStats(human).maxHp, effectiveStats(bot).regenPerSec / effectiveStats(bot).maxHp, 'healing to full takes the same time');
   grantPerks(w, human, ['optics', 'thickSkin']);
-  assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 30) * 3, 'thick skin is tripled too');
+  assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 40) * 3, 'thick skin is tripled too');
+});
+
+test('first aid starts healing 1.6s after a hit, three times as fast; without it healing waits 4s', () => {
+  const w = emptyWorld();
+  const medic = spawnAt(w, 500, 500);
+  const plain = spawnAt(w, 900, 500);
+  grantPerks(w, medic, ['optics', 'firstAid']);
+  for (const p of [medic, plain]) if (p.life.k === 'alive') { p.life.hp = 50; p.life.lastDamageAt = w.now; }
+  run(w, 1500);
+  assert.deepEqual([hpOf(medic), hpOf(plain)], [50, 50], 'nobody heals within 1.5s');
+  run(w, 1000);
+  assert.ok(hpOf(medic) > 50 && hpOf(plain) === 50, `at 2.5s first aid heals (${hpOf(medic).toFixed(1)}) and plain waits`);
+  const healed = hpOf(medic);
+  run(w, 1000);
+  assert.ok(Math.abs(hpOf(medic) - healed - 3 * WORLD.regenPerSec) < 0.5, `heals ${(hpOf(medic) - healed).toFixed(1)} in the next second`);
+  run(w, 1000);
+  assert.ok(hpOf(plain) > 50, 'plain heals after 4s');
 });
 
 test('humans kill each other as fast as bots kill each other, armored or not, and bots still need triple the time on a human', () => {

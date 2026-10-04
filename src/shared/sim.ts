@@ -133,7 +133,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
   }
 
-  if (p.life.k === 'alive' && w.now - p.life.lastDamageAt >= WORLD.regenDelayMs) {
+  if (p.life.k === 'alive' && w.now - p.life.lastDamageAt >= stats.regenDelayMs) {
     p.life.hp = Math.min(stats.maxHp, p.life.hp + stats.regenPerSec * dt);
   }
 }

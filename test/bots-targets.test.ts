@@ -100,14 +100,25 @@ test('a bot fights an enemy in view before shooting crates', () => {
   assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `aims down at the enemy, angle ${angle.toFixed(2)}`);
 });
 
-test('a bot aims at the highest-level enemy in view over a nearer fresh one', () => {
+test('a bot aims at the highest-level human in view over a nearer fresh enemy', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    spawnAt(w, 1200, 1000);
+    spawnAt(w, 1000, 1400, { kind: 'human' }).level = 3;
+    const angle = think(w, bot.id, seed, 20).angle;
+    assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the level-3 human, angle ${angle.toFixed(2)}`);
+  }
+});
+
+test('a bot aims at the nearer of two bots whatever their levels', () => {
   for (let seed = 1; seed <= 5; seed++) {
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     spawnAt(w, 1200, 1000);
     spawnAt(w, 1000, 1400).level = 3;
     const angle = think(w, bot.id, seed, 20).angle;
-    assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the level-3 enemy, angle ${angle.toFixed(2)}`);
+    assert.ok(Math.abs(angle) < 0.3, `seed ${seed}: aims right at the nearer level-0 bot, angle ${angle.toFixed(2)}`);
   }
 });
 

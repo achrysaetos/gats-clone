@@ -199,7 +199,7 @@ async function proveKnife() {
     seen = frames.events.length;
     for (const slash of fresh.filter((e) => e.e === 'slash' && e.owner === frames.welcome?.id)) {
       const knifeKill = fresh.some((e) => e.e === 'kill' && e.at === slash.at && e.killerId === frames.welcome?.id && e.weapon === 'Knife');
-      const dmg = fresh.find((e) => e.e === 'dmg' && e.at === slash.at && e.attacker === frames.welcome?.id && e.kind === 'player' && (e.amount >= 74 || knifeKill));
+      const dmg = fresh.find((e) => e.e === 'dmg' && e.at === slash.at && e.attacker === frames.welcome?.id && e.kind === 'player' && (e.amount >= 49 || knifeKill));
       const burst: string[] = [];
       if (slashes.length < 2 || (dmg && !hit)) for (const tag of ['a', 'b', 'c', 'd']) { burst.push(await shot(`knife-slash-${slashes.length + 1}${tag}`)); await sleep(50); }
       slashes.push(burst[0] ?? '');
@@ -209,7 +209,7 @@ async function proveKnife() {
   }
   await key('keyUp', 'Space', ' ', 32);
   expect('knife: a slash event from the driven player arrives on the page socket', slashes.length > 0, `${slashes.length} slashes`);
-  expect('knife: a slash hit a bot (a 75 dmg event, or a Knife kill, in the same snapshot as the slash)', hit);
+  expect('knife: a slash hit a bot (a 50 dmg event, or a Knife kill, in the same snapshot as the slash)', hit);
 }
 
 for (const ability of WANTED) {

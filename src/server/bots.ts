@@ -1,6 +1,7 @@
 import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
-import { segmentEntersRectAt } from '../shared/sim/movement.ts';
+import { GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
+import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt } from '../shared/sim/movement.ts';
 
 export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
@@ -24,8 +25,9 @@ const BOT_AIM = {
 const TICK_MS = 1000 / WORLD.tickHz;
 
 /**
- * Bots sharpen against a target that has climbed further, indexed by the target's level; a hunted target gets the last row.
+ * Bots sharpen against a human who has climbed further, indexed by the human's level; a hunted human gets the last row.
  * A fresh player meets the base aim, so the room is beatable on arrival and fights back as they snowball.
+ * Bots fight each other at the base row, so a bot that climbs keeps climbing and the room shows abilities and hunted bots.
  */
 const SHARPNESS: readonly { aimMul: number; reactionMul: number }[] = [
   { aimMul: 1, reactionMul: 1 },
@@ -35,15 +37,16 @@ const SHARPNESS: readonly { aimMul: number; reactionMul: number }[] = [
   { aimMul: 0.2, reactionMul: 0.5 },
   { aimMul: 0.15, reactionMul: 0.45 },
 ];
-const sharpnessAgainst = (target: PlayerView) => SHARPNESS[target.hunted ? SHARPNESS.length - 1 : Math.min(target.level, SHARPNESS.length - 1)]!;
+const sharpnessAgainst = (target: PlayerView) =>
+  target.kind === 'bot' ? SHARPNESS[0]! : SHARPNESS[target.hunted ? SHARPNESS.length - 1 : Math.min(target.level, SHARPNESS.length - 1)]!;
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
 type Situation = { threat: { d: number } | null; hurting: boolean; underFire: boolean; onContestedZone: boolean };
 
-/** Knife lunge (90) plus knife reach (70) from sim/movement.ts, short of the target's radius so a strafing target is still caught. */
-const KNIFE_REACH_PX = 160;
-/** Grenades land where they were aimed when the 900ms fuse in sim/abilities.ts runs out, so bots aim where the target will be then. */
-const GRENADE_FUSE_TICKS = Math.round(900 / TICK_MS);
+/** Lunge plus reach, leaving the target's radius as slack so a strafing target is still caught. */
+const KNIFE_REACH_PX = KNIFE_LUNGE + KNIFE_REACH;
+/** Grenades land where they were aimed when the fuse runs out, so bots aim where the target will be then. */
+const GRENADE_FUSE_TICKS = Math.round(GRENADE_FUSE_MS / TICK_MS);
 const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
 const throwRange = (s: Situation) => s.threat !== null && s.threat.d >= 150 && s.threat.d <= 450;
 
@@ -211,13 +214,13 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
 const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
   xs.reduce<T | null>((best, x) => (best && Math.hypot(best.x - me.x, best.y - me.y) <= Math.hypot(x.x - me.x, x.y - me.y) ? best : x), null);
 
-/** The nearest of the most dangerous enemies in sight: hunted first, then highest level, so bots in view of a leader all turn on it. */
+/** The nearest of the most dangerous enemies in sight: hunted first, then the highest-level human, so bots in view of a leading human all turn on it. Among bots only hunted counts, so a climbing bot is not ganged up on before it evolves. */
 function chooseTarget(me: PlayerView, players: PlayerView[], walls: readonly WallView[], viewRadius: number): PlayerView | null {
   const sight = viewExtents(viewRadius, VIEW_ASPECT.max);
   const visible = players.filter((p) => p.id !== me.id && p.alive && (me.team === null || p.team !== me.team)
     && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
     && !walls.some((w) => segmentEntersRectAt(me.x, me.y, p.x - me.x, p.y - me.y, w) !== null));
-  const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.level);
+  const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
   const top = Math.max(...visible.map(danger));
   return nearest(me, visible.filter((p) => danger(p) === top));
 }

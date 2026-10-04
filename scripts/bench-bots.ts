@@ -1,12 +1,12 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10] [abilityMinutes=3]
 // minutes=0 or abilityMinutes=0 skips that section.
-import { EVOLUTIONS, GUNS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type GunId } from '../src/shared/defs.ts';
+import { EVOLUTIONS, GUNS, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type GunId } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
+import { choosePick, effectiveStats, levelForScore, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
@@ -73,7 +73,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
   };
 }
 
-type Tally = { lives: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number };
+type Tally = { lives: number[]; levels: number[]; botLevels: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number };
 
 /** A stage-2 gun of the human's class, standing in for a human who has reached the hunted stage. */
 const HUNTED_GUN: GunId = EVOLUTIONS[EVOLUTIONS[HUMAN_LOADOUT.weapon][0]!][0]!;
@@ -93,7 +93,7 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
   arm(human, forcedGun);
   let mind: HumanMind = { target: null, fireAtTick: 0, aimErr: 0, strafe: 1, flipAtTick: 0, seen: null, shots: 0, wanderX: r() * WORLD.size, wanderY: r() * WORLD.size };
   let bornAt = w.now;
-  const tally: Tally = { lives: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
+  const tally: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
   const ticks = Math.round((minutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
     const walls = wallViews(w);
@@ -118,6 +118,7 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
       else if (e.killerId === human.id) tally.botsKilledByHuman++;
       else if (e.killerId !== null && bots.has(e.killerId)) tally.botOnBotKills++;
     }
+    for (const rec of w.lifeRecords.splice(0)) (rec.id === human.id ? tally.levels : tally.botLevels).push(levelForScore(rec.score));
   }
   tally.kills = human.kills;
   tally.deaths = human.deaths;
@@ -129,6 +130,10 @@ const median = (xs: number[]) => {
   return s.length === 0 ? NaN : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
+const reachLabel = (levels: number[]) => LEVELS.flatMap((l, level) => (l.pick
+  ? [`${l.pick.k === 'perk' ? `t${l.pick.tier}` : 'evo'} ${((100 * levels.filter((x) => x >= level).length) / Math.max(1, levels.length)).toFixed(0)}%`]
+  : [])).join(' ');
+
 const VARIANTS: { label: string; style: HumanStyle; gun: GunId | null }[] = [
   { label: 'idle', style: 'idle', gun: null },
   { label: 'strafe', style: 'strafe', gun: null },
@@ -137,10 +142,12 @@ const VARIANTS: { label: string; style: HumanStyle; gun: GunId | null }[] = [
 
 console.log(`human (3x health) vs ${WORLD.minPlayers - 1} bots, ${minutes} min x ${seeds} seeds`);
 for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
-  const all: Tally = { lives: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
+  const all: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
   for (let seed = 1; seed <= seeds; seed++) {
     const t = simulate(seed, style, gun);
     all.lives.push(...t.lives);
+    all.levels.push(...t.levels);
+    all.botLevels.push(...t.botLevels);
     all.kills += t.kills; all.deaths += t.deaths; all.botOnBotKills += t.botOnBotKills; all.botsKilledByHuman += t.botsKilledByHuman;
   }
   const simMinutes = minutes * seeds;
@@ -151,6 +158,8 @@ for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
     `kills ${all.kills}`,
     `K/D ${(all.kills / Math.max(1, all.deaths)).toFixed(2)}`,
     `bot-on-bot kills/min ${(all.botOnBotKills / simMinutes).toFixed(1)}`,
+    `human lives reaching ${reachLabel(all.levels)}`,
+    `bot lives reaching ${reachLabel(all.botLevels)}`,
   ].join('  '));
 }
 
@@ -202,4 +211,43 @@ for (const ability of abilityMinutes > 0 ? PERK_TIERS[3] : []) {
     `share of kills ${((100 * kills) / Math.max(1, deaths)).toFixed(1).padStart(5)}%`,
     `deaths/min ${(deaths / simMinutes).toFixed(1)}`,
   ].join('  '));
+}
+
+/** Each bot life draws one ability at random, so holders of different abilities fight each other and their K/D shows which one wins fights. */
+function mixedArena(seed: number, kills: Map<AbilityId, number>, deaths: Map<AbilityId, number>) {
+  const w: World = createWorld('FFA', seed, 'boneyard');
+  const r = () => rand(w);
+  const bots = new Map<number, BotMemory>();
+  const holds = new Map<number, AbilityId>();
+  const draw = (id: number) => holds.set(id, PERK_TIERS[3][Math.floor(r() * PERK_TIERS[3].length)]!);
+  for (let i = 0; i < WORLD.minPlayers; i++) {
+    const id = addPlayer(w, `bot${i}`, randomLoadout(r)).id;
+    bots.set(id, newBotMemory(r));
+    draw(id);
+  }
+  const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
+  for (let t = 0; t < ticks; t++) {
+    const walls = wallViews(w);
+    for (const [id, mem] of bots) {
+      w.players.get(id)!.perks[3] = holds.get(id)!;
+      const d = botThink(snapshotFor(w, id), walls, mem, r);
+      bots.set(id, d.mem);
+      setInput(w, id, w.tick, d.input);
+      if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) draw(id);
+    }
+    step(w, TICK_MS);
+    for (const e of w.events) {
+      if (e.e !== 'kill') continue;
+      const victim = holds.get(e.victimId), killer = e.killerId === null ? undefined : holds.get(e.killerId);
+      if (victim) deaths.set(victim, (deaths.get(victim) ?? 0) + 1);
+      if (killer && e.killerId !== e.victimId) kills.set(killer, (kills.get(killer) ?? 0) + 1);
+    }
+  }
+}
+
+if (abilityMinutes > 0) {
+  const kills = new Map<AbilityId, number>(), deaths = new Map<AbilityId, number>();
+  for (let seed = 1; seed <= seeds; seed++) mixedArena(seed, kills, deaths);
+  console.log(`\nmixed ability arena: each bot life holds a random ability, ${abilityMinutes} min x ${seeds} seeds; K/D by ability held`);
+  for (const ability of PERK_TIERS[3]) console.log(`  ${ability.padEnd(12)} kills ${String(kills.get(ability) ?? 0).padStart(4)}  deaths ${String(deaths.get(ability) ?? 0).padStart(4)}  K/D ${((kills.get(ability) ?? 0) / Math.max(1, deaths.get(ability) ?? 0)).toFixed(2)}`);
 }

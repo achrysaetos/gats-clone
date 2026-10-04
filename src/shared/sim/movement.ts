@@ -94,8 +94,8 @@ function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: nu
   return at;
 }
 
-const KNIFE_LUNGE = 90;
-const KNIFE_REACH = 70;
+export const KNIFE_LUNGE = 90;
+export const KNIFE_REACH = 70;
 const KNIFE_ARC = Math.PI / 3;
 
 type Point = { x: number; y: number };

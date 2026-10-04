@@ -1,4 +1,4 @@
-import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId } from '../src/shared/defs.ts';
+import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { InputState, Loadout, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
@@ -15,8 +15,8 @@ export function emptyWorld(mode: ModeId = 'FFA'): World {
   return w;
 }
 
-export function spawnAt(w: World, x: number, y: number, opts: { loadout?: Partial<Loadout>; team?: Team; name?: string } = {}): Player {
-  return addPlayer(w, opts.name ?? `p${w.nextId}`, { ...PISTOL, ...opts.loadout }, { at: { x, y }, team: opts.team });
+export function spawnAt(w: World, x: number, y: number, opts: { loadout?: Partial<Loadout>; team?: Team; name?: string; kind?: PlayerKind } = {}): Player {
+  return addPlayer(w, opts.name ?? `p${w.nextId}`, { ...PISTOL, ...opts.loadout }, { at: { x, y }, team: opts.team, kind: opts.kind });
 }
 
 let seq = 1;

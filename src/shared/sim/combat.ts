@@ -6,7 +6,7 @@ import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
-const SHIELD_BLOCK = 0.35;
+const SHIELD_BLOCK = 0.33;
 const SHIELD_ARC = (40 * Math.PI) / 180;
 /** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
 export const MAX_REWIND_MS = 350;
