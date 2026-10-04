@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addFeedback, ASSIST_MS, HURT_ARC_MS, HURT_MS, NO_FEEDBACK, NUMBER_MS, type Feedback } from '../src/client/feedback.ts';
+import { addFeedback, ASSIST_MS, HURT_ARC_MS, HURT_MS, NO_FEEDBACK, NUMBER_MS, numberHeight, type Feedback } from '../src/client/feedback.ts';
 import type { DamageKind, GameEvent } from '../src/shared/protocol.ts';
 
 const ME = 1;
@@ -33,12 +33,21 @@ test('damage numbers show your damage, summing rapid hits on one target', () => 
   assert.deepEqual(apply([], 1000 + NUMBER_MS, pellets).numbers, [], 'numbers expire');
 });
 
-test('a new number over a victim stacks above the ones still floating there, reusing freed slots', () => {
+test('a new number over a victim starts clear above the ones still floating there, and keeps clear as they rise', () => {
   const first = apply([dmg(ME, 2, 10), dmg(ME, 3, 10)]);
-  const second = apply([dmg(ME, 2, 10)], 1000 + 400, first);
-  assert.deepEqual(second.numbers.map((n) => [n.victim, n.slot]), [[2, 0], [3, 0], [2, 1]], 'the second number on victim 2 rises above the first; victim 3 is unaffected');
-  const third = apply([dmg(ME, 2, 10)], 1000 + NUMBER_MS + 10, second);
-  assert.deepEqual(third.numbers.map((n) => [n.victim, n.slot]), [[2, 1], [2, 0]], 'once the bottom number expires its slot is free again');
+  const at = 1000 + 400;
+  const second = apply([dmg(ME, 2, 10)], at, first);
+  const [old, other, fresh] = second.numbers;
+  assert.equal(numberHeight(other!, at), numberHeight(old!, at), 'victim 3 is unaffected');
+  for (const t of [at, at + 300, at + 490]) assert.ok(numberHeight(fresh!, t) - numberHeight(old!, t) >= 20, `still apart ${t - at}ms later`);
+  assert.equal(apply([dmg(ME, 3, 10)], 1000 + NUMBER_MS + 10, second).numbers.at(-1)!.lift, 0, 'with nothing left floating over a victim, its number starts at the bottom');
+});
+
+test('a merged hit keeps its number where it was drawn instead of snapping back down', () => {
+  const first = apply([dmg(ME, 2, 10)]);
+  const merged = apply([dmg(ME, 2, 10)], 1250, first);
+  assert.equal(merged.numbers.length, 1);
+  assert.ok(Math.abs(numberHeight(merged.numbers[0]!, 1250) - numberHeight(first.numbers[0]!, 1250)) < 1e-9);
 });
 
 test('a hit draws an arc on the side the attacker stands, or where the hit landed when the attacker is unseen', () => {

@@ -1,7 +1,7 @@
 import type { DamageKind, GameEvent } from '../shared/protocol.ts';
 
-/** `slot` lifts a number above the ones still floating over the same victim. */
-export type DamageNumber = { victim: number; kind: DamageKind; x: number; y: number; amount: number; born: number; slot: number };
+/** `lift` is how far above the victim the number started, so it clears the ones already floating there. */
+export type DamageNumber = { victim: number; kind: DamageKind; x: number; y: number; amount: number; born: number; lift: number };
 
 /** `angle` points from you toward where the damage came from. */
 export type HurtArc = { angle: number; strength: number; born: number };
@@ -25,11 +25,17 @@ const MERGE_MS = 300;
 /** Hits from within this angle of a fresh arc refresh it, so a stream of bullets from one gun draws one arc. */
 const ARC_MERGE_RAD = 0.45;
 
-function freeSlot(numbers: readonly DamageNumber[], victim: number): number {
-  const taken = new Set(numbers.filter((n) => n.victim === victim).map((n) => n.slot));
-  let slot = 0;
-  while (taken.has(slot)) slot++;
-  return slot;
+export const NUMBER_RISE = 46;
+const NUMBER_GAP = 28;
+/** A stream of merged hits stops climbing here, so its number stays by the target. */
+const NUMBER_MAX_LIFT = 80;
+
+/** How far above its victim a number is drawn right now, in world units. */
+export const numberHeight = (n: DamageNumber, now: number): number => n.lift + (NUMBER_RISE * (now - n.born)) / NUMBER_MS;
+
+function liftOver(numbers: readonly DamageNumber[], victim: number, now: number): number {
+  const above = numbers.filter((n) => n.victim === victim).map((n) => numberHeight(n, now) + NUMBER_GAP);
+  return Math.max(0, ...above);
 }
 
 type Placed = { id: number; x: number; y: number };
@@ -56,8 +62,8 @@ export function addFeedback(fb: Feedback, events: readonly GameEvent[], players:
     if (ev.e === 'dmg' && ev.attacker === myId && ev.victim !== myId) {
       const recent = numbers.find((n) => n.victim === ev.victim && now - n.born < MERGE_MS);
       numbers = recent
-        ? numbers.map((n) => (n === recent ? { ...n, amount: n.amount + ev.amount, x: ev.x, y: ev.y, born: now } : n))
-        : [...numbers, { victim: ev.victim, kind: ev.kind, x: ev.x, y: ev.y, amount: ev.amount, born: now, slot: freeSlot(numbers, ev.victim) }];
+        ? numbers.map((n) => (n === recent ? { ...n, amount: n.amount + ev.amount, x: ev.x, y: ev.y, born: now, lift: Math.min(NUMBER_MAX_LIFT, numberHeight(n, now)) } : n))
+        : [...numbers, { victim: ev.victim, kind: ev.kind, x: ev.x, y: ev.y, amount: ev.amount, born: now, lift: liftOver(numbers, ev.victim, now) }];
       if (ev.kind === 'player' && !hitmarker?.kill) hitmarker = { born: now, kill: false };
     } else if (ev.e === 'dmg' && ev.victim === myId && ev.kind === 'player') {
       const prior = hurt ? hurt.strength * (1 - (now - hurt.born) / HURT_MS) : 0;

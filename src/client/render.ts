@@ -3,7 +3,7 @@ import type { BulletView, CrateView, PlayerView, Snapshot, ThrownView, WallView,
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes } from './effects.ts';
-import { NUMBER_MS, type DamageNumber } from './feedback.ts';
+import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
 import { ARMOR_BAND, INK, PALETTE, shade, TEAM_COLORS, teamColor } from './palette.ts';
 import { drawGun, gripsOf } from './sprites.ts';
 import type { Session } from './state.ts';
@@ -605,8 +605,6 @@ function drawLabel(ctx: CanvasRenderingContext2D, p: PlayerView, self: boolean) 
   }
 }
 
-const NUMBER_STACK = 30;
-
 function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly DamageNumber[], now: number) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -618,7 +616,7 @@ function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly Dama
     ctx.globalAlpha = 1 - k * k;
     ctx.font = `800 ${player ? 26 : 18}px system-ui, sans-serif`;
     const label = String(Math.max(1, Math.round(n.amount)));
-    const y = n.y - R - 24 - NUMBER_STACK * n.slot - 46 * k;
+    const y = n.y - R - 24 - numberHeight(n, now);
     ctx.lineWidth = 5;
     ctx.strokeStyle = INK;
     ctx.strokeText(label, n.x, y);
