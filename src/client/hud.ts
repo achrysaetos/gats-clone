@@ -23,7 +23,7 @@ const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
 
 /** `selfAt` is where your player is drawn on screen. */
-type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; cam: Camera; selfAt: Point };
+type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point };
 
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((id) => [GUNS[id].name, id]));
 const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id, info]) => [info.name, id as PerkId]));
@@ -50,7 +50,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   hudFont = '';
   const { w, h } = cam;
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
-  const hud: Hud = { ctx, w, h, snap, s, me, now, cam, selfAt: worldToScreen(cam, s.lastSelf) };
+  const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf) };
+  lastHudAt = now;
   const compact = w < 640;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
@@ -59,6 +60,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   drawLeaderboard(hud, compact);
   drawMinimap(hud, compact ? 110 : 170);
   drawScore(hud, compact);
+  ctx.globalAlpha = 1;
   if (me?.alive) drawVitals(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
@@ -240,6 +242,7 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 
 /** Assigning ctx.font reparses the string every time, so skip the assignment when the HUD's last font is still set. */
 let hudFont = '';
+let lastHudAt = 0;
 const fonts = new Map<number, string>();
 function setFont(ctx: CanvasRenderingContext2D, weight: number, size: number) {
   const key = weight * 1000 + size;
@@ -324,13 +327,15 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
   });
 }
 
-function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
+function drawLeaderboard(hud: Hud, compact: boolean) {
+  const { ctx, w, snap, s } = hud;
   const rows = topScorers(snap.match.mode, snap.leaderboard, compact ? 5 : 10);
   const teams = snap.match.mode !== 'FFA';
   const pw = compact ? 150 : 210;
   const x = w - pw - 12;
   const rowH = 20;
   const ph = 36 + rows.length * rowH + (teams ? 30 : 18);
+  fadePanel(hud, 'board', x, 12, pw, ph);
   panel(ctx, x, 12, pw, ph);
   caps(ctx, 'Leaderboard', x + SPACE.md, 29);
   text(ctx, snap.match.mode, x + pw - SPACE.md, 29, TYPE.label, PALETTE.gold, 'right', 800);
@@ -368,13 +373,40 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
   });
 }
 
+export const PANEL_ALPHA = { rest: 0.85, covering: 0.3 } as const;
+const PANEL_FADE_MS = 180;
+
+/** Steps a panel's opacity toward see-through while a player is drawn under it, and back once they leave. */
+export function approachAlpha(alpha: number, covering: boolean, dtMs: number): number {
+  const target = covering ? PANEL_ALPHA.covering : PANEL_ALPHA.rest;
+  const step = (dtMs / PANEL_FADE_MS) * (PANEL_ALPHA.rest - PANEL_ALPHA.covering);
+  return alpha < target ? Math.min(target, alpha + step) : Math.max(target, alpha - step);
+}
+
+type PanelId = 'score' | 'board' | 'minimap';
+const panelAlpha: Record<PanelId, number> = { score: PANEL_ALPHA.rest, board: PANEL_ALPHA.rest, minimap: PANEL_ALPHA.rest };
+
+function fadePanel({ ctx, snap, cam, dt }: Hud, id: PanelId, x: number, y: number, w: number, h: number): number {
+  const pad = WORLD.playerRadius * cam.scale;
+  const covering = snap.players.some((p) => {
+    if (!p.alive) return false;
+    const at = worldToScreen(cam, p);
+    return at.x > x - pad && at.x < x + w + pad && at.y > y - pad && at.y < y + h + pad;
+  });
+  panelAlpha[id] = approachAlpha(panelAlpha[id], covering, dt);
+  ctx.globalAlpha = panelAlpha[id];
+  return panelAlpha[id];
+}
+
 const PING_WAVE_MS = 700;
 const DIAMOND_R = 6;
 
-function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
+function drawMinimap(hud: Hud, size: number) {
+  const { ctx, w, h, snap, s, me } = hud;
   const x = w - size - 12;
   const y = h - size - 12;
   const k = size / s.worldSize;
+  const base = fadePanel(hud, 'minimap', x - 5, y - 5, size + 10, size + 10);
   panel(ctx, x - 5, y - 5, size + 10, size + 10);
   ctx.fillStyle = 'rgba(226, 221, 209, 0.12)';
   ctx.fillRect(x, y, size, size);
@@ -394,9 +426,9 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
     ctx.beginPath();
     ctx.arc(x + z.x * k, y + z.y * k, Math.max(4, z.r * k), 0, TAU);
     ctx.fillStyle = z.owner ? TEAM_COLORS[z.owner] : PALETTE.neutral;
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = base * 0.5;
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = base;
   }
   for (const m of snap.minimap) {
     if (m.pingAge !== null) continue;
@@ -415,7 +447,7 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
       ctx.beginPath();
       ctx.rect(x, y, size, size);
       ctx.clip();
-      ctx.globalAlpha = 1 - wave;
+      ctx.globalAlpha = base * (1 - wave);
       ctx.beginPath();
       ctx.arc(mx, my, 5 + 14 * wave, 0, TAU);
       ctx.lineWidth = 2;
@@ -445,11 +477,13 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
   ctx.stroke();
 }
 
-function drawScore({ ctx, w, snap, me }: Hud, compact: boolean) {
+function drawScore(hud: Hud, compact: boolean) {
+  const { ctx, w, snap, me } = hud;
   if (!me) return;
   const lp = levelProgress(me.level, me.score);
   const bw = compact ? w - 150 - 56 : 260;
   const x = compact ? 22 : (w - bw) / 2;
+  fadePanel(hud, 'score', x - 10, 10, bw + 20, mapNotice(snap.match) ? 96 : 70);
   panel(ctx, x - 10, 10, bw + 20, 44);
   ctx.beginPath();
   ctx.arc(x + 9, 30, 13, 0, TAU);

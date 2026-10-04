@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from '../src/client/moments.ts';
+import { approachAlpha, PANEL_ALPHA } from '../src/client/hud.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -59,6 +60,17 @@ test('an off-screen hunted mark gets an edge marker on its bearing; an on-screen
   const corner = edgePoint(center, { x: -500, y: 3000 }, 1280, 800, 30)!;
   assert.equal(corner.y, 770, 'a steep bearing toward the bottom left clamps to the bottom edge first');
   assert.ok(corner.x > 30 && corner.x < 640, 'left of center, still on screen');
+});
+
+test('a HUD panel fades toward see-through while a player is under it, and back after', () => {
+  let alpha: number = PANEL_ALPHA.rest;
+  alpha = approachAlpha(alpha, true, 90);
+  assert.ok(alpha < PANEL_ALPHA.rest && alpha > PANEL_ALPHA.covering, 'eases rather than snapping');
+  for (let i = 0; i < 10; i++) alpha = approachAlpha(alpha, true, 50);
+  assert.equal(alpha, PANEL_ALPHA.covering, 'settles see-through without overshooting');
+  for (let i = 0; i < 10; i++) alpha = approachAlpha(alpha, false, 50);
+  assert.equal(alpha, PANEL_ALPHA.rest, 'returns to its resting opacity');
+  assert.ok(PANEL_ALPHA.rest < 1, 'even at rest the panel is translucent');
 });
 
 test('the death screen names the killer\'s gun and what the life had earned', () => {
