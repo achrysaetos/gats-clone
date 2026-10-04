@@ -57,6 +57,17 @@ test('a press during the cooldown is held and fires once the weapon is ready; a 
   assert.equal(start - ammoOf(p), 2, 'the held press fired once');
 });
 
+test('a press during a reload is held and fires once the reload ends', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500);
+  if (p.life.k === 'alive') p.life.ammo = 0;
+  run(w, GUNS.pistol.reloadMs / 2);
+  assert.ok(p.life.k === 'alive' && p.life.reloadUntil !== null, 'reloading');
+  press(w, p, { shots: 1 });
+  run(w, GUNS.pistol.reloadMs / 2 + GUNS.pistol.fireMs);
+  assert.equal(ammoOf(p), GUNS.pistol.mag - 1, 'the press fired the first round of the fresh magazine');
+});
+
 test('a press during a burst fires the next burst once the burst and its cooldown end', () => {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);

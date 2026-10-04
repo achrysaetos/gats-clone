@@ -75,8 +75,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (life.k !== 'alive') return;
   const gun = GUNS[p.gun];
   if (pressed) {
-    const readyAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
-    life.pressUntil = Math.max(w.now, readyAt) + PRESS_GRACE_MS;
+    const cooledAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
+    life.pressUntil = Math.max(w.now, cooledAt, life.reloadUntil ?? 0) + PRESS_GRACE_MS;
   }
   const dt = dtMs / 1000;
   const inp = p.input;
