@@ -109,6 +109,20 @@ test('FFA: a timer finish with tied kills goes to the player with fewer deaths',
   assert.equal(over.leaderboard[0]!.id, b!.id, 'the leaderboard breaks the tie the same way');
 });
 
+test('FFA: a timer finish with no kills starts a fresh round on the next map without a winner', () => {
+  const [first, second] = ROTATION.FFA;
+  const w = createWorld('FFA', 1, first);
+  populate(w);
+  const [a] = [...w.players.values()];
+  a!.score = 150;
+  a!.deaths = 3;
+  run(w, MAP_MS.FFA + TICK_MS);
+  const snap = snapshotFor(w, a!.id);
+  assert.deepEqual([w.match.k, snap.match.winner, w.map], ['playing', null, second]);
+  assert.deepEqual([a!.score, a!.deaths], [0, 0], 'the old round\'s score and deaths are cleared');
+  assert.ok(w.mapChangeAt - w.now > MAP_MS.FFA - 1000, 'the new round runs a full timer of its own');
+});
+
 test('FFA: a human reaching the kill target behind a bot wins, says why, and keeps a place on the board', () => {
   const w = createWorld('FFA', 1, ROTATION.FFA[0]);
   for (let i = 0; i < 12; i++) addPlayer(w, `bot${i}`, PISTOL).kills = 30 + i;

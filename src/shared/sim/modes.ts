@@ -116,19 +116,26 @@ export function tickMatch(w: World, dtMs: number) {
     if (winner) {
       w.match = { k: 'over', winner, restartAt: w.now + WORLD.roundRestartMs };
       w.mapChangeAt = w.match.restartAt;
+    } else if (w.now >= w.mapChangeAt) {
+      // The clock ran out with nobody to crown, so there is no banner to hold: the next round starts on the next map at once.
+      startRound(w);
     }
   } else if (w.now >= w.match.restartAt) {
-    w.match = { k: 'playing' };
-    w.teamScore = { red: 0, blue: 0 };
-    for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
-    for (const p of w.players.values()) {
-      if (p.life.k === 'alive') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
-      p.lifeKills = 0;
-      resetProgress(p);
-      p.kills = 0;
-      p.deaths = 0;
-      if (p.life.k === 'alive') p.life = freshLife(p, w.now);
-    }
+    startRound(w);
   }
   if (w.now >= w.mapChangeAt) changeMap(w);
+}
+
+function startRound(w: World) {
+  w.match = { k: 'playing' };
+  w.teamScore = { red: 0, blue: 0 };
+  for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
+  for (const p of w.players.values()) {
+    if (p.life.k === 'alive') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+    p.lifeKills = 0;
+    resetProgress(p);
+    p.kills = 0;
+    p.deaths = 0;
+    if (p.life.k === 'alive') p.life = freshLife(p, w.now);
+  }
 }
