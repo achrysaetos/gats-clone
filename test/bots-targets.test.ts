@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { WallView } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
-import { emptyWorld, equip, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, hpOf, spawnAt, TICK_MS } from './helpers.ts';
 
 const CRATE = 40;
 const addCrate = (w: World, cx: number, cy: number) => w.crates.push({ id: 9000 + w.crates.length, x: cx - CRATE / 2, y: cy - CRATE / 2, size: CRATE, hp: 40, respawnAt: null });
@@ -149,4 +149,24 @@ test('a bot with nobody in view heads for gunfire on its minimap, the hunted fir
   step(w, TICK_MS);
   const input = think(w, bot.id, 1, 1);
   assert.ok(input.right && input.down, 'passes over a nearer shooter for the hunted one');
+});
+
+test('a bot walled off from a hunted marker walks around the wall and fights instead of pinning against it', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const w = emptyWorld();
+    w.walls.push({ x: 1100, y: 1000, w: 50, h: 1000, built: false, expiresAt: Infinity });
+    const bot = spawnAt(w, 1050, 1500);
+    const hunted = spawnAt(w, 1200, 1500, { kind: 'human' });
+    equip(hunted, 'executioner');
+    const fullHp = hpOf(hunted);
+    const r = seeded(seed);
+    let mem = newBotMemory(r);
+    for (let i = 1; i <= 20 * 30 && hpOf(hunted) === fullHp; i++) {
+      const d = botThink(snapshotFor(w, bot.id), wallViews(w), mem, r);
+      mem = d.mem;
+      setInput(w, bot.id, i, d.input);
+      step(w, TICK_MS);
+    }
+    assert.ok(hpOf(hunted) < fullHp, `seed ${seed}: reached a line of fire within 20s; ended at (${Math.round(bot.x)}, ${Math.round(bot.y)})`);
+  }
 });

@@ -5,6 +5,8 @@ import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../sha
 
 export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
+  /** A waypoint round the cover between an idle bot and the shooting it heads for; without it the bot would push into the wall for as long as the marker stays put. */
+  detour: { x: number; y: number; untilTick: number } | null;
   strafe: 1 | -1;
   engaged: Engagement | null;
   shots: number;
@@ -64,6 +66,12 @@ const ABILITY_RULES: Record<AbilityId, (s: Situation) => boolean> = {
 const HURTING_HP_FRAC = 0.4;
 const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
 const RETREAT_CLEARANCE = 240 + WORLD.playerRadius;
+const STUCK_TICKS = 15;
+const DETOUR_MARGIN = WORLD.playerRadius + 30;
+/** How close on an axis a bot's goal must be before it stops pressing toward it. */
+const DEAD_ZONE = 30;
+/** Within the dead zone on both axes, which is as close as a bot walks to a waypoint. */
+const reached = (me: PlayerView, p: { x: number; y: number }) => Math.abs(p.x - me.x) <= DEAD_ZONE && Math.abs(p.y - me.y) <= DEAD_ZONE;
 
 type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
 
@@ -83,7 +91,7 @@ function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () =
 }
 
 export function newBotMemory(rand: () => number): BotMemory {
-  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0, hitTick: -Infinity };
+  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, detour: null, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0, hitTick: -Infinity };
 }
 
 export function randomLoadout(rand: () => number): Loadout {
@@ -103,7 +111,9 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   next.stuckTicks = moved < 1 ? mem.stuckTicks + 1 : 0;
   if (next.stuckTicks > 6 || rand() < 0.02) next.strafe = next.strafe === 1 ? -1 : 1;
   const arrived = Math.hypot(me.x - mem.targetX, me.y - mem.targetY) < 80;
-  if (arrived || next.stuckTicks > 15) {
+  const stuck = next.stuckTicks > STUCK_TICKS;
+  if (next.detour && snap.tick >= next.detour.untilTick) next.detour = null;
+  if (arrived || stuck) {
     const contested = snap.zones.filter((z) => z.owner !== me.team);
     const zone = contested.length > 0 && rand() < 0.8 ? pick(contested, rand) : null;
     next = zone
@@ -115,7 +125,8 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
 
   if (snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id)) next.hitTick = snap.tick;
   const hurting = me.hp < me.maxHp * HURTING_HP_FRAC;
-  const enemy = chooseTarget(me, snap.players, [...walls, ...snap.crates.map(crateRect)], snap.self.viewRadius);
+  const cover = [...walls, ...snap.crates.map(crateRect)];
+  const enemy = chooseTarget(me, snap.players, cover, snap.self.viewRadius);
   const weapon = GUNS[me.gun];
   const range = weapon.range;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
@@ -144,12 +155,19 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
       goX = me.x + Math.cos(toward) * 200; goY = me.y + Math.sin(toward) * 200;
     }
     next.engaged = engaged;
+    next.detour = null;
   } else {
     next.engaged = null;
     // The minimap shows enemies who fired lately, so an idle bot heads for the shooting, the hunted first.
     const heard = snap.minimap.filter((m) => me.team === null || m.team !== me.team);
     const lead = snap.zones.length === 0 ? nearest(me, heard.filter((m) => m.pingAge !== null)) ?? nearest(me, heard) : null;
-    if (lead) { goX = lead.x; goY = lead.y; }
+    if (lead) {
+      const atWaypoint = next.detour !== null && reached(me, next.detour);
+      if (next.detour && firstBlock(me, lead, cover) === null) next.detour = null;
+      else if (stuck || atWaypoint) next.detour = detourToward(me, lead, cover, snap.tick, rand);
+    }
+    const go = lead && (next.detour ?? lead);
+    if (go) { goX = go.x; goY = go.y; }
     const crate = snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading ? crateInSight(me, snap.crates, walls, range * 0.95, snap.self.viewRadius) : null;
     if (crate) {
       angle = Math.atan2(crate.y - me.y, crate.x - me.x);
@@ -173,9 +191,8 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   }
   if (fire) next.shots++;
   const mx = goX - me.x, my = goY - me.y;
-  const dead = 30;
   const input: InputState = {
-    up: my < -dead, down: my > dead, left: mx < -dead, right: mx > dead,
+    up: my < -DEAD_ZONE, down: my > DEAD_ZONE, left: mx < -DEAD_ZONE, right: mx > DEAD_ZONE,
     angle, fire, shots: next.shots, reload: !enemy && !fire && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
   };
   return { input, pick: choice, mem: next };
@@ -210,6 +227,36 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
     return !walls.some((w) => segmentEntersRectAt(me.x, me.y, dx, dy, w) !== null);
   });
   return clear ?? headings[0] ?? away;
+}
+
+/**
+ * The way round the first cover between `me` and `goal`: the corner of it, pushed out by a body width, that is in the clear and shortest to go through.
+ * A corner the bot already stands at is skipped, so a bot that reached one moves on to the next. With no such corner it wanders off for a while instead.
+ */
+function detourToward(me: PlayerView, goal: { x: number; y: number }, cover: readonly Rect[], tick: number, rand: () => number): NonNullable<BotMemory['detour']> {
+  const block = firstBlock(me, goal, cover);
+  const m = DETOUR_MARGIN, edge = WORLD.playerRadius;
+  const corners = block ? [
+    { x: block.x - m, y: block.y - m }, { x: block.x + block.w + m, y: block.y - m },
+    { x: block.x - m, y: block.y + block.h + m }, { x: block.x + block.w + m, y: block.y + block.h + m },
+  ] : [];
+  const via = (c: { x: number; y: number }) => Math.hypot(c.x - me.x, c.y - me.y) + Math.hypot(goal.x - c.x, goal.y - c.y);
+  const corner = corners
+    .filter((c) => c.x >= edge && c.y >= edge && c.x <= WORLD.size - edge && c.y <= WORLD.size - edge
+      && !reached(me, c) && firstBlock(me, c, cover) === null)
+    .sort((a, b) => via(a) - via(b))[0];
+  const to = corner ?? { x: rand() * WORLD.size, y: rand() * WORLD.size };
+  const walkTicks = (Math.hypot(to.x - me.x, to.y - me.y) / WORLD.baseSpeed) * WORLD.tickHz;
+  return { ...to, untilTick: tick + Math.round(2 * walkTicks) + WORLD.tickHz };
+}
+
+function firstBlock(me: PlayerView, to: { x: number; y: number }, cover: readonly Rect[]): Rect | null {
+  let block: Rect | null = null, first = Infinity;
+  for (const r of cover) {
+    const t = segmentEntersRectAt(me.x, me.y, to.x - me.x, to.y - me.y, r);
+    if (t !== null && t < first) { first = t; block = r; }
+  }
+  return block;
 }
 
 const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
