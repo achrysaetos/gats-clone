@@ -1,4 +1,5 @@
 import { WORLD } from '../shared/defs.ts';
+import type { DamageKind } from '../shared/protocol.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { INK, PALETTE } from './palette.ts';
 import { burst, isLive, particleAt, type BurstKind, type ParticlePool } from './particles.ts';
@@ -7,7 +8,7 @@ import { EFFECT_LIFE_MS, type Effect, type Session } from './state.ts';
 const TAU = Math.PI * 2;
 export const HIT_FLASH_MS = 120;
 
-const IMPACT_BURST: Record<'wall' | 'crate' | 'player', BurstKind> = { wall: 'spark', crate: 'splinter', player: 'hit' };
+const IMPACT_BURST: Record<'wall' | DamageKind, BurstKind> = { wall: 'spark', crate: 'splinter', player: 'hit', zombie: 'hit', building: 'splinter' };
 
 export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: string) {
   s.effects.push({ ...spec, born: now } as Effect);

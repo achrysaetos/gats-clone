@@ -48,8 +48,7 @@ export function segmentEntersRectAt(px: number, py: number, dx: number, dy: numb
   return t0;
 }
 
-function resolveCircle(solids: readonly Rect[], nx: number, ny: number): { x: number; y: number } {
-  const r = WORLD.playerRadius;
+function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: number): { x: number; y: number } {
   let x = clamp(nx, r, WORLD.size - r), y = clamp(ny, r, WORLD.size - r);
   for (const b of solids) {
     const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
@@ -87,10 +86,11 @@ export function startDash(input: MoveKeys & Pick<InputState, 'angle'>): Dash {
     : { dirX: Math.cos(input.angle), dirY: Math.sin(input.angle), leftMs: DASH_MS };
 }
 
-function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number): { x: number; y: number } {
+/** Moves a circle of radius `r` by (`dx`, `dy`), sliding along whatever solid it meets. */
+export function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number, r: number = WORLD.playerRadius): { x: number; y: number } {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / MAX_SUBSTEP));
   let at = { x, y };
-  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps);
+  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps, r);
   return at;
 }
 

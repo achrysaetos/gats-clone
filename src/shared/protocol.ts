@@ -76,8 +76,8 @@ export type SelfView = {
   viewRadius: number;
 };
 
-/** `victim` is a player id for 'player' and a crate id for 'crate'; both come from the world's one id sequence. */
-export type DamageKind = 'player' | 'crate';
+/** `victim` is the id of the player, crate, zombie or squad wall hit; all come from the world's one id sequence. */
+export type DamageKind = 'player' | 'crate' | 'zombie' | 'building';
 
 export type GameEvent =
   /** `assisters` are the other players paid an assist for this kill. */

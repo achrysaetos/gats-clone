@@ -1,5 +1,6 @@
 import { ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
+import { tickHorde } from './horde.ts';
 import { circleHitsRect } from './movement.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { loadMap, newId, newRun, rand, solidRects, spawnPoint, type Player, type Run, type RunStats, type World } from './world.ts';
@@ -69,7 +70,7 @@ function restartRun(w: World) {
 }
 
 /** The run's state machine: the day counts down to night, the night spawns its wave and turns to day once the wave is dead, and the core's fall ends the run until a fresh one starts. */
-export function tickRun(w: World, _dtMs: number) {
+export function tickRun(w: World, dtMs: number) {
   const run = w.run;
   if (!run) return;
   const phase = run.phase;
@@ -88,6 +89,7 @@ export function tickRun(w: World, _dtMs: number) {
       if (w.now >= phase.restartAt) restartRun(w);
       return;
   }
+  tickHorde(w, run, dtMs);
   if (run.core.hp <= 0) {
     run.phase = { k: 'over', night: run.night, restartAt: w.now + ZOM.restartMs };
     w.zombies = [];

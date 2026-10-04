@@ -25,15 +25,22 @@ test('a run opens on a day with the starting scrap and a whole core, and night f
 
 test('the night trickles its wave in from the horde edges and stays dark until the whole wave is spawned and dead', () => {
   const w = zomWorld();
+  w.run!.core.hp = 1e9;
   run(w, ZOM.dayMs + TICK_MS);
   const night = w.run!.phase;
   assert.ok(night.k === 'night');
   const wave = night.toSpawn.length + w.zombies.length;
   assert.equal(wave, ZOM.waveSize(1, 0));
-  run(w, 1000);
-  assert.ok(w.zombies.length > 1 && w.zombies.length < wave, `${w.zombies.length} of ${wave} spawned after a second`);
   const horde = MAPS.outpost.siege!.horde;
-  for (const z of w.zombies) assert.ok(horde.some((r) => z.x >= r.x && z.x <= r.x + r.w && z.y >= r.y && z.y <= r.y + r.h), `zombie at ${z.x},${z.y} came from no edge`);
+  const seen = new Set<number>();
+  for (let t = 0; t < 1000; t += TICK_MS) {
+    for (const z of w.zombies.filter((z) => !seen.has(z.id))) {
+      seen.add(z.id);
+      assert.ok(horde.some((r) => z.x >= r.x && z.x <= r.x + r.w && z.y >= r.y && z.y <= r.y + r.h), `zombie at ${z.x},${z.y} came from no edge`);
+    }
+    step(w, TICK_MS);
+  }
+  assert.ok(w.zombies.length > 1 && w.zombies.length < wave, `${w.zombies.length} of ${wave} spawned after a second`);
 
   w.zombies = [];
   run(w, TICK_MS * 2);
