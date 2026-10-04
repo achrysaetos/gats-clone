@@ -1,6 +1,6 @@
 import { ARMORS, WORLD } from '../defs.ts';
 import { MODES } from './modes.ts';
-import { angleDiff, circleHitsRect, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
+import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, sameTeam, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
 
@@ -63,40 +63,59 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   if (attacker) addScore(w, attacker, WORLD.crateScore);
 }
 
-export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, owner: Player | null, label: string) {
+/** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
+type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[] };
+const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
+
+const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) =>
+  walls.some((wall) => segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
+
+export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, owner: Player | null, label: string, view: View = liveView(w)) {
   w.events.push({ e: 'boom', x, y, r: radius });
   for (const p of w.players.values()) {
-    const d = Math.sqrt(dist2(p.x, p.y, x, y));
-    if (d > radius + WORLD.playerRadius) continue;
+    const at = view.poseOf(p);
+    if (!at) continue;
+    const d = Math.sqrt(dist2(at.x, at.y, x, y));
+    if (d > radius + WORLD.playerRadius || sheltered(view.walls, x, y, at.x, at.y)) continue;
     const dmg = maxDamage * (1 - Math.max(0, d - WORLD.playerRadius) / radius);
     damagePlayer(w, p, dmg, { attacker: owner, label, piercing: false, fromX: x, fromY: y });
   }
   for (const c of w.crates) {
-    if (circleHitsRect(x, y, radius, crateRect(c))) damageCrate(w, c, maxDamage, owner);
+    const r = crateRect(c);
+    const nx = clamp(x, r.x, r.x + r.w), ny = clamp(y, r.y, r.y + r.h);
+    const d = Math.sqrt(dist2(x, y, nx, ny));
+    if (d >= radius || sheltered(view.walls, x, y, nx, ny)) continue;
+    damageCrate(w, c, maxDamage * (1 - d / radius), owner);
   }
 }
 
 type BulletHit = { t: number | null; victim: Player | null; apply: (x: number, y: number) => void };
 
-function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | null): false {
-  if (b.blast) explode(w, x, y, b.blast.radius, b.blast.damage, owner, b.label);
+/** Backs the blast off the surface it struck, so the wall it hit does not shelter the side the bullet came from. */
+const BLAST_STANDOFF = 2;
+
+function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | null, view: View): false {
+  if (!b.blast) return false;
+  const speed = Math.hypot(b.vx, b.vy);
+  const bx = x - (b.vx / speed) * BLAST_STANDOFF, by = y - (b.vy / speed) * BLAST_STANDOFF;
+  explode(w, bx, by, b.blast.radius, b.blast.damage, owner, b.label, view);
   return false;
 }
 
-function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose | undefined, walls: readonly Wall[]): boolean {
+function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const speed = Math.hypot(b.vx, b.vy);
   const travel = Math.min(b.left, speed * dt);
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   const candidates: BulletHit[] = [
-    ...walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),
     ...[...w.players.values()]
       .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !(owner && sameTeam(owner, p)) && !b.passed.includes(p.id))
       .flatMap((p) => {
-        const at = poseOf(p);
+        const at = view.poseOf(p);
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
@@ -108,14 +127,14 @@ function moveBullet(w: World, b: Bullet, dt: number, poseOf: (p: Player) => Pose
   for (const hit of hits) {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
     hit.apply(x, y);
-    if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner);
+    if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner, view);
     b.penetrate--;
     b.passed.push(hit.victim.id);
   }
   b.x += dx;
   b.y += dy;
   b.left -= travel;
-  return b.left > 0.5 || stopBullet(w, b, b.x, b.y, owner);
+  return b.left > 0.5 || stopBullet(w, b, b.x, b.y, owner, view);
 }
 
 function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {
@@ -142,13 +161,13 @@ export function flyThroughPast(w: World, b: Bullet, rewindMs: number): boolean {
     const dtMs = Math.min(TICK_MS, w.now - t);
     t += dtMs;
     const poses = posesAt(w, t);
-    if (!moveBullet(w, b, dtMs / 1000, (p) => poses.get(p.id), walls)) return false;
+    if (!moveBullet(w, b, dtMs / 1000, { poseOf: (p) => poses.get(p.id), walls })) return false;
   }
   return true;
 }
 
 export function tickBullets(w: World, dt: number) {
-  w.bullets = w.bullets.filter((b) => moveBullet(w, b, dt, (p) => p, w.walls));
+  w.bullets = w.bullets.filter((b) => moveBullet(w, b, dt, liveView(w)));
 }
 
 export function recordPoses(w: World) {

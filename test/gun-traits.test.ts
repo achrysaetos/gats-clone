@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
-import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, hpOf, press, spawnAt, TICK_MS } from './helpers.ts';
+import { setInput, step } from '../src/shared/sim.ts';
+import { explode } from '../src/shared/sim/combat.ts';
+import { IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
+import { emptyWorld, equip, hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 function pressAndCollect(w: World, shooter: Player, ms: number): GameEvent[] {
   const events: GameEvent[] = [];
@@ -57,6 +58,46 @@ test('a blast round damages bodies within its radius where it stops: at a wall, 
   const atRangeEnd = spawnAt(w, rangeEnd, 560);
   pressAndCollect(w, a, 1000);
   assert.ok(hpOf(atRangeEnd) < WORLD.baseHp, 'a spent round still bursts');
+});
+
+test('a blast never reaches a body on the far side of a wall, the struck wall included', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 300, 500);
+  equip(a, 'artillery');
+  w.walls.push({ x: 600, y: 400, w: 40, h: 200, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 520, y: 600, w: 60, h: 20, built: true, expiresAt: Infinity });
+  const behindStruck = spawnAt(w, 680, 500);
+  const besideImpact = spawnAt(w, 560, 540);
+  const behindBuilt = spawnAt(w, 560, 650);
+  pressAndCollect(w, a, 600);
+  assert.equal(hpOf(behindStruck), WORLD.baseHp, 'the wall the shell hit shelters the far side');
+  assert.equal(hpOf(behindBuilt), WORLD.baseHp, 'a built wall between the blast and a body shelters it');
+  assert.ok(hpOf(besideImpact) < WORLD.baseHp, 'a body in the open on the near side takes splash');
+});
+
+test('a blast hurts crates less the farther they sit from its center', () => {
+  const w = emptyWorld();
+  const near = { id: 1, x: 500, y: 490, size: 20, hp: WORLD.crateHp, respawnAt: null };
+  const far = { id: 2, x: 550, y: 490, size: 20, hp: WORLD.crateHp, respawnAt: null };
+  w.crates.push(near, far);
+  explode(w, 480, 500, 100, 30, null, 'test');
+  assert.equal(near.hp, WORLD.crateHp - 30 * (1 - 20 / 100));
+  assert.equal(far.hp, WORLD.crateHp - 30 * (1 - 70 / 100));
+});
+
+test('a lag-compensated blast round bursts on the victim where the shooter saw them, not where they stand now', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  equip(a, 'thunderclap');
+  const victim = spawnAt(w, 700, 500);
+  run(w, 500);
+  const sawAt = w.now - 200;
+  victim.y = 800;
+  step(w, TICK_MS);
+  setInput(w, a.id, 1_000_000, { ...IDLE_INPUT, angle: 0, shots: a.input.shots + 1 }, sawAt);
+  run(w, 300);
+  const lost = WORLD.baseHp - hpOf(victim);
+  assert.ok(lost > GUNS.thunderclap.damage + GUNS.thunderclap.blast!.damage * 0.9, `took the round and the burst around the rewound pose (lost ${lost})`);
 });
 
 test('a silenced gun fires without revealing the shooter, like the silencer perk', () => {
