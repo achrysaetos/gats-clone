@@ -292,24 +292,9 @@ a.wordmark { text-decoration: none; }
 .perk-icon { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .perk:hover:not(:disabled) .perk-icon { stroke: #ffe58a; }
 .perk b { max-width: 100%; font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.perk-tip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: 200px;
-  padding: 6px 9px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: rgba(18, 21, 26, 0.96);
-  font-size: 12px;
-  text-align: left;
-  pointer-events: none;
-  visibility: hidden;
-}
-.perk-tip strong { display: block; color: var(--accent); }
-.perk:hover .perk-tip, .perk:focus-visible .perk-tip { visibility: visible; }
+.perk-desc { margin: 0 2px 5px; min-height: 1.3em; font-size: 12px; color: var(--muted); }
+.perk-desc strong { color: var(--accent); }
+.perk-line { display: none; }
 .perk.evolve { width: 150px; height: auto; grid-template-rows: auto auto auto auto; gap: 2px; padding: 4px 6px 6px; }
 .perk.evolve canvas { width: 108px; height: 34px; }
 .perk.evolve b { font-size: 12px; }
@@ -440,6 +425,19 @@ a.wordmark { text-decoration: none; }
 .death-card #respawn { margin-top: var(--s3); }
 .death-card > h2:first-child { margin: 0 0 var(--s1); font-size: var(--t-display); font-weight: 900; color: var(--danger); text-transform: none; letter-spacing: 0; }
 
+@media (min-width: 1700px) {
+  .perk:not(.evolve) { width: 104px; height: auto; min-height: 58px; gap: 2px; padding: 3px 5px 5px; }
+  .perk-line {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.25;
+    color: var(--muted);
+    text-align: center;
+  }
+}
 @media (max-width: 900px) {
   .perk-panel { left: 12px; right: 12px; bottom: 128px; max-width: calc(100vw - 24px); }
 }

@@ -20,6 +20,7 @@ const PERK_SHORT: Record<PerkId, string> = {
   engineer: 'Engineer', dash: 'Dash',
 };
 const CHAT_LINES = 8;
+const PERK_DESC_HINT = 'Hover a choice to read what it does.';
 const PODIUM_SIZE = 3;
 
 export function createOverlays(onPick: (slot: number) => void, onRespawn: () => void, onToggleMute: (name: string) => void) {
@@ -44,12 +45,10 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const icon = iconSvg(PERK_ICONS[perk], 'perk-icon');
     const label = document.createElement('b');
     label.textContent = PERK_SHORT[perk];
-    const tip = document.createElement('span');
-    tip.className = 'perk-tip';
-    const tipName = document.createElement('strong');
-    tipName.textContent = name;
-    tip.append(tipName, desc);
-    return { className: 'perk', aria: `${name}: ${desc}`, parts: [icon, label, tip] };
+    const line = document.createElement('small');
+    line.className = 'perk-line';
+    line.textContent = desc;
+    return { className: 'perk', name, desc, parts: [icon, label, line] };
   };
 
   const gunTile = (gun: GunId) => {
@@ -62,7 +61,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     label.textContent = name;
     const detail = document.createElement('small');
     detail.textContent = desc;
-    return { className: 'perk evolve', aria: `${name}: ${desc}`, parts: [art, label, detail] };
+    return { className: 'perk evolve', name, desc, parts: [art, label, detail] };
   };
 
   const renderPick = (pending: PendingPick | null, gun: GunId) => {
@@ -76,6 +75,15 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const hint = document.createElement('span');
     hint.textContent = ` · press 1-${perkKeyLabel(options.length - 1)} or click`;
     title.append(pending.k === 'perk' ? `Level up · tier ${pending.tier} perk` : `Level up · evolve your ${GUNS[gun].name}`, hint);
+    const desc = document.createElement('p');
+    desc.className = 'perk-desc';
+    const describe = (tile?: { name: string; desc: string }) => {
+      if (!tile) return desc.replaceChildren(PERK_DESC_HINT);
+      const name = document.createElement('strong');
+      name.textContent = tile.name;
+      desc.replaceChildren(name, ` · ${tile.desc}`);
+    };
+    describe();
     const list = document.createElement('div');
     list.className = 'perk-list';
     options.forEach((option, slot) => {
@@ -83,14 +91,16 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       const b = document.createElement('button');
       b.type = 'button';
       b.className = tile.className;
-      b.setAttribute('aria-label', tile.aria);
+      b.setAttribute('aria-label', `${tile.name}: ${tile.desc}`);
       const kbd = document.createElement('kbd');
       kbd.textContent = perkKeyLabel(slot);
       b.append(kbd, ...tile.parts);
       b.onclick = () => onPick(slot);
+      b.onmouseenter = b.onfocus = () => describe(tile);
+      b.onmouseleave = b.onblur = () => describe();
       list.append(b);
     });
-    perkPanel.replaceChildren(title, list);
+    perkPanel.replaceChildren(title, desc, list);
   };
 
   const sender = (name: string, label: string, title: string) => {

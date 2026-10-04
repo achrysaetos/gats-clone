@@ -6,6 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
+import { PERK_INFO } from '../../../../src/shared/defs.ts';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
@@ -194,7 +195,8 @@ async function perkDock(w: Watch) {
   const tile = await js(`(() => { const r = document.querySelectorAll('#perk-panel .perk')[1].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await mouse('mouseMoved', tile.x, tile.y);
   await sleep(150);
-  expect(`${w.room}: hovering a tile shows its description`, await js(`getComputedStyle(document.querySelectorAll('#perk-panel .perk-tip')[1]).visibility === 'visible'`));
+  const described = String(await js(`document.querySelector('#perk-panel .perk-desc').textContent`));
+  expect(`${w.room}: hovering a tile shows its description in the dock`, described.startsWith(PERK_INFO.optics.name) && described.includes(PERK_INFO.optics.desc), described);
   log(`     screenshot ${await shot(`perk-dock-${w.room}`)}`);
   await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit2', key: '2', windowsVirtualKeyCode: 50 });
   await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit2', key: '2', windowsVirtualKeyCode: 50 });
