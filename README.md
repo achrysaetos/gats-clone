@@ -13,9 +13,9 @@ Open http://localhost:8080. Set `PORT` to change the port. Accounts and stats ar
 
 ## Play
 
-Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM every body wears its team color.
+Pick a weapon, a color and an armor tier, then choose an FFA, TDM or DOM room. Bots keep every room at ten players or more. In TDM and DOM a team short of humans gets three bots for each human it lacks, since humans carry triple health. In TDM and DOM every body wears its team color.
 
-Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). Every mode loads the next map when a round restarts. TDM is won at 50 team kills and DOM at 1000 points. An FFA round runs 6 minutes and goes to the player with the most kills, bot or human; a human who reaches 20 kills ends it early. The next map is announced 15 seconds ahead.
+Each room rotates through four maps: Boneyard (open ground with scattered cover), Causeway (three lanes split by long walls with crossings), Old Town (a grid of city blocks with narrow streets) and Citadel (a walled fort in the middle with four doors). Every mode loads the next map when a round restarts. TDM is won at 50 team kills or, after 10 minutes, by the team ahead on score and then on kills. DOM is won at 1000 points. An FFA round runs 6 minutes and goes to the player with the most kills, bot or human, fewest deaths breaking a tie; a human who reaches 20 kills ends it early and leads the podium. A timed round that nobody wins, such as an FFA round with no kills or a dead-even TDM round, restarts at once on the next map. The objective line and the FFA leaderboard count the round's time down. The next map is announced 15 seconds ahead.
 
 | Input | Action |
 |---|---|
@@ -28,7 +28,7 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | Enter | Chat |
 | M | Mute sound |
 
-Points in one life raise your level. At 100, 300 and 400 points you pick an attachment, a survival perk and an ability. At 200 and 550 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy minimap pings their position every 2.5 seconds and whenever they fire an unsilenced shot, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill. An attacker who dealt at least 30% of a victim's max health earns a 50-point assist when someone else gets the kill.
+Points in one life raise your level. At 100, 300 and 400 points you pick an attachment, a survival perk and an ability. At 200 and 550 points your gun evolves into one of two branches: 6 class guns, 12 stage-1 guns and 24 stage-2 guns. Dying resets your score, perks and gun to the class gun. While your level is below the average level of the other living players, every point you earn counts 1.5 times. A player holding a stage-2 gun is hunted: every enemy minimap pings their position every 2.5 seconds and whenever they fire an unsilenced shot, the kill feed announces it, and killing them pays a 200-point bounty on top of the kill. An attacker who dealt at least 30% of a victim's max health earns a 50-point assist when someone else gets the kill. A player killed by their own blast gives the kill to whoever hurt them most in the last 10 seconds.
 
 ## Layout
 
