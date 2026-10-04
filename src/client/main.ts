@@ -17,7 +17,7 @@ import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } fro
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
-import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, solidsOf } from './predict.ts';
+import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
 import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
@@ -250,9 +250,8 @@ const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, sel
 function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = newestSnap(s.snaps);
   s.snaps = pushSnap(s.snaps, snap, now);
-  const me = snap.players.find((p) => p.id === s.myId);
-  const server = me?.alive ? { x: me.x, y: me.y, dash: snap.self.dash } : null;
-  s.predict = reconcile(s.predict, server, snap.ackSeq, solidsOf(s.walls, snap.crates), snap.self.speed);
+  const motion = selfMotion(snap);
+  s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now);
@@ -263,7 +262,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
-  const dead = !snap.self.alive;
+  const dead = !snap.self.alive && !selfOf(snap)?.downed;
   if (dead && state.phase === 'playing') setState({ phase: 'dead', s, kill: killOf(snap.events, s.myId), loss: prev && lossOf(prev) });
   else if (dead && state.phase === 'dead' && !state.kill) state.kill = killOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
@@ -297,9 +296,8 @@ setInterval(() => {
   const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
-  const solids = solidsOf(s.walls, latest?.crates ?? []);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
-  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solids, latest?.self.speed ?? 0, performance.now());
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest), latest ? selfMotion(latest).speed : 0, performance.now());
 }, INPUT_MS);
 
 function pick(slot: number) {
@@ -369,7 +367,7 @@ function drawFrame(now: number) {
     ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) }
     : interpolated;
   const me = snap.players.find((p) => p.id === s.myId);
-  if (me?.alive) s.lastSelf = { x: me.x, y: me.y };
+  if (me?.alive || me?.downed) s.lastSelf = { x: me.x, y: me.y };
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   if (DEV) {

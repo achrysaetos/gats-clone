@@ -1,4 +1,6 @@
-import type { CrateView, InputState, Snapshot, WallView } from '../shared/protocol.ts';
+import { ZOM } from '../shared/defs.ts';
+import type { InputState, Snapshot, WallView } from '../shared/protocol.ts';
+import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { knifeLunge, moveStep, startDash, type Motion, type Rect } from '../shared/sim/movement.ts';
 import { lerp } from './interp.ts';
 
@@ -22,15 +24,25 @@ const MAX_PENDING = 90;
 export const SNAP_DIST = 150;
 const SMOOTH_MS = 60;
 
-export const solidsOf = (walls: readonly WallView[], crates: readonly CrateView[]): Rect[] => [
+/** What stops the local player, as the server's solidRects: cover, and in a zombies run the squad's walls and the core. */
+export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crates' | 'buildings' | 'run'> | null): Rect[] => [
   ...walls,
-  ...crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
+  ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
+  ...(snap?.buildings ?? []).map((b) => cellRect(b.cx, b.cy)),
+  ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
 ];
+
+/** Where the server has the local player and how fast they move: a downed player crawls, and a dead one has no position to predict from. */
+export function selfMotion(snap: Snapshot): { at: Motion | null; speed: number } {
+  const me = snap.players.find((p) => p.id === snap.self.id);
+  const crawling = !!me?.downed;
+  return { at: me && (me.alive || crawling) ? { x: me.x, y: me.y, dash: snap.self.dash } : null, speed: snap.self.speed * (crawling ? ZOM.crawlMul : 1) };
+}
 
 export function predictAbility(pred: Prediction, input: InputState, latest: Snapshot): PredictedAbility | null {
   const { self } = latest;
   const busy = !!pred.afterNewest?.dash || pred.pending.some((p) => p.ability);
-  if (!input.ability || latest.match.winner !== null || self.abilityReadyIn > 0 || busy) return null;
+  if (!input.ability || !self.alive || latest.match.winner !== null || self.abilityReadyIn > 0 || busy) return null;
   switch (self.ability) {
     case 'dash': return { k: 'dash' };
     case 'knife': {

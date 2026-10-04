@@ -1,33 +1,45 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, solidsOf, type Prediction } from '../src/client/predict.ts';
+import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf, type Prediction } from '../src/client/predict.ts';
 import { ABILITY_COOLDOWN_MS } from '../src/shared/defs.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import type { Motion, Rect } from '../src/shared/sim/movement.ts';
+import type { Rect } from '../src/shared/sim/movement.ts';
+import { goDown } from '../src/shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { IDLE_INPUT } from '../src/shared/sim/world.ts';
+import { createWorld, IDLE_INPUT, newId } from '../src/shared/sim/world.ts';
 import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
 const LATENCY_TICKS = 3;
 
-type Lockstep = { clientSolids?: (snap: Snapshot) => Rect[]; ability?: 'dash' | 'knife'; enemyAt?: { x: number; y: number } };
+/** `squad` plays in a zombies run instead, from beside the core, with squad walls on `walls`, the player starting down when `downed`. */
+type Lockstep = {
+  clientSolids?: (snap: Snapshot) => Rect[]; ability?: 'dash' | 'knife'; enemyAt?: { x: number; y: number };
+  squad?: { walls: [number, number][]; downed?: boolean };
+};
 
-function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability, enemyAt }: Lockstep = {}) {
-  const w = emptyWorld();
-  w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, expiresAt: Infinity }];
-  const p = spawnAt(w, 500, 500);
+function lockstepWorld(squad: Lockstep['squad']) {
+  if (!squad) {
+    const w = emptyWorld();
+    w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, expiresAt: Infinity }];
+    return { w, p: spawnAt(w, 500, 500) };
+  }
+  const w = createWorld('ZOM', 1, 'outpost');
+  const p = spawnAt(w, 1380, 1525);
+  for (const [cx, cy] of squad.walls) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: 400 });
+  if (squad.downed) goDown(w, p);
+  return { w, p };
+}
+
+function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability, enemyAt, squad }: Lockstep = {}) {
+  const { w, p } = lockstepWorld(squad);
   if (ability) grantPerks(w, p, ['grip', 'thickSkin', ability]);
   if (enemyAt) spawnAt(w, enemyAt.x, enemyAt.y);
   const walls = wallViews(w);
-  const solidsFor = clientSolids ?? ((snap: Snapshot) => solidsOf(walls, snap.crates));
-  const selfOf = (snap: Snapshot): Motion => {
-    const v = snap.players.find((v) => v.id === snap.self.id)!;
-    return { x: v.x, y: v.y, dash: snap.self.dash };
-  };
+  const solidsFor = clientSolids ?? ((snap: Snapshot) => solidsOf(walls, snap));
   const first = snapshotFor(w, p.id);
-  let pred: Prediction = reconcile(NO_PREDICTION, selfOf(first), first.ackSeq, solidsFor(first), first.self.speed);
+  let pred: Prediction = reconcile(NO_PREDICTION, selfMotion(first).at, first.ackSeq, solidsFor(first), selfMotion(first).speed);
   let latest = first;
   const toServer: { at: number; seq: number; input: InputState }[] = [];
   const toClient: { at: number; snap: Snapshot }[] = [];
@@ -36,7 +48,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
   all.forEach((partial, i) => {
     const seq = i + 1;
     const input = { ...IDLE_INPUT, ...partial };
-    pred = predictInput(pred, { seq, input, dtMs: TICK_MS, ability: predictAbility(pred, input, latest) }, solidsFor(latest), latest.self.speed, seq * TICK_MS);
+    pred = predictInput(pred, { seq, input, dtMs: TICK_MS, ability: predictAbility(pred, input, latest) }, solidsFor(latest), selfMotion(latest).speed, seq * TICK_MS);
     toServer.push({ at: seq + LATENCY_TICKS, seq, input });
     for (const m of toServer.filter((m) => m.at === seq)) setInput(w, p.id, m.seq, m.input);
     step(w, TICK_MS);
@@ -44,11 +56,11 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
     for (const m of toClient.filter((m) => m.at === seq)) {
       const before = pred.afterNewest!;
       latest = m.snap;
-      pred = reconcile(pred, selfOf(m.snap), m.snap.ackSeq, solidsFor(m.snap), m.snap.self.speed);
+      pred = reconcile(pred, selfMotion(m.snap).at, m.snap.ackSeq, solidsFor(m.snap), selfMotion(m.snap).speed);
       maxCorrection = Math.max(maxCorrection, Math.hypot(pred.afterNewest!.x - before.x, pred.afterNewest!.y - before.y));
     }
   });
-  return { server: { x: p.x, y: p.y, dash: p.life.k === 'alive' ? p.life.dash : null }, pred, maxCorrection };
+  return { server: { x: p.x, y: p.y, dash: p.life.k === 'alive' ? p.life.dash : null }, pred, maxCorrection, downed: p.life.k === 'downed' };
 }
 
 const route: Partial<InputState>[] = [
@@ -130,6 +142,22 @@ test('a knife lunge predicted on the client matches the server every snapshot, i
 test('a knife lunge that reaches an enemy stops where the server stops it', () => {
   const { server, pred, maxCorrection } = playOutLockstep(knifeRoute.slice(0, 20), { ability: 'knife', enemyAt: { x: 500, y: 360 } });
   assert.ok(server.y < 470 && server.y > 420, `the lunge stopped short of its full 90px (y ${server.y})`);
+  assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
+  assert.deepEqual(pred.afterNewest, server);
+});
+
+test('in a zombies run the squad\'s walls and the core stop the predicted player where the server stops them', () => {
+  const route: Partial<InputState>[] = [...Array(20).fill({ left: true }), ...Array(30).fill({ right: true })];
+  const { server, pred, maxCorrection } = playOutLockstep(route, { squad: { walls: [[25, 30]] } });
+  assert.ok(Math.abs(server.x - (1450 - 24)) < 1e-9, `the core stopped the server player (x ${server.x})`);
+  assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
+  assert.deepEqual(pred.afterNewest, server);
+});
+
+test('a downed player\'s crawl is predicted as the server moves it', () => {
+  const route: Partial<InputState>[] = Array(40).fill({ left: true, up: true });
+  const { server, pred, maxCorrection, downed } = playOutLockstep(route, { squad: { walls: [], downed: true } });
+  assert.ok(downed && 1525 - server.y > 40, `the crawl moved them (to ${server.x.toFixed(1)},${server.y.toFixed(1)})`);
   assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
   assert.deepEqual(pred.afterNewest, server);
 });
