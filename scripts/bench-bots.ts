@@ -1,5 +1,6 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-bots.ts [minutes=10] [seeds=10] [abilityMinutes=3]
+// minutes=0 or abilityMinutes=0 skips that section.
 import { GUNS, PERK_TIERS, pickOptions, WORLD, type AbilityId } from '../src/shared/defs.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
@@ -118,7 +119,7 @@ const median = (xs: number[]) => {
   return s.length === 0 ? NaN : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
-for (const style of ['idle', 'strafe'] as const) {
+for (const style of minutes > 0 ? (['idle', 'strafe'] as const) : []) {
   const all: Tally = { lives: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
   for (let seed = 1; seed <= seeds; seed++) {
     const t = simulate(seed, style);
@@ -170,8 +171,8 @@ function abilityArena(ability: AbilityId, seed: number): { uses: number; kills: 
   return { uses, kills, deaths };
 }
 
-console.log(`\nability arena: ${WORLD.minPlayers} bots all holding one ability, ${abilityMinutes} min x ${seeds} seeds`);
-for (const ability of PERK_TIERS[3]) {
+if (abilityMinutes > 0) console.log(`\nability arena: ${WORLD.minPlayers} bots all holding one ability, ${abilityMinutes} min x ${seeds} seeds`);
+for (const ability of abilityMinutes > 0 ? PERK_TIERS[3] : []) {
   let uses = 0, kills = 0, deaths = 0;
   for (let seed = 1; seed <= seeds; seed++) {
     const a = abilityArena(ability, seed);
