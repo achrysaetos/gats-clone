@@ -69,6 +69,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     s.ghillie ||= m.ghillie ?? false;
   }
   s.maxHp *= HP_MULTIPLIER[p.kind];
+  s.maxArmor *= HP_MULTIPLIER[p.kind];
   s.regenPerSec *= HP_MULTIPLIER[p.kind];
   return s;
 }

@@ -192,7 +192,7 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
 export type PlayerKind = (typeof PLAYER_KINDS)[number];
-/** Humans carry triple health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
+/** Humans carry triple health and armor so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
 export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 3, bot: 1 };
 
 export type Pick = { k: 'perk'; tier: Tier } | { k: 'evolve' };

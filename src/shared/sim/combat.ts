@@ -32,13 +32,14 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
+  // A human hits as hard as the victim's health and armor are multiplied, so human duels run at bot pace.
+  if (a?.kind === 'human') amount *= HP_MULTIPLIER[victim.kind];
   if (!src.piercing && life.armor > 0) {
     const absorbed = Math.min(life.armor, amount * ARMORS[victim.loadout.armor].absorbFrac);
     life.armor -= absorbed;
     amount -= absorbed;
   }
-  // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace; armor is not multiplied, so this follows absorption.
-  life.hp -= amount * (a?.kind === 'human' ? HP_MULTIPLIER[victim.kind] : 1);
+  life.hp -= amount;
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp) - life.armor;
   if (a && a.id !== victim.id) life.damageBy.set(a.id, (life.damageBy.get(a.id) ?? 0) + dealt);
