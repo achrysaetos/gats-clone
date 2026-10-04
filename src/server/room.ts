@@ -107,6 +107,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const takenByAnotherAccount = (n: string) => registered(n) && n.toLowerCase() !== account?.toLowerCase();
       const name = uniqueName(account ?? (moderator.isClean(msg.name) ? msg.name : 'Player'), names(), takenByAnotherAccount);
       const p = addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
+      // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
+      if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder() });
       balanceBots();

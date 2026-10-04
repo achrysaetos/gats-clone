@@ -57,8 +57,12 @@ export const reportRows = (report: RunReport, selfName: string | undefined): Rep
 
 export const reportTitle = (report: RunReport) => `The core fell on night ${report.night}`;
 
-export function bledOutText(run: Pick<RunView, 'phase' | 'waveLeft'>): { title: string; sub: string } {
-  return { title: 'You bled out', sub: run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn' };
+/** The card for a squad player out of the fight until dawn: bled out, or joined while the night was under way. */
+export function outTillDawnText(run: Pick<RunView, 'phase' | 'waveLeft'>, bledOut: boolean): { title: string; sub: string } {
+  return {
+    title: bledOut ? 'You bled out' : 'The night is under way',
+    sub: run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn',
+  };
 }
 
 /** The wall rules' view of the world from one snapshot, with the builder where the client draws them. */

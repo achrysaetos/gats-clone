@@ -5,7 +5,9 @@ import { MAPS } from '../src/shared/maps.ts';
 import { canRespawn, step } from '../src/shared/sim.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { createWorld, newId, type Player, type World } from '../src/shared/sim/world.ts';
-import { press, run, spawnAt, TICK_MS } from './helpers.ts';
+import type { Accounts } from '../src/server/accounts.ts';
+import { createRoom } from '../src/server/room.ts';
+import { fakeSocket, PISTOL, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const X = 1475, Y = 1700;
 /** Reads the life afresh, past what an earlier assertion narrowed it to. */
@@ -148,4 +150,37 @@ test('dawn gets a downed player up too', () => {
   run(w, TICK_MS);
   assert.equal(w.run!.phase.k, 'day');
   assert.equal(lifeOf(p).k, 'alive');
+});
+
+test('a human who joins or rejoins by night sits out until dawn, so leaving cannot skip going down; by day they join on their feet', (t) => {
+  const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as Accounts;
+  const room = createRoom('z-test', 'ZOM', 1, accounts);
+  const w = room.world;
+  const join = () => {
+    const ws = fakeSocket();
+    room.connect(ws.socket);
+    t.after(ws.close);
+    ws.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5 });
+    const welcome = ws.sent.find((m) => m.t === 'welcome');
+    return { ws, p: w.players.get(welcome?.t === 'welcome' ? welcome.id : -1)! };
+  };
+  const first = join();
+  assert.equal(first.p.life.k, 'alive', 'joins on their feet by day');
+
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.core.hp = 1e9;
+  holdNight(w);
+  downByBite(w, first.p);
+  assert.equal(first.p.life.k, 'downed');
+  first.ws.close();
+
+  const back = join();
+  assert.deepEqual(back.p.life, { k: 'dead', respawnAt: Infinity }, 'back as out of the fight, not at full health');
+  back.ws.send({ t: 'respawn', loadout: PISTOL });
+  assert.equal(lifeOf(back.p).k, 'dead', 'no respawning out of it');
+
+  w.zombies = [];
+  room.tick();
+  assert.equal(w.run!.phase.k, 'day');
+  assert.equal(lifeOf(back.p).k, 'alive', 'up at dawn');
 });

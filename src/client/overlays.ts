@@ -10,7 +10,7 @@ import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
 import { drawSilhouette } from './sprites.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
-import { bledOutText, reportRows, reportTitle } from './zombies.ts';
+import { outTillDawnText, reportRows, reportTitle } from './zombies.ts';
 
 const CHAT_VISIBLE_MS = 15000;
 
@@ -239,7 +239,8 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     if (!dead) return;
     respawn.hidden = deathLoadout.hidden = !!run;
     if (run) {
-      const text = bledOutText(run);
+      // Dawn gets everyone up, so a death this run can only be tonight's bleed-out; a night joiner has none.
+      const text = outTillDawnText(run, snap.self.deaths > 0);
       deathTitle.textContent = text.title;
       deathSub.textContent = text.sub;
       deathCause.hidden = deathLost.hidden = true;

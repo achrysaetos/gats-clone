@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { bledOutText, buildSiteOf, downedLine, inviteLink, phaseLine, reportRows, reportTitle, runCallouts, squadFromSearch, useHint, withSquad } from '../src/client/zombies.ts';
+import { outTillDawnText, buildSiteOf, downedLine, inviteLink, phaseLine, reportRows, reportTitle, runCallouts, squadFromSearch, useHint, withSquad } from '../src/client/zombies.ts';
 import type { RunView } from '../src/shared/protocol.ts';
 import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
@@ -91,8 +91,9 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
 test('a downed player is told how long they have, or that help is on the way', () => {
   assert.equal(downedLine({ revive: 0, bleedOutAt: 40_000 }, 22_000), 'Crawl to a squadmate · 0:18');
   assert.equal(downedLine({ revive: 0.45, bleedOutAt: 40_000 }, 22_000), 'Being revived · 45%');
-  assert.equal(bledOutText(runView({ phase: 'night', waveLeft: 9 })).sub, 'Back at dawn · 9 zombies left tonight');
-  assert.equal(bledOutText(runView({ phase: 'night' })).title, 'You bled out');
+  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9 }), true).sub, 'Back at dawn · 9 zombies left tonight');
+  assert.equal(outTillDawnText(runView({ phase: 'night' }), true).title, 'You bled out');
+  assert.equal(outTillDawnText(runView({ phase: 'night' }), false).title, 'The night is under way', 'a night joiner never bled out');
 });
 
 test('holding E is offered for a downed squadmate in reach before a worn wall, and never with an empty bank for repairs', () => {
