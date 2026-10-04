@@ -2,7 +2,7 @@ import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, t
 import { rankValue, type Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
-import { OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
+import { deathScreenArmed, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
@@ -36,6 +36,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const keys = { perk: '', chat: '', banner: '', death: '', objective: '' };
   let lastPhase: ClientState['phase'] = 'menu';
   let objectiveAt = -Infinity;
+  let deathAt = -Infinity;
 
   const perkTile = (perk: PerkId) => {
     const { name, desc } = PERK_INFO[perk];
@@ -175,8 +176,11 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     objective.style.borderColor = team ? TEAM_COLORS[team] : '';
   };
 
-  const renderDeath = (state: ClientState, snap: Snapshot) => {
+  const renderDeath = (state: ClientState, snap: Snapshot, now: number) => {
     const dead = state.phase === 'dead';
+    if (dead && death.hidden) deathAt = now;
+    const inert = dead && !deathScreenArmed(deathAt, now);
+    if (death.inert !== inert) death.inert = inert;
     const wait = seconds(snap.self.respawnIn);
     const key = dead ? `${state.killer}|${wait}` : '';
     if (key === keys.death) return;
@@ -211,7 +215,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
       renderBanner(snap);
       renderObjective(state, snap, now);
-      renderDeath(state, snap);
+      renderDeath(state, snap, now);
     },
     reset() {
       keys.perk = keys.chat = keys.banner = keys.death = keys.objective = '';

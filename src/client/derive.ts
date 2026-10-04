@@ -45,6 +45,10 @@ export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
 
 export const OBJECTIVE_MS = 4000;
 
+/** Long enough for a held or spammed trigger click to land before the death screen takes clicks, so it cannot repick the loadout. */
+export const DEATH_ARM_MS = 700;
+export const deathScreenArmed = (openedAt: number, now: number): boolean => now - openedAt >= DEATH_ARM_MS;
+
 export const mapNotice = (match: Pick<MatchView, 'nextMap' | 'mapChangeIn'>): string | null =>
   match.mapChangeIn > 0 ? `Next map: ${match.nextMap} in ${seconds(match.mapChangeIn)}s` : null;
 

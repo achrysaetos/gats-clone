@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { OBJECTIVE_MS, objectiveVisible, topScorers } from '../src/client/derive.ts';
+import { DEATH_ARM_MS, deathScreenArmed, OBJECTIVE_MS, objectiveVisible, topScorers } from '../src/client/derive.ts';
 import type { LeaderRow } from '../src/shared/protocol.ts';
 
 test('the objective banner never shows while the round is over', () => {
@@ -21,4 +21,11 @@ test('the round summary lists the top three: by score in team modes, by kills in
   assert.deepEqual(topScorers('TDM', rows, 3).map((r) => [r.name, r.score]), [['Bo', 90], ['Di', 65], ['Ann', 40]]);
   assert.deepEqual(topScorers('FFA', rows, 3).map((r) => [r.name, r.kills]), [['Ann', 9], ['Di', 5], ['Bo', 3]]);
   assert.deepEqual(topScorers('DOM', rows.slice(0, 2), 3).map((r) => r.name), ['Bo', 'Ann'], 'fewer players than places lists them all');
+});
+
+test('the death screen ignores clicks until a held trigger has had time to let go', () => {
+  assert.equal(deathScreenArmed(1000, 1000), false, 'not on the frame it opens');
+  assert.equal(deathScreenArmed(1000, 1000 + DEATH_ARM_MS - 1), false, 'not just before the delay ends');
+  assert.equal(deathScreenArmed(1000, 1000 + DEATH_ARM_MS), true, 'armed once the delay has passed');
+  assert.ok(DEATH_ARM_MS >= 500, 'long enough to outlast a spammed trigger');
 });
