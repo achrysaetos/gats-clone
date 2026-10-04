@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MODE_IDS, WORLD } from '../src/shared/defs.ts';
+import { MODE_IDS, WORLD, ZOM } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ROTATION, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
@@ -27,7 +27,7 @@ function placementProblems(m: MapDef): string[] {
       if (solids.some((s) => rectsOverlap(s, r, R))) problems.push(`${side} spawn ${i} lets a player stand in a wall or crate`);
     });
   }
-  if (m.zones.length !== 3) problems.push(`${m.zones.length} zones, DOM needs 3`);
+  if (ROTATION.DOM.some((id) => MAPS[id] === m) && m.zones.length !== 3) problems.push(`${m.zones.length} zones, DOM needs 3`);
   m.zones.forEach((z, i) => {
     if (solids.some((s) => circleHitsRect(z.x, z.y, ZONE_RADIUS, s))) problems.push(`zone ${i} overlaps a wall or crate`);
     if (!inside({ x: z.x - ZONE_RADIUS, y: z.y - ZONE_RADIUS, w: ZONE_RADIUS * 2, h: ZONE_RADIUS * 2 }, 0)) problems.push(`zone ${i} leaves the world`);
@@ -104,6 +104,31 @@ for (const id of MAP_IDS) {
   });
 }
 
-test('every mode rotates through every map', () => {
-  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), [...MAP_IDS].sort(), mode);
+const SIEGE_MAPS = MAP_IDS.filter((id) => MAPS[id].siege);
+
+test('every versus mode rotates through every versus map, and zombies through the siege maps', () => {
+  const versus = MAP_IDS.filter((id) => !MAPS[id].siege).sort();
+  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), mode === 'ZOM' ? SIEGE_MAPS : versus, mode);
 });
+
+for (const id of SIEGE_MAPS) {
+  const m = MAPS[id];
+  const siege = m.siege!;
+  const core: Rect = { x: siege.core.x - ZOM.coreHalf, y: siege.core.y - ZOM.coreHalf, w: ZOM.coreHalf * 2, h: ZOM.coreHalf * 2 };
+
+  test(`${m.name}: the core and the horde's edges are clear, and the core sits on the wall grid`, () => {
+    for (const r of [core, ...siege.horde]) {
+      assert.ok(inside(r, 0), `${JSON.stringify(r)} leaves the world`);
+      assert.ok(!m.walls.some((wall) => rectsOverlap(wall, r)), `${JSON.stringify(r)} overlaps a wall`);
+    }
+    assert.ok(Object.values(m.spawns).flat().every((r) => !rectsOverlap(core, r, R)), 'squad spawns keep a body clear of the core');
+    for (const r of [core, ...m.walls]) assert.ok([r.x, r.y, r.w, r.h].every((v) => v % ZOM.cell === 0), `${JSON.stringify(r)} is off the ${ZOM.cell}px grid`);
+  });
+
+  test(`${m.name}: every horde edge can walk to the core`, () => {
+    const open = standable(m);
+    const dist = walk(open, cellsIn([{ x: core.x - R - CELL, y: core.y - R - CELL, w: core.w + 2 * (R + CELL), h: CELL }]));
+    const stuck = cellsIn(siege.horde).filter((c) => open[c] && dist[c] === Infinity);
+    assert.equal(stuck.length, 0, `${stuck.length} horde cells cannot reach the core`);
+  });
+}

@@ -1,6 +1,7 @@
 import { WORLD, type ModeId } from '../defs.ts';
 import { byRank, type RoundWinner, type Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
+import { tickRun } from './run.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
 import { loadMap, spawnPoint, type Player, type World, type Zone } from './world.ts';
@@ -97,6 +98,13 @@ export const MODES: Record<ModeId, ModeRules> = {
     onKill: () => {},
     tick: tickZones,
     winner: (w) => teamWinner(w, WORLD.domWinScore),
+  },
+  // One squad on one team, so the friendly-fire rules spare every squadmate; the run, not the match, decides when it ends.
+  ZOM: {
+    assignTeam: () => 'red',
+    onKill: () => {},
+    tick: tickRun,
+    winner: () => null,
   },
 };
 

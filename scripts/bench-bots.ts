@@ -68,7 +68,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
   if (fire) next.shots++;
   const mx = Math.cos(moveAngle), my = Math.sin(moveAngle);
   return {
-    input: { up: my < -0.38, down: my > 0.38, left: mx < -0.38, right: mx > 0.38, angle, fire, shots: next.shots, reload: !enemy && snap.self.ammo < snap.self.mag / 2, ability: false, aimDist },
+    input: { up: my < -0.38, down: my > 0.38, left: mx < -0.38, right: mx > 0.38, angle, fire, shots: next.shots, reload: !enemy && snap.self.ammo < snap.self.mag / 2, ability: false, aimDist, use: false },
     mind: next,
   };
 }

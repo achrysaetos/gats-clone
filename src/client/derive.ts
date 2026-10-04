@@ -75,6 +75,8 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
         banner: `Domination: you are ${side.toUpperCase()}, hold A B C, first to ${WORLD.domWinScore}`,
         line: `DOM · ${Side} team · hold A B C · first to ${WORLD.domWinScore}`,
       };
+    case 'ZOM':
+      return { banner: 'Zombies: defend the core', line: 'ZOM · defend the core' };
   }
 }
 

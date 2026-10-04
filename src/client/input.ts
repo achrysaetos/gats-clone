@@ -49,5 +49,6 @@ export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots:
     shots,
     reload: held.has('reload'),
     ability: held.has('ability'),
+    use: false,
   };
 }

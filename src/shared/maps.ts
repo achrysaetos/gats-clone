@@ -14,6 +14,8 @@ export type MapDef = {
   /** Every point inside a region is a clear spot for a player's center. */
   spawns: { red: readonly Rect[]; blue: readonly Rect[]; ffa: readonly Rect[] };
   crates: readonly Center[];
+  /** Zombies only: the core the squad defends and the edge strips the horde walks in from. */
+  siege?: { core: Center; horde: readonly Rect[] };
 };
 
 const S = WORLD.size;
@@ -32,7 +34,28 @@ function symmetricMap(name: string, half: { walls: Rect[]; zoneA: Center; red: R
   };
 }
 
-export const MAP_IDS = ['boneyard', 'causeway', 'oldtown', 'citadel'] as const;
+/** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover. */
+const quarterTurn = (r: Rect): Rect => ({ x: S - r.y - r.h, y: r.x, w: r.h, h: r.w });
+const fourWays = (quarter: readonly Rect[]): Rect[] => {
+  const out: Rect[] = [];
+  let turn = [...quarter];
+  for (let i = 0; i < 4; i++) { out.push(...turn); turn = turn.map(quarterTurn); }
+  return out;
+};
+
+function siegeMap(name: string, quarter: { walls: Rect[]; squad: Rect; horde: Rect }): MapDef {
+  const squad = fourWays([quarter.squad]);
+  return {
+    name,
+    walls: fourWays(quarter.walls),
+    zones: [],
+    spawns: { red: squad, blue: squad, ffa: squad },
+    crates: [],
+    siege: { core: { x: S / 2, y: S / 2 }, horde: fourWays([quarter.horde]) },
+  };
+}
+
+export const MAP_IDS = ['boneyard', 'causeway', 'oldtown', 'citadel', 'outpost'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
@@ -107,16 +130,26 @@ export const MAPS: Record<MapId, MapDef> = {
       { x: 1000, y: 2000 }, { x: 2100, y: 900 }, { x: 400, y: 1500 },
     ],
   }),
+
+  outpost: siegeMap('Outpost', {
+    walls: [
+      { x: 600, y: 600, w: 150, h: 50 }, { x: 600, y: 650, w: 50, h: 100 }, { x: 1000, y: 300, w: 50, h: 200 },
+      { x: 300, y: 1050, w: 100, h: 100 }, { x: 1350, y: 650, w: 100, h: 50 }, { x: 850, y: 900, w: 100, h: 100 },
+    ],
+    squad: { x: 1330, y: 1400, w: 60, h: 200 },
+    horde: { x: 40, y: 40, w: 2920, h: 30 },
+  }),
 };
 
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
   FFA: ['boneyard', 'oldtown', 'causeway', 'citadel'],
   TDM: ['causeway', 'boneyard', 'citadel', 'oldtown'],
   DOM: ['citadel', 'causeway', 'oldtown', 'boneyard'],
+  ZOM: ['outpost'],
 };
 
 /** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
-export const MAP_MS: Record<ModeId, number> = { FFA: 6 * 60_000, TDM: 10 * 60_000, DOM: Infinity };
+export const MAP_MS: Record<ModeId, number> = { FFA: 6 * 60_000, TDM: 10 * 60_000, DOM: Infinity, ZOM: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
 export function nextMap(mode: ModeId, current: MapId): MapId {

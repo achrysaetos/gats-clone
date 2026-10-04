@@ -2,7 +2,7 @@
 // Usage: node scripts/golden-replay.ts [expectedHash]
 // Replays fixed-seed matches and hashes every snapshot; a behavior-preserving sim refactor must keep the hash.
 import { createHash } from 'node:crypto';
-import { LEVELS, MODE_IDS, pickOptions, WORLD } from '../src/shared/defs.ts';
+import { LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { MAP_NOTICE_MS, ROTATION } from '../src/shared/maps.ts';
 import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../src/shared/sim.ts';
@@ -45,6 +45,7 @@ function humanInput(w: World, h: Player, phase: number): InputState {
     reload: (w.tick + phase) % 211 === 0,
     ability: (w.tick + phase) % 37 === 0,
     aimDist: Math.min(dist, 500),
+    use: false,
   };
 }
 
@@ -58,7 +59,7 @@ function feed(w: World) {
 }
 
 let worldIndex = 0;
-for (const mode of MODE_IDS) {
+for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
   for (const seed of SEEDS) {
     worldIndex++;
     const w = createWorld(mode, seed, ROTATION[mode][0]);

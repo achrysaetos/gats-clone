@@ -101,7 +101,7 @@ export function randomLoadout(rand: () => number): Loadout {
 export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMemory, rand: () => number): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
   if (!me || !me.alive) {
-    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0 }, pick: null, mem };
+    return { input: { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: mem.shots, reload: false, ability: false, aimDist: 0, use: false }, pick: null, mem };
   }
   const pending = snap.self.pending;
   const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, rand) } : null;
@@ -193,7 +193,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   const mx = goX - me.x, my = goY - me.y;
   const input: InputState = {
     up: my < -DEAD_ZONE, down: my > DEAD_ZONE, left: mx < -DEAD_ZONE, right: mx > DEAD_ZONE,
-    angle, fire, shots: next.shots, reload: !enemy && !fire && snap.self.ammo < snap.self.mag / 2, ability, aimDist,
+    angle, fire, shots: next.shots, reload: !enemy && !fire && snap.self.ammo < snap.self.mag / 2, ability, aimDist, use: false,
   };
   return { input, pick: choice, mem: next };
 }

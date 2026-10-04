@@ -210,7 +210,7 @@ export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(
 
 export const PICK_OPTIONS: readonly PickOption[] = [...PERK_TIERS[1], ...PERK_TIERS[2], ...PERK_TIERS[3], ...GUN_IDS];
 
-export const MODE_IDS = ['FFA', 'TDM', 'DOM'] as const;
+export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 
 export const WORLD = {
@@ -236,4 +236,58 @@ export const WORLD = {
   ffaWinKills: 20,
   roundRestartMs: 8000,
   minPlayers: 10,
+} as const;
+
+export const ZOMBIE_KINDS = ['walker', 'brute'] as const;
+export type ZombieKind = (typeof ZOMBIE_KINDS)[number];
+/** `damage` is per bite and `buildingDamageMul` scales it against walls; `hp` and `damage` grow each night (see `ZOM.nightMul`). */
+export const ZOMBIES: Record<ZombieKind, {
+  name: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; score: number; scrap: number; firstNight: number;
+}> = {
+  walker: { name: 'Walker', hp: 60, speed: 120, radius: 16, damage: 10, attackMs: 900, buildingDamageMul: 1, score: 10, scrap: 2, firstNight: 1 },
+  brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 3, score: 60, scrap: 10, firstNight: 3 },
+};
+
+export const BUILDING_KINDS = ['wall'] as const;
+export type BuildingKind = (typeof BUILDING_KINDS)[number];
+export const BUILDINGS: Record<BuildingKind, { name: string; cost: number; hp: number }> = {
+  wall: { name: 'Wall', cost: 20, hp: 400 },
+};
+
+export const ZOM = {
+  /** One grid cell in px; a wall fills one cell and the horde's flow field runs on the same grid. */
+  cell: 50,
+  coreHp: 2000,
+  /** Half the side of the square core at the map's center. */
+  coreHalf: 50,
+  dayMs: 40_000,
+  /** How far from the core's center a wall may stand. */
+  buildRadius: 600,
+  /** How far from the builder's center a wall may be placed or repaired. */
+  reachPx: 250,
+  reviveMs: 3000,
+  reviveRange: 70,
+  bleedOutMs: 25_000,
+  crawlMul: 0.3,
+  /** Health back after a revive, as a share of max. */
+  reviveHpFrac: 0.4,
+  repairHpPerSec: 80,
+  repairScrapPerHp: 0.05,
+  demolishRefund: 0.5,
+  startScrap: 100,
+  squadSize: 4,
+  /** Spawning waits while this many zombies are alive. */
+  maxAlive: 200,
+  /** A zombie turns on a squad player this close, in sight, instead of marching on the core. */
+  aggroPx: 120,
+  /** How far past touching a zombie's bite reaches. */
+  biteReach: 10,
+  /** What walking through a wall cell costs the flow field, in orthogonal steps; high enough that the horde takes any open way round. */
+  wallCostCells: 40,
+  spawnGapMs: (night: number) => Math.max(120, 700 - 50 * night),
+  waveSize: (night: number, humans: number) => Math.round((10 + 8 * night + night * night) * (1 + 0.25 * Math.max(0, humans - 1))),
+  /** Brutes join from their first night and make up a growing share after. */
+  share: (kind: ZombieKind, night: number) => (night < ZOMBIES[kind].firstNight ? 0 : kind === 'walker' ? 1 : 0.06 * (night - ZOMBIES[kind].firstNight + 1)),
+  nightMul: (night: number) => ({ hp: 1 + 0.15 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
+  restartMs: 20_000,
 } as const;

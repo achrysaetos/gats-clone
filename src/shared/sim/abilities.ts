@@ -1,7 +1,7 @@
 import { WORLD, type AbilityId } from '../defs.ts';
 import { damagePlayer, explode } from './combat.ts';
 import { circleHitsRect, clamp, dist2, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
-import { isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
+import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 
 const BUILT_WALL_MS = 12000;
 export const GAS_RADIUS = 140;
@@ -70,7 +70,7 @@ export function tickThrown(w: World, dt: number) {
       case 'fragGrenade':
       case 'gasGrenade': {
         const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
-        if (solidRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
+        if (coverRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
         if (t.kind === 'grenade') explode(w, t.x, t.y, BLAST_RADIUS.grenade, 80, { ...by, label: 'Grenade' });

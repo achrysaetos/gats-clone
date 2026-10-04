@@ -1,4 +1,4 @@
-import { PERK_TIERS, WORLD, type Blast, type GunId, type ModeId, type PlayerKind, type Tier } from '../defs.ts';
+import { PERK_TIERS, WORLD, ZOM, type Blast, type BuildingKind, type GunId, type ModeId, type PlayerKind, type Tier, type ZombieKind } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type MapId } from '../maps.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
@@ -22,6 +22,9 @@ export type Life =
     /** Health and armor each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];
   }
+  /** Zombies only: out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
+  | { k: 'downed'; bleedOutAt: number; reviveProgress: number }
+  /** `respawnAt` is Infinity for a squad player who bled out; dawn brings them back. */
   | { k: 'dead'; respawnAt: number };
 
 export type Player = {
@@ -81,6 +84,33 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restart
 
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
+export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number };
+
+/** A wall the squad built, filling grid cell (`cx`, `cy`). */
+export type Building = { id: number; kind: BuildingKind; cx: number; cy: number; hp: number };
+
+export type RunPhase =
+  | { k: 'day'; endsAt: number }
+  /** Ends once `toSpawn` is empty and every zombie is dead. */
+  | { k: 'night'; toSpawn: ZombieKind[]; nextSpawnAt: number }
+  | { k: 'over'; night: number; restartAt: number };
+
+export type RunStats = { name: string; kills: number; revives: number; built: number };
+
+/** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
+export type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
+
+/** One zombies run, from the first dawn to the core's fall. */
+export type Run = {
+  core: { hp: number };
+  scrap: number;
+  night: number;
+  phase: RunPhase;
+  startedAt: number;
+  flow: Flow | null;
+  stats: Map<number, RunStats>;
+};
+
 export type Pose = { x: number; y: number };
 type PoseFrame = { at: number; poses: ReadonlyMap<number, Pose>; walls: readonly Wall[] };
 
@@ -107,10 +137,15 @@ export type World = {
   lifeRecords: LifeRecord[];
   /** Recent player positions, oldest first, so a shot can be judged against the world its shooter saw. */
   history: PoseFrame[];
+  zombies: Zombie[];
+  buildings: Building[];
+  buildingsVersion: number;
+  /** The zombies run; null in every other mode. */
+  run: Run | null;
 };
 
 export const IDLE_INPUT: InputState = {
-  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0,
+  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false,
 };
 
 function mulberry32(state: number): number {
@@ -136,9 +171,18 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], history: [],
+    zombies: [], buildings: [], buildingsVersion: 0, run: null,
   };
   loadMap(w, map);
+  if (mode === 'ZOM') w.run = newRun(w.now);
   return w;
+}
+
+export function newRun(now: number): Run {
+  return {
+    core: { hp: ZOM.coreHp }, scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
+    startedAt: now, flow: null, stats: new Map(),
+  };
 }
 
 /** Replaces the layout and everything in flight; players stay where they are. */
@@ -153,10 +197,30 @@ export function loadMap(w: World, map: MapId) {
   w.bullets = [];
   w.thrown = [];
   w.history = [];
+  w.zombies = [];
+  w.buildings = [];
+  w.buildingsVersion++;
 }
 
 export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
-export const solidRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
+export const cellRect = (cx: number, cy: number): Rect => ({ x: cx * ZOM.cell, y: cy * ZOM.cell, w: ZOM.cell, h: ZOM.cell });
+
+export function coreRect(w: World): Rect | null {
+  const core = MAPS[w.map].siege?.core;
+  return core ? { x: core.x - ZOM.coreHalf, y: core.y - ZOM.coreHalf, w: ZOM.coreHalf * 2, h: ZOM.coreHalf * 2 } : null;
+}
+
+/** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. */
+export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
+
+/** What stops bodies: cover, plus the squad's walls and the core in a zombies run. */
+export function solidRects(w: World): Rect[] {
+  const solids = coverRects(w);
+  for (const b of w.buildings) solids.push(cellRect(b.cx, b.cy));
+  const core = w.run && coreRect(w);
+  if (core) solids.push(core);
+  return solids;
+}
 
 const SPAWN_CLEARANCE = 10;
 const SPAWN_ENEMY_DIST = 400;

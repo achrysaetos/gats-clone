@@ -15,6 +15,8 @@ export type InputState = {
   reload: boolean;
   ability: boolean;
   aimDist: number;
+  /** Zombies: held to revive a downed squadmate nearby, or else to repair the nearest damaged wall in reach. */
+  use: boolean;
 };
 
 /** How far behind the newest snapshot a client draws the world; the server allows for it when judging a lagged shot. */
@@ -163,7 +165,7 @@ function parseInput(v: unknown): InputState | null {
   const b = (k: string) => v[k] === true;
   return {
     up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist,
-    fire: b('fire'), shots: Math.floor(shots), reload: b('reload'), ability: b('ability'),
+    fire: b('fire'), shots: Math.floor(shots), reload: b('reload'), ability: b('ability'), use: b('use'),
   };
 }
 
