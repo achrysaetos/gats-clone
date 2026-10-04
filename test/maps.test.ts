@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MODE_IDS, WORLD } from '../src/shared/defs.ts';
-import { CRATE_SIZE, MAP_IDS, MAPS, ROTATION, ZONE_RADIUS, type MapDef, type Point } from '../src/shared/maps.ts';
+import { CRATE_SIZE, MAP_IDS, MAPS, ROTATION, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
 const S = WORLD.size, R = WORLD.playerRadius;
@@ -48,7 +48,7 @@ function standable(m: MapDef): boolean[] {
   return open;
 }
 
-const cellOf = (p: Point) => Math.floor(p.y / CELL) * N + Math.floor(p.x / CELL);
+const cellOf = (p: Center) => Math.floor(p.y / CELL) * N + Math.floor(p.x / CELL);
 
 function cellsIn(regions: readonly Rect[]): number[] {
   const cells: number[] = [];

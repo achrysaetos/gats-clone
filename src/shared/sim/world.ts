@@ -72,7 +72,6 @@ type PoseFrame = { at: number; poses: ReadonlyMap<number, Pose>; walls: readonly
 export type World = {
   mode: ModeId;
   map: MapId;
-  /** When the next map in the rotation loads. */
   mapChangeAt: number;
   now: number;
   tick: number;
