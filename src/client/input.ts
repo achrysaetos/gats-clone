@@ -1,6 +1,6 @@
 import type { InputState } from '../shared/protocol.ts';
 
-export type Action = 'up' | 'down' | 'left' | 'right' | 'reload' | 'ability';
+export type Action = 'up' | 'down' | 'left' | 'right' | 'reload' | 'ability' | 'use';
 
 /** KeyboardEvent.code -> held action. Layout-independent so WASD stays in place on AZERTY. */
 const KEY_BINDINGS: Readonly<Record<string, Action>> = {
@@ -10,6 +10,7 @@ const KEY_BINDINGS: Readonly<Record<string, Action>> = {
   KeyD: 'right', ArrowRight: 'right',
   KeyR: 'reload',
   Space: 'ability',
+  KeyE: 'use',
 };
 
 export const actionForKey = (code: string): Action | null => (Object.hasOwn(KEY_BINDINGS, code) ? KEY_BINDINGS[code]! : null);
@@ -30,6 +31,8 @@ export const CONTROLS: readonly [string, string][] = [
   ['R', 'Reload'],
   ['Space', 'Ability'],
   ['1-9, 0', 'Pick perk or evolution'],
+  ['B', 'Zombies: build walls by day'],
+  ['E', 'Zombies: hold to revive or repair'],
   ['Enter', 'Chat'],
   ['M', 'Mute sound'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],
@@ -49,6 +52,6 @@ export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots:
     shots,
     reload: held.has('reload'),
     ability: held.has('ability'),
-    use: false,
+    use: held.has('use'),
   };
 }

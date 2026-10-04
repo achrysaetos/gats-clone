@@ -1,8 +1,68 @@
-import { WORLD, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
-import type { Snapshot, WallView } from '../shared/protocol.ts';
-import { coreRectAt, type BuildSite } from '../shared/sim/build.ts';
+import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import type { PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
+import { buildRefusal, cellOf, coreRectAt, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
+import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
+
+/** The run in one line: `Day 2 · night in 0:31`, `Night 3 · 12 left`, `Core fell · next run in 0:14`. */
+export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft'>, serverNow: number | null): string {
+  const left = run.phaseEndsAt === null || serverNow === null ? null : run.phaseEndsAt - serverNow;
+  switch (run.phase) {
+    case 'day': return `Day ${run.night}${left === null ? '' : ` · night in ${clock(left)}`}`;
+    case 'night': return `Night ${run.night} · ${run.waveLeft} left`;
+    case 'over': return `Core fell${left === null ? '' : ` · next run in ${clock(left)}`}`;
+  }
+}
+
+/** What a downed player reads: help on the way, or the time they have to crawl to it. */
+export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: number | null): string {
+  if (down.revive > 0) return `Being revived · ${Math.round(down.revive * 100)}%`;
+  return `Crawl to a squadmate${serverNow === null ? '' : ` · ${clock(down.bleedOutAt - serverNow)}`}`;
+}
+
+/** What holding E would do right now, by the same order the server tries: revive first, then repair. */
+export function useHint(snap: Snapshot, at: Pose): string | null {
+  if (!snap.run || !snap.self.alive) return null;
+  const down = snap.players.find((p) => p.id !== snap.self.id && p.downed && Math.hypot(p.x - at.x, p.y - at.y) <= ZOM.reviveRange);
+  if (down) return `Hold E to revive ${down.name}`;
+  if (snap.run.scrap <= 0) return null;
+  const worn = (snap.buildings ?? []).some((b) => b.hp < 10 && Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) <= ZOM.reachPx);
+  return worn ? 'Hold E to repair the wall' : null;
+}
+
+export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' | 'fell' };
+export const NIGHT_WARNING_MS = 10_000;
+
+/** The run's turning points between two snapshots, timed on the server's clock (`prevAt`, `nextAt`). */
+export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number): RunCallout[] {
+  if (!prev || !next) return [];
+  const out: RunCallout[] = [];
+  if (prev.phase === 'day' && next.phase === 'day' && prev.phaseEndsAt !== null && next.phaseEndsAt !== null
+    && prev.phaseEndsAt - prevAt > NIGHT_WARNING_MS && next.phaseEndsAt - nextAt <= NIGHT_WARNING_MS) {
+    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: 'Finish your walls and get by the core', tone: 'warn' });
+  }
+  if (prev.phase === 'day' && next.phase === 'night') out.push({ title: `Night ${next.night}`, line: `${next.waveLeft} zombies are coming · hold the core`, tone: 'night' });
+  if (prev.phase === 'night' && next.phase === 'day') {
+    const core = Math.round((100 * next.core.hp) / next.core.maxHp);
+    out.push({ title: 'Dawn', line: `Night ${prev.night} held · core ${core}% · ${next.scrap} scrap to build with`, tone: 'dawn' });
+  }
+  if (prev.phase !== 'over' && next.phase === 'over') out.push({ title: 'The core fell', line: `The squad held out to night ${next.night}`, tone: 'fell' });
+  return out;
+}
+
+export type ReportRow = { name: string; kills: number; revives: number; built: number; you: boolean };
+
+/** The report's table: most kills first, then most revives, so the squad's carry tops it. */
+export const reportRows = (report: RunReport, selfName: string | undefined): ReportRow[] =>
+  [...report.players].sort((a, b) => b.kills - a.kills || b.revives - a.revives || b.built - a.built).map((p) => ({ ...p, you: p.name === selfName }));
+
+export const reportTitle = (report: RunReport) => `The core fell on night ${report.night}`;
+
+/** A bled-out player sits out the night; dawn, not a respawn button, brings them back. */
+export function bledOutText(run: Pick<RunView, 'phase' | 'waveLeft'>): { title: string; sub: string } {
+  return { title: 'You bled out', sub: run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn' };
+}
 
 /** The wall rules' view of the world from one snapshot, with the builder where the client draws them. */
 export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder: Pose): BuildSite | null {
@@ -23,3 +83,49 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
     scrap: run.scrap,
   };
 }
+
+export const REFUSAL_TEXT: Record<BuildRefusal, string> = {
+  notDay: 'Walls go up by day',
+  farFromCore: 'Too far from the core',
+  outOfReach: 'Out of reach',
+  cover: 'Blocked',
+  core: 'That is the core',
+  body: 'Someone is in the way',
+  taken: `Right click to take down · +${Math.floor(BUILDINGS.wall.cost * ZOM.demolishRefund)}`,
+  scrap: `Needs ${BUILDINGS.wall.cost} scrap`,
+};
+
+/** The cell under the cursor in build mode and what clicking it would do. */
+export type Ghost = { cx: number; cy: number; refusal: BuildRefusal | null; label: string };
+
+const GRID = WORLD.size / ZOM.cell;
+
+export function ghostAt(site: BuildSite, at: Pose): Ghost {
+  const cell = cellOf(at.x, at.y);
+  const cx = Math.min(GRID - 1, Math.max(0, cell.cx)), cy = Math.min(GRID - 1, Math.max(0, cell.cy));
+  const refusal = buildRefusal(site, cx, cy);
+  return { cx, cy, refusal, label: refusal ? REFUSAL_TEXT[refusal] : `Wall · ${BUILDINGS.wall.cost} scrap` };
+}
+
+const SQUAD_CODE = /^z-[a-z2-7]{6}$/;
+
+/** A squad code from an invite link, or null when there is none; `bad` when the link carries a code that cannot exist. */
+export function squadFromSearch(search: string): string | null | 'bad' {
+  const code = new URLSearchParams(search).get('squad');
+  if (code === null) return null;
+  return SQUAD_CODE.test(code) ? code : 'bad';
+}
+
+/** This page's address with `squad` set to the code, or removed for null, keeping every other parameter. */
+export function withSquad(href: string, code: string | null): string {
+  const url = new URL(href);
+  if (code === null) url.searchParams.delete('squad');
+  else url.searchParams.set('squad', code);
+  return url.toString();
+}
+
+/** The link a friend opens to join: the page with only the squad code. */
+export const inviteLink = (href: string, code: string): string => {
+  const url = new URL(href);
+  return `${url.origin}${url.pathname}?squad=${code}`;
+};

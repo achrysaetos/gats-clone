@@ -1,20 +1,20 @@
 import { pickOptions, WORLD } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
-import { fetchServers, loadLoadout, loadMuted, loadName, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
+import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
-import { makeCamera, viewAspect, worldToScreen, type Camera } from './camera.ts';
+import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
-import { addMoments, NO_MOMENTS } from './moments.ts';
+import { addMoments, CALLOUT_MS, NO_MOMENTS } from './moments.ts';
 import { drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
-import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers } from './menu.ts';
+import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
@@ -26,10 +26,14 @@ import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
+import { CORE_ALERT_MS } from './siege.ts';
+import { buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SESSION_EXPIRED = 'Session expired, log in again.';
+const BAD_INVITE = 'That invite link is broken. Ask your squad for a new one, or start your own.';
+const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one.`;
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
@@ -44,12 +48,17 @@ const reconnectEl = $('reconnect');
 const playBtn = $<HTMLButtonElement>('play');
 const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
+const squadEl = $('squad');
+const squadChip = $('squad-chip');
 
 let state: ClientState = { phase: 'menu', status: { kind: 'idle' } };
 let loadout: Loadout = loadLoadout();
 let muted = loadMuted();
 let servers: ServerInfo[] | null = [];
 let selectedRoom: string | null = null;
+/** The squad from an invite link or the one this page started, listed beside the public rooms. */
+let squad: string | null = null;
+let squadBusy = false;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
 let viewTimer: ReturnType<typeof setTimeout> | undefined;
@@ -72,6 +81,8 @@ const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('j
 const DEV = params.has('dev');
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
+/** The build preview under the cursor this frame, which a click acts on. */
+let ghost: Ghost | null = null;
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
 const liveNumbers = () => {
@@ -79,7 +90,15 @@ const liveNumbers = () => {
   const now = performance.now();
   return s ? s.feedback.numbers.filter((n) => now - n.born < NUMBER_MS).map((n) => ({ victim: n.victim, amount: n.amount, height: numberHeight(n, now) })) : [];
 };
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, takeFrameCosts: () => frameCosts.splice(0), benchFrames } });
+const zombiesView = () => {
+  const s = drawnSessionOf(state);
+  const now = performance.now();
+  return s && {
+    building: s.building, ghost, coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
+    callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
+  };
+};
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
 
 /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
 function benchFrames(n: number): number[] {
@@ -102,8 +121,13 @@ function send(ws: WebSocket, msg: ClientMsg) {
 }
 
 function setState(next: ClientState) {
+  const was = state;
   state = next;
   menuEl.hidden = next.phase !== 'menu';
+  if (next.phase !== was.phase) {
+    const room = next.phase === 'menu' ? null : next.s.rejoin.room;
+    renderSquadChip(squadChip, room === squad ? squad : null, squad && inviteLink(location.href, squad));
+  }
   hudEl.hidden = next.phase === 'menu';
   canvas.classList.toggle('aiming', next.phase === 'playing');
   reconnectEl.hidden = next.phase !== 'reconnecting';
@@ -170,7 +194,12 @@ function dial(rejoin: Rejoin): WebSocket {
 function onClose(ws: WebSocket, code: number) {
   const now = performance.now();
   switch (closeVerdict(socketRole(state, ws), code)) {
-    case 'connect-failed':
+    case 'connect-failed': {
+      const room = state.phase === 'menu' && state.status.kind === 'connecting' ? state.status.rejoin.room : null;
+      if (room === null || room !== squad) return setState({ phase: 'menu', status: { kind: 'error', message: 'Disconnected from server.' } });
+      setSquad(null);
+      return setState({ phase: 'menu', status: { kind: 'error', message: squadClosed(room) } });
+    }
     case 'drop':
       return setState({ phase: 'menu', status: { kind: 'error', message: 'Disconnected from server.' } });
     case 'reconnect':
@@ -237,6 +266,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], pendingFx: [], feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), building: false,
   };
 }
 
@@ -259,7 +289,9 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
-  for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+  for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+  if (prev?.run && snap.run && snap.run.core.hp < prev.run.core.hp && snap.run.phase !== 'over') s.coreHitAt = now;
+  if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
   const dead = !snap.self.alive && !selfOf(snap)?.downed;
@@ -310,6 +342,26 @@ function pick(slot: number) {
   if (!option) return;
   send(s.ws, { t: 'pick', level: pending.level, option });
   s.pickSentFor = pending.level;
+  playClick(s);
+}
+
+function toggleBuild(s: Session) {
+  const run = newestSnap(s.snaps)?.run;
+  if (!run || state.phase !== 'playing') return;
+  if (!s.building && run.phase !== 'day') {
+    s.chat.push({ from: '', text: 'Walls go up by day.', team: null, at: performance.now() });
+    return;
+  }
+  s.building = !s.building;
+  playClick(s);
+}
+
+/** In build mode the mouse places walls instead of firing: left builds on the previewed cell, right takes your squad's wall there down. */
+function buildClick(s: Session, button: number) {
+  if (!ghost) return;
+  if (button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', cx: ghost.cx, cy: ghost.cy });
+  else if (button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
+  else return;
   playClick(s);
 }
 
@@ -382,9 +434,11 @@ function drawFrame(now: number) {
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId });
+  const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
+  ghost = site && ghostAt(site, screenToWorld(aimCamera, mouse));
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
   const moving = MOVES.some((a) => held.has(a));
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive ? spreadFor(me.gun, snap.self.perks, !moving) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, !moving) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
@@ -407,6 +461,10 @@ function onKeyDown(e: KeyboardEvent) {
     held.clear();
     firing = false;
     overlays.openChat();
+    return;
+  }
+  if (e.code === 'KeyB') {
+    toggleBuild(s);
     return;
   }
   if (e.code === 'KeyM') {
@@ -453,6 +511,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
 }
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
 canvas.addEventListener('mousedown', (e) => {
+  if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e.button);
   if (e.button !== 0) return;
   firing = true;
   if (state.phase === 'playing' && !overlays.typing) state.s.shots++;
@@ -468,13 +527,47 @@ async function pollServers() {
   } catch {
     servers = null;
   }
-  if (servers && !servers.some((sv) => sv.id === selectedRoom)) selectedRoom = servers[0]?.id ?? null;
+  if (servers && selectedRoom !== squad && !servers.some((sv) => sv.id === selectedRoom)) selectedRoom = servers[0]?.id ?? null;
   showServers();
 }
 
+let squadKey = '';
+
 function showServers() {
   renderServers(serversEl, servers, selectedRoom, (id) => { selectedRoom = id; showServers(); });
+  const key = `${squad}|${selectedRoom === squad}|${squadBusy}`;
+  if (key !== squadKey) {
+    squadKey = key;
+    renderSquad(squadEl, { code: squad, selected: squad !== null && selectedRoom === squad, link: squad && inviteLink(location.href, squad), busy: squadBusy }, {
+      start: () => void startSquad(),
+      pick: () => { selectedRoom = squad; showServers(); },
+    });
+  }
   refreshPlayButton();
+}
+
+function setSquad(code: string | null) {
+  if (code === null && selectedRoom === squad) selectedRoom = servers?.[0]?.id ?? null;
+  squad = code;
+  history.replaceState(null, '', withSquad(location.href, code));
+  showServers();
+}
+
+async function startSquad() {
+  if (squadBusy || state.phase !== 'menu' || state.status.kind === 'connecting') return;
+  squadBusy = true;
+  showServers();
+  const opened = await openSquad();
+  squadBusy = false;
+  if ('error' in opened) {
+    showServers();
+    if (state.phase === 'menu') setState({ phase: 'menu', status: { kind: 'error', message: opened.error } });
+    return;
+  }
+  setSquad(opened.room);
+  selectedRoom = opened.room;
+  showServers();
+  play(opened.room);
 }
 
 function toggleMuted(name: string) {
@@ -502,6 +595,14 @@ window.addEventListener('online', () => {
 });
 setInterval(() => void pollServers(), SERVER_POLL_MS);
 
+const invited = squadFromSearch(location.search);
+if (invited === 'bad') {
+  history.replaceState(null, '', withSquad(location.href, null));
+  state = { phase: 'menu', status: { kind: 'error', message: BAD_INVITE } };
+} else if (invited) {
+  squad = selectedRoom = invited;
+}
 resize();
 setState(state);
+if (invited && invited !== 'bad') squadEl.scrollIntoView({ block: 'center' });
 requestAnimationFrame(frame);

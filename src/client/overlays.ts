@@ -2,7 +2,7 @@ import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, t
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
-import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, roundTimeLeft, seconds } from './derive.ts';
+import { clock, deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, roundTimeLeft, seconds } from './derive.ts';
 import { serverNow } from './interp.ts';
 import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
@@ -10,6 +10,7 @@ import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
 import { drawSilhouette } from './sprites.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
+import { bledOutText, reportRows, reportTitle } from './zombies.ts';
 
 const CHAT_VISIBLE_MS = 15000;
 
@@ -36,8 +37,10 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const deathCause = $('death-cause');
   const deathLost = $('death-lost');
   const respawn = $<HTMLButtonElement>('respawn');
+  const report = $('report');
+  const deathLoadout = $('loadout-death');
   respawn.onclick = onRespawn;
-  const keys = { perk: '', chat: '', banner: '', death: '', objective: '' };
+  const keys = { perk: '', chat: '', banner: '', death: '', objective: '', report: '' };
   let objectiveSeen = NO_OBJECTIVE_SEEN;
   let deathAt = -Infinity;
 
@@ -191,7 +194,35 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     if (!show) return;
     objective.textContent = objectiveFor(snap.match.mode, team, roundTimeLeft(snap.match, clockNow)).banner;
     objective.style.animationDuration = `${OBJECTIVE_MS}ms`;
-    objective.style.borderColor = team ? TEAM_COLORS[team] : '';
+    objective.style.borderColor = team && !snap.run ? TEAM_COLORS[team] : '';
+    objective.classList.toggle('siege', !!snap.run);
+  };
+
+  const renderReport = (snap: Snapshot, clockNow: number | null) => {
+    const run = snap.run;
+    const done = run?.phase === 'over' && run.report ? run.report : null;
+    const left = done && run?.phaseEndsAt != null && clockNow !== null ? seconds(run.phaseEndsAt - clockNow) : null;
+    const key = done ? `${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}` : '';
+    if (key === keys.report) return;
+    keys.report = key;
+    report.hidden = !done;
+    if (!done) return;
+    const h = document.createElement('h2');
+    h.textContent = reportTitle(done);
+    const length = document.createElement('p');
+    length.textContent = `The run lasted ${clock(done.durationMs)}`;
+    const table = document.createElement('table');
+    const head = document.createElement('tr');
+    for (const label of ['Player', 'Kills', 'Revives', 'Walls']) head.append(Object.assign(document.createElement('th'), { textContent: label }));
+    table.append(head, ...reportRows(done, snap.players.find((p) => p.id === snap.self.id)?.name).map((r) => {
+      const tr = document.createElement('tr');
+      if (r.you) tr.className = 'you';
+      for (const v of [r.name, r.kills, r.revives, r.built]) tr.append(Object.assign(document.createElement('td'), { textContent: String(v) }));
+      return tr;
+    }));
+    const next = document.createElement('p');
+    next.textContent = left === null ? 'A fresh run starts soon' : `Next run in ${left}s`;
+    report.replaceChildren(h, length, table, next);
   };
 
   const renderDeath = (state: ClientState, snap: Snapshot, now: number) => {
@@ -200,11 +231,20 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const inert = dead && !deathScreenArmed(deathAt, now);
     if (death.inert !== inert) death.inert = inert;
     const wait = seconds(snap.self.respawnIn);
-    const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}` : '';
+    const run = snap.run;
+    const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}|${run?.phase}|${run?.waveLeft}` : '';
     if (key === keys.death) return;
     keys.death = key;
     death.hidden = !dead;
     if (!dead) return;
+    respawn.hidden = deathLoadout.hidden = !!run;
+    if (run) {
+      const text = bledOutText(run);
+      deathTitle.textContent = text.title;
+      deathSub.textContent = text.sub;
+      deathCause.hidden = deathLost.hidden = true;
+      return;
+    }
     const text = deathText(state.kill, state.loss);
     deathTitle.textContent = text.title;
     deathCause.textContent = text.cause;
@@ -239,11 +279,12 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       renderBanner(snap);
       renderObjective(state, snap, now, serverNow(s.snaps, now));
       renderDeath(state, snap, now);
+      renderReport(snap, serverNow(s.snaps, now));
     },
     reset() {
-      keys.perk = keys.chat = keys.banner = keys.death = keys.objective = '';
+      keys.perk = keys.chat = keys.banner = keys.death = keys.objective = keys.report = '';
       objectiveSeen = NO_OBJECTIVE_SEEN;
-      perkPanel.hidden = banner.hidden = death.hidden = objective.hidden = true;
+      perkPanel.hidden = banner.hidden = death.hidden = objective.hidden = report.hidden = true;
       chatLog.replaceChildren();
       chatInput.hidden = true;
     },

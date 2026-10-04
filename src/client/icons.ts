@@ -27,6 +27,8 @@ export const UI_ICONS = {
   heart: 'M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 4-3 7-10 13z',
   armor: 'M12 2l8 3v7c0 5-4 9-8 10-4-1-8-5-8-10V5z',
   target: 'M5 12a7 7 0 1 0 14 0a7 7 0 1 0 -14 0M12 1v6M12 17v6M1 12h6M17 12h6',
+  scrap: 'M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10',
+  core: 'M12 2l7 10-7 10-7-10z',
 } as const;
 
 const paths = new Map<string, Path2D>();

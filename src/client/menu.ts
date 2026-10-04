@@ -91,6 +91,55 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   }));
 }
 
+type SquadMenu = { code: string | null; selected: boolean; link: string | null; busy: boolean };
+
+/** Starting a squad joins it at once; a squad from an invite link waits to be picked like any room. */
+export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): void; pick(): void }) {
+  const start = el('button', { type: 'button', id: 'squad-start', className: 'secondary', disabled: squad.busy }, squad.busy ? 'Starting…' : squad.code ? 'New squad' : 'Start a squad');
+  start.onclick = on.start;
+  const pitch = el('div', { className: 'squad-pitch' }, el('span', {}, 'Hold the core against the horde with up to three friends.'), start);
+  if (!squad.code || !squad.link) { root.replaceChildren(pitch); return; }
+  const room = el('button', { type: 'button', className: 'server', id: 'squad-room' },
+    el('span', { className: 'mode mode-zom' }, 'ZOM'),
+    el('span', { className: 'server-name' }, `Squad ${squad.code}`),
+    el('span', { className: 'count' }, 'private'));
+  room.ariaPressed = String(squad.selected);
+  room.onclick = on.pick;
+  const link = el('input', { id: 'squad-link', readOnly: true, value: squad.link, ariaLabel: 'Invite link' });
+  const copy = el('button', { type: 'button', id: 'squad-copy' }, 'Copy link');
+  copy.onclick = () => void copyText(link.value, copy);
+  root.replaceChildren(room, el('div', { className: 'invite' }, link, copy), pitch);
+}
+
+/** Copies through the clipboard API where the page may, else through a selected scratch field. */
+export async function copyText(text: string, button: HTMLButtonElement) {
+  const label = button.textContent;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
+    const scratch = el('textarea', { value: text });
+    document.body.append(scratch);
+    scratch.select();
+    ok = document.execCommand('copy');
+    scratch.remove();
+  }
+  button.textContent = ok ? 'Copied' : 'Copy failed';
+  setTimeout(() => { button.textContent = label; }, 1600);
+}
+
+/** The in-game reminder of which squad you are in, with the invite one click away. */
+export function renderSquadChip(root: HTMLElement, code: string | null, link: string | null) {
+  root.hidden = code === null;
+  if (!code || !link) return;
+  const copy = el('button', { type: 'button', id: 'squad-chip-copy' }, 'Copy invite link');
+  // A focused button would also take the Space that triggers the ability.
+  copy.onmousedown = (e) => e.preventDefault();
+  copy.onclick = () => void copyText(link, copy);
+  root.replaceChildren(el('span', {}, `Squad ${code}`), copy);
+}
+
 export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null; expire(message: string): void } {
   let account = loadAccount();
 

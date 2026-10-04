@@ -1,4 +1,4 @@
-import { COLORS, type ArmorId } from '../shared/defs.ts';
+import { COLORS, type ArmorId, type ZombieKind } from '../shared/defs.ts';
 import type { Team } from '../shared/protocol.ts';
 
 export const INK = '#1b1d22';
@@ -49,3 +49,8 @@ export function shade(hex: string, f: number): string {
 }
 
 export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
+
+export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; line: number }> = {
+  walker: { body: '#8fb35a', arm: '#6f9440', eye: '#1b1d22', line: 3 },
+  brute: { body: '#7d6a92', arm: '#5e4d72', eye: '#ff5a3c', line: 4 },
+};

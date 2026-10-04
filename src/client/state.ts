@@ -1,3 +1,4 @@
+import type { ZombieKind } from '../shared/defs.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
@@ -13,11 +14,12 @@ export type Effect =
   | { kind: 'death'; x: number; y: number; victim: number; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
   | { kind: 'flash'; x: number; y: number; angle: number; born: number }
-  | { kind: 'slash'; x: number; y: number; angle: number; born: number };
+  | { kind: 'slash'; x: number; y: number; angle: number; born: number }
+  | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 420 };
 
-type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' }> & { at: number };
+type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 type TrailPoint = { x: number; y: number; at: number };
 
@@ -45,6 +47,10 @@ export type Session = {
   /** The level whose pick was sent and not yet confirmed by a snapshot. */
   pickSentFor: number | null;
   particles: ParticlePool;
+  /** Zombies: the time the core last lost health, each zombie's last heading, and whether build mode is on. */
+  coreHitAt: number;
+  zombieFaces: Map<number, { x: number; y: number; a: number }>;
+  building: boolean;
 };
 
 type MenuStatus =

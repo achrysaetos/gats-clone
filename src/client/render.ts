@@ -1,12 +1,15 @@
-import { COLORS, GUNS, WORLD } from '../shared/defs.ts';
+import { COLORS, GUNS, WORLD, ZOM } from '../shared/defs.ts';
 import type { BulletView, CrateView, PlayerView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes } from './effects.ts';
 import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
 import { ARMOR_BAND, INK, PALETTE, shade, TEAM_COLORS, teamColor } from './palette.ts';
+import { serverNow } from './interp.ts';
+import { drawBuildings, drawCore, drawDowned, drawGhost, drawZombies, faceZombies, wallFlashes } from './siege.ts';
 import { drawGun, gripsOf } from './sprites.ts';
 import type { Session } from './state.ts';
+import type { Ghost } from './zombies.ts';
 import { crateDamage, crateSprite, floorCracks, PLAYER_SHADOW, SLAB, slabLevels, WALL_SHADOW } from './textures.ts';
 
 const TAU = Math.PI * 2;
@@ -18,7 +21,7 @@ const TRACER = { tail: 0.07, core: 0.022 } as const;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null };
+type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
@@ -35,6 +38,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
 
   const mine = snap.players.find((p) => p.id === s.myId);
   const myTeam = mine?.team ?? null;
+  // The squad shares one team, so each squadmate wears their own color instead.
+  const colorOf = (p: PlayerView) => (snap.run ? COLORS[p.color] : bodyColor(p));
   for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
   const crates = snap.crates.filter((c) => inView(view, c.x, c.y, c.size, c.size));
@@ -47,17 +52,25 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const walls = s.walls.filter((w) => inView(view, w.x, w.y, w.w + WALL_SHADOW.x, w.h + WALL_SHADOW.y));
   drawWallShadows(ctx, walls);
   for (const w of walls) drawWall(ctx, w);
+  if (snap.buildings) drawBuildings(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), now);
+  if (snap.run) drawCore(ctx, snap.run, now, s.coreHitAt);
   const alive = snap.players.filter((p) => p.alive && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
+  const downed = snap.players.filter((p) => p.downed && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
   drawPlayerShadows(ctx, alive);
-  for (const p of snap.players) drawTrail(ctx, bodyColor(p), s.trails.get(p.id), now);
+  for (const p of snap.players) drawTrail(ctx, colorOf(p), s.trails.get(p.id), now);
   drawTracers(ctx, snap.bullets, s.myId);
 
   const flashes = hitFlashes(s.effects, now);
+  if (snap.zombies) {
+    faceZombies(s.zombieFaces, snap.zombies, snap.run?.core ?? s.lastSelf);
+    drawZombies(ctx, snap.zombies, s.zombieFaces, flashes, now);
+  }
+  for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId);
   for (const p of alive) {
     const self = p.id === s.myId;
     const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
     const flash = flashes.get(p.id);
-    drawPlayer(ctx, { ...p, angle }, bodyColor(p), {
+    drawPlayer(ctx, { ...p, angle }, colorOf(p), {
       self, friendly: !self && p.team !== null && p.team === myTeam, rival: !self && p.team === null && p.color === mine?.color, flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, now,
     });
   }
@@ -65,7 +78,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects, now);
   drawParticles(ctx, s.particles, now);
-  for (const p of alive) if (!p.hidden) drawLabel(ctx, p, p.id === s.myId);
+  for (const p of [...downed, ...alive]) if (!p.hidden) drawLabel(ctx, p, p.id === s.myId);
+  if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now);
   drawDamageNumbers(ctx, s.feedback.numbers, now);

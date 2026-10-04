@@ -1,7 +1,11 @@
-import { GUNS, WORLD } from '../shared/defs.ts';
+import { GUNS, WORLD, ZOMBIES } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf, type KillEvent } from './derive.ts';
+import { TICK_MS } from './interp.ts';
 import { PALETTE } from './palette.ts';
+import { runCallouts, type RunCallout } from './zombies.ts';
+
+const TONE: Record<RunCallout['tone'], string> = { night: '#a08cff', dawn: PALETTE.gold, warn: '#ff9f43', fell: PALETTE.hunted };
 
 /** A centered announcement; `ring` also bursts a ring around your player. */
 export type Callout = { title: string; line: string; color: string; ring: boolean; born: number };
@@ -22,7 +26,17 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
   const announce = (c: Omit<Callout, 'born'>) => callouts.push({ ...c, born: Math.max(now, (callouts.at(-1)?.born ?? -Infinity) + CALLOUT_STAGGER_MS) });
   const popups = m.popups.filter((p) => now - p.born < POPUP_MS);
   const me = selfOf(next);
-  if (!me?.alive) return { callouts: [], popups };
+  if (!me?.alive && !me?.downed) return { callouts: [], popups };
+  for (const c of runCallouts(prev?.run, next.run, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS)) {
+    announce({ title: c.title, line: c.line, color: TONE[c.tone], ring: c.tone !== 'warn' });
+  }
+  for (const ev of next.events) {
+    if (ev.e === 'life' && ev.id === next.self.id && ev.k === 'revived') {
+      const by = next.players.find((p) => p.id === ev.by)?.name;
+      announce({ title: 'Back on your feet', line: by ? `${by} got you up` : 'Your squad got you up', color: PALETTE.hpGood, ring: true });
+    }
+    if (ev.e === 'zkill' && ev.by === next.self.id) popups.push({ x: ev.x, y: ev.y, amount: ZOMBIES[ev.kind].score, born: now });
+  }
   const was = prev && selfOf(prev);
   const life = me?.alive && was?.alive ? { me, was } : null;
   if (life && GUNS[life.me.gun].stage > GUNS[life.was.gun].stage) {

@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, BUILDINGS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { clearOfRects, edgePoint, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, topScorers, type Rect } from './derive.ts';
@@ -7,7 +7,9 @@ import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { serverNow } from './interp.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
-import { PALETTE, TEAM_COLORS } from './palette.ts';
+import { PALETTE, TEAM_COLORS, ZOMBIE_LOOK } from './palette.ts';
+import { CORE_ALERT_MS } from './siege.ts';
+import { downedLine, phaseLine, useHint } from './zombies.ts';
 import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
 
@@ -57,12 +59,13 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   const compact = w < 640;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
-  drawKillFeed(hud, compact ? 74 : 18);
+  drawKillFeed(hud, (compact ? 74 : 18) + (snap.run ? SQUAD_CHIP_H : 0));
   drawLeaderboard(hud, compact);
   drawMinimap(hud, compact ? 110 : 170);
   drawScore(hud, compact);
   ctx.globalAlpha = 1;
   if (me?.alive) drawVitals(hud);
+  if (snap.run) drawSiege(hud, snap.run, compact);
   drawHuntedArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
@@ -334,12 +337,21 @@ function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: numb
   return { width: ctx.measureText(label).width + SPACE.sm, draw: (x, y) => text(ctx, label, x, y, TYPE.label, color, 'left', weight) };
 }
 
-function drawKillFeed({ ctx, s, now }: Hud, top: number) {
+function drawKillFeed(hud: Hud, top: number) {
+  const { ctx, s, now } = hud;
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-5);
   lines.forEach((f, i) => {
     const y = top + i * 28;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
     setFont(ctx, 700, TYPE.body);
+    if (f.e === 'life') {
+      const by = f.by === null ? null : hud.snap.players.find((p) => p.id === f.by)?.name ?? hud.snap.leaderboard.find((r) => r.id === f.by)?.name;
+      const [line, color] = f.k === 'downed' ? [`${f.name} is down`, PALETTE.hunted] : f.k === 'revived' ? [by ? `${by} revived ${f.name}` : `${f.name} is back up`, PALETTE.hpGood] : [`${f.name} bled out`, MUTED];
+      panel(ctx, 12, y - 12, ctx.measureText(line).width + SPACE.lg * 2, 24, color);
+      text(ctx, line, 12 + SPACE.lg, y, TYPE.body, f.id === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
+      ctx.globalAlpha = 1;
+      return;
+    }
     if (f.e === 'hunted') {
       const line = `${f.name} is hunted`;
       panel(ctx, 12, y - 12, ctx.measureText(line).width + 22 + SPACE.lg * 2, 24, PALETTE.hunted);
@@ -370,14 +382,15 @@ const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(
 function drawLeaderboard(hud: Hud, compact: boolean) {
   const { ctx, w, snap, s } = hud;
   const rows = topScorers(snap.leaderboard, compact ? 5 : 10);
-  const teams = snap.match.mode !== 'FFA';
+  const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM';
+  const squad = !!snap.run;
   const pw = compact ? 150 : 210;
   const x = w - pw - 12;
   const rowH = 20;
-  const ph = 36 + rows.length * rowH + (teams ? 30 : 18);
+  const ph = 36 + rows.length * rowH + (teams ? 30 : squad ? 0 : 18);
   fadePanel(hud, 'board', x, 12, pw, ph);
   panel(ctx, x, 12, pw, ph);
-  caps(ctx, 'Leaderboard', x + SPACE.md, 29);
+  caps(ctx, squad ? 'Squad kills' : 'Leaderboard', x + SPACE.md, 29);
   text(ctx, snap.match.mode, x + pw - SPACE.md, 29, TYPE.label, PALETTE.gold, 'right', 800);
   let y = 52;
   if (teams) {
@@ -389,7 +402,7 @@ function drawLeaderboard(hud: Hud, compact: boolean) {
     text(ctx, `to ${goal}`, x + pw / 2, y + 13, TYPE.micro, MUTED, 'center', 500);
     text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
     y += 30;
-  } else {
+  } else if (!squad) {
     const mostKills = mostKillsText(timeLeft(hud));
     text(ctx, mostKills[0]!.toUpperCase() + mostKills.slice(1), x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
     y += 18;
@@ -402,13 +415,13 @@ function drawLeaderboard(hud: Hud, compact: boolean) {
       ctx.roundRect(x + 6, y - rowH / 2, pw - 12, rowH, 5);
       ctx.fill();
     }
-    if (r.team) {
+    if (r.team && teams) {
       ctx.fillStyle = TEAM_COLORS[r.team];
       ctx.beginPath();
       ctx.arc(x + SPACE.md + 4, y, 4, 0, TAU);
       ctx.fill();
     }
-    text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
+    text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team && teams ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
     text(ctx, String(r.kills), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
     y += rowH;
   });
@@ -507,6 +520,29 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.strokeStyle = '#000';
     ctx.stroke();
   }
+  if (snap.run) {
+    for (const b of snap.buildings ?? []) {
+      ctx.fillStyle = 'rgba(205, 182, 138, 0.9)';
+      ctx.fillRect(x + b.cx * ZOM.cell * k, y + b.cy * ZOM.cell * k, Math.max(1.5, ZOM.cell * k), Math.max(1.5, ZOM.cell * k));
+    }
+    for (const kind of ZOMBIE_KINDS) {
+      const r = kind === 'brute' ? 2.4 : 1.6;
+      ctx.fillStyle = ZOMBIE_LOOK[kind].body;
+      ctx.beginPath();
+      for (const [, k2, zx, zy] of snap.zombies ?? []) {
+        if (ZOMBIE_KINDS[k2] !== kind) continue;
+        ctx.moveTo(x + zx * k + r, y + zy * k);
+        ctx.arc(x + zx * k, y + zy * k, r, 0, TAU);
+      }
+      ctx.fill();
+    }
+    const c = snap.run.core, half = Math.max(3, ZOM.coreHalf * k);
+    ctx.fillStyle = hud.now - s.coreHitAt < CORE_ALERT_MS && Math.floor(hud.now / 200) % 2 ? PALETTE.hunted : '#4fd1e8';
+    ctx.fillRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
+  }
   const self = me ?? s.lastSelf;
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#000';
@@ -535,13 +571,13 @@ function drawScore(hud: Hud, compact: boolean) {
   text(ctx, `K ${snap.self.kills}  D ${snap.self.deaths}`, bx + barW / 2, 22, TYPE.label, MUTED, 'center', 600);
   text(ctx, lp.nextAt === null ? `${me.score} · max` : `${me.score} / ${lp.nextAt}`, bx + barW, 22, TYPE.label, HUD_INK, 'right', 700);
   bar(ctx, bx, 34, barW, 8, lp.frac, PALETTE.gold);
-  const line = `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team, timeLeft(hud)).line}`;
+  const line = snap.run ? `${snap.match.map} · ${phaseLine(snap.run, serverNow(hud.s.snaps, hud.now))}` : `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team, timeLeft(hud)).line}`;
   setFont(ctx, 600, TYPE.label + 1);
-  const dot = me.team ? 14 : 0;
+  const dot = me.team && !snap.run ? 14 : 0;
   const lw = ctx.measureText(line).width + 20 + dot;
   const lx = compact ? x - 10 : w / 2 - lw / 2;
   panel(ctx, lx, 58, lw, 22);
-  if (me.team) {
+  if (me.team && dot) {
     ctx.fillStyle = TEAM_COLORS[me.team];
     ctx.beginPath();
     ctx.arc(lx + 14, 69, 4.5, 0, TAU);
@@ -555,6 +591,97 @@ function drawScore(hud: Hud, compact: boolean) {
   const nx = compact ? x - 10 : w / 2 - nw / 2;
   panel(ctx, nx, 84, nw, 22);
   text(ctx, notice, nx + 10, 95, TYPE.label + 1, PALETTE.gold, 'left', 700);
+}
+
+const SQUAD_CHIP_H = 40;
+
+/** The zombies run's HUD: the scrap bank and core health under the level bar, the core alert, your downed state, and the build and use hints. */
+function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean) {
+  const { ctx, w, h, s, me, now } = hud;
+  const bw = compact ? w - 150 - 56 : 260;
+  const x = compact ? 22 : (w - bw) / 2;
+  const y = 84;
+  panel(ctx, x - 10, y, bw + 20, 26);
+  strokeIcon(ctx, UI_ICONS.scrap, x + 6, y + 13, 14, PALETTE.gold, 2.4);
+  text(ctx, `${run.scrap}`, x + 18, y + 13, TYPE.body, PALETTE.gold, 'left', 800);
+  setFont(ctx, 800, TYPE.body);
+  const sx = x + 22 + ctx.measureText(`${run.scrap}`).width;
+  caps(ctx, 'scrap', sx, y + 13);
+  const frac = run.core.hp / run.core.maxHp;
+  const alert = now - s.coreHitAt < CORE_ALERT_MS;
+  const coreColor = alert && Math.floor(now / 200) % 2 ? PALETTE.hunted : frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
+  const barX = x + bw - 110;
+  setFont(ctx, 750, TYPE.micro);
+  const labelW = ctx.measureText('CORE').width;
+  caps(ctx, 'core', barX - labelW - 8, y + 13);
+  strokeIcon(ctx, UI_ICONS.core, barX - labelW - 20, y + 13, 13, coreColor, 2.4);
+  bar(ctx, barX, y + 9, 110, 8, frac, coreColor);
+  if (alert) drawCoreAlert(hud, run.core, y + 40);
+  if (me?.downed) {
+    const k = 0.5 + 0.5 * Math.sin(now / 260);
+    outlined(ctx, "You're down", w / 2, h * 0.64, 30, PALETTE.hunted, 900);
+    outlined(ctx, downedLine(me.downed, serverNow(s.snaps, now)), w / 2, h * 0.64 + 30, TYPE.title + 1, HUD_INK, 700);
+    ctx.globalAlpha = 0.6 + 0.4 * k;
+    bar(ctx, w / 2 - 110, h * 0.64 + 50, 220, 8, me.downed.revive, PALETTE.hpGood);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (!me?.alive) return;
+  const hints: [string, string][] = [];
+  if (s.building) {
+    hints.push(['Left click', `wall · ${BUILDINGS.wall.cost} scrap`], ['Right click', `take down · +${Math.floor(BUILDINGS.wall.cost * ZOM.demolishRefund)}`], ['B', 'done']);
+  } else if (run.phase === 'day') hints.push(['B', 'build walls']);
+  const use = useHint(hud.snap, s.lastSelf);
+  const row = h - (compact ? 150 : 28);
+  if (use) outlined(ctx, use, w / 2, h * 0.64, TYPE.title + 1, PALETTE.gold, 800);
+  if (!hints.length) return;
+  setFont(ctx, 700, TYPE.label);
+  const parts = hints.map(([key, what]) => ({ key, what, kw: ctx.measureText(key).width + 12, ww: ctx.measureText(what).width }));
+  const total = parts.reduce((t, p) => t + p.kw + p.ww + 26, s.building ? 70 : 0) + 8;
+  let hx = w / 2 - total / 2;
+  panel(ctx, hx, row - 14, total, 28, s.building ? PALETTE.gold : undefined);
+  hx += 12;
+  if (s.building) {
+    text(ctx, 'BUILD', hx, row, TYPE.label, PALETTE.gold, 'left', 900);
+    hx += 58;
+  }
+  for (const p of parts) {
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.roundRect(hx, row - 10, p.kw, 20, 4);
+    ctx.fill();
+    text(ctx, p.key, hx + 6, row, TYPE.label, HUD_INK, 'left', 800);
+    text(ctx, p.what, hx + p.kw + 6, row, TYPE.label, MUTED, 'left', 600);
+    hx += p.kw + p.ww + 26;
+  }
+}
+
+function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; y: number }, y: number) {
+  const pulse = 0.5 + 0.5 * Math.sin(now / 110);
+  ctx.globalAlpha = 0.7 + 0.3 * pulse;
+  outlined(ctx, 'CORE UNDER ATTACK', w / 2, y, 18, PALETTE.hunted, 900);
+  ctx.globalAlpha = 1;
+  const at = edgePoint(selfAt, worldToScreen(cam, core), w, h, EDGE_INSET + 10);
+  if (!at) return;
+  const clear = clearOfRects(selfAt, at, panels, ARROW_CLEARANCE);
+  ctx.save();
+  ctx.translate(clear.x, clear.y);
+  ctx.rotate(at.angle);
+  ctx.scale(1.3 + 0.2 * pulse, 1.3 + 0.2 * pulse);
+  ctx.beginPath();
+  ctx.moveTo(14, 0);
+  ctx.lineTo(-8, -12);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(-8, 12);
+  ctx.closePath();
+  ctx.fillStyle = PALETTE.hunted;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000';
+  ctx.stroke();
+  ctx.restore();
+  strokeIcon(ctx, UI_ICONS.core, clear.x - Math.cos(at.angle) * 26, clear.y - Math.sin(at.angle) * 26, 16, PALETTE.hunted, 2.6);
 }
 
 function drawVitals({ ctx, w, h, snap, me }: Hud) {

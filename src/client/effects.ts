@@ -1,7 +1,7 @@
-import { WORLD } from '../shared/defs.ts';
+import { WORLD, ZOMBIES } from '../shared/defs.ts';
 import type { DamageKind } from '../shared/protocol.ts';
 import type { EffectSpec } from './eventclock.ts';
-import { INK, PALETTE } from './palette.ts';
+import { INK, PALETTE, ZOMBIE_LOOK } from './palette.ts';
 import { burst, isLive, particleAt, type BurstKind, type ParticlePool } from './particles.ts';
 import { EFFECT_LIFE_MS, type Effect, type Session } from './state.ts';
 
@@ -20,6 +20,7 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       burst(s.particles, 'smoke', spec.x, spec.y, angle, now);
       return;
     case 'death': burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint); return;
+    case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
     case 'flash':
     case 'slash':
       return;
@@ -45,6 +46,7 @@ export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Eff
       case 'flash': drawMuzzleFlash(ctx, fx.x, fx.y, fx.angle, k); break;
       case 'slash': drawSlash(ctx, fx.x, fx.y, fx.angle, k); break;
       case 'death': drawDeathRing(ctx, fx.x, fx.y, k); break;
+      case 'splat': drawSplat(ctx, fx.x, fx.y, ZOMBIE_LOOK[fx.zombie].arm, ZOMBIES[fx.zombie].radius, k); break;
     }
   }
   ctx.globalAlpha = 1;
@@ -132,6 +134,20 @@ function drawDeathRing(ctx: CanvasRenderingContext2D, x: number, y: number, k: n
   ctx.lineWidth = 3 * (1 - k) + 0.5;
   ctx.beginPath();
   ctx.arc(x, y, WORLD.playerRadius * (0.8 + 1.4 * Math.sqrt(k)), 0, TAU);
+  ctx.stroke();
+}
+
+function drawSplat(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, r: number, k: number) {
+  ctx.globalAlpha = 0.55 * (1 - k);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r * (0.9 + 0.5 * Math.sqrt(k)), 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = 1 - k;
+  ctx.lineWidth = 4 * (1 - k) + 1;
+  ctx.strokeStyle = INK;
+  ctx.beginPath();
+  ctx.arc(x, y, r * (1 + 1.2 * Math.sqrt(k)), 0, TAU);
   ctx.stroke();
 }
 

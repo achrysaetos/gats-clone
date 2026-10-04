@@ -220,6 +220,14 @@ kbd {
 .mode-ffa { background: #4a3a12; color: #ffd34d; }
 .mode-tdm { background: #3a1c22; color: #ff8b8f; }
 .mode-dom { background: #1c2848; color: #8eaaff; }
+.mode-zom { background: #22361a; color: #a6d96a; }
+
+.squad { display: grid; gap: var(--s2); }
+.squad-pitch { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); align-items: center; font-size: var(--t-label); color: var(--muted); }
+.invite { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); }
+.invite input { font-size: var(--t-label); padding: 8px var(--s3); }
+.squad-chip { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px 12px; border-radius: 10px; background: rgba(17, 19, 24, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); font-size: var(--t-label); font-weight: 700; }
+.squad-chip button { padding: 4px 10px; font-size: var(--t-label); }
 
 .auth { display: grid; gap: 8px; margin-top: 10px; }
 .auth .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -350,6 +358,13 @@ a.wordmark { text-decoration: none; }
 .podium li::before { content: counter(podium) "."; color: var(--muted); min-width: 1.2em; text-align: left; }
 .podium li span { flex: 1; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
 .podium li b { font-variant-numeric: tabular-nums; }
+.report { border-color: var(--danger); min-width: min(420px, calc(100vw - 32px)); }
+.report h2 { color: var(--danger); }
+.report table { width: 100%; margin: 12px 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.report th { font-size: var(--t-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; padding: 4px 8px; text-align: right; }
+.report td { padding: 5px 8px; text-align: right; font-size: 15px; border-top: 1px solid var(--line); }
+.report th:first-child, .report td:first-child { text-align: left; }
+.report tr.you td { color: var(--accent); font-weight: 750; }
 
 .objective {
   position: absolute;
@@ -368,6 +383,7 @@ a.wordmark { text-decoration: none; }
   pointer-events: none;
   animation: objective ease-out forwards;
 }
+.objective.siege { top: 124px; }
 @keyframes objective {
   0% { opacity: 0; transform: translate(-50%, -8px); }
   8%, 80% { opacity: 1; transform: translate(-50%, 0); }

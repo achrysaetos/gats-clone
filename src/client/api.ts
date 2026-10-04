@@ -23,6 +23,16 @@ export async function fetchServers(): Promise<ServerInfo[]> {
       : []);
 }
 
+export async function openSquad(): Promise<{ room: string } | { error: string }> {
+  try {
+    const r = await getJson('/api/squads', { method: 'POST' });
+    if (isObj(r) && typeof r.room === 'string') return { room: r.room };
+    return { error: isObj(r) && typeof r.error === 'string' ? r.error : 'Could not start a squad' };
+  } catch {
+    return { error: 'Could not reach server' };
+  }
+}
+
 export async function fetchStats(name: string): Promise<Stats | null> {
   const s = await getJson(`/api/stats/${encodeURIComponent(name)}`);
   if (!isObj(s) || typeof s.name !== 'string') return null;
