@@ -43,15 +43,16 @@ export const feedMentions = (kill: { killerId: number | null; victimId: number }
 
 export const selfOf = (snap: Snapshot): PlayerView | undefined => snap.players.find((p) => p.id === snap.self.id);
 
-const clock = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
-export const FFA_GOAL = `Most kills in ${clock(MAP_MS.FFA)} · first player to ${WORLD.ffaWinKills} ends it`;
+/** An FFA round's length as m:ss. */
+export const FFA_ROUND = `${Math.floor(MAP_MS.FFA / 60_000)}:${String(Math.floor(MAP_MS.FFA / 1000) % 60).padStart(2, '0')}`;
+const FFA_GOAL = `most kills in ${FFA_ROUND} · first player to ${WORLD.ffaWinKills} ends it`;
 
 export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: string } {
   const side = team ?? 'no';
   const Side = side[0]!.toUpperCase() + side.slice(1);
   switch (mode) {
     case 'FFA':
-      return { banner: `Free for all: ${FFA_GOAL.toLowerCase()}`, line: `FFA · ${FFA_GOAL.toLowerCase()}` };
+      return { banner: `Free for all: ${FFA_GOAL}`, line: `FFA · ${FFA_GOAL}` };
     case 'TDM':
       return {
         banner: `Team Deathmatch: you are ${side.toUpperCase()}, first to ${WORLD.tdmWinScore} kills`,
