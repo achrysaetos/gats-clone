@@ -1,4 +1,4 @@
-import { ARMORS, WORLD } from '../defs.ts';
+import { ARMORS, HP_MULTIPLIER, WORLD } from '../defs.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
@@ -31,7 +31,8 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     life.armor -= absorbed;
     amount -= absorbed;
   }
-  life.hp -= amount;
+  // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace; armor is not multiplied, so this follows absorption.
+  life.hp -= amount * (a?.kind === 'human' ? HP_MULTIPLIER[victim.kind] : 1);
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp) - life.armor;
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });

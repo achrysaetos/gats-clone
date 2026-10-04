@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import WebSocket from 'ws';
-import { WORLD } from '../src/shared/defs.ts';
-import { addPlayer } from '../src/shared/sim.ts';
+import { WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { startServer } from '../src/server/main.ts';
-import { PISTOL, emptyWorld, grantPerks } from './helpers.ts';
+import { PISTOL, TICK_MS, emptyWorld, grantPerks, press } from './helpers.ts';
 
 test('humans carry triple health and regen, bots keep the base', () => {
   const w = emptyWorld();
@@ -20,6 +20,23 @@ test('humans carry triple health and regen, bots keep the base', () => {
   assert.equal(effectiveStats(human).regenPerSec / effectiveStats(human).maxHp, effectiveStats(bot).regenPerSec / effectiveStats(bot).maxHp, 'healing to full takes the same time');
   grantPerks(w, human, ['optics', 'thickSkin']);
   assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 30) * 3, 'thick skin is tripled too');
+});
+
+test('humans kill each other as fast as bots kill each other, armored or not, and bots still need triple the time on a human', () => {
+  const ttk = (shooterKind: PlayerKind, victimKind: PlayerKind, armor: ArmorId) => {
+    const w = emptyWorld();
+    const shooter = addPlayer(w, 'S', { ...PISTOL, weapon: 'smg' }, { kind: shooterKind, at: { x: 500, y: 500 } });
+    const victim = addPlayer(w, 'V', { ...PISTOL, armor }, { kind: victimKind, at: { x: 700, y: 500 } });
+    press(w, shooter, { angle: 0, fire: true, shots: 1 });
+    let t = 0;
+    for (; victim.life.k === 'alive' && t < 20_000; t += TICK_MS) step(w, TICK_MS);
+    return Math.round(t);
+  };
+  for (const armor of ['none', 'medium'] as const) {
+    assert.equal(ttk('human', 'human', armor), ttk('bot', 'bot', armor), `${armor} armor`);
+    assert.equal(ttk('human', 'bot', armor), ttk('bot', 'bot', armor), `a human hits a bot for base damage (${armor} armor)`);
+    assert.ok(ttk('bot', 'human', armor) > 2 * ttk('bot', 'bot', armor), `a bot needs far longer on a human (${armor} armor)`);
+  }
 });
 
 test('a player who joins through the server gets triple health while the room bots do not', { timeout: 10_000 }, async () => {
