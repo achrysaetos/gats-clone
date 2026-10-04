@@ -1,5 +1,5 @@
 import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
-import { VIEW_ASPECT, viewExtents, type InputState, type Loadout, type CrateView, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
+import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Loadout, type PlayerView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { segmentEntersRectAt } from '../shared/sim/movement.ts';
 
 export type BotMemory = {
