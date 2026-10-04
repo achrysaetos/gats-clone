@@ -61,7 +61,20 @@ export function objectiveFor(mode: ModeId, team: Team): { banner: string; line: 
   }
 }
 
-export const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
+type Pt = { x: number; y: number };
+
+/** Where the bearing from `from` to an off-screen `to` crosses the screen rect shrunk by `inset`, or null when `to` is inside it. */
+export function edgePoint(from: Pt, to: Pt, w: number, h: number, inset: number): (Pt & { angle: number }) | null {
+  const x0 = inset, x1 = w - inset, y0 = inset, y1 = h - inset;
+  if (to.x >= x0 && to.x <= x1 && to.y >= y0 && to.y <= y1) return null;
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const tx = dx > 0 ? (x1 - from.x) / dx : dx < 0 ? (x0 - from.x) / dx : Infinity;
+  const ty = dy > 0 ? (y1 - from.y) / dy : dy < 0 ? (y0 - from.y) / dy : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: from.x + dx * t, y: from.y + dy * t, angle: Math.atan2(dy, dx) };
+}
+
+export const seconds =(ms: number) => Math.max(0, Math.ceil(ms / 1000));
 
 export const OBJECTIVE_MS = 4000;
 

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
-import { deathText, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
+import { deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from '../src/client/moments.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
@@ -49,6 +49,16 @@ test('a bounty kill gets a gold callout, and moments expire', () => {
   assert.deepEqual(m.callouts.map((c) => c.title), [`BOUNTY +${WORLD.bountyScore}`]);
   assert.deepEqual(m.popups.map((p) => [p.x, p.y]), [[300, 200]], 'without a blow this snapshot, the victim\'s last position');
   assert.deepEqual(addMoments(m, prev, prev, 1000 + CALLOUT_MS), NO_MOMENTS);
+});
+
+test('an off-screen hunted mark gets an edge marker on its bearing; an on-screen one gets none', () => {
+  const center = { x: 640, y: 400 };
+  assert.equal(edgePoint(center, { x: 900, y: 100 }, 1280, 800, 30), null, 'inside the screen');
+  assert.deepEqual(edgePoint(center, { x: 3000, y: 400 }, 1280, 800, 30), { x: 1250, y: 400, angle: 0 }, 'due east lands on the right edge');
+  assert.deepEqual(edgePoint(center, { x: 640, y: -5000 }, 1280, 800, 30), { x: 640, y: 30, angle: -Math.PI / 2 }, 'due north lands on the top edge');
+  const corner = edgePoint(center, { x: -500, y: 3000 }, 1280, 800, 30)!;
+  assert.equal(corner.y, 770, 'a steep bearing toward the bottom left clamps to the bottom edge first');
+  assert.ok(corner.x > 30 && corner.x < 640, 'left of center, still on screen');
 });
 
 test('the death screen names the killer\'s gun and what the life had earned', () => {

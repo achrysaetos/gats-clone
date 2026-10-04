@@ -2,7 +2,7 @@ import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
-import { feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
+import { edgePoint, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
@@ -54,6 +54,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   const compact = w < 640;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
+  drawHuntedArrows(hud);
   drawKillFeed(hud, compact ? 74 : 18);
   drawLeaderboard(hud, compact);
   drawMinimap(hud, compact ? 110 : 170);
@@ -81,6 +82,36 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
     ctx.fillRect(0, h - d, w, d);
     ctx.fillRect(0, d, d, h - d * 2);
     ctx.fillRect(w - d, d, d, h - d * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const EDGE_INSET = 34;
+
+function drawHuntedArrows({ ctx, w, h, snap, now, cam, selfAt }: Hud) {
+  const pulse = 0.5 + 0.5 * Math.sin(now / 140);
+  for (const m of snap.minimap) {
+    if (m.pingAge === null) continue;
+    const at = edgePoint(selfAt, worldToScreen(cam, m), w, h, EDGE_INSET);
+    if (!at) continue;
+    ctx.save();
+    ctx.translate(at.x, at.y);
+    ctx.rotate(at.angle);
+    ctx.scale(1 + 0.15 * pulse, 1 + 0.15 * pulse);
+    ctx.globalAlpha = 0.65 + 0.35 * pulse;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -12);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-8, 12);
+    ctx.closePath();
+    ctx.fillStyle = PALETTE.hunted;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
 }
@@ -338,6 +369,7 @@ function drawLeaderboard({ ctx, w, snap, s }: Hud, compact: boolean) {
 }
 
 const PING_WAVE_MS = 700;
+const DIAMOND_R = 6;
 
 function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
   const x = w - size - 12;
@@ -373,18 +405,23 @@ function drawMinimap({ ctx, w, h, snap, s, me }: Hud, size: number) {
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);
     ctx.fill();
   }
+  const inside = (v: number) => Math.min(size - DIAMOND_R, Math.max(DIAMOND_R, v));
   for (const m of snap.minimap) {
     if (m.pingAge === null) continue;
-    const mx = x + m.x * k, my = y + m.y * k;
+    const mx = x + inside(m.x * k), my = y + inside(m.y * k);
     const wave = m.pingAge / PING_WAVE_MS;
     if (wave < 1) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, size, size);
+      ctx.clip();
       ctx.globalAlpha = 1 - wave;
       ctx.beginPath();
       ctx.arc(mx, my, 5 + 14 * wave, 0, TAU);
       ctx.lineWidth = 2;
       ctx.strokeStyle = PALETTE.hunted;
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.restore();
     }
     ctx.beginPath();
     ctx.moveTo(mx, my - 5);
