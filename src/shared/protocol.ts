@@ -90,12 +90,10 @@ export type GameEvent =
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
 
-/** `kills` counts this round only; FFA ranks on it, team modes on `score`. */
+/** `kills` counts this round only and every mode ranks on it; `score` is the current life's, which a death resets. */
 export type LeaderRow = { id: number; name: string; score: number; kills: number; team: Team };
 /** `mapChangeIn` counts down to the next map once it is close enough to announce, and is 0 otherwise. */
-/** FFA rounds are won on kills and team rounds on the team score, so that is what each mode ranks players by. */
-export const rankValue = (mode: ModeId, r: LeaderRow): number => (mode === 'FFA' ? r.kills : r.score);
-export const rankRows = (mode: ModeId, rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort((a, b) => rankValue(mode, b) - rankValue(mode, a));
+export const rankRows = (rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort((a, b) => b.kills - a.kills);
 export type MatchView = { mode: ModeId; map: string; nextMap: string; mapChangeIn: number; teamScore: { red: number; blue: number }; winner: string | null; restartIn: number };
 
 export type Snapshot = {

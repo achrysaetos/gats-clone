@@ -1,5 +1,5 @@
 import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
-import { rankValue, type Snapshot } from '../shared/protocol.ts';
+import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
 import { deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, seconds, topScorers } from './derive.ts';
@@ -147,8 +147,8 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
 
   const renderBanner = (snap: Snapshot) => {
     const { winner, restartIn } = snap.match;
-    const podium = topScorers(snap.match.mode, snap.leaderboard, PODIUM_SIZE);
-    const key = winner === null ? '' : `${winner}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.score}`).join(',')}`;
+    const podium = topScorers(snap.leaderboard, PODIUM_SIZE);
+    const key = winner === null ? '' : `${winner}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
     if (key === keys.banner) return;
     keys.banner = key;
     banner.hidden = winner === null;
@@ -163,7 +163,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       name.textContent = r.name;
       if (r.team) name.style.color = TEAM_COLORS[r.team];
       const score = document.createElement('b');
-      score.textContent = String(rankValue(snap.match.mode, r));
+      score.textContent = String(r.kills);
       li.append(name, score);
       return li;
     }));

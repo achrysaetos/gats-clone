@@ -179,6 +179,21 @@ test('a round restart records each survivor\'s life so far, and their next life 
   assert.equal(w.lifeRecords.find((r) => r.id === a.id)?.kills, 1, 'the life after the restart holds one kill, not four');
 });
 
+for (const mode of ['TDM', 'DOM'] as const) {
+  test(`${mode}: the leaderboard ranks by round kills, so a death does not drop a player down it`, () => {
+    const w = emptyWorld(mode);
+    const players = Array.from({ length: 12 }, (_, i) => spawnAt(w, 100 + i * 200, 500, { team: i % 2 ? 'blue' : 'red' }));
+    players.forEach((p, i) => { p.score = 500; p.kills = i % 3; });
+    const ace = players[11]!;
+    ace.kills = 7;
+    ace.score = 0;
+    const board = snapshotFor(w, ace.id).leaderboard;
+    assert.equal(board.length, 10);
+    assert.deepEqual(board[0], { id: ace.id, name: ace.name, score: 0, kills: 7, team: ace.team });
+    assert.deepEqual(board.map((r) => r.kills), [...board.map((r) => r.kills)].sort((a, b) => b - a));
+  });
+}
+
 test('a hurt, half-empty survivor starts the next round at full health, armor and ammo', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'red', loadout: { armor: 'medium' } });

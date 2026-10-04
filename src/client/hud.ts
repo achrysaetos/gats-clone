@@ -1,6 +1,6 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
-import { rankValue, type PlayerView, type Snapshot } from '../shared/protocol.ts';
+import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { clearOfRects, edgePoint, FFA_GOAL, feedMentions, levelProgress, mapNotice, objectiveFor, topScorers, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
@@ -366,7 +366,7 @@ function drawKillFeed({ ctx, s, now }: Hud, top: number) {
 
 function drawLeaderboard(hud: Hud, compact: boolean) {
   const { ctx, w, snap, s } = hud;
-  const rows = topScorers(snap.match.mode, snap.leaderboard, compact ? 5 : 10);
+  const rows = topScorers(snap.leaderboard, compact ? 5 : 10);
   const teams = snap.match.mode !== 'FFA';
   const pw = compact ? 150 : 210;
   const x = w - pw - 12;
@@ -405,7 +405,7 @@ function drawLeaderboard(hud: Hud, compact: boolean) {
       ctx.fill();
     }
     text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
-    text(ctx, String(rankValue(snap.match.mode, r)), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
+    text(ctx, String(r.kills), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
     y += rowH;
   });
 }

@@ -64,7 +64,7 @@ function selfView(w: World, p: Player): SelfView {
 }
 
 function leaderboard(w: World): LeaderRow[] {
-  return rankRows(w.mode, [...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, team: p.team }))).slice(0, 10);
+  return rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, team: p.team }))).slice(0, 10);
 }
 
 function matchView(w: World): MatchView {

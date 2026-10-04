@@ -128,4 +128,4 @@ export function nextObjectiveSeen(seen: ObjectiveSeen, phase: ClientState['phase
 export const objectiveVisible =(phase: ClientState['phase'], match: Pick<MatchView, 'winner'>, msSincePlaying: number): boolean =>
   phase === 'playing' && match.winner === null && msSincePlaying < OBJECTIVE_MS;
 
-export const topScorers = (mode: ModeId, rows: readonly LeaderRow[], count: number): LeaderRow[] => rankRows(mode, rows).slice(0, count);
+export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow[] => rankRows(rows).slice(0, count);
