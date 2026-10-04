@@ -35,6 +35,7 @@ export const PALETTE = {
   neutral: '#8b8f98',
   gold: '#ffd34d',
   hunted: '#ff3b30',
+  rival: '#f2555a',
 } as const;
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };

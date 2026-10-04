@@ -136,6 +136,12 @@ test('the hunted brackets mark hunted enemies but not yourself', () => {
   assert.equal(worldStrokes(snap({ players: [player(2, { gun: 'phantom', hunted: true })] })).includes(PALETTE.hunted), true, 'brackets on a hunted enemy');
 });
 
+test('in free for all an enemy wearing your color gets a rival ring; other colors and teammates do not', () => {
+  const rings = (frame: Snapshot) => worldStrokes(frame).filter((c) => c === PALETTE.rival).length;
+  assert.equal(rings(snap({ me: { color: 'blue' }, players: [player(2, { color: 'blue' }), player(3, { color: 'red' })] })), 1, 'only the same-colored enemy');
+  assert.equal(rings(snap({ me: { color: 'blue', team: 'blue' }, players: [player(2, { color: 'blue', team: 'blue' })] })), 0, 'team modes color by team already');
+});
+
 test('while you wait to respawn, your killer wears a red ring', () => {
   const frame = snap({ me: { alive: false }, players: [player(2)] });
   assert.equal(worldStrokes(frame).includes(PALETTE.hunted), false);

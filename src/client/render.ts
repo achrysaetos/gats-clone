@@ -34,7 +34,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawGround(ctx, s.worldSize, tl, br);
   const toScreen = (x: number, y: number) => ({ x: Math.round(dpr * ((x - cam.x) * cam.scale + cam.w / 2)), y: Math.round(dpr * ((y - cam.y) * cam.scale + cam.h / 2)) });
 
-  const myTeam = snap.players.find((p) => p.id === s.myId)?.team ?? null;
+  const mine = snap.players.find((p) => p.id === s.myId);
+  const myTeam = mine?.team ?? null;
   for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
   const crates = snap.crates.filter((c) => inView(view, c.x, c.y, c.size, c.size));
@@ -58,7 +59,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
     const flash = flashes.get(p.id);
     drawPlayer(ctx, { ...p, angle }, bodyColor(p), {
-      self, friendly: !self && p.team !== null && p.team === myTeam, flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, now,
+      self, friendly: !self && p.team !== null && p.team === myTeam, rival: !self && p.team === null && p.color === mine?.color, flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, now,
     });
   }
   for (const t of snap.thrown) if (t.kind !== 'landMine' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
@@ -415,7 +416,8 @@ function drawPlayerShadows(ctx: CanvasRenderingContext2D, players: readonly Play
   ctx.fill();
 }
 
-type PlayerLook = { self: boolean; friendly: boolean; flash: number; now: number };
+/** `rival` marks a free-for-all enemy wearing your color, so it never reads as you. */
+type PlayerLook = { self: boolean; friendly: boolean; rival: boolean; flash: number; now: number };
 const TIER_COLORS = { 1: '#d8dee9', 2: PALETTE.gold } as const;
 
 function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2, top: number) {
@@ -467,6 +469,13 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.arc(0, 0, R + 9, 0, TAU);
     ctx.lineWidth = 4;
     ctx.strokeStyle = PALETTE.halo;
+    ctx.stroke();
+  }
+  if (look.rival) {
+    ctx.beginPath();
+    ctx.arc(0, 0, R + 8, 0, TAU);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = PALETTE.rival;
     ctx.stroke();
   }
   ctx.rotate(p.angle);
