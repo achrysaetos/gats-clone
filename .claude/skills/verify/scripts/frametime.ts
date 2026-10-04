@@ -1,5 +1,6 @@
 /// <reference types="node" />
 // Usage: node frametime.ts <run-dir> [seconds] [width] [height]   Measures client frame cost in a busy FFA room while the driven player fires.
+// SQUAD=1 starts a zombies squad through the menu instead and fires at the nearest zombie; point it at a scratch copy whose night holds a full horde.
 // `frame cost` times each real frame's draw calls. With SOFTWARE=1 (no GPU canvas) it also logs `rastered frame cost`, which waits for the pixels,
 // dropping each batch's first redraw, which waits on the compositor. On the GPU canvas the pixel reads would move it to the CPU mid-run and skew every later frame.
 import { spawn } from 'node:child_process';
@@ -20,6 +21,7 @@ const WARMUP_MS = 5000;
 const BENCH_EVERY_STEPS = 2;
 const BENCH_FRAMES = 8;
 const SOFTWARE = process.env.SOFTWARE === '1';
+const SQUAD = process.env.SQUAD === '1';
 const BASE = existsSync(join(RUN, 'url'))
   ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '')
   : `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
@@ -47,7 +49,7 @@ await new Promise((r) => page.once('open', r));
 let nextId = 1;
 let myId: number | null = null;
 let full: Snapshot | null = null;
-const busy = { snaps: 0, players: 0, bullets: 0 };
+const busy = { snaps: 0, players: 0, bullets: 0, zombies: 0 };
 const rastered: number[] = [];
 let sampling = false;
 const exceptions: string[] = [];
@@ -60,7 +62,7 @@ page.on('message', (raw) => {
     if (msg.t === 'welcome') myId = msg.id;
     if (msg.t === 'snap') {
       full = fillSnapshot(msg, full) ?? full;
-      if (sampling && full) { busy.snaps++; busy.players += full.players.length; busy.bullets += full.bullets.length; }
+      if (sampling && full) { busy.snaps++; busy.players += full.players.length; busy.bullets += full.bullets.length; busy.zombies += full.zombies?.length ?? 0; }
     }
   } else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
 });
@@ -70,7 +72,8 @@ await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable
 await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
 await cdp('Page.navigate', { url: `${BASE}/?dev` });
 for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.querySelector('#servers .server').click(); document.getElementById('name').value = 'Bench'; document.getElementById('play').click()`);
+await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.getElementById('name').value = 'Bench'`);
+await js(SQUAD ? `document.getElementById('squad-start').click()` : `document.querySelector('#servers .server').click(); document.getElementById('play').click()`);
 for (let i = 0; i < 50 && !full; i++) await sleep(100);
 
 const me = () => full?.players.find((p) => p.id === myId);
@@ -89,7 +92,8 @@ async function fightFor(ms: number) {
       continue;
     }
     const self = me();
-    const foe = self && full?.players.filter((p) => p.id !== myId && p.alive).sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
+    const targets = SQUAD ? (full?.zombies ?? []).map(([, , x, y]) => ({ x, y })) : (full?.players.filter((p) => p.id !== myId && p.alive) ?? []);
+    const foe = self && targets.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
     const [mx, my] = self && foe ? [VIEW.w / 2 + (foe.x - self.x) * 0.5, VIEW.h / 2 + (foe.y - self.y) * 0.5] : [VIEW.w / 2 + 300, VIEW.h / 2];
     await aimAt(mx, my);
     await mouseDown(mx, my);
@@ -121,7 +125,7 @@ const stats = (xs: number[]) => {
 const fmt = (o: ReturnType<typeof stats>) => `n=${o.n} avg=${o.avg.toFixed(2)} p50=${o.p50.toFixed(2)} p95=${o.p95.toFixed(2)} p99=${o.p99.toFixed(2)} max=${o.max.toFixed(2)}ms`;
 const intervals = stamps.slice(1).map((t, i) => t - stamps[i]!);
 log(`frametime ${VIEW.w}x${VIEW.h} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
-log(`busy: avg ${(busy.players / busy.snaps).toFixed(1)} players and ${(busy.bullets / busy.snaps).toFixed(1)} bullets in view per snapshot`);
+log(`busy: avg ${(busy.players / busy.snaps).toFixed(1)} players, ${(busy.bullets / busy.snaps).toFixed(1)} bullets${SQUAD ? ` and ${(busy.zombies / busy.snaps).toFixed(1)} zombies` : ''} in view per snapshot`);
 log(`frame cost  ${fmt(stats(costs))}`);
 if (SOFTWARE) log(`rastered frame cost  ${fmt(stats(rastered))}`);
 log(`raf interval ${fmt(stats(intervals))}`);
