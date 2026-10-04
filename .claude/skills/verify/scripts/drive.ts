@@ -287,7 +287,9 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async leave() {
     await cdp('Page.reload', { ignoreCache: true });
-    expect('server human count returns to baseline after the page unloads (reload)', await until(async () => (await humansIn('ffa')) === humansBefore, REMOTE_URL ? 25_000 : 6000), `baseline ${humansBefore}`);
+    expect('the departed player drops off the observer leaderboard after the page unloads (reload)', await until(() => !observerBoard.includes(NAME), REMOTE_URL ? 25_000 : 6000));
+    // A public site can gain or lose real visitors mid-run, so the head count is only meaningful against a private local server.
+    if (!REMOTE_URL) expect('server human count returns to baseline after the page unloads (reload)', await until(async () => (await humansIn('ffa')) === humansBefore, 6000), `baseline ${humansBefore}`);
   },
 };
 
