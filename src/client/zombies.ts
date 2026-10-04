@@ -5,7 +5,6 @@ import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
 
-/** The run in one line: `Day 2 · night in 0:31`, `Night 3 · 12 left`, `Core fell · next run in 0:14`. */
 export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft'>, serverNow: number | null): string {
   const left = run.phaseEndsAt === null || serverNow === null ? null : run.phaseEndsAt - serverNow;
   switch (run.phase) {
@@ -15,7 +14,6 @@ export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' |
   }
 }
 
-/** What a downed player reads: help on the way, or the time they have to crawl to it. */
 export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: number | null): string {
   if (down.revive > 0) return `Being revived · ${Math.round(down.revive * 100)}%`;
   return `Crawl to a squadmate${serverNow === null ? '' : ` · ${clock(down.bleedOutAt - serverNow)}`}`;
@@ -32,7 +30,7 @@ export function useHint(snap: Snapshot, at: Pose): string | null {
 }
 
 export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' | 'fell' };
-export const NIGHT_WARNING_MS = 10_000;
+const NIGHT_WARNING_MS = 10_000;
 
 /** The run's turning points between two snapshots, timed on the server's clock (`prevAt`, `nextAt`). */
 export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number): RunCallout[] {
@@ -51,7 +49,7 @@ export function runCallouts(prev: RunView | undefined, next: RunView | undefined
   return out;
 }
 
-export type ReportRow = { name: string; kills: number; revives: number; built: number; you: boolean };
+type ReportRow = { name: string; kills: number; revives: number; built: number; you: boolean };
 
 /** The report's table: most kills first, then most revives, so the squad's carry tops it. */
 export const reportRows = (report: RunReport, selfName: string | undefined): ReportRow[] =>
@@ -59,7 +57,6 @@ export const reportRows = (report: RunReport, selfName: string | undefined): Rep
 
 export const reportTitle = (report: RunReport) => `The core fell on night ${report.night}`;
 
-/** A bled-out player sits out the night; dawn, not a respawn button, brings them back. */
 export function bledOutText(run: Pick<RunView, 'phase' | 'waveLeft'>): { title: string; sub: string } {
   return { title: 'You bled out', sub: run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn' };
 }
@@ -71,7 +68,7 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   const me = snap.players.find((p) => p.id === snap.self.id);
   const bodies = [
     ...snap.players.filter((p) => p.alive || p.downed).map((p) => ({ x: p.id === snap.self.id ? builder.x : p.x, y: p.id === snap.self.id ? builder.y : p.y, r: WORLD.playerRadius })),
-    ...(snap.zombies ?? []).map(([, kind, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[kind] ?? 'walker'].radius })),
+    ...(snap.zombies ?? []).map(([, kind, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[kind]].radius })),
   ];
   return {
     day: run.phase === 'day',
@@ -84,7 +81,7 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   };
 }
 
-export const REFUSAL_TEXT: Record<BuildRefusal, string> = {
+const REFUSAL_TEXT: Record<BuildRefusal, string> = {
   notDay: 'Walls go up by day',
   farFromCore: 'Too far from the core',
   outOfReach: 'Out of reach',
@@ -95,7 +92,6 @@ export const REFUSAL_TEXT: Record<BuildRefusal, string> = {
   scrap: `Needs ${BUILDINGS.wall.cost} scrap`,
 };
 
-/** The cell under the cursor in build mode and what clicking it would do. */
 export type Ghost = { cx: number; cy: number; refusal: BuildRefusal | null; label: string };
 
 const GRID = WORLD.size / ZOM.cell;
@@ -116,7 +112,6 @@ export function squadFromSearch(search: string): string | null | 'bad' {
   return SQUAD_CODE.test(code) ? code : 'bad';
 }
 
-/** This page's address with `squad` set to the code, or removed for null, keeping every other parameter. */
 export function withSquad(href: string, code: string | null): string {
   const url = new URL(href);
   if (code === null) url.searchParams.delete('squad');
@@ -124,7 +119,6 @@ export function withSquad(href: string, code: string | null): string {
   return url.toString();
 }
 
-/** The link a friend opens to join: the page with only the squad code. */
 export const inviteLink = (href: string, code: string): string => {
   const url = new URL(href);
   return `${url.origin}${url.pathname}?squad=${code}`;

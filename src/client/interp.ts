@@ -55,8 +55,8 @@ function interpolateById<T extends Positioned>(
   });
 }
 
-function interpolateZombies(prev: readonly ZombieView[] | undefined, next: readonly ZombieView[] | undefined, t: number): ZombieView[] | undefined {
-  if (!prev || !next) return next as ZombieView[] | undefined;
+function interpolateZombies(prev: ZombieView[] | undefined, next: ZombieView[] | undefined, t: number): ZombieView[] | undefined {
+  if (!prev || !next) return next;
   const before = new Map(prev.map((z) => [z[0], z]));
   return next.map((z) => {
     const a = before.get(z[0]);

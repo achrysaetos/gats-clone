@@ -13,8 +13,7 @@ const R = WORLD.playerRadius;
 
 const WALL_LOOK = { top: '#bdb4a3', face: '#7d7568', edge: '#d9d1c1', mortar: '#8f8778' } as const;
 const CORE_LOOK = { plate: '#2d3340', rim: '#4a5262', glow: '#4fd1e8' } as const;
-export const CORE_HIT_MS = 180;
-/** How long after the core last lost health the HUD keeps warning that it is under attack. */
+const CORE_HIT_MS = 180;
 export const CORE_ALERT_MS = 1500;
 
 /** Damage numbers and impact effects name walls by their center, since a wall's view carries no id. */
@@ -167,7 +166,6 @@ export function faceZombies(faces: Map<number, { x: number; y: number; a: number
   for (const id of faces.keys()) if (!seen.has(id)) faces.delete(id);
 }
 
-/** Circles from flat [x, y, r] triples, each grown by `pad`. */
 function addCircles(ctx: CanvasRenderingContext2D, xyr: readonly number[], pad: number) {
   for (let i = 0; i < xyr.length; i += 3) {
     const r = xyr[i + 2]! + pad;
@@ -181,7 +179,7 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
   ctx.fillStyle = PALETTE.shadow;
   ctx.beginPath();
   for (const [, kind, x, y] of zombies) {
-    const r = ZOMBIES[ZOMBIE_KINDS[kind] ?? 'walker'].radius;
+    const r = ZOMBIES[ZOMBIE_KINDS[kind]].radius;
     ctx.moveTo(x + 5 + r, y + 7);
     ctx.arc(x + 5, y + 7, r, 0, TAU);
   }
@@ -233,7 +231,7 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
     ctx.globalAlpha = 0.85 * (1 - (now - hit) / HIT_FLASH_MS);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(x, y, ZOMBIES[ZOMBIE_KINDS[kind] ?? 'walker'].radius, 0, TAU);
+    ctx.arc(x, y, ZOMBIES[ZOMBIE_KINDS[kind]].radius, 0, TAU);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -247,7 +245,6 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
   }
 }
 
-/** A downed squadmate lies low and grey, ringed by a squadmate's revive progress, with the time left before they bleed out. */
 export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, serverNow: number | null, self: boolean) {
   const down = p.downed;
   if (!down) return;
@@ -299,7 +296,6 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
 
 const GHOST_LOOK = { ok: PALETTE.hpGood, no: PALETTE.hpBad, down: '#ff9f43' } as const;
 
-/** The build preview: the cell under the cursor, green when a wall may go up, orange over a wall you can take down, red with the reason otherwise. */
 export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x: number; y: number }, core: { x: number; y: number }, now: number) {
   ctx.setLineDash([12, 10]);
   ctx.lineDashOffset = -now / 60;

@@ -56,10 +56,8 @@ let loadout: Loadout = loadLoadout();
 let muted = loadMuted();
 let servers: ServerInfo[] | null = [];
 let selectedRoom: string | null = null;
-/** The squad from an invite link or the one this page started, listed beside the public rooms. */
 let squad: string | null = null;
 let squadBusy = false;
-/** An invite link scrolls the menu to its squad once the room list above it has loaded. */
 let revealSquad = false;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
@@ -83,7 +81,6 @@ const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('j
 const DEV = params.has('dev');
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
-/** The build preview under the cursor this frame, which a click acts on. */
 let ghost: Ghost | null = null;
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
@@ -358,7 +355,6 @@ function toggleBuild(s: Session) {
   playClick(s);
 }
 
-/** In build mode the mouse places walls instead of firing: left builds on the previewed cell, right takes your squad's wall there down. */
 function buildClick(s: Session, button: number) {
   if (!ghost) return;
   if (button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', cx: ghost.cx, cy: ghost.cy });

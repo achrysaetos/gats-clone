@@ -595,7 +595,6 @@ function drawScore(hud: Hud, compact: boolean) {
 
 const SQUAD_CHIP_H = 52;
 
-/** The zombies run's HUD: the scrap bank and core health under the level bar, the core alert, your downed state, and the build and use hints. */
 function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean) {
   const { ctx, w, h, s, me, now } = hud;
   const bw = compact ? w - 150 - 56 : 260;

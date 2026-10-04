@@ -111,8 +111,7 @@ export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): 
   root.replaceChildren(room, el('div', { className: 'invite' }, link, copy), pitch);
 }
 
-/** Copies through the clipboard API where the page may, else through a selected scratch field. */
-export async function copyText(text: string, button: HTMLButtonElement) {
+async function copyText(text: string, button: HTMLButtonElement) {
   const label = button.textContent;
   let ok = false;
   try {
@@ -129,7 +128,6 @@ export async function copyText(text: string, button: HTMLButtonElement) {
   setTimeout(() => { button.textContent = label; }, 1600);
 }
 
-/** The in-game reminder of which squad you are in, with the invite one click away. */
 export function renderSquadChip(root: HTMLElement, code: string | null, link: string | null) {
   root.hidden = code === null;
   if (!code || !link) return;
