@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, solidsOf, type Prediction } from '../src/client/predict.ts';
+import { ABILITY_COOLDOWN_MS } from '../src/shared/defs.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import type { Motion, Rect } from '../src/shared/sim/movement.ts';
@@ -113,7 +114,7 @@ test('a dash predicted on the client matches the server every snapshot, so the l
 
 const knifeRoute: Partial<InputState>[] = [
   ...Array(4).fill({ ability: true, angle: -Math.PI / 2 }),
-  ...Array(50).fill({}),
+  ...Array(Math.ceil(ABILITY_COOLDOWN_MS.knife / TICK_MS) + 5).fill({}),
   ...Array(4).fill({ ability: true, angle: 0 }),
   ...Array(10).fill({}),
 ];

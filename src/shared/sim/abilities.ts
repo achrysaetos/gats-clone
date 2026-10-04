@@ -21,7 +21,7 @@ function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
   };
 }
 
-const KNIFE_DAMAGE = 75;
+const KNIFE_DAMAGE = 50;
 const MAX_MINES = 2;
 
 export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {

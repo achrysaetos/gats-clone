@@ -187,7 +187,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
 };
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
-  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 1500, engineer: 10000, dash: 3500,
+  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 10000, dash: 3500,
 };
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
