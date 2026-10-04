@@ -1,6 +1,6 @@
 import {
   ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
-  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -51,6 +51,8 @@ export type PlayerView = {
   kind: PlayerKind;
   /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
   hunted: boolean;
+  /** Zombies only, while down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. */
+  downed?: { revive: number; bleedOutAt: number };
 };
 
 /** `gun` is null for shrapnel. */
@@ -62,6 +64,20 @@ export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
+
+/** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
+export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
+/** `hp` is tenths of full health, 1..10. */
+export type BuildingView = { kind: BuildingKind; cx: number; cy: number; hp: number };
+export type RunReport = { night: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[] };
+/**
+ * `phaseEndsAt` is the server time the day ends or the next run starts, and null at night, which ends when the wave is dead.
+ * `waveLeft` counts the night's zombies alive or still to come; `report` is set once the core has fallen.
+ */
+export type RunView = {
+  phase: 'day' | 'night' | 'over'; night: number; phaseEndsAt: number | null; scrap: number;
+  core: { x: number; y: number; hp: number; maxHp: number }; aliveZombies: number; waveLeft: number; report: RunReport | null;
+};
 
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
@@ -129,10 +145,14 @@ export type Snapshot = {
   leaderboard: LeaderRow[];
   match: MatchView;
   events: GameEvent[];
+  /** Zombies only: the horde in view, the squad's walls and the run. */
+  zombies?: ZombieView[];
+  buildings?: BuildingView[];
+  run?: RunView;
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
 

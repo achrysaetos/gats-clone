@@ -29,5 +29,6 @@ export function fillSnapshot(wire: SnapshotWire, last: Snapshot | null): Snapsho
   const zones = wire.zones ?? last?.zones;
   const match = wire.match ?? last?.match;
   if (!crates || !leaderboard || !zones || !match) return null;
-  return { ...wire, crates, leaderboard, zones, match };
+  const buildings = wire.buildings ?? last?.buildings, run = wire.run ?? last?.run;
+  return { ...wire, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }) };
 }

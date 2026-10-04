@@ -1,0 +1,91 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { BUILDINGS, ZOM, ZOMBIE_KINDS } from '../src/shared/defs.ts';
+import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
+import { step } from '../src/shared/sim.ts';
+import { zombieMaxHp } from '../src/shared/sim/run.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
+import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
+import { run, spawnAt, TICK_MS } from './helpers.ts';
+
+const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
+
+test('a zombies snapshot shows the horde in view as compact tuples, the squad walls and the run', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1380, 1500);
+  w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 28, hp: BUILDINGS.wall.hp * 0.35 });
+  const near = { id: newId(w), kind: 'brute' as const, x: 1700.4, y: 1500.6, hp: zombieMaxHp('brute', 1) / 2, attackAt: 0 };
+  w.zombies.push(near, { id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1, attackAt: 0 });
+  const snap = snapshotFor(w, p.id);
+  assert.deepEqual(snap.zombies, [[near.id, ZOMBIE_KINDS.indexOf('brute'), 1700, 1501, 5]]);
+  assert.deepEqual(snap.buildings, [{ kind: 'wall', cx: 26, cy: 28, hp: 4 }]);
+  assert.deepEqual(snap.run, {
+    phase: 'day', night: 1, phaseEndsAt: ZOM.dayMs, scrap: ZOM.startScrap, core: { x: 1500, y: 1500, hp: ZOM.coreHp, maxHp: ZOM.coreHp },
+    aliveZombies: 2, waveLeft: 2, report: null,
+  });
+});
+
+test('the run view times the night by its wave and reports the run once the core falls', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1380, 1500);
+  run(w, ZOM.dayMs + TICK_MS);
+  const night = snapshotFor(w, p.id).run!;
+  assert.equal(night.phase, 'night');
+  assert.equal(night.phaseEndsAt, null);
+  assert.equal(night.waveLeft, ZOM.waveSize(1, 0));
+  w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
+  w.run!.core.hp = 0;
+  step(w, TICK_MS);
+  const over = snapshotFor(w, p.id).run!;
+  assert.equal(over.phase, 'over');
+  assert.equal(over.phaseEndsAt, w.now + ZOM.restartMs);
+  assert.deepEqual(over.report, { night: 1, durationMs: w.now, players: [{ name: p.name, kills: 4, revives: 1, built: 2 }] });
+});
+
+test('squadmates see a downed player with the revive and bleed-out clocks; nobody sees one who bled out', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1380, 1500);
+  const mate = spawnAt(w, 1380, 1560);
+  mate.life = { k: 'downed', bleedOutAt: 9000, reviveProgress: ZOM.reviveMs / 4 };
+  assert.deepEqual(snapshotFor(w, p.id).players.find((v) => v.id === mate.id)?.downed, { revive: 0.25, bleedOutAt: 9000 });
+  assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.downed, undefined);
+  mate.life = { k: 'dead', respawnAt: Infinity };
+  assert.equal(snapshotFor(w, p.id).players.some((v) => v.id === mate.id), false);
+  assert.equal(snapshotFor(w, mate.id).self.respawnIn, 0, 'a squad death has no respawn clock');
+});
+
+test('versus snapshots carry no zombie fields at all', () => {
+  const w = createWorld('FFA', 1, 'boneyard');
+  const p = spawnAt(w, 1500, 1500);
+  const snap = snapshotFor(w, p.id);
+  assert.deepEqual(['zombies', 'buildings', 'run'].filter((k) => k in snap), []);
+});
+
+test('the wire omits unchanged walls and run, rebuilds them, and keeps a snapshot with 200 zombies in view under 6KB', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1380, 1500);
+  for (let cx = 24; cx <= 35; cx++) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy: 24, hp: BUILDINGS.wall.hp });
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  for (let i = 0; i < ZOM.maxAlive; i++) {
+    const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 250 + (i % 7) * 40;
+    w.zombies.push({ id: newId(w), kind: i % 9 === 0 ? 'brute' : 'walker', x: 1500 + Math.cos(a) * r * 1.6, y: 1500 + Math.sin(a) * r, hp: 1e6, attackAt: Infinity });
+  }
+  const encode = makeSnapshotEncoder();
+  let last: Snapshot | null = null;
+  const sizes: number[] = [];
+  for (let tick = 0; tick < 10; tick++) {
+    step(w, TICK_MS);
+    const snap = snapshotFor(w, p.id);
+    const json = encode(snap);
+    const wire = JSON.parse(json) as SnapshotWire;
+    if (tick > 0) assert.equal(wire.buildings, undefined, 'unchanged walls are not resent');
+    last = fillSnapshot(wire, last);
+    assert.deepEqual(last?.buildings, snap.buildings);
+    assert.deepEqual(last?.run, JSON.parse(JSON.stringify(snap.run)));
+    sizes.push(json.length);
+  }
+  assert.ok(snapshotFor(w, p.id).zombies!.length >= 190, 'nearly the whole horde is in view');
+  const steady = Math.max(...sizes.slice(1));
+  assert.ok(steady < 6000, `${steady} bytes per snapshot`);
+});

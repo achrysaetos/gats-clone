@@ -1,13 +1,14 @@
-import { GUNS, WORLD } from '../defs.ts';
+import { BUILDINGS, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZoneView,
+  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
-import { isEnemy, sameTeam, type Player, type World } from './world.ts';
+import { zombieMaxHp } from './run.ts';
+import { isEnemy, sameTeam, type Player, type Run, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
@@ -34,6 +35,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(me, p),
+    ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
 }
 
@@ -57,7 +59,8 @@ function selfView(w: World, p: Player): SelfView {
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
     dash: life.k === 'alive' ? life.dash : null,
-    respawnIn: life.k === 'dead' ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
+    // A squad player who bled out waits for dawn, which the run view times.
+    respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,
     deaths: p.deaths,
     viewRadius: stats.viewRadius,
@@ -102,7 +105,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const players: PlayerView[] = [];
   for (const p of w.players.values()) {
     if (p.id !== me.id) {
-      if (p.life.k !== 'alive' || !inView(p.x, p.y, WORLD.playerRadius)) continue;
+      if (p.life.k === 'dead' || !inView(p.x, p.y, WORLD.playerRadius)) continue;
       const seesHidden = !isEnemy(me, p) || stats.thermal || dist2(p.x, p.y, me.x, me.y) < HIDDEN_REVEAL_DIST ** 2;
       if (isHidden(w, p) && !seesHidden) continue;
     }
@@ -135,5 +138,35 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
+    ...(w.run && siegeViews(w, w.run, inView)),
   };
+}
+
+const tenths = (hp: number, max: number) => Math.max(1, Math.ceil((hp / max) * 10));
+
+function runView(w: World, run: Run): RunView {
+  const core = MAPS[w.map].siege!.core;
+  const phase = run.phase;
+  return {
+    phase: phase.k,
+    night: run.night,
+    phaseEndsAt: phase.k === 'day' ? phase.endsAt : phase.k === 'over' ? phase.restartAt : null,
+    scrap: Math.floor(run.scrap),
+    core: { x: core.x, y: core.y, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp },
+    aliveZombies: w.zombies.length,
+    waveLeft: w.zombies.length + (phase.k === 'night' ? phase.toSpawn.length : 0),
+    report: phase.k === 'over'
+      ? { night: phase.night, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })) }
+      : null,
+  };
+}
+
+function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: number) => boolean) {
+  const zombies: ZombieView[] = [];
+  for (const z of w.zombies) {
+    if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
+    zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night))]);
+  }
+  const buildings = w.buildings.map((b) => ({ kind: b.kind, cx: b.cx, cy: b.cy, hp: tenths(b.hp, BUILDINGS[b.kind].hp) }));
+  return { zombies, buildings, run: runView(w, run) };
 }
