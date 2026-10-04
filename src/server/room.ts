@@ -1,7 +1,7 @@
 import type { WebSocket } from 'ws';
-import { WORLD, type ModeId } from '../shared/defs.ts';
+import { WORLD, type ModeId, type PlayerKind } from '../shared/defs.ts';
 import { ROTATION } from '../shared/maps.ts';
-import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot } from '../shared/protocol.ts';
+import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { choosePick } from '../shared/sim/stats.ts';
@@ -58,6 +58,15 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
+  /** Humans split evenly first, so a lone pair lands on opposite sides; balanceBots then trims a bot from whichever side is larger. */
+  function teamForHuman(): Team {
+    if (mode === 'FFA') return null;
+    const count = (team: Team, kind?: PlayerKind) => [...world.players.values()].filter((p) => p.team === team && (kind === undefined || p.kind === kind)).length;
+    const redHumans = count('red', 'human'), blueHumans = count('blue', 'human');
+    if (redHumans !== blueHumans) return redHumans < blueHumans ? 'red' : 'blue';
+    return count('red') <= count('blue') ? 'red' : 'blue';
+  }
+
   function creditLives(departed?: Extract<Client, { k: 'joined' }>) {
     const accountOf = new Map<number, string>();
     for (const c of departed ? [...joined(), departed] : joined()) if (c.account) accountOf.set(c.playerId, c.account);
@@ -78,7 +87,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
       const takenByAnotherAccount = (n: string) => registered(n) && n.toLowerCase() !== account?.toLowerCase();
       const name = uniqueName(account ?? (moderator.isClean(msg.name) ? msg.name : 'Player'), names(), takenByAnotherAccount);
-      const p = addPlayer(world, name, msg.loadout, { kind: 'human' });
+      const p = addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder() });
       balanceBots();

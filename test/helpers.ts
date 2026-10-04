@@ -1,6 +1,8 @@
+import { EventEmitter } from 'node:events';
+import type { WebSocket } from 'ws';
 import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
-import type { InputState, Loadout, Team } from '../src/shared/protocol.ts';
+import type { ClientMsg, InputState, Loadout, ServerMsg, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
 import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
@@ -63,4 +65,23 @@ export function hpOf(p: Player): number {
 export function shootUntilDead(w: World, shooter: Player, victim: Player, angle = 0) {
   for (let i = 0; i < 40 && victim.life.k === 'alive'; i++) shootOnce(w, shooter, angle, 300);
   if (victim.life.k === 'alive') throw new Error('victim survived');
+}
+
+/** A socket a room can be connected to: `send` delivers a client message, `sent` holds what the room sent back, `pings` the payloads it pinged with. */
+export function fakeSocket() {
+  const sent: ServerMsg[] = [];
+  const pings: string[] = [];
+  const ws = Object.assign(new EventEmitter(), {
+    OPEN: 1, readyState: 1,
+    send: (data: string) => { sent.push(JSON.parse(data)); },
+    close: () => {}, ping: (data?: unknown) => { pings.push(String(data ?? '')); }, terminate: () => {},
+  });
+  return {
+    socket: ws as unknown as WebSocket,
+    sent,
+    pings,
+    send: (msg: ClientMsg) => { ws.emit('message', Buffer.from(JSON.stringify(msg)), false); },
+    pong: (data: string) => { ws.emit('pong', Buffer.from(data)); },
+    close: () => { ws.emit('close'); },
+  };
 }

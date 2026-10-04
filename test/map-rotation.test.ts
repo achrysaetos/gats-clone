@@ -1,17 +1,14 @@
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import type { WebSocket } from 'ws';
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
 import { MAP_MS, MAP_NOTICE_MS, MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
-import type { ServerMsg } from '../src/shared/protocol.ts';
 import { addPlayer } from '../src/shared/sim.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, type World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
 import { createRoom } from '../src/server/room.ts';
-import { PISTOL, run, TICK_MS } from './helpers.ts';
+import { fakeSocket, PISTOL, run, TICK_MS } from './helpers.ts';
 
 function assertStandingInSpawns(w: World, map: MapId) {
   for (const p of w.players.values()) {
@@ -113,30 +110,20 @@ test('a map change places players apart on the new map, not apart from where the
   assert.deepEqual(close, [], 'eight players fit the FFA spawns with nobody on top of anyone');
 });
 
-function fakeSocket() {
-  const sent: ServerMsg[] = [];
-  const ws = Object.assign(new EventEmitter(), {
-    OPEN: 1, readyState: 1, sent,
-    send: (data: string) => { sent.push(JSON.parse(data)); },
-    close: () => {}, ping: () => {}, terminate: () => {},
-  });
-  return ws;
-}
-
 test('a joined client receives the new map\'s walls when the round restarts', () => {
   const mode: ModeId = 'TDM';
   const [first, second] = ROTATION[mode];
   const room = createRoom('tdm', mode, 1, { stats: () => null, credit: () => {} } as unknown as Accounts);
   const ws = fakeSocket();
-  room.connect(ws as unknown as WebSocket);
-  ws.emit('message', Buffer.from(JSON.stringify({ t: 'join', name: 'Tester', loadout: PISTOL, aspect: 1.5 })), false);
+  room.connect(ws.socket);
+  ws.send({ t: 'join', name: 'Tester', loadout: PISTOL, aspect: 1.5 });
   const welcome = ws.sent.find((m) => m.t === 'welcome');
   assert.ok(welcome && welcome.t === 'welcome');
   assert.deepEqual(welcome.walls.map(({ x, y, w, h }) => ({ x, y, w, h })), MAPS[first].walls);
 
   room.world.teamScore.red = WORLD.tdmWinScore;
   for (let t = 0; t <= WORLD.roundRestartMs + 500; t += TICK_MS) room.tick();
-  ws.emit('close');
+  ws.close();
   const walls = ws.sent.filter((m) => m.t === 'walls');
   assert.equal(walls.length, 1, 'one walls message for the one map change');
   assert.deepEqual(walls[0].t === 'walls' && walls[0].walls, MAPS[second].walls.map((r) => ({ ...r, built: false })));
