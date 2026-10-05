@@ -134,7 +134,10 @@ export function drawShadowLayer(ctx: CanvasRenderingContext2D, layer: ShadowLaye
   const ax = Math.max(layer.x, x0), ay = Math.max(layer.y, y0);
   const bx = Math.min(layer.x + layer.canvas.width / layer.scale, x1), by = Math.min(layer.y + layer.canvas.height / layer.scale, y1);
   if (bx <= ax || by <= ay) return;
+  // The layer is already blurred, so nearest-pixel scaling looks the same and skips most of a software canvas's per-pixel work.
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(layer.canvas, (ax - layer.x) * layer.scale, (ay - layer.y) * layer.scale, (bx - ax) * layer.scale, (by - ay) * layer.scale, ax, ay, bx - ax, by - ay);
+  ctx.imageSmoothingEnabled = true;
 }
 
 const crateShadows = new Map<number, HTMLCanvasElement>();
