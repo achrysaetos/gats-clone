@@ -160,7 +160,7 @@ test('a hurt bot leaves the hiding spot a teammate is already in', () => {
   setWalls(w, [pillarWest]);
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, team: 'red' });
   spawnAt(w, 1500, 1000, { team: 'blue' });
-  if (bot.life.k === 'alive') bot.life.hp = 20;
+  if (bot.life.k === 'alive') bot.life.hp = 10;
   const alone = decide(w, bot.id, { k: 'engage', target: 0 });
   assert.ok(alone.k === 'retreatAndHeal' && alone.spot, 'retreats to cover');
   const spot = alone.k === 'retreatAndHeal' ? alone.spot! : { x: 0, y: 0 };
@@ -175,15 +175,15 @@ test('a hurt bot keeps fighting a lone enemy who is worse off, but leaves when o
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, team: 'red' });
   const foe = spawnAt(w, 1500, 1000, { team: 'blue' });
   const hp = (p: typeof bot, v: number) => { if (p.life.k === 'alive') p.life.hp = v; };
-  hp(bot, 30);
-  hp(foe, 10);
+  hp(bot, 15);
+  hp(foe, 8);
   assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'engage', 'finishes a weaker lone enemy');
   hp(foe, 100);
   assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'retreatAndHeal', 'leaves a stronger one');
 
-  hp(bot, 60);
+  hp(bot, 25);
   spawnAt(w, 1500, 1150, { team: 'blue' });
-  assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'retreatAndHeal', 'two on one at 60% is a fight to leave');
+  assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'retreatAndHeal', 'two on one at 25% is a fight to leave');
   spawnAt(w, 1000, 1150, { team: 'red' });
   assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'engage', 'with a teammate beside it, it stays');
 });

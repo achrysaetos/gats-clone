@@ -24,18 +24,18 @@ export type Personality = {
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
-  aggressive: { rangeMul: 0.8, retreatHp: 0.25, healedHp: 0.6, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.35, flankOdds: 0.5, pushOdds: 0.9, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8 },
-  cautious: { rangeMul: 1, retreatHp: 0.4, healedHp: 0.8, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.9, flankOdds: 0.2, pushOdds: 0.45, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2 },
-  marksman: { rangeMul: 1.15, retreatHp: 0.35, healedHp: 0.75, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.8, flankOdds: 0.1, pushOdds: 0.3, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
+  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8 },
+  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2 },
+  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
 };
 
 const WEAPON_BAND: Record<WeaponId, Band> = {
-  pistol: { headOn: 180, ideal: 340, max: 500 },
-  smg: { headOn: 90, ideal: 240, max: 380 },
+  pistol: { headOn: 180, ideal: 320, max: 420 },
+  smg: { headOn: 90, ideal: 250, max: 330 },
   shotgun: { headOn: 0, ideal: 150, max: 260 },
-  assault: { headOn: 220, ideal: 420, max: 580 },
-  sniper: { headOn: 400, ideal: 700, max: 1000 },
-  lmg: { headOn: 200, ideal: 400, max: 560 },
+  assault: { headOn: 220, ideal: 380, max: 480 },
+  sniper: { headOn: 420, ideal: 650, max: 840 },
+  lmg: { headOn: 200, ideal: 340, max: 450 },
 };
 
 type Band = { headOn: number; ideal: number; max: number };
@@ -76,7 +76,7 @@ const RETREAT_REACH_PX = 600;
 const CORNERED_PX = 220;
 const OPEN_ESCAPE_PX = 500;
 const OUTNUMBERED_BY = 2;
-const OUTNUMBERED_HP = 0.65;
+const OUTNUMBERED_HP = 0.3;
 const LOW_AMMO = 0.25;
 
 const ticks = (ms: number) => Math.round(ms / TICK_MS);
