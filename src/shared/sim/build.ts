@@ -29,11 +29,12 @@ export function buildRefusal(site: BuildSite, kind: BuildingKind, cx: number, cy
   const { core } = site;
   if (dist2(at.x, at.y, core.x + core.w / 2, core.y + core.h / 2) > ZOM.buildRadius ** 2) return 'farFromCore';
   if (dist2(at.x, at.y, site.builder.x, site.builder.y) > ZOM.reachPx ** 2) return 'outOfReach';
+  // Before bodies, so a building with someone pressed against it still offers to come down.
+  if (site.buildings.some((b) => b.cx === cx && b.cy === cy)) return 'taken';
   const cell = cellRect(cx, cy);
   if (site.cover.some((r) => rectsOverlap(r, cell))) return 'cover';
   if (rectsOverlap(core, cell)) return 'core';
   if (site.bodies.some((b) => circleHitsRect(b.x, b.y, b.r, cell))) return 'body';
-  if (site.buildings.some((b) => b.cx === cx && b.cy === cy)) return 'taken';
   if (site.scrap < BUILDINGS[kind].cost) return 'scrap';
   return null;
 }

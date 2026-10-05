@@ -38,6 +38,11 @@ const refusals: [string, (w: World) => { cx: number; cy: number; by?: { x: numbe
   ['body', (w) => { w.zombies.push({ id: newId(w), kind: 'walker', x: (CELL.cx + 0.5) * ZOM.cell, y: CELL.cy * ZOM.cell - 5, hp: 1, attackAt: Infinity }); return CELL; }],
   ['body', (w) => { spawnAt(w, (CELL.cx + 0.5) * ZOM.cell, (CELL.cy + 0.5) * ZOM.cell); return CELL; }],
   ['taken', (w) => { w.buildings.push({ id: newId(w), kind: 'wall', cx: CELL.cx, cy: CELL.cy, hp: 1 }); return CELL; }],
+  ['taken', (w) => {
+    w.buildings.push({ id: newId(w), kind: 'wall', cx: CELL.cx, cy: CELL.cy, hp: 1 });
+    w.zombies.push({ id: newId(w), kind: 'walker', x: CELL.cx * ZOM.cell - 15, y: (CELL.cy + 0.5) * ZOM.cell, hp: 1, attackAt: Infinity });
+    return CELL;
+  }],
   ['scrap', (w) => { w.run!.scrap = BUILDINGS.wall.cost - 1; return CELL; }],
 ];
 
