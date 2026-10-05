@@ -33,6 +33,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['1-9, 0', 'Pick perk or evolution'],
   ['B', 'Zombies: build walls and turrets by day, 1-3 to pick'],
   ['E', 'Zombies: hold to revive, repair or reload'],
+  ['Tab', 'Hold for the whole leaderboard'],
   ['Enter', 'Chat'],
   ['M', 'Mute sound'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],

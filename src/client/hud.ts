@@ -3,7 +3,7 @@ import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMB
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
-import { clearOfRects, clock, edgePoint, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, topScorers, type Rect } from './derive.ts';
+import { clearOfRects, clock, edgePoint, boardRows, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { serverNow } from './interp.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
@@ -19,7 +19,8 @@ const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 22 } as const;
 const SPACE = { sm: 8, md: 12, lg: 16 } as const;
 const HUD_INK = '#f2f3f5';
 const MUTED = '#9ba2ae';
-const PANEL_FILL = 'rgba(28, 32, 40, 0.82)';
+/** Near-opaque, so walls and crates under a panel never show through as stray boxes. */
+const PANEL_FILL = 'rgba(28, 32, 40, 0.94)';
 const PANEL_RADIUS = 10;
 const EDGE = 12;
 const FEED_ROW = 30;
@@ -51,7 +52,7 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
 }
 
 /** `spread` is your current aim spread, or null when no reticle should be drawn. */
-export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera, snap: Snapshot, s: Session, now: number, crosshair: Point, spread: number | null) {
+export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera, snap: Snapshot, s: Session, now: number, crosshair: Point, spread: number | null, fullBoard = false) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   hudFont = '';
   const { w, h } = cam;
@@ -66,7 +67,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   drawHurtArcs(hud);
   drawMinimap(hud, EDGE, EDGE + (snap.run ? SQUAD_CHIP_H : 0), compact ? 96 : 170);
   drawKillFeed(hud, feedRows);
-  drawLeaderboard(hud, EDGE + feedRows * FEED_ROW + ROW_GAP, compact);
+  drawLeaderboard(hud, EDGE + feedRows * FEED_ROW + ROW_GAP, compact, fullBoard);
   const below = drawPill(hud, compact);
   ctx.globalAlpha = 1;
   const siegeTop = drawObjectiveLine(hud, below, compact);
@@ -397,26 +398,34 @@ function nameColor({ s, snap }: Hud, id: number | null): string {
 
 const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
 
-function drawLeaderboard(hud: Hud, top: number, compact: boolean) {
+/** Tucked under the kill feed: the top three and your own place, or the whole board while Tab is held. */
+function drawLeaderboard(hud: Hud, top: number, compact: boolean, full: boolean) {
   const { ctx, w, h, snap, s } = hud;
-  const rows = topScorers(snap.leaderboard, compact || h < 760 ? 5 : 10);
+  const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 5 : 10) : null);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM';
   const squad = !!snap.run;
   const pw = compact ? 150 : 200;
   const x = w - pw - EDGE;
   const rowH = 20;
-  const ph = 34 + rows.length * rowH + (squad ? 0 : 16);
+  const goal = full && !squad;
+  const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
+  const ph = 30 + rows.length * rowH + (goal ? 16 : 0) + (split ? 6 : 0);
   fadePanel(hud, 'board', x, top, pw, ph);
   panel(ctx, x, top, pw, ph);
-  caps(ctx, squad ? 'Squad kills' : 'Leaderboard', x + SPACE.md, top + 16);
-  text(ctx, snap.match.mode, x + pw - SPACE.md, top + 16, TYPE.label, PALETTE.gold, 'right', 800);
-  let y = top + 36;
-  if (!squad) {
-    const goal = teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
-    text(ctx, goal[0]!.toUpperCase() + goal.slice(1), x + SPACE.md, y - 4, TYPE.micro, MUTED, 'left', 500);
+  caps(ctx, squad ? 'Squad kills' : 'Leaderboard', x + SPACE.md, top + 15);
+  text(ctx, full ? snap.match.mode : `TAB · ${snap.match.mode}`, x + pw - SPACE.md, top + 15, TYPE.micro, full ? PALETTE.gold : MUTED, 'right', 800);
+  let y = top + 33;
+  if (goal) {
+    const line = teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
+    text(ctx, line[0]!.toUpperCase() + line.slice(1), x + SPACE.md, y - 3, TYPE.micro, MUTED, 'left', 500);
     y += 16;
   }
-  rows.forEach((r, i) => {
+  rows.forEach(({ place, row: r }, i) => {
+    if (split && i === rows.length - 1) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.fillRect(x + SPACE.md, y - rowH / 2 - 1, pw - SPACE.md * 2, 1);
+      y += 6;
+    }
     const mine = r.id === s.myId;
     if (mine) {
       ctx.fillStyle = 'rgba(255, 211, 77, 0.14)';
@@ -430,7 +439,7 @@ function drawLeaderboard(hud: Hud, top: number, compact: boolean) {
       ctx.arc(x + SPACE.md + 4, y, 4, 0, TAU);
       ctx.fill();
     }
-    text(ctx, `${i + 1}  ${r.name}`, x + SPACE.md + (r.team && teams ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
+    text(ctx, `${place}  ${r.name}`, x + SPACE.md + (r.team && teams ? 14 : 0), y, TYPE.body - 1, mine ? PALETTE.gold : HUD_INK, 'left', mine ? 750 : 550);
     text(ctx, String(r.kills), x + pw - SPACE.md, y, TYPE.body - 1, mine ? PALETTE.gold : MUTED, 'right', 650);
     y += rowH;
   });

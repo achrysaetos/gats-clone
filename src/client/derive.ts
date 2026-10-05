@@ -145,6 +145,16 @@ export const objectiveVisible =(phase: ClientState['phase'], match: Pick<MatchVi
 
 export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow[] => rankRows(rows).slice(0, count);
 
+export const BOARD_TOP = 3;
+
+/** The leaderboard's rows with their places: the top three plus your own row when you rank lower, or the first `full` rows while the whole board is asked for. */
+export function boardRows(rows: readonly LeaderRow[], myId: number, full: number | null): { place: number; row: LeaderRow }[] {
+  const ranked = rankRows(rows).map((row, i) => ({ place: i + 1, row }));
+  if (full !== null) return ranked.slice(0, full);
+  const mine = ranked.find((r) => r.row.id === myId);
+  return mine && mine.place > BOARD_TOP ? [...ranked.slice(0, BOARD_TOP), mine] : ranked.slice(0, BOARD_TOP);
+}
+
 /** The round-end podium: the winning team's best in team modes, with the final team score; in FFA the winner, then everyone else's best. */
 export function roundPodium(match: MatchView, rows: readonly LeaderRow[], count: number): { rows: LeaderRow[]; score: string | null } {
   if (match.mode === 'FFA') {

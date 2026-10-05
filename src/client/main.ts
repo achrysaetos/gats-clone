@@ -66,6 +66,8 @@ let aimCamera: Camera | null = null;
 let viewTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 const held = new Set<Action>();
+/** Whether Tab is held, which opens the whole leaderboard. */
+let fullBoard = false;
 let firing = false;
 let touchWasAiming = false;
 const mouse = { x: 0, y: 0 };
@@ -487,7 +489,7 @@ function drawFrame(now: number) {
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
   const moving = MOVES.some((a) => held.has(a));
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, !moving) : null;
-  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread);
+  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
 }
@@ -514,6 +516,11 @@ function onKeyDown(e: KeyboardEvent) {
     } else if (e.key === 'Escape') {
       overlays.closeChat();
     }
+    return;
+  }
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    fullBoard = true;
     return;
   }
   if (e.key === 'Enter') {
@@ -551,6 +558,7 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 function onKeyUp(e: KeyboardEvent) {
+  if (e.code === 'Tab') fullBoard = false;
   const action = actionForKey(e.code);
   if (action) held.delete(action);
 }
@@ -558,7 +566,7 @@ function onKeyUp(e: KeyboardEvent) {
 for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, audio.unlock, { capture: true });
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
-window.addEventListener('blur', () => { held.clear(); firing = false; sticks = NO_STICKS; });
+window.addEventListener('blur', () => { held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; });
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   // Suppresses the emulated mousedown so a thumb on the move stick does not also fire.
