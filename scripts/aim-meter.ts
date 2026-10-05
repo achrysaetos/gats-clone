@@ -17,15 +17,15 @@ const minutes = Number(process.argv[3] ?? 3);
 const seeds = Number(process.argv[4] ?? 2);
 const TICK_MS = 1000 / WORLD.tickHz;
 const DEG = 180 / Math.PI;
-/** A deliberate flick: the ticks just after a bot takes or drops a target. */
-const FLICK_MS = 500;
+/** A deliberate flick: the ticks just after a bot takes or drops a target, long enough to cover a reaction and the turn. */
+const FLICK_MS = 700;
 /** Two wire quanta (0.01 rad), so rounding alone never reads as a reversal. */
 const REVERSAL_DEG = 1.2;
 const SWING_DEG = 30;
 
-type Track = { angle: number | null; lastDelta: number; target: number | null; targetSince: number };
-type Tally = { deltas: number[]; calmDeltas: number[]; calmTicks: number; reversals: number; idleTicks: number; idleReversals: number; swings: number; flickPeaks: number[] };
-const emptyTally = (): Tally => ({ deltas: [], calmDeltas: [], calmTicks: 0, reversals: 0, idleTicks: 0, idleReversals: 0, swings: 0, flickPeaks: [] });
+type Track = { angle: number | null; lastDelta: number; target: number | null; targetSince: number; awaitingShot: boolean };
+type Tally = { deltas: number[]; calmDeltas: number[]; calmTicks: number; reversals: number; idleTicks: number; idleReversals: number; swings: number; flickPeaks: number[]; firstShotMs: number[] };
+const emptyTally = (): Tally => ({ deltas: [], calmDeltas: [], calmTicks: 0, reversals: 0, idleTicks: 0, idleReversals: 0, swings: 0, flickPeaks: [], firstShotMs: [] });
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const targetOf = (mem: BotMemory) => mem.motor.engaged?.id ?? null;
@@ -37,7 +37,7 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
   const mems = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
   const wires = new Map([...mems.keys()].map((id) => [id, { encode: makeSnapshotEncoder(), last: null as ReturnType<typeof fillSnapshot> }]));
-  const tracks = new Map<number, Track>([...mems.keys()].map((id) => [id, { angle: null, lastDelta: 0, target: null, targetSince: -Infinity }]));
+  const tracks = new Map<number, Track>([...mems.keys()].map((id) => [id, { angle: null, lastDelta: 0, target: null, targetSince: -Infinity, awaitingShot: false }]));
   const flickPeak = new Map<number, number>();
   for (let tick = 0; tick < (minutes * 60_000) / TICK_MS; tick++) {
     if (w.match.k === 'over') break;
@@ -73,12 +73,18 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
       const d = botThink(snap, arena, mem, r);
       mems.set(id, d.mem);
       const target = targetOf(d.mem);
-      if (target !== tr.target) { tr.target = target; tr.targetSince = w.now; }
+      if (target !== tr.target) { tr.target = target; tr.targetSince = w.now; tr.awaitingShot = target !== null; }
       setInput(w, id, w.tick, d.input);
       if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
       if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
     }
     step(w, TICK_MS);
+    for (const e of w.events) {
+      const tr = e.e === 'shot' ? tracks.get(e.owner) : undefined;
+      if (!tr?.awaitingShot) continue;
+      t.firstShotMs.push(w.now - tr.targetSince);
+      tr.awaitingShot = false;
+    }
   }
 }
 
@@ -97,6 +103,7 @@ function report(label: string, t: Tally) {
     `calm p99 ${f1(quantile(t.calmDeltas, 0.99))} max ${Math.round(quantile(t.calmDeltas, 1) * WORLD.tickHz)} deg/s`,
     `calm swings >${SWING_DEG}deg ${t.swings}`,
     `calm reversals ${(t.reversals / Math.max(1e-9, calmSec)).toFixed(2)}/s (idle ${(t.idleReversals / Math.max(1e-9, (t.idleTicks * TICK_MS) / 1000)).toFixed(2)}/s, ${Math.round((100 * t.idleTicks) / Math.max(1, t.calmTicks))}% of calm time)`,
+    `new target to first shot p50 ${Math.round(quantile(t.firstShotMs, 0.5))}ms p90 ${Math.round(quantile(t.firstShotMs, 0.9))}ms`,
     `flick peak p50 ${Math.round(quantile(t.flickPeaks, 0.5) * WORLD.tickHz)} p95 ${Math.round(quantile(t.flickPeaks, 0.95) * WORLD.tickHz)} deg/s`,
   ].join('  '));
 }
