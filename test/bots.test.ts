@@ -71,10 +71,11 @@ test('a bot aims more steadily the longer it tracks the same target', () => {
   const early: number[] = [], late: number[] = [];
   for (let seed = 1; seed <= 40; seed++) {
     const looks = watch({ seed, ticks: 90, targetAt: { x: 1500, y: 1000 } });
-    early.push(...aimErrors(looks, 0, 10));
+    const first = looks.findIndex((l) => l.fire);
+    early.push(...aimErrors(looks, first, first + 10));
     late.push(...aimErrors(looks, 60, 90));
   }
-  assert.ok(rms(early) > 1.5 * rms(late), `first 300ms ${rms(early).toFixed(3)} rad vs after 2s ${rms(late).toFixed(3)} rad`);
+  assert.ok(rms(early) > 1.5 * rms(late), `first 300ms of fire ${rms(early).toFixed(3)} rad vs after 2s ${rms(late).toFixed(3)} rad`);
 });
 
 test('a bot ignores an enemy in the snapshot preload margin beyond its 16:9 view', () => {
@@ -153,7 +154,7 @@ test('a bot stepping out from cover onto the target it hid from fires at once, w
     const plan = k === 'peekAndHide'
       ? { k, target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 }
       : { k, target: enemy.id };
-    const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, bearing: 0, acquiredTick: 0, fireAtTick: 5, aimErrRad: 0 }, engagedSeen: 10 };
+    const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: 0, noticeAtTick: 5 }, engagedSeen: 10 };
     return botThink(snapshotFor(w, bot.id), arenaFor(w), { ...mem, persona: 'cautious', intent: { ...plan, since: w.tick, holdUntil: 1e9 }, motor: lostLongAgo }, r).input.fire;
   };
   assert.equal(firstShot('peekAndHide'), true, 'aim held behind cover');

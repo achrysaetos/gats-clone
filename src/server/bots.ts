@@ -2,11 +2,11 @@ import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, Z
 import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type Loadout, type PlayerView, type RunView, type Snapshot } from '../shared/protocol.ts';
 import { cellRect } from '../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../shared/sim/movement.ts';
-import { engage, SHARPNESS, TICK_MS, type Engagement } from './bot/aim.ts';
+import { aimSigma, drift, engage, freshAim, HANDS, onTarget, SHARPNESS, TICK_MS, turn, type Engagement, type Hand } from './bot/aim.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
-import { ABILITY_RULES, act, freshMotor, HURTING_HP_FRAC, type Motor, type Situation } from './bot/motor.ts';
+import { ABILITY_RULES, act, AIMED_ABILITIES, freshMotor, HURTING_HP_FRAC, type Motor, type Situation } from './bot/motor.ts';
 
 export type BotMemory = {
   persona: PersonalityId;
@@ -161,29 +161,42 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotAren
   const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, wornBuilding: nearest(me, worn), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
 
-  let angle = Math.atan2(errand.y - me.y, errand.x - me.x), aimDist = 300, fire = false;
+  // Facing out from the core watches the way the horde comes; mending faces the job.
+  const face = errand.use ? errand : { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
+  const before = mem.motor.aim ?? freshAim(me.angle);
+  let want = Math.hypot(face.x - me.x, face.y - me.y) > 1 ? Math.atan2(face.y - me.y, face.x - me.x) : before.want;
+  let spin = 0, hand: Hand = HANDS.calm, err = before.err, aimDist = 300, wantsFire = false;
   let threat: Situation['threat'] = null;
   let engaged: Engagement | null = null;
   if (zombie) {
     // A bot reacts once when the horde comes into sight, then swings from zombie to zombie without waiting again.
-    engaged = engage(mem.motor.engaged, zombie, SHARPNESS[0]!, me, snap.tick, rand);
-    angle = Math.atan2(zombie.y - me.y, zombie.x - me.x) + engaged.aimErrRad;
-    aimDist = zombie.d;
-    const reacted = snap.tick >= engaged.fireAtTick;
-    fire = reacted && zombie.d < GUNS[me.gun].range * 0.95;
-    if (reacted) threat = { d: zombie.d };
+    const prev = mem.motor.engaged;
+    engaged = prev?.id === zombie.id ? engage(prev, zombie, SHARPNESS[0]!, snap.tick, rand) : { ...engage(null, zombie, SHARPNESS[0]!, snap.tick, rand), ...(prev && { acquiredTick: prev.acquiredTick, noticeAtTick: prev.noticeAtTick }) };
+    if (snap.tick >= engaged.noticeAtTick) {
+      err = drift(err, aimSigma(engaged, me, SHARPNESS[0]!, snap.tick), TICK_MS, rand);
+      const rx = zombie.x - me.x, ry = zombie.y - me.y;
+      want = Math.atan2(ry, rx) + err;
+      spin = (rx * engaged.vy - ry * engaged.vx) / Math.max(1, rx * rx + ry * ry);
+      hand = HANDS.flick;
+      aimDist = zombie.d;
+      wantsFire = zombie.d < GUNS[me.gun].range * 0.95;
+      threat = { d: zombie.d };
+    }
   }
+  const aim = turn({ ...before, err }, want, spin, hand, TICK_MS);
+  const aimed = onTarget(aim, aimDist);
+  const fire = wantsFire && aimed;
   const hitTick = snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id) ? snap.tick : mem.awareness.hitTick;
   const situation: Situation = { threat, hurting: me.hp < me.maxHp * HURTING_HP_FRAC, underFire: snap.tick - hitTick <= UNDER_FIRE_TICKS, onContestedZone: false };
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
-  const ability = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation);
+  const ability = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation) && (aimed || !AIMED_ABILITIES.has(readyAbility));
   const shots = mem.motor.shots + (fire ? 1 : 0);
   const mx = errand.x - me.x, my = errand.y - me.y;
   const still = errand.use;
   const input: InputState = {
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
-    angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist, use: errand.use,
+    angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist, use: errand.use,
   };
-  const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, shots } };
+  const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots } };
   return { input, mem: next };
 }
