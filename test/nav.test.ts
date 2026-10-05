@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
-import { findPath, navGrid, type Point } from '../src/server/nav.ts';
+import { findPath, navGrid, type Point } from '../src/server/bot/nav.ts';
 
 const R = 24;
 

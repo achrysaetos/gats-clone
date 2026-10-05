@@ -1,4 +1,4 @@
-import { circleHitsRect, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
+import { circleHitsRect, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 
 export type Point = { x: number; y: number };
 
