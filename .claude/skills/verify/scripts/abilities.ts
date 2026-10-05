@@ -45,7 +45,7 @@ const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
 type Stamped<T> = T & { at: number };
-const frames = { welcome: null as null | { id: number; worldSize: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number }>[] };
+const frames = { welcome: null as null | { id: number; worldSize: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number; dashing: boolean }>[] };
 let nextId = 1;
 let socketId = '';
 const pending = new Map<number, (v: any) => void>();
@@ -56,13 +56,13 @@ page.on('message', (raw) => {
   else if (m.method === 'Network.webSocketFrameReceived' && m.params.requestId === socketId) {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
-    if (msg.t === 'walls') frames.welcome = frames.welcome && { ...frames.welcome, walls: msg.walls };
+    if (msg.t === 'walls') frames.welcome = frames.welcome && { ...frames.welcome, worldSize: msg.worldSize, walls: msg.walls };
     if (msg.t === 'snap') {
       frames.last = fillSnapshot(msg, frames.last) ?? frames.last;
       const at = Date.now();
       for (const e of msg.events) frames.events.push({ ...e, at });
       const self = frames.last?.players.find((p) => p.id === frames.welcome?.id);
-      if (self) frames.selves.push({ x: self.x, y: self.y, at });
+      if (self) frames.selves.push({ x: self.x, y: self.y, dashing: self.dashing, at });
     }
   } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
@@ -80,6 +80,10 @@ const selfView = () => frames.last?.self;
 const solids = (): Rect[] => [...(frames.welcome?.walls ?? []), ...(frames.last?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))];
 const blocked = (x: number, y: number, dx: number, dy: number) =>
   solids().some((b) => segmentEntersRectAt(x, y, dx, dy, { x: b.x - R, y: b.y - R, w: b.w + 2 * R, h: b.h + 2 * R }) !== null);
+const clearLane = (x: number, y: number, angle: number, len: number) => {
+  const ex = x + Math.cos(angle) * len, ey = y + Math.sin(angle) * len, size = frames.welcome?.worldSize ?? 0;
+  return ex >= R && ex <= size - R && ey >= R && ey <= size - R && !blocked(x, y, ex - x, ey - y);
+};
 const aimAt = (angle: number) => mouse('mouseMoved', W / 2 + Math.cos(angle) * 200, H / 2 + Math.sin(angle) * 200);
 
 await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
@@ -171,19 +175,24 @@ async function proveDash() {
     await ensureAlive();
     const self = me();
     if (!self || selfView()?.ability !== 'dash' || (selfView()?.abilityReadyIn ?? 1) > 0) { await sleep(500); continue; }
-    const angle = [...Array(16).keys()].map((i) => (i / 16) * Math.PI * 2).find((a) => !blocked(self.x, self.y, Math.cos(a) * 300, Math.sin(a) * 300));
+    const angle = [...Array(16).keys()].map((i) => (i / 16) * Math.PI * 2).find((a) => clearLane(self.x, self.y, a, 300));
     if (angle === undefined) { await sleep(500); continue; }
     await aimAt(angle);
     await sleep(150);
     await js(`window.maxCorrection = 0; window.watching = true; (function watch() { maxCorrection = Math.max(maxCorrection, skirmishDev.drawnSelf().correction); if (watching) requestAnimationFrame(watch); })(); 0`);
-    const from = { x: me()!.x, y: me()!.y }, t0 = Date.now();
+    const from = { x: me()!.x, y: me()!.y }, mark = frames.selves.length;
+    const dashEnd = () => {
+      const after = frames.selves.slice(mark), started = after.findIndex((s) => s.dashing);
+      return started < 0 ? undefined : after.slice(started).find((s) => !s.dashing);
+    };
     await key('keyDown', 'Space', ' ', 32);
     await sleep(90);
     const trail = await shot('dash-trail');
     await key('keyUp', 'Space', ' ', 32);
-    await sleep(500);
+    await until(() => !!dashEnd(), 3000);
+    await sleep(200);
     const correction = await js(`watching = false; maxCorrection`);
-    const to = frames.selves.filter((s) => s.at <= t0 + 600).at(-1)!;
+    const to = dashEnd() ?? frames.selves.at(-1)!;
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
     const along = (to.x - from.x) * Math.cos(angle) + (to.y - from.y) * Math.sin(angle);
     if (!me()?.alive) continue;
