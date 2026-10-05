@@ -472,7 +472,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   return top + ph;
 }
 
-export const PANEL_ALPHA = { rest: 0.97, covering: 0.3 } as const;
+export const PANEL_ALPHA = { rest: 0.97, covering: 0.8 } as const;
 const PANEL_FADE_MS = 180;
 
 export function approachAlpha(alpha: number, covering: boolean, dtMs: number): number {
