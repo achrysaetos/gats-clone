@@ -65,6 +65,14 @@ LAG=80 JITTER=0 node .claude/skills/verify/scripts/muzzle.ts "$RUN" [seconds]
 
 One muted browser strafes, turns and taps the pistol in FFA beside a second lagged browser. `skirmishDev.firstRounds()` lists each round the first frame the page draws it, with its shooter's drawn muzzle. Shrapnel is left out. The script logs the median, p90 and max gap for own rounds, the second browser's and the bots', and fails when the median gap for own rounds or the second browser's passes 25px, or when the page draws a server copy of either human's gun rounds while their shooter is in view. Its log is `$RUN/evidence/muzzle.log`, with screenshots `muzzle-<own|other>-lag<L>-<ms>ms.png` taken that long after a shot's round trip.
 
+### Fire feel
+
+```bash
+LAG=80 node .claude/skills/verify/scripts/firefeel.ts "$RUN"
+```
+
+One muted browser taps the pistol, spams it through an empty magazine and a reload, and taps the touch aim stick; a second holds the SMG down (`HOLDS=` sets how often, 3 by default). `skirmishDev.fireFeel()` lists when the page first drew your own round, flash and gun kick, scheduled your shot sound, took back a drawn shot the server never fired (`reject`) or drew a server shot it had not predicted (`late`). The script fails when any cue comes more than 20ms (median) or 34ms (p90) after the real mousedown, when a phase's sounds or flashes differ from the server's own shot events, when any shot is taken back or drawn late, or when the held SMG's mean gap between shots strays 10% from its `fireMs`. A phase in which a bot kills the driver runs again. Its log is `$RUN/evidence/firefeel.log`.
+
 ### Zombies
 
 ```bash

@@ -172,13 +172,15 @@ checkCounts('tap', p);
 await reload(pistol);
 await sleep(GUNS.pistol.reloadMs + 400);
 p = await phase('spam', pistol, GUNS.pistol.reloadMs + roundTrip + 600, async () => {
-  for (let i = 0; i < GUNS.pistol.mag + 8; i++) {
+  for (let i = 0; i < 3 * GUNS.pistol.mag; i++) {
     await tap(pistol, 20);
     await sleep(60);
   }
 });
 checkCounts('spam through empty mag and reload', p);
 
+await reload(pistol);
+await sleep(GUNS.pistol.reloadMs + 400);
 await pistol.cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 await pistol.js(`window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') window.aimStart = true; }, { capture: true });
   window.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && window.aimStart) { window.aimStart = false; window.downs.push(performance.now()); } }, { capture: true })`);
