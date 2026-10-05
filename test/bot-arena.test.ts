@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { MAPS } from '../src/shared/maps.ts';
 import { loadMap } from '../src/shared/sim/world.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { findPath, isOpen } from '../src/server/bot/nav.ts';
@@ -14,7 +15,7 @@ test('an engineer wall blocks bot paths while it stands and frees them once it i
   const gap = { x: 1020, y: 1500 };
   assert.ok(isOpen(before.nav, gap), 'the gap below the wall is open');
 
-  w.walls.push({ x: 960, y: 1400, w: 140, h: 1600, built: true, expiresAt: Infinity });
+  w.walls.push({ x: 960, y: 1400, w: 140, h: MAPS[w.map].size - 1400, built: true, expiresAt: Infinity });
   w.wallsVersion++;
   const walled = arenaFor(w);
   assert.ok(!isOpen(walled.nav, gap), 'the engineer wall closes the gap');
@@ -35,5 +36,6 @@ test('a new map rebuilds the arena\'s cover', () => {
   loadMap(w, 'oldtown');
   const second = arenaFor(w);
   assert.notEqual(second.cover, first.cover);
-  assert.ok(!isOpen(second.nav, { x: 500, y: 500 }), 'old town\'s first block is solid');
+  const block = MAPS.oldtown.walls[0]!;
+  assert.ok(!isOpen(second.nav, { x: block.x + block.w / 2, y: block.y + block.h / 2 }), 'old town\'s first wall is solid');
 });
