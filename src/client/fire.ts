@@ -9,7 +9,7 @@ const TICK_MS = 1000 / WORLD.tickHz;
 const CONFIRM_SLACK = 4;
 
 /** The server's trigger state for your gun, stepped by the rules of `tickPlayer` in sim.ts. Times are on the input clock, `seq * TICK_MS`. */
-export type Trigger = {
+type Trigger = {
   gun: GunId; mag: number; alive: boolean; armed: boolean;
   ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; shotsSeen: number;
 };
