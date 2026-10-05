@@ -633,7 +633,6 @@ function drawPill(hud: Hud, compact: boolean): number {
 /** While Tab holds the board open, the map and objective in a small panel under the pill; the next-map notice whenever it runs. Returns the bottom edge of what it drew. */
 function drawObjectiveLine(hud: Hud, top: number, full: boolean): number {
   const { ctx, w, snap, me } = hud;
-  ctx.globalAlpha = 1;
   if (!me) return top;
   const lines: [string, string][] = [];
   if (full) lines.push([snap.run ? `${snap.match.map} · ${phaseLine(snap.run, serverNow(hud.s.snaps, hud.now))}` : `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team, timeLeft(hud)).line}`, PANEL_INK]);
@@ -796,7 +795,7 @@ function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   bar(ctx, lx + 36, y - 1.5, 44, 3, lp.frac, PALETTE.gold, on.track);
   y += 22;
   drawAbility(ctx, x, y, self, on);
-  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (snap.self.perks[t] && t !== 3 ? [snap.self.perks[t]!] : []));
+  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
   let px = x + abilityWidth(ctx, self) + 14;
   for (const perk of owned) {
     strokeIcon(ctx, PERK_ICONS[perk], px + 7, y, 13, on.glyph, 2.2);
