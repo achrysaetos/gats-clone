@@ -42,11 +42,11 @@ for (const mode of MODE_IDS.filter((m) => m === 'TDM' || m === 'DOM')) {
     // The room's heartbeat timers keep the test process alive until every socket closes, so close them even when an assertion fails.
     try {
       for (const name of ['Ann', 'Bo', 'Cy', 'Di']) join(name);
-      assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 3, blueBots: 3 });
+      assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 7, blueBots: 7 });
       for (const p of [...room.world.players.values()]) if (p.kind === 'human' && p.team === 'red') sockets.get(p.name)!.close();
-      assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 7, blueBots: 1 }, 'red plays seven bots against two humans and a bot');
+      assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 11, blueBots: 5 }, 'red plays eleven bots against two humans and five bots');
       join('Eve');
-      assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 5, blueBots: 2 }, 'the next human joins red and two of its extra bots leave');
+      assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 9, blueBots: 6 }, 'the next human joins red, two of its extra bots leave and blue gains one');
     } finally {
       for (const ws of sockets.values()) ws.close();
     }

@@ -234,7 +234,7 @@ export const WORLD = {
   /** A human who reaches this ends the FFA round early; otherwise the round runs until MAP_MS.FFA and the top killer, bot or human, wins. */
   ffaWinKills: 20,
   roundRestartMs: 8000,
-  minPlayers: 10,
+  minPlayers: 18,
 } as const;
 
 export const ZOMBIE_KINDS = ['walker', 'brute'] as const;

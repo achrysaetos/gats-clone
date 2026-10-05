@@ -58,7 +58,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const humans = (team: Team) => [...world.players.values()].filter((p) => p.kind === 'human' && p.team === team).length;
     if (mode === 'FFA') return [[null, Math.max(0, limits.minPlayers - humans(null))]];
     if (mode === 'ZOM') return [['red', Math.max(0, ZOM.squadSize - humans('red'))]];
-    const seats = botSeats({ red: humans('red'), blue: humans('blue') }, limits.minPlayers, BOTS_PER_HUMAN, limits.humansPerRoom);
+    const seats = botSeats({ red: humans('red'), blue: humans('blue') }, limits.minPlayers, BOTS_PER_HUMAN, limits.minPlayers);
     return [['red', seats.red], ['blue', seats.blue]];
   }
 
