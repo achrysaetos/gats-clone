@@ -67,16 +67,8 @@ function selfView(w: World, p: Player): SelfView {
   };
 }
 
-const LEADERBOARD_ROWS = 10;
-
-/** The top rows, keeping a round's winner on the board when they rank below it, so the podium can put them first. */
-function leaderboard(w: World): LeaderRow[] {
-  const ranked = rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team })));
-  const top = ranked.slice(0, LEADERBOARD_ROWS);
-  const winnerId = w.match.k === 'over' ? w.match.winner.id : null;
-  const winner = ranked.find((r) => r.id === winnerId);
-  return winner && !top.includes(winner) ? [...top.slice(0, -1), winner] : top;
-}
+/** Every player, ranked: an 18-player room has more rows than the board shows, and a player outside the top still sees their own row. */
+const leaderboard = (w: World): LeaderRow[] => rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team })));
 
 function matchView(w: World): MatchView {
   const untilChange = w.mapChangeAt - w.now;

@@ -165,8 +165,8 @@ test('FFA: a human reaching the kill target behind a bot wins, says why, and kee
   run(w, TICK_MS);
   const over = snapshotFor(w, human.id);
   assert.deepEqual(over.match.winner, { name: 'Kestrel', id: human.id, note: `Kestrel reached ${WORLD.ffaWinKills} kills` });
-  assert.equal(over.leaderboard.length, 10);
-  assert.ok(over.leaderboard.some((r) => r.id === human.id), 'the winner is on the board though eleven players out-killed them');
+  assert.equal(over.leaderboard.length, w.players.size, 'every player has a row');
+  assert.ok(over.leaderboard.some((r) => r.id === human.id), 'the winner is on the board though twelve players out-killed them');
 });
 
 test('FFA: when the map timer runs out, the player with the most kills wins the round', () => {
