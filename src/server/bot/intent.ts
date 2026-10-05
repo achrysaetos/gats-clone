@@ -108,7 +108,6 @@ function flankPlan(v: Perception, c: IntentCtx, target: number, at: Point): Plan
   return { k: 'flank', target, via, lastKnown: at };
 }
 
-/** A search lasts the walk there plus a look round, so a lead across a big map is not given up halfway. */
 const searchPlan = (v: Perception, c: IntentCtx, at: Point): Plan => ({ k: 'search', at, giveUpAt: c.tick + ticks(SEARCH_MS + (dist(v.me, at) / v.self.speed) * 1000) });
 
 function zoneToHold(v: Perception, c: IntentCtx): ZoneView | null {

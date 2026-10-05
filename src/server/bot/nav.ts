@@ -72,10 +72,6 @@ export function walkable(nav: NavGrid, a: Point, b: Point): boolean {
   return true;
 }
 
-/**
- * With `maxExpansions` a search that runs long stops and returns the route to the cell it reached nearest the goal,
- * which ends short of `to`; the caller walks it and plans again from there.
- */
 export function findPath(nav: NavGrid, from: Point, to: Point, maxExpansions = Infinity): Point[] | null {
   const start = nearestOpen(nav, from), goal = nearestOpen(nav, to);
   if (start === null || goal === null) return null;

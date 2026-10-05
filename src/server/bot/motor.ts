@@ -196,6 +196,9 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
+const sidestepOctant = (stuckTicks: number) =>
+  stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor(stuckTicks / BLOCKED_TICKS) % 2 ? 1 : -1;
+
 function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number } {
   const none = { up: false, down: false, left: false, right: false };
   if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick };
@@ -204,9 +207,7 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys
   const off = m.dir === null ? Infinity : Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
   const blocked = m.stuckTicks >= BLOCKED_TICKS;
   const hold = !blocked && m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
-  // Pressed against a wall, a bot first drops the key it was holding for the exact heading, then tries the headings either side to slide off.
-  const slide = m.stuckTicks >= 2 * BLOCKED_TICKS ? (Math.floor(m.stuckTicks / BLOCKED_TICKS) % 2 ? 1 : -1) : 0;
-  const dir = hold && m.dir !== null ? m.dir : (octant + slide + 8) % 8;
+  const dir = hold && m.dir !== null ? m.dir : (octant + sidestepOctant(m.stuckTicks) + 8) % 8;
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
   return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick };
 }

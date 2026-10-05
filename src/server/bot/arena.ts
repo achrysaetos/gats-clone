@@ -16,7 +16,6 @@ export type BotArena = {
   replans: { tick: number; left: number };
 };
 
-// A route across a 6000 px map can take A* a few ms, so a room plans only this many new routes a tick; a bot that misses out keeps walking its old one.
 const REPLANS_PER_TICK = 3;
 
 export function takeReplan(a: BotArena, tick: number): boolean {
