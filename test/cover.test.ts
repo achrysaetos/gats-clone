@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
-import { coverIndex, pickCover } from '../src/server/bot/cover.ts';
+import { bearingIndex, coverIndex, pickCover } from '../src/server/bot/cover.ts';
 import { clearShot, navGrid } from '../src/server/bot/nav.ts';
 
 const R = WORLD.playerRadius;
@@ -50,4 +50,16 @@ test('cover is judged against the live cover, so a spot behind a crate that brok
   const threat = { x: 1600, y: 1000 };
   assert.ok(pickCover(index, nav, [crate], { x: 800, y: 1000 }, [threat], { reach: 400, range: 500, peek: false }), 'the standing crate is cover');
   assert.equal(pickCover(index, nav, [], { x: 800, y: 1000 }, [threat], { reach: 400, range: 500, peek: false }), null, 'the broken crate is not');
+});
+
+test('each cover point records the bearings its wall shields: a west-face spot blocks shots from the east and not from the west', () => {
+  const { index } = setup();
+  const points = index.cells.flat();
+  const west = points.filter((p) => p.x < pillar.x && p.y > pillar.y + 20 && p.y < pillar.y + pillar.h - 20);
+  assert.ok(west.length > 0, 'the west face has cover points');
+  for (const p of west) {
+    assert.ok(p.blocks & (1 << bearingIndex(p, { x: 2000, y: p.y })), `(${p.x}, ${p.y}) blocks the east`);
+    assert.ok(!(p.blocks & (1 << bearingIndex(p, { x: 0, y: p.y }))), `(${p.x}, ${p.y}) is open to the west`);
+  }
+  assert.ok(points.every((p) => p.blocks !== 0), 'no point that shields nothing');
 });
