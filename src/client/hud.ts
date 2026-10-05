@@ -32,6 +32,7 @@ const FEED_ROW = 24;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
+const HURT_EDGE = { depth: 0.06, alpha: 0.05, alphaPerStrength: 0.12 } as const;
 const HP_FILL = ['#ef6b60', '#d6463e'] as const;
 
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point; on: OnWorld };
@@ -92,10 +93,10 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
   if (!hurt) return;
   const k = (now - hurt.born) / HURT_MS;
   if (k < 0 || k >= 1) return;
-  const depth = Math.min(w, h) * 0.06;
+  const depth = Math.min(w, h) * HURT_EDGE.depth;
   const step = depth / HURT_BANDS;
   ctx.fillStyle = 'rgb(200, 40, 40)';
-  ctx.globalAlpha = ((0.05 + 0.12 * hurt.strength) * (1 - k)) / HURT_BANDS;
+  ctx.globalAlpha = ((HURT_EDGE.alpha + HURT_EDGE.alphaPerStrength * hurt.strength) * (1 - k)) / HURT_BANDS;
   for (let i = 0; i < HURT_BANDS; i++) {
     const d = depth - i * step;
     ctx.fillRect(0, 0, w, d);
