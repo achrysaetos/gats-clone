@@ -2,7 +2,6 @@ import { WORLD } from '../../shared/defs.ts';
 import type { PlayerView } from '../../shared/protocol.ts';
 import type { Point } from './nav.ts';
 
-/** How a bot's aim tracks one enemy: when it first saw them, when it may fire, and its current, slowly wandering aim error. */
 export type Engagement = { id: number; x: number; y: number; bearing: number; acquiredTick: number; fireAtTick: number; aimErrRad: number };
 
 const BOT_AIM = {

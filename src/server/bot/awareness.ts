@@ -5,13 +5,10 @@ import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
 import { clearShot, type Point } from './nav.ts';
 
-/** An enemy the bot has seen, where it last saw them. `seenTick` is now while they are in sight. */
 type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
 
-/** A place worth going to look: gunfire heard, a hunted ping, where a teammate just fell, or where a shot that hit the bot came from. */
 type Lead = { x: number; y: number; tick: number; hunted: boolean };
 
-/** What one bot remembers between thinks. Only that bot writes it. */
 export type Awareness = {
   contacts: readonly Contact[];
   heard: readonly Lead[];
@@ -23,7 +20,6 @@ export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates
 
 export type Threat = { p: PlayerView; d: number };
 
-/** Everything the intent table and the motor read, derived fresh each think from the snapshot and the memory. */
 export type Perception = {
   tick: number;
   me: PlayerView;
@@ -31,34 +27,24 @@ export type Perception = {
   weapon: WeaponId;
   hpFrac: number;
   team: Team;
-  /** Enemies in sight, most dangerous first, then nearest. */
   threats: readonly Threat[];
-  /** The freshest enemy the bot saw but cannot see now. */
   lastSeen: Contact | null;
-  /** Hunted pings first, then the nearest other lead. */
   lead: Lead | null;
   underFire: boolean;
   zones: readonly ZoneView[];
-  /** What stops a shot right now: walls and the crates in view. */
   solids: readonly Rect[];
-  /** Teammates in view, who count against being outnumbered and whose spots a bot leaves to them. */
   allies: readonly Point[];
 };
 
 const FORGET_MS = 8000;
 const HEARD_MS = 4000;
 const UNDER_FIRE_MS = 500;
-/** A silenced shot is heard only this close; an unsilenced one wherever the snapshot carries it. */
 const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
 
 const crateRect = (c: { x: number; y: number; size: number }): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
-/**
- * The nearest of the most dangerous enemies in sight: hunted first, then the highest-level human, so bots in view of a leading human all turn on it.
- * Among bots only hunted counts, so a climbing bot is not ganged up on before it evolves.
- */
 const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
 
 export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: Awareness): { awareness: Awareness; view: Perception } {

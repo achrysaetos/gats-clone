@@ -8,10 +8,8 @@ import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { ABILITY_RULES, act, freshMotor, HURTING_HP_FRAC, type Motor, type Situation } from './bot/motor.ts';
 
-/** One bot's mind: who it is, what it is doing and since when, what it knows, and its body's state. Only that bot's think writes it. */
 export type BotMemory = {
   persona: PersonalityId;
-  /** Null until the first think, which needs the arena to pick a goal. */
   intent: Intent | null;
   awareness: Awareness;
   motor: Motor;
@@ -20,13 +18,11 @@ export type BotMemory = {
 type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
 
 const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };
-/** How close on an axis a squad bot's errand must be before it stops pressing toward it. */
 const DEAD_ZONE = 30;
 const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
-/** Perks that do nothing for a bot, which every other perk and every evolution outweighs: bots fire only inside their gun's base range, so long range never helps, and a bolt-action barely spreads, so grip is wasted on it. */
 const PERK_WEIGHT: Partial<Record<PerkId, number>> = { longRange: 0 };
 const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { sniper: { grip: 0 } };
 
@@ -44,7 +40,6 @@ export function randomLoadout(rand: () => number): Loadout {
   return { weapon: pick(WEAPON_IDS, rand), armor: pick(ARMOR_IDS, rand), color: pick(COLOR_IDS, rand) };
 }
 
-/** Perceive, decide, act: the snapshot becomes what the bot knows, that and its current intent become its next intent, and the intent becomes keys, aim and fire. */
 export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: () => number): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
   if (me?.downed && snap.run) {

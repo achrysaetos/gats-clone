@@ -1,7 +1,6 @@
 /// <reference types="node" />
 // Usage: node scripts/bot-trace.ts [mode=TDM] [map] [seconds=120] [seed=1] [out=bot-trace.html]
-// Plays an all-bot match through the room's own bot loop and writes a self-contained HTML replay that draws each bot's intent,
-// where it is headed and what it shoots at. Open `out#t=<seconds>` to land on a moment, add `&f=<bot id>` to follow one bot up close; arrow keys step, space plays.
+// Open `out#t=<seconds>` to land on a moment, add `&f=<bot id>` to follow one bot; arrow keys step, space plays.
 import { writeFileSync } from 'node:fs';
 import { MODE_IDS, WORLD } from '../src/shared/defs.ts';
 import { MAP_IDS, ROTATION, type MapId } from '../src/shared/maps.ts';
@@ -27,18 +26,17 @@ const r = () => rand(w);
 const mems = new Map<number, BotMemory>();
 for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
 
-/** Where an intent sends the bot, and a second point it cares about (a peek spot, the target's last known place). */
-function marks(i: Intent): { to: [number, number] | null; also: [number, number] | null } {
+function marks(i: Intent): { to: [number, number] | null; lookAt: [number, number] | null } {
   const p = (q: { x: number; y: number }): [number, number] => [Math.round(q.x), Math.round(q.y)];
   switch (i.k) {
-    case 'patrol': return { to: p(i.goal), also: null };
-    case 'takePosition': return { to: p(i.spot), also: p(i.facing) };
-    case 'engage': return { to: null, also: null };
-    case 'peekAndHide': return { to: p(i.phase === 'hide' ? i.spot : i.peek), also: p(i.phase === 'hide' ? i.peek : i.spot) };
-    case 'reloadInCover': return { to: p(i.spot), also: p(i.threat) };
-    case 'retreatAndHeal': return { to: i.spot && p(i.spot), also: p(i.threat) };
-    case 'flank': return { to: p(i.via), also: p(i.lastKnown) };
-    case 'search': return { to: p(i.at), also: null };
+    case 'patrol': return { to: p(i.goal), lookAt: null };
+    case 'takePosition': return { to: p(i.spot), lookAt: p(i.facing) };
+    case 'engage': return { to: null, lookAt: null };
+    case 'peekAndHide': return { to: p(i.phase === 'hide' ? i.spot : i.peek), lookAt: p(i.phase === 'hide' ? i.peek : i.spot) };
+    case 'reloadInCover': return { to: p(i.spot), lookAt: p(i.threat) };
+    case 'retreatAndHeal': return { to: i.spot && p(i.spot), lookAt: p(i.threat) };
+    case 'flank': return { to: p(i.via), lookAt: p(i.lastKnown) };
+    case 'search': return { to: p(i.at), lookAt: null };
   }
 }
 
@@ -61,9 +59,9 @@ for (let tick = 0; tick < (seconds * 1000) / TICK_MS; tick++) {
     const p = w.players.get(id)!;
     const alive = p.life.k === 'alive';
     const i = mem.intent;
-    const m = i && alive ? marks(i) : { to: null, also: null };
+    const m = i && alive ? marks(i) : { to: null, lookAt: null };
     const phase = i?.k === 'peekAndHide' ? i.phase : '';
-    return [id, Math.round(p.x), Math.round(p.y), p.team ?? '', alive ? Math.round((p.life.k === 'alive' ? p.life.hp : 0)) : 0, alive && i ? i.k : 'dead', phase, mem.persona, p.loadout.weapon, m.to, m.also];
+    return [id, Math.round(p.x), Math.round(p.y), p.team ?? '', alive ? Math.round((p.life.k === 'alive' ? p.life.hp : 0)) : 0, alive && i ? i.k : 'dead', phase, mem.persona, p.loadout.weapon, m.to, m.lookAt];
   });
   frames.push({ t: Math.round(w.now) / 1000, bots, shots: fired });
 }
@@ -89,9 +87,9 @@ g.fillStyle='#3a3f48';for(const z of D.zones){g.beginPath();g.arc(z[0]*k,z[1]*k,
 g.fillStyle='#6b7280';for(const r of D.walls)g.fillRect(r[0]*k,r[1]*k,r[2]*k,r[3]*k);
 g.fillStyle='#8a6d3b';for(const r of D.crates)g.fillRect(r[0]*k,r[1]*k,r[2]*k,r[3]*k);
 g.strokeStyle='rgba(255,230,120,.5)';for(const sh of f.shots){g.beginPath();g.moveTo(sh[0]*k,sh[1]*k);g.lineTo((sh[0]+Math.cos(sh[2])*120)*k,(sh[1]+Math.sin(sh[2])*120)*k);g.stroke();}
-for(const b of f.bots){const[id,x,y,team,hp,kind,phase,persona,weapon,to,also]=b;if(kind==='dead')continue;const col=C[kind];
+for(const b of f.bots){const[id,x,y,team,hp,kind,phase,persona,weapon,to,lookAt]=b;if(kind==='dead')continue;const col=C[kind];
 if(to){g.setLineDash([4,4]);g.strokeStyle=col;g.beginPath();g.moveTo(x*k,y*k);g.lineTo(to[0]*k,to[1]*k);g.stroke();g.setLineDash([]);g.strokeRect(to[0]*k-3,to[1]*k-3,6,6);}
-if(also){g.strokeStyle=col+'88';g.beginPath();g.arc(also[0]*k,also[1]*k,5,0,7);g.stroke();}
+if(lookAt){g.strokeStyle=col+'88';g.beginPath();g.arc(lookAt[0]*k,lookAt[1]*k,5,0,7);g.stroke();}
 g.fillStyle=col;g.beginPath();g.arc(x*k,y*k,24*k+2,0,7);g.fill();
 g.lineWidth=3;g.strokeStyle=team==='red'?'#e63946':team==='blue'?'#4361ee':'#fff';g.beginPath();g.arc(x*k,y*k,24*k+4,0,7);g.stroke();g.lineWidth=1;
 g.fillStyle='#fff';g.fillText(id+' '+Math.round(hp),x*k+10,y*k-8);}

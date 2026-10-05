@@ -58,8 +58,8 @@ test('each cover point records the bearings its wall shields: a west-face spot b
   const west = points.filter((p) => p.x < pillar.x && p.y > pillar.y + 20 && p.y < pillar.y + pillar.h - 20);
   assert.ok(west.length > 0, 'the west face has cover points');
   for (const p of west) {
-    assert.ok(p.blocks & (1 << bearingIndex(p, { x: 2000, y: p.y })), `(${p.x}, ${p.y}) blocks the east`);
-    assert.ok(!(p.blocks & (1 << bearingIndex(p, { x: 0, y: p.y }))), `(${p.x}, ${p.y}) is open to the west`);
+    assert.ok(p.shieldedBearings & (1 << bearingIndex(p, { x: 2000, y: p.y })), `(${p.x}, ${p.y}) blocks the east`);
+    assert.ok(!(p.shieldedBearings & (1 << bearingIndex(p, { x: 0, y: p.y }))), `(${p.x}, ${p.y}) is open to the west`);
   }
-  assert.ok(points.every((p) => p.blocks !== 0), 'no point that shields nothing');
+  assert.ok(points.every((p) => p.shieldedBearings !== 0), 'no point that shields nothing');
 });

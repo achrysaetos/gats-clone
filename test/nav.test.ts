@@ -6,7 +6,6 @@ import { findPath, navGrid, type Point } from '../src/server/bot/nav.ts';
 
 const R = 24;
 
-/** Walks the route in 5px steps and returns the first spot where a body of radius R would overlap a solid, or null. */
 function firstClash(from: Point, route: readonly Point[], solids: readonly Rect[]): Point | null {
   let at = from;
   for (const to of route) {

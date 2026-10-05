@@ -1,7 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-tactics.ts [minutes=4] [seeds=3] [tdmCapMinutes=10] [thinkBots=20]
-// Plays all-bot FFA rounds on every FFA map, then all-bot TDM matches to their kill target, and times the bot brain at thinkBots bots.
-// Every number is measured from the world, not from what the bots believe, so the same seeds compare one brain against another.
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
 import { ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
@@ -18,9 +16,7 @@ const tdmCapMinutes = Number(process.argv[4] ?? 10);
 const thinkBots = Number(process.argv[5] ?? 20);
 const TICK_MS = 1000 / WORLD.tickHz;
 const SIGHT_PX = WORLD.viewRadius;
-/** A fight between two players ends when neither has hurt the other for this long. */
 const FIGHT_GAP_MS = 3000;
-/** Within this of a wall's or crate's edge, with it between the body and the nearest enemy, counts as in cover. */
 const COVER_HUG_PX = 40;
 const LOOKBACK_TICKS = Math.round(1500 / TICK_MS);
 const LOSING_HP_FRAC = 0.5;
@@ -50,7 +46,6 @@ const emptyTally = (): Tally => ({ lives: [], fights: [], combatTicks: 0, coverT
 const sees = (cover: readonly Rect[], a: Player, b: Player) => !cover.some((r) => segmentEntersRectAt(a.x, a.y, b.x - a.x, b.y - a.y, r) !== null);
 const near = (a: Player, b: Player, px: number) => Math.hypot(a.x - b.x, a.y - b.y) <= px;
 
-/** Plays `w` with every player a bot until `done` or `ticks` run out, adding what it measured to `t`. */
 function play(w: World, t: Tally, ticks: number, done: () => boolean = () => false): number {
   const ids = [...w.players.keys()];
   const brain = makeBrain(w, ids);

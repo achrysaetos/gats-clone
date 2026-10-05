@@ -10,7 +10,6 @@ import { emptyWorld, setWalls, spawnAt } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
 
-/** One decision by the bot `id` in `w` from `cur`, as `persona`, at tick `tick`. */
 function decide(w: World, id: number, cur: Plan | Intent, opts: { persona?: Personality; tick?: number; aware?: Awareness } = {}): Intent {
   const persona = opts.persona ?? PERSONALITIES.cautious;
   const snap = snapshotFor(w, id);

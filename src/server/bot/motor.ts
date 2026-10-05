@@ -8,20 +8,14 @@ import type { Perception, Threat } from './awareness.ts';
 import type { Intent, IntentCtx } from './intent.ts';
 import { clearShot, findPath, isOpen, walkable, type Point } from './nav.ts';
 
-/**
- * How a bot's body carries out its intent between thinks: the route it is walking, the 8-way key direction it holds and since when,
- * its stand-or-step rhythm in a fight, and its aim on the enemy it tracks.
- */
 export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number } | null;
-  /** The octant held, 0 = right, counting clockwise in screen space, or null while standing. */
   dir: number | null;
   dirSince: number;
   stance: { step: 0 | 1 | -1; until: number };
   last: Point;
   stuckTicks: number;
   engaged: Engagement | null;
-  /** Last tick the tracked enemy was in sight; a target that stays hidden longer than REACQUIRE costs a fresh reaction. */
   engagedSeen: number;
   shots: number;
 };
@@ -54,25 +48,20 @@ export const HURTING_HP_FRAC = 0.4;
 const KNIFE_CHASE_PX = 300;
 const REACQUIRE_TICKS = Math.round(600 / TICK_MS);
 const RETREAT_STEP = 240 + WORLD.playerRadius;
-/** A waypoint counts as reached this close, and a goal this close means stand still. */
 const WAYPOINT_PX = 16;
 const ARRIVED_PX = 14;
-/** Movement keys change direction only after this long, or when the way to go leaves the held direction by more than HOLD_SLACK. */
 const MIN_HOLD_TICKS = 3;
 const HOLD_SLACK = (35 * Math.PI) / 180;
 const STUCK_TICKS = 12;
 const REPLAN_PX = 48;
-/** In range a bot stands to shoot for a while, then by its personality's odds takes one committed step to the side. */
 const STAND_MS: readonly [number, number] = [700, 1500];
 const STEP_MS: readonly [number, number] = [300, 700];
-/** Shot at in the open, any bot takes a step at least this often, as a person under fire does. */
 const UNDER_FIRE_STEP_ODDS = 0.75;
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
 const crateRect = (c: CrateView): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 
-/** The 8-way heading closest to `away` whose step is free of walls and the world edge, so a retreat or dash does not end against cover. */
 function retreatHeading(me: Point, away: number, arena: BotArena): number {
   const headings = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)
     .filter((h) => Math.cos(h - away) > 0)
@@ -107,7 +96,6 @@ function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly R
 
 type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean };
 
-/** Where the intent wants the body and the eyes this tick. */
 function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbility: AbilityId | null): { steer: Steer; stance: Motor['stance'] } {
   const me = v.me;
   const idle = (to: Point | null, face: Point | null): Steer => ({ to, face, reload: false, crates: true });
@@ -150,7 +138,6 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
   }
 }
 
-/** The next point to walk toward on the way to `to`, replanning when the goal moved, the walls changed or the bot is stuck. */
 function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena): { at: Point; route: Motor['route']; replanned: boolean } {
   const old = m.route;
   const fresh = !old || old.version !== arena.version || dist(old.goal, to) > REPLAN_PX || m.stuckTicks > STUCK_TICKS;
@@ -162,7 +149,6 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena): { at: Po
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
-/** Turns a way to go into held 8-way keys that change only after a minimum hold or a real change of course, like a hand on a keyboard. */
 function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number } {
   const none = { up: false, down: false, left: false, right: false };
   if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick };
@@ -175,7 +161,6 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys
   return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick };
 }
 
-/** Turns the intent into this tick's input: walk the route, hold or step, aim and fire through the aim model, reload and use the ability. */
 export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot): { input: InputState; motor: Motor } {
   const me = v.me;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
@@ -187,8 +172,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const gun = GUNS[me.gun];
 
   const t: Threat | undefined = (intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank') ? v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0] : v.threats[0];
-  // Tucked behind cover the bot keeps its aim on where the target was, so stepping back out costs no fresh reaction; anywhere else a lost target does.
-  const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || (intent.k === 'peekAndHide' && intent.target === id));
+  const aimSurvivesCover = (id: number) => intent.k === 'peekAndHide' && intent.target === id;
+  const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || aimSurvivesCover(id));
   let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;
   let angle = s.face ? Math.atan2(s.face.y - me.y, s.face.x - me.x) : way.at ? Math.atan2(way.at.y - me.y, way.at.x - me.x) : me.angle;
   let aimDist = s.face ? Math.max(1, dist(me, s.face)) : 300;

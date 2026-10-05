@@ -2,19 +2,14 @@ import { circleHitsRect, segmentEntersRectAt, type Rect } from '../../shared/sim
 
 export type Point = { x: number; y: number };
 
-/**
- * Where a body of `radius` can stand, sampled at each `cell`'s centre over a square world of `size`.
- * The A* buffers ride along so a search allocates nothing; a grid belongs to one room, which thinks its bots one at a time.
- */
 export type NavGrid = {
   size: number; cell: number; n: number; open: Uint8Array;
-  search: { g: Float64Array; from: Int32Array; seen: Uint32Array; stamp: number };
+  scratch: { g: Float64Array; from: Int32Array; seen: Uint32Array; stamp: number };
 };
 
 const NAV_CELL = 25;
 const ORTH = 1, DIAG = Math.SQRT2;
 const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
-/** How far, in cells, a start or goal inside a wall is moved to the nearest open cell. */
 const SNAP_CELLS = 4;
 
 export function navGrid(size: number, solids: readonly Rect[], radius: number, cell = NAV_CELL): NavGrid {
@@ -32,7 +27,7 @@ export function navGrid(size: number, solids: readonly Rect[], radius: number, c
     const y0 = Math.max(0, Math.floor((r.y - radius) / cell)), y1 = Math.min(n - 1, Math.floor((r.y + r.h + radius) / cell));
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (circleHitsRect(centre(cx), centre(cy), radius, r)) open[cy * n + cx] = 0;
   }
-  return { size, cell, n, open, search: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0 } };
+  return { size, cell, n, open, scratch: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0 } };
 }
 
 const cellOf = (nav: NavGrid, p: Point) => {
@@ -43,7 +38,6 @@ const centreOf = (nav: NavGrid, c: number): Point => ({ x: ((c % nav.n) + 0.5) *
 
 export const isOpen = (nav: NavGrid, p: Point) => nav.open[cellOf(nav, p)] === 1;
 
-/** The open cell nearest `p` within a few cells, for a point a body cannot stand on such as a spot hugging a wall. */
 function nearestOpen(nav: NavGrid, p: Point): number | null {
   const c = cellOf(nav, p);
   if (nav.open[c]) return c;
@@ -60,7 +54,6 @@ function nearestOpen(nav: NavGrid, p: Point): number | null {
   return best;
 }
 
-/** True when every cell the segment crosses is open, so a body can walk it straight. */
 export function walkable(nav: NavGrid, a: Point, b: Point): boolean {
   const steps = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (nav.cell / 2));
   for (let i = 0; i <= steps; i++) {
@@ -70,17 +63,13 @@ export function walkable(nav: NavGrid, a: Point, b: Point): boolean {
   return true;
 }
 
-/**
- * The shortest 8-way route from `from` to `to` as waypoints a body can walk straight between, ending at `to` (or the nearest open spot to it),
- * or null when `to` cannot be reached. A diagonal step needs both cells it cuts past open, so a route never clips a corner.
- */
 export function findPath(nav: NavGrid, from: Point, to: Point): Point[] | null {
   const start = nearestOpen(nav, from), goal = nearestOpen(nav, to);
   if (start === null || goal === null) return null;
   const end = nav.open[cellOf(nav, to)] ? to : centreOf(nav, goal);
   if (walkable(nav, from, end)) return [end];
   const { n, open } = nav;
-  const s = nav.search;
+  const s = nav.scratch;
   s.stamp++;
   const gx = goal % n, gy = Math.floor(goal / n);
   const h = (c: number) => {
@@ -146,7 +135,6 @@ export function findPath(nav: NavGrid, from: Point, to: Point): Point[] | null {
   return smooth(nav, from, cells);
 }
 
-/** Drops every waypoint the walker could skip by going straight, so a route bends only at corners. */
 function smooth(nav: NavGrid, from: Point, cells: Point[]): Point[] {
   const out: Point[] = [];
   let at = from;
@@ -160,7 +148,6 @@ function smooth(nav: NavGrid, from: Point, cells: Point[]): Point[] {
   return out;
 }
 
-/** True when no rect blocks the straight line from `a` to `b`, which is what bullets and eyes need. */
 export function clearShot(rects: readonly Rect[], a: Point, b: Point): boolean {
   for (const r of rects) if (segmentEntersRectAt(a.x, a.y, b.x - a.x, b.y - a.y, r) !== null) return false;
   return true;
