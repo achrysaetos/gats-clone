@@ -54,8 +54,11 @@ test('a route threads a doorway wider than a body and refuses one narrower', () 
 });
 
 test('the grid follows the size it is given, not a global world size', () => {
-  const nav = navGrid(6000, [], R);
-  assert.deepEqual(findPath(nav, { x: 100, y: 100 }, { x: 5900, y: 5900 }), [{ x: 5900, y: 5900 }]);
+  const wall = { x: 4500, y: 0, w: 40, h: 5000 };
+  const from = { x: 4000, y: 3000 };
+  const route = findPath(navGrid(6000, [wall], R), from, { x: 5000, y: 3000 });
+  assert.ok(route && route.some((p) => p.y > 5000), `goes round the far end of a wall past 3000: ${JSON.stringify(route)}`);
+  assert.equal(firstClash(from, route, [wall]), null);
   const end = findPath(navGrid(3000, [], R), { x: 100, y: 100 }, { x: 5900, y: 5900 })?.at(-1);
   assert.ok(end && end.x < 3000 && end.y < 3000, `a 3000 grid stops at its own edge: ${JSON.stringify(end)}`);
 });
