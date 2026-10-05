@@ -8,7 +8,7 @@ import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const mode = MODE_IDS.find((m) => m === process.argv[2]) satisfies ModeId | undefined;
 if (!mode || mode === 'ZOM') throw new Error('usage: bench-maps.ts <FFA|TDM|DOM> [maps] [minutes] [players] [heatDir]');

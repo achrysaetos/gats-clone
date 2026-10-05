@@ -22,12 +22,22 @@ export function navGrid(size: number, solids: readonly Rect[], radius: number, c
       if (x >= radius && y >= radius && x <= size - radius && y <= size - radius) open[cy * n + cx] = 1;
     }
   }
-  for (const r of solids) {
-    const x0 = Math.max(0, Math.floor((r.x - radius) / cell)), x1 = Math.min(n - 1, Math.floor((r.x + r.w + radius) / cell));
-    const y0 = Math.max(0, Math.floor((r.y - radius) / cell)), y1 = Math.min(n - 1, Math.floor((r.y + r.h + radius) / cell));
-    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (circleHitsRect(centre(cx), centre(cy), radius, r)) open[cy * n + cx] = 0;
-  }
+  for (const r of solids) stamp(open, n, cell, radius, r);
   return { size, cell, n, open, scratch: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0 } };
+}
+
+function stamp(open: Uint8Array, n: number, cell: number, radius: number, r: Rect) {
+  const centre = (c: number) => (c + 0.5) * cell;
+  const x0 = Math.max(0, Math.floor((r.x - radius) / cell)), x1 = Math.min(n - 1, Math.floor((r.x + r.w + radius) / cell));
+  const y0 = Math.max(0, Math.floor((r.y - radius) / cell)), y1 = Math.min(n - 1, Math.floor((r.y + r.h + radius) / cell));
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (circleHitsRect(centre(cx), centre(cy), radius, r)) open[cy * n + cx] = 0;
+}
+
+/** `base` with more solids stamped in, sharing its search buffers, so a short-lived wall costs a copy instead of a rebuild. */
+export function withSolids(base: NavGrid, solids: readonly Rect[], radius: number): NavGrid {
+  const open = base.open.slice();
+  for (const r of solids) stamp(open, base.n, base.cell, radius, r);
+  return { ...base, open };
 }
 
 const cellOf = (nav: NavGrid, p: Point) => {

@@ -2,10 +2,10 @@ import { WORLD } from '../../shared/defs.ts';
 import { MAPS } from '../../shared/maps.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
-import { crateRect, type World } from '../../shared/sim/world.ts';
+import { crateRect, type Crate, type Wall, type World } from '../../shared/sim/world.ts';
 import { wallViews } from '../../shared/sim/snapshot.ts';
 import { coverIndex, type CoverIndex } from './cover.ts';
-import { isOpen, navGrid, type NavGrid, type Point } from './nav.ts';
+import { isOpen, navGrid, withSolids, type NavGrid, type Point } from './nav.ts';
 
 export type BotArena = {
   size: number;
@@ -15,19 +15,33 @@ export type BotArena = {
   cover: CoverIndex;
 };
 
-const ARENAS = new WeakMap<World, BotArena>();
+/** The part of an arena that only a new map changes: its own walls and crates, and the nav and cover built from them. */
+type Layout = { walls: readonly Wall[]; crates: readonly Crate[]; nav: NavGrid; cover: CoverIndex };
+
+const ARENAS = new WeakMap<World, { arena: BotArena; layout: Layout }>();
+
+const sameLayout = (l: Layout, walls: readonly Wall[], crates: readonly Crate[]) =>
+  l.crates === crates && l.walls.length === walls.length && l.walls.every((wall, i) => wall === walls[i]);
 
 export function arenaFor(w: World): BotArena {
   const cached = ARENAS.get(w);
-  if (cached && cached.version === w.wallsVersion) return cached;
+  if (cached && cached.arena.version === w.wallsVersion) return cached.arena;
   const size = MAPS[w.map].size;
-  const walls = wallViews(w);
-  const cratesBrokenOrNot = w.crates.map(crateRect);
-  const nav = navGrid(size, [...walls, ...cratesBrokenOrNot], WORLD.playerRadius);
-  const permanent: Rect[] = [...walls.filter((wall) => !wall.built), ...cratesBrokenOrNot];
-  const arena: BotArena = { size, version: w.wallsVersion, walls, nav, cover: coverIndex(nav, permanent, WORLD.playerRadius) };
-  ARENAS.set(w, arena);
+  const mapWalls = w.walls.filter((wall) => !wall.built);
+  const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : buildLayout(size, mapWalls, w.crates);
+  const built = w.walls.filter((wall) => wall.built);
+  const arena: BotArena = {
+    size, version: w.wallsVersion, walls: wallViews(w), cover: layout.cover,
+    nav: built.length ? withSolids(layout.nav, built, WORLD.playerRadius) : layout.nav,
+  };
+  ARENAS.set(w, { arena, layout });
   return arena;
+}
+
+function buildLayout(size: number, walls: readonly Wall[], crates: readonly Crate[]): Layout {
+  const solids: Rect[] = [...walls, ...crates.map(crateRect)];
+  const nav = navGrid(size, solids, WORLD.playerRadius);
+  return { walls, crates, nav, cover: coverIndex(nav, solids, WORLD.playerRadius) };
 }
 
 export function openSpot(a: BotArena, rand: () => number, near?: { at: Point; r: number }): Point {
