@@ -16,6 +16,12 @@ const CORE_LOOK = { plate: '#2d3340', rim: '#4a5262', glow: '#4fd1e8' } as const
 const CORE_HIT_MS = 180;
 export const CORE_ALERT_MS = 1500;
 
+/** When the core was last bitten, for the alert. Only the night can bite it, so dawn and the report clear the alert at once. */
+export function nextCoreHitAt(prev: RunView | null | undefined, run: RunView | null | undefined, now: number, hitAt: number): number {
+  if (run?.phase !== 'night') return -Infinity;
+  return prev && run.core.hp < prev.core.hp ? now : hitAt;
+}
+
 /** Damage numbers and impact effects name walls by their center, since a wall's view carries no id. */
 const cellKey = (x: number, y: number) => `${Math.floor(x / ZOM.cell)},${Math.floor(y / ZOM.cell)}`;
 

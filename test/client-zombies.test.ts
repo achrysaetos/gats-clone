@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { outTillDawnText, buildSiteOf, downedLine, inviteLink, phaseLine, reportRows, reportTitle, runCallouts, squadFromSearch, useHint, withSquad } from '../src/client/zombies.ts';
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
+import { nextCoreHitAt } from '../src/client/siege.ts';
 import type { RunView } from '../src/shared/protocol.ts';
 import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
@@ -150,4 +151,12 @@ test('the run report ranks the squad by kills, then revives, and marks you', () 
   ] };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The core fell on night 4');
+});
+
+test('the core alert starts on a bite by night and clears the moment dawn or the report arrives', () => {
+  const night = (hp: number) => runView({ phase: 'night', core: { x: 1500, y: 1500, hp, maxHp: ZOM.coreHp } });
+  assert.equal(nextCoreHitAt(night(4000), night(3990), 500, -Infinity), 500, 'a bite starts the alert');
+  assert.equal(nextCoreHitAt(night(3990), night(3990), 600, 500), 500, 'no bite keeps the last one');
+  assert.equal(nextCoreHitAt(night(3990), runView({ phase: 'day', core: { x: 1500, y: 1500, hp: 3990, maxHp: ZOM.coreHp } }), 700, 500), -Infinity, 'dawn clears it');
+  assert.equal(nextCoreHitAt(night(10), runView({ phase: 'over', core: { x: 1500, y: 1500, hp: 0, maxHp: ZOM.coreHp } }), 700, 600), -Infinity, 'the report clears it');
 });

@@ -26,7 +26,7 @@ import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
-import { CORE_ALERT_MS } from './siege.ts';
+import { CORE_ALERT_MS, nextCoreHitAt } from './siege.ts';
 import { buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
@@ -289,8 +289,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
-  if (snap.run?.phase === 'over') s.coreHitAt = -Infinity;
-  else if (prev?.run && snap.run && snap.run.core.hp < prev.run.core.hp) s.coreHitAt = now;
+  s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
