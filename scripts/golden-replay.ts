@@ -3,7 +3,7 @@
 // Replays fixed-seed matches and hashes every snapshot; a behavior-preserving sim refactor must keep the hash.
 import { createHash } from 'node:crypto';
 import { LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
-import { MAP_NOTICE_MS, ROTATION } from '../src/shared/maps.ts';
+import { MAP_NOTICE_MS, MAPS, ROTATION } from '../src/shared/maps.ts';
 import { VIEW_ASPECT, type InputState } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -65,10 +65,10 @@ for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
     const w = createWorld(mode, seed, ROTATION[mode][0]);
     const r = () => rand(w);
     const bots = new Map<number, BotMemory>();
-    const addBot = (name: string) => bots.set(addPlayer(w, name, randomLoadout(r)).id, newBotMemory(r));
+    const addBot = (name: string) => bots.set(addPlayer(w, name, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
     for (let i = 0; i < 8; i++) addBot(`bot${i}`);
     const humans = [
-      addPlayer(w, 'lagged', { weapon: 'assault', armor: 'light', color: 'red' }, { kind: 'human', at: { x: WORLD.size / 2, y: WORLD.size / 2 } }),
+      addPlayer(w, 'lagged', { weapon: 'assault', armor: 'light', color: 'red' }, { kind: 'human', at: { x: MAPS[w.map].size / 2, y: MAPS[w.map].size / 2 } }),
       addPlayer(w, 'local', { weapon: 'shotgun', armor: 'medium', color: 'blue' }, { kind: 'human' }),
     ];
     for (const h of humans) h.level = LEVELS.length - 1;
@@ -76,7 +76,7 @@ for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
     for (let tick = 0; tick < TICKS; tick++) {
       const walls = wallViews(w);
       for (const [id, mem] of bots) {
-        const d = botThink(snapshotFor(w, id), walls, mem, r);
+        const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
         bots.set(id, d.mem);
         setInput(w, id, w.tick, d.input);
         if (d.pick && choosePick(w, id, d.pick.level, d.pick.option)) seen.picks++;

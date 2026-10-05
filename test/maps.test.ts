@@ -4,39 +4,39 @@ import { MODE_IDS, WORLD, ZOM } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ROTATION, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
-const S = WORLD.size, R = WORLD.playerRadius;
+const R = WORLD.playerRadius;
 const CELL = 10;
-const N = S / CELL;
 const FAIR_TOLERANCE = 0.1;
 
 const crateRects = (m: MapDef): Rect[] => m.crates.map((c) => ({ x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
-const inside = (r: Rect, margin: number) => r.x >= margin && r.y >= margin && r.x + r.w <= S - margin && r.y + r.h <= S - margin;
+const inside = (r: Rect, margin: number, S: number) => r.x >= margin && r.y >= margin && r.x + r.w <= S - margin && r.y + r.h <= S - margin;
 
 function placementProblems(m: MapDef): string[] {
   const problems: string[] = [];
   const solids = [...m.walls, ...crateRects(m)];
-  m.walls.forEach((w, i) => { if (!inside(w, 0)) problems.push(`wall ${i} leaves the world`); });
+  m.walls.forEach((w, i) => { if (!inside(w, 0, m.size)) problems.push(`wall ${i} leaves the world`); });
   crateRects(m).forEach((c, i) => {
-    if (!inside(c, 0)) problems.push(`crate ${i} leaves the world`);
+    if (!inside(c, 0, m.size)) problems.push(`crate ${i} leaves the world`);
     if (m.walls.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
   });
   for (const [side, regions] of Object.entries(m.spawns)) {
     if (regions.length === 0) problems.push(`no ${side} spawn region`);
     regions.forEach((r, i) => {
-      if (!inside(r, R)) problems.push(`${side} spawn ${i} lets a player stand past the edge`);
+      if (!inside(r, R, m.size)) problems.push(`${side} spawn ${i} lets a player stand past the edge`);
       if (solids.some((s) => rectsOverlap(s, r, R))) problems.push(`${side} spawn ${i} lets a player stand in a wall or crate`);
     });
   }
   if (ROTATION.DOM.some((id) => MAPS[id] === m) && m.zones.length !== 3) problems.push(`${m.zones.length} zones, DOM needs 3`);
   m.zones.forEach((z, i) => {
     if (solids.some((s) => circleHitsRect(z.x, z.y, ZONE_RADIUS, s))) problems.push(`zone ${i} overlaps a wall or crate`);
-    if (!inside({ x: z.x - ZONE_RADIUS, y: z.y - ZONE_RADIUS, w: ZONE_RADIUS * 2, h: ZONE_RADIUS * 2 }, 0)) problems.push(`zone ${i} leaves the world`);
+    if (!inside({ x: z.x - ZONE_RADIUS, y: z.y - ZONE_RADIUS, w: ZONE_RADIUS * 2, h: ZONE_RADIUS * 2 }, 0, m.size)) problems.push(`zone ${i} leaves the world`);
   });
   return problems;
 }
 
 /** Where a player's center can stand, on a CELL grid, treating crates as solid since a door blocked by one is still blocked until it breaks. */
 function standable(m: MapDef): boolean[] {
+  const S = m.size, N = S / CELL;
   const solids = [...m.walls, ...crateRects(m)];
   const open: boolean[] = new Array(N * N);
   for (let gy = 0; gy < N; gy++) {
@@ -48,18 +48,18 @@ function standable(m: MapDef): boolean[] {
   return open;
 }
 
-const cellOf = (p: Center) => Math.floor(p.y / CELL) * N + Math.floor(p.x / CELL);
+const cellOf = (p: Center, N: number) => Math.floor(p.y / CELL) * N + Math.floor(p.x / CELL);
 
-function cellsIn(regions: readonly Rect[]): number[] {
+function cellsIn(regions: readonly Rect[], N: number): number[] {
   const cells: number[] = [];
   for (const r of regions) {
-    for (let y = r.y + CELL / 2; y < r.y + r.h; y += CELL) for (let x = r.x + CELL / 2; x < r.x + r.w; x += CELL) cells.push(cellOf({ x, y }));
+    for (let y = r.y + CELL / 2; y < r.y + r.h; y += CELL) for (let x = r.x + CELL / 2; x < r.x + r.w; x += CELL) cells.push(cellOf({ x, y }, N));
   }
   return cells;
 }
 
 /** Walking distance in cells from the nearest source to every cell, Infinity where unreachable. */
-function walk(open: boolean[], sources: number[]): number[] {
+function walk(open: boolean[], sources: number[], N: number): number[] {
   const dist = new Array<number>(N * N).fill(Infinity);
   const queue: number[] = [];
   for (const c of sources) if (open[c] && dist[c] === Infinity) { dist[c] = 0; queue.push(c); }
@@ -77,6 +77,7 @@ function walk(open: boolean[], sources: number[]): number[] {
 
 for (const id of MAP_IDS) {
   const m = MAPS[id];
+  const N = m.size / CELL;
 
   test(`${m.name}: walls and crates sit inside the world, and spawns and zones are clear of them`, () => {
     assert.deepEqual(placementProblems(m), []);
@@ -84,7 +85,7 @@ for (const id of MAP_IDS) {
 
   test(`${m.name}: a player can walk from the red spawn to every open spot`, () => {
     const open = standable(m);
-    const dist = walk(open, cellsIn(m.spawns.red));
+    const dist = walk(open, cellsIn(m.spawns.red, N), N);
     const stranded = open.flatMap((o, c) => (o && dist[c] === Infinity ? [`(${(c % N) * CELL}, ${Math.floor(c / N) * CELL})`] : []));
     assert.equal(stranded.length, 0, `unreachable open cells, first: ${stranded.slice(0, 5).join(' ')}`);
   });
@@ -92,8 +93,8 @@ for (const id of MAP_IDS) {
   test(`${m.name}: each team's nearest, middle and farthest DOM zone are equally far to walk`, () => {
     const open = standable(m);
     const toZones = (regions: readonly Rect[]) => {
-      const dist = walk(open, cellsIn(regions));
-      return m.zones.map((z) => dist[cellOf(z)]!).sort((a, b) => a - b);
+      const dist = walk(open, cellsIn(regions, N), N);
+      return m.zones.map((z) => dist[cellOf(z, N)]!).sort((a, b) => a - b);
     };
     const red = toZones(m.spawns.red), blue = toZones(m.spawns.blue);
     red.forEach((r, i) => {
@@ -114,11 +115,12 @@ test('every versus mode rotates through every versus map, and zombies through th
 for (const id of SIEGE_MAPS) {
   const m = MAPS[id];
   const siege = m.siege!;
+  const N = m.size / CELL;
   const core: Rect = { x: siege.core.x - ZOM.coreHalf, y: siege.core.y - ZOM.coreHalf, w: ZOM.coreHalf * 2, h: ZOM.coreHalf * 2 };
 
   test(`${m.name}: the core and the horde's edges are clear, and the core sits on the wall grid`, () => {
     for (const r of [core, ...siege.horde]) {
-      assert.ok(inside(r, 0), `${JSON.stringify(r)} leaves the world`);
+      assert.ok(inside(r, 0, m.size), `${JSON.stringify(r)} leaves the world`);
       assert.ok(!m.walls.some((wall) => rectsOverlap(wall, r)), `${JSON.stringify(r)} overlaps a wall`);
     }
     assert.ok(Object.values(m.spawns).flat().every((r) => !rectsOverlap(core, r, R)), 'squad spawns keep a body clear of the core');
@@ -127,8 +129,8 @@ for (const id of SIEGE_MAPS) {
 
   test(`${m.name}: every horde edge can walk to the core`, () => {
     const open = standable(m);
-    const dist = walk(open, cellsIn([{ x: core.x - R - CELL, y: core.y - R - CELL, w: core.w + 2 * (R + CELL), h: CELL }]));
-    const stuck = cellsIn(siege.horde).filter((c) => open[c] && dist[c] === Infinity);
+    const dist = walk(open, cellsIn([{ x: core.x - R - CELL, y: core.y - R - CELL, w: core.w + 2 * (R + CELL), h: CELL }], N), N);
+    const stuck = cellsIn(siege.horde, N).filter((c) => open[c] && dist[c] === Infinity);
     assert.equal(stuck.length, 0, `${stuck.length} horde cells cannot reach the core`);
   });
 }

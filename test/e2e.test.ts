@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { WebSocket } from 'ws';
 import { WORLD } from '../src/shared/defs.ts';
+import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import type { ServerMsg, Snapshot } from '../src/shared/protocol.ts';
 import { startServer, type RunningServer } from '../src/server/main.ts';
 
@@ -101,7 +102,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
     send(c, { t: 'join', name: 'ignored', loadout: LOADOUT, token });
     const welcome = await c.waitFor((m): m is Extract<ServerMsg, { t: 'welcome' }> => m.t === 'welcome', 5000, 'welcome');
     assert.equal(welcome.mode, mode);
-    assert.equal(welcome.worldSize, WORLD.size);
+    assert.equal(welcome.worldSize, MAPS[ROTATION[mode][0]].size);
     assert.ok(welcome.walls.length > 0);
     const snap = await c.waitFor(isSnap, 5000, 'first snapshot');
     assert.equal(snap.self.id, welcome.id);
@@ -122,7 +123,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
     return m.players.some((p) => p.id === m.self.id && p.alive);
   }, 5000, 'tester alive in FFA');
   const me0 = start.players.find((p) => p.id === start.self.id)!;
-  const towardCenter = me0.x < WORLD.size / 2 ? { right: true } : { left: true };
+  const towardCenter = me0.x < MAPS[ROTATION.FFA[0]].size / 2 ? { right: true } : { left: true };
   send(ffa, { t: 'input', seq: 1, input: { up: false, down: false, left: false, right: false, ...towardCenter, angle: 0, fire: false, reload: false, ability: false, aimDist: 0 } });
   const moved = await ffa.waitFor((m): m is Snapshot => {
     if (!isSnap(m) || m.ackSeq < 1) return false;

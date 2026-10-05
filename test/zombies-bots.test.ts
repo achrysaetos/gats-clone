@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type Player, type World } from '../src/shared/sim/world.ts';
@@ -20,10 +21,10 @@ function nightWorld(): World {
 /** Steps the world with `bots` thinking each tick, until `done` or `ms` runs out; returns whether `done` came true. */
 function play(w: World, bots: Player[], ms: number, done: () => boolean, seed = 3): boolean {
   const rand = seeded(seed);
-  const mems = new Map<number, BotMemory>(bots.map((b) => [b.id, newBotMemory(rand)]));
+  const mems = new Map<number, BotMemory>(bots.map((b) => [b.id, newBotMemory(rand, MAPS[w.map].size)]));
   for (let t = 0; t < ms; t += TICK_MS) {
     for (const b of bots) {
-      const d = botThink(snapshotFor(w, b.id), wallViews(w), mems.get(b.id)!, rand);
+      const d = botThink(snapshotFor(w, b.id), wallViews(w), mems.get(b.id)!, rand, MAPS[w.map].size);
       mems.set(b.id, d.mem);
       setInput(w, b.id, w.tick, d.input);
     }

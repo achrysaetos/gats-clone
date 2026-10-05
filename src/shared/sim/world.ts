@@ -229,11 +229,12 @@ const SPAWN_CLEARANCE = 10;
 const SPAWN_ENEMY_DIST = 400;
 
 export function spawnPoint(w: World, team: Team): Pose {
-  const regions = MAPS[w.map].spawns[team ?? 'ffa'];
+  const { spawns, siege, size } = MAPS[w.map];
+  const regions = spawns[team ?? 'ffa'];
   const solids = solidRects(w);
-  const core = MAPS[w.map].siege?.core;
+  const core = siege?.core;
   if (w.run && core) {
-    const inside = defendedPoints(solids, core);
+    const inside = defendedPoints(solids, core, size);
     if (inside.length) return inside[Math.floor(rand(w) * Math.min(inside.length, SQUAD_SPAWN_CHOICES))]!;
   }
   for (let i = 0; i < 200; i++) {
@@ -245,14 +246,14 @@ export function spawnPoint(w: World, team: Team): Pose {
     return { x, y };
   }
   const fallback = regions[0];
-  return clearPointNear(solids, fallback.x + fallback.w / 2, fallback.y + fallback.h / 2, WORLD.playerRadius + SPAWN_CLEARANCE);
+  return clearPointNear(solids, fallback.x + fallback.w / 2, fallback.y + fallback.h / 2, WORLD.playerRadius + SPAWN_CLEARANCE, size);
 }
 
 const SQUAD_SPAWN_CHOICES = 12;
 
 /** Grid points a player can walk to from the core, nearest first, so a squad respawns on the defended side of its walls. */
-function defendedPoints(solids: readonly Rect[], core: Center): Pose[] {
-  const n = Math.floor(WORLD.size / ZOM.cell);
+function defendedPoints(solids: readonly Rect[], core: Center, size: number): Pose[] {
+  const n = Math.floor(size / ZOM.cell);
   const center = (c: number) => c * ZOM.cell + ZOM.cell / 2;
   const open = (cx: number, cy: number, r: number) => !solids.some((b) => circleHitsRect(center(cx), center(cy), r, b));
   const seen = new Uint8Array(n * n);
@@ -280,9 +281,9 @@ function defendedPoints(solids: readonly Rect[], core: Center): Pose[] {
 }
 
 /** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */
-function clearPointNear(solids: readonly Rect[], x: number, y: number, r: number): Pose {
-  const clear = (px: number, py: number) => px >= r && py >= r && px <= WORLD.size - r && py <= WORLD.size - r && !solids.some((b) => circleHitsRect(px, py, r, b));
-  for (let ring = 0; ring * ZOM.cell < WORLD.size; ring++) {
+function clearPointNear(solids: readonly Rect[], x: number, y: number, r: number, size: number): Pose {
+  const clear = (px: number, py: number) => px >= r && py >= r && px <= size - r && py <= size - r && !solids.some((b) => circleHitsRect(px, py, r, b));
+  for (let ring = 0; ring * ZOM.cell < size; ring++) {
     const points: Pose[] = [];
     for (let i = -ring; i <= ring; i++) for (let j = -ring; j <= ring; j++) {
       if (Math.max(Math.abs(i), Math.abs(j)) === ring && clear(x + i * ZOM.cell, y + j * ZOM.cell)) points.push({ x: x + i * ZOM.cell, y: y + j * ZOM.cell });

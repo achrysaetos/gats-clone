@@ -2,6 +2,7 @@ import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.t
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
+import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, resetProgress } from './sim/stats.ts';
@@ -74,7 +75,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const life = p.life;
   if (life.k === 'downed') {
     p.angle = p.input.angle;
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     return;
@@ -88,7 +89,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p, !moving);
   if (moving) {
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     life.dash = m.dash;

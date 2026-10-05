@@ -48,8 +48,8 @@ export function segmentEntersRectAt(px: number, py: number, dx: number, dy: numb
   return t0;
 }
 
-function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: number): { x: number; y: number } {
-  let x = clamp(nx, r, WORLD.size - r), y = clamp(ny, r, WORLD.size - r);
+function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: number, size: number): { x: number; y: number } {
+  let x = clamp(nx, r, size - r), y = clamp(ny, r, size - r);
   for (const b of solids) {
     const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
     const d2 = dist2(x, y, cx, cy);
@@ -70,7 +70,7 @@ function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: numbe
       y = shallowest.y;
     }
   }
-  return { x: clamp(x, r, WORLD.size - r), y: clamp(y, r, WORLD.size - r) };
+  return { x: clamp(x, r, size - r), y: clamp(y, r, size - r) };
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
@@ -86,10 +86,10 @@ export function startDash(input: MoveKeys & Pick<InputState, 'angle'>): Dash {
     : { dirX: Math.cos(input.angle), dirY: Math.sin(input.angle), leftMs: DASH_MS };
 }
 
-export function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number, r: number = WORLD.playerRadius): { x: number; y: number } {
+export function slide(solids: readonly Rect[], x: number, y: number, dx: number, dy: number, r: number, size: number): { x: number; y: number } {
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / MAX_SUBSTEP));
   let at = { x, y };
-  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps, r);
+  for (let i = 0; i < steps; i++) at = resolveCircle(solids, at.x + dx / steps, at.y + dy / steps, r, size);
   return at;
 }
 
@@ -99,8 +99,8 @@ const KNIFE_ARC = Math.PI / 3;
 
 type Point = { x: number; y: number };
 
-const insideWorld = (x: number, y: number) =>
-  x >= WORLD.playerRadius && x <= WORLD.size - WORLD.playerRadius && y >= WORLD.playerRadius && y <= WORLD.size - WORLD.playerRadius;
+const insideWorld = (x: number, y: number, size: number) =>
+  x >= WORLD.playerRadius && x <= size - WORLD.playerRadius && y >= WORLD.playerRadius && y <= size - WORLD.playerRadius;
 
 function knifeTarget<T extends Point>(at: Point, angle: number, enemies: readonly T[], solids: readonly Rect[]): T | null {
   let best: T | null = null, bestD = Infinity;
@@ -115,14 +115,14 @@ function knifeTarget<T extends Point>(at: Point, angle: number, enemies: readonl
   return best;
 }
 
-export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point, angle: number, enemies: readonly T[]): Point & { victim: T | null } {
+export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point, angle: number, enemies: readonly T[], size: number): Point & { victim: T | null } {
   const steps = Math.ceil(KNIFE_LUNGE / MAX_SUBSTEP);
   const sx = (Math.cos(angle) * KNIFE_LUNGE) / steps, sy = (Math.sin(angle) * KNIFE_LUNGE) / steps;
   let { x, y } = from;
   let victim = knifeTarget(from, angle, enemies, solids);
   for (let i = 0; i < steps && !victim; i++) {
     const nx = x + sx, ny = y + sy;
-    if (!insideWorld(nx, ny) || solids.some((b) => circleHitsRect(nx, ny, WORLD.playerRadius, b))) break;
+    if (!insideWorld(nx, ny, size) || solids.some((b) => circleHitsRect(nx, ny, WORLD.playerRadius, b))) break;
     x = nx;
     y = ny;
     victim = knifeTarget({ x, y }, angle, enemies, solids);
@@ -130,15 +130,15 @@ export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point
   return { x, y, victim };
 }
 
-export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number): Motion {
+export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number, size: number): Motion {
   const { dash } = from;
   if (dash) {
     const d = (DASH_DISTANCE * Math.min(dtMs, dash.leftMs)) / DASH_MS;
     const leftMs = dash.leftMs - dtMs;
-    return { ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d), dash: leftMs > 0 ? { ...dash, leftMs } : null };
+    return { ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d, WORLD.playerRadius, size), dash: leftMs > 0 ? { ...dash, leftMs } : null };
   }
   const { mx, my } = keyAxes(keys);
   if (mx === 0 && my === 0) return from;
   const d = (speed * dtMs) / 1000 / Math.hypot(mx, my);
-  return { ...slide(solids, from.x, from.y, mx * d, my * d), dash: null };
+  return { ...slide(solids, from.x, from.y, mx * d, my * d, WORLD.playerRadius, size), dash: null };
 }

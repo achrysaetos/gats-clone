@@ -8,6 +8,7 @@ import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
 import type { RunView } from '../src/shared/protocol.ts';
 import { BUILDING_KINDS, BUILDINGS, ZOM, type TurretKind } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
 import { build } from '../src/shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -53,17 +54,17 @@ test('the ghost judges each kind as the server would build it, and names what it
     w.run!.scrap = scrap;
     for (const kind of BUILDING_KINDS) {
       for (const cell of [{ cx: 26, cy: 30 }, { cx: 26, cy: 31 }, { cx: 20, cy: 30 }]) {
-        const ghost = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, kind, at(cell.cx, cell.cy));
+        const ghost = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, kind, at(cell.cx, cell.cy), MAPS[w.map].size);
         assert.equal(ghost.refusal, build(structuredClone(w), p.id, kind, cell.cx, cell.cy), `${kind} at ${cell.cx},${cell.cy} with ${scrap} scrap`);
         assert.equal(ghost.kind, kind);
       }
     }
   }
   const site = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
-  assert.equal(ghostAt(site, 'sentry', at(26, 30)).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
-  assert.equal(ghostAt(site, 'wall', at(26, 31)).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 2}`, 'the refund is the standing building\'s');
+  assert.equal(ghostAt(site, 'sentry', at(26, 30), MAPS[w.map].size).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
+  assert.equal(ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 2}`, 'the refund is the standing building\'s');
   w.run!.scrap = 0;
-  assert.equal(ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'cannon', at(26, 30)).label, `Cannon needs ${BUILDINGS.cannon.cost} scrap`);
+  assert.equal(ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'cannon', at(26, 30), MAPS[w.map].size).label, `Cannon needs ${BUILDINGS.cannon.cost} scrap`);
 });
 
 test('in build mode 1, 2 and 3 pick wall, sentry and cannon, and the hint bar lists each with its cost', () => {

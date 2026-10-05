@@ -47,14 +47,14 @@ if (worlds > 0) {
     const bornAt = new Map<number, number>();
     for (let i = 0; i < WORLD.minPlayers; i++) {
       const p = addPlayer(w, `bot${i}`, randomLoadout(r));
-      bots.set(p.id, newBotMemory(r));
+      bots.set(p.id, newBotMemory(r, MAPS[w.map].size));
       bornAt.set(p.id, w.now);
       tally(livesByArmor, p.loadout.armor);
     }
     for (let t = 0; t < minutes * 60_000; t += TICK_MS) {
       const walls = wallViews(w);
       for (const [id, mem] of bots) {
-        const d = botThink(snapshotFor(w, id), walls, mem, r);
+        const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
         bots.set(id, d.mem);
         setInput(w, id, w.tick, d.input);
         if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);

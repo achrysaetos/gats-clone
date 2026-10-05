@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AbilityId, ModeId } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -29,13 +30,13 @@ function inputs(scene: Scene, ticks = 30): InputState[] {
   grantPerks(w, bot, ['grip', 'thickSkin', scene.ability]);
   if (scene.enemyAt) spawnAt(w, scene.enemyAt.x, scene.enemyAt.y, { team: scene.mode === 'DOM' ? 'blue' : undefined });
   const r = seeded(11);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, MAPS[w.map].size);
   const out: InputState[] = [];
   for (let i = 0; i < ticks; i++) {
     if (scene.hp !== undefined && bot.life.k === 'alive') bot.life.hp = scene.hp;
     const snap: Snapshot = snapshotFor(w, bot.id);
     if (scene.hitEveryTick) snap.events = [...snap.events, { e: 'dmg', attacker: null, victim: bot.id, amount: 5, x: bot.x, y: bot.y, kind: 'player' }];
-    const d = botThink(snap, scene.walls ?? [], mem, r);
+    const d = botThink(snap, scene.walls ?? [], mem, r, MAPS[w.map].size);
     mem = d.mem;
     out.push(d.input);
     step(w, TICK_MS);
@@ -108,9 +109,9 @@ test('a bot throws a grenade where a moving target will be when it lands', () =>
     grantPerks(w, bot, ['grip', 'thickSkin', 'grenade']);
     const target = spawnAt(w, 1350, 850);
     const r = seeded(seed);
-    let mem = newBotMemory(r);
+    let mem = newBotMemory(r, MAPS[w.map].size);
     for (let i = 0; i < 30; i++) {
-      const d = botThink(snapshotFor(w, bot.id), [], mem, r);
+      const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
       mem = d.mem;
       if (d.input.ability) {
         const landing = { x: target.x, y: target.y + speed * fuseS };
@@ -135,10 +136,10 @@ test('a hurt bot without a dash keeps fighting rather than backing away', () => 
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   spawnAt(w, 1300, 1000);
   const r = seeded(2);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, MAPS[w.map].size);
   for (let i = 0; i < 20; i++) {
     if (bot.life.k === 'alive') bot.life.hp = 20;
-    const d = botThink(snapshotFor(w, bot.id), [], mem, r);
+    const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
     mem = d.mem;
     assert.ok(!d.input.left, `tick ${i}: does not back away`);
     step(w, TICK_MS);

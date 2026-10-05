@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { GUN_IDS, GUNS, WORLD } from '../../../../src/shared/defs.ts';
+import { GUN_IDS, GUNS } from '../../../../src/shared/defs.ts';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
@@ -40,7 +40,7 @@ for (let i = 0; i < 50 && !target; i++) {
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
-const st = { id: -1, walls: [] as Rect[], last: null as Snapshot | null, fresh: [] as GameEvent[], respawnsSent: 0 };
+const st = { id: -1, worldSize: 0, walls: [] as Rect[], last: null as Snapshot | null, fresh: [] as GameEvent[], respawnsSent: 0 };
 let nextId = 1, socketId = '';
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -49,7 +49,7 @@ page.on('message', (raw) => {
   if (m.method === 'Network.webSocketCreated') { socketId = m.params.requestId; st.last = null; }
   else if (m.method === 'Network.webSocketFrameReceived' && m.params.requestId === socketId) {
     const msg = JSON.parse(m.params.response.payloadData);
-    if (msg.t === 'welcome') { st.id = msg.id; st.walls = msg.walls; }
+    if (msg.t === 'welcome') { st.id = msg.id; st.walls = msg.walls; st.worldSize = msg.worldSize; }
     if (msg.t === 'walls') st.walls = msg.walls;
     if (msg.t === 'snap') {
       st.last = fillSnapshot(msg, st.last) ?? st.last;
@@ -253,7 +253,7 @@ while (Date.now() < end && !done()) {
   const seen = enemies.filter((p) => Math.abs(p.x - self.x) < sight.w && Math.abs(p.y - self.y) < sight.h && visible(self.x, self.y, p.x, p.y)).sort((a, b) => near(a) - near(b));
   const crates = snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })).filter((c) => visible(self.x, self.y, c.x, c.y)).sort((a, b) => near(a) - near(b));
   const aimAt = seen[0] ?? (crates[0] && near(crates[0]) < 500 ? crates[0] : undefined);
-  const goal = seen[0] ?? enemies.sort((a, b) => near(a) - near(b))[0] ?? { x: WORLD.size / 2, y: WORLD.size / 2 };
+  const goal = seen[0] ?? enemies.sort((a, b) => near(a) - near(b))[0] ?? { x: st.worldSize / 2, y: st.worldSize / 2 };
   if (Math.random() < 0.05) strafe = -strafe;
   const dir = Math.atan2(goal.y - self.y, goal.x - self.x) + (near(goal) > 380 ? 0 : (Math.PI / 2) * strafe);
   await setKeys([...(Math.cos(dir) > 0.38 ? ['d'] : Math.cos(dir) < -0.38 ? ['a'] : []), ...(Math.sin(dir) > 0.38 ? ['s'] : Math.sin(dir) < -0.38 ? ['w'] : [])]);

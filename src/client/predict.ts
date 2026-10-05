@@ -53,32 +53,32 @@ export function predictAbility(pred: Prediction, input: InputState, latest: Snap
   }
 }
 
-function stepInput(solids: readonly Rect[], at: Motion, p: PendingInput, speed: number): Motion {
-  const moved = moveStep(solids, at, p.input, speed, p.dtMs);
+function stepInput(solids: readonly Rect[], at: Motion, p: PendingInput, speed: number, size: number): Motion {
+  const moved = moveStep(solids, at, p.input, speed, p.dtMs, size);
   switch (p.ability?.k) {
     case 'dash': return moved.dash ? moved : { ...moved, dash: startDash(p.input) };
     case 'knife': {
-      const { x, y } = knifeLunge(solids, moved, p.input.angle, p.ability.enemies);
+      const { x, y } = knifeLunge(solids, moved, p.input.angle, p.ability.enemies, size);
       return { ...moved, x, y };
     }
     case undefined: return moved;
   }
 }
 
-const replay = (solids: readonly Rect[], start: Motion, pending: readonly PendingInput[], speed: number): Motion =>
-  pending.reduce((at, p) => stepInput(solids, at, p, speed), start);
+const replay = (solids: readonly Rect[], start: Motion, pending: readonly PendingInput[], speed: number, size: number): Motion =>
+  pending.reduce((at, p) => stepInput(solids, at, p, speed, size), start);
 
-export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: number, now: number): Prediction {
+export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: number, now: number, size: number): Prediction {
   const pending = [...pred.pending, entry].slice(-MAX_PENDING);
   const was = pred.afterNewest;
   if (!was) return { ...pred, pending };
-  return { ...pred, pending, beforeNewest: was, afterNewest: stepInput(solids, was, entry, speed), sampledAt: now };
+  return { ...pred, pending, beforeNewest: was, afterNewest: stepInput(solids, was, entry, speed, size), sampledAt: now };
 }
 
-export function reconcile(pred: Prediction, server: Motion | null, ackSeq: number, solids: readonly Rect[], speed: number): Prediction {
+export function reconcile(pred: Prediction, server: Motion | null, ackSeq: number, solids: readonly Rect[], speed: number, size: number): Prediction {
   const pending = pred.pending.filter((p) => p.seq > ackSeq);
   if (!server) return { ...NO_PREDICTION, pending };
-  const afterNewest = replay(solids, server, pending, speed);
+  const afterNewest = replay(solids, server, pending, speed, size);
   const was = pred.afterNewest;
   if (!was || !pred.beforeNewest || Math.hypot(afterNewest.x - was.x, afterNewest.y - was.y) > SNAP_DIST) {
     return { pending, afterNewest, beforeNewest: afterNewest, sampledAt: pred.sampledAt, smoothingCorrection: { x: 0, y: 0 } };

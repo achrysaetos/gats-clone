@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws';
 import { WORLD, ZOM, type ModeId, type PlayerKind } from '../shared/defs.ts';
-import { ROTATION } from '../shared/maps.ts';
+import { MAPS, ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
@@ -72,7 +72,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       for (let i = mine.length; i < want; i++) {
         const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
         const p = addPlayer(world, name, randomLoadout(botRand), { team });
-        bots.set(p.id, newBotMemory(botRand));
+        bots.set(p.id, newBotMemory(botRand, MAPS[world.map].size));
       }
     }
   }
@@ -112,7 +112,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder() });
       balanceBots();
-      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: WORLD.size, walls: wallViews(world), account });
+      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
       return;
     }
     const id = client.playerId;
@@ -149,7 +149,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function thinkBots() {
     const walls = wallViews(world);
     for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(world, id), walls, mem, botRand);
+      const d = botThink(snapshotFor(world, id), walls, mem, botRand, MAPS[world.map].size);
       bots.set(id, d.mem);
       setInput(world, id, world.tick, d.input);
       if (d.pick) choosePick(world, id, d.pick.level, d.pick.option);
@@ -215,7 +215,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;
         const walls = wallViews(world);
-        for (const c of joined()) send(c.ws, { t: 'walls', walls });
+        for (const c of joined()) send(c.ws, { t: 'walls', worldSize: MAPS[world.map].size, walls });
       }
       for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
     },

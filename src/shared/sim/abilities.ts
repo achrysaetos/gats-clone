@@ -1,4 +1,5 @@
 import { WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
+import { MAPS } from '../maps.ts';
 import { damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
 import { circleHitsRect, clamp, dist2, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
@@ -42,7 +43,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
       })),
       ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => damageZombie(w, z, KNIFE_DAMAGE, p) })),
     ];
-    const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, targets);
+    const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, targets, MAPS[w.map].size);
     p.x = x;
     p.y = y;
     victim?.strike();

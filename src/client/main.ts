@@ -263,7 +263,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.walls = msg.walls; return;
+    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
     case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
@@ -290,7 +290,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = newestSnap(s.snaps);
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
-  s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed);
+  s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now);
@@ -369,7 +369,7 @@ setInterval(() => {
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
-  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest), latest ? selfMotion(latest).speed : 0, performance.now());
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
 }, INPUT_MS);
 
 function pick(slot: number) {
@@ -482,7 +482,7 @@ function drawFrame(now: number) {
   if (DEV) noteFirstRounds(snap, s.myId, selfAngle);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
-  ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse));
+  ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost, hover: mouseAiming ? screenToWorld(aimCamera, mouse) : null });
   const moving = MOVES.some((a) => held.has(a));
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, !moving) : null;

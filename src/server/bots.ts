@@ -93,15 +93,15 @@ function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () =
   return options.find((o) => (roll -= weight(o)) < 0) ?? pick(options, rand);
 }
 
-export function newBotMemory(rand: () => number): BotMemory {
-  return { targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, lastX: 0, lastY: 0, stuckTicks: 0, detour: null, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0, hitTick: -Infinity };
+export function newBotMemory(rand: () => number, size: number): BotMemory {
+  return { targetX: rand() * size, targetY: rand() * size, lastX: 0, lastY: 0, stuckTicks: 0, detour: null, strafe: rand() < 0.5 ? 1 : -1, engaged: null, shots: 0, hitTick: -Infinity };
 }
 
 export function randomLoadout(rand: () => number): Loadout {
   return { weapon: pick(WEAPON_IDS, rand), armor: pick(ARMOR_IDS, rand), color: pick(COLOR_IDS, rand) };
 }
 
-export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMemory, rand: () => number): BotDecision {
+export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMemory, rand: () => number, size: number): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
   if (me?.downed && snap.run) {
     const core = snap.run.core;
@@ -127,7 +127,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     const zone = contested.length > 0 && rand() < 0.8 ? pick(contested, rand) : null;
     next = zone
       ? { ...next, targetX: zone.x + (rand() - 0.5) * zone.r, targetY: zone.y + (rand() - 0.5) * zone.r, stuckTicks: 0 }
-      : { ...next, targetX: rand() * WORLD.size, targetY: rand() * WORLD.size, stuckTicks: 0 };
+      : { ...next, targetX: rand() * size, targetY: rand() * size, stuckTicks: 0 };
   }
   next.lastX = me.x;
   next.lastY = me.y;
@@ -173,7 +173,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
     if (lead) {
       const atWaypoint = next.detour !== null && reached(me, next.detour);
       if (next.detour && firstBlock(me, lead, cover) === null) next.detour = null;
-      else if (stuck || atWaypoint) next.detour = detourToward(me, lead, cover, snap.tick, rand);
+      else if (stuck || atWaypoint) next.detour = detourToward(me, lead, cover, snap.tick, rand, size);
     }
     const go = lead && (next.detour ?? lead);
     if (go) { goX = go.x; goY = go.y; }
@@ -191,7 +191,7 @@ export function botThink(snap: Snapshot, walls: readonly WallView[], mem: BotMem
   };
   const ability = readyAbility !== null && ABILITY_RULES[readyAbility](situation);
   if (ability && readyAbility === 'dash' && enemy) {
-    const away = retreatHeading(me, Math.atan2(me.y - enemy.y, me.x - enemy.x), walls);
+    const away = retreatHeading(me, Math.atan2(me.y - enemy.y, me.x - enemy.x), walls, size);
     goX = me.x + Math.cos(away) * 200; goY = me.y + Math.sin(away) * 200;
   }
   if (ability && throwAt && GRENADES.has(readyAbility)) {
@@ -225,14 +225,14 @@ function engage(prev: Engagement | null, enemy: { id: number; x: number; y: numb
 }
 
 /** The 8-way heading closest to `away` whose dash-length path is free of walls and the world edge, so a retreat or dash does not end against cover. */
-function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]): number {
+function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[], size: number): number {
   const headings = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)
     .filter((h) => Math.cos(h - away) > 0)
     .sort((a, b) => Math.cos(b - away) - Math.cos(a - away));
   const clear = headings.find((h) => {
     const dx = Math.cos(h) * RETREAT_CLEARANCE, dy = Math.sin(h) * RETREAT_CLEARANCE;
     const ex = me.x + dx, ey = me.y + dy;
-    if (ex < WORLD.playerRadius || ey < WORLD.playerRadius || ex > WORLD.size - WORLD.playerRadius || ey > WORLD.size - WORLD.playerRadius) return false;
+    if (ex < WORLD.playerRadius || ey < WORLD.playerRadius || ex > size - WORLD.playerRadius || ey > size - WORLD.playerRadius) return false;
     return !walls.some((w) => segmentEntersRectAt(me.x, me.y, dx, dy, w) !== null);
   });
   return clear ?? headings[0] ?? away;
@@ -242,7 +242,7 @@ function retreatHeading(me: PlayerView, away: number, walls: readonly WallView[]
  * The way round the first cover between `me` and `goal`: the corner of it, pushed out by a body width, that is in the clear and shortest to go through.
  * A corner the bot already stands at is skipped, so a bot that reached one moves on to the next. With no such corner it wanders off for a while instead.
  */
-function detourToward(me: PlayerView, goal: { x: number; y: number }, cover: readonly Rect[], tick: number, rand: () => number): NonNullable<BotMemory['detour']> {
+function detourToward(me: PlayerView, goal: { x: number; y: number }, cover: readonly Rect[], tick: number, rand: () => number, size: number): NonNullable<BotMemory['detour']> {
   const block = firstBlock(me, goal, cover);
   const m = DETOUR_MARGIN, edge = WORLD.playerRadius;
   const corners = block ? [
@@ -251,10 +251,10 @@ function detourToward(me: PlayerView, goal: { x: number; y: number }, cover: rea
   ] : [];
   const via = (c: { x: number; y: number }) => Math.hypot(c.x - me.x, c.y - me.y) + Math.hypot(goal.x - c.x, goal.y - c.y);
   const corner = corners
-    .filter((c) => c.x >= edge && c.y >= edge && c.x <= WORLD.size - edge && c.y <= WORLD.size - edge
+    .filter((c) => c.x >= edge && c.y >= edge && c.x <= size - edge && c.y <= size - edge
       && !reached(me, c) && firstBlock(me, c, cover) === null)
     .sort((a, b) => via(a) - via(b))[0];
-  const to = corner ?? { x: rand() * WORLD.size, y: rand() * WORLD.size };
+  const to = corner ?? { x: rand() * size, y: rand() * size };
   const walkTicks = (Math.hypot(to.x - me.x, to.y - me.y) / WORLD.baseSpeed) * WORLD.tickHz;
   return { ...to, untilTick: tick + Math.round(2 * walkTicks) + WORLD.tickHz };
 }

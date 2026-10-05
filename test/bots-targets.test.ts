@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { WallView } from '../src/shared/protocol.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
@@ -15,12 +16,12 @@ const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) 
 
 function think(w: World, botId: number, seed: number, ticks: number) {
   const r = seeded(seed);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, MAPS[w.map].size);
   for (let i = 1; i < ticks; i++) {
-    mem = botThink(snapshotFor(w, botId), [], mem, r).mem;
+    mem = botThink(snapshotFor(w, botId), [], mem, r, MAPS[w.map].size).mem;
     step(w, TICK_MS);
   }
-  return botThink(snapshotFor(w, botId), [], mem, r).input;
+  return botThink(snapshotFor(w, botId), [], mem, r, MAPS[w.map].size).input;
 }
 
 test('a bot aims at a hunted enemy in view over a nearer ordinary one', () => {
@@ -62,9 +63,9 @@ test('a bot with nobody in view shoots a crate in the clear and scores for it', 
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   addCrate(w, 1300, 1000);
   const r = seeded(1);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, MAPS[w.map].size);
   for (let i = 0; i < 90; i++) {
-    const d = botThink(snapshotFor(w, bot.id), [], mem, r);
+    const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
     mem = d.mem;
     setInput(w, bot.id, i + 1, d.input);
     step(w, TICK_MS);
@@ -78,7 +79,7 @@ test('a bot holds fire at a crate behind a wall', () => {
   addCrate(w, 1300, 1000);
   const wall: WallView = { x: 1130, y: 900, w: 40, h: 200, built: false };
   const r = seeded(1);
-  assert.ok(!botThink(snapshotFor(w, bot.id), [wall], newBotMemory(r), r).input.fire, 'no shots into the wall');
+  assert.ok(!botThink(snapshotFor(w, bot.id), [wall], newBotMemory(r, MAPS[w.map].size), r, MAPS[w.map].size).input.fire, 'no shots into the wall');
 });
 
 test('a bot keeps half a magazine for enemies instead of emptying it into crates', () => {
@@ -87,7 +88,7 @@ test('a bot keeps half a magazine for enemies instead of emptying it into crates
   addCrate(w, 1300, 1000);
   if (bot.life.k === 'alive') bot.life.ammo = 5;
   const r = seeded(1);
-  const input = botThink(snapshotFor(w, bot.id), [], newBotMemory(r), r).input;
+  const input = botThink(snapshotFor(w, bot.id), [], newBotMemory(r, MAPS[w.map].size), r, MAPS[w.map].size).input;
   assert.ok(!input.fire && input.reload, 'reloads rather than shooting the crate');
 });
 
@@ -160,9 +161,9 @@ test('a bot walled off from a hunted marker walks around the wall and fights ins
     equip(hunted, 'executioner');
     const fullHp = hpOf(hunted);
     const r = seeded(seed);
-    let mem = newBotMemory(r);
+    let mem = newBotMemory(r, MAPS[w.map].size);
     for (let i = 1; i <= 20 * 30 && hpOf(hunted) === fullHp; i++) {
-      const d = botThink(snapshotFor(w, bot.id), wallViews(w), mem, r);
+      const d = botThink(snapshotFor(w, bot.id), wallViews(w), mem, r, MAPS[w.map].size);
       mem = d.mem;
       setInput(w, bot.id, i, d.input);
       step(w, TICK_MS);

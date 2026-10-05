@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BUILDINGS, TURRET_KINDS, WORLD, ZOM } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { build, demolish } from '../src/shared/sim/run.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
@@ -105,7 +106,7 @@ test('a wall ring over the squad spawn strips sends a squad spawn to clear groun
   for (let i = 0; i < 20; i++) {
     const at = spawnPoint(w, 'red');
     assert.ok(!solidRects(w).some((r) => circleHitsRect(at.x, at.y, WORLD.playerRadius, r)), `spawned inside a solid at ${at.x},${at.y}`);
-    assert.ok(Math.hypot(at.x - WORLD.size / 2, at.y - WORLD.size / 2) < 300, `spawned far from the core at ${at.x},${at.y}`);
+    assert.ok(Math.hypot(at.x - MAPS.outpost.size / 2, at.y - MAPS.outpost.size / 2) < 300, `spawned far from the core at ${at.x},${at.y}`);
   }
 });
 

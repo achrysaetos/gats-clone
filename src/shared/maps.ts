@@ -1,4 +1,4 @@
-import { WORLD, type ModeId } from './defs.ts';
+import type { ModeId } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 
 export type Center = { x: number; y: number };
@@ -8,6 +8,8 @@ export const CRATE_SIZE = 44;
 
 export type MapDef = {
   name: string;
+  /** The map is a square this many pixels on a side. */
+  size: number;
   walls: readonly Rect[];
   /** DOM capture points A, B and C. */
   zones: readonly Center[];
@@ -18,40 +20,41 @@ export type MapDef = {
   siege?: { core: Center; horde: readonly Rect[] };
 };
 
-const S = WORLD.size;
-const turnRect = (r: Rect): Rect => ({ x: S - r.x - r.w, y: S - r.y - r.h, w: r.w, h: r.h });
-const turnCenter = (p: Center): Center => ({ x: S - p.x, y: S - p.y });
+export const turnRect = (r: Rect, size: number): Rect => ({ x: size - r.x - r.w, y: size - r.y - r.h, w: r.w, h: r.h });
+export const turnCenter = (p: Center, size: number): Center => ({ x: size - p.x, y: size - p.y });
 /** Each map is the same after a half turn about its center, so red (left) and blue (right) get mirror-image ground. */
-const withTurned = <T>(half: readonly T[], turn: (t: T) => T): T[] => [...half, ...half.map(turn)];
+const withTurned = <T>(half: readonly T[], turn: (t: T, size: number) => T, size: number): T[] => [...half, ...half.map((t) => turn(t, size))];
 
-function symmetricMap(name: string, half: { walls: Rect[]; zoneA: Center; red: Rect[]; ffa: Rect[]; crates: Center[] }): MapDef {
+function symmetricMap(name: string, size: number, half: { walls: Rect[]; zoneA: Center; red: Rect[]; ffa: Rect[]; crates: Center[] }): MapDef {
   return {
     name,
-    walls: withTurned(half.walls, turnRect),
-    zones: [half.zoneA, { x: S / 2, y: S / 2 }, turnCenter(half.zoneA)],
-    spawns: { red: half.red, blue: half.red.map(turnRect), ffa: withTurned(half.ffa, turnRect) },
-    crates: withTurned(half.crates, turnCenter),
+    size,
+    walls: withTurned(half.walls, turnRect, size),
+    zones: [half.zoneA, { x: size / 2, y: size / 2 }, turnCenter(half.zoneA, size)],
+    spawns: { red: half.red, blue: half.red.map((r) => turnRect(r, size)), ffa: withTurned(half.ffa, turnRect, size) },
+    crates: withTurned(half.crates, turnCenter, size),
   };
 }
 
 /** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover. */
-const quarterTurn = (r: Rect): Rect => ({ x: S - r.y - r.h, y: r.x, w: r.h, h: r.w });
-const fourWays = (quarter: readonly Rect[]): Rect[] => {
+const quarterTurn = (r: Rect, size: number): Rect => ({ x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
+const fourWays = (quarter: readonly Rect[], size: number): Rect[] => {
   const out: Rect[] = [];
   let turn = [...quarter];
-  for (let i = 0; i < 4; i++) { out.push(...turn); turn = turn.map(quarterTurn); }
+  for (let i = 0; i < 4; i++) { out.push(...turn); turn = turn.map((r) => quarterTurn(r, size)); }
   return out;
 };
 
-function siegeMap(name: string, quarter: { walls: Rect[]; squad: Rect; horde: Rect }): MapDef {
-  const squad = fourWays([quarter.squad]);
+function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: Rect; horde: Rect }): MapDef {
+  const squad = fourWays([quarter.squad], size);
   return {
     name,
-    walls: fourWays(quarter.walls),
+    size,
+    walls: fourWays(quarter.walls, size),
     zones: [],
     spawns: { red: squad, blue: squad, ffa: squad },
     crates: [],
-    siege: { core: { x: S / 2, y: S / 2 }, horde: fourWays([quarter.horde]) },
+    siege: { core: { x: size / 2, y: size / 2 }, horde: fourWays([quarter.horde], size) },
   };
 }
 
@@ -59,7 +62,7 @@ export const MAP_IDS = ['boneyard', 'causeway', 'oldtown', 'citadel', 'outpost']
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
-  boneyard: symmetricMap('Boneyard', {
+  boneyard: symmetricMap('Boneyard', 3000, {
     walls: [
       { x: 420, y: 300, w: 260, h: 50 }, { x: 900, y: 200, w: 50, h: 280 }, { x: 1250, y: 450, w: 120, h: 120 },
       { x: 600, y: 750, w: 120, h: 120 }, { x: 1000, y: 850, w: 280, h: 50 }, { x: 350, y: 1050, w: 50, h: 240 },
@@ -77,7 +80,7 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
   }),
 
-  causeway: symmetricMap('Causeway', {
+  causeway: symmetricMap('Causeway', 3000, {
     walls: [
       { x: 500, y: 980, w: 600, h: 50 }, { x: 1300, y: 980, w: 400, h: 50 }, { x: 1900, y: 980, w: 600, h: 50 },
       { x: 380, y: 1330, w: 50, h: 340 }, { x: 800, y: 1250, w: 160, h: 50 }, { x: 800, y: 1700, w: 160, h: 50 },
@@ -94,7 +97,7 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
   }),
 
-  oldtown: symmetricMap('Old Town', {
+  oldtown: symmetricMap('Old Town', 3000, {
     walls: [
       { x: 360, y: 360, w: 280, h: 280 }, { x: 860, y: 360, w: 280, h: 280 }, { x: 1360, y: 360, w: 780, h: 280 },
       { x: 2360, y: 360, w: 280, h: 280 },
@@ -111,7 +114,7 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
   }),
 
-  citadel: symmetricMap('Citadel', {
+  citadel: symmetricMap('Citadel', 3000, {
     walls: [
       { x: 1080, y: 1080, w: 300, h: 60 }, { x: 1620, y: 1080, w: 300, h: 60 },
       { x: 1080, y: 1140, w: 60, h: 240 }, { x: 1080, y: 1620, w: 60, h: 240 },
@@ -131,7 +134,7 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
   }),
 
-  outpost: siegeMap('Outpost', {
+  outpost: siegeMap('Outpost', 3000, {
     walls: [
       { x: 600, y: 600, w: 150, h: 50 }, { x: 600, y: 650, w: 50, h: 100 }, { x: 1000, y: 300, w: 50, h: 200 },
       { x: 300, y: 1050, w: 100, h: 100 }, { x: 1350, y: 650, w: 100, h: 50 }, { x: 850, y: 900, w: 100, h: 100 },

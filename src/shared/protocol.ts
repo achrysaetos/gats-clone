@@ -2,6 +2,7 @@ import {
   ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
+import { MAP_IDS, MAPS } from './maps.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
 export type Team = 'red' | 'blue' | null;
@@ -167,7 +168,7 @@ export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, St
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
   | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[]; account: string | null }
-  | { t: 'walls'; walls: WallView[] }
+  | { t: 'walls'; worldSize: number; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
   | { t: 'error'; message: string };
@@ -189,7 +190,8 @@ export function cleanName(v: unknown): string {
   return s || 'Unnamed';
 }
 
-const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < WORLD.size / ZOM.cell ? v : null);
+const MAX_GRID = Math.max(...MAP_IDS.map((m) => MAPS[m].size)) / ZOM.cell;
+const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < MAX_GRID ? v : null);
 
 const parseAspect = (v: unknown): number => num(v, VIEW_ASPECT.min, VIEW_ASPECT.max) ?? VIEW_ASPECT.max;
 

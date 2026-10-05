@@ -119,11 +119,9 @@ function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingK
 /** `kind` is what build mode would put up. */
 export type Ghost = { kind: BuildingKind; cx: number; cy: number; refusal: BuildRefusal | null; label: string };
 
-const GRID = WORLD.size / ZOM.cell;
-
-export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose): Ghost {
-  const cell = cellOf(at.x, at.y);
-  const cx = Math.min(GRID - 1, Math.max(0, cell.cx)), cy = Math.min(GRID - 1, Math.max(0, cell.cy));
+export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize: number): Ghost {
+  const cell = cellOf(at.x, at.y), grid = worldSize / ZOM.cell;
+  const cx = Math.min(grid - 1, Math.max(0, cell.cx)), cy = Math.min(grid - 1, Math.max(0, cell.cy));
   const refusal = buildRefusal(site, kind, cx, cy);
   const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy)?.kind;
   return { kind, cx, cy, refusal, label: refusal ? refusalText(refusal, kind, taken) : `${BUILDINGS[kind].name} · ${BUILDINGS[kind].cost} scrap` };

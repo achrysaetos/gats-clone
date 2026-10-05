@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf, type Prediction } from '../src/client/predict.ts';
 import { ABILITY_COOLDOWN_MS } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
@@ -39,7 +40,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
   const walls = wallViews(w);
   const solidsFor = clientSolids ?? ((snap: Snapshot) => solidsOf(walls, snap));
   const first = snapshotFor(w, p.id);
-  let pred: Prediction = reconcile(NO_PREDICTION, selfMotion(first).at, first.ackSeq, solidsFor(first), selfMotion(first).speed);
+  let pred: Prediction = reconcile(NO_PREDICTION, selfMotion(first).at, first.ackSeq, solidsFor(first), selfMotion(first).speed, MAPS[w.map].size);
   let latest = first;
   const toServer: { at: number; seq: number; input: InputState }[] = [];
   const toClient: { at: number; snap: Snapshot }[] = [];
@@ -48,7 +49,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
   all.forEach((partial, i) => {
     const seq = i + 1;
     const input = { ...IDLE_INPUT, ...partial };
-    pred = predictInput(pred, { seq, input, dtMs: TICK_MS, ability: predictAbility(pred, input, latest) }, solidsFor(latest), selfMotion(latest).speed, seq * TICK_MS);
+    pred = predictInput(pred, { seq, input, dtMs: TICK_MS, ability: predictAbility(pred, input, latest) }, solidsFor(latest), selfMotion(latest).speed, seq * TICK_MS, MAPS[w.map].size);
     toServer.push({ at: seq + LATENCY_TICKS, seq, input });
     for (const m of toServer.filter((m) => m.at === seq)) setInput(w, p.id, m.seq, m.input);
     step(w, TICK_MS);
@@ -56,7 +57,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
     for (const m of toClient.filter((m) => m.at === seq)) {
       const before = pred.afterNewest!;
       latest = m.snap;
-      pred = reconcile(pred, selfMotion(m.snap).at, m.snap.ackSeq, solidsFor(m.snap), selfMotion(m.snap).speed);
+      pred = reconcile(pred, selfMotion(m.snap).at, m.snap.ackSeq, solidsFor(m.snap), selfMotion(m.snap).speed, MAPS[w.map].size);
       maxCorrection = Math.max(maxCorrection, Math.hypot(pred.afterNewest!.x - before.x, pred.afterNewest!.y - before.y));
     }
   });
@@ -90,7 +91,7 @@ test('a misprediction converges to the server position and the drawn player glid
 const at = (x: number, y: number): Prediction => ({ ...NO_PREDICTION, afterNewest: { x, y, dash: null }, beforeNewest: { x, y } });
 
 test('a small correction leaves the drawn player in place, then decays toward the server', () => {
-  const pred = reconcile(at(100, 100), { x: 106, y: 100, dash: null }, 0, [], 300);
+  const pred = reconcile(at(100, 100), { x: 106, y: 100, dash: null }, 0, [], 300, 3000);
   assert.deepEqual(drawnPosition(pred, 0, TICK_MS), { x: 100, y: 100 });
   const later = drawnPosition(decayCorrection(pred, 60), 0, TICK_MS)!;
   assert.ok(later.x > 102 && later.x < 106, `partway after 60ms (x=${later.x})`);
@@ -98,12 +99,12 @@ test('a small correction leaves the drawn player in place, then decays toward th
 });
 
 test('a respawn-sized correction snaps', () => {
-  const pred = reconcile(at(100, 100), { x: 2000, y: 1500, dash: null }, 0, [], 300);
+  const pred = reconcile(at(100, 100), { x: 2000, y: 1500, dash: null }, 0, [], 300, 3000);
   assert.deepEqual(drawnPosition(pred, 0, TICK_MS), { x: 2000, y: 1500 });
 });
 
 test('the drawn player walks the latest step across one input interval', () => {
-  const pred = predictInput(at(100, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS, ability: null }, [], 300, 1000);
+  const pred = predictInput(at(100, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS, ability: null }, [], 300, 1000, 3000);
   assert.equal(drawnPosition(pred, 1000, TICK_MS)!.x, 100);
   assert.ok(Math.abs(drawnPosition(pred, 1000 + TICK_MS / 2, TICK_MS)!.x - 105) < 1e-9);
   assert.ok(Math.abs(drawnPosition(pred, 5000, TICK_MS)!.x - 110) < 1e-9);

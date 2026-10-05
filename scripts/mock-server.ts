@@ -18,7 +18,7 @@ const PORT = Number(process.argv[2] ?? 8787);
 const ROOT = join(import.meta.dirname, '..', 'public');
 const ROOMS: { id: string; mode: ModeId }[] = [{ id: '1', mode: 'FFA' }, { id: '2', mode: 'TDM' }, { id: '3', mode: 'DOM' }];
 const MIME: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.map': 'application/json' };
-const SIZE = WORLD.size;
+const SIZE = 3000;
 const DT = 1 / WORLD.tickHz;
 const GRENADE_FUSE_MS = 900;
 
@@ -142,7 +142,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         else if (cmd === '/level') pending = !perks[2] ? { level: 3, k: 'perk', tier: 2 } : { level: 4, k: 'perk', tier: 3 };
         else if (cmd === '/evolve') pending = { level: GUNS[gun].stage === 0 ? 2 : 5, k: 'evolve' };
         else if (cmd === '/win') winnerUntil = Date.now() + WORLD.roundRestartMs;
-        else if (cmd === '/walls') { w.walls.push({ x: me.x + 60, y: me.y - 60, w: 30, h: 120, built: true }); out({ t: 'walls', walls: w.walls }); }
+        else if (cmd === '/walls') { w.walls.push({ x: me.x + 60, y: me.y - 60, w: 30, h: 120, built: true }); out({ t: 'walls', worldSize: SIZE, walls: w.walls }); }
         else out({ t: 'chat', from: name, text: cmd, team: mode === 'FFA' ? null : 'red' });
         return;
       }

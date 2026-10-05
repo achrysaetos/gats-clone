@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import WebSocket from 'ws';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import type { GameEvent, Loadout } from '../src/shared/protocol.ts';
 import { canRespawn, respawn } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
@@ -36,8 +37,8 @@ const world = room.world;
 function arenaCenter(): { x: number; y: number } {
   const box = (x: number, y: number): Rect => ({ x: x - STRAFE_HALF - 80, y: y - RANGE - 80, w: 2 * (STRAFE_HALF + 80), h: RANGE + 160 });
   const solids: Rect[] = [...world.walls, ...world.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))];
-  for (let y = 600; y < WORLD.size - 300; y += 50) {
-    for (let x = 400; x < WORLD.size - 400; x += 50) {
+  for (let y = 600; y < MAPS[world.map].size - 300; y += 50) {
+    for (let x = 400; x < MAPS[world.map].size - 400; x += 50) {
       const b = box(x, y);
       if (!solids.some((s) => s.x < b.x + b.w && b.x < s.x + s.w && s.y < b.y + b.h && b.y < s.y + s.h)) return { x, y };
     }

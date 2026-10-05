@@ -214,7 +214,6 @@ export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 
 export const WORLD = {
-  size: 3000,
   playerRadius: 24,
   baseHp: 100,
   baseSpeed: 255,

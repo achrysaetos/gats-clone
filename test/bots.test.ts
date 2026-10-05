@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, WORLD, type WeaponId } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import type { WallView } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -21,10 +22,10 @@ function watch(opts: { seed: number; ticks: number; weapon?: WeaponId; targetAt:
   const target = spawnAt(w, opts.targetAt.x, opts.targetAt.y);
   const vel = opts.targetVel ?? { x: 0, y: 0 };
   const r = seeded(opts.seed);
-  let mem = newBotMemory(r);
+  let mem = newBotMemory(r, MAPS[w.map].size);
   const looks: Look[] = [];
   for (let i = 0; i < opts.ticks; i++) {
-    const d = botThink(snapshotFor(w, bot.id), opts.walls?.(i) ?? [], mem, r);
+    const d = botThink(snapshotFor(w, bot.id), opts.walls?.(i) ?? [], mem, r, MAPS[w.map].size);
     mem = d.mem;
     const flight = Math.hypot(target.x - bot.x, target.y - bot.y) / GUNS[bot.loadout.weapon].bulletSpeed;
     const leadAngle = Math.atan2(target.y + vel.y * flight - bot.y, target.x + vel.x * flight - bot.x);
@@ -83,7 +84,7 @@ test('a bot in range strafes sideways instead of standing still', () => {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   spawnAt(w, 1300, 1000);
-  const d = botThink(snapshotFor(w, bot.id), [], newBotMemory(rand), rand);
+  const d = botThink(snapshotFor(w, bot.id), [], newBotMemory(rand, MAPS[w.map].size), rand, MAPS[w.map].size);
   assert.ok(d.input.up || d.input.down, 'moves across the line to the enemy');
 });
 

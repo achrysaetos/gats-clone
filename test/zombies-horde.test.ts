@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, WORLD, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDINGS, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { step } from '../src/shared/sim.ts';
 import { clamp } from '../src/shared/sim/movement.ts';
@@ -88,7 +88,7 @@ test('no zombie stays pinned on cover: one starting behind each wall of the map 
     const reach = Math.max(wall.w, wall.h) / 2 + 40;
     const w = nightWorld();
     w.run!.core.hp = 1e9;
-    const z = addZombie(w, 'walker', clamp(cx + ux * reach, 40, WORLD.size - 40), clamp(cy + uy * reach, 40, WORLD.size - 40));
+    const z = addZombie(w, 'walker', clamp(cx + ux * reach, 40, MAPS.outpost.size - 40), clamp(cy + uy * reach, 40, MAPS.outpost.size - 40));
     let closest = Infinity;
     stepFor(w, (d / ZOMBIES.walker.speed) * 1000 * 2 + 5000, () => { closest = Math.min(closest, toCore(z.x, z.y)); });
     if (closest > ZOMBIES.walker.radius + ZOM.biteReach) stuck.push(`(${z.x.toFixed(0)}, ${z.y.toFixed(0)}) ended ${closest.toFixed(0)}px off`);

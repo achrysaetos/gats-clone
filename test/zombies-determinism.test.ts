@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { ZOM } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
 import { build } from '../src/shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -15,13 +16,13 @@ function replay(seed: number): { hash: string; nights: number; walls: number } {
   const w = createWorld('ZOM', seed, 'outpost');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
-  for (let i = 0; i < ZOM.squadSize; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
+  for (let i = 0; i < ZOM.squadSize; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
   const builder = [...bots.keys()][0]!;
   const hash = createHash('sha256');
   for (let tick = 0; tick < 6000 && w.run!.phase.k !== 'over'; tick++) {
     const walls = wallViews(w);
     for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(w, id), walls, mem, r);
+      const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
       if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);

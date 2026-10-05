@@ -130,19 +130,20 @@ function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: nu
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
 const BACKDROP_MAP = MAPS.boneyard;
-const backdropSolids: Solid[] = [...curbSolids(WORLD.size), ...wallSolids(BACKDROP_MAP.walls.map((w) => ({ ...w, built: false })))];
+const backdropSolids: Solid[] = [...curbSolids(BACKDROP_MAP.size), ...wallSolids(BACKDROP_MAP.walls.map((w) => ({ ...w, built: false })))];
 const backdropCrates: Solid[] = BACKDROP_MAP.crates.map((c) => ({ kind: 'planter', x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
 
 export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, now: number) {
-  const zoom = Math.max(BACKDROP.zoom, w / (WORLD.size * BACKDROP.fill), h / (WORLD.size * BACKDROP.fill));
+  const { size } = BACKDROP_MAP;
+  const zoom = Math.max(BACKDROP.zoom, w / (size * BACKDROP.fill), h / (size * BACKDROP.fill));
   const viewW = w / zoom, viewH = h / zoom;
-  const freeX = WORLD.size - viewW, freeY = WORLD.size - viewH;
+  const freeX = size - viewW, freeY = size - viewH;
   const x = freeX / 2 + (freeX / 2) * Math.sin(now / BACKDROP.swayMs);
   const y = freeY / 2 + (freeY / 2) * 0.5 * Math.cos(now / BACKDROP.swayMs);
   const k = dpr * zoom;
   ctx.setTransform(k, 0, 0, k, -x * k, -y * k);
-  drawGround(ctx, ground.get(BACKDROP_MAP, WORLD.size, () => backdropSolids, []), x, y, x + viewW, y + viewH);
-  drawGrid(ctx, WORLD.size, { x, y }, { x: x + viewW, y: y + viewH });
+  drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, []), x, y, x + viewW, y + viewH);
+  drawGrid(ctx, size, { x, y }, { x: x + viewW, y: y + viewH });
   drawCrateShadows(ctx, backdropCrates);
   drawSolids(ctx, [...backdropSolids, ...backdropCrates]);
 }

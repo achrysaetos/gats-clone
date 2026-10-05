@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ABILITY_COOLDOWN_MS, ARMORS, GUNS, WORLD } from '../src/shared/defs.ts';
+import { MAPS } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { explode } from '../src/shared/sim/combat.ts';
@@ -341,11 +342,11 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
   const w = createWorld('FFA', 3, 'boneyard');
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
-  for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
+  for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
   let kills = 0;
   for (let t = 0; t < 60_000 && kills === 0; t += TICK_MS) {
     for (const [id, mem] of mems) {
-      const d = botThink(snapshotFor(w, id), wallViews(w), mem, r);
+      const d = botThink(snapshotFor(w, id), wallViews(w), mem, r, MAPS[w.map].size);
       mems.set(id, d.mem);
       setInput(w, id, t, d.input);
     }

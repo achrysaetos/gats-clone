@@ -31,7 +31,7 @@ function newSquad(seed: number): Squad {
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < squad; i++) {
     const p = addPlayer(w, `bot${i}`, randomLoadout(r), { kind: squad === 1 ? 'human' : 'bot' });
-    bots.set(p.id, newBotMemory(r));
+    bots.set(p.id, newBotMemory(r, MAPS[w.map].size));
   }
   return { w, bots, r, encoders: new Map([...bots.keys()].map((id) => [id, makeSnapshotEncoder()])) };
 }
@@ -41,7 +41,7 @@ function tick({ w, bots, r, encoders }: Squad) {
   const started = performance.now();
   const walls = wallViews(w);
   for (const [id, mem] of bots) {
-    const d = botThink(snapshotFor(w, id), walls, mem, r);
+    const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
     bots.set(id, d.mem);
     setInput(w, id, w.tick, d.input);
     if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
