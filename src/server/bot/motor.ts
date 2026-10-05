@@ -13,6 +13,8 @@ export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
   dir: number | null;
   dirSince: number;
+  /** The last way the bot pressed and when it last turned back, so no turn back follows another sooner than a person's. */
+  pace: { dir: number | null; turnedAt: number };
   /** A strafe or sway leg: which way, from and until which tick, and whether the bot is planted between sidesteps rather than strafing. */
   stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
@@ -24,7 +26,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
+  route: null, dir: null, dirSince: 0, pace: { dir: null, turnedAt: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -238,17 +240,26 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
 const sidestepOctant = (stuckTicks: number) =>
   stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor((stuckTicks - 2 * BLOCKED_TICKS) / MIN_LEG_TICKS) % 2 ? -1 : 1;
 
-function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number } {
+type Drive = { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number; pace: Motor['pace'] };
+
+const octantGap = (a: number, b: number) => Math.min((a - b + 8) % 8, (b - a + 8) % 8);
+
+function keysToward(m: Motor, me: Point, at: Point | null, tick: number): Drive {
   const none = { up: false, down: false, left: false, right: false };
-  if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick };
+  if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
   const want = Math.atan2(at.y - me.y, at.x - me.x);
   const octant = ((Math.round(want / (Math.PI / 4)) % 8) + 8) % 8;
   const off = m.dir === null ? Infinity : Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
   const blocked = m.stuckTicks >= BLOCKED_TICKS;
   const hold = !blocked && m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
   const dir = hold && m.dir !== null ? m.dir : (octant + sidestepOctant(m.stuckTicks) + 8) % 8;
+  const turnsBack = m.pace.dir !== null && octantGap(dir, m.pace.dir) >= 3;
+  if (turnsBack && tick - m.pace.turnedAt < MIN_LEG_TICKS) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
-  return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick };
+  return {
+    keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick,
+    pace: { dir, turnedAt: turnsBack ? tick : m.pace.turnedAt },
+  };
 }
 
 export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot): { input: InputState; motor: Motor } {
@@ -303,7 +314,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let keys = drive.keys;
   if (wantsAbility && readyAbility === 'dash' && t) {
     const away = awayFrom(me, t.p, c.arena, RETREAT_STEP);
-    keys = keysToward({ ...m, dir: null, stuckTicks: 0 }, me, away, v.tick).keys;
+    keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { dir: null, turnedAt: -Infinity } }, me, away, v.tick).keys;
   }
   if (wantsAbility && throwAt && GRENADES.has(readyAbility)) {
     look = { ...look, want: Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err, spin: 0, d: Math.hypot(throwAt.x - me.x, throwAt.y - me.y) };
@@ -318,7 +329,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   return {
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false },
     motor: {
-      route: way.route, dir: drive.dir, dirSince: drive.dirSince, stance, last: { x: me.x, y: me.y },
+      route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
       stuckTicks: pressing && moved < 1 && !way.replanned ? m.stuckTicks + 1 : 0, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
     },
   };
