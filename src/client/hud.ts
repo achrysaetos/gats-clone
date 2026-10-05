@@ -60,7 +60,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   lastHudAt = now;
   panels = [];
   buildChips = [];
-  const compact = w < 640;
+  const compact = w < 640 || h < 520;
   const feedRows = compact ? 3 : 5;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
