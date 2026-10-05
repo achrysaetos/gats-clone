@@ -813,7 +813,7 @@ function drawWeapon({ ctx, w, h, snap, me }: Hud, compact: boolean) {
   const pw = compact ? 150 : 230;
   const x = sx - SPACE.sm - pw;
   panel(ctx, x, y, pw, SLOT);
-  drawGunGlyph(ctx, me.gun, x + 14, y + 22, compact ? 52 : 84, 18, HUD_INK);
+  drawGunGlyph(ctx, me.gun, x + 14, y + 22, compact ? 52 : 90, compact ? 18 : 26, HUD_INK);
   caps(ctx, GUNS[me.gun].name, x + 14, y + 45);
   setFont(ctx, 750, TYPE.micro);
   drawStagePips(ctx, me.gun, x + 14 + ctx.measureText(GUNS[me.gun].name.toUpperCase()).width + SPACE.sm, y + 45);
