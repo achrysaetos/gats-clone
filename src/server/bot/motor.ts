@@ -1,6 +1,7 @@
 import { GUNS, WORLD, type AbilityId } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
+import { spreadFor } from '../../shared/sim/stats.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { engage, sharpnessAgainst, TICK_MS, type Engagement } from './aim.ts';
 import type { BotArena } from './arena.ts';
@@ -12,7 +13,6 @@ export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number } | null;
   dir: number | null;
   dirSince: number;
-  /** `heading` is the octant a strafe leg holds, fixed when the leg starts so its keys never change mid-leg. */
   stance: { step: 0 | 1 | -1; until: number; heading: number | null };
   last: Point;
   stuckTicks: number;
@@ -101,11 +101,9 @@ function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly R
 
 type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean };
 
-// The sim gives no accuracy for standing still except to a bipod, so only a bipod, or a marksman picking at range from cover, plants its feet.
 const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
-  Object.values(v.self.perks).includes('bipod') || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
+  spreadFor(v.me.gun, v.self.perks, true) < spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
 
-/** A planted bot stands and now and then steps; anyone else strafes in legs held for a while, turning back at the end of each. */
 function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean): Motor['stance'] {
   const wasPlanted = m.stance.step === 0;
   if (v.tick < m.stance.until && planted === wasPlanted) return m.stance;
@@ -118,7 +116,6 @@ function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean): Mo
   return { step, until: v.tick + Math.round(between(step === 0 ? STAND_MS : STEP_MS, c.rand) / TICK_MS), heading: null };
 }
 
-/** The octant square across the line to `at`, or with `advance` 45 degrees in toward it. */
 function legHeading(me: Point, at: Point, step: 1 | -1, advance: boolean): number {
   const a = Math.atan2(at.y - me.y, at.x - me.x) + (step * Math.PI) / (advance ? 4 : 2);
   return Math.round(a / (Math.PI / 4)) * (Math.PI / 4);

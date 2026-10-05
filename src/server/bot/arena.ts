@@ -15,7 +15,6 @@ export type BotArena = {
   cover: CoverIndex;
 };
 
-/** The part of an arena that only a new map changes: its own walls and crates, and the nav and cover built from them. */
 type Layout = { walls: readonly Wall[]; crates: readonly Crate[]; nav: NavGrid; cover: CoverIndex };
 
 const ARENAS = new WeakMap<World, { arena: BotArena; layout: Layout }>();

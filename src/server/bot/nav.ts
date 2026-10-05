@@ -33,7 +33,6 @@ function stamp(open: Uint8Array, n: number, cell: number, radius: number, r: Rec
   for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (circleHitsRect(centre(cx), centre(cy), radius, r)) open[cy * n + cx] = 0;
 }
 
-/** `base` with more solids stamped in, sharing its search buffers, so a short-lived wall costs a copy instead of a rebuild. */
 export function withSolids(base: NavGrid, solids: readonly Rect[], radius: number): NavGrid {
   const open = base.open.slice();
   for (const r of solids) stamp(open, base.n, base.cell, radius, r);

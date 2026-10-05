@@ -47,7 +47,6 @@ const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
 
-/** The enemy to shoot: the one the bot set out to fight while it is in sight, unless someone more dangerous has come into view. */
 export function focus(v: Perception, target: number): Threat | undefined {
   const top = v.threats[0];
   const mine = v.threats.find((x) => x.p.id === target);
