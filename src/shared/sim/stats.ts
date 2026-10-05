@@ -99,7 +99,8 @@ export function pendingPick(p: Player): PendingPick | null {
   return null;
 }
 
-export const isHunted = (p: Player): boolean => GUNS[p.gun].stage === 2;
+/** The hunt is a PvP pressure valve; a co-op squad has no one to hunt its own. */
+export const isHunted = (w: World, p: Player): boolean => w.mode !== 'ZOM' && GUNS[p.gun].stage === 2;
 
 export function abilityOf(p: Player): AbilityId | null {
   return p.perks[3] ?? null;
@@ -131,7 +132,7 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   p.gun = gun;
   p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
-  if (isHunted(p)) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
+  if (isHunted(w, p)) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
   return true;
 }
 

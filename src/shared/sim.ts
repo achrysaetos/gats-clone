@@ -132,7 +132,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     }
     if (!stats.silenced) {
       p.revealedUntil = w.now + REVEAL_MS;
-      if (isHunted(p)) p.huntedPing = { x: p.x, y: p.y, at: w.now };
+      if (isHunted(w, p)) p.huntedPing = { x: p.x, y: p.y, at: w.now };
     }
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
   }
@@ -148,7 +148,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 }
 
 function pingHunted(w: World, p: Player) {
-  if (p.life.k !== 'alive' || !isHunted(p)) p.huntedPing = null;
+  if (p.life.k !== 'alive' || !isHunted(w, p)) p.huntedPing = null;
   else if (!p.huntedPing || w.now - p.huntedPing.at >= HUNTED_PING_MS) p.huntedPing = { x: p.x, y: p.y, at: w.now };
 }
 

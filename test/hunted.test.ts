@@ -5,6 +5,7 @@ import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
+import { createWorld } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 test('killing a hunted player pays the bounty on top of the kill score, and the kill says so', () => {
@@ -102,4 +103,19 @@ test('a hunted player cannot vanish in a ghillie suit', () => {
   assert.equal(seen(), false, 'a still ghillie player with a class gun is hidden');
   equip(camper, 'executioner');
   assert.equal(seen(), true);
+});
+
+test('a squadmate on a stage-2 gun in a zombies run is never hunted: no announcement, no marker, no ping', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  const a = spawnAt(w, 1400, 1400, { name: 'Bramble' });
+  const mate = spawnAt(w, 1600, 1400);
+  a.level = 5;
+  for (const [level, option] of [[1, 'grip'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
+  assert.ok(choosePick(w, a.id, 5, 'thunderclap'));
+  step(w, TICK_MS);
+  const snap = snapshotFor(w, mate.id);
+  assert.deepEqual(snap.events.filter((e) => e.e === 'hunted'), []);
+  assert.equal(snap.players.find((p) => p.id === a.id)?.hunted, false);
+  assert.equal(snapshotFor(w, a.id).players.find((p) => p.id === a.id)?.hunted, false, 'not even to themself');
+  assert.equal(a.huntedPing, null);
 });

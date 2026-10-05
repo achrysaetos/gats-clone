@@ -80,7 +80,7 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   if (w.run) { goDown(w, victim); return; }
   const credited = creditFor(w, victim, killer);
   const named = credited ?? killer;
-  const bounty = credited !== null && isHunted(victim);
+  const bounty = credited !== null && isHunted(w, victim);
   const assisters = assistersOf(w, victim, credited);
   victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
   victim.deaths++;

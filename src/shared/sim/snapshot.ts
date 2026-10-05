@@ -18,11 +18,11 @@ export function wallViews(w: World): WallView[] {
 }
 
 function isHidden(w: World, p: Player): boolean {
-  return p.life.k === 'alive' && !isHunted(p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
+  return p.life.k === 'alive' && !isHunted(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
 }
 
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
-const huntedFor = (me: Player, p: Player) => isHunted(p) && (p.id === me.id || isEnemy(me, p));
+const huntedFor = (w: World, me: Player, p: Player) => isHunted(w, p) && (p.id === me.id || isEnemy(me, p));
 
 function playerView(w: World, p: Player, me: Player): PlayerView {
   const life = p.life;
@@ -34,7 +34,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
-    score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(me, p),
+    score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
 }
@@ -129,7 +129,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const minimap: MinimapMark[] = [];
   for (const p of w.players.values()) {
     if (p.id === me.id || p.life.k !== 'alive') continue;
-    if (huntedFor(me, p)) {
+    if (huntedFor(w, me, p)) {
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
