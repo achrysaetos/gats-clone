@@ -161,8 +161,8 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotAren
   const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, wornBuilding: nearest(me, worn), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
 
-  // Facing out from the core watches the way the horde comes; mending faces the job.
-  const face = errand.use ? errand : { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
+  const outFromCore = { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
+  const face = errand.use ? errand : outFromCore;
   const before = mem.motor.aim ?? freshAim(me.angle);
   let want = Math.hypot(face.x - me.x, face.y - me.y) > 1 ? Math.atan2(face.y - me.y, face.x - me.x) : before.want;
   let spin = 0, hand: Hand = HANDS.calm, err = before.err, aimDist = 300, wantsFire = false;

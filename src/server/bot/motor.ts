@@ -13,9 +13,7 @@ export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
   dir: number | null;
   dirSince: number;
-  /** The last way the bot pressed and when it last turned back, so no turn back follows another sooner than a person's. */
-  pace: { dir: number | null; turnedAt: number };
-  /** A strafe or sway leg: which way, from and until which tick, and whether the bot is planted between sidesteps rather than strafing. */
+  pace: { lastDir: number | null; lastTurnBackTick: number };
   stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
   stuckTicks: number;
@@ -26,7 +24,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, pace: { dir: null, turnedAt: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
+  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -36,7 +34,6 @@ export type Situation = { threat: { d: number } | null; hurting: boolean; underF
 const KNIFE_REACH_PX = KNIFE_LUNGE + KNIFE_REACH;
 /** Grenades land where they were aimed when the fuse runs out, so bots aim where the target will be then. */
 const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
-/** Abilities that go where the gun points, so a bot waits for its gun to arrive first. */
 export const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'knife', 'engineer']);
 const throwRange = (s: Situation) => s.threat !== null && s.threat.d >= 150 && s.threat.d <= 450;
 
@@ -69,10 +66,9 @@ const UNDER_FIRE_STEP_ODDS = 0.75;
 const STRAFE_MS: readonly [number, number] = [450, 1000];
 const STRAFE_PX = 120;
 const PEEK_SWAY_PX = 70;
-/** A sway leg crosses PEEK_SWAY_PX and stands this long at the end before stepping back. */
 const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
-/** No leg turns back sooner than a person would choose to. */
-const MIN_LEG_TICKS = Math.round(400 / TICK_MS);
+export const MIN_TURN_BACK_MS = 400;
+const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
@@ -114,17 +110,15 @@ type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: bo
 
 type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 
-/** A look point nearer than this would whip the gun round as the bot walks past it, so the gun holds where it was. */
-const LOOK_MIN_PX = 150;
+const LOOK_HOLD_INSIDE_PX = 150;
 const LOOK_AHEAD_PX = 400;
 
-function lookAt(at: Point | null, me: Point, mine: Point, minPx = LOOK_MIN_PX): { want: number; spin: number; d: number } | null {
+function lookAt(at: Point | null, me: Point, mine: Point, minPx = LOOK_HOLD_INSIDE_PX): { want: number; spin: number; d: number } | null {
   if (!at || dist(at, me) < Math.max(1, minPx)) return null;
   const rx = at.x - me.x, ry = at.y - me.y;
   return { want: Math.atan2(ry, rx), spin: bearingSpin(rx, ry, -mine.x, -mine.y), d: dist(at, me) };
 }
 
-/** The point LOOK_AHEAD_PX along the route, so a walking bot looks down the way it is going rather than at each waypoint. */
 function routeAhead(me: Point, route: Motor['route']): Point | null {
   let from = me, left = LOOK_AHEAD_PX;
   for (const p of route?.points ?? []) {
@@ -230,7 +224,6 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
-/** A stuck bot tries one side for a whole leg before the other, so it slides off a corner instead of jittering at it. */
 const sidestepOctant = (stuckTicks: number) =>
   stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor((stuckTicks - 2 * BLOCKED_TICKS) / MIN_LEG_TICKS) % 2 ? -1 : 1;
 
@@ -247,12 +240,12 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): Drive 
   const blocked = m.stuckTicks >= BLOCKED_TICKS;
   const hold = !blocked && m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
   const dir = hold && m.dir !== null ? m.dir : (octant + sidestepOctant(m.stuckTicks) + 8) % 8;
-  const turnsBack = m.pace.dir !== null && octantGap(dir, m.pace.dir) >= 3;
-  if (turnsBack && tick - m.pace.turnedAt < MIN_LEG_TICKS) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
+  const turnsBack = m.pace.lastDir !== null && octantGap(dir, m.pace.lastDir) >= 3;
+  if (turnsBack && tick - m.pace.lastTurnBackTick < MIN_LEG_TICKS) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
   return {
     keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick,
-    pace: { dir, turnedAt: turnsBack ? tick : m.pace.turnedAt },
+    pace: { lastDir: dir, lastTurnBackTick: turnsBack ? tick : m.pace.lastTurnBackTick },
   };
 }
 
@@ -308,7 +301,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let keys = drive.keys;
   if (wantsAbility && readyAbility === 'dash' && t) {
     const away = awayFrom(me, t.p, c.arena, RETREAT_STEP);
-    keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { dir: null, turnedAt: -Infinity } }, me, away, v.tick).keys;
+    keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity } }, me, away, v.tick).keys;
   }
   if (wantsAbility && throwAt && GRENADES.has(readyAbility)) {
     look = { ...look, want: Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err, spin: 0, d: Math.hypot(throwAt.x - me.x, throwAt.y - me.y) };

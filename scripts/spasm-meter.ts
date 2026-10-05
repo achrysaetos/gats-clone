@@ -1,7 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/spasm-meter.ts [modes=FFA,TDM] [minutes=3] [seeds=2]
-// Measures how bots' guns turn and bodies move as a client sees them: every bot's angle and position are read from snapshots
-// sent through the real wire encoder. Each movement reversal is put down to what the bot's brain did in the ticks before it.
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { SnapshotWire } from '../src/shared/protocol.ts';
@@ -12,26 +10,23 @@ import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
+import { MIN_TURN_BACK_MS } from '../src/server/bot/motor.ts';
 
 const modes = (process.argv[2] ?? 'FFA,TDM').split(',').filter(Boolean) as Exclude<ModeId, 'ZOM'>[];
 const minutes = Number(process.argv[3] ?? 3);
 const seeds = Number(process.argv[4] ?? 2);
 const TICK_MS = 1000 / WORLD.tickHz;
 const DEG = 180 / Math.PI;
-/** A deliberate flick: the ticks just after a bot takes or drops a target, long enough to cover a reaction and the turn. */
 const FLICK_MS = 700;
-/** Two wire quanta (0.01 rad), so rounding alone never reads as a reversal. */
-const REVERSAL_DEG = 1.2;
+const WIRE_ANGLE_STEP_DEG = 0.01 * DEG;
+const REVERSAL_DEG = 2.5 * WIRE_ANGLE_STEP_DEG;
 const SWING_DEG = 30;
 const MOVING_PX = 1.5;
 const MOVE_REVERSAL_DEG = 120;
-/** A stop longer than this before going back reads as a new move, not a twitch. */
 const PAUSE_MS = 500;
-/** How many of the bot's thinks before a reversal can have caused it. */
 const CAUSE_TICKS = 3;
 const NEAR_GOAL_PX = 300;
-/** Faster than a person turns back on purpose. */
-const QUICK_MS = 400;
+const QUICK_MS = MIN_TURN_BACK_MS;
 
 type Track = {
   angle: number | null; lastDelta: number; target: number | null; targetSince: number; awaitingShot: boolean;
@@ -51,7 +46,6 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const targetOf = (mem: BotMemory) => mem.motor.engaged?.id ?? null;
 const near = (a: { x: number; y: number }, b: { x: number; y: number }, px: number) => Math.hypot(a.x - b.x, a.y - b.y) < px;
 
-/** What changed in a bot's brain on one think, most decisive first. */
 function causesOf(a: BotMemory, b: BotMemory, tick: number, me: { x: number; y: number }): string[] {
   const out: string[] = [];
   const ai = a.intent, bi = b.intent;

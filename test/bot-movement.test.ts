@@ -7,14 +7,13 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import type { Intent, PersonalityId } from '../src/server/bot/intent.ts';
+import { MIN_TURN_BACK_MS } from '../src/server/bot/motor.ts';
 import { emptyWorld, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
-const QUICK_MS = 400;
 
 type Fight = { persona: PersonalityId; seed: number; ticks: number; enemyAt?: { x: number; y: number }; walls?: (tick: number) => WallView[]; intent?: (enemy: number) => Intent };
 
-/** The bot's position each tick of a fight with an enemy kept at full health, both alive throughout. */
 function track(f: Fight): { x: number; y: number }[] {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
@@ -34,7 +33,6 @@ function track(f: Fight): { x: number; y: number }[] {
   return at;
 }
 
-/** Milliseconds between successive turns back (heading change over 120°) of a moving body. */
 function reversalGaps(at: readonly { x: number; y: number }[]): number[] {
   const gaps: number[] = [];
   let heading: number | null = null, last: number | null = null;
@@ -51,7 +49,7 @@ function reversalGaps(at: readonly { x: number; y: number }[]): number[] {
   return gaps;
 }
 
-const quick = (gaps: number[]) => gaps.filter((g) => g < QUICK_MS - TICK_MS / 2);
+const quick = (gaps: number[]) => gaps.filter((g) => g < MIN_TURN_BACK_MS - TICK_MS / 2);
 
 test('a strafing bot boxed in by walls turns back no sooner than a person would', () => {
   const box = (gap: number): WallView[] => [

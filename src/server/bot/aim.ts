@@ -2,18 +2,14 @@ import { WORLD } from '../../shared/defs.ts';
 import type { PlayerView } from '../../shared/protocol.ts';
 import type { Point } from './nav.ts';
 
-/** The gun as a hand moves it: where it points and how fast it turns (rad/s), where the bot wants it, and the slow error in that want. */
 export type AimState = { angle: number; spin: number; want: number; err: number };
 
-/** An enemy a bot has seen, with its velocity smoothed the way an eye reads motion (px/s). It notices them, and starts its flick, at `noticeAtTick`. */
 export type Engagement = { id: number; x: number; y: number; vx: number; vy: number; acquiredTick: number; noticeAtTick: number };
 
-/** A spring with `omega` (rad/s) natural frequency and `zeta` damping, capped at `maxSpin` (rad/s) and `maxAccel` (rad/s²). */
 export type Hand = { omega: number; zeta: number; maxSpin: number; maxAccel: number };
 
 const DEG = Math.PI / 180;
 
-/** A flick onto an enemy peaks near 800°/s and overshoots a hair before it settles; looking around turns at a calm 240°/s at most. */
 export const HANDS = {
   flick: { omega: 30, zeta: 0.72, maxSpin: 800 * DEG, maxAccel: 10_000 * DEG },
   calm: { omega: 9, zeta: 0.9, maxSpin: 240 * DEG, maxAccel: 2_500 * DEG },
@@ -27,8 +23,7 @@ const BOT_AIM = {
   settleMs: 700,
   errTauMs: 400,
   motionTauMs: 30,
-  /** Leading a strafer by its full flight time overshoots each change of direction, so a bot leads by part of it, as players do. */
-  leadMul: 0.7,
+  strafeLeadFraction: 0.7,
   fireSlackRad: 2.5 * DEG,
 } as const;
 
@@ -57,12 +52,10 @@ const gaussian = (rand: () => number) => Math.sqrt(-2 * Math.log(1 - rand())) * 
 export const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (x: number, lim: number) => Math.max(-lim, Math.min(lim, x));
 
-/** How fast the bearing to something turns (rad/s), given its offset from the bot and its velocity relative to the bot. */
 export const bearingSpin = (rx: number, ry: number, vx: number, vy: number) => (rx * vy - ry * vx) / Math.max(1, rx * rx + ry * ry);
 
 export const freshAim = (angle: number): AimState => ({ angle, spin: 0, want: angle, err: 0 });
 
-/** Turns the gun toward `want`, which itself turns at `wantSpin`, so a smooth track carries no lag. Fixed substeps keep it the same at any tick rate. */
 export function turn(aim: AimState, want: number, wantSpin: number, hand: Hand, dtMs: number): AimState {
   const n = Math.max(1, Math.ceil(dtMs / SUBSTEP_MS)), h = dtMs / 1000 / n;
   let angle = aim.angle, spin = aim.spin, goal = angle + wrapAngle(want - angle);
@@ -75,20 +68,17 @@ export function turn(aim: AimState, want: number, wantSpin: number, hand: Hand, 
   return { ...aim, angle: wrapAngle(angle), spin, want: wrapAngle(goal) };
 }
 
-/** An Ornstein-Uhlenbeck drift with spread `sigma` and a time constant in real time, so it wanders alike at any tick rate. */
 export function drift(err: number, sigma: number, dtMs: number, rand: () => number): number {
   const keep = Math.exp(-dtMs / BOT_AIM.errTauMs);
   return err * keep + sigma * Math.sqrt(1 - keep * keep) * gaussian(rand);
 }
 
-/** A bot sharpened against a stronger player also moves its hand faster, so its tighter error is not lost to lag. */
 export function handFor(sharpness: Sharpness): Hand {
   const f = Math.min(2.5, 1 / Math.sqrt(sharpness.aimMul));
   return { ...HANDS.flick, omega: HANDS.flick.omega * f, maxAccel: HANDS.flick.maxAccel * f * f };
 }
 
-/** Seconds of the enemy's motion a bot leads by for a round that flies `d` px at `speed` px/s. */
-export const leadSeconds = (d: number, speed: number) => (BOT_AIM.leadMul * d) / speed;
+export const leadSeconds = (d: number, speed: number) => (BOT_AIM.strafeLeadFraction * d) / speed;
 
 export const onTarget = (aim: AimState, d: number) => Math.abs(wrapAngle(aim.angle - aim.want)) <= Math.max(BOT_AIM.fireSlackRad, Math.atan2(WORLD.playerRadius, d));
 
@@ -104,7 +94,6 @@ export function engage(prev: Engagement | null, enemy: Point & { id: number }, s
   return { ...prev, id: enemy.id, x: enemy.x, y: enemy.y, vx, vy };
 }
 
-/** The spread of a bot's aim error: wider against a target crossing its view fast and just after its flick, narrower against a sharper foe. */
 export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: number): number {
   const rx = e.x - me.x, ry = e.y - me.y;
   const crossing = Math.abs(rx * e.vy - ry * e.vx) / Math.max(1, rx * rx + ry * ry);
@@ -112,5 +101,4 @@ export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: n
   return (BOT_AIM.baseSigma + BOT_AIM.sigmaPerRadPerSec * crossing) * unsettled * sharpness.aimMul;
 }
 
-/** The fresh error a flick lands with. */
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);

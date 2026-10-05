@@ -74,8 +74,7 @@ const ARRIVED_PX = 60;
 const COVER_REACH_PX = 320;
 const RETREAT_REACH_PX = 600;
 const CORNERED_PX = 220;
-/** Wider than CORNERED_PX, so a bot that turned on a pursuer does not flee again the moment it steps back. */
-const FLEE_FROM_PX = 280;
+const FLEE_FROM_PX = CORNERED_PX + 60;
 const OPEN_ESCAPE_PX = 500;
 const OUTNUMBERED_BY = 2;
 const OUTNUMBERED_HP = 0.3;
@@ -86,7 +85,6 @@ const between = (r: readonly [number, number], rand: () => number) => r[0] + ran
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const pos = (t: Threat): Point => ({ x: t.p.x, y: t.p.y });
 
-/** An enemy flickering at the edge of sight is still being fought, so one lost tick does not start a search. */
 const LOST_GRACE_MS = 500;
 export const justLost = (v: Perception) => v.lastSeen !== null && (v.tick - v.lastSeen.seenTick) * TICK_MS < LOST_GRACE_MS;
 
