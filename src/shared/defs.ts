@@ -258,6 +258,8 @@ export const ZOM = {
   /** One grid cell in px; a wall fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,
+  /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
+  coreArmor: 0.5,
   /** Half the side of the square core at the map's center. */
   coreHalf: 50,
   dayMs: 40_000,
@@ -273,6 +275,8 @@ export const ZOM = {
   reviveHpFrac: 0.4,
   repairHpPerSec: 80,
   repairScrapPerHp: 0.05,
+  /** Dearer than a wall's, so the core wears down over the nights instead of being made whole every day. */
+  coreRepairScrapPerHp: 0.2,
   demolishRefund: 0.5,
   startScrap: 100,
   squadSize: 4,

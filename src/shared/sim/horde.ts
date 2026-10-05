@@ -185,7 +185,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
         bite = () => damagePlayer(w, prey, damage, { attacker: null, team: null, label: def.name, piercing: false, via: 'bite', fromX: z.x, fromY: z.y });
       } else goal = prey;
     } else if (distToRect(z.x, z.y, core) <= reach) {
-      bite = () => { run.core.hp = Math.max(0, run.core.hp - damage); };
+      bite = () => { run.core.hp = Math.max(0, run.core.hp - damage * (1 - ZOM.coreArmor)); };
     } else {
       const next = nextCell(flow, cellAt(z.x, z.y), (c) => wallAt.has(c));
       const wall = next === null ? undefined : wallAt.get(next);

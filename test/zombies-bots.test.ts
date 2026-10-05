@@ -67,6 +67,15 @@ test('a squad bot mends a damaged wall near the core while no zombie is close', 
   assert.equal(w.buildings.length, 1, 'and builds nothing new');
 });
 
+test('a squad bot mends the worn core while no zombie is close, spending the bank', () => {
+  const w = nightWorld();
+  farZombie(w);
+  const bot = spawnAt(w, CORE.x - 300, CORE.y);
+  w.run!.core.hp = ZOM.coreHp - 400;
+  assert.ok(play(w, [bot], 15_000, () => w.run!.core.hp > ZOM.coreHp - 1), `the core is mended, at ${w.run!.core.hp.toFixed(1)}`);
+  assert.ok(Math.abs(ZOM.startScrap - w.run!.scrap - 400 * ZOM.coreRepairScrapPerHp) < 0.5, 'for scrap');
+});
+
 test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing', () => {
   const w = nightWorld();
   const bot = spawnAt(w, CORE.x, CORE.y + 320, { loadout: { weapon: 'smg' } });

@@ -141,6 +141,27 @@ test('holding use beside a damaged wall mends it for scrap, and stops when the s
   assert.equal(far.hp, 100, 'out of reach');
 });
 
+test('holding use by the worn core mends it for scrap at the core\'s dearer rate, by night as by day, up to full', () => {
+  const w = nightWorld();
+  holdNight(w);
+  const core = MAPS.outpost.siege!.core;
+  const p = spawnAt(w, core.x, core.y + ZOM.reachPx - 20);
+  w.run!.core.hp = ZOM.coreHp - 500;
+  w.run!.scrap = 1000;
+  press(w, p, { use: true });
+  run(w, 1000);
+  const mended = w.run!.core.hp - (ZOM.coreHp - 500);
+  assert.ok(Math.abs(mended - ZOM.repairHpPerSec) <= ZOM.repairHpPerSec * TICK_MS / 1000 + 0.01, `mended ${mended}`);
+  assert.ok(Math.abs(1000 - w.run!.scrap - mended * ZOM.coreRepairScrapPerHp) < 1e-6, 'at the core\'s rate');
+  run(w, 60_000);
+  assert.equal(w.run!.core.hp, ZOM.coreHp, 'to full and no further');
+
+  w.run!.core.hp = ZOM.coreHp - 500;
+  p.y = core.y + ZOM.reachPx + 20;
+  run(w, 1000);
+  assert.equal(w.run!.core.hp, ZOM.coreHp - 500, 'out of reach');
+});
+
 test('dawn gets a downed player up too', () => {
   const w = nightWorld();
   holdNight(w);

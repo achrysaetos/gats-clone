@@ -141,3 +141,11 @@ test('zombies piled on one spot spread apart', () => {
     }
   }
 });
+
+test('the core\'s armor shrugs off its share of each bite', () => {
+  const w = nightWorld();
+  const z = addZombie(w, 'walker', CORE.x, CORE.y + ZOM.coreHalf + ZOMBIES.walker.radius + 2);
+  step(w, TICK_MS);
+  assert.equal(ZOM.coreHp - w.run!.core.hp, ZOMBIES.walker.damage * (1 - ZOM.coreArmor));
+  assert.ok(z.attackAt > w.now, 'that was its bite');
+});

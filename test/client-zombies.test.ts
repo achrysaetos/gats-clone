@@ -108,6 +108,17 @@ test('holding E is offered for a downed squadmate in reach before a worn wall, a
   assert.equal(useHint(snapshotFor(w, p.id), p), null, 'out of revive range and no scrap to repair with');
 });
 
+test('holding E is offered for the worn core in reach, after a nearer worn wall, as the server picks', () => {
+  const { w, p } = squadWorld();
+  w.run!.core.hp = ZOM.coreHp - 100;
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the core');
+  w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 30, hp: 100 });
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the wall');
+  w.buildings = [];
+  p.x = 1500 - ZOM.reachPx - 10;
+  assert.equal(useHint(snapshotFor(w, p.id), p), null, 'out of reach of the core');
+});
+
 test('the run announces the night ten seconds ahead, nightfall with its wave, dawn with the core, and the fall', () => {
   const titles = (prev: RunView, next: RunView, prevAt: number, nextAt: number) => runCallouts(prev, next, prevAt, nextAt).map((c) => c.title);
   assert.deepEqual(titles(runView(), runView(), 39_000, 40_000), ['Night falls in 10']);

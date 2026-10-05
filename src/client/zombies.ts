@@ -19,14 +19,19 @@ export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: n
   return `Crawl to a squadmate${serverNow === null ? '' : ` · ${clock(down.bleedOutAt - serverNow)}`}`;
 }
 
-/** What holding E would do right now, by the same order the server tries: revive first, then repair. */
+/** What holding E would do right now, by the same rules the server follows: revive first, else repair the nearest worn wall or core in reach. */
 export function useHint(snap: Snapshot, at: Pose): string | null {
-  if (!snap.run || !snap.self.alive) return null;
+  const run = snap.run;
+  if (!run || !snap.self.alive) return null;
   const down = snap.players.find((p) => p.id !== snap.self.id && p.downed && Math.hypot(p.x - at.x, p.y - at.y) <= ZOM.reviveRange);
   if (down) return `Hold E to revive ${down.name}`;
-  if (snap.run.scrap <= 0) return null;
-  const worn = (snap.buildings ?? []).some((b) => b.hp < 10 && Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) <= ZOM.reachPx);
-  return worn ? 'Hold E to repair the wall' : null;
+  if (run.scrap <= 0) return null;
+  const worn = [
+    ...(snap.buildings ?? []).filter((b) => b.hp < 10).map((b) => ({ what: 'wall', d: Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) })),
+    ...(run.core.hp < run.core.maxHp ? [{ what: 'core', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
+  ].filter((m) => m.d <= ZOM.reachPx);
+  const nearest = worn.reduce<(typeof worn)[number] | null>((a, b) => (a && a.d <= b.d ? a : b), null);
+  return nearest && `Hold E to repair the ${nearest.what}`;
 }
 
 export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' | 'fell' };

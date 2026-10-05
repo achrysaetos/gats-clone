@@ -325,22 +325,26 @@ type Watch = {
   zombie: { id: number; x: number; y: number; d: number } | null;
   downed: PlayerView | null;
   damagedWall: { x: number; y: number } | null;
+  /** The core is worn and the bank can pay to mend it. */
+  coreWorn: boolean;
 };
 
 type Errand = { x: number; y: number; use: boolean };
 
-/** How far from the core a squad bot will wander, and how close a zombie must be before it stops mending walls. */
+/** How far from the core a squad bot will wander, and how close a zombie must be before it stops mending. */
 const GUARD_RADIUS = 550;
 const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
 const KITE_PX = 140;
 
-/** A squad bot's errands, first match wins: get a downed squadmate up, mend a wall while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
+const mendAt = (s: Watch, at: { x: number; y: number }): Errand => ({ ...at, use: Math.hypot(at.x - s.me.x, at.y - s.me.y) <= ZOM.reachPx - 60 });
+const hordeFar = (s: Watch) => !s.zombie || s.zombie.d > BUSY_ZOMBIE_PX;
+
+/** A squad bot's errands, first match wins: get a downed squadmate up, mend a wall and then the core while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
 const SIEGE_RULES: readonly ((s: Watch) => Errand | null)[] = [
   (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 },
-  (s) => s.damagedWall && (!s.zombie || s.zombie.d > BUSY_ZOMBIE_PX)
-    ? { ...s.damagedWall, use: Math.hypot(s.damagedWall.x - s.me.x, s.damagedWall.y - s.me.y) <= ZOM.reachPx - 60 }
-    : null,
+  (s) => s.damagedWall && hordeFar(s) ? mendAt(s, s.damagedWall) : null,
+  (s) => s.coreWorn && hordeFar(s) ? mendAt(s, s.core) : null,
   (s) => {
     const post = { x: s.core.x + Math.cos(s.me.id) * POST_RADIUS, y: s.core.y + Math.sin(s.me.id) * POST_RADIUS };
     if (!s.zombie || s.zombie.d > KITE_PX) return { ...post, use: false };
@@ -364,7 +368,7 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonl
     .filter((b) => b.hp < 10)
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const watch: Watch = { me, core: run.core, zombie, downed, damagedWall: nearest(me, damaged) };
+  const watch: Watch = { me, core: run.core, zombie, downed, damagedWall: nearest(me, damaged), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
 
   const next = { ...mem };

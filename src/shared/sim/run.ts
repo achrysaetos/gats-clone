@@ -47,16 +47,20 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
 }
 
+/** Holding use mends the nearest worn wall or core in reach, as far as the scrap goes. */
 function repair(w: World, run: Run, p: Player, dtMs: number) {
-  let best: Building | null = null, bestD = ZOM.reachPx ** 2;
+  const core = MAPS[w.map].siege!.core;
+  let best: Building | Run['core'] | null = null, bestD = ZOM.reachPx ** 2;
+  if (run.core.hp < ZOM.coreHp && dist2(p.x, p.y, core.x, core.y) <= bestD) { best = run.core; bestD = dist2(p.x, p.y, core.x, core.y); }
   for (const b of w.buildings) {
     const d = dist2(p.x, p.y, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell);
     if (b.hp < BUILDINGS[b.kind].hp && d <= bestD) { best = b; bestD = d; }
   }
   if (!best) return;
-  const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, BUILDINGS[best.kind].hp - best.hp, run.scrap / ZOM.repairScrapPerHp);
+  const [max, perHp] = 'kind' in best ? [BUILDINGS[best.kind].hp, ZOM.repairScrapPerHp] : [ZOM.coreHp, ZOM.coreRepairScrapPerHp];
+  const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - best.hp, run.scrap / perHp);
   best.hp += hp;
-  run.scrap -= hp * ZOM.repairScrapPerHp;
+  run.scrap -= hp * perHp;
 }
 
 function tickSquad(w: World, run: Run, dtMs: number) {
