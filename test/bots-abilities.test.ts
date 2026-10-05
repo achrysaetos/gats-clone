@@ -6,7 +6,8 @@ import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { arenaFor, botThink, newBotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, grantPerks, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));

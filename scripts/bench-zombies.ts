@@ -13,7 +13,8 @@ import { choosePick } from '../src/shared/sim/stats.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
 import { createWorld, newId, rand, type World } from '../src/shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../src/shared/wire.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const seeds = (process.argv[2] ?? '1,2,3').split(',').map(Number);
 const squad = Number(process.argv[3] ?? ZOM.squadSize);

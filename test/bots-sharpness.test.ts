@@ -6,7 +6,8 @@ import { MAPS } from '../src/shared/maps.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { Player } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, equip, spawnAt, TICK_MS } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };

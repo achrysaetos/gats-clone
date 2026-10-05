@@ -8,8 +8,6 @@ import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { ABILITY_RULES, act, freshMotor, HURTING_HP_FRAC, type Motor, type Situation } from './bot/motor.ts';
 
-export { arenaFor } from './bot/arena.ts';
-
 /** One bot's mind: who it is, what it is doing and since when, what it knows, and its body's state. Only that bot's think writes it. */
 export type BotMemory = {
   persona: PersonalityId;
@@ -66,7 +64,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   const persona = PERSONALITIES[mem.persona];
   const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.weapon, persona), arena, rand };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
-  const { input, motor } = act(intent, view, ctx, mem.motor, snap, rand);
+  const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor } };
 }
 

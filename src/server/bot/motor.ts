@@ -54,7 +54,6 @@ export const HURTING_HP_FRAC = 0.4;
 const KNIFE_CHASE_PX = 300;
 const REACQUIRE_TICKS = Math.round(600 / TICK_MS);
 const RETREAT_STEP = 240 + WORLD.playerRadius;
-const BACKOFF_STEP = 160;
 /** A waypoint counts as reached this close, and a goal this close means stand still. */
 const WAYPOINT_PX = 16;
 const ARRIVED_PX = 14;
@@ -138,7 +137,6 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       if ((readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) || t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal)) {
         return { steer: fight(t.p), stance: m.stance };
       }
-      if (t.d < c.band.min) return { steer: fight(awayFrom(me, t.p, c.arena, BACKOFF_STEP)), stance: m.stance };
       let stance = m.stance;
       if (v.tick >= stance.until) {
         const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
@@ -154,15 +152,14 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
 
 /** The next point to walk toward on the way to `to`, replanning when the goal moved, the walls changed or the bot is stuck. */
 function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena): { at: Point; route: Motor['route']; replanned: boolean } {
-  let route = m.route;
-  const stale = !route || route.version !== arena.version || dist(route.goal, to) > REPLAN_PX || m.stuckTicks > STUCK_TICKS;
-  if (stale) {
-    const points = isOpen(arena.nav, me) || walkable(arena.nav, me, to) ? findPath(arena.nav, me, to) : null;
-    route = { goal: to, points: points ?? [to], version: arena.version };
-  }
-  let points = route!.points;
+  const old = m.route;
+  const fresh = !old || old.version !== arena.version || dist(old.goal, to) > REPLAN_PX || m.stuckTicks > STUCK_TICKS;
+  const route = fresh || !old
+    ? { goal: to, points: (isOpen(arena.nav, me) || walkable(arena.nav, me, to) ? findPath(arena.nav, me, to) : null) ?? [to], version: arena.version }
+    : old;
+  let points = route.points;
   while (points.length > 1 && dist(me, points[0]!) < WAYPOINT_PX) points = points.slice(1);
-  return { at: points[0]!, route: { ...route!, points }, replanned: stale };
+  return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
 /** Turns a way to go into held 8-way keys that change only after a minimum hold or a real change of course, like a hand on a keyboard. */
@@ -171,17 +168,15 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys
   if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick };
   const want = Math.atan2(at.y - me.y, at.x - me.x);
   const octant = ((Math.round(want / (Math.PI / 4)) % 8) + 8) % 8;
-  let dir = octant, dirSince = tick;
-  if (m.dir !== null) {
-    const off = Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
-    if (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2)) { dir = m.dir; dirSince = m.dirSince; }
-  }
+  const off = m.dir === null ? Infinity : Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
+  const hold = m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
+  const dir = hold && m.dir !== null ? m.dir : octant;
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
-  return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: dir === m.dir ? dirSince : tick };
+  return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick };
 }
 
 /** Turns the intent into this tick's input: walk the route, hold or step, aim and fire through the aim model, reload and use the ability. */
-export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot, rand: () => number): { input: InputState; motor: Motor } {
+export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot): { input: InputState; motor: Motor } {
   const me = v.me;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
@@ -202,7 +197,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let throwAt: { x: number; y: number; err: number } | null = null;
   if (t) {
     const tracked = held(t.p.id) ? m.engaged : null;
-    engaged = engage(tracked, t.p, sharpnessAgainst(t.p), me, v.tick, rand);
+    engaged = engage(tracked, t.p, sharpnessAgainst(t.p), me, v.tick, c.rand);
     const vel = tracked ? { x: t.p.x - tracked.x, y: t.p.y - tracked.y } : { x: 0, y: 0 };
     const flightTicks = (t.d / gun.bulletSpeed) * WORLD.tickHz;
     angle = Math.atan2(t.p.y + vel.y * flightTicks - me.y, t.p.x + vel.x * flightTicks - me.x) + engaged.aimErrRad;

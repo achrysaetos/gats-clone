@@ -6,10 +6,11 @@ import { WORLD, type ModeId } from '../src/shared/defs.ts';
 import { ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { circleHitsRect, segmentEntersRectAt, type Rect } from '../src/shared/sim/movement.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats } from '../src/shared/sim/stats.ts';
 import { coverRects, createWorld, isEnemy, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const minutes = Number(process.argv[2] ?? 4);
 const seeds = Number(process.argv[3] ?? 3);

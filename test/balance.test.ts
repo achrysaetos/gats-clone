@@ -7,7 +7,8 @@ import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { ROTATION, type MapId } from '../src/shared/maps.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 test('a bolt-action hit kills an unarmored full-health player', () => {

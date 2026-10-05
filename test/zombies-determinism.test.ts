@@ -8,7 +8,8 @@ import { build } from '../src/shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { TICK_MS } from './helpers.ts';
 
 /** Plays a bot squad through the first day, walls and turrets and the first nights, hashing every snapshot. */

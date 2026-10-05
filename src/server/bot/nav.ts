@@ -11,7 +11,7 @@ export type NavGrid = {
   search: { g: Float64Array; from: Int32Array; seen: Uint32Array; stamp: number };
 };
 
-export const NAV_CELL = 25;
+const NAV_CELL = 25;
 const ORTH = 1, DIAG = Math.SQRT2;
 const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 /** How far, in cells, a start or goal inside a wall is moved to the nearest open cell. */

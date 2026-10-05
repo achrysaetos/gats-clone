@@ -5,12 +5,12 @@ import { clearShot, isOpen, type NavGrid, type Point } from './nav.ts';
  * A spot hugging a wall or crate, and the bearings it hides from: bit i of `blocks` is set when a shot coming from bearing i * 2π/BEARINGS
  * meets the cover first. Built once per map from its permanent cover; engineer walls and broken crates are left to the live sight checks.
  */
-export type CoverPoint = { x: number; y: number; blocks: number };
+type CoverPoint = { x: number; y: number; blocks: number };
 
 /** Cover points bucketed on a coarse grid, so a query near a bot reads a few buckets instead of the whole map. */
 export type CoverIndex = { bucket: number; n: number; cells: CoverPoint[][] };
 
-export const BEARINGS = 16;
+const BEARINGS = 16;
 const STANDOFF = 6;
 const SPACING = 50;
 /** A shot from a bearing is stopped when its line meets cover this close to the spot, which a wall the bot is hugging always is. */
@@ -71,7 +71,7 @@ export function coverNear(index: CoverIndex, at: Point, within: number): CoverPo
 }
 
 /** The spot just beside `spot`, across the line to `threat`, from which `threat` is in plain sight, or null when no step round the edge sees it. */
-export function peekFrom(nav: NavGrid, solids: readonly Rect[], spot: Point, threat: Point): Point | null {
+function peekFrom(nav: NavGrid, solids: readonly Rect[], spot: Point, threat: Point): Point | null {
   const a = Math.atan2(threat.y - spot.y, threat.x - spot.x);
   for (const step of PEEK_STEPS) {
     for (const side of [1, -1]) {
@@ -82,7 +82,7 @@ export function peekFrom(nav: NavGrid, solids: readonly Rect[], spot: Point, thr
   return null;
 }
 
-export type CoverPick = { spot: CoverPoint; peek: Point | null };
+type CoverPick = { spot: CoverPoint; peek: Point | null };
 
 /**
  * The best spot within `reach` of `me` that hides it from every threat right now, judged against the live `solids` so a broken crate

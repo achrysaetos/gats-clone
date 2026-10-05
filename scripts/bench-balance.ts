@@ -9,7 +9,8 @@ import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/si
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const worlds = Number(process.argv[2] ?? 8);
 const minutes = Number(process.argv[3] ?? 5);

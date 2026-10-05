@@ -5,7 +5,8 @@ import { GUNS, WORLD, type WeaponId } from '../src/shared/defs.ts';
 import type { InputState, WallView } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { arenaFor, botName, botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { botName, botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import type { PersonalityId } from '../src/server/bot/intent.ts';
 import { emptyWorld, setWalls, spawnAt } from './helpers.ts';
 

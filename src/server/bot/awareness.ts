@@ -6,10 +6,10 @@ import type { BotArena } from './arena.ts';
 import { clearShot, type Point } from './nav.ts';
 
 /** An enemy the bot has seen, where it last saw them. `seenTick` is now while they are in sight. */
-export type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
+type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
 
 /** A place worth going to look: gunfire heard, a hunted ping, where a teammate just fell, or where a shot that hit the bot came from. */
-export type Lead = { x: number; y: number; tick: number; hunted: boolean };
+type Lead = { x: number; y: number; tick: number; hunted: boolean };
 
 /** What one bot remembers between thinks. Only that bot writes it. */
 export type Awareness = {

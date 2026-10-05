@@ -4,9 +4,10 @@ import { test } from 'node:test';
 import type { WallView } from '../src/shared/protocol.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, equip, hpOf, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const CRATE = 40;

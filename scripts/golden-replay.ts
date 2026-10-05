@@ -9,7 +9,8 @@ import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '..
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { abilityOf, choosePick, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const TICKS = 4000;
 const SEEDS = [7, 8];

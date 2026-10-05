@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import type { PickOption, WeaponId } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { arenaFor, botThink, newBotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };

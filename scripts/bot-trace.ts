@@ -9,7 +9,8 @@ import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/si
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import { createWorld, crateRect, rand } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import type { Intent } from '../src/server/bot/intent.ts';
 
 const mode = MODE_IDS.find((m) => m === (process.argv[2] ?? 'TDM'));

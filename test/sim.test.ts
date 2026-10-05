@@ -6,7 +6,8 @@ import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/si
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { explode } from '../src/shared/sim/combat.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 

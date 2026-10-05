@@ -9,7 +9,8 @@ import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats, levelForScore, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const minutes = Number(process.argv[2] ?? 10);
 const seeds = Number(process.argv[3] ?? 10);

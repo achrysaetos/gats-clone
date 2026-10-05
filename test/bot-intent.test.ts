@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
-import { arenaFor } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx, type Personality, type Plan } from '../src/server/bot/intent.ts';
 import { emptyWorld, setWalls, spawnAt } from './helpers.ts';

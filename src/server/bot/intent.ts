@@ -35,8 +35,8 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
   marksman: { rangeMul: 1.15, retreatHp: 0.35, healedHp: 0.75, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.8, flankOdds: 0.1, pushOdds: 0.3, sidestepOdds: 0.2, commitMul: 1.3 },
 };
 
-/** Where each class likes to fight from, in px: inside `min` it backs off, beyond `max` it closes in, and it settles round `ideal`. */
-export const WEAPON_BAND: Record<WeaponId, { min: number; ideal: number; max: number }> = {
+/** Where each class likes to fight from, in px: beyond `max` it closes in, it picks cover round `ideal`, and an enemy inside `min` is fought head on rather than peeked at. */
+const WEAPON_BAND: Record<WeaponId, { min: number; ideal: number; max: number }> = {
   pistol: { min: 180, ideal: 340, max: 500 },
   smg: { min: 90, ideal: 240, max: 380 },
   shotgun: { min: 0, ideal: 150, max: 260 },
@@ -45,14 +45,14 @@ export const WEAPON_BAND: Record<WeaponId, { min: number; ideal: number; max: nu
   lmg: { min: 200, ideal: 400, max: 560 },
 };
 
-export type Band = { min: number; ideal: number; max: number };
+type Band = { min: number; ideal: number; max: number };
 export const bandFor = (weapon: WeaponId, p: Personality): Band => {
   const b = WEAPON_BAND[weapon];
   return { min: b.min * p.rangeMul, ideal: b.ideal * p.rangeMul, max: b.max * p.rangeMul };
 };
 
 /** In TDM and DOM an anchor holds ground (an owned zone, or the middle) and a rotator moves to where the fight is (a zone to take, gunfire). */
-export type Role = 'anchor' | 'rotate';
+type Role = 'anchor' | 'rotate';
 export const roleFor = (id: number, team: string | null): Role | null => (team === null ? null : id % 3 === 0 ? 'anchor' : 'rotate');
 
 export type Plan =
@@ -67,7 +67,7 @@ export type Plan =
 
 /** Every intent carries when it began and the tick before which ordinary rules may not replace it; only startIntent builds one. */
 export type Intent = Plan & { since: number; holdUntil: number };
-export type IntentKind = Plan['k'];
+type IntentKind = Plan['k'];
 type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
 
 export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number };
