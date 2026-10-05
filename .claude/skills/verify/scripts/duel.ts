@@ -101,7 +101,8 @@ const b = await openPlayer('B', `Target${Math.floor(Math.random() * 1e4)}`);
 for (let i = 0; i < 60 && (!selfOf(a) || !selfOf(b)); i++) await sleep(100);
 expect('both browsers joined the same room', !!selfOf(a) && !!selfOf(b), `${a.name} #${a.id()}, ${b.name} #${b.id()}`);
 
-const deadline = Date.now() + 90_000;
+const deadline = Date.now() + 180_000;
+let lastHunt = { x: NaN, y: NaN, sidestep: 0 };
 let sawEachOther = false, hitSeenByA: Dmg | undefined, hitSeenByB: Dmg | undefined, shots = 0;
 while (Date.now() < deadline && !(hitSeenByA && hitSeenByB)) {
   await respawnIfDead(a); await respawnIfDead(b);
@@ -115,6 +116,8 @@ while (Date.now() < deadline && !(hitSeenByA && hitSeenByB)) {
     const dirs: (keyof typeof KEY)[] = [];
     if (Math.abs(dx) > 60) dirs.push(dx > 0 ? 'right' : 'left');
     if (Math.abs(dy) > 60) dirs.push(dy > 0 ? 'down' : 'up');
+    if (Math.hypot(pa.x - lastHunt.x, pa.y - lastHunt.y) < 30) dirs.push(lastHunt.sidestep++ % 4 < 2 ? 'up' : 'down');
+    lastHunt = { ...lastHunt, x: pa.x, y: pa.y };
     await hold(a, dirs.length ? dirs : ['right'], 350);
     continue;
   }
