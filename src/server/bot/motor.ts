@@ -3,7 +3,7 @@ import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapsho
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { spreadFor } from '../../shared/sim/stats.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
-import { aimSigma, drift, engage, freshAim, HANDS, landingErr, onTarget, sharpnessAgainst, TICK_MS, turn, type AimState, type Engagement, type Hand } from './aim.ts';
+import { aimSigma, drift, engage, freshAim, handFor, HANDS, landingErr, leadSeconds, onTarget, sharpnessAgainst, TICK_MS, turn, type AimState, type Engagement, type Hand } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
@@ -287,9 +287,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     if (v.tick >= engaged.noticeAtTick) {
       const sigma = aimSigma(engaged, me, sharp, v.tick);
       const err = v.tick === engaged.noticeAtTick ? landingErr(sigma, c.rand) : drift(before.err, sigma, TICK_MS, c.rand);
-      const flight = t.d / gun.bulletSpeed;
+      const flight = leadSeconds(t.d, gun.bulletSpeed);
       const rx = t.p.x + engaged.vx * flight - me.x, ry = t.p.y + engaged.vy * flight - me.y;
-      look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx - mine.x, engaged.vy - mine.y), hand: HANDS.flick, d: t.d, err };
+      look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx - mine.x, engaged.vy - mine.y), hand: handFor(sharp), d: t.d, err };
       wantsFire = t.d < gun.range * 0.95;
       threat = { d: t.d };
       const fuse = GRENADE_FUSE_MS / 1000;

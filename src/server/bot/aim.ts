@@ -15,7 +15,7 @@ const DEG = Math.PI / 180;
 
 /** A flick onto an enemy peaks near 800°/s and overshoots a hair before it settles; looking around turns at a calm 240°/s at most. */
 export const HANDS = {
-  flick: { omega: 22, zeta: 0.72, maxSpin: 800 * DEG, maxAccel: 10_000 * DEG },
+  flick: { omega: 30, zeta: 0.72, maxSpin: 800 * DEG, maxAccel: 10_000 * DEG },
   calm: { omega: 9, zeta: 0.9, maxSpin: 240 * DEG, maxAccel: 2_500 * DEG },
 } as const satisfies Record<string, Hand>;
 
@@ -26,7 +26,9 @@ const BOT_AIM = {
   unsettledMul: 1.5,
   settleMs: 700,
   errTauMs: 400,
-  motionTauMs: 150,
+  motionTauMs: 30,
+  /** Leading a strafer by its full flight time overshoots each change of direction, so a bot leads by part of it, as players do. */
+  leadMul: 0.7,
   fireSlackRad: 2.5 * DEG,
 } as const;
 
@@ -75,6 +77,15 @@ export function drift(err: number, sigma: number, dtMs: number, rand: () => numb
   const keep = Math.exp(-dtMs / BOT_AIM.errTauMs);
   return err * keep + sigma * Math.sqrt(1 - keep * keep) * gaussian(rand);
 }
+
+/** A bot sharpened against a stronger player also moves its hand faster, so its tighter error is not lost to lag. */
+export function handFor(sharpness: Sharpness): Hand {
+  const f = Math.min(2.5, 1 / Math.sqrt(sharpness.aimMul));
+  return { ...HANDS.flick, omega: HANDS.flick.omega * f, maxAccel: HANDS.flick.maxAccel * f * f };
+}
+
+/** Seconds of the enemy's motion a bot leads by for a round that flies `d` px at `speed` px/s. */
+export const leadSeconds = (d: number, speed: number) => (BOT_AIM.leadMul * d) / speed;
 
 export const onTarget = (aim: AimState, d: number) => Math.abs(wrapAngle(aim.angle - aim.want)) <= Math.max(BOT_AIM.fireSlackRad, Math.atan2(WORLD.playerRadius, d));
 
