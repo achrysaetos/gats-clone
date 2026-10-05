@@ -1,4 +1,4 @@
-import { ARMORS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
+import { ARMORS, BUILDINGS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
@@ -189,7 +189,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
-        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.damage, owner, b.turret ?? 'hit'),
+        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.turret ? BUILDINGS[b.turret].turret.damage[z.kind] : b.damage, owner, b.turret ?? 'hit'),
       })),
   ];
   const hits = candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);

@@ -257,16 +257,25 @@ export const BUILDING_KINDS = ['wall', ...TURRET_KINDS] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
 export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TURRET_KINDS.map((k) => [k, f(k)])) as Record<TurretKind, T>;
 
-/** A turret holds `ammo` rounds and fires its nearest zombie in `range` one round every `fireMs`; a refill costs `scrapPerRound`. */
+/**
+ * A turret holds `ammo` rounds and fires one every `fireMs` at the nearest zombie of the kind it `prefers` in `range`, else the nearest of any kind.
+ * A round's `damage` depends on the kind of zombie it hits; a refill costs `scrapPerRound`.
+ */
 export type TurretDef = {
-  range: number; fireMs: number; damage: number; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
+  prefers: ZombieKind; range: number; fireMs: number; damage: Record<ZombieKind, number>; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
   bullet: { r: number; color: string };
 };
 type BuildingDef = { name: string; cost: number; hp: number };
 export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> = {
   wall: { name: 'Wall', cost: 20, hp: 2000, turret: null },
-  sentry: { name: 'Sentry', cost: 50, hp: 1000, turret: { range: 420, fireMs: 140, damage: 12, bulletSpeed: 2000, spread: 0.06, ammo: 150, scrapPerRound: 0.1, bullet: { r: 1.8, color: '#a88600' } } },
-  cannon: { name: 'Cannon', cost: 140, hp: 1500, turret: { range: 560, fireMs: 1600, damage: 260, bulletSpeed: 2600, spread: 0.01, ammo: 16, scrapPerRound: 2.5, bullet: { r: 4.2, color: '#3b3f4a' } } },
+  sentry: {
+    name: 'Sentry', cost: 70, hp: 1000,
+    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: { walker: 14, brute: 4 }, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, bullet: { r: 1.8, color: '#a88600' } },
+  },
+  cannon: {
+    name: 'Cannon', cost: 180, hp: 1500,
+    turret: { prefers: 'brute', range: 560, fireMs: 2200, damage: { walker: 260, brute: 260 }, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 4, bullet: { r: 4.2, color: '#3b3f4a' } },
+  },
 };
 
 export const ZOM = {

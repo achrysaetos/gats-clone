@@ -49,6 +49,27 @@ test('a turret fires one round at its nearest zombie in range, spending one of i
   assert.deepEqual(w.bullets.map((b) => b.turret), ['sentry']);
 });
 
+test('a cannon picks a brute in range over a nearer walker, and a sentry a walker over a nearer brute', () => {
+  for (const [kind, near, far, angle] of [['cannon', 'walker', 'brute', Math.PI], ['sentry', 'brute', 'walker', Math.PI]] as const) {
+    const w = nightWorld();
+    addTurret(w, kind, spawnAt(w, TX, TY + 300).id);
+    addZombie(w, near, TX, TY - 150);
+    addZombie(w, far, TX - 350, TY);
+    step(w, TICK_MS);
+    assert.ok(Math.abs(shotsIn(w)[0]!.angle - angle) < 0.1, `${kind} aimed at the ${far}, angle ${shotsIn(w)[0]!.angle.toFixed(2)}`);
+  }
+});
+
+test('a round hurts each zombie kind by its own amount: a sentry barely scratches a brute', () => {
+  for (const kind of ['walker', 'brute'] as const) {
+    const w = nightWorld();
+    addTurret(w, 'sentry', spawnAt(w, TX, TY + 300).id, { ammo: 1 });
+    const z = addZombie(w, kind, TX, TY - 150);
+    run(w, 500);
+    assert.equal(1e9 - z.hp, SENTRY.damage[kind]);
+  }
+});
+
 test('a zombie out of range or behind cover draws no fire, but the squad\'s own walls hide nothing', () => {
   const w = nightWorld();
   const owner = spawnAt(w, TX, TY + 300).id;
@@ -89,7 +110,7 @@ test('a turret\'s rounds pass a squad player by and leave them whole', () => {
   const z = addZombie(w, 'walker', TX, TY - 220);
   const hp = mate.life.k === 'alive' ? mate.life.hp : 0;
   run(w, 300);
-  assert.equal(z.hp, 1e9 - BUILDINGS.cannon.turret.damage, 'the round reached the zombie');
+  assert.equal(z.hp, 1e9 - BUILDINGS.cannon.turret.damage.walker, 'the round reached the zombie');
   assert.equal(mate.life.k === 'alive' && mate.life.hp, hp);
 });
 
