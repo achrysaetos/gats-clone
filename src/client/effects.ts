@@ -75,8 +75,9 @@ export function kicks(effects: readonly Effect[], now: number): Map<number, numb
 
 export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Effect[], now: number) {
   for (const fx of effects) {
-    const k = (now - fx.born) / EFFECT_LIFE_MS[fx.kind];
-    if (k < 0 || k >= 1) continue;
+    // An effect started after this frame's timestamp, such as your shot's flash on mousedown, draws from its start rather than a frame late.
+    const k = Math.max(0, now - fx.born) / EFFECT_LIFE_MS[fx.kind];
+    if (k >= 1) continue;
     switch (fx.kind) {
       case 'impact': if (fx.victim === null) drawSpark(ctx, fx.x, fx.y, k); break;
       case 'boom': drawBoom(ctx, fx.x, fx.y, fx.r, k); break;
