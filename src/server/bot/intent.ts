@@ -151,8 +151,12 @@ function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
   return { k: 'takePosition', spot, facing: last };
 }
 
-const losing = (v: Perception, p: Personality) =>
-  (v.threats.length > 0 || v.underFire) && (v.hpFrac < p.retreatHp || (v.threats.length >= 2 && v.hpFrac < OUTNUMBERED_HP));
+/** Low or outnumbered while threatened, unless the one enemy in sight is worse off, which is a kill to finish rather than a fight to leave. */
+const losing = (v: Perception, p: Personality) => {
+  const lone = v.threats.length === 1 ? v.threats[0]!.p : null;
+  if (lone && lone.hp / lone.maxHp < v.hpFrac) return false;
+  return (v.threats.length > 0 || v.underFire) && (v.hpFrac < p.retreatHp || (v.threats.length >= 2 && v.hpFrac < OUTNUMBERED_HP));
+};
 
 /** Checked every think, in order, whatever the commitment: a losing fight, a retreat caught up with or found in its hiding spot, an empty gun in a fight, and an enemy walking into view. */
 const INTERRUPTS: readonly ((cur: Intent, v: Perception, c: IntentCtx) => Plan | null)[] = [

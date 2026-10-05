@@ -65,7 +65,9 @@ const STUCK_TICKS = 12;
 const REPLAN_PX = 48;
 /** In range a bot stands to shoot for a while, then by its personality's odds takes one committed step to the side. */
 const STAND_MS: readonly [number, number] = [700, 1500];
-const STEP_MS: readonly [number, number] = [250, 550];
+const STEP_MS: readonly [number, number] = [300, 700];
+/** Shot at in the open, any bot takes a step at least this often, as a person under fire does. */
+const UNDER_FIRE_STEP_ODDS = 0.75;
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
@@ -139,7 +141,8 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       if (t.d < c.band.min) return { steer: fight(awayFrom(me, t.p, c.arena, BACKOFF_STEP)), stance: { step: 0, until: v.tick } };
       let stance = m.stance;
       if (v.tick >= stance.until) {
-        const step = stance.step === 0 && c.rand() < c.persona.sidestepOdds ? (c.rand() < 0.5 ? 1 : -1) : 0;
+        const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
+        const step = stance.step === 0 && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
         stance = { step, until: v.tick + Math.round(between(step === 0 ? STAND_MS : STEP_MS, c.rand) / TICK_MS) };
       }
       if (stance.step === 0) return { steer: fight(null), stance };
@@ -189,14 +192,16 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const gun = GUNS[me.gun];
 
   const t: Threat | undefined = (intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank') ? v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0] : v.threats[0];
-  let engaged = t ? null : (v.tick - m.engagedSeen <= REACQUIRE_TICKS ? m.engaged : null);
+  // Tucked behind cover the bot keeps its aim on where the target was, so stepping back out costs no fresh reaction; anywhere else a lost target does.
+  const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || (intent.k === 'peekAndHide' && intent.target === id));
+  let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;
   let angle = s.face ? Math.atan2(s.face.y - me.y, s.face.x - me.x) : way.at ? Math.atan2(way.at.y - me.y, way.at.x - me.x) : me.angle;
   let aimDist = s.face ? Math.max(1, dist(me, s.face)) : 300;
   let fire = false;
   let threat: Situation['threat'] = null;
   let throwAt: { x: number; y: number; err: number } | null = null;
   if (t) {
-    const tracked = m.engaged?.id === t.p.id && v.tick - m.engagedSeen <= REACQUIRE_TICKS ? m.engaged : null;
+    const tracked = held(t.p.id) ? m.engaged : null;
     engaged = engage(tracked, t.p, sharpnessAgainst(t.p), me, v.tick, rand);
     const vel = tracked ? { x: t.p.x - tracked.x, y: t.p.y - tracked.y } : { x: 0, y: 0 };
     const flightTicks = (t.d / gun.bulletSpeed) * WORLD.tickHz;
