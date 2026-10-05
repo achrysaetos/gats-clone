@@ -25,6 +25,7 @@ import { createGroundCache, crateSolid, curbSolids, drawLooseShadows, drawGround
 import { PALETTE, TEAM_COLORS } from '../src/client/palette.ts';
 
 const GRID = 80;
+const BOX_RADIUS = 3, BOX_PASSES = 2;
 const RAMP = [[255, 211, 77, 0], [255, 211, 77, 150], [247, 107, 21, 190], [229, 72, 77, 215], [130, 20, 40, 235]];
 const ramp = (t) => {
   const f = Math.min(0.999, Math.max(0, t)) * (RAMP.length - 1), i = Math.floor(f), u = f - i;
@@ -37,13 +38,13 @@ function heatLayer(size, points) {
     const cx = Math.floor(points[i] / cell), cy = Math.floor(points[i + 1] / cell);
     if (cx >= 0 && cy >= 0 && cx < n && cy < n) d[cy * n + cx]++;
   }
-  const blur = (src) => {
+  const approxGaussian = (src) => {
     let a = src;
-    for (let pass = 0; pass < 2; pass++) for (const horizontal of [true, false]) {
-      const b = new Float32Array(n * n), r = 3;
+    for (let pass = 0; pass < BOX_PASSES; pass++) for (const horizontal of [true, false]) {
+      const b = new Float32Array(n * n);
       for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
         let s = 0, c = 0;
-        for (let k = -r; k <= r; k++) {
+        for (let k = -BOX_RADIUS; k <= BOX_RADIUS; k++) {
           const xx = horizontal ? x + k : x, yy = horizontal ? y : y + k;
           if (xx < 0 || yy < 0 || xx >= n || yy >= n) continue;
           s += a[yy * n + xx]; c++;
@@ -54,7 +55,7 @@ function heatLayer(size, points) {
     }
     return a;
   };
-  const h = blur(d);
+  const h = approxGaussian(d);
   let max = 0;
   for (const v of h) max = Math.max(max, v);
   const c = document.createElement('canvas');
@@ -76,7 +77,7 @@ window.renderMap = (id, px, heat) => {
   ctx.setTransform(k, 0, 0, k, 0, 0);
   const walls = wallSolids(m.walls.map((w) => ({ ...w, built: false })));
   const curbs = curbSolids(size);
-  drawGround(ctx, createGroundCache().get(m, size, () => [...curbs, ...walls], null), 0, 0, size, size);
+  drawGround(ctx, createGroundCache().get(m, size, () => [...curbs, ...walls], 'static'), 0, 0, size, size);
   ctx.fillStyle = PALETTE.grid;
   for (let x = GRID; x < size; x += GRID) ctx.fillRect(x - 0.5 / k, 0, 1 / k, size);
   for (let y = GRID; y < size; y += GRID) ctx.fillRect(0, y - 0.5 / k, size, 1 / k);

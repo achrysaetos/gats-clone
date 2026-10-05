@@ -22,6 +22,8 @@ function standable(def: MapDef, n: number): Uint8Array {
 
 const crateRects = (def: MapDef): Rect[] => def.crates.map((c) => ({ x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
 const centerOf = (c: number, n: number): Center => ({ x: ((c % n) + 0.5) * CELL, y: (Math.floor(c / n) + 0.5) * CELL });
+/** The raster cells on both sides of `v` when it sits on a cell edge, so a zone and its turned twin are judged alike. */
+const cellsEitherSide = (v: number, n: number) => [Math.floor((v - 1) / CELL), Math.floor((v + 1) / CELL)].filter((k) => k >= 0 && k < n);
 const where = (p: Center) => `(${Math.round(p.x)}, ${Math.round(p.y)})`;
 
 function cellsIn(r: Rect, n: number): number[] {
@@ -78,7 +80,7 @@ const MATERIAL_KEY = { concrete: 1, sandstone: 2, planter: 4 } as const;
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
 
-function unturned(points: readonly Center[], size: number): Center[] {
+function withoutHalfTurnTwin(points: readonly Center[], size: number): Center[] {
   const key = (p: Center) => `${p.x},${p.y}`;
   const have = new Map<string, number>();
   for (const p of points) have.set(key(p), (have.get(key(p)) ?? 0) + 1);
@@ -108,8 +110,7 @@ export function lintMap(def: MapDef): string[] {
 
   def.zones.forEach((z, i) => {
     if (z.x - ZONE_RADIUS < 0 || z.y - ZONE_RADIUS < 0 || z.x + ZONE_RADIUS > def.size || z.y + ZONE_RADIUS > def.size) problems.push(`zone ${i} at ${where(z)} reaches past the map's edge`);
-    const near = (v: number) => [Math.floor((v - 1) / CELL), Math.floor((v + 1) / CELL)].filter((k) => k >= 0 && k < n);
-    if (!near(z.y).some((row) => near(z.x).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
+    if (!cellsEitherSide(z.y, n).some((row) => cellsEitherSide(z.x, n).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
     if (def.walls.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
   });
 
@@ -129,8 +130,8 @@ export function lintMap(def: MapDef): string[] {
   if (walls) problems.push(`walls are not the same after a half turn around ${where(walls)}`);
   const spawns = asymmetryOf(spawnSides.flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
-  for (const c of unturned(def.crates, def.size)) problems.push(`the crate at ${where(c)} has no twin at the half turn`);
-  for (const z of unturned(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
+  for (const c of withoutHalfTurnTwin(def.crates, def.size)) problems.push(`the crate at ${where(c)} has no twin at the half turn`);
+  for (const z of withoutHalfTurnTwin(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
   return problems;
 }
 

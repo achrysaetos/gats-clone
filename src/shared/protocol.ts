@@ -190,8 +190,8 @@ export function cleanName(v: unknown): string {
   return s || 'Unnamed';
 }
 
-const MAX_GRID = Math.max(...MAP_IDS.filter((m) => MAPS[m].siege).map((m) => MAPS[m].size)) / ZOM.cell;
-const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < MAX_GRID ? v : null);
+const MAX_SIEGE_GRID = Math.max(...MAP_IDS.filter((m) => MAPS[m].siege).map((m) => MAPS[m].size)) / ZOM.cell;
+const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < MAX_SIEGE_GRID ? v : null);
 
 const parseAspect = (v: unknown): number => num(v, VIEW_ASPECT.min, VIEW_ASPECT.max) ?? VIEW_ASPECT.max;
 

@@ -113,7 +113,7 @@ async function shootNearest() {
     ...snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })),
   ].filter((t) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, t.x - self.x, t.y - self.y, w) !== null));
   const t = targets.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
-  if (!t) { await walkTowardMiddle(self.x); return; }
+  if (!t) { await walkUpAndAcrossTowardMiddle(self.x); return; }
   await aimAt(Math.atan2(t.y - self.y, t.x - self.x));
   await mouse('mousePressed', W / 2, H / 2);
   await sleep(60);
@@ -121,7 +121,7 @@ async function shootNearest() {
   await sleep(250);
 }
 
-async function walkTowardMiddle(x: number) {
+async function walkUpAndAcrossTowardMiddle(x: number) {
   const [code, k, vk] = x < (frames.welcome?.worldSize ?? 0) / 2 ? ['KeyD', 'd', 68] : ['KeyA', 'a', 65];
   await key('keyDown', code, k, vk); await key('keyDown', 'KeyW', 'w', 87);
   await sleep(500);

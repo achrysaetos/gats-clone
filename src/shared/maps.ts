@@ -26,7 +26,7 @@ export type MapDef = {
 };
 
 const BLOCKY = 1.6;
-const byShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
+const outpostMaterialByShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
 
 /** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover. */
 const quarterTurn = <T extends Rect>(r: T, size: number): T => ({ ...r, x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
@@ -42,7 +42,7 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
   return {
     name,
     size,
-    walls: fourWays(quarter.walls.map(byShape), size),
+    walls: fourWays(quarter.walls.map(outpostMaterialByShape), size),
     zones: [],
     spawns: { red: squad, blue: squad, ffa: squad },
     crates: [],

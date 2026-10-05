@@ -58,17 +58,17 @@ function tick({ w, bots, r }: Sim): { respawned: number[]; ms: number } {
   return { respawned, ms: performance.now() - t0 };
 }
 
-type Contact = { bornAt: number; lastAt: number | null };
+type Contact = { bornAt: number; lastFightAt: number | null };
 type Tally = { firstContact: number[]; betweenFights: number[]; tickMs: number[]; dmg: number[]; death: number[]; range: number[] };
 
 function watch(sim: Sim, contact: Map<number, Contact>, t: Tally, respawned: readonly number[]) {
   const { w } = sim;
-  for (const id of respawned) contact.set(id, { bornAt: w.now, lastAt: null });
+  for (const id of respawned) contact.set(id, { bornAt: w.now, lastFightAt: null });
   const touch = (id: number) => {
-    const c = contact.get(id) ?? { bornAt: 0, lastAt: null };
-    if (c.lastAt === null) t.firstContact.push(w.now - c.bornAt);
-    else if (w.now - c.lastAt > FIGHT_GAP_MS) t.betweenFights.push(w.now - c.lastAt);
-    contact.set(id, { ...c, lastAt: w.now });
+    const c = contact.get(id) ?? { bornAt: 0, lastFightAt: null };
+    if (c.lastFightAt === null) t.firstContact.push(w.now - c.bornAt);
+    else if (w.now - c.lastFightAt > FIGHT_GAP_MS) t.betweenFights.push(w.now - c.lastFightAt);
+    contact.set(id, { ...c, lastFightAt: w.now });
   };
   const touched = new Set<number>();
   for (const e of w.events) {
@@ -84,6 +84,12 @@ function watch(sim: Sim, contact: Map<number, Contact>, t: Tally, respawned: rea
     }
   }
   for (const id of touched) touch(id);
+}
+
+function holdRoundOpen(w: World, banked: { red: number; blue: number }) {
+  w.mapChangeAt = Infinity;
+  banked.red += w.teamScore.red; banked.blue += w.teamScore.blue;
+  w.teamScore = { red: 0, blue: 0 };
 }
 
 const leader = (w: World) => (mode === 'FFA' ? Math.max(0, ...[...w.players.values()].map((p) => p.kills)) : Math.max(w.teamScore.red, w.teamScore.blue));
@@ -102,19 +108,15 @@ for (const map of maps) {
     while (real.w.map === map && real.w.match.k === 'playing' && real.w.now < 60 * 60_000) tick(real);
     rounds.push({ ms: real.w.now, winner: real.w.match.k === 'over' ? real.w.match.winner.name : 'nobody' });
     const open = fill(map, seed);
-    const contact = new Map<number, Contact>([...open.bots.keys()].map((id) => [id, { bornAt: 0, lastAt: null }]));
+    const contact = new Map<number, Contact>([...open.bots.keys()].map((id) => [id, { bornAt: 0, lastFightAt: null }]));
     const banked = { red: 0, blue: 0 };
     const reached = new Map<number, number>();
     for (let ms = 0; ms < minutes * 60_000; ms += TICK_MS) {
-      open.w.mapChangeAt = Infinity;
+      holdRoundOpen(open.w, banked);
       const { respawned, ms: took } = tick(open);
       t.tickMs.push(took);
       watch(open, contact, t, respawned);
       kills += open.w.events.filter((e) => e.e === 'kill').length;
-      if (mode !== 'FFA') {
-        banked.red += open.w.teamScore.red; banked.blue += open.w.teamScore.blue;
-        open.w.teamScore = { red: 0, blue: 0 };
-      }
       const lead = mode === 'FFA' ? leader(open.w) : Math.max(banked.red, banked.blue);
       for (const target of TARGETS[mode]) if (lead >= target && !reached.has(target)) reached.set(target, open.w.now);
     }

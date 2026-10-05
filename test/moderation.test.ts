@@ -28,7 +28,7 @@ test('the server renames a blocked name and masks chat before anyone else sees i
   const { startServer } = await import('../src/server/main.ts');
   const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-mod-'));
   await writeFile(join(dataDir, 'blocklist.txt'), 'grief\n');
-  const server = await startServer({ port: 0, dataDir, limits: { minPlayers: 4 } });
+  const server = await startServer({ port: 0, dataDir });
   const { fillSnapshot } = await import('../src/shared/wire.ts');
   const full = new Map<unknown, any>();
   const connect = () => new Promise<InstanceType<typeof WebSocket>>((resolve) => {

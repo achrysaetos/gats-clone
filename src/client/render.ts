@@ -61,7 +61,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
   const dark = easeNight(snap.run, now);
-  const siege = snap.run ? [...(snap.buildings ?? []).map(buildingSolid), coreSolid(snap.run)] : null;
+  const siege = snap.run ? [...(snap.buildings ?? []).map(buildingSolid), coreSolid(snap.run)] : 'static';
   drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege), view.x0, view.y0, view.x1, view.y1);
   drawGrid(ctx, s.worldSize, tl, br);
 
@@ -86,7 +86,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   ], k);
 
   const walls = wallSolids(s.walls).filter((w) => solidInView(view, w));
-  const standing = (siege ?? []).filter((b) => solidInView(view, b));
+  const standing = (siege === 'static' ? [] : siege).filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
   if (snap.buildings && snap.run) {
     drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
@@ -148,7 +148,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const y = freeY / 2 + (freeY / 2) * 0.5 * Math.cos(now / BACKDROP.swayMs);
   const k = dpr * zoom;
   ctx.setTransform(k, 0, 0, k, -x * k, -y * k);
-  drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, null), x, y, x + viewW, y + viewH);
+  drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, 'static'), x, y, x + viewW, y + viewH);
   drawGrid(ctx, size, { x, y }, { x: x + viewW, y: y + viewH });
   drawLooseShadows(ctx, backdropCrates);
   drawSolids(ctx, [...backdropSolids, ...backdropCrates]);
