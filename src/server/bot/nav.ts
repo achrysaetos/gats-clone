@@ -11,8 +11,6 @@ const NAV_CELL = 25;
 const ORTH = 1, DIAG = Math.SQRT2;
 const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 const SNAP_CELLS = 4;
-// Among routes of equal length, prefer cells nearer the goal, so a search across open ground runs straight at it instead of flooding sideways.
-const TIE_BREAK = 1.001;
 
 export function navGrid(size: number, solids: readonly Rect[], radius: number, cell = NAV_CELL): NavGrid {
   const n = Math.ceil(size / cell);
@@ -133,7 +131,7 @@ export function findPath(nav: NavGrid, from: Point, to: Point, maxExpansions = I
   s.seen[start] = s.stamp;
   s.g[start] = 0;
   s.from[start] = -1;
-  push(start, h(start) * TIE_BREAK);
+  push(start, h(start));
   let found = false, expanded = 0, best = start, bestH = h(start);
   while (hc.length > 0) {
     const f = hf[0]!;
@@ -142,7 +140,7 @@ export function findPath(nav: NavGrid, from: Point, to: Point, maxExpansions = I
     if (++expanded > maxExpansions) break;
     const hc0 = h(c);
     if (hc0 < bestH) { best = c; bestH = hc0; }
-    if (f > s.g[c]! + h(c) * TIE_BREAK + 1e-9) continue;
+    if (f > s.g[c]! + h(c) + 1e-9) continue;
     const cx = c % n, cy = Math.floor(c / n);
     for (const [dx, dy] of NEIGHBORS) {
       const x = cx + dx, y = cy + dy;
@@ -155,7 +153,7 @@ export function findPath(nav: NavGrid, from: Point, to: Point, maxExpansions = I
       s.seen[next] = s.stamp;
       s.g[next] = g;
       s.from[next] = c;
-      push(next, g + h(next) * TIE_BREAK);
+      push(next, g + h(next));
     }
   }
   if (!found && (expanded <= maxExpansions || best === start)) return null;
