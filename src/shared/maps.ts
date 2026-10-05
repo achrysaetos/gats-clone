@@ -2,7 +2,7 @@ import type { ModeId } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 
 export type Center = { x: number; y: number };
-export type WallMaterial = 'concrete' | 'sandstone';
+export type WallMaterial = 'concrete' | 'sandstone' | 'planter';
 export type MapWall = Rect & { material: WallMaterial };
 
 export const ZONE_RADIUS = 180;

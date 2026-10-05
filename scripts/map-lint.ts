@@ -83,7 +83,7 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   return null;
 }
 
-const MATERIAL_KEY = { concrete: 1, sandstone: 2 } as const;
+const MATERIAL_KEY = { concrete: 1, sandstone: 2, planter: 4 } as const;
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
 

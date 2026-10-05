@@ -3,7 +3,7 @@ import type { Rect } from './sim/movement.ts';
 
 export const MAP_CELL = 50;
 
-type Layer = 'concrete' | 'sandstone' | 'red' | 'blue' | 'ffa';
+type Layer = WallMaterial | 'red' | 'blue' | 'ffa';
 type Cell = { layers: readonly Layer[]; crate: boolean; zone: boolean };
 
 const FLOOR: Cell = { layers: [], crate: false, zone: false };
@@ -11,6 +11,7 @@ const LEGEND: Record<string, Cell> = {
   '.': FLOOR,
   '#': { ...FLOOR, layers: ['concrete'] },
   S: { ...FLOOR, layers: ['sandstone'] },
+  P: { ...FLOOR, layers: ['planter'] },
   c: { ...FLOOR, crate: true },
   R: { ...FLOOR, layers: ['red'] },
   F: { ...FLOOR, layers: ['ffa'] },
@@ -52,7 +53,7 @@ function mergeCells(on: readonly boolean[][]): Rect[] {
 /**
  * A team map from its west half drawn one character per 50px cell; the east half is the west turned half way round the map's centre,
  * so cell (c, r) of a C-column, R-row half lands on (2C-1-c, R-1-r) and red spawns land as blue ones.
- * Legend: `.` floor, `#` concrete, `S` sandstone, `c` crate, `R` red spawn, `F` FFA spawn, `X` red and FFA spawn, `A` zone A (B is the centre, C is A turned).
+ * Legend: `.` floor, `#` concrete, `S` sandstone, `P` planter (a wall, unlike a crate), `c` crate, `R` red spawn, `F` FFA spawn, `X` red and FFA spawn, `A` zone A (B is the centre, C is A turned).
  */
 export function gridMap(name: string, text: string): MapDef {
   const rows = gridRows(text);
@@ -78,7 +79,7 @@ export function gridMap(name: string, text: string): MapDef {
   return {
     name,
     size,
-    walls: [...walls('concrete'), ...walls('sandstone')],
+    walls: [...walls('concrete'), ...walls('sandstone'), ...walls('planter')],
     zones: [zoneA, { x: size / 2, y: size / 2 }, turn(zoneA)],
     spawns: { red: mergeCells(layerAt('red')), blue: mergeCells(layerAt('blue')), ffa: mergeCells(layerAt('ffa')) },
     crates: [...westCrates, ...westCrates.map(turn)],

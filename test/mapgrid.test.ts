@@ -42,16 +42,16 @@ R.
   });
 });
 
-test('spawn cells merge into rects the way walls do, and concrete and sandstone never merge with each other', () => {
+test('spawn cells merge into rects the way walls do, and concrete, sandstone and planter never merge with each other', () => {
   const m = gridMap('Strip', `
 RR
 RR
 #S
-A.
+AP
 `);
   assert.deepEqual(m.spawns.red, [{ x: 0, y: 0, w: 100, h: 100 }]);
   assert.deepEqual(m.spawns.blue, [{ x: 100, y: 100, w: 100, h: 100 }]);
-  assert.deepEqual(m.walls.map((w) => [w.x, w.material]), [[150, 'concrete'], [0, 'concrete'], [100, 'sandstone'], [50, 'sandstone']]);
+  assert.deepEqual(m.walls.map((w) => [w.x, w.material]), [[150, 'concrete'], [0, 'concrete'], [100, 'sandstone'], [50, 'sandstone'], [100, 'planter'], [50, 'planter']]);
 });
 
 test('blank lines around the grid and the indentation every row shares are ignored', () => {
