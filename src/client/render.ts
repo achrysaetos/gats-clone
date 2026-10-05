@@ -119,14 +119,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawLetterbox(ctx, cam, dpr);
 }
 
-/** The world under night: multiplied toward a cool blue, so the floor and cover sink while the bodies and fire drawn after stay bright. */
+/** The world under night: a cool blue laid over the floor and cover, so they sink while the bodies and fire drawn after stay bright. A plain blend, since a multiply costs a software canvas over a millisecond a frame. */
 function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: number) {
-  const v = parseInt(NIGHT.tint.slice(1), 16);
-  const mix = (sh: number) => Math.round(255 - (255 - ((v >> sh) & 255)) * dark * NIGHT.strength * 1.6);
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = `rgb(${mix(16)}, ${mix(8)}, ${mix(0)})`;
+  ctx.globalAlpha = dark * NIGHT.alpha;
+  ctx.fillStyle = NIGHT.shade;
   ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
-  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
 }
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;

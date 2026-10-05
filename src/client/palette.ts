@@ -32,7 +32,7 @@ export const PALETTE = {
 } as const;
 
 /** Zombies' night: the world darkens toward this cool blue while the HUD stays as it is. */
-export const NIGHT = { tint: '#3a4a78', strength: 0.55, label: '#e6ebf5' } as const;
+export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as const;
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };
 
