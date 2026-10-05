@@ -1,7 +1,7 @@
 /// <reference types="node" />
-// Usage: node scripts/bench-tactics.ts [minutes=4] [seeds=3] [tdmCapMinutes=10] [thinkBots=20]
+// Usage: node scripts/bench-tactics.ts [modes=FFA,TDM,DOM] [ffaMinutes=4] [seeds=3] [capMinutes=15] [thinkBots=20]
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
-import { ROTATION, type MapId } from '../src/shared/maps.ts';
+import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { circleHitsRect, segmentEntersRectAt, type Rect } from '../src/shared/sim/movement.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -10,16 +10,18 @@ import { coverRects, createWorld, isEnemy, rand, type Player, type World } from 
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 
-const minutes = Number(process.argv[2] ?? 4);
-const seeds = Number(process.argv[3] ?? 3);
-const tdmCapMinutes = Number(process.argv[4] ?? 10);
-const thinkBots = Number(process.argv[5] ?? 20);
+const modes = (process.argv[2] ?? 'FFA,TDM,DOM').split(',').filter(Boolean) as Exclude<ModeId, 'ZOM'>[];
+const ffaMinutes = Number(process.argv[3] ?? 4);
+const seeds = Number(process.argv[4] ?? 3);
+const capMinutes = Number(process.argv[5] ?? 15);
+const thinkBots = Number(process.argv[6] ?? 20);
 const TICK_MS = 1000 / WORLD.tickHz;
 const SIGHT_PX = WORLD.viewRadius;
 const FIGHT_GAP_MS = 3000;
 const COVER_HUG_PX = 40;
 const LOOKBACK_TICKS = Math.round(1500 / TICK_MS);
 const LOSING_HP_FRAC = 0.5;
+const WIN_SCORE: Record<'TDM' | 'DOM', number> = { TDM: WORLD.tdmWinScore, DOM: WORLD.domWinScore };
 
 type Brain = { think(w: World, id: number): void };
 
@@ -38,10 +40,19 @@ function makeBrain(w: World, ids: readonly number[]): Brain {
 
 type Pulse = { hpFrac: number; seenBy: number; allies: number };
 type Tally = {
-  lives: number[]; fights: number[]; combatTicks: number; coverTicks: number; shots: number; stillShots: number;
+  lives: number[]; fights: number[]; firstContact: number[]; betweenFights: number[]; combatTicks: number; coverTicks: number; shots: number; stillShots: number;
   deaths: number; lowDeaths: number; outnumberedDeaths: number; losingDeaths: number; kills: number; minutes: number;
 };
-const emptyTally = (): Tally => ({ lives: [], fights: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0, kills: 0, minutes: 0 });
+const emptyTally = (): Tally => ({
+  lives: [], fights: [], firstContact: [], betweenFights: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0,
+  deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0, kills: 0, minutes: 0,
+});
+const addTally = (into: Tally, t: Tally) => {
+  for (const k of Object.keys(t) as (keyof Tally)[]) {
+    const v = t[k];
+    if (Array.isArray(v)) (into[k] as number[]).push(...v); else (into[k] as number) += v;
+  }
+};
 
 const sees = (cover: readonly Rect[], a: Player, b: Player) => !cover.some((r) => segmentEntersRectAt(a.x, a.y, b.x - a.x, b.y - a.y, r) !== null);
 const near = (a: Player, b: Player, px: number) => Math.hypot(a.x - b.x, a.y - b.y) <= px;
@@ -51,9 +62,16 @@ function play(w: World, t: Tally, ticks: number, done: () => boolean = () => fal
   const brain = makeBrain(w, ids);
   const r = () => rand(w);
   const bornAt = new Map(ids.map((id) => [id, w.now]));
+  const lastFightAt = new Map<number, number | null>(ids.map((id) => [id, null]));
   const pulses = new Map<number, Pulse[]>(ids.map((id) => [id, []]));
   const fights = new Map<string, { start: number; last: number; a: number; b: number }>();
   const closeFight = (key: string, end: number) => { const f = fights.get(key)!; t.fights.push(end - f.start); fights.delete(key); };
+  const touch = (id: number) => {
+    const last = lastFightAt.get(id);
+    if (last === null || last === undefined) t.firstContact.push(w.now - (bornAt.get(id) ?? 0));
+    else if (w.now - last > FIGHT_GAP_MS) t.betweenFights.push(w.now - last);
+    lastFightAt.set(id, w.now);
+  };
   let tick = 0;
   for (; tick < ticks && !done(); tick++) {
     const cover = coverRects(w);
@@ -74,9 +92,10 @@ function play(w: World, t: Tally, ticks: number, done: () => boolean = () => fal
     }
     for (const id of ids) {
       brain.think(w, id);
-      if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) { bornAt.set(id, w.now); pulses.set(id, []); }
+      if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) { bornAt.set(id, w.now); lastFightAt.set(id, null); pulses.set(id, []); }
     }
     step(w, TICK_MS);
+    const touched = new Set<number>();
     for (const e of w.events) {
       if (e.e === 'shot') {
         const p = w.players.get(e.owner), was = before.get(e.owner);
@@ -84,6 +103,8 @@ function play(w: World, t: Tally, ticks: number, done: () => boolean = () => fal
         t.shots++;
         if (p.x === was.x && p.y === was.y) t.stillShots++;
       } else if (e.e === 'dmg' && e.kind === 'player' && e.attacker !== null && e.attacker !== e.victim) {
+        touched.add(e.attacker);
+        touched.add(e.victim);
         const [a, b] = e.attacker < e.victim ? [e.attacker, e.victim] : [e.victim, e.attacker];
         const key = `${a}:${b}`;
         const f = fights.get(key);
@@ -102,6 +123,7 @@ function play(w: World, t: Tally, ticks: number, done: () => boolean = () => fal
         for (const [key, f] of fights) if (f.a === e.victimId || f.b === e.victimId) closeFight(key, w.now);
       }
     }
+    for (const id of touched) touch(id);
     for (const [key, f] of fights) if (w.now - f.last > FIGHT_GAP_MS) closeFight(key, f.last);
   }
   t.minutes += (tick * TICK_MS) / 60_000;
@@ -128,6 +150,8 @@ function report(label: string, t: Tally) {
     `  ${label.padEnd(10)}`,
     `life mean ${sec(mean(t.lives))} median ${sec(median(t.lives))}`,
     `fight mean ${sec(mean(t.fights))} median ${sec(median(t.fights))}`,
+    `first contact median ${sec(median(t.firstContact))}`,
+    `between fights median ${sec(median(t.betweenFights))}`,
     `in cover ${pct(t.coverTicks, t.combatTicks)}`,
     `still shots ${pct(t.stillShots, t.shots)}`,
     `deaths low ${pct(t.lowDeaths, t.deaths)} outnumbered ${pct(t.outnumberedDeaths, t.deaths)} both ${pct(t.losingDeaths, t.deaths)}`,
@@ -137,49 +161,47 @@ function report(label: string, t: Tally) {
 
 const MAX_TICKS = (m: number) => Math.round((m * 60_000) / TICK_MS);
 
-if (minutes > 0) {
-  console.log(`FFA, ${WORLD.minPlayers} bots, ${minutes} min x ${seeds} seeds per map`);
+for (const mode of modes) {
   const all = emptyTally();
-  for (const map of ROTATION.FFA) {
-    const t = emptyTally();
-    for (let seed = 1; seed <= seeds; seed++) play(world('FFA', map, seed, WORLD.minPlayers), t, MAX_TICKS(minutes));
-    report(map, t);
-    for (const k of Object.keys(t) as (keyof Tally)[]) {
-      const v = t[k];
-      if (Array.isArray(v)) (all[k] as number[]).push(...v); else (all[k] as number) += v;
+  if (mode === 'FFA') {
+    console.log(`FFA, ${WORLD.minPlayers} bots, ${ffaMinutes} min x ${seeds} seeds per map, round held open`);
+    for (const map of ROTATION.FFA) {
+      const t = emptyTally();
+      for (let seed = 1; seed <= seeds; seed++) {
+        const w = world('FFA', map, seed, WORLD.minPlayers);
+        play(w, t, MAX_TICKS(ffaMinutes), () => { w.mapChangeAt = Infinity; return false; });
+      }
+      report(`${map} ${MAPS[map].size}`, t);
+      addTally(all, t);
     }
+    report('all', all);
+    continue;
   }
-  report('all', all);
-}
-
-if (tdmCapMinutes > 0) {
-  console.log(`\nTDM to ${WORLD.tdmWinScore} kills, ${WORLD.minPlayers} bots, capped at ${tdmCapMinutes} min, ${seeds} seeds per map`);
-  const all = emptyTally();
-  const lengths: number[] = [];
+  const target = WIN_SCORE[mode];
+  console.log(`\n${mode} to ${target}, ${WORLD.minPlayers} bots, capped at ${capMinutes} min, ${seeds} seeds per map`);
+  const wins: number[] = [];
   let unfinished = 0;
-  for (const map of ROTATION.TDM) {
+  for (const map of ROTATION[mode]) {
     const t = emptyTally();
-    const mapLengths: number[] = [];
+    const mapWins: string[] = [];
     for (let seed = 1; seed <= seeds; seed++) {
-      const w = world('TDM', map, seed, WORLD.minPlayers);
-      const ms = play(w, t, MAX_TICKS(tdmCapMinutes), () => w.match.k === 'over');
-      if (w.match.k === 'over' && w.teamScore.red !== w.teamScore.blue && Math.max(w.teamScore.red, w.teamScore.blue) >= WORLD.tdmWinScore) mapLengths.push(ms);
-      else unfinished++;
+      const w = world(mode, map, seed, WORLD.minPlayers);
+      w.mapChangeAt = Infinity;
+      const ms = play(w, t, MAX_TICKS(capMinutes), () => w.match.k === 'over');
+      if (w.match.k === 'over' && Math.max(w.teamScore.red, w.teamScore.blue) >= target) { wins.push(ms); mapWins.push(sec(ms)); }
+      else { unfinished++; mapWins.push(`cap (${Math.round(Math.max(w.teamScore.red, w.teamScore.blue))})`); }
     }
-    lengths.push(...mapLengths);
-    report(map, t);
-    console.log(`  ${''.padEnd(10)}  to ${WORLD.tdmWinScore} kills ${mapLengths.map(sec).join(' ') || 'none'}`);
-    for (const k of Object.keys(t) as (keyof Tally)[]) {
-      const v = t[k];
-      if (Array.isArray(v)) (all[k] as number[]).push(...v); else (all[k] as number) += v;
-    }
+    report(`${map} ${MAPS[map].size}`, t);
+    console.log(`  ${''.padEnd(10)}  to ${target}: ${mapWins.join(' ')}`);
+    addTally(all, t);
   }
   report('all', all);
-  console.log(`  match to ${WORLD.tdmWinScore} kills: mean ${sec(mean(lengths))} median ${sec(median(lengths))}, ${unfinished} of ${seeds * ROTATION.TDM.length} hit the ${tdmCapMinutes} min cap`);
+  console.log(`  match to ${target}: mean ${sec(mean(wins))} median ${sec(median(wins))}, ${unfinished} of ${seeds * ROTATION[mode].length} hit the ${capMinutes} min cap`);
 }
 
 if (thinkBots > 0) {
-  const w = world('FFA', ROTATION.FFA[0]!, 1, thinkBots);
+  const map = ROTATION.FFA[0]!;
+  const w = world('FFA', map, 1, thinkBots);
   const brain = makeBrain(w, [...w.players.keys()]);
   const r = () => rand(w);
   const perTick: number[] = [];
@@ -192,5 +214,5 @@ if (thinkBots > 0) {
   }
   const warm = perTick.slice(WORLD.tickHz * 5).sort((a, b) => a - b);
   const at = (q: number) => warm[Math.min(warm.length - 1, Math.floor(q * warm.length))]!.toFixed(3);
-  console.log(`\nthink time, ${thinkBots} bots on ${ROTATION.FFA[0]}, 2 min: per tick mean ${mean(warm).toFixed(3)}ms p50 ${at(0.5)}ms p95 ${at(0.95)}ms p99 ${at(0.99)}ms max ${at(1)}ms (tick budget ${TICK_MS.toFixed(1)}ms)`);
+  console.log(`\nthink time, ${thinkBots} bots on ${map} (${MAPS[map].size}px), 2 min: per tick mean ${mean(warm).toFixed(3)}ms p50 ${at(0.5)}ms p95 ${at(0.95)}ms p99 ${at(0.99)}ms max ${at(1)}ms (tick budget ${TICK_MS.toFixed(1)}ms)`);
 }
