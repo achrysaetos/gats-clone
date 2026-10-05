@@ -1,6 +1,6 @@
 import { PERK_TIERS, WORLD, ZOM, type Blast, type BuildingKind, type GunId, type ModeId, type PlayerKind, type Tier, type ZombieKind } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team } from '../protocol.ts';
-import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type MapId } from '../maps.ts';
+import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 
@@ -224,6 +224,11 @@ const SPAWN_ENEMY_DIST = 400;
 export function spawnPoint(w: World, team: Team): Pose {
   const regions = MAPS[w.map].spawns[team ?? 'ffa'];
   const solids = solidRects(w);
+  const core = MAPS[w.map].siege?.core;
+  if (w.run && core) {
+    const inside = defendedPoints(solids, core);
+    if (inside.length) return inside[Math.floor(rand(w) * Math.min(inside.length, SQUAD_SPAWN_CHOICES))]!;
+  }
   for (let i = 0; i < 200; i++) {
     const r = regions[Math.floor(rand(w) * regions.length)];
     const x = r.x + rand(w) * r.w, y = r.y + rand(w) * r.h;
@@ -234,6 +239,34 @@ export function spawnPoint(w: World, team: Team): Pose {
   }
   const fallback = regions[0];
   return clearPointNear(solids, fallback.x + fallback.w / 2, fallback.y + fallback.h / 2, WORLD.playerRadius + SPAWN_CLEARANCE);
+}
+
+const SQUAD_SPAWN_CHOICES = 12;
+
+/** Grid points a player can walk to from the core, nearest first, so a squad respawns on the defended side of its walls. */
+function defendedPoints(solids: readonly Rect[], core: Center): Pose[] {
+  const n = Math.floor(WORLD.size / ZOM.cell);
+  const center = (c: number) => c * ZOM.cell + ZOM.cell / 2;
+  const open = (cx: number, cy: number, r: number) => !solids.some((b) => circleHitsRect(center(cx), center(cy), r, b));
+  const seen = new Uint8Array(n * n);
+  const x0 = Math.floor((core.x - ZOM.coreHalf) / ZOM.cell) - 1, x1 = Math.floor((core.x + ZOM.coreHalf - 1) / ZOM.cell) + 1;
+  const y0 = Math.floor((core.y - ZOM.coreHalf) / ZOM.cell) - 1, y1 = Math.floor((core.y + ZOM.coreHalf - 1) / ZOM.cell) + 1;
+  const queue: [number, number][] = [];
+  for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
+    const border = cx === x0 || cx === x1 || cy === y0 || cy === y1;
+    if (border && open(cx, cy, WORLD.playerRadius)) { seen[cy * n + cx] = 1; queue.push([cx, cy]); }
+  }
+  const points: Pose[] = [];
+  for (let i = 0; i < queue.length && points.length < SQUAD_SPAWN_CHOICES; i++) {
+    const [cx, cy] = queue[i]!;
+    if (open(cx, cy, WORLD.playerRadius + SPAWN_CLEARANCE)) points.push({ x: center(cx), y: center(cy) });
+    for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]] as const) {
+      if (nx < 1 || ny < 1 || nx >= n - 1 || ny >= n - 1 || seen[ny * n + nx] || !open(nx, ny, WORLD.playerRadius)) continue;
+      seen[ny * n + nx] = 1;
+      queue.push([nx, ny]);
+    }
+  }
+  return points;
 }
 
 /** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */
