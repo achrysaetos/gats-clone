@@ -1,4 +1,4 @@
-import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, PRESS_GRACE_MS, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
@@ -10,7 +10,6 @@ import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Play
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
-const PRESS_GRACE_MS = 100;
 
 type AddPlayerOpts = { team?: Team; at?: { x: number; y: number }; kind?: PlayerKind };
 

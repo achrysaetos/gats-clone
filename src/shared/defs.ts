@@ -210,6 +210,9 @@ export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(
 
 export const PICK_OPTIONS: readonly PickOption[] = [...PERK_TIERS[1], ...PERK_TIERS[2], ...PERK_TIERS[3], ...GUN_IDS];
 
+/** How long a press waits past the gun's cooldown or reload to fire, so a tap a moment early is not lost. */
+export const PRESS_GRACE_MS = 100;
+
 export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 

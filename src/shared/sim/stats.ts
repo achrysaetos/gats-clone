@@ -44,6 +44,9 @@ export const MAX_RANGE_MUL = Math.max(...Object.values(PERK_MODS).map((m) => m.r
 export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((range, perk) => range * (PERK_MODS[perk].rangeMul ?? 1), GUNS[gun].range);
 
+export const silencedFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): boolean =>
+  (GUNS[gun].silenced ?? false) || Object.values(perks).some((perk) => PERK_MODS[perk].silenced ?? false);
+
 export function effectiveStats(p: Player, still = false): Stats {
   const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
@@ -57,7 +60,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     regenPerSec: WORLD.regenPerSec,
     regenDelayMs: WORLD.regenDelayMs,
     viewRadius: WORLD.viewRadius,
-    piercing: false, silenced: weapon.silenced ?? false, shield: false, thermal: false, ghillie: false,
+    piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
@@ -68,7 +71,6 @@ export function effectiveStats(p: Player, still = false): Stats {
     s.regenDelayMs *= m.regenDelayMul ?? 1;
     s.viewRadius *= m.viewMul ?? 1;
     s.piercing ||= m.piercing ?? false;
-    s.silenced ||= m.silenced ?? false;
     s.shield ||= m.shield ?? false;
     s.thermal ||= m.thermal ?? false;
     s.ghillie ||= m.ghillie ?? false;
