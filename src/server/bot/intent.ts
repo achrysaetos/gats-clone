@@ -67,6 +67,7 @@ const MIN_COMMIT_MS: Record<IntentKind, number> = {
   patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500,
 };
 const SEARCH_MS = 9000;
+const GUNFIRE_PULL_PX = 1400;
 const FLANK_MS = 8000;
 const STALEMATE_MS = 6000;
 const ARRIVED_PX = 60;
@@ -182,7 +183,14 @@ const engageOnSight: Interrupt = (cur, v) => {
   return { k: 'engage', target: t.p.id };
 };
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight];
+const investigateGunfire: Interrupt = (cur, v, c) => {
+  const idle = cur.k === 'patrol' || (cur.k === 'takePosition' && v.zones.length === 0);
+  if (!idle || c.role === 'anchor' || !v.lead || v.lead.tick !== v.tick || dist(v.lead, v.me) > GUNFIRE_PULL_PX) return null;
+  if (cur.k === 'takePosition' && dist(v.lead, cur.facing) < GUNFIRE_PULL_PX / 3) return null;
+  return searchPlan(c, v.lead);
+};
+
+const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {

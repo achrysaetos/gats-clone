@@ -198,3 +198,16 @@ test('a peek that nobody answers stays out, and one that draws fire tucks back i
   const shot = decide(w, bot.id, out, { tick: 10, aware: { ...freshAwareness(), hitTick: 10 } });
   assert.ok(shot.k === 'peekAndHide' && shot.phase === 'hide', 'shot at: ducks');
 });
+
+test('a bot holding a spot goes to gunfire it just heard, unless it is far off or where it is already watching', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const hold = startIntent({ k: 'takePosition', spot: { x: 1000, y: 1000 }, facing: { x: 1000, y: 200 } }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
+  const heard = (x: number, y: number, tick: number): Awareness => ({ ...freshAwareness(), heard: [{ x, y, tick, hunted: false }] });
+  const after = (x: number, y: number, heardAt: number) => decide(w, bot.id, hold, { tick: 30, aware: heard(x, y, heardAt) });
+  const go = after(1900, 1300, 30);
+  assert.ok(go.k === 'search' && go.at.x === 1900, `goes to look: ${JSON.stringify(go)}`);
+  assert.equal(after(1900, 1300, 20).k, 'takePosition', 'an older shot does not pull it off its spot');
+  assert.equal(after(2900, 2900, 30).k, 'takePosition', 'gunfire across the map does not');
+  assert.equal(after(1050, 300, 30).k, 'takePosition', 'gunfire where it is already watching does not');
+});

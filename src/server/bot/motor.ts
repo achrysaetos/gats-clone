@@ -4,7 +4,7 @@ import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { engage, sharpnessAgainst, TICK_MS, type Engagement } from './aim.ts';
 import type { BotArena } from './arena.ts';
-import type { Perception, Threat } from './awareness.ts';
+import { focus, type Perception, type Threat } from './awareness.ts';
 import type { Intent, IntentCtx } from './intent.ts';
 import { clearShot, findPath, isOpen, walkable, type Point } from './nav.ts';
 
@@ -138,7 +138,7 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     case 'search': return { steer: { to: intent.at, face: intent.at, reload: false, crates: false }, stance: m.stance };
     case 'flank': return { steer: { to: intent.via, face: intent.lastKnown, reload: false, crates: false }, stance: m.stance };
     case 'peekAndHide': {
-      const t = v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0];
+      const t = focus(v, intent.target);
       const face = t ? t.p : v.lastSeen ?? intent.peek;
       const reload = intent.phase === 'hide' && !t && v.self.ammo < v.self.mag;
       const peeking = (to: Point, stance: Motor['stance']) => ({ steer: { to, face, reload, crates: false }, stance });
@@ -160,7 +160,7 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       return { steer: { to, face: v.threats[0]?.p ?? intent.threat, reload: v.threats.length === 0 && v.self.ammo < v.self.mag, crates: false }, stance: m.stance };
     }
     case 'engage': {
-      const t = v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0];
+      const t = focus(v, intent.target);
       if (!t) return { steer: { to: v.lastSeen, face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
       if (readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) return { steer: fight(t.p), stance: m.stance };
@@ -211,7 +211,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const pressing = drive.dir !== null;
   const gun = GUNS[me.gun];
 
-  const t: Threat | undefined = (intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank') ? v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0] : v.threats[0];
+  const t: Threat | undefined = intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank' ? focus(v, intent.target) : v.threats[0];
   const aimSurvivesCover = (id: number) => intent.k === 'peekAndHide' && intent.target === id;
   const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || aimSurvivesCover(id));
   let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;

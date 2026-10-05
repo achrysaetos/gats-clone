@@ -8,7 +8,7 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botName, botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import type { PersonalityId } from '../src/server/bot/intent.ts';
-import { emptyWorld, grantPerks, setWalls, spawnAt } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, setWalls, spawnAt } from './helpers.ts';
 
 const rand = (() => { let x = 7; return () => ((x = (x * 16807) % 2147483647) / 2147483647); })();
 
@@ -184,6 +184,29 @@ test('out on a peek at long range a marksman plants its feet, while a cautious b
   assert.ok(marksman.filter(moving).length / marksman.length < 0.2, `marksman moves ${marksman.filter(moving).length} of ${marksman.length} ticks`);
   const cautious = peekInputs('cautious');
   assert.ok(cautious.filter(moving).length / cautious.length > 0.5, `cautious moves ${cautious.filter(moving).length} of ${cautious.length} ticks`);
+});
+
+test('a bot fighting one enemy turns on a hunted one who comes into view, and keeps its own target over a mere nearer one', () => {
+  const aimAfter = (hunted: boolean) => {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    const target = spawnAt(w, 1400, 1000);
+    const other = spawnAt(w, 1000, 1250);
+    if (hunted) equip(other, 'executioner');
+    const r = seeded(6);
+    let mem: BotMemory = { ...newBotMemory(r), persona: 'aggressive', intent: { k: 'engage', target: target.id, since: 0, holdUntil: 1e9 } };
+    let angle = 0;
+    for (let i = 0; i < 20; i++) {
+      for (const p of [bot, target, other]) if (p.life.k === 'alive') p.life.hp = 100;
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+      mem = d.mem;
+      angle = d.input.angle;
+      step(w, TICK_MS);
+    }
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  };
+  assert.ok(Math.abs(aimAfter(true) - Math.PI / 2) < 0.4, `aims down at the hunted enemy: ${aimAfter(true).toFixed(2)}`);
+  assert.ok(Math.abs(aimAfter(false)) < 0.4, `stays on its target to the right: ${aimAfter(false).toFixed(2)}`);
 });
 
 test('a bot leads a target moving across its line of fire', () => {
