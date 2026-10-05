@@ -100,7 +100,7 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   };
 }
 
-export const refundOf = (kind: BuildingKind) => Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund);
+const refundOf = (kind: BuildingKind) => Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund);
 
 /** `taken` names what stands on the cell, since that decides the refund. */
 function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingKind | undefined): string {

@@ -75,7 +75,7 @@ const TURRET_LOOK: Record<TurretKind, { plate: string; ring: string; barrel: str
   cannon: { plate: '#7a6a58', ring: '#4a4036', barrel: '#3b3f48', accent: '#e5484d', ammo: '#ff9f43' },
 };
 
-export function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, angle: number, recoil: number, now: number) {
+function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, angle: number, recoil: number, now: number) {
   const { x, y, w, h } = cellRect(b.cx, b.cy);
   const look = TURRET_LOOK[b.kind];
   const wear = 1 - 0.4 * (1 - b.hp / 10);
