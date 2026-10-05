@@ -66,8 +66,8 @@ export type IntentCtx = { tick: number; persona: Personality; role: Role | null;
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
   patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500,
 };
-const SEARCH_MS = 9000;
-const GUNFIRE_PULL_PX = 1400;
+const SEARCH_MS = 5000;
+const GUNFIRE_PULL_PX = 2500;
 const FLANK_MS = 8000;
 const STALEMATE_MS = 6000;
 const ARRIVED_PX = 60;
