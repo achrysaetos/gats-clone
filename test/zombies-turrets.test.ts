@@ -180,7 +180,7 @@ test('holding use by a turret short of ammo reloads it for scrap up to a full lo
   assert.equal(t.ammo, 0, 'no scrap, no reload');
 });
 
-test('a turret\'s ammo shows in tenths and its aim only in its shot events, so the sticky buildings field holds still while it fires', () => {
+test('a turret\'s ammo shows in tenths, and its aim and rounds only in its shot events, so the sticky buildings field holds still while it fires', () => {
   const w = nightWorld();
   const p = spawnAt(w, TX, TY + 300);
   const t = addTurret(w, 'sentry', p.id);
@@ -188,7 +188,7 @@ test('a turret\'s ammo shows in tenths and its aim only in its shot events, so t
   step(w, TICK_MS);
   const first = snapshotFor(w, p.id);
   assert.deepEqual(first.buildings, [{ kind: 'sentry', cx: T.cx, cy: T.cy, hp: 10, ammo: 10 }]);
-  assert.deepEqual(first.bullets.map((b) => b.turret), ['sentry']);
+  assert.deepEqual([first.bullets.length, w.bullets.length], [0, 1], 'its round flies on the server but stays off the wire');
   run(w, 500);
   assert.ok(t.ammo < SENTRY.ammo - 1, 'it kept firing');
   assert.deepEqual(snapshotFor(w, p.id).buildings, first.buildings);

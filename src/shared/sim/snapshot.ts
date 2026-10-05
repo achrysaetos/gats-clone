@@ -112,8 +112,8 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     players.push(playerView(w, p, me));
   }
   const bullets: BulletView[] = w.bullets
-    .filter((b) => inView(b.x, b.y, 100))
-    .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun, ...(b.turret && { turret: b.turret }) }));
+    .filter((b) => !b.turret && inView(b.x, b.y, 100))
+    .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
     .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size }));

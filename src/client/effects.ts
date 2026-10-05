@@ -1,4 +1,4 @@
-import { WORLD, ZOMBIES } from '../shared/defs.ts';
+import { BUILDINGS, WORLD, ZOMBIES, type TurretKind } from '../shared/defs.ts';
 import type { DamageKind } from '../shared/protocol.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { INK, PALETTE, ZOMBIE_LOOK } from './palette.ts';
@@ -23,6 +23,7 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
     case 'flash':
     case 'slash':
+    case 'tracer':
       return;
   }
 }
@@ -47,9 +48,35 @@ export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Eff
       case 'slash': drawSlash(ctx, fx.x, fx.y, fx.angle, k); break;
       case 'death': drawDeathRing(ctx, fx.x, fx.y, k); break;
       case 'splat': drawSplat(ctx, fx.x, fx.y, ZOMBIE_LOOK[fx.zombie].arm, ZOMBIES[fx.zombie].radius, k); break;
+      case 'tracer': drawTurretRound(ctx, fx.turret, fx.x, fx.y, fx.angle, fx.reach, now - fx.born); break;
     }
   }
   ctx.globalAlpha = 1;
+}
+
+const FLASH_MS = 70;
+const TRAIL_S = 0.03;
+
+/** The muzzle flash, then the round flying out along its line until it stops `reach` px out. */
+function drawTurretRound(ctx: CanvasRenderingContext2D, kind: TurretKind, x: number, y: number, angle: number, reach: number, ms: number) {
+  if (ms < FLASH_MS) drawMuzzleFlash(ctx, x, y, angle, ms / FLASH_MS);
+  const { bulletSpeed, bullet } = BUILDINGS[kind].turret;
+  const head = (bulletSpeed * ms) / 1000;
+  if (head > reach) return;
+  const tail = Math.max(0, head - bulletSpeed * TRAIL_S);
+  const c = Math.cos(angle), s = Math.sin(angle);
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = bullet.color;
+  ctx.lineWidth = bullet.r * 2.4;
+  ctx.beginPath();
+  ctx.moveTo(x + c * tail, y + s * tail);
+  ctx.lineTo(x + c * head, y + s * head);
+  ctx.stroke();
+  ctx.fillStyle = '#f4efe6';
+  ctx.beginPath();
+  ctx.arc(x + c * head, y + s * head, bullet.r, 0, TAU);
+  ctx.fill();
 }
 
 function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, k: number) {

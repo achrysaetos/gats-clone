@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS } from '../src/shared/defs.ts';
+import { BUILDINGS, ZOMBIES } from '../src/shared/defs.ts';
 import type { GameEvent, Snapshot } from '../src/shared/protocol.ts';
 import { releaseDue, scheduleEffects } from '../src/client/eventclock.ts';
 
@@ -64,9 +64,13 @@ test('deferred effects release exactly when the render clock reaches their tick'
   assert.deepEqual(onTime.rest, []);
 });
 
-test('a turret\'s shot flashes at the tip of its barrel on the render clock', () => {
-  const { now, later } = scheduleEffects(snapWith([{ e: 'turret', kind: 'cannon', x: 100, y: 200, angle: Math.PI / 2 }]), 700, ME);
+test('a turret\'s shot draws its round on the render clock from the barrel tip to the first zombie on its line, or to its range', () => {
+  const shot: GameEvent = { e: 'turret', kind: 'cannon', x: 100, y: 200, angle: Math.PI / 2 };
+  const { muzzle, range } = BUILDINGS.cannon.turret;
+  const { now, later } = scheduleEffects(snapWith([shot]), 700, ME);
   assert.deepEqual(now, []);
-  const fx = later[0]!.fx;
-  assert.ok(fx.kind === 'flash' && Math.abs(fx.x - 100) < 1e-9 && fx.y === 200 + BUILDINGS.cannon.turret.muzzle, JSON.stringify(fx));
+  const open = later[0]!.fx;
+  assert.ok(open.kind === 'tracer' && Math.abs(open.x - 100) < 1e-9 && open.y === 200 + muzzle && open.reach === range, JSON.stringify(open));
+  const blocked = scheduleEffects({ ...snapWith([shot]), zombies: [[7, 0, 100, 400, 10], [8, 0, 100, 300, 10]] }, 700, ME).later[0]!.fx;
+  assert.ok(blocked.kind === 'tracer' && Math.abs(blocked.reach - (300 - ZOMBIES.walker.radius - 200 - muzzle)) < 1e-6, JSON.stringify(blocked));
 });

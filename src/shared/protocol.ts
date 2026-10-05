@@ -56,8 +56,7 @@ export type PlayerView = {
 };
 
 /** `gun` is null for shrapnel. */
-/** `turret` names the turret that fired it, and is left off a player's round. */
-export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null; turret?: TurretKind };
+export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
 export type WallView = { x: number; y: number; w: number; h: number; built: boolean };
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
@@ -116,7 +115,7 @@ export type GameEvent =
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
   /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
   | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null }
-  /** A turret at cell center (`x`, `y`) fired toward `angle`. */
+  /** A turret at cell center (`x`, `y`) fired toward `angle`, to 0.01 rad. Its rounds stay off `bullets`: the client draws each from this. */
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number }
   /** A squad player went down, was revived (`by` the reviver), or bled out. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut'; by: number | null };

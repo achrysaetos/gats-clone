@@ -19,7 +19,7 @@ function fire(w: World, t: Turret, target: Zombie, x: number, y: number) {
     vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: def.range, damage: def.damage.walker, piercing: false,
     label: BUILDINGS[t.kind].name, gun: null, turret: t.kind, penetrate: 0, passed: [], blast: null,
   });
-  w.events.push({ e: 'turret', kind: t.kind, x, y, angle: aim });
+  w.events.push({ e: 'turret', kind: t.kind, x, y, angle: Math.round(aim * 100) / 100 });
 }
 
 /** Each loaded turret whose gun has cooled fires one round at its target. */

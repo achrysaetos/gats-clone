@@ -1,4 +1,5 @@
-import { BUILDINGS, WORLD } from '../shared/defs.ts';
+import { BUILDINGS, WORLD, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { segmentEntersCircleAt } from '../shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../shared/protocol.ts';
 import { muzzleTip } from './sprites.ts';
 import type { Effect } from './state.ts';
@@ -15,8 +16,12 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
     case 'turret': {
-      const reach = BUILDINGS[ev.kind].turret.muzzle;
-      return { kind: 'flash', x: ev.x + Math.cos(ev.angle) * reach, y: ev.y + Math.sin(ev.angle) * reach, angle: ev.angle };
+      const def = BUILDINGS[ev.kind].turret;
+      const x = ev.x + Math.cos(ev.angle) * def.muzzle, y = ev.y + Math.sin(ev.angle) * def.muzzle;
+      const dx = Math.cos(ev.angle) * def.range, dy = Math.sin(ev.angle) * def.range;
+      // The round stops in the first zombie on its line, as the server's does.
+      const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]!].radius) ?? 1));
+      return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: hit * def.range };
     }
     case 'hunted':
     case 'life': return null;

@@ -1,4 +1,4 @@
-import type { BuildingKind, ZombieKind } from '../shared/defs.ts';
+import type { BuildingKind, TurretKind, ZombieKind } from '../shared/defs.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
@@ -16,9 +16,11 @@ export type Effect =
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
   | { kind: 'flash'; x: number; y: number; angle: number; born: number }
   | { kind: 'slash'; x: number; y: number; angle: number; born: number }
-  | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number };
+  | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number }
+  /** A turret's round from its muzzle at (`x`, `y`), flying `reach` px before it stops. */
+  | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 420 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 420, tracer: 240 };
 
 type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
