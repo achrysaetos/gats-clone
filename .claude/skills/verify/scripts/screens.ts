@@ -1,6 +1,7 @@
 /// <reference types="node" />
 // Usage: node screens.ts <run-dir> <out-dir> [view ...]   Screenshots each art view through real play, so an art change can be compared before and after.
-// Views: menu ffa tdm dom (default), board (TDM while Tab holds the whole leaderboard open), and zom-day zom-night, which start a squad and need a scratch copy whose night brings a full horde (see features/zombies.md).
+// Views: menu ffa tdm dom (default), board (TDM while Tab holds the whole leaderboard open), death (FFA until a bot kills you), levelup and evolve
+// (the perk and evolve docks, then `evolved` after the pick; need a scratch copy with low LEVELS), and zom-day zom-night, which start a squad and need a scratch copy whose night brings a full horde (see features/zombies.md).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -139,6 +140,35 @@ for (const view of VIEWS) {
       await enter(serverOf('dom'));
       const zone = () => { const self = me(), zones = latest()?.zones ?? []; return self && zones.length ? [...zones].sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0]! : null; };
       await fightShot('dom', 30_000, zone);
+      break;
+    }
+    case 'death': {
+      await enter(serverOf('ffa'));
+      for (let i = 0; i < 600 && !(await js(`!document.getElementById('death').hidden`)); i++) await play(300, () => enemies()[0] ?? null, enemies, false);
+      await sleep(900);
+      await shot('death');
+      await js(`document.getElementById('respawn').click()`);
+      break;
+    }
+    case 'levelup':
+    case 'evolve': {
+      if (!me()?.alive) await enter(serverOf('ffa'));
+      const dock = () => js(`document.getElementById('perk-panel').hidden ? '' : document.querySelector('#perk-panel h2')?.textContent ?? ''`);
+      const want = view === 'levelup' ? 'perk' : 'evolve';
+      for (let i = 0; i < 400; i++) {
+        const title: string = await dock();
+        if (title.includes(want)) break;
+        if (title) { await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 }); await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 }); await sleep(300); continue; }
+        await play(400, null, enemies);
+      }
+      await play(600, null, enemies, false);
+      await shot(view);
+      if (view === 'evolve') {
+        await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
+        await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
+        await sleep(700);
+        await shot('evolved');
+      }
       break;
     }
     case 'zom-day': {
