@@ -50,8 +50,9 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
 /** Holding use mends the nearest worn wall or core in reach, as far as the scrap goes. */
 function repair(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
+  const coreD = dist2(p.x, p.y, core.x, core.y);
   let best: Building | Run['core'] | null = null, bestD = ZOM.reachPx ** 2;
-  if (run.core.hp < ZOM.coreHp && dist2(p.x, p.y, core.x, core.y) <= bestD) { best = run.core; bestD = dist2(p.x, p.y, core.x, core.y); }
+  if (run.core.hp < ZOM.coreHp && coreD <= bestD) { best = run.core; bestD = coreD; }
   for (const b of w.buildings) {
     const d = dist2(p.x, p.y, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell);
     if (b.hp < BUILDINGS[b.kind].hp && d <= bestD) { best = b; bestD = d; }
