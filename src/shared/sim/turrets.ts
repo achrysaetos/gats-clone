@@ -3,9 +3,6 @@ import { MODES } from './modes.ts';
 import { dist2, segmentEntersRectAt, type Rect } from './movement.ts';
 import { coverRects, newId, rand, type Turret, type World, type Zombie } from './world.ts';
 
-/** How far out from the cell's center a turret's rounds leave the barrel. */
-export const MUZZLE = { sentry: 22, cannon: 28 } as const;
-
 /** The nearest zombie in range of the kind the turret prefers, else of any kind, that nothing solid hides; the squad's own buildings never block a turret's view. */
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
   const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : 1);
@@ -18,7 +15,7 @@ function fire(w: World, t: Turret, target: Zombie, x: number, y: number) {
   const aim = Math.atan2(target.y - y, target.x - x);
   const a = aim + (rand(w) - 0.5) * def.spread * 2;
   w.bullets.push({
-    id: newId(w), owner: t.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * MUZZLE[t.kind], y: y + Math.sin(aim) * MUZZLE[t.kind],
+    id: newId(w), owner: t.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
     vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: def.range, damage: def.damage.walker, piercing: false,
     label: BUILDINGS[t.kind].name, gun: null, turret: t.kind, penetrate: 0, passed: [], blast: null,
   });

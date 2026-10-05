@@ -10,7 +10,7 @@ import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
 import { drawSilhouette } from './sprites.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
-import { outTillDawnText, reportRows, reportTitle } from './zombies.ts';
+import { outTillDawnText, reportRows, reportTitle, turretLine } from './zombies.ts';
 
 const CHAT_VISIBLE_MS = 15000;
 
@@ -202,7 +202,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const run = snap.run;
     const done = run?.phase === 'over' && run.report ? run.report : null;
     const left = done && run?.phaseEndsAt != null && clockNow !== null ? seconds(run.phaseEndsAt - clockNow) : null;
-    const key = done ? `${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}` : '';
+    const key = done ? `${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}|${turretLine(done)}` : '';
     if (key === keys.report) return;
     keys.report = key;
     report.hidden = !done;
@@ -213,16 +213,17 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     length.textContent = `The run lasted ${clock(done.durationMs)}`;
     const table = document.createElement('table');
     const head = document.createElement('tr');
-    for (const label of ['Player', 'Kills', 'Revives', 'Walls']) head.append(Object.assign(document.createElement('th'), { textContent: label }));
+    for (const label of ['Player', 'Kills', 'Revives', 'Built']) head.append(Object.assign(document.createElement('th'), { textContent: label }));
     table.append(head, ...reportRows(done, snap.players.find((p) => p.id === snap.self.id)?.name).map((r) => {
       const tr = document.createElement('tr');
       if (r.you) tr.className = 'you';
       for (const v of [r.name, r.kills, r.revives, r.built]) tr.append(Object.assign(document.createElement('td'), { textContent: String(v) }));
       return tr;
     }));
+    const turrets = turretLine(done);
     const next = document.createElement('p');
     next.textContent = left === null ? 'A fresh run starts soon' : `Next run in ${left}s`;
-    report.replaceChildren(h, length, table, next);
+    report.replaceChildren(h, length, table, ...(turrets ? [Object.assign(document.createElement('p'), { textContent: turrets })] : []), next);
   };
 
   const renderDeath = (state: ClientState, snap: Snapshot, now: number) => {

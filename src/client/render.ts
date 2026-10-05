@@ -1,4 +1,4 @@
-import { COLORS, GUNS, WORLD, ZOM } from '../shared/defs.ts';
+import { BUILDINGS, COLORS, GUNS, WORLD, ZOM } from '../shared/defs.ts';
 import type { BulletView, CrateView, PlayerView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
@@ -52,7 +52,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const walls = s.walls.filter((w) => inView(view, w.x, w.y, w.w + WALL_SHADOW.x, w.h + WALL_SHADOW.y));
   drawWallShadows(ctx, walls);
   for (const w of walls) drawWall(ctx, w);
-  if (snap.buildings) drawBuildings(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), now);
+  if (snap.buildings && snap.run) {
+    drawBuildings(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now);
+  }
   if (snap.run) drawCore(ctx, snap.run, now, s.coreHitAt);
   const alive = snap.players.filter((p) => p.alive && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
   const downed = snap.players.filter((p) => p.downed && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
@@ -384,9 +386,10 @@ function drawTrail(ctx: CanvasRenderingContext2D, color: string, trail: { x: num
 
 export const TRAIL_MS = 260;
 
-/** Class guns and shrapnel keep the plain tracer, orange for your own; an evolved gun's rounds wear its own color and size. */
+/** Class guns and shrapnel keep the plain tracer, orange for your own; an evolved gun's or a turret's rounds wear its own color and size. */
 function tracerLook(b: BulletView, myId: number): { r: number; color: string; own: boolean } {
   const own = b.owner === myId;
+  if (b.turret) return { ...BUILDINGS[b.turret].turret.bullet, own: false };
   if (b.gun && GUNS[b.gun].stage > 0) return { ...GUNS[b.gun].look.bullet, own };
   return { r: 1.6, color: own ? PALETTE.ownBullet : PALETTE.bullet, own };
 }

@@ -1,5 +1,5 @@
-import { WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
-import type { BuildingView, PlayerView, RunView, ZombieView } from '../shared/protocol.ts';
+import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind } from '../shared/defs.ts';
+import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 import { HIT_FLASH_MS } from './effects.ts';
@@ -42,13 +42,116 @@ function cracksOf(cx: number, cy: number): number[][] {
 }
 const crackCache = new Map<string, number[][]>();
 
-export function drawBuildings(ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, now: number) {
+/** `to` is the angle of the turret's last shot (fired at `firedAt`), and `drawn` eases toward it, last eased at `at`. */
+export type TurretAim = { to: number; drawn: number; at: number; firedAt: number };
+
+/** A turret turns only to fire, so each shot's angle is its aim until the next; aims of turrets gone from the snapshot are dropped. */
+export function aimTurrets(aims: Map<string, TurretAim>, snap: Snapshot, now: number) {
+  for (const ev of snap.events) {
+    if (ev.e !== 'turret') continue;
+    const key = cellKey(ev.x, ev.y), aim = aims.get(key);
+    if (aim) { aim.to = ev.angle; aim.firedAt = now; } else aims.set(key, { to: ev.angle, drawn: ev.angle, at: now, firedAt: now });
+  }
+  if (!snap.buildings) return;
+  const standing = new Set(snap.buildings.map((b) => `${b.cx},${b.cy}`));
+  for (const key of aims.keys()) if (!standing.has(key)) aims.delete(key);
+}
+
+const TURN_PER_SEC = 14;
+const RECOIL_MS = 110;
+
+/** The barrel's drawn angle eases toward its aim; a turret that never fired faces away from the core. */
+function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: number; y: number }, now: number): { angle: number; recoil: number } {
+  const aim = aims.get(`${b.cx},${b.cy}`);
+  if (!aim) return { angle: Math.atan2((b.cy + 0.5) * ZOM.cell - core.y, (b.cx + 0.5) * ZOM.cell - core.x), recoil: 0 };
+  const d = aim.to - aim.drawn;
+  aim.drawn += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, ((now - aim.at) / 1000) * TURN_PER_SEC);
+  aim.at = now;
+  return { angle: aim.drawn, recoil: Math.max(0, 1 - (now - aim.firedAt) / RECOIL_MS) };
+}
+
+const TURRET_LOOK: Record<TurretKind, { plate: string; ring: string; barrel: string; accent: string; ammo: string }> = {
+  sentry: { plate: '#6b7280', ring: '#454b57', barrel: '#2e333c', accent: '#f5c400', ammo: '#f5c400' },
+  cannon: { plate: '#5a5248', ring: '#3d3730', barrel: '#24272d', accent: '#e5484d', ammo: '#ff9f43' },
+};
+
+export function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, angle: number, recoil: number, now: number) {
+  const { x, y, w, h } = cellRect(b.cx, b.cy);
+  const look = TURRET_LOOK[b.kind];
+  const wear = 1 - 0.4 * (1 - b.hp / 10);
+  const cx = x + w / 2, cy = y + h / 2;
+  ctx.beginPath();
+  ctx.roundRect(x + 2, y + 2, w - 4, h - 4, 8);
+  ctx.fillStyle = shade(look.plate, wear);
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = INK;
+  ctx.stroke();
+  ctx.fillStyle = shade(look.ring, wear);
+  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    ctx.beginPath();
+    ctx.arc(cx + dx * 16, cy + dy * 16, 2.5, 0, TAU);
+    ctx.fill();
+  }
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  ctx.translate(-recoil * 5, 0);
+  ctx.fillStyle = INK;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2.5;
+  if (b.kind === 'sentry') {
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.rect(4, side * 4 - 2.5, BUILDINGS.sentry.turret.muzzle - 4, 5);
+      ctx.fillStyle = look.barrel;
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else {
+    ctx.beginPath();
+    ctx.rect(2, -6.5, BUILDINGS.cannon.turret.muzzle - 6, 13);
+    ctx.fillStyle = look.barrel;
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(BUILDINGS.cannon.turret.muzzle - 7, -8.5, 7, 17);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(0, 0, b.kind === 'sentry' ? 10 : 13, 0, TAU);
+  ctx.fillStyle = shade(look.ring, wear);
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, TAU);
+  ctx.fillStyle = look.accent;
+  ctx.fill();
+  ctx.restore();
+  const empty = b.ammo === 0;
+  ctx.fillStyle = INK;
+  ctx.fillRect(x + 7, y + h - 9, w - 14, 6);
+  ctx.fillStyle = empty ? (Math.floor(now / 250) % 2 ? PALETTE.hpBad : INK) : look.ammo;
+  ctx.fillRect(x + 8, y + h - 8, empty ? w - 16 : ((w - 16) * b.ammo) / 10, 4);
+}
+
+export function drawBuildings(
+  ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, aims: Map<string, TurretAim>, core: { x: number; y: number }, now: number,
+) {
   ctx.fillStyle = PALETTE.shadow;
   ctx.beginPath();
   for (const b of buildings) ctx.rect(b.cx * ZOM.cell + WALL_SHADOW.x, b.cy * ZOM.cell + WALL_SHADOW.y, ZOM.cell, ZOM.cell);
   ctx.fill();
   for (const b of buildings) {
     const { x, y, w, h } = cellRect(b.cx, b.cy);
+    if (b.kind !== 'wall') {
+      const barrel = barrelOf(aims, b, core, now);
+      drawTurret(ctx, b, barrel.angle, barrel.recoil, now);
+      drawDamage(ctx, b, flashes, now);
+      continue;
+    }
     const wear = 1 - 0.4 * (1 - b.hp / 10);
     ctx.fillStyle = shade(WALL_LOOK.face, wear);
     ctx.fillRect(x, y, w, h);
@@ -65,27 +168,33 @@ export function drawBuildings(ctx: CanvasRenderingContext2D, buildings: readonly
       for (const bx of i % 2 ? [w / 2] : [w / 4, (3 * w) / 4]) { ctx.moveTo(x + bx, y + i * course); ctx.lineTo(x + bx, y + (i + 1) * course); }
     }
     ctx.stroke();
-    const cracks = b.hp <= 2 ? 3 : b.hp <= 5 ? 2 : b.hp <= 8 ? 1 : 0;
-    if (cracks) {
-      const key = `${b.cx},${b.cy}`;
-      let lines = crackCache.get(key);
-      if (!lines) crackCache.set(key, (lines = cracksOf(b.cx, b.cy)));
-      ctx.strokeStyle = INK;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (const c of lines.slice(0, cracks)) { ctx.moveTo(x + c[0]!, y + c[1]!); ctx.lineTo(x + c[2]!, y + c[3]!); ctx.lineTo(x + c[4]!, y + c[5]!); }
-      ctx.stroke();
-    }
     ctx.strokeStyle = INK;
     ctx.lineWidth = 3;
     ctx.strokeRect(x, y, w, h);
-    const hit = flashes.get(`${b.cx},${b.cy}`);
-    if (hit !== undefined) {
-      ctx.globalAlpha = 0.7 * (1 - (now - hit) / HIT_FLASH_MS);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x, y, w, h);
-      ctx.globalAlpha = 1;
-    }
+    drawDamage(ctx, b, flashes, now);
+  }
+}
+
+/** Cracks by lost health and a white flash when bitten, on walls and turrets alike. */
+function drawDamage(ctx: CanvasRenderingContext2D, b: BuildingView, flashes: ReadonlyMap<string, number>, now: number) {
+  const { x, y, w, h } = cellRect(b.cx, b.cy);
+  const cracks = b.hp <= 2 ? 3 : b.hp <= 5 ? 2 : b.hp <= 8 ? 1 : 0;
+  if (cracks) {
+    const key = `${b.cx},${b.cy}`;
+    let lines = crackCache.get(key);
+    if (!lines) crackCache.set(key, (lines = cracksOf(b.cx, b.cy)));
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const c of lines.slice(0, cracks)) { ctx.moveTo(x + c[0]!, y + c[1]!); ctx.lineTo(x + c[2]!, y + c[3]!); ctx.lineTo(x + c[4]!, y + c[5]!); }
+    ctx.stroke();
+  }
+  const hit = flashes.get(`${b.cx},${b.cy}`);
+  if (hit !== undefined) {
+    ctx.globalAlpha = 0.7 * (1 - (now - hit) / HIT_FLASH_MS);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -317,6 +426,10 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   ctx.setLineDash([]);
   const { x, y, w, h } = cellRect(ghost.cx, ghost.cy);
   const color = ghost.refusal === null ? GHOST_LOOK.ok : ghost.refusal === 'taken' ? GHOST_LOOK.down : GHOST_LOOK.no;
+  if (ghost.kind !== 'wall' && ghost.refusal !== 'taken') {
+    ctx.globalAlpha = 0.6;
+    drawTurret(ctx, { kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, hp: 10, ammo: 10 }, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, now);
+  }
   ctx.globalAlpha = 0.35 + 0.1 * Math.sin(now / 160);
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w, h);

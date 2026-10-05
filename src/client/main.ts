@@ -1,4 +1,4 @@
-import { pickOptions, WORLD } from '../shared/defs.ts';
+import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -9,7 +9,7 @@ import { killOf, lossOf, selfOf } from './derive.ts';
 import { spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from './moments.ts';
-import { drawHud, drawSticks } from './hud.ts';
+import { buildChipAt, drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
@@ -26,8 +26,8 @@ import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
-import { CORE_ALERT_MS, nextCoreHitAt } from './siege.ts';
-import { buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
+import { aimTurrets, CORE_ALERT_MS, nextCoreHitAt } from './siege.ts';
+import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -93,7 +93,7 @@ const zombiesView = () => {
   const s = drawnSessionOf(state);
   const now = performance.now();
   return s && {
-    building: s.building, ghost, coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
+    building: s.building, buildKind: s.buildKind, ghost, coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
     callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
   };
 };
@@ -265,7 +265,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], pendingFx: [], feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), building: false,
+    coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 
@@ -290,6 +290,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.pendingFx.push(...fx.later);
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
+  aimTurrets(s.turretAims, snap, now);
   if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
@@ -348,17 +349,25 @@ function toggleBuild(s: Session) {
   const run = newestSnap(s.snaps)?.run;
   if (!run || state.phase !== 'playing') return;
   if (!s.building && run.phase !== 'day') {
-    s.chat.push({ from: '', text: 'Walls go up by day.', team: null, at: performance.now() });
+    s.chat.push({ from: '', text: 'You build by day.', team: null, at: performance.now() });
     return;
   }
   s.building = !s.building;
   playClick(s);
 }
 
-function buildClick(s: Session, button: number) {
+function pickBuildKind(s: Session, kind: BuildingKind) {
+  if (s.buildKind === kind) return;
+  s.buildKind = kind;
+  playClick(s);
+}
+
+function buildClick(s: Session, e: MouseEvent) {
+  const chip = e.button === 0 ? buildChipAt(e.clientX, e.clientY) : null;
+  if (chip) return pickBuildKind(s, chip);
   if (!ghost) return;
-  if (button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: 'wall', cx: ghost.cx, cy: ghost.cy });
-  else if (button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
+  if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy });
+  else if (e.button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
   else return;
   playClick(s);
 }
@@ -433,7 +442,7 @@ function drawFrame(now: number) {
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
-  ghost = site && ghostAt(site, screenToWorld(aimCamera, mouse));
+  ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse));
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
   const moving = MOVES.some((a) => held.has(a));
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, !moving) : null;
@@ -469,6 +478,11 @@ function onKeyDown(e: KeyboardEvent) {
     const muted = audio.toggleMute();
     s.chat.push({ from: '', text: muted ? 'Sound off (M to turn on)' : 'Sound on', team: null, at: performance.now() });
     if (!muted) playClick(s);
+    return;
+  }
+  const kind = state.phase === 'playing' && s.building ? buildKindForKey(e.code) : null;
+  if (kind) {
+    pickBuildKind(s, kind);
     return;
   }
   const slot = perkSlotForKey(e.code);
@@ -509,7 +523,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
 }
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
 canvas.addEventListener('mousedown', (e) => {
-  if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e.button);
+  if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e);
   if (e.button !== 0) return;
   firing = true;
   if (state.phase === 'playing' && !overlays.typing) state.s.shots++;

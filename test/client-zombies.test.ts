@@ -1,11 +1,13 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { outTillDawnText, buildSiteOf, downedLine, inviteLink, phaseLine, reportRows, reportTitle, runCallouts, squadFromSearch, useHint, withSquad } from '../src/client/zombies.ts';
+import {
+  BUILD_HINTS, buildKindForKey, buildSiteOf, downedLine, ghostAt, inviteLink, outTillDawnText, phaseLine, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, useHint, withSquad,
+} from '../src/client/zombies.ts';
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
-import { nextCoreHitAt } from '../src/client/siege.ts';
+import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
 import type { RunView } from '../src/shared/protocol.ts';
-import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, ZOM, type TurretKind } from '../src/shared/defs.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
 import { build } from '../src/shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -41,6 +43,66 @@ test('the build preview judges every cell around the builder as the server does'
     }
   }
   assert.deepEqual([...seen].sort(), [null, 'body', 'core', 'cover', 'farFromCore', 'outOfReach', 'taken'].sort(), 'the sweep covered every refusal a cell can earn');
+});
+
+test('the ghost judges each kind as the server would build it, and names what it costs or why not', () => {
+  const { w, p } = squadWorld();
+  w.buildings.push({ id: newId(w), kind: 'cannon', cx: 26, cy: 31, hp: 1, owner: p.id, ammo: 0, nextFireAt: 0 });
+  const at = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
+  for (const scrap of [BUILDINGS.sentry.cost - 1, 1000]) {
+    w.run!.scrap = scrap;
+    for (const kind of BUILDING_KINDS) {
+      for (const cell of [{ cx: 26, cy: 30 }, { cx: 26, cy: 31 }, { cx: 20, cy: 30 }]) {
+        const ghost = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, kind, at(cell.cx, cell.cy));
+        assert.equal(ghost.refusal, build(structuredClone(w), p.id, kind, cell.cx, cell.cy), `${kind} at ${cell.cx},${cell.cy} with ${scrap} scrap`);
+        assert.equal(ghost.kind, kind);
+      }
+    }
+  }
+  const site = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
+  assert.equal(ghostAt(site, 'sentry', at(26, 30)).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
+  assert.equal(ghostAt(site, 'wall', at(26, 31)).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 2}`, 'the refund is the standing building\'s');
+  w.run!.scrap = 0;
+  assert.equal(ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'cannon', at(26, 30)).label, `Cannon needs ${BUILDINGS.cannon.cost} scrap`);
+});
+
+test('in build mode 1, 2 and 3 pick wall, sentry and cannon, and the hint bar lists each with its cost', () => {
+  assert.deepEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'KeyB'].map(buildKindForKey), ['wall', 'sentry', 'cannon', null, null]);
+  assert.deepEqual(BUILD_HINTS.filter((h) => h.pick).map((h) => [h.key, h.what, h.pick]), [
+    ['1', `Wall ${BUILDINGS.wall.cost}`, 'wall'], ['2', `Sentry ${BUILDINGS.sentry.cost}`, 'sentry'], ['3', `Cannon ${BUILDINGS.cannon.cost}`, 'cannon'],
+  ]);
+});
+
+test('holding E is offered to reload a turret short of ammo, to repair it first when worn, nearest first', () => {
+  const { w, p } = squadWorld();
+  const turret = { id: newId(w), kind: 'sentry' as const, cx: 26, cy: 30, hp: BUILDINGS.sentry.hp, owner: p.id, ammo: BUILDINGS.sentry.turret.ammo, nextFireAt: 0 };
+  w.buildings.push(turret);
+  assert.equal(useHint(snapshotFor(w, p.id), p), null, 'a full turret needs nothing');
+  turret.ammo = 10;
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to reload the sentry');
+  turret.hp = 100;
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the sentry');
+  w.buildings.push({ id: newId(w), kind: 'cannon', cx: 27, cy: 30, hp: BUILDINGS.cannon.hp, owner: p.id, ammo: 0, nextFireAt: 0 });
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to reload the cannon', 'the cannon is the nearer');
+});
+
+test('a turret\'s barrel takes the angle of its last shot, and its aim is forgotten once it is gone', () => {
+  const { w, p } = squadWorld();
+  const aims = new Map<string, TurretAim>();
+  const shot = (kind: TurretKind, angle: number) => ({ e: 'turret' as const, kind, x: 26.5 * ZOM.cell, y: 30.5 * ZOM.cell, angle });
+  w.buildings.push({ id: newId(w), kind: 'sentry', cx: 26, cy: 30, hp: 1, owner: p.id, ammo: 100, nextFireAt: 0 });
+  aimTurrets(aims, { ...snapshotFor(w, p.id), events: [shot('sentry', 1)] }, 100);
+  aimTurrets(aims, { ...snapshotFor(w, p.id), events: [shot('sentry', 2)] }, 200);
+  assert.deepEqual(aims.get('26,30'), { to: 2, drawn: 1, at: 100, firedAt: 200 });
+  w.buildings = [];
+  aimTurrets(aims, snapshotFor(w, p.id), 300);
+  assert.equal(aims.size, 0);
+});
+
+test('the report sums the squad\'s turret kills by kind, and leaves the line off when they killed none', () => {
+  const report = { night: 4, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0 } };
+  assert.equal(turretLine(report), null);
+  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7 } }), 'Turret kills · Sentry 41 · Cannon 7');
 });
 
 test('the build preview refuses at night, while down, and when the bank is short, as the server does', () => {

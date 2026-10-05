@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, BUILDINGS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { clearOfRects, edgePoint, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, topScorers, type Rect } from './derive.ts';
@@ -9,7 +9,7 @@ import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { PALETTE, TEAM_COLORS, ZOMBIE_LOOK } from './palette.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { downedLine, phaseLine, useHint } from './zombies.ts';
+import { BUILD_HINTS, downedLine, phaseLine, useHint } from './zombies.ts';
 import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
 
@@ -56,6 +56,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf) };
   lastHudAt = now;
   panels = [];
+  buildChips = [];
   const compact = w < 640;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
@@ -253,6 +254,8 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
   }
   ctx.globalAlpha = 1;
 }
+
+const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: 'rgba(205, 182, 138, 0.9)', sentry: '#f5c400', cannon: '#ff6b3d' };
 
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];
@@ -522,8 +525,9 @@ function drawMinimap(hud: Hud, size: number) {
   }
   if (snap.run) {
     for (const b of snap.buildings ?? []) {
-      ctx.fillStyle = 'rgba(205, 182, 138, 0.9)';
-      ctx.fillRect(x + b.cx * ZOM.cell * k, y + b.cy * ZOM.cell * k, Math.max(1.5, ZOM.cell * k), Math.max(1.5, ZOM.cell * k));
+      ctx.fillStyle = MINIMAP_BUILDING[b.kind];
+      const pad = b.kind === 'wall' ? 0 : 1;
+      ctx.fillRect(x + b.cx * ZOM.cell * k - pad, y + b.cy * ZOM.cell * k - pad, Math.max(1.5, ZOM.cell * k) + 2 * pad, Math.max(1.5, ZOM.cell * k) + 2 * pad);
     }
     for (const kind of ZOMBIE_KINDS) {
       const r = kind === 'brute' ? 2.4 : 1.6;
@@ -627,16 +631,13 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean
     return;
   }
   if (!me?.alive) return;
-  const hints: [string, string][] = [];
-  if (s.building) {
-    hints.push(['Left click', `wall · ${BUILDINGS.wall.cost} scrap`], ['Right click', `take down · +${Math.floor(BUILDINGS.wall.cost * ZOM.demolishRefund)}`], ['B', 'done']);
-  } else if (run.phase === 'day') hints.push(['B', 'build walls']);
+  const hints = s.building ? BUILD_HINTS : run.phase === 'day' ? [{ key: 'B', what: 'build walls and turrets' }] : [];
   const use = useHint(hud.snap, s.lastSelf);
   const row = h - (compact ? 150 : 28);
   if (use) outlined(ctx, use, w / 2, h * 0.64, TYPE.title + 1, PALETTE.gold, 800);
   if (!hints.length) return;
   setFont(ctx, 700, TYPE.label);
-  const parts = hints.map(([key, what]) => ({ key, what, kw: ctx.measureText(key).width + 12, ww: ctx.measureText(what).width }));
+  const parts = hints.map((p) => ({ ...p, kw: ctx.measureText(p.key).width + 12, ww: ctx.measureText(p.what).width }));
   const total = parts.reduce((t, p) => t + p.kw + p.ww + 26, s.building ? 70 : 0) + 8;
   let hx = w / 2 - total / 2;
   panel(ctx, hx, row - 14, total, 28, s.building ? PALETTE.gold : undefined);
@@ -646,15 +647,22 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean
     hx += 58;
   }
   for (const p of parts) {
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    const picked = p.pick !== undefined && p.pick === s.buildKind;
+    ctx.fillStyle = picked ? PALETTE.gold : 'rgba(255,255,255,0.12)';
     ctx.beginPath();
     ctx.roundRect(hx, row - 10, p.kw, 20, 4);
     ctx.fill();
-    text(ctx, p.key, hx + 6, row, TYPE.label, HUD_INK, 'left', 800);
-    text(ctx, p.what, hx + p.kw + 6, row, TYPE.label, MUTED, 'left', 600);
+    text(ctx, p.key, hx + 6, row, TYPE.label, picked ? '#16181d' : HUD_INK, 'left', 800);
+    text(ctx, p.what, hx + p.kw + 6, row, TYPE.label, picked ? PALETTE.gold : MUTED, 'left', picked ? 800 : 600);
+    if (p.pick) buildChips.push({ kind: p.pick, x: hx - 4, y: row - 14, w: p.kw + p.ww + 14, h: 28 });
     hx += p.kw + p.ww + 26;
   }
 }
+
+/** The build bar's kind chips as last drawn, in CSS px, so a click on one picks its kind. */
+let buildChips: (Rect & { kind: BuildingKind })[] = [];
+export const buildChipAt = (x: number, y: number): BuildingKind | null =>
+  buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.kind ?? null;
 
 function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; y: number }, y: number) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 110);

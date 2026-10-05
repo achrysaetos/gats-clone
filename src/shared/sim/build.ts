@@ -15,7 +15,7 @@ export type BuildSite = {
   cover: readonly Rect[];
   /** Squad players not dead, downed included, and zombies. */
   bodies: readonly (Pose & { r: number })[];
-  buildings: readonly { cx: number; cy: number }[];
+  buildings: readonly { kind: BuildingKind; cx: number; cy: number }[];
   scrap: number;
 };
 

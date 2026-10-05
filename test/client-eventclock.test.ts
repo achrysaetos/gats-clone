@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { BUILDINGS } from '../src/shared/defs.ts';
 import type { GameEvent, Snapshot } from '../src/shared/protocol.ts';
 import { releaseDue, scheduleEffects } from '../src/client/eventclock.ts';
 
@@ -61,4 +62,11 @@ test('deferred effects release exactly when the render clock reaches their tick'
   const onTime = releaseDue(early.rest, 1000);
   assert.equal(onTime.due.length, 1);
   assert.deepEqual(onTime.rest, []);
+});
+
+test('a turret\'s shot flashes at the tip of its barrel on the render clock', () => {
+  const { now, later } = scheduleEffects(snapWith([{ e: 'turret', kind: 'cannon', x: 100, y: 200, angle: Math.PI / 2 }]), 700, ME);
+  assert.deepEqual(now, []);
+  const fx = later[0]!.fx;
+  assert.ok(fx.kind === 'flash' && Math.abs(fx.x - 100) < 1e-9 && fx.y === 200 + BUILDINGS.cannon.turret.muzzle, JSON.stringify(fx));
 });

@@ -139,6 +139,13 @@ test('walls clack up, thud when bitten and crumble when they fall', () => {
   assert.deepEqual(ids(squad(night, { buildings: [wall(26), wall(27)] }), squad(night, { buildings: [wall(27)] })), ['wallDown']);
 });
 
+test('turrets fire with their own sound, once per kind a snapshot however many rounds fly', () => {
+  const shot = (kind: 'sentry' | 'cannon'): GameEvent => ({ e: 'turret', kind, x: 1325, y: 1525, angle: 0 });
+  const night = run({ phase: 'night', phaseEndsAt: null });
+  assert.deepEqual(ids(squad(night), squad(night, { events: [shot('sentry'), shot('sentry'), shot('cannon'), shot('sentry')] })), ['turret:sentry', 'turret:cannon']);
+  assert.notDeepEqual(SOUNDS['turret:sentry'], SOUNDS['turret:cannon']);
+});
+
 test('a zombie bite crunches, your own zombie kills splat, and going down or getting up has its own sound', () => {
   const bite: GameEvent = { e: 'dmg', attacker: null, victim: 1, amount: 8, x: 100, y: 0, kind: 'player' };
   assert.deepEqual(ids(squad(run(), { me: { hp: 100 } }), squad(run(), { me: { hp: 92 }, events: [bite] })), ['bite', 'hurt']);

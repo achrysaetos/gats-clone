@@ -1,4 +1,4 @@
-import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
 import type { PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
 import { buildRefusal, cellOf, coreRectAt, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -19,19 +19,24 @@ export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: n
   return `Crawl to a squadmate${serverNow === null ? '' : ` · ${clock(down.bleedOutAt - serverNow)}`}`;
 }
 
-/** What holding E would do right now, by the same rules the server follows: revive first, else repair the nearest worn wall or core in reach. */
+const nameOf = (kind: BuildingKind) => BUILDINGS[kind].name.toLowerCase();
+
+/** What holding E would do right now, by the same rules the server follows: revive first, else mend the nearest worn building or core in reach, or reload the nearest turret short of ammo; a worn turret is mended first. */
 export function useHint(snap: Snapshot, at: Pose): string | null {
   const run = snap.run;
   if (!run || !snap.self.alive) return null;
   const down = snap.players.find((p) => p.id !== snap.self.id && p.downed && Math.hypot(p.x - at.x, p.y - at.y) <= ZOM.reviveRange);
   if (down) return `Hold E to revive ${down.name}`;
   if (run.scrap <= 0) return null;
-  const worn = [
-    ...(snap.buildings ?? []).filter((b) => b.hp < 10).map((b) => ({ what: 'wall', d: Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) })),
-    ...(run.core.hp < run.core.maxHp ? [{ what: 'core', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
+  const jobs = [
+    ...(snap.buildings ?? []).flatMap((b) => {
+      const job = b.hp < 10 ? `repair the ${nameOf(b.kind)}` : b.kind !== 'wall' && b.ammo < 10 ? `reload the ${nameOf(b.kind)}` : null;
+      return job ? [{ job, d: Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) }] : [];
+    }),
+    ...(run.core.hp < run.core.maxHp ? [{ job: 'repair the core', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
   ].filter((m) => m.d <= ZOM.reachPx);
-  const nearest = worn.reduce<(typeof worn)[number] | null>((a, b) => (a && a.d <= b.d ? a : b), null);
-  return nearest && `Hold E to repair the ${nearest.what}`;
+  const nearest = jobs.reduce<(typeof jobs)[number] | null>((a, b) => (a && a.d <= b.d ? a : b), null);
+  return nearest && `Hold E to ${nearest.job}`;
 }
 
 export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' };
@@ -61,6 +66,12 @@ export const reportRows = (report: RunReport, selfName: string | undefined): Rep
 
 export const reportTitle = (report: RunReport) => `The core fell on night ${report.night}`;
 
+/** The squad's turrets' kills, or null when they killed none. */
+export function turretLine(report: RunReport): string | null {
+  const kills = TURRET_KINDS.filter((t) => report.turretKills[t] > 0).map((t) => `${BUILDINGS[t].name} ${report.turretKills[t]}`);
+  return kills.length ? `Turret kills · ${kills.join(' · ')}` : null;
+}
+
 /** The card for a squad player out of the fight until dawn: bled out, or joined while the night was under way. */
 export function outTillDawnText(run: Pick<RunView, 'phase' | 'waveLeft'>, bledOut: boolean): { title: string; sub: string } {
   return {
@@ -89,27 +100,45 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   };
 }
 
-const REFUSAL_TEXT: Record<BuildRefusal, string> = {
-  notDay: 'Walls go up by day',
-  farFromCore: 'Too far from the core',
-  outOfReach: 'Out of reach',
-  cover: 'Blocked',
-  core: 'That is the core',
-  body: 'Someone is in the way',
-  taken: `Right click to take down · +${Math.floor(BUILDINGS.wall.cost * ZOM.demolishRefund)}`,
-  scrap: `Needs ${BUILDINGS.wall.cost} scrap`,
-};
+export const refundOf = (kind: BuildingKind) => Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund);
 
-export type Ghost = { cx: number; cy: number; refusal: BuildRefusal | null; label: string };
+/** `taken` names what stands on the cell, since that decides the refund. */
+function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingKind | undefined): string {
+  switch (refusal) {
+    case 'notDay': return 'Build by day';
+    case 'farFromCore': return 'Too far from the core';
+    case 'outOfReach': return 'Out of reach';
+    case 'cover': return 'Blocked';
+    case 'core': return 'That is the core';
+    case 'body': return 'Someone is in the way';
+    case 'taken': return `Right click to take down the ${nameOf(taken ?? 'wall')} · +${refundOf(taken ?? 'wall')}`;
+    case 'scrap': return `${BUILDINGS[kind].name} needs ${BUILDINGS[kind].cost} scrap`;
+  }
+}
+
+/** `kind` is what build mode would put up. */
+export type Ghost = { kind: BuildingKind; cx: number; cy: number; refusal: BuildRefusal | null; label: string };
 
 const GRID = WORLD.size / ZOM.cell;
 
-export function ghostAt(site: BuildSite, at: Pose): Ghost {
+export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose): Ghost {
   const cell = cellOf(at.x, at.y);
   const cx = Math.min(GRID - 1, Math.max(0, cell.cx)), cy = Math.min(GRID - 1, Math.max(0, cell.cy));
-  const refusal = buildRefusal(site, 'wall', cx, cy);
-  return { cx, cy, refusal, label: refusal ? REFUSAL_TEXT[refusal] : `Wall · ${BUILDINGS.wall.cost} scrap` };
+  const refusal = buildRefusal(site, kind, cx, cy);
+  const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy)?.kind;
+  return { kind, cx, cy, refusal, label: refusal ? refusalText(refusal, kind, taken) : `${BUILDINGS[kind].name} · ${BUILDINGS[kind].cost} scrap` };
 }
+
+/** Build mode's hint bar: a chip per kind, which its number key or a click on it selects, then the clicks. */
+export const BUILD_HINTS: readonly { key: string; what: string; pick?: BuildingKind }[] = [
+  ...BUILDING_KINDS.map((kind, i) => ({ key: `${i + 1}`, what: `${BUILDINGS[kind].name} ${BUILDINGS[kind].cost}`, pick: kind })),
+  { key: 'Left click', what: 'build' },
+  { key: 'Right click', what: 'take down · half back' },
+  { key: 'B', what: 'done' },
+];
+
+/** In build mode the number keys pick what to put up, in BUILDING_KINDS order from 1. */
+export const buildKindForKey = (code: string): BuildingKind | null => BUILDING_KINDS.find((_, i) => code === `Digit${i + 1}`) ?? null;
 
 const SQUAD_CODE = /^z-[a-z2-7]{6}$/;
 

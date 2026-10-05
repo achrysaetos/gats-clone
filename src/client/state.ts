@@ -1,4 +1,4 @@
-import type { ZombieKind } from '../shared/defs.ts';
+import type { BuildingKind, ZombieKind } from '../shared/defs.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
@@ -8,6 +8,7 @@ import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
 import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
+import type { TurretAim } from './siege.ts';
 
 export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
@@ -47,10 +48,13 @@ export type Session = {
   /** The level whose pick was sent and not yet confirmed by a snapshot. */
   pickSentFor: number | null;
   particles: ParticlePool;
-  /** Zombies: the time the core last lost health, each zombie's last heading, and whether build mode is on. */
+  /** Zombies: the time the core last lost health, each zombie's last heading, whether build mode is on and what it puts up. */
   coreHitAt: number;
   zombieFaces: Map<number, { x: number; y: number; a: number }>;
   building: boolean;
+  buildKind: BuildingKind;
+  /** Each turret's aim by cell (`cx,cy`). */
+  turretAims: Map<string, TurretAim>;
 };
 
 type MenuStatus =
