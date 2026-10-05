@@ -28,11 +28,12 @@ const MAX_MEDIAN_MS = 20;
 const MAX_P90_MS = 34;
 const TAPS = 10;
 const HOLD_MS = 1200;
+const HOLDS = Number(process.env.HOLDS ?? 3);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
-type Felt = { cue: Cue | 'reject'; at: number };
+type Felt = { cue: Cue | 'reject' | 'late'; at: number };
 type Browser = { chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; serverShots: () => number; exceptions: string[] };
 
 async function open(name: string, weapon: GunId): Promise<Browser> {
@@ -87,8 +88,10 @@ const reload = async (b: Browser) => {
   await sleep(80);
   await b.cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyR', key: 'r', windowsVirtualKeyCode: 82 });
 };
+let deaths = 0;
 const respawnIfDead = async (b: Browser) => {
   if (!(await b.js(`!document.getElementById('death').hidden`))) return false;
+  deaths++;
   for (let i = 0; i < 60 && (await b.js(`document.getElementById('respawn').disabled`)); i++) await sleep(100);
   await b.js(`document.getElementById('respawn').click()`);
   await sleep(1500);
@@ -124,79 +127,94 @@ function checkLatency(label: string, lat: Record<Cue, number[]>, expected: numbe
 }
 
 /** One sound and one flash per shot the server fired, and none it did not. */
-async function checkCounts(label: string, b: Browser, fs: Felt[], serverBefore: number) {
-  const fired = b.serverShots() - serverBefore;
+function checkCounts(label: string, { felt: fs, fired }: { felt: Felt[]; fired: number }) {
   const count = (c: Felt['cue']) => fs.filter((f) => f.cue === c).length;
-  log(`${label} counts: server shots ${fired}  sounds ${count('sound')}  flashes ${count('flash')}  kicks ${count('kick')}  rejected predictions ${count('reject')}`);
-  check(fired > 0 && count('sound') === fired && count('flash') === fired, `${label}: one sound and one flash per server shot, no doubles or phantoms`);
+  log(`${label} counts: server shots ${fired}  sounds ${count('sound')}  flashes ${count('flash')}  kicks ${count('kick')}  rejected predictions ${count('reject')}  drawn late ${count('late')}`);
+  check(fired > 0 && count('sound') === fired && count('flash') === fired && count('reject') === 0 && count('late') === 0, `${label}: one sound and one flash per server shot, each drawn on time, none taken back`);
 }
 
+/** Runs a phase until one passes with no death in it, so a bot's kill never reads as a lost or phantom shot. */
+async function phase(label: string, b: Browser, settleMs: number, body: () => Promise<void>): Promise<{ felt: Felt[]; downs: number[]; fired: number }> {
+  for (let attempt = 1; ; attempt++) {
+    await respawnIfDead(b);
+    await felt(b); await downs(b);
+    const deathsBefore = deaths, before = b.serverShots();
+    await body();
+    await sleep(settleMs);
+    await respawnIfDead(b);
+    const out = { felt: await felt(b), downs: await downs(b), fired: b.serverShots() - before };
+    if (deaths === deathsBefore || attempt === 6) return out;
+    log(`note ${label}: died mid-phase, running it again`);
+  }
+}
+
+const tap = async (b: Browser, holdMs: number) => {
+  await respawnIfDead(b);
+  await mouse(b, 'mousePressed');
+  await sleep(holdMs);
+  await mouse(b, 'mouseReleased');
+};
+
 log(`LAG=${LAG} JITTER=${JITTER}`);
+const roundTrip = 2 * LAG + JITTER;
 
 const pistol = await open('Tapper', 'pistol');
 await mouse(pistol, 'mouseReleased');
-await respawnIfDead(pistol);
-await felt(pistol); await downs(pistol);
-let before = pistol.serverShots();
-let deaths = 0;
-for (let i = 0; i < TAPS; i++) {
-  if (await respawnIfDead(pistol)) deaths++;
-  await mouse(pistol, 'mousePressed');
-  await sleep(40);
-  await mouse(pistol, 'mouseReleased');
-  await sleep(GUNS.pistol.fireMs + 60 + Math.random() * 40);
-}
-await sleep(2 * LAG + JITTER + 400);
-let fs = await felt(pistol);
-checkLatency('tap', latencies(await downs(pistol), fs), TAPS - 2);
-await checkCounts('tap', pistol, fs, before);
+let p = await phase('tap', pistol, roundTrip + 400, async () => {
+  for (let i = 0; i < TAPS; i++) {
+    await tap(pistol, 40);
+    await sleep(GUNS.pistol.fireMs + 60 + Math.random() * 40);
+  }
+});
+checkLatency('tap', latencies(p.downs, p.felt), TAPS);
+checkCounts('tap', p);
 
 await reload(pistol);
 await sleep(GUNS.pistol.reloadMs + 400);
-before = pistol.serverShots();
-for (let i = 0; i < GUNS.pistol.mag + 8; i++) {
-  if (await respawnIfDead(pistol)) deaths++;
-  await mouse(pistol, 'mousePressed');
-  await sleep(20);
-  await mouse(pistol, 'mouseReleased');
-  await sleep(60);
-}
-await sleep(GUNS.pistol.reloadMs + 2 * LAG + JITTER + 600);
-fs = await felt(pistol);
-await downs(pistol);
-await checkCounts('spam through empty mag and reload', pistol, fs, before);
+p = await phase('spam', pistol, GUNS.pistol.reloadMs + roundTrip + 600, async () => {
+  for (let i = 0; i < GUNS.pistol.mag + 8; i++) {
+    await tap(pistol, 20);
+    await sleep(60);
+  }
+});
+checkCounts('spam through empty mag and reload', p);
+
+await pistol.cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+await pistol.js(`window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') window.aimStart = true; }, { capture: true });
+  window.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && window.aimStart) { window.aimStart = false; window.downs.push(performance.now()); } }, { capture: true })`);
+const touch = (type: string, points: { x: number; y: number; id: number }[]) => pistol.cdp('Input.dispatchTouchEvent', { type, touchPoints: points });
+p = await phase('touch', pistol, roundTrip + 400, async () => {
+  for (let i = 0; i < TAPS; i++) {
+    await respawnIfDead(pistol);
+    await touch('touchStart', [{ x: VIEW.w - 300, y: VIEW.h / 2, id: 7 }]);
+    await sleep(30);
+    await touch('touchMove', [{ x: VIEW.w - 260, y: VIEW.h / 2 - 10, id: 7 }]);
+    await sleep(60);
+    await touch('touchEnd', []);
+    await sleep(GUNS.pistol.fireMs + 60 + Math.random() * 40);
+  }
+});
+checkLatency('touch', latencies(p.downs, p.felt), TAPS);
+checkCounts('touch', p);
 pistol.chrome.kill();
 
 const smg = await open('Holder', 'smg');
-await respawnIfDead(smg);
-await felt(smg); await downs(smg);
-before = smg.serverShots();
 const gaps: number[] = [];
-let holdDowns: number[] = [];
-const holdFelt: Felt[] = [];
-for (let i = 0; i < 3; i++) {
-  if (await respawnIfDead(smg)) deaths++;
-  await mouse(smg, 'mousePressed');
-  await sleep(HOLD_MS);
-  await mouse(smg, 'mouseReleased');
-  await sleep(2 * LAG + JITTER + 300);
-  const f = await felt(smg);
-  holdFelt.push(...f);
-  holdDowns = [...holdDowns, ...(await downs(smg))];
-  const sounds = f.filter((x) => x.cue === 'sound').map((x) => x.at);
+const firstSounds: number[] = [];
+for (let i = 0; i < HOLDS; i++) {
+  p = await phase(`hold ${i + 1}`, smg, roundTrip + 300, () => tap(smg, HOLD_MS));
+  const sounds = p.felt.filter((x) => x.cue === 'sound').map((x) => x.at);
   gaps.push(...sounds.slice(1).map((t, k) => t - sounds[k]!));
+  firstSounds.push(...latencies(p.downs, p.felt).sound);
+  checkCounts(`hold ${i + 1}`, p);
   await reload(smg);
   await sleep(GUNS.smg.reloadMs + 300);
 }
-await sleep(300);
-holdFelt.push(...(await felt(smg)));
-const holdLat = latencies(holdDowns, holdFelt);
-log(`hold first sound: ${fmt(holdLat.sound)}`);
-log(`hold cadence between own shot sounds: ${fmt(gaps)}  mean ${(gaps.reduce((a, b) => a + b, 0) / gaps.length).toFixed(1)}ms (fireMs ${GUNS.smg.fireMs})`);
-check(holdLat.sound.length === 3 && q(holdLat.sound, 0.5) <= MAX_MEDIAN_MS, `hold: first own shot sound within ${MAX_MEDIAN_MS}ms of mousedown`);
 const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+log(`hold first sound: ${fmt(firstSounds)}`);
+log(`hold cadence between own shot sounds: ${fmt(gaps)}  mean ${mean.toFixed(1)}ms (fireMs ${GUNS.smg.fireMs})`);
+check(firstSounds.length === HOLDS && q(firstSounds, 0.5) <= MAX_MEDIAN_MS, `hold: first own shot sound within ${MAX_MEDIAN_MS}ms of mousedown`);
 check(Math.abs(mean - GUNS.smg.fireMs) <= GUNS.smg.fireMs * 0.1, `hold: mean gap between own shots within 10% of fireMs (${mean.toFixed(1)}ms)`);
-await checkCounts('hold', smg, holdFelt, before);
 smg.chrome.kill();
 
 if (deaths) log(`note respawned ${deaths} times mid-run`);

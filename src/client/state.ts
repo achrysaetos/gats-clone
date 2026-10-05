@@ -6,6 +6,7 @@ import type { Moments } from './moments.ts';
 import type { SnapBuffer } from './interp.ts';
 import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
+import type { Firing } from './fire.ts';
 import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
 import type { LocalRound, ShotEvent } from './rounds.ts';
@@ -41,6 +42,8 @@ export type Session = {
   seq: number;
   shots: number;
   predict: Prediction;
+  /** Your gun's trigger and the shots the page fired ahead of the server. */
+  firing: Firing;
   lastSelf: { x: number; y: number };
   effects: Effect[];
   rounds: LocalRound[];

@@ -109,6 +109,10 @@ const CORE_HIT_STEP = 100;
 export type SoundCue = { x: number; y: number; self: boolean; gain: number }
   & ({ id: 'hurt'; damageFrac: number } | { id: Exclude<SoundId, 'hurt'> });
 
+export const shotCue = (gun: GunId, silenced: boolean, at: { x: number; y: number }, self: boolean): SoundCue =>
+  ({ id: silenced ? 'shot:silenced' : `shot:${gun}`, x: at.x, y: at.y, self, gain: 1 });
+
+/** The sounds a snapshot's events and changes make. Your own shots are left out: the page voices them as it fires them. */
 export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   const me = selfOf(next);
   const at = { x: me?.x ?? 0, y: me?.y ?? 0 };
@@ -117,7 +121,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   for (const ev of next.events) {
     switch (ev.e) {
       case 'shot':
-        cues.push({ id: ev.silenced ? 'shot:silenced' : `shot:${ev.gun}`, x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 });
+        if (ev.owner !== next.self.id) cues.push(shotCue(ev.gun, ev.silenced, ev, false));
         break;
       case 'dmg': {
         const iHitSomeone = (ev.kind === 'player' || ev.kind === 'zombie') && ev.attacker === next.self.id && ev.victim !== next.self.id;

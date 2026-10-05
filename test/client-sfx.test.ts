@@ -38,13 +38,13 @@ test('hurt plays on damage, including armor-absorbed hits, and never on regen or
   assert.deepEqual(ids(snap({ me: { hp: 0, alive: false } }), snap({ me: { hp: 100 } })), [], 'respawning at full hp is silent');
 });
 
-test('a shot sounds like the shooter\'s weapon and is flagged self only for your own shots', () => {
+test('another player\'s shot sounds like their weapon, and your own shot events stay silent because the page voiced them when it fired', () => {
   const shots = soundsFor(null, snap({ events: [
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: false, owner: 2, gun: 'sniper' },
     { e: 'shot', x: 100, y: 0, angle: 0, silenced: false, owner: 1, gun: 'smg' },
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2, gun: 'sniper' },
   ] }));
-  assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:smg', true, 100], ['shot:silenced', false, 200]]);
+  assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:silenced', false, 200]]);
 });
 
 test('every gun on the evolution tree has its own shot sound, and blast guns add a low thump', () => {
