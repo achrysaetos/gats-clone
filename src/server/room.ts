@@ -212,6 +212,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       ws.on('error', () => ws.terminate());
     },
     tick() {
+      // A room nobody is playing in stands still: its bots would otherwise burn the server's whole CPU share around the clock.
+      if (joined().length === 0) return;
       const events = advance();
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;
