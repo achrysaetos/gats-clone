@@ -86,13 +86,12 @@ test('a merge keeps the newer aim and movement and every held button of both', (
   assert.equal(q.waiting[0]!.viewAt, 20);
 });
 
-/** Arrives `backlog` inputs at once, then one a tick for a whole drain window, those due on `late` ticks arriving with the next; returns how many still wait. */
-function standingBacklog(backlog: number, input: Partial<InputState>, late: number[] = []): number {
+function standingBacklog(backlog: number, input: Partial<InputState>, deliveredWithNext: number[] = []): number {
   const q = newInputQueue();
   let seq = 0, owed = backlog;
   for (let tick = 0; tick < DRAIN_WINDOW_TICKS; tick++) {
     owed++;
-    if (!late.includes(tick)) for (; owed > 0; owed--) enqueueInput(q, queued(++seq, input, tick));
+    if (!deliveredWithNext.includes(tick)) for (; owed > 0; owed--) enqueueInput(q, queued(++seq, input, tick));
     takeInput(q, tick);
   }
   return q.waiting.length;

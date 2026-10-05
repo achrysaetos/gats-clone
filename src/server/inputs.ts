@@ -28,19 +28,19 @@ export function enqueueInput(q: InputQueue, next: QueuedInput): void {
   if (q.waiting.length > INPUT_QUEUE_CAP) mergeOldest(q);
 }
 
-/**
- * The input for this tick, if one is waiting. A backlog that never ran dry over a whole window is delay jitter no longer
- * needs, so the two oldest merge, but only while neither holds the trigger, since merging a held one shortens the hold.
- * The rewind an input may claim grows by the time it waited here, which its round trip did not include.
- */
+const mergingShortensAHold = (a: QueuedInput, b: QueuedInput) => a.input.fire || b.input.fire;
+
+const rewindCapAfterQueueWait = (i: QueuedInput, tick: number) => Math.min(MAX_REWIND_MS, i.rewindCapMs + (tick - i.arrivedTick) * TICK_MS);
+
 export function takeInput(q: InputQueue, tick: number): QueuedInput | undefined {
   const next = q.waiting.shift();
   q.fewestLeft = Math.min(q.fewestLeft, q.waiting.length);
   if (++q.windowTicks >= DRAIN_WINDOW_TICKS) {
+    const backlogNeverRanDry = q.fewestLeft > 0;
     const [a, b] = q.waiting;
-    if (q.fewestLeft > 0 && a && b && !a.input.fire && !b.input.fire) mergeOldest(q);
+    if (backlogNeverRanDry && a && b && !mergingShortensAHold(a, b)) mergeOldest(q);
     q.fewestLeft = Infinity;
     q.windowTicks = 0;
   }
-  return next && { ...next, rewindCapMs: Math.min(MAX_REWIND_MS, next.rewindCapMs + (tick - next.arrivedTick) * TICK_MS) };
+  return next && { ...next, rewindCapMs: rewindCapAfterQueueWait(next, tick) };
 }
