@@ -1,8 +1,9 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
-import { clearOfRects, edgePoint, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, topScorers, type Rect } from './derive.ts';
+import { clearOfRects, clock, edgePoint, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, topScorers, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { serverNow } from './interp.ts';
 import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
@@ -10,7 +11,7 @@ import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { PALETTE, TEAM_COLORS, ZOMBIE_LOOK } from './palette.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { BUILD_HINTS, downedLine, phaseLine, useHint } from './zombies.ts';
-import { drawGun } from './sprites.ts';
+import { drawGunGlyph } from './sprites.ts';
 import type { Session } from './state.ts';
 
 const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -18,9 +19,11 @@ const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 22 } as const;
 const SPACE = { sm: 8, md: 12, lg: 16 } as const;
 const HUD_INK = '#f2f3f5';
 const MUTED = '#9ba2ae';
-const PANEL_FILL = 'rgba(17, 19, 24, 0.8)';
-const PANEL_EDGE = 'rgba(255, 255, 255, 0.08)';
+const PANEL_FILL = 'rgba(28, 32, 40, 0.82)';
 const PANEL_RADIUS = 10;
+const EDGE = 12;
+const FEED_ROW = 30;
+const ROW_GAP = 8;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
@@ -58,15 +61,17 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   panels = [];
   buildChips = [];
   const compact = w < 640;
+  const feedRows = compact ? 3 : 5;
   drawHurtVignette(hud);
   drawHurtArcs(hud);
-  drawKillFeed(hud, (compact ? 74 : 18) + (snap.run ? SQUAD_CHIP_H : 0));
-  drawLeaderboard(hud, compact);
-  drawMinimap(hud, compact ? 110 : 170);
-  drawScore(hud, compact);
+  drawMinimap(hud, EDGE, EDGE + (snap.run ? SQUAD_CHIP_H : 0), compact ? 96 : 170);
+  drawKillFeed(hud, feedRows);
+  drawLeaderboard(hud, EDGE + feedRows * FEED_ROW + ROW_GAP, compact);
+  const below = drawPill(hud, compact);
   ctx.globalAlpha = 1;
-  if (me?.alive) drawVitals(hud);
-  if (snap.run) drawSiege(hud, snap.run, compact);
+  const siegeTop = drawObjectiveLine(hud, below, compact);
+  if (me?.alive) { drawVitals(hud, compact); drawWeapon(hud, compact); }
+  if (snap.run) drawSiege(hud, snap.run, siegeTop, compact);
   drawHuntedArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
@@ -260,15 +265,12 @@ const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: 'rgba(205, 182, 1
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];
 
-function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, accent?: string) {
+function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, accent?: string, radius: number | number[] = PANEL_RADIUS) {
   panels.push({ x, y, w, h });
   ctx.beginPath();
-  ctx.roundRect(x, y, w, h, PANEL_RADIUS);
+  ctx.roundRect(x, y, w, h, radius);
   ctx.fillStyle = PANEL_FILL;
   ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = PANEL_EDGE;
-  ctx.stroke();
   if (!accent) return;
   ctx.fillStyle = accent;
   ctx.fillRect(x + PANEL_RADIUS, y, w - PANEL_RADIUS * 2, 2);
@@ -285,8 +287,6 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   ctx.beginPath();
   ctx.roundRect(x, y, Math.max(h, w * f), h, h / 2);
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.22)';
-  ctx.fillRect(x + h / 2, y + 1, Math.max(0, w * f - h), Math.max(1, h * 0.25));
 }
 
 /** Assigning ctx.font reparses the string every time, so skip the assignment when the HUD's last font is still set. */
@@ -324,42 +324,46 @@ function caps(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, co
   text(ctx, s.toUpperCase(), x, y, TYPE.micro, color, align, 750);
 }
 
-const FEED_ICON_W = 34;
+const FEED_ICON_W = 40;
 const BOUNTY_TAG = `+${WORLD.bountyScore} BOUNTY`;
 
 /** Class guns read as their icon; an evolved gun is spelled out in its accent color, since its silhouette is easy to mistake. */
 function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: number; draw(x: number, y: number): void } {
   const gun = GUN_BY_NAME.get(label);
   if (gun && GUNS[gun].stage === 0) {
-    return { width: FEED_ICON_W, draw: (x, y) => { ctx.save(); ctx.translate(x - 4, y); drawGun(ctx, gun, 10, MUTED); ctx.restore(); } };
+    return { width: FEED_ICON_W, draw: (x, y) => drawGunGlyph(ctx, gun, x, y, FEED_ICON_W - SPACE.sm, 12, HUD_INK) };
   }
   const perk = PERK_BY_NAME.get(label);
-  if (perk) return { width: 22, draw: (x, y) => strokeIcon(ctx, PERK_ICONS[perk], x + 9, y, 15, MUTED, 2.4) };
+  if (perk) return { width: 22, draw: (x, y) => strokeIcon(ctx, PERK_ICONS[perk], x + 9, y, 15, HUD_INK, 2.4) };
   const [color, weight] = gun ? [GUNS[gun].look.accent, 800] : [MUTED, 500];
   setFont(ctx, weight, TYPE.label);
   return { width: ctx.measureText(label).width + SPACE.sm, draw: (x, y) => text(ctx, label, x, y, TYPE.label, color, 'left', weight) };
 }
 
-function drawKillFeed(hud: Hud, top: number) {
-  const { ctx, s, now } = hud;
-  const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-5);
+/** Rows hang from the top-right corner, each sized to its line and right-aligned, killer and victim either side of a white weapon glyph. */
+function drawKillFeed(hud: Hud, rows: number) {
+  const { ctx, w, s, now } = hud;
+  const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
+  const right = w - EDGE;
   lines.forEach((f, i) => {
-    const y = top + i * 28;
+    const y = EDGE + i * FEED_ROW + 13;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600);
     setFont(ctx, 700, TYPE.body);
     if (f.e === 'life') {
       const by = f.by === null ? null : hud.snap.players.find((p) => p.id === f.by)?.name ?? hud.snap.leaderboard.find((r) => r.id === f.by)?.name;
       const [line, color] = f.k === 'downed' ? [`${f.name} is down`, PALETTE.hunted] : f.k === 'revived' ? [by ? `${by} revived ${f.name}` : `${f.name} is back up`, PALETTE.hpGood] : [`${f.name} bled out`, MUTED];
-      panel(ctx, 12, y - 12, ctx.measureText(line).width + SPACE.lg * 2, 24, color);
-      text(ctx, line, 12 + SPACE.lg, y, TYPE.body, f.id === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
+      const pw = ctx.measureText(line).width + SPACE.md * 2;
+      panel(ctx, right - pw, y - 13, pw, 26, color, 7);
+      text(ctx, line, right - pw + SPACE.md, y, TYPE.body, f.id === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
       ctx.globalAlpha = 1;
       return;
     }
     if (f.e === 'hunted') {
       const line = `${f.name} is hunted`;
-      panel(ctx, 12, y - 12, ctx.measureText(line).width + 22 + SPACE.lg * 2, 24, PALETTE.hunted);
-      strokeIcon(ctx, UI_ICONS.target, 12 + SPACE.md + 8, y, 15, PALETTE.hunted, 2.4);
-      text(ctx, line, 12 + SPACE.md + 22, y, TYPE.body, f.id === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
+      const pw = ctx.measureText(line).width + 22 + SPACE.md * 2;
+      panel(ctx, right - pw, y - 13, pw, 26, PALETTE.hunted, 7);
+      strokeIcon(ctx, UI_ICONS.target, right - pw + SPACE.md + 7, y, 14, PALETTE.hunted, 2.4);
+      text(ctx, line, right - pw + SPACE.md + 20, y, TYPE.body, f.id === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
       ctx.globalAlpha = 1;
       return;
     }
@@ -367,48 +371,50 @@ function drawKillFeed(hud: Hud, top: number) {
     const vw = ctx.measureText(f.victim).width;
     const weapon = feedWeapon(ctx, f.weapon);
     setFont(ctx, 800, TYPE.micro);
-    const bw = f.bounty ? ctx.measureText(BOUNTY_TAG).width + SPACE.sm * 2 : 0;
+    const bw = f.bounty ? ctx.measureText(BOUNTY_TAG).width + SPACE.sm : 0;
     const mine = feedMentions(f, s.myId);
-    panel(ctx, 12, y - 12, kw + vw + weapon.width + bw + SPACE.lg * 2, 24, mine ? PALETTE.gold : f.bounty ? PALETTE.hunted : undefined);
-    let x = 12 + SPACE.md;
-    if (f.killer) { text(ctx, f.killer, x, y, TYPE.body, f.killerId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700); x += kw + SPACE.sm; }
+    const pw = kw + vw + weapon.width + bw + SPACE.md * 2 + (f.killer ? SPACE.sm : 0);
+    let x = right - pw;
+    panel(ctx, x, y - 13, pw, 26, mine ? PALETTE.gold : f.bounty ? PALETTE.hunted : undefined, 7);
+    x += SPACE.md;
+    if (f.killer) { text(ctx, f.killer, x, y, TYPE.body, nameColor(hud, f.killerId), 'left', 700); x += kw + SPACE.sm; }
     weapon.draw(x, y);
     x += weapon.width;
-    text(ctx, f.victim, x, y, TYPE.body, f.victimId === s.myId ? PALETTE.gold : HUD_INK, 'left', 700);
+    text(ctx, f.victim, x, y, TYPE.body, nameColor(hud, f.victimId), 'left', 700);
     if (f.bounty) text(ctx, BOUNTY_TAG, x + vw + SPACE.sm, y, TYPE.micro, PALETTE.hunted, 'left', 800);
     ctx.globalAlpha = 1;
   });
 }
 
+const FEED_TEAM = { red: '#ff7b7f', blue: '#7b9bff' } as const;
+
+/** You read gold; in team modes everyone else reads in their team's color, so the feed shows who traded with whom. */
+function nameColor({ s, snap }: Hud, id: number | null): string {
+  if (id === s.myId) return PALETTE.gold;
+  const team = id === null ? null : snap.leaderboard.find((r) => r.id === id)?.team ?? null;
+  return team && !snap.run ? FEED_TEAM[team] : HUD_INK;
+}
+
 const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
 
-function drawLeaderboard(hud: Hud, compact: boolean) {
-  const { ctx, w, snap, s } = hud;
-  const rows = topScorers(snap.leaderboard, compact ? 5 : 10);
+function drawLeaderboard(hud: Hud, top: number, compact: boolean) {
+  const { ctx, w, h, snap, s } = hud;
+  const rows = topScorers(snap.leaderboard, compact || h < 760 ? 5 : 10);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM';
   const squad = !!snap.run;
-  const pw = compact ? 150 : 210;
-  const x = w - pw - 12;
+  const pw = compact ? 150 : 200;
+  const x = w - pw - EDGE;
   const rowH = 20;
-  const ph = 36 + rows.length * rowH + (teams ? 30 : squad ? 0 : 18);
-  fadePanel(hud, 'board', x, 12, pw, ph);
-  panel(ctx, x, 12, pw, ph);
-  caps(ctx, squad ? 'Squad kills' : 'Leaderboard', x + SPACE.md, 29);
-  text(ctx, snap.match.mode, x + pw - SPACE.md, 29, TYPE.label, PALETTE.gold, 'right', 800);
-  let y = 52;
-  if (teams) {
-    const goal = snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore;
-    const half = (pw - SPACE.md * 2) / 2;
-    bar(ctx, x + SPACE.md, y - 5, half - 4, 8, snap.match.teamScore.red / goal, TEAM_COLORS.red);
-    bar(ctx, x + SPACE.md + 4 + half, y - 5, half - 4, 8, snap.match.teamScore.blue / goal, TEAM_COLORS.blue);
-    text(ctx, `Red ${snap.match.teamScore.red}`, x + SPACE.md, y + 13, TYPE.label, HUD_INK, 'left', 700);
-    text(ctx, `to ${goal}`, x + pw / 2, y + 13, TYPE.micro, MUTED, 'center', 500);
-    text(ctx, `${snap.match.teamScore.blue} Blue`, x + pw - SPACE.md, y + 13, TYPE.label, HUD_INK, 'right', 700);
-    y += 30;
-  } else if (!squad) {
-    const mostKills = mostKillsText(timeLeft(hud));
-    text(ctx, mostKills[0]!.toUpperCase() + mostKills.slice(1), x + SPACE.md, y - 2, TYPE.micro, MUTED, 'left', 500);
-    y += 18;
+  const ph = 34 + rows.length * rowH + (squad ? 0 : 16);
+  fadePanel(hud, 'board', x, top, pw, ph);
+  panel(ctx, x, top, pw, ph);
+  caps(ctx, squad ? 'Squad kills' : 'Leaderboard', x + SPACE.md, top + 16);
+  text(ctx, snap.match.mode, x + pw - SPACE.md, top + 16, TYPE.label, PALETTE.gold, 'right', 800);
+  let y = top + 36;
+  if (!squad) {
+    const goal = teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
+    text(ctx, goal[0]!.toUpperCase() + goal.slice(1), x + SPACE.md, y - 4, TYPE.micro, MUTED, 'left', 500);
+    y += 16;
   }
   rows.forEach((r, i) => {
     const mine = r.id === s.myId;
@@ -441,8 +447,13 @@ export function approachAlpha(alpha: number, covering: boolean, dtMs: number): n
 
 type PanelId = 'score' | 'board' | 'minimap';
 const panelAlpha: Record<PanelId, number> = { score: PANEL_ALPHA.rest, board: PANEL_ALPHA.rest, minimap: PANEL_ALPHA.rest };
+const fadeRects: Partial<Record<PanelId, Rect>> = {};
+
+/** Where each panel that fades over a body was last drawn, in CSS px, so a driver can tell when a player is under one. */
+export const drawnPanels = (): Readonly<Partial<Record<PanelId, Rect>>> => fadeRects;
 
 function fadePanel({ ctx, snap, cam, dt }: Hud, id: PanelId, x: number, y: number, w: number, h: number): number {
+  fadeRects[id] = { x, y, w, h };
   const pad = WORLD.playerRadius * cam.scale;
   const covering = snap.players.some((p) => {
     if (!p.alive) return false;
@@ -457,26 +468,19 @@ function fadePanel({ ctx, snap, cam, dt }: Hud, id: PanelId, x: number, y: numbe
 const PING_WAVE_MS = 700;
 const DIAMOND_R = 6;
 
-function drawMinimap(hud: Hud, size: number) {
-  const { ctx, w, h, snap, s, me } = hud;
-  const x = w - size - 12;
-  const y = h - size - 12;
+function drawMinimap(hud: Hud, x: number, y: number, size: number) {
+  const { ctx, snap, s, me, cam } = hud;
   const k = size / s.worldSize;
-  const base = fadePanel(hud, 'minimap', x - 5, y - 5, size + 10, size + 10);
-  panel(ctx, x - 5, y - 5, size + 10, size + 10);
-  ctx.fillStyle = 'rgba(226, 221, 209, 0.12)';
+  const pad = 6;
+  const base = fadePanel(hud, 'minimap', x, y, size + pad * 2, size + pad * 2);
+  panel(ctx, x, y, size + pad * 2, size + pad * 2);
+  x += pad;
+  y += pad;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
   ctx.fillRect(x, y, size, size);
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let g = 1; g < 4; g++) {
-    ctx.moveTo(x + (size * g) / 4, y); ctx.lineTo(x + (size * g) / 4, y + size);
-    ctx.moveTo(x, y + (size * g) / 4); ctx.lineTo(x + size, y + (size * g) / 4);
-  }
-  ctx.stroke();
   for (const wall of s.walls) {
-    ctx.fillStyle = wall.built ? 'rgba(210,171,115,0.85)' : 'rgba(205,210,220,0.6)';
-    ctx.fillRect(x + wall.x * k, y + wall.y * k, Math.max(1, wall.w * k), Math.max(1, wall.h * k));
+    ctx.fillStyle = wall.built ? 'rgba(94, 143, 214, 0.9)' : 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(x + wall.x * k, y + wall.y * k, Math.max(1.5, wall.w * k), Math.max(1.5, wall.h * k));
   }
   for (const z of snap.zones) {
     ctx.beginPath();
@@ -526,8 +530,8 @@ function drawMinimap(hud: Hud, size: number) {
   if (snap.run) {
     for (const b of snap.buildings ?? []) {
       ctx.fillStyle = MINIMAP_BUILDING[b.kind];
-      const pad = b.kind === 'wall' ? 0 : 1;
-      ctx.fillRect(x + b.cx * ZOM.cell * k - pad, y + b.cy * ZOM.cell * k - pad, Math.max(1.5, ZOM.cell * k) + 2 * pad, Math.max(1.5, ZOM.cell * k) + 2 * pad);
+      const bp = b.kind === 'wall' ? 0 : 1;
+      ctx.fillRect(x + b.cx * ZOM.cell * k - bp, y + b.cy * ZOM.cell * k - bp, Math.max(1.5, ZOM.cell * k) + 2 * bp, Math.max(1.5, ZOM.cell * k) + 2 * bp);
     }
     for (const kind of ZOMBIE_KINDS) {
       const r = kind === 'brute' ? 2.4 : 1.6;
@@ -543,68 +547,118 @@ function drawMinimap(hud: Hud, size: number) {
     const c = snap.run.core, half = Math.max(3, ZOM.coreHalf * k);
     ctx.fillStyle = hud.now - s.coreHitAt < CORE_ALERT_MS && Math.floor(hud.now / 200) % 2 ? PALETTE.hunted : '#4fd1e8';
     ctx.fillRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
   }
   const self = me ?? s.lastSelf;
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 1.5;
+  const vx0 = Math.max(0, (self.x - cam.viewHalfW) * k), vy0 = Math.max(0, (self.y - cam.viewHalfH) * k);
+  const vx1 = Math.min(size, (self.x + cam.viewHalfW) * k), vy1 = Math.min(size, (self.y + cam.viewHalfH) * k);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.lineWidth = 1;
+  if (vx1 > vx0 && vy1 > vy0) ctx.strokeRect(x + vx0 + 0.5, y + vy0 + 0.5, vx1 - vx0 - 1, vy1 - vy0 - 1);
+  ctx.save();
+  ctx.translate(x + self.x * k, y + self.y * k);
+  ctx.rotate((me?.angle ?? -Math.PI / 2) + Math.PI / 2);
   ctx.beginPath();
-  ctx.arc(x + self.x * k, y + self.y * k, 4, 0, TAU);
+  ctx.moveTo(0, -7); ctx.lineTo(5.5, 5.5); ctx.lineTo(0, 2.5); ctx.lineTo(-5.5, 5.5);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
   ctx.fill();
-  ctx.stroke();
+  ctx.restore();
 }
 
-function drawScore(hud: Hud, compact: boolean) {
+/** The score pill at the top center: red and blue scores either side of the clock in team modes, the run's phase in zombies, the clock in FFA. Returns its bottom edge. */
+function drawPill(hud: Hud, compact: boolean): number {
+  const { ctx, w, snap, me, s, now } = hud;
+  const ph = compact ? 30 : 38, y = EDGE;
+  const side = compact ? 50 : 66, mid = compact ? 64 : 84;
+  const big = compact ? 17 : 22;
+  const left = timeLeft(hud);
+  const cy = y + ph / 2;
+  if (snap.match.mode === 'TDM' || snap.match.mode === 'DOM') {
+    const x = w / 2 - side - mid / 2;
+    fadePanel(hud, 'score', x, y, side * 2 + mid, ph);
+    for (const [team, bx, corners] of [['red', x, [10, 0, 0, 10]], ['blue', x + side + mid, [0, 10, 10, 0]]] as const) {
+      ctx.fillStyle = TEAM_COLORS[team];
+      ctx.beginPath();
+      ctx.roundRect(bx, y, side, ph, corners);
+      ctx.fill();
+      text(ctx, String(snap.match.teamScore[team]), bx + side / 2, cy + 1, big, '#ffffff', 'center', 800);
+      if (me?.team === team) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(bx + side / 2 - 10, y + ph - 5, 20, 2.5);
+      }
+    }
+    panel(ctx, x + side, y, mid, ph, undefined, 0);
+    const center = snap.match.mode === 'DOM' ? `to ${WORLD.domWinScore}` : left === null ? `to ${WORLD.tdmWinScore}` : clock(left);
+    text(ctx, center, x + side + mid / 2, cy + 1, snap.match.mode === 'DOM' ? TYPE.body : big - 4, HUD_INK, 'center', 700);
+    return y + ph;
+  }
+  if (snap.run) {
+    const run = snap.run;
+    const [label, color] = run.phase === 'day' ? [`DAY ${run.night}`, PALETTE.gold] : run.phase === 'night' ? [`NIGHT ${run.night}`, '#8f7cff'] : ['FALLEN', PALETTE.hunted];
+    const until = run.phaseEndsAt === null ? null : run.phaseEndsAt - (serverNow(s.snaps, now) ?? run.phaseEndsAt);
+    const center = run.phase === 'night' ? `${run.waveLeft} left` : until === null ? '' : clock(until);
+    const lw = compact ? 76 : 96;
+    const x = w / 2 - (lw + mid) / 2;
+    fadePanel(hud, 'score', x, y, lw + mid, ph);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(x, y, lw, ph, [10, 0, 0, 10]);
+    ctx.fill();
+    text(ctx, label, x + lw / 2, cy + 1, TYPE.body + 1, run.phase === 'day' ? '#1d1a0b' : '#ffffff', 'center', 850);
+    panel(ctx, x + lw, y, mid, ph, undefined, [0, 10, 10, 0]);
+    text(ctx, center, x + lw + mid / 2, cy + 1, big - 4, HUD_INK, 'center', 700);
+    return y + ph;
+  }
+  const kills = snap.self.kills;
+  const top = Math.max(0, ...snap.leaderboard.filter((r) => r.id !== s.myId).map((r) => r.kills));
+  const x = w / 2 - side - mid / 2;
+  fadePanel(hud, 'score', x, y, side * 2 + mid, ph);
+  panel(ctx, x, y, side * 2 + mid, ph);
+  text(ctx, String(kills), x + side / 2, cy - 3, big - 2, PALETTE.gold, 'center', 800);
+  caps(ctx, 'you', x + side / 2, cy + 11, MUTED, 'center');
+  text(ctx, left === null ? clock(MAP_MS.FFA) : clock(left), x + side + mid / 2, cy + 1, big - 2, HUD_INK, 'center', 700);
+  text(ctx, String(top), x + side + mid + side / 2, cy - 3, big - 2, HUD_INK, 'center', 800);
+  caps(ctx, 'best', x + side + mid + side / 2, cy + 11, MUTED, 'center');
+  return y + ph;
+}
+
+/** The map and objective in one line under the pill, then the next-map notice. Returns the bottom edge of what it drew. */
+function drawObjectiveLine(hud: Hud, top: number, compact: boolean): number {
   const { ctx, w, snap, me } = hud;
-  if (!me) return;
-  const lp = levelProgress(me.level, me.score);
-  const bw = compact ? w - 150 - 56 : 260;
-  const x = compact ? 22 : (w - bw) / 2;
-  fadePanel(hud, 'score', x - 10, 10, bw + 20, mapNotice(snap.match) ? 96 : 70);
-  panel(ctx, x - 10, 10, bw + 20, 44);
-  ctx.beginPath();
-  ctx.arc(x + 9, 30, 13, 0, TAU);
-  ctx.fillStyle = PALETTE.gold;
-  ctx.fill();
-  text(ctx, String(lp.displayLevel), x + 9, 31, TYPE.title, '#1d1a0b', 'center', 850);
-  const bx = x + 30, barW = bw - 30;
-  caps(ctx, 'Level', bx, 22);
-  text(ctx, `K ${snap.self.kills}  D ${snap.self.deaths}`, bx + barW / 2, 22, TYPE.label, MUTED, 'center', 600);
-  text(ctx, lp.nextAt === null ? `${me.score} · max` : `${me.score} / ${lp.nextAt}`, bx + barW, 22, TYPE.label, HUD_INK, 'right', 700);
-  bar(ctx, bx, 34, barW, 8, lp.frac, PALETTE.gold);
+  ctx.globalAlpha = 1;
+  if (!me) return top;
   const line = snap.run ? `${snap.match.map} · ${phaseLine(snap.run, serverNow(hud.s.snaps, hud.now))}` : `${snap.match.map} · ${objectiveFor(snap.match.mode, me.team, timeLeft(hud)).line}`;
   setFont(ctx, 600, TYPE.label + 1);
   const dot = me.team && !snap.run ? 14 : 0;
   const lw = ctx.measureText(line).width + 20 + dot;
-  const lx = compact ? x - 10 : w / 2 - lw / 2;
-  panel(ctx, lx, 58, lw, 22);
+  const lx = compact ? EDGE + 120 : w / 2 - lw / 2;
+  const y = top + 6;
+  panel(ctx, lx, y, lw, 22, undefined, 7);
   if (me.team && dot) {
     ctx.fillStyle = TEAM_COLORS[me.team];
     ctx.beginPath();
-    ctx.arc(lx + 14, 69, 4.5, 0, TAU);
+    ctx.arc(lx + 14, y + 11, 4.5, 0, TAU);
     ctx.fill();
   }
-  text(ctx, line, lx + 10 + dot, 69, TYPE.label + 1, HUD_INK, 'left');
+  text(ctx, line, lx + 10 + dot, y + 11, TYPE.label + 1, HUD_INK, 'left');
   const notice = mapNotice(snap.match);
-  if (!notice) return;
+  if (!notice) return y + 22;
   setFont(ctx, 700, TYPE.label + 1);
   const nw = ctx.measureText(notice).width + 20;
-  const nx = compact ? x - 10 : w / 2 - nw / 2;
-  panel(ctx, nx, 84, nw, 22);
-  text(ctx, notice, nx + 10, 95, TYPE.label + 1, PALETTE.gold, 'left', 700);
+  const nx = compact ? lx : w / 2 - nw / 2;
+  panel(ctx, nx, y + 26, nw, 22, undefined, 7);
+  text(ctx, notice, nx + 10, y + 37, TYPE.label + 1, PALETTE.gold, 'left', 700);
+  return y + 48;
 }
 
 const SQUAD_CHIP_H = 52;
 
-function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean) {
+function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, compact: boolean) {
   const { ctx, w, h, s, me, now } = hud;
-  const bw = compact ? w - 150 - 56 : 260;
-  const x = compact ? 22 : (w - bw) / 2;
-  const y = 84;
-  panel(ctx, x - 10, y, bw + 20, 26);
+  const bw = compact ? Math.min(240, w - 260) : 260;
+  const x = compact ? EDGE + 130 : (w - bw) / 2;
+  const y = top + 4;
+  panel(ctx, x - 10, y, bw + 20, 26, undefined, 7);
   strokeIcon(ctx, UI_ICONS.scrap, x + 6, y + 13, 14, PALETTE.gold, 2.4);
   text(ctx, `${run.scrap}`, x + 18, y + 13, TYPE.body, PALETTE.gold, 'left', 800);
   setFont(ctx, 800, TYPE.body);
@@ -699,76 +753,109 @@ function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; 
   strokeIcon(ctx, UI_ICONS.core, clear.x - Math.cos(at.angle) * 26, clear.y - Math.sin(at.angle) * 26, 16, PALETTE.hunted, 2.6);
 }
 
-function drawVitals({ ctx, w, h, snap, me }: Hud) {
+const VITALS_H = 86;
+
+/** Bottom left: level and score to the next pick, then health and armor; owned perks ride above it, with the HUNTED badge. */
+function drawVitals({ ctx, w, h, snap, me }: Hud, compact: boolean) {
   if (!me) return;
-  const self = snap.self;
-  const pw = Math.min(340, w - 24 - (w < 640 ? 130 : 190));
-  const x = 12;
-  const y = h - 92;
-  panel(ctx, x, y, pw, 80);
-  const barX = x + 58, barW = pw - 150;
-  const hpFrac = me.hp / me.maxHp;
-  const hpColor = hpFrac > 0.35 ? PALETTE.hpGood : PALETTE.hpBad;
-  strokeIcon(ctx, UI_ICONS.heart, x + 18, y + 18, 14, hpColor, 2.6);
-  text(ctx, `${Math.ceil(me.hp)}`, x + 30, y + 18, TYPE.body, HUD_INK, 'left', 800);
-  bar(ctx, barX, y + 13, barW, 10, hpFrac, hpColor);
-  strokeIcon(ctx, UI_ICONS.armor, x + 18, y + 37, 14, PALETTE.armor, 2.6);
-  text(ctx, `${Math.ceil(me.armor)}`, x + 30, y + 37, TYPE.body, MUTED, 'left', 800);
-  bar(ctx, barX, y + 32, barW, 10, me.maxArmor ? me.armor / me.maxArmor : 0, PALETTE.armor);
-
-  ctx.save();
-  ctx.translate(x + 10, y + 62);
-  drawGun(ctx, me.gun, 11 / Math.max(1, GUNS[me.gun].look.length), MUTED);
-  ctx.restore();
-  caps(ctx, GUNS[me.gun].name, x + 46, y + 62);
-  drawStagePips(ctx, me.gun, x + 46 + ctx.measureText(GUNS[me.gun].name.toUpperCase()).width + SPACE.sm, y + 62);
-  const ammoRight = barX + barW;
-  if (self.reloading) {
-    text(ctx, 'Reloading', ammoRight, y + 56, TYPE.label, PALETTE.gold, 'right', 800);
-    bar(ctx, ammoRight - 70, y + 66, 70, 5, self.reloadFrac, PALETTE.gold);
-  } else {
-    setFont(ctx, 500, TYPE.body);
-    const magW = ctx.measureText(` / ${self.mag}`).width;
-    text(ctx, ` / ${self.mag}`, ammoRight, y + 63, TYPE.body, MUTED, 'right', 500);
-    text(ctx, String(self.ammo), ammoRight - magW, y + 61, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : HUD_INK, 'right', 850);
-  }
-
-  const ax = x + pw - 46;
-  const ay = y + 40;
+  const pw = compact ? Math.min(240, w / 2 - EDGE * 2) : 300;
+  const x = EDGE;
+  const y = h - EDGE - VITALS_H;
+  panel(ctx, x, y, pw, VITALS_H);
+  const lp = levelProgress(me.level, me.score);
   ctx.beginPath();
-  ctx.arc(ax, ay, 29, 0, TAU);
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.arc(x + 22, y + 18, 10, 0, TAU);
+  ctx.fillStyle = PALETTE.gold;
   ctx.fill();
-  if (self.ability) {
-    const total = ABILITY_COOLDOWN_MS[self.ability];
-    const left = Math.max(0, Math.min(1, self.abilityReadyIn / total));
-    const ready = left === 0;
-    ctx.beginPath();
-    ctx.arc(ax, ay, 29, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = ready ? PALETTE.gold : MUTED;
-    ctx.stroke();
-    strokeIcon(ctx, PERK_ICONS[self.ability], ax, ay - 6, 20, ready ? PALETTE.gold : MUTED, 2.2);
-    text(ctx, ready ? 'SPACE' : `${(self.abilityReadyIn / 1000).toFixed(1)}s`, ax, ay + 14, TYPE.micro, ready ? PALETTE.gold : HUD_INK, 'center', 800);
-  } else {
-    const [top, bottom] = abilityHint(self.pending);
-    text(ctx, top, ax, ay - 6, TYPE.micro, MUTED, 'center', 600);
-    text(ctx, bottom, ax, ay + 8, TYPE.micro, MUTED, 'center', 600);
-  }
+  text(ctx, String(lp.displayLevel), x + 22, y + 19, TYPE.body, '#1d1a0b', 'center', 850);
+  caps(ctx, 'Level', x + 38, y + 18);
+  if (!compact) text(ctx, `K ${snap.self.kills}  D ${snap.self.deaths}`, x + pw / 2 + 14, y + 18, TYPE.label, MUTED, 'center', 600);
+  text(ctx, lp.nextAt === null ? `${me.score} · max` : `${me.score} / ${lp.nextAt}`, x + pw - 14, y + 18, TYPE.label, HUD_INK, 'right', 700);
+  bar(ctx, x + 14, y + 32, pw - 28, 4, lp.frac, PALETTE.gold);
 
-  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] ? [self.perks[t]!] : []));
+  const hpFrac = me.hp / me.maxHp;
+  const low = hpFrac <= 0.35;
+  strokeIcon(ctx, UI_ICONS.heart, x + 22, y + 55, 15, low ? PALETTE.hpBad : '#ffffff', 2.6);
+  setFont(ctx, 800, TYPE.figure - 4);
+  const hpText = `${Math.ceil(me.hp)}`;
+  const hw = ctx.measureText(hpText).width;
+  text(ctx, hpText, x + 36, y + 55, TYPE.figure - 4, low ? PALETTE.hpBad : HUD_INK, 'left', 800);
+  text(ctx, `/ ${me.maxHp}`, x + 40 + hw, y + 56, TYPE.label, MUTED, 'left', 500);
+  if (me.maxArmor > 0 || me.armor > 0) {
+    text(ctx, `${Math.ceil(me.armor)}`, x + pw - 14, y + 55, TYPE.body, PALETTE.armor, 'right', 800);
+    setFont(ctx, 800, TYPE.body);
+    strokeIcon(ctx, UI_ICONS.armor, x + pw - 24 - ctx.measureText(`${Math.ceil(me.armor)}`).width, y + 55, 13, PALETTE.armor, 2.4);
+  }
+  bar(ctx, x + 14, y + 68, pw - 28, 6, hpFrac, low ? PALETTE.hpBad : '#ffffff');
+  if (me.maxArmor > 0) bar(ctx, x + 14, y + 77, pw - 28, 3, me.armor / me.maxArmor, PALETTE.armor);
+
+  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (snap.self.perks[t] ? [snap.self.perks[t]!] : []));
   let cx = x;
   for (const perk of owned) {
     const name = PERK_INFO[perk].name;
     setFont(ctx, 600, TYPE.label);
     const tw = ctx.measureText(name).width + 34;
-    panel(ctx, cx, y - 30, tw, 24);
+    panel(ctx, cx, y - 30, tw, 24, undefined, 7);
     strokeIcon(ctx, PERK_ICONS[perk], cx + 14, y - 18, 14, PALETTE.gold, 2.4);
     text(ctx, name, cx + 26, y - 18, TYPE.label, HUD_INK);
     cx += tw + SPACE.sm - 2;
   }
   if (me.hunted) drawHuntedBadge(ctx, x + pw, cx > x + pw - HUNTED_BADGE_W ? y - 58 : y - 30);
+}
+
+const SLOT = 58;
+
+/** Bottom right: the gun's white glyph, name and ammo, then the ability as a square slot that fills as it cools down. */
+function drawWeapon({ ctx, w, h, snap, me }: Hud, compact: boolean) {
+  if (!me) return;
+  const self = snap.self;
+  const sx = w - EDGE - SLOT, y = h - EDGE - SLOT;
+  const pw = compact ? 150 : 230;
+  const x = sx - SPACE.sm - pw;
+  panel(ctx, x, y, pw, SLOT);
+  drawGunGlyph(ctx, me.gun, x + 14, y + 22, compact ? 52 : 84, 18, HUD_INK);
+  caps(ctx, GUNS[me.gun].name, x + 14, y + 45);
+  setFont(ctx, 750, TYPE.micro);
+  drawStagePips(ctx, me.gun, x + 14 + ctx.measureText(GUNS[me.gun].name.toUpperCase()).width + SPACE.sm, y + 45);
+  const right = x + pw - 14;
+  if (self.reloading) {
+    text(ctx, 'Reloading', right, y + 22, TYPE.label, PALETTE.gold, 'right', 800);
+    bar(ctx, right - 70, y + 36, 70, 5, self.reloadFrac, PALETTE.gold);
+  } else {
+    setFont(ctx, 500, TYPE.body);
+    const magW = ctx.measureText(` / ${self.mag}`).width;
+    text(ctx, ` / ${self.mag}`, right, y + 31, TYPE.body, MUTED, 'right', 500);
+    text(ctx, String(self.ammo), right - magW, y + 29, TYPE.figure + 2, self.ammo === 0 ? PALETTE.hpBad : HUD_INK, 'right', 850);
+  }
+
+  panel(ctx, sx, y, SLOT, SLOT);
+  const cx = sx + SLOT / 2;
+  if (self.ability) {
+    const total = ABILITY_COOLDOWN_MS[self.ability];
+    const left = Math.max(0, Math.min(1, self.abilityReadyIn / total));
+    const ready = left === 0;
+    if (!ready) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(sx, y, SLOT, SLOT, PANEL_RADIUS);
+      ctx.clip();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.fillRect(sx, y + SLOT * left, SLOT, SLOT * (1 - left));
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.roundRect(sx + 1, y + 1, SLOT - 2, SLOT - 2, PANEL_RADIUS - 1);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = PALETTE.gold;
+      ctx.stroke();
+    }
+    strokeIcon(ctx, PERK_ICONS[self.ability], cx, y + 23, 20, ready ? PALETTE.gold : MUTED, 2.2);
+    text(ctx, ready ? 'SPACE' : `${(self.abilityReadyIn / 1000).toFixed(1)}s`, cx, y + 46, TYPE.micro, ready ? PALETTE.gold : HUD_INK, 'center', 800);
+  } else {
+    const [top, bottom] = abilityHint(self.pending);
+    text(ctx, top, cx, y + 23, TYPE.micro, MUTED, 'center', 600);
+    text(ctx, bottom, cx, y + 37, TYPE.micro, MUTED, 'center', 600);
+  }
 }
 
 const HUNTED_BADGE_W = 84;

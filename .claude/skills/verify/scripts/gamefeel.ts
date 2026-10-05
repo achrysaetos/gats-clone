@@ -218,8 +218,11 @@ async function onSelf(self: NonNullable<ReturnType<typeof me>>, snap: Snapshot) 
 
 async function underPanel(): Promise<string> {
   const others: { id: number; screen: { x: number; y: number } }[] = await js(`window.skirmishDev.drawnOthers()`) ?? [];
-  if (others.some((o) => o.screen.x > W - 222 && o.screen.x < W - 12 && o.screen.y > 12 && o.screen.y < 240)) return 'player under the leaderboard';
-  if (others.some((o) => o.screen.x > W - 194 && o.screen.x < W - 12 && o.screen.y > H - 194 && o.screen.y < H - 12)) return 'player under the minimap';
+  const panels: Record<string, { x: number; y: number; w: number; h: number }> = await js(`window.skirmishDev.panels()`) ?? {};
+  for (const [id, name] of [['board', 'leaderboard'], ['minimap', 'minimap'], ['score', 'score pill']] as const) {
+    const r = panels[id];
+    if (r && others.some((o) => o.screen.x > r.x && o.screen.x < r.x + r.w && o.screen.y > r.y && o.screen.y < r.y + r.h)) return `player under the ${name}`;
+  }
   return '';
 }
 

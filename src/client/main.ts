@@ -9,7 +9,7 @@ import { killOf, lossOf, selfOf } from './derive.ts';
 import { rangeFor, spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from './moments.ts';
-import { buildChipAt, drawHud, drawnBuildChips, drawSticks } from './hud.ts';
+import { buildChipAt, drawHud, drawnBuildChips, drawnPanels, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
@@ -104,7 +104,7 @@ const zombiesView = () => {
     callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
   };
 };
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, shadowBakes, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, panels: drawnPanels, shadowBakes, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
 
 /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
 function benchFrames(n: number): number[] {
