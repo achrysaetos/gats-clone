@@ -2,7 +2,7 @@
 
 type Rect = { x: number; y: number; w: number; h: number };
 /** `host` names the solid it lies on, so a crack on a crate that breaks goes with it. `lines` holds x0,y0,x1,y1 in world units. */
-export type Crack = { born: number; host: string; lines: readonly number[] };
+type Crack = { born: number; host: string; lines: readonly number[] };
 export type CrackPool = { readonly slots: (Crack | null)[]; next: number };
 
 export const CRACKS = { cap: 72, lifeMs: 14_000, fadeMs: 4000, reach: 18 } as const;

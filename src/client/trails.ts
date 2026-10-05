@@ -5,7 +5,7 @@ export type TrailPoint = { x: number; y: number; at: number; d: number; dashing:
 export const TRAIL = { lifeMs: 900, step: 6, jump: 160, cap: 48, dash: 18, gap: 14 } as const;
 
 /** One dash on the floor, `fade` 1 when fresh and 0 when gone; `dashing` marks a stretch covered by the dash ability. */
-export type TrailDash = { x0: number; y0: number; x1: number; y1: number; fade: number; dashing: boolean };
+type TrailDash = { x0: number; y0: number; x1: number; y1: number; fade: number; dashing: boolean };
 
 /** Adds where the body is now and drops what has faded, keeping at most `TRAIL.cap` points. */
 export function recordTrail(trail: TrailPoint[], x: number, y: number, now: number, dashing: boolean) {

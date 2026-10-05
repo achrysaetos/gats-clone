@@ -36,7 +36,7 @@ export function particleAt(p: Particle, now: number): { x: number; y: number; k:
   return { x: p.x + p.vx * travel, y: p.y + p.vy * travel, k: (now - p.born) / p.life };
 }
 
-export type BurstKind = 'spark' | 'rubble' | 'debris' | 'smoke' | 'puff' | 'gore' | 'casing';
+type BurstKind = 'spark' | 'rubble' | 'debris' | 'smoke' | 'puff' | 'gore' | 'casing';
 
 type BurstSpec = {
   count: number; speed: [number, number]; life: [number, number]; size: [number, number];
