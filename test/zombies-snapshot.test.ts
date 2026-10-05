@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, ZOM, ZOMBIE_KINDS } from '../src/shared/defs.ts';
+import { BUILDINGS, LEVELS, ZOM, ZOMBIE_KINDS } from '../src/shared/defs.ts';
 import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
@@ -101,4 +101,14 @@ test('each squad player hears only of their own hits on zombies', () => {
   ];
   const victims = (id: number) => snapshotFor(w, id).events.map((e) => e.e === 'dmg' && e.victim);
   assert.deepEqual([victims(a.id), victims(b.id)], [[99], [98]]);
+});
+
+test('a fallen run offers no level-up pick, since the fresh run wipes it', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1380, 1500);
+  p.score = LEVELS[1].score;
+  p.level = 1;
+  assert.notEqual(snapshotFor(w, p.id).self.pending, null, 'offered while the run goes on');
+  w.run!.phase = { k: 'over', night: 3, restartAt: Infinity };
+  assert.equal(snapshotFor(w, p.id).self.pending, null);
 });

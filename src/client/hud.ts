@@ -616,6 +616,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean
   strokeIcon(ctx, UI_ICONS.core, barX - labelW - 20, y + 13, 13, coreColor, 2.4);
   bar(ctx, barX, y + 9, 110, 8, frac, coreColor);
   if (alert) drawCoreAlert(hud, run.core, y + 40);
+  if (run.phase === 'over') return;
   if (me?.downed) {
     const k = 0.5 + 0.5 * Math.sin(now / 260);
     outlined(ctx, "You're down", w / 2, h * 0.64, 30, PALETTE.hunted, 900);
