@@ -32,18 +32,15 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
   }
 }
 
-const isOwnShot = (ev: GameEvent, myId: number) => ev.e === 'shot' && ev.owner === myId;
-
-export function scheduleEffects(snap: Snapshot, serverMs: number, myId: number): { now: EffectSpec[]; later: PendingEffect[] } {
-  const now: EffectSpec[] = [];
+/** Every effect waits for the render clock to reach its tick. Your own shots are left out, since main.ts draws them from your drawn muzzle. */
+export function scheduleEffects(snap: Snapshot, serverMs: number, myId: number): PendingEffect[] {
   const later: PendingEffect[] = [];
   for (const ev of snap.events) {
+    if (ev.e === 'shot' && ev.owner === myId) continue;
     const fx = effectOf(ev, snap);
-    if (!fx) continue;
-    if (isOwnShot(ev, myId)) now.push(fx);
-    else later.push({ at: serverMs, fx });
+    if (fx) later.push({ at: serverMs, fx });
   }
-  return { now, later };
+  return later;
 }
 
 export function releaseDue(queue: readonly PendingEffect[], renderMs: number): { due: EffectSpec[]; rest: PendingEffect[] } {

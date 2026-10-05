@@ -17,7 +17,7 @@ const R = WORLD.playerRadius;
 const CURB = 18;
 const WALL_FACE = 7;
 const CULL_MARGIN = 80;
-const TRACER = { tail: 0.07, core: 0.022 } as const;
+export const TRACER = { tail: 0.07, core: 0.022 } as const;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 

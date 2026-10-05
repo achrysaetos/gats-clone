@@ -8,29 +8,26 @@ import { releaseDue, scheduleEffects } from '../src/client/eventclock.ts';
 const ME = 1;
 const snapWith = (events: GameEvent[]): Snapshot => ({ players: [], events } as unknown as Snapshot);
 
-test('my own muzzle flash shows at once; another player\'s waits for the render clock', () => {
-  const { now, later } = scheduleEffects(snapWith([
+test('another player\'s muzzle flash waits for the render clock, and my own shot is left to my drawn muzzle', () => {
+  const later = scheduleEffects(snapWith([
     { e: 'shot', x: 0, y: 0, angle: 0, silenced: false, owner: ME, gun: 'pistol' },
     { e: 'shot', x: 50, y: 0, angle: 0, silenced: false, owner: 2, gun: 'pistol' },
   ]), 1000, ME);
-  assert.equal(now.length, 1, 'own flash is immediate');
-  assert.equal(later.length, 1, 'remote flash is deferred');
-  assert.equal(later[0]!.at, 1000);
+  assert.deepEqual(later.map((p) => [p.at, p.fx.kind, p.fx.kind === 'flash' && p.fx.x > 50]), [[1000, 'flash', true]]);
 });
 
 test('impacts, sparks and booms are drawn on the render clock, even from my own bullets', () => {
-  const { now, later } = scheduleEffects(snapWith([
+  const later = scheduleEffects(snapWith([
     { e: 'impact', x: 1, y: 1 },
     { e: 'dmg', attacker: ME, victim: 2, amount: 10, x: 2, y: 2, kind: 'player' },
     { e: 'boom', x: 3, y: 3, r: 50 },
     { e: 'kill', killer: 'a', victim: 'b', killerId: ME, victimId: 2, weapon: 'Pistol', bounty: false, assisters: [] },
   ]), 500, ME);
-  assert.deepEqual(now, []);
   assert.deepEqual(later.map((p) => p.fx.kind), ['impact', 'impact', 'boom', 'death']);
 });
 
 test('a kill puffs where the killing blow landed, and a hit names its victim for the hit flash', () => {
-  const { later } = scheduleEffects(snapWith([
+  const later = scheduleEffects(snapWith([
     { e: 'dmg', attacker: ME, victim: 2, amount: 10, x: 5, y: 5, kind: 'player' },
     { e: 'dmg', attacker: ME, victim: 2, amount: 90, x: 8, y: 9, kind: 'player' },
     { e: 'dmg', attacker: ME, victim: 70, amount: 5, x: 1, y: 1, kind: 'crate' },
@@ -43,11 +40,10 @@ test('a kill puffs where the killing blow landed, and a hit names its victim for
 });
 
 test('a knife slash draws an arc at the strike point on the render clock, including my own', () => {
-  const { now, later } = scheduleEffects(snapWith([
+  const later = scheduleEffects(snapWith([
     { e: 'slash', x: 10, y: 20, angle: 1.5, owner: ME },
     { e: 'slash', x: 30, y: 40, angle: 0, owner: 2 },
   ]), 700, ME);
-  assert.deepEqual(now, []);
   assert.deepEqual(later, [
     { at: 700, fx: { kind: 'slash', x: 10, y: 20, angle: 1.5 } },
     { at: 700, fx: { kind: 'slash', x: 30, y: 40, angle: 0 } },
@@ -55,7 +51,7 @@ test('a knife slash draws an arc at the strike point on the render clock, includ
 });
 
 test('deferred effects release exactly when the render clock reaches their tick', () => {
-  const { later } = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1 }]), 1000, ME);
+  const later = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1 }]), 1000, ME);
   const early = releaseDue(later, 999);
   assert.deepEqual(early.due, [], 'nothing shows before its tick');
   assert.equal(early.rest.length, 1);
@@ -67,10 +63,9 @@ test('deferred effects release exactly when the render clock reaches their tick'
 test('a turret\'s shot draws its round on the render clock from the barrel tip to the first zombie on its line, or to its range', () => {
   const shot: GameEvent = { e: 'turret', kind: 'cannon', x: 100, y: 200, angle: Math.PI / 2 };
   const { muzzle, range } = BUILDINGS.cannon.turret;
-  const { now, later } = scheduleEffects(snapWith([shot]), 700, ME);
-  assert.deepEqual(now, []);
+  const later = scheduleEffects(snapWith([shot]), 700, ME);
   const open = later[0]!.fx;
   assert.ok(open.kind === 'tracer' && Math.abs(open.x - 100) < 1e-9 && open.y === 200 + muzzle && open.reach === range, JSON.stringify(open));
-  const blocked = scheduleEffects({ ...snapWith([shot]), zombies: [[7, 0, 100, 400, 10], [8, 0, 100, 300, 10]] }, 700, ME).later[0]!.fx;
+  const blocked = scheduleEffects({ ...snapWith([shot]), zombies: [[7, 0, 100, 400, 10], [8, 0, 100, 300, 10]] }, 700, ME)[0]!.fx;
   assert.ok(blocked.kind === 'tracer' && Math.abs(blocked.reach - (300 - ZOMBIES.walker.radius - 200 - muzzle)) < 1e-6, JSON.stringify(blocked));
 });

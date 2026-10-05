@@ -8,6 +8,7 @@ import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
 import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
+import type { OwnRound } from './rounds.ts';
 import type { TurretAim } from './siege.ts';
 
 export type Effect =
@@ -41,6 +42,7 @@ export type Session = {
   predict: Prediction;
   lastSelf: { x: number; y: number };
   effects: Effect[];
+  ownRounds: OwnRound[];
   pendingFx: PendingEffect[];
   feedback: Feedback;
   moments: Moments;

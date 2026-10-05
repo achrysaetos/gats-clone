@@ -38,6 +38,9 @@ export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, stil
   return spread;
 }
 
+export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
+  Object.values(perks).reduce((range, perk) => range * (PERK_MODS[perk].rangeMul ?? 1), GUNS[gun].range);
+
 export function effectiveStats(p: Player, still = false): Stats {
   const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
@@ -46,7 +49,7 @@ export function effectiveStats(p: Player, still = false): Stats {
     maxHp: WORLD.baseHp,
     maxArmor: armor.points,
     mag: weapon.mag,
-    range: weapon.range,
+    range: rangeFor(p.gun, p.perks),
     spread: spreadFor(p.gun, p.perks, still),
     regenPerSec: WORLD.regenPerSec,
     regenDelayMs: WORLD.regenDelayMs,
@@ -56,7 +59,6 @@ export function effectiveStats(p: Player, still = false): Stats {
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
     s.mag = Math.round(s.mag * (m.magMul ?? 1));
-    s.range *= m.rangeMul ?? 1;
     s.speed *= m.speedMul ?? 1;
     s.maxHp += m.maxHpAdd ?? 0;
     s.regenPerSec *= m.regenMul ?? 1;

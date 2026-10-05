@@ -144,8 +144,11 @@ stats('lagged human Other', rounds.filter((r) => !r.own && r.owner === other.id)
 stats('bots', rounds.filter((r) => !r.own && r.owner !== other.id));
 const exceptions = [...shooter.exceptions, ...other.exceptions];
 for (const e of exceptions) log(`page exception: ${e}`);
-const pass = ownMedian !== undefined && ownMedian <= MAX_OWN_GAP && exceptions.length === 0;
-log(`${pass ? 'ok  ' : 'FAIL'} own rounds start within ${MAX_OWN_GAP}px of the drawn muzzle (median ${ownMedian ?? 'none'}px)`);
+const near = ownMedian !== undefined && ownMedian <= MAX_OWN_GAP;
+log(`${near ? 'ok  ' : 'FAIL'} own rounds start within ${MAX_OWN_GAP}px of the drawn muzzle (median ${ownMedian ?? 'none'}px)`);
+const serverCopies = rounds.filter((r) => r.own && r.id > 0).length;
+log(`${serverCopies === 0 ? 'ok  ' : 'FAIL'} the server's copies of own rounds are not drawn (${serverCopies} drawn)`);
+const pass = near && serverCopies === 0 && exceptions.length === 0;
 log(pass ? 'RESULT PASS' : 'RESULT FAIL');
 shooter.chrome.kill(); other.chrome.kill();
 process.exit(pass ? 0 : 1);

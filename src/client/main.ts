@@ -1,4 +1,4 @@
-import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
+import { pickOptions, WORLD, type BuildingKind, type GunId } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -6,7 +6,7 @@ import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
-import { spreadFor } from '../shared/sim/stats.ts';
+import { rangeFor, spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from './moments.ts';
 import { buildChipAt, drawHud, drawnBuildChips, drawSticks } from './hud.ts';
@@ -22,6 +22,7 @@ import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { muzzleTip } from './sprites.ts';
+import { drawnRounds, fireOwnRounds, roundLive, roundScene } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
@@ -86,6 +87,7 @@ type DrawnRound = { id: number; owner: number; own: boolean; x: number; y: numbe
 const seenRounds = new Set<number>();
 const firstRounds: DrawnRound[] = [];
 let ghost: Ghost | null = null;
+let ownRoundId = -1;
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
 const liveNumbers = () => {
@@ -269,7 +271,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], pendingFx: [], feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
+    effects: [], ownRounds: [], pendingFx: [], feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
     coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
@@ -290,9 +292,9 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
-  const fx = scheduleEffects(snap, snap.tick * TICK_MS, s.myId);
-  for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
-  s.pendingFx.push(...fx.later);
+  s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS, s.myId));
+  s.ownRounds = s.ownRounds.filter((r) => roundLive(r, now));
+  for (const ev of snap.events) if (ev.e === 'shot' && ev.owner === s.myId) fireFromMuzzle(s, snap, ev.gun, ev.angle, now);
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
@@ -303,6 +305,19 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   if (dead && state.phase === 'playing') setState({ phase: 'dead', s, kill: killOf(snap.events, s.myId), loss: prev && lossOf(prev) });
   else if (dead && state.phase === 'dead' && !state.kill) state.kill = killOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
+}
+
+/** Your own shot leaves the gun where the page draws it, aimed where you aim now; the server still decides what it hits. */
+function fireFromMuzzle(s: Session, snap: Snapshot, gun: GunId, shotAngle: number, now: number) {
+  const aim = aimOffset(s);
+  const angle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : shotAngle;
+  const muzzle = muzzleTip(s.lastSelf.x, s.lastSelf.y, angle, gun, WORLD.playerRadius);
+  const seen = sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap;
+  const still = !MOVES.some((a) => held.has(a));
+  const rounds = fireOwnRounds(gun, rangeFor(gun, snap.self.perks), spreadFor(gun, snap.self.perks, still), muzzle, angle, roundScene(seen, s.walls, s.myId), now, ownRoundId);
+  ownRoundId -= rounds.length;
+  s.ownRounds.push(...rounds);
+  startEffect(s, { kind: 'flash', ...muzzle, angle }, now);
 }
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
@@ -427,9 +442,10 @@ function drawFrame(now: number) {
   for (const spec of released.due) startEffect(s, spec, now, deathTint(s, spec));
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
+  const bullets = drawnRounds(interpolated.bullets, s.ownRounds, s.myId, now);
   const snap = drawn
-    ? { ...interpolated, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) }
-    : interpolated;
+    ? { ...interpolated, bullets, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) }
+    : { ...interpolated, bullets };
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive || me?.downed) s.lastSelf = { x: me.x, y: me.y };
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
