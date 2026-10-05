@@ -2,6 +2,8 @@ import type { ModeId } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 
 export type Center = { x: number; y: number };
+export type WallMaterial = 'concrete' | 'sandstone';
+export type MapWall = Rect & { material: WallMaterial };
 
 export const ZONE_RADIUS = 180;
 export const CRATE_SIZE = 44;
@@ -10,7 +12,7 @@ export type MapDef = {
   name: string;
   /** The map is a square this many pixels on a side. */
   size: number;
-  walls: readonly Rect[];
+  walls: readonly MapWall[];
   /** DOM capture points A, B and C. */
   zones: readonly Center[];
   /** Every point inside a region is a clear spot for a player's center. */
@@ -20,16 +22,20 @@ export type MapDef = {
   siege?: { core: Center; horde: readonly Rect[] };
 };
 
-export const turnRect = (r: Rect, size: number): Rect => ({ x: size - r.x - r.w, y: size - r.y - r.h, w: r.w, h: r.h });
+export const turnRect = <T extends Rect>(r: T, size: number): T => ({ ...r, x: size - r.x - r.w, y: size - r.y - r.h });
 export const turnCenter = (p: Center, size: number): Center => ({ x: size - p.x, y: size - p.y });
 /** Each map is the same after a half turn about its center, so red (left) and blue (right) get mirror-image ground. */
 const withTurned = <T>(half: readonly T[], turn: (t: T, size: number) => T, size: number): T[] => [...half, ...half.map((t) => turn(t, size))];
+
+const BLOCKY = 1.6;
+/** The rect maps were drawn before walls had a material, when the client told them apart by shape: blocky ones sandstone, long ones concrete. */
+const byShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
 
 function symmetricMap(name: string, size: number, half: { walls: Rect[]; zoneA: Center; red: Rect[]; ffa: Rect[]; crates: Center[] }): MapDef {
   return {
     name,
     size,
-    walls: withTurned(half.walls, turnRect, size),
+    walls: withTurned(half.walls.map(byShape), turnRect, size),
     zones: [half.zoneA, { x: size / 2, y: size / 2 }, turnCenter(half.zoneA, size)],
     spawns: { red: half.red, blue: half.red.map((r) => turnRect(r, size)), ffa: withTurned(half.ffa, turnRect, size) },
     crates: withTurned(half.crates, turnCenter, size),
@@ -37,9 +43,9 @@ function symmetricMap(name: string, size: number, half: { walls: Rect[]; zoneA: 
 }
 
 /** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover. */
-const quarterTurn = (r: Rect, size: number): Rect => ({ x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
-const fourWays = (quarter: readonly Rect[], size: number): Rect[] => {
-  const out: Rect[] = [];
+const quarterTurn = <T extends Rect>(r: T, size: number): T => ({ ...r, x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
+const fourWays = <T extends Rect>(quarter: readonly T[], size: number): T[] => {
+  const out: T[] = [];
   let turn = [...quarter];
   for (let i = 0; i < 4; i++) { out.push(...turn); turn = turn.map((r) => quarterTurn(r, size)); }
   return out;
@@ -50,7 +56,7 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
   return {
     name,
     size,
-    walls: fourWays(quarter.walls, size),
+    walls: fourWays(quarter.walls.map(byShape), size),
     zones: [],
     spawns: { red: squad, blue: squad, ffa: squad },
     crates: [],

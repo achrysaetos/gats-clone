@@ -37,7 +37,7 @@ test('walls stop bullets', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 800, 500);
-  w.walls.push({ x: 640, y: 400, w: 20, h: 200, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 640, y: 400, w: 20, h: 200, built: false, material: 'concrete', expiresAt: Infinity });
   shootOnce(w, a, 0, 1000);
   assert.equal(hpOf(b), WORLD.baseHp, 'target behind wall untouched');
   assert.equal(w.bullets.length, 0, 'bullet removed at the wall');
@@ -329,7 +329,7 @@ test('minimap always shows teammates', () => {
 test('players collide with walls and map edges', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  w.walls.push({ x: 600, y: 300, w: 50, h: 400, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 600, y: 300, w: 50, h: 400, built: false, material: 'concrete', expiresAt: Infinity });
   press(w, a, { right: true });
   run(w, 2000);
   assert.ok(a.x <= 600 - WORLD.playerRadius + 0.01, `stopped at wall (${a.x})`);

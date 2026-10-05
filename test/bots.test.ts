@@ -41,7 +41,7 @@ const rms = (xs: number[]) => Math.sqrt(xs.reduce((a, x) => a + x * x, 0) / xs.l
 const aimErrors = (looks: Look[], from: number, to: number) => looks.slice(from, to).map((l) => Math.atan2(Math.sin(l.angle - l.leadAngle), Math.cos(l.angle - l.leadAngle)));
 
 test('a bot holds fire at an enemy behind a wall and fires once it can see them', () => {
-  const wall: WallView = { x: 1180, y: 900, w: 40, h: 200, built: false };
+  const wall: WallView = { x: 1180, y: 900, w: 40, h: 200, built: false, material: 'concrete' };
   const looks = watch({ seed: 3, ticks: 60, targetAt: { x: 1400, y: 1000 }, walls: (i) => (i < 30 ? [wall] : []) });
   assert.ok(looks.slice(0, 30).every((l) => !l.fire), 'no shots into the wall');
   assert.ok(looks.slice(30).some((l) => l.fire), 'fires with a clear line');

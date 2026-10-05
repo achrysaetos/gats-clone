@@ -79,7 +79,7 @@ test('a zombie out of range or behind cover draws no fire, but the squad\'s own 
   assert.deepEqual([shotsIn(w).length, t.ammo], [0, SENTRY.ammo], 'out of range');
 
   w.zombies = [];
-  w.walls.push({ x: TX - 50, y: TY - 120, w: 100, h: 20, built: false, expiresAt: Infinity });
+  w.walls.push({ x: TX - 50, y: TY - 120, w: 100, h: 20, built: false, material: 'concrete', expiresAt: Infinity });
   w.wallsVersion++;
   addZombie(w, 'walker', TX, TY - 200);
   step(w, TICK_MS);

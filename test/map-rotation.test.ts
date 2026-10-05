@@ -205,7 +205,7 @@ test('a joined client receives the new map\'s walls when the round restarts', ()
   ws.send({ t: 'join', name: 'Tester', loadout: PISTOL, aspect: 1.5 });
   const welcome = ws.sent.find((m) => m.t === 'welcome');
   assert.ok(welcome && welcome.t === 'welcome');
-  assert.deepEqual(welcome.walls.map(({ x, y, w, h }) => ({ x, y, w, h })), MAPS[first].walls);
+  assert.deepEqual(welcome.walls, MAPS[first].walls.map((r) => ({ ...r, built: false })));
 
   room.world.teamScore.red = WORLD.tdmWinScore;
   for (let t = 0; t <= WORLD.roundRestartMs + 500; t += TICK_MS) room.tick();

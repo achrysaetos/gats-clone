@@ -23,7 +23,7 @@ type Lockstep = {
 function lockstepWorld(squad: Lockstep['squad']) {
   if (!squad) {
     const w = emptyWorld();
-    w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, expiresAt: Infinity }];
+    w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, material: 'concrete', expiresAt: Infinity }];
     return { w, p: spawnAt(w, 500, 500) };
   }
   const w = createWorld('ZOM', 1, 'outpost');

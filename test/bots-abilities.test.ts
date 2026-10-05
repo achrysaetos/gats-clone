@@ -73,7 +73,7 @@ test('a hurt dash bot dashes away from the enemy, and a healthy one does not das
 });
 
 test('a hurt bot dashes around a wall behind it rather than into it', () => {
-  const wall: WallView = { x: 900, y: 950, w: 40, h: 100, built: false };
+  const wall: WallView = { x: 900, y: 950, w: 40, h: 100, built: false, material: 'concrete' };
   const dash = inputs({ ability: 'dash', enemyAt: { x: 1300, y: 1000 }, hp: 20, walls: [wall] }).find((i) => i.ability);
   assert.ok(dash, 'dashes');
   assert.ok(dash.left && !dash.right && (dash.up || dash.down), 'dashes diagonally away, past the wall');

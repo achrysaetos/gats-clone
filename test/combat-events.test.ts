@@ -62,7 +62,7 @@ test('a crate hit emits one crate-kind dmg event with the crate id', () => {
 test('a wall hit emits an impact at the wall face and no dmg', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  w.walls.push({ x: 650, y: 400, w: 40, h: 200, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 650, y: 400, w: 40, h: 200, built: false, material: 'concrete', expiresAt: Infinity });
   const got = hits(fireAndCollect(w, a));
   assert.equal(got.length, 1, JSON.stringify(got));
   const [ev] = got;

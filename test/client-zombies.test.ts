@@ -34,7 +34,7 @@ test('the build preview judges every cell around the builder as the server does'
   w.zombies.push({ id: newId(w), kind: 'brute', x: AT.x + 120, y: AT.y - 60, hp: 1, attackAt: Infinity });
   spawnAt(w, AT.x - 100, AT.y + 100);
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 28, cy: 27, hp: 1 });
-  w.walls.push({ x: 1200, y: 1400, w: 24, h: 140, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 1200, y: 1400, w: 24, h: 140, built: false, material: 'concrete', expiresAt: Infinity });
   const seen = new Set<string | null>();
   for (let cy = 24; cy <= 37; cy++) {
     for (let cx = 20; cx <= 33; cx++) {

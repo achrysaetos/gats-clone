@@ -14,7 +14,7 @@ const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
 
 export function wallViews(w: World): WallView[] {
-  return w.walls.map(({ x, y, w: ww, h, built }) => ({ x, y, w: ww, h, built }));
+  return w.walls.map(({ expiresAt: _, ...view }) => view);
 }
 
 function isHidden(w: World, p: Player): boolean {

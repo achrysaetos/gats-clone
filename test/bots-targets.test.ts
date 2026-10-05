@@ -77,7 +77,7 @@ test('a bot holds fire at a crate behind a wall', () => {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000);
   addCrate(w, 1300, 1000);
-  const wall: WallView = { x: 1130, y: 900, w: 40, h: 200, built: false };
+  const wall: WallView = { x: 1130, y: 900, w: 40, h: 200, built: false, material: 'concrete' };
   const r = seeded(1);
   assert.ok(!botThink(snapshotFor(w, bot.id), [wall], newBotMemory(r, MAPS[w.map].size), r, MAPS[w.map].size).input.fire, 'no shots into the wall');
 });
@@ -155,7 +155,7 @@ test('a bot with nobody in view heads for gunfire on its minimap, the hunted fir
 test('a bot walled off from a hunted marker walks around the wall and fights instead of pinning against it', () => {
   for (let seed = 1; seed <= 5; seed++) {
     const w = emptyWorld();
-    w.walls.push({ x: 1100, y: 1000, w: 50, h: 1000, built: false, expiresAt: Infinity });
+    w.walls.push({ x: 1100, y: 1000, w: 50, h: 1000, built: false, material: 'concrete', expiresAt: Infinity });
     const bot = spawnAt(w, 1050, 1500);
     const hunted = spawnAt(w, 1200, 1500, { kind: 'human' });
     equip(hunted, 'executioner');

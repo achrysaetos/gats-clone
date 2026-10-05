@@ -1,10 +1,10 @@
 import { byTurret, PERK_TIERS, WORLD, ZOM, type Blast, type GunId, type ModeId, type PlayerKind, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
-import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team } from '../protocol.ts';
+import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 
-export type Wall = Rect & { built: boolean; expiresAt: number };
+export type Wall = WallView & { expiresAt: number };
 
 export type Life =
   | {
@@ -195,7 +195,7 @@ export function loadMap(w: World, map: MapId) {
   const def = MAPS[map];
   w.map = map;
   w.mapChangeAt = w.now + MAP_MS[w.mode];
-  w.walls = def.walls.map((r) => ({ ...r, built: false, expiresAt: Infinity }));
+  w.walls = def.walls.map((r) => ({ ...r, built: false as const, expiresAt: Infinity }));
   w.wallsVersion++;
   w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
   w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0 })) : [];

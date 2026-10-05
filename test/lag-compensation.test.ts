@@ -44,7 +44,7 @@ test('the same shot with no view time misses the victim who stepped aside', () =
 });
 
 test('a rewound shot stops at a wall standing between shooter and the rewound victim', () => {
-  const { w, shooter, victim, sawAt } = victimThatSteppedAside([{ x: 600, y: 450, w: 20, h: 100, built: false, expiresAt: Infinity }]);
+  const { w, shooter, victim, sawAt } = victimThatSteppedAside([{ x: 600, y: 450, w: 20, h: 100, built: false, material: 'concrete', expiresAt: Infinity }]);
   const events = fireSeeing(w, shooter, 0, sawAt);
   assert.ok(!hitOn(events, victim), 'no hit through the wall');
   assert.ok(events.some((e) => e.e === 'impact' && e.x === 600), 'the bullet struck the wall face');
@@ -64,7 +64,7 @@ function latestHitAfterCover(rewindCapMs: number, range: number): number {
     const w = emptyWorld();
     const shooter = spawnAt(w, 500, 380);
     const victim = spawnAt(w, 500 + range, 380);
-    w.walls.push({ x: 600, y: 400, w: 20, h: 300, built: false, expiresAt: Infinity });
+    w.walls.push({ x: 600, y: 400, w: 20, h: 300, built: false, material: 'concrete', expiresAt: Infinity });
     run(w, 300);
     press(w, victim, { down: true });
     while (victim.y - 380 <= WORLD.playerRadius + range * GUNS.pistol.spread) step(w, TICK_MS);

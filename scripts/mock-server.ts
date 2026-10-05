@@ -23,10 +23,10 @@ const DT = 1 / WORLD.tickHz;
 const GRENADE_FUSE_MS = 900;
 
 const WALLS: WallView[] = [
-  { x: 1300, y: 1200, w: 400, h: 40, built: false },
-  { x: 1300, y: 1760, w: 400, h: 40, built: false },
-  { x: 900, y: 1300, w: 40, h: 400, built: false },
-  { x: 2060, y: 1300, w: 40, h: 400, built: false },
+  { x: 1300, y: 1200, w: 400, h: 40, built: false, material: 'concrete' },
+  { x: 1300, y: 1760, w: 400, h: 40, built: false, material: 'concrete' },
+  { x: 900, y: 1300, w: 40, h: 400, built: false, material: 'concrete' },
+  { x: 2060, y: 1300, w: 40, h: 400, built: false, material: 'concrete' },
 ];
 
 const json = (res: import('node:http').ServerResponse, body: unknown, status = 200) => {

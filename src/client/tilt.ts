@@ -38,9 +38,7 @@ export function shadowHull({ kind, x, y, w, h }: Solid): number[] {
 }
 
 const CURB = 18;
-const BLOCKY = 1.6;
-
-const mapWallKind = (w: WallView): SolidKind => (w.built ? 'slate' : Math.max(w.w, w.h) <= BLOCKY * Math.min(w.w, w.h) ? 'sandstone' : 'concrete');
+const mapWallKind = (w: WallView): SolidKind => (w.built ? 'slate' : w.material);
 
 export const wallSolids = (walls: readonly WallView[]): Solid[] => walls.map((w) => ({ kind: mapWallKind(w), x: w.x, y: w.y, w: w.w, h: w.h }));
 

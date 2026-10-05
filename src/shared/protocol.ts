@@ -2,7 +2,7 @@ import {
   ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
-import { MAP_IDS, MAPS } from './maps.ts';
+import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
 export type Team = 'red' | 'blue' | null;
@@ -59,7 +59,8 @@ export type PlayerView = {
 /** `gun` is null for shrapnel. */
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
-export type WallView = { x: number; y: number; w: number; h: number; built: boolean };
+/** A map wall carries its material; a wall an engineer put up is `built` and has none of its own. */
+export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };

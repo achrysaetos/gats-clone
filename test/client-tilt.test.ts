@@ -1,7 +1,8 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGroundCache, drawSolids, LIGHT, LIP, MATERIALS, shadowHull, type Solid } from '../src/client/tilt.ts';
+import { createGroundCache, drawSolids, LIGHT, LIP, MATERIALS, shadowHull, wallSolids, type Solid } from '../src/client/tilt.ts';
+import { MAPS } from '../src/shared/maps.ts';
 
 type Call = { name: string; args: number[]; fill: unknown };
 
@@ -73,4 +74,20 @@ test('the ground layer paints and traces the map once per layout and re-blurs on
   assert.equal(cache.bakes(), 3, 'losing the building re-blurs');
   cache.get({}, 3000, statics, []);
   assert.deepEqual([cache.bakes(), traced], [4, 2], 'a new layout traces the map again');
+});
+
+test('a map wall is drawn in its own material whatever its shape, and a built wall in slate', () => {
+  const long = { x: 0, y: 0, w: 400, h: 40 }, square = { x: 0, y: 0, w: 100, h: 100 };
+  const kinds = wallSolids([
+    { ...long, built: false, material: 'sandstone' }, { ...square, built: false, material: 'concrete' }, { ...square, built: true },
+  ]).map((s) => s.kind);
+  assert.deepEqual(kinds, ['sandstone', 'concrete', 'slate']);
+});
+
+test('the rect maps keep the look their shapes gave them: blocky walls sandstone, long walls concrete', () => {
+  const kinds = new Map(wallSolids(MAPS.boneyard.walls.map((w) => ({ ...w, built: false }))).map((s) => [`${s.w}x${s.h}`, s.kind]));
+  assert.equal(kinds.get('120x120'), 'sandstone');
+  assert.equal(kinds.get('80x80'), 'sandstone');
+  assert.equal(kinds.get('260x50'), 'concrete');
+  assert.equal(kinds.get('50x280'), 'concrete');
 });

@@ -46,7 +46,7 @@ test('a blast round damages bodies within its radius where it stops: at a wall, 
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   equip(a, 'thunderclap');
-  w.walls.push({ x: 800, y: 300, w: 20, h: 400, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 800, y: 300, w: 20, h: 400, built: false, material: 'concrete', expiresAt: Infinity });
   const nearWall = spawnAt(w, 770, 545);
   const clear = spawnAt(w, 770, 680);
   pressAndCollect(w, a, 400);
@@ -64,7 +64,7 @@ test('a blast never reaches a body on the far side of a wall, the struck wall in
   const w = emptyWorld();
   const a = spawnAt(w, 300, 500);
   equip(a, 'artillery');
-  w.walls.push({ x: 600, y: 400, w: 40, h: 200, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 600, y: 400, w: 40, h: 200, built: false, material: 'concrete', expiresAt: Infinity });
   w.walls.push({ x: 520, y: 600, w: 60, h: 20, built: true, expiresAt: Infinity });
   const behindStruck = spawnAt(w, 680, 500);
   const besideImpact = spawnAt(w, 560, 540);
@@ -109,7 +109,7 @@ test('a blast hurts its owner for half, never a teammate, and a self-kill earns 
   assert.equal(hpOf(mate), WORLD.baseHp, 'a teammate takes nothing');
   const shooter = spawnAt(w, 300, 900, { team: 'red' });
   equip(shooter, 'artillery');
-  w.walls.push({ x: 340, y: 800, w: 40, h: 200, built: false, expiresAt: Infinity });
+  w.walls.push({ x: 340, y: 800, w: 40, h: 200, built: false, material: 'concrete', expiresAt: Infinity });
   const before = hpOf(shooter);
   pressAndCollect(w, shooter, 300);
   assert.ok(hpOf(shooter) < before, 'firing artillery into a wall at point blank hurts the shooter');
