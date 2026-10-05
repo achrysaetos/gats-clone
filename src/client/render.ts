@@ -120,6 +120,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawLetterbox(ctx, cam, dpr);
 }
 
+/** A plain blend, since a multiply costs a software canvas over a millisecond a frame. */
 function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: number) {
   ctx.globalAlpha = dark * NIGHT.alpha;
   ctx.fillStyle = NIGHT.shade;
