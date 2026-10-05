@@ -249,7 +249,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let keys = drive.keys;
   if (ability && readyAbility === 'dash' && t) {
     const away = awayFrom(me, t.p, c.arena, RETREAT_STEP);
-    keys = keysToward({ ...m, dir: null }, me, away, v.tick).keys;
+    keys = keysToward({ ...m, dir: null, stuckTicks: 0 }, me, away, v.tick).keys;
   }
   if (ability && throwAt && GRENADES.has(readyAbility)) {
     angle = Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err;

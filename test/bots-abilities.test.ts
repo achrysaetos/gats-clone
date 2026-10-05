@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { AbilityId, ModeId } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot, WallView } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
@@ -143,6 +143,7 @@ test('a hurt bot without a dash and with no cover in reach keeps fighting a near
     if (bot.life.k === 'alive') bot.life.hp = 20;
     const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
+    setInput(w, bot.id, i + 1, d.input);
     assert.ok(!d.input.left, `tick ${i}: does not back away`);
     step(w, TICK_MS);
   }
