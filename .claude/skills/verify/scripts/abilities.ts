@@ -23,6 +23,7 @@ mkdirSync(EV, { recursive: true });
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const W = 1280, H = 800;
 const R = WORLD.playerRadius;
+const SHOTGUN_REACH = 380;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const problems: string[] = [];
@@ -109,7 +110,7 @@ async function shootNearest() {
   const self = me(), snap = frames.last;
   if (!self || !snap) return;
   const targets = [
-    ...snap.players.filter((p) => p.id !== self.id && p.alive).map((p) => ({ x: p.x, y: p.y })),
+    ...snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team)).map((p) => ({ x: p.x, y: p.y })),
     ...snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })),
   ].filter((t) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, t.x - self.x, t.y - self.y, w) !== null));
   const t = targets.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
@@ -117,6 +118,16 @@ async function shootNearest() {
   if (!t) { await walkToward(self, { x: mid, y: mid }); return; }
   if (Math.hypot(t.x - self.x, t.y - self.y) > GUNS[self.gun].range * 0.8) { await walkToward(self, t); return; }
   await aimAt(Math.atan2(t.y - self.y, t.x - self.x));
+  if (Math.hypot(t.x - self.x, t.y - self.y) > SHOTGUN_REACH) {
+    const walk = [
+      ...(t.x - self.x > 40 ? [['KeyD', 'd']] : t.x - self.x < -40 ? [['KeyA', 'a']] : []),
+      ...(t.y - self.y > 40 ? [['KeyS', 's']] : t.y - self.y < -40 ? [['KeyW', 'w']] : []),
+    ];
+    for (const [code, k] of walk) await key('keyDown', code, k, k.toUpperCase().charCodeAt(0));
+    await sleep(250);
+    for (const [code, k] of walk) await key('keyUp', code, k, k.toUpperCase().charCodeAt(0));
+    return;
+  }
   await mouse('mousePressed', W / 2, H / 2);
   await sleep(60);
   await mouse('mouseReleased', W / 2, H / 2);
