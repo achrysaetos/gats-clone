@@ -24,7 +24,7 @@ mkdirSync(OUT, { recursive: true });
 const PAGE = `
 import { WORLD } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAPS, ZONE_RADIUS } from '../src/shared/maps.ts';
-import { createGroundCache, crateSolid, curbSolids, drawCrateShadows, drawGround, drawSolids, wallSolids } from '../src/client/tilt.ts';
+import { createGroundCache, crateSolid, curbSolids, drawLooseShadows, drawGround, drawSolids, wallSolids } from '../src/client/tilt.ts';
 import { PALETTE, TEAM_COLORS } from '../src/client/palette.ts';
 
 const GRID = 80;
@@ -110,7 +110,7 @@ window.renderMap = (id, px, heat) => {
     ctx.globalAlpha = 1;
   }
   const crates = m.crates.map((c, i) => crateSolid({ id: i, x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp }));
-  drawCrateShadows(ctx, crates);
+  drawLooseShadows(ctx, crates);
   drawSolids(ctx, [...curbs, ...walls, ...crates]);
   if (heat) {
     ctx.fillStyle = 'rgba(28, 31, 38, 0.55)';

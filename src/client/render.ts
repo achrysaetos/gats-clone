@@ -1,6 +1,6 @@
 import { COLORS, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
-import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, ZoneView } from '../shared/protocol.ts';
+import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
@@ -11,7 +11,7 @@ import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZo
 import { bodySprite, drawBody, drawBodyShadows } from './bodies.ts';
 import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
-import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawCrateShadows, drawGround, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
+import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { drawCracks, hostKey } from './decals.ts';
@@ -31,6 +31,13 @@ const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >=
 const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w + LIP, s.h + LIP);
 
 const ground = createGroundCache();
+const mapWallKeys = new WeakMap<readonly WallView[], string>();
+/** The ground is baked from the map's own walls, so an engineer's wall coming or going never rebakes it; a walls message is keyed once. */
+export function mapWallsKey(walls: readonly WallView[]): string {
+  let key = mapWallKeys.get(walls);
+  if (key === undefined) mapWallKeys.set(walls, (key = walls.flatMap((w) => (w.built ? [] : [`${w.material}${w.x},${w.y},${w.w},${w.h}`])).join('|')));
+  return key;
+}
 export const shadowBakes = ground.bakes;
 
 let night = 0;
@@ -56,7 +63,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
   const dark = easeNight(snap.run, now);
   const siege = snap.run ? [...(snap.buildings ?? []).map(buildingSolid), coreSolid(snap.run)] : [];
-  drawGround(ctx, ground.get(s.walls, s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls)], siege), view.x0, view.y0, view.x1, view.y1);
+  drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege), view.x0, view.y0, view.x1, view.y1);
   drawGrid(ctx, s.worldSize, tl, br);
 
   const mine = snap.players.find((p) => p.id === s.myId);
@@ -68,7 +75,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawTrails(ctx, s.trails, now);
 
   const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
-  drawCrateShadows(ctx, crates);
+  drawLooseShadows(ctx, [...crates, ...wallSolids(s.walls.filter((w) => w.built)).filter((w) => solidInView(view, w))]);
   drawCasings(ctx, s.particles, now);
 
   const alive = snap.players.filter((p) => p.alive && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
@@ -144,7 +151,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   ctx.setTransform(k, 0, 0, k, -x * k, -y * k);
   drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, []), x, y, x + viewW, y + viewH);
   drawGrid(ctx, size, { x, y }, { x: x + viewW, y: y + viewH });
-  drawCrateShadows(ctx, backdropCrates);
+  drawLooseShadows(ctx, backdropCrates);
   drawSolids(ctx, [...backdropSolids, ...backdropCrates]);
 }
 

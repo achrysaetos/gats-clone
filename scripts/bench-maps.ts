@@ -22,7 +22,7 @@ const TICK_MS = 1000 / WORLD.tickHz;
 const SEEDS = [1, 2];
 /** Damage to or from a player closer together than this belongs to the same fight. */
 const FIGHT_GAP_MS = 3000;
-const TARGETS: Record<Exclude<ModeId, 'ZOM'>, number[]> = { FFA: [10, 20, 30, 40, 50], TDM: [50, 75, 100, 150, 200], DOM: [1000, 1500, 2000, 3000] };
+const TARGETS: Record<Exclude<ModeId, 'ZOM'>, number[]> = { FFA: [10, 20, 30, 40, 50], TDM: [50, 100, 150, 200, 250], DOM: [1000, 2000, 3000, 4000] };
 
 const quantile = (xs: readonly number[], q: number) => {
   if (!xs.length) return NaN;

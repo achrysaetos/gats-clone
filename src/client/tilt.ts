@@ -88,14 +88,14 @@ function fillHulls(g: CanvasRenderingContext2D, solids: readonly Solid[]) {
 const solidKey = (solids: readonly Solid[]) => solids.map((s) => `${s.kind}${s.x},${s.y},${s.w},${s.h}`).join('|');
 
 export function createGroundCache() {
-  let layout: object | null = null;
+  let layout: unknown = null;
   let size = 0;
   let floor: HTMLCanvasElement | null = null;
   let hard: HTMLCanvasElement | null = null;
   let movingKey: string | null = null;
   let layer: GroundLayer | null = null;
   let bakes = 0;
-  const get = (nextLayout: object, worldSize: number, statics: () => readonly Solid[], moving: readonly Solid[]): GroundLayer => {
+  const get = (nextLayout: unknown, worldSize: number, statics: () => readonly Solid[], moving: readonly Solid[]): GroundLayer => {
     const key = solidKey(moving);
     if (nextLayout === layout && worldSize === size && key === movingKey && layer) return layer;
     if (nextLayout !== layout || worldSize !== size || !floor || !hard) {
@@ -148,24 +148,27 @@ export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0
   ctx.imageSmoothingEnabled = true;
 }
 
-const crateShadows = new Map<number, HTMLCanvasElement>();
+const looseShadows = new Map<string, HTMLCanvasElement>();
 
-export function drawCrateShadows(ctx: CanvasRenderingContext2D, crates: readonly Solid[]) {
+/** Shadows for solids that come and go (crates, an engineer's walls) from a pre-blurred sprite per shape, so they never rebake the ground. */
+export function drawLooseShadows(ctx: CanvasRenderingContext2D, solids: readonly Solid[]) {
   const pad = BLUR_PX * 2;
-  for (const c of crates) {
-    let image = crateShadows.get(c.w);
+  for (const s of solids) {
+    const key = `${s.kind}${s.w}x${s.h}`;
+    let image = looseShadows.get(key);
     if (!image) {
-      const side = c.w + MATERIALS.planter.height * SHADOW_PER_HEIGHT + pad * 2;
+      const reach = MATERIALS[s.kind].height * SHADOW_PER_HEIGHT;
       image = document.createElement('canvas');
-      image.width = image.height = Math.ceil(side * LAYER_SCALE);
+      image.width = Math.ceil((s.w + LIGHT.x * reach + pad * 2) * LAYER_SCALE);
+      image.height = Math.ceil((s.h + LIGHT.y * reach + pad * 2) * LAYER_SCALE);
       const g = image.getContext('2d')!;
       g.filter = `blur(${BLUR_PX * LAYER_SCALE}px)`;
       g.globalAlpha = SHADOW_ALPHA;
       g.setTransform(LAYER_SCALE, 0, 0, LAYER_SCALE, pad * LAYER_SCALE, pad * LAYER_SCALE);
-      fillHulls(g, [{ kind: 'planter', x: 0, y: 0, w: c.w, h: c.h }]);
-      crateShadows.set(c.w, image);
+      fillHulls(g, [{ kind: s.kind, x: 0, y: 0, w: s.w, h: s.h }]);
+      looseShadows.set(key, image);
     }
-    ctx.drawImage(image, c.x - pad, c.y - pad, image.width / LAYER_SCALE, image.height / LAYER_SCALE);
+    ctx.drawImage(image, s.x - pad, s.y - pad, image.width / LAYER_SCALE, image.height / LAYER_SCALE);
   }
 }
 
