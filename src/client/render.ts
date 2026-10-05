@@ -340,10 +340,10 @@ function tracerLook(b: BulletView): TracerLook {
 }
 
 const TRACER_PASSES = [
-  [1, 0, 5, 0.16, 'glow'],
-  [1, 0.5, 1.5, 0.45, 'color'],
-  [0.5, 0, 2, 0.95, 'color'],
-  [0.6, 0, 1, 1, 'hot'],
+  { from: 1, to: 0, width: 5, alpha: 0.16, color: 'glow' },
+  { from: 1, to: 0.5, width: 1.5, alpha: 0.45, color: 'color' },
+  { from: 0.5, to: 0, width: 2, alpha: 0.95, color: 'color' },
+  { from: 0.6, to: 0, width: 1, alpha: 1, color: 'hot' },
 ] as const;
 
 function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[]) {
@@ -357,7 +357,7 @@ function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView
     else groups.set(key, { look, bullets: [b] });
   }
   for (const { look, bullets: group } of groups.values()) {
-    for (const [from, to, width, alpha, color] of TRACER_PASSES) {
+    for (const { from, to, width, alpha, color } of TRACER_PASSES) {
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = look[color];
       ctx.lineWidth = look.r * width;
