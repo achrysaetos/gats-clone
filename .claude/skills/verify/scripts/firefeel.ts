@@ -89,6 +89,10 @@ const reload = async (b: Browser) => {
   await sleep(80);
   await b.cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyR', key: 'r', windowsVirtualKeyCode: 82 });
 };
+const refillMagazine = async (b: Browser) => {
+  await reload(b);
+  await sleep(GUNS[b.gun].reloadMs + 300);
+};
 let deaths = 0;
 const respawnIfDead = async (b: Browser) => {
   if (!(await b.js(`!document.getElementById('death').hidden`))) return false;
@@ -135,9 +139,7 @@ function checkCounts(label: string, { felt: fs, fired }: { felt: Felt[]; fired: 
 async function runUndisturbed(label: string, b: Browser, settleMs: number, body: () => Promise<void>): Promise<{ felt: Felt[]; downs: number[]; fired: number }> {
   for (let attempt = 1; ; attempt++) {
     await respawnIfDead(b);
-    // An attempt cut short by a death leaves the magazine part spent, and a reload mid-phase would delay a press.
-    await reload(b);
-    await sleep(GUNS[b.gun].reloadMs + 300);
+    await refillMagazine(b);
     await felt(b); await downs(b);
     const deathsBefore = deaths, roundOverBefore = b.roundOverSnaps(), before = b.serverShots();
     await body();

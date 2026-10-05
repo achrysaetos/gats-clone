@@ -159,7 +159,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
-  /** Each step takes one waiting input per client; a client with none keeps its last, so held keys stay held. */
   function applyInputs() {
     for (const c of joined()) {
       const next = c.inputs.shift();
