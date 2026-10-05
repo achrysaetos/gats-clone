@@ -49,6 +49,14 @@ Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`.
 
 `scripts/drive.ts` and `scripts/mock-server.ts` at the repo root are a second harness that forces UI states (perk panels, death, winner banner) through mock chat commands. Use it only to check how those states render. Its server is fake, so it proves nothing about gameplay.
 
+### Muzzle
+
+```bash
+LAG=80 JITTER=0 node .claude/skills/verify/scripts/muzzle.ts "$RUN" [seconds]
+```
+
+One muted browser strafes, turns and taps the pistol in FFA beside a second lagged browser. `skirmishDev.firstRounds()` lists each round the first frame the page draws it, with its shooter's drawn muzzle. The script logs the median, p90 and max gap for own rounds, the second browser's and the bots', and fails when own rounds start more than 25px from the muzzle or any server copy of an own round is drawn. Its log is `$RUN/evidence/muzzle.log`, with screenshots `muzzle-lag<L>-<ms>ms.png` taken that long after a shot's round trip.
+
 ### Zombies
 
 ```bash
