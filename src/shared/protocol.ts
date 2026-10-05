@@ -59,7 +59,6 @@ export type PlayerView = {
 /** `gun` is null for shrapnel. */
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
-/** A map wall carries its material; a wall an engineer put up is `built` and has none of its own. */
 export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
@@ -191,7 +190,6 @@ export function cleanName(v: unknown): string {
   return s || 'Unnamed';
 }
 
-/** Only a zombies map can be built on. */
 const MAX_GRID = Math.max(...MAP_IDS.filter((m) => MAPS[m].siege).map((m) => MAPS[m].size)) / ZOM.cell;
 const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < MAX_GRID ? v : null);
 

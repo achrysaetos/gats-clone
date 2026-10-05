@@ -28,7 +28,6 @@ test('the server renames a blocked name and masks chat before anyone else sees i
   const { startServer } = await import('../src/server/main.ts');
   const dataDir = await mkdtemp(join(tmpdir(), 'skirmish-mod-'));
   await writeFile(join(dataDir, 'blocklist.txt'), 'grief\n');
-  // Few enough bots that both humans make the ten-row leaderboard.
   const server = await startServer({ port: 0, dataDir, limits: { minPlayers: 4 } });
   const { fillSnapshot } = await import('../src/shared/wire.ts');
   const full = new Map<unknown, any>();

@@ -1,8 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/map-overview.ts <outDir> [mapId,...|all|none] [heat.json ...]
-// Draws each map whole, top down, with the game's own ground, shadows and materials (src/client/tilt.ts) in a muted
-// headless Chrome, and saves <outDir>/overview-<map>.png. Each heat file from scripts/bench-maps.ts adds
-// <outDir>/heat-<map>-<mode>.png: the same overview with where players took damage as a heat layer and deaths as dots.
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -40,7 +37,6 @@ function heatLayer(size, points) {
     const cx = Math.floor(points[i] / cell), cy = Math.floor(points[i + 1] / cell);
     if (cx >= 0 && cy >= 0 && cx < n && cy < n) d[cy * n + cx]++;
   }
-  // Two box passes each way approximate a gaussian of about four cells.
   const blur = (src) => {
     let a = src;
     for (let pass = 0; pass < 2; pass++) for (const horizontal of [true, false]) {

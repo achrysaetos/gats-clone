@@ -121,7 +121,6 @@ async function shootNearest() {
   await sleep(250);
 }
 
-/** Nothing in sight from a spawn on a 6000px map, so head for the middle: diagonally, so the walk slides round the spawn screens. */
 async function walkTowardMiddle(x: number) {
   const [code, k, vk] = x < (frames.welcome?.worldSize ?? 0) / 2 ? ['KeyD', 'd', 68] : ['KeyA', 'a', 65];
   await key('keyDown', code, k, vk); await key('keyDown', 'KeyW', 'w', 87);

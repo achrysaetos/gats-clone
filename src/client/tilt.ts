@@ -95,7 +95,6 @@ export function createGroundCache() {
   let movingKey: string | null = null;
   let layer: GroundLayer | null = null;
   let bakes = 0;
-  /** `moving` is null on a map that never has buildings, so the floor and hull layers under the bake can go once it is done. */
   const get = (nextLayout: unknown, worldSize: number, statics: () => readonly Solid[], moving: readonly Solid[] | null): GroundLayer => {
     const key = solidKey(moving ?? []);
     if (nextLayout === layout && worldSize === size && key === movingKey && layer) return layer;
@@ -152,7 +151,6 @@ export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0
 
 const looseShadows = new Map<string, HTMLCanvasElement>();
 
-/** Shadows for solids that come and go (crates, an engineer's walls) from a pre-blurred sprite per shape, so they never rebake the ground. */
 export function drawLooseShadows(ctx: CanvasRenderingContext2D, solids: readonly Solid[]) {
   const pad = BLUR_PX * 2;
   for (const s of solids) {

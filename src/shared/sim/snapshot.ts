@@ -67,7 +67,6 @@ function selfView(w: World, p: Player): SelfView {
   };
 }
 
-/** Every player, ranked: an 18-player room has more rows than the board shows, and a player outside the top still sees their own row. */
 const leaderboard = (w: World): LeaderRow[] => rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team })));
 
 function matchView(w: World): MatchView {

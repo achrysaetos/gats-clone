@@ -20,7 +20,6 @@ const LEGEND: Record<string, Cell> = {
 };
 const turned = (l: Layer): Layer => (l === 'red' ? 'blue' : l);
 
-/** The rows of a grid with blank lines around it and the indentation every row shares taken off, so a map can sit indented in a template literal. */
 function gridRows(text: string): string[] {
   const lines = text.split('\n').map((l) => l.trimEnd());
   while (lines.length && lines[0] === '') lines.shift();
@@ -29,7 +28,6 @@ function gridRows(text: string): string[] {
   return lines.map((l) => l.slice(indent));
 }
 
-/** Covers every true cell with rects: a run along a row, grown down while the row below has exactly the same run. */
 function mergeCells(on: readonly boolean[][]): Rect[] {
   const h = on.length, w = on[0]?.length ?? 0;
   const used = on.map((row) => row.map(() => false));
@@ -50,11 +48,6 @@ function mergeCells(on: readonly boolean[][]): Rect[] {
   return rects;
 }
 
-/**
- * A team map from its west half drawn one character per 50px cell; the east half is the west turned half way round the map's centre,
- * so cell (c, r) of a C-column, R-row half lands on (2C-1-c, R-1-r) and red spawns land as blue ones.
- * Legend: `.` floor, `#` concrete, `S` sandstone, `P` planter (a wall, unlike a crate), `c` crate, `R` red spawn, `F` FFA spawn, `X` red and FFA spawn, `A` zone A (B is the centre, C is A turned).
- */
 export function gridMap(name: string, text: string): MapDef {
   const rows = gridRows(text);
   const cols = rows[0]?.length ?? 0;

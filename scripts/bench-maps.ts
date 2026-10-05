@@ -1,8 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-maps.ts <FFA|TDM|DOM> [maps=rotation] [minutes=10] [players=minPlayers] [heatDir]
-// Plays each map with bots only under the mode's real rules, then again with the round end held off, and prints round length,
-// how long the leader takes to reach each score, time to first contact, time between fights and tick time. With heatDir it
-// writes heat-<map>-<mode>.json (damage and death points) for scripts/map-overview.ts.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { GUN_IDS, GUNS, MODE_IDS, WORLD, type ModeId } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
@@ -20,7 +17,6 @@ const players = Number(process.argv[5] ?? WORLD.minPlayers);
 const heatDir = process.argv[6];
 const TICK_MS = 1000 / WORLD.tickHz;
 const SEEDS = [1, 2];
-/** Damage to or from a player closer together than this belongs to the same fight. */
 const FIGHT_GAP_MS = 3000;
 const TARGETS: Record<Exclude<ModeId, 'ZOM'>, number[]> = { FFA: [10, 20, 30, 40, 50], TDM: [50, 100, 150, 200, 250], DOM: [1000, 2000, 3000, 4000] };
 
@@ -47,7 +43,6 @@ function fill(map: MapId, seed: number): Sim {
   return { w, bots, r };
 }
 
-/** One tick as a room runs it; returns the ids that respawned and the time it took. */
 function tick({ w, bots, r }: Sim): { respawned: number[]; ms: number } {
   const t0 = performance.now();
   const walls = wallViews(w);
@@ -63,7 +58,6 @@ function tick({ w, bots, r }: Sim): { respawned: number[]; ms: number } {
   return { respawned, ms: performance.now() - t0 };
 }
 
-/** Per player: when its life began and the last time it hurt or was hurt by another player. */
 type Contact = { bornAt: number; lastAt: number | null };
 type Tally = { firstContact: number[]; betweenFights: number[]; tickMs: number[]; dmg: number[]; death: number[]; range: number[] };
 
@@ -104,11 +98,9 @@ for (const map of maps) {
   let kills = 0;
   let simMs = 0;
   for (const seed of SEEDS) {
-    // Real rules: play one round, which ends on the map's own clock or score.
     const real = fill(map, seed);
     while (real.w.map === map && real.w.match.k === 'playing' && real.w.now < 60 * 60_000) tick(real);
     rounds.push({ ms: real.w.now, winner: real.w.match.k === 'over' ? real.w.match.winner.name : 'nobody' });
-    // Held open: the round never ends, so contact, fights and the leader's pace are measured over the whole span.
     const open = fill(map, seed);
     const contact = new Map<number, Contact>([...open.bots.keys()].map((id) => [id, { bornAt: 0, lastAt: null }]));
     const banked = { red: 0, blue: 0 };

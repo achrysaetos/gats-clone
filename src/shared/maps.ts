@@ -14,7 +14,6 @@ export const CRATE_SIZE = 44;
 
 export type MapDef = {
   name: string;
-  /** The map is a square this many pixels on a side. */
   size: number;
   walls: readonly MapWall[];
   /** DOM capture points A, B and C. */
@@ -27,7 +26,6 @@ export type MapDef = {
 };
 
 const BLOCKY = 1.6;
-/** Outpost was drawn before walls had a material, when the client told them apart by shape: blocky ones sandstone, long ones concrete. */
 const byShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
 
 /** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover. */

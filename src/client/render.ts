@@ -32,7 +32,6 @@ const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w + LIP, s.h + 
 
 const ground = createGroundCache();
 const mapWallKeys = new WeakMap<readonly WallView[], string>();
-/** The ground is baked from the map's own walls, so an engineer's wall coming or going never rebakes it; a walls message is keyed once. */
 export function mapWallsKey(walls: readonly WallView[]): string {
   let key = mapWallKeys.get(walls);
   if (key === undefined) mapWallKeys.set(walls, (key = walls.flatMap((w) => (w.built ? [] : [`${w.material}${w.x},${w.y},${w.w},${w.h}`])).join('|')));
