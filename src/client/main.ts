@@ -1,4 +1,4 @@
-import { GUNS, pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
+import { GUNS, pickOptions, WORLD, type BuildingKind, type GunId } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -83,7 +83,7 @@ const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('j
 const DEV = params.has('dev');
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
-type DrawnRound = { id: number; owner: number; own: boolean; x: number; y: number; muzzle: { x: number; y: number } | null };
+type DrawnRound = { id: number; owner: number; own: boolean; gun: GunId | null; x: number; y: number; muzzle: { x: number; y: number } | null };
 const seenRounds = new Set<number>();
 const firstRounds: DrawnRound[] = [];
 let ghost: Ghost | null = null;
@@ -492,7 +492,7 @@ function drawFrame(now: number) {
   overlays.update(state, s, latest, now, muted);
 }
 
-/** Each round the first frame it is drawn, with its shooter's drawn muzzle in that frame. */
+/** Each round the first frame it is drawn, with its shooter's drawn muzzle in that frame. Local rounds have negative ids. */
 function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null) {
   if (seenRounds.size > 5000) seenRounds.clear();
   for (const b of snap.bullets) {
@@ -500,7 +500,7 @@ function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null)
     seenRounds.add(b.id);
     const p = snap.players.find((q) => q.id === b.owner && q.alive);
     const angle = p && (p.id === myId && selfAngle !== null ? selfAngle : p.angle);
-    firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, x: b.x, y: b.y, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
+    firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, gun: b.gun, x: b.x, y: b.y, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
   }
 }
 
