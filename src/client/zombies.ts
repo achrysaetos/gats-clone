@@ -84,7 +84,7 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
     core: coreRectAt(run.core),
     cover: [...walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))],
     bodies,
-    walls: snap.buildings ?? [],
+    buildings: snap.buildings ?? [],
     scrap: run.scrap,
   };
 }
@@ -107,7 +107,7 @@ const GRID = WORLD.size / ZOM.cell;
 export function ghostAt(site: BuildSite, at: Pose): Ghost {
   const cell = cellOf(at.x, at.y);
   const cx = Math.min(GRID - 1, Math.max(0, cell.cx)), cy = Math.min(GRID - 1, Math.max(0, cell.cy));
-  const refusal = buildRefusal(site, cx, cy);
+  const refusal = buildRefusal(site, 'wall', cx, cy);
   return { cx, cy, refusal, label: refusal ? REFUSAL_TEXT[refusal] : `Wall · ${BUILDINGS.wall.cost} scrap` };
 }
 

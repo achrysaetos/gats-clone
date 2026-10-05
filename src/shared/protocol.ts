@@ -1,6 +1,6 @@
 import {
-  ARMOR_IDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
-  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind,
+  ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
+  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -38,7 +38,7 @@ export type ClientMsg =
   | { t: 'chat'; text: string }
   | { t: 'respawn'; loadout: Loadout }
   /** Zombies: put a wall on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. */
-  | { t: 'build'; cx: number; cy: number }
+  | { t: 'build'; kind: BuildingKind; cx: number; cy: number }
   | { t: 'demolish'; cx: number; cy: number };
 
 export type PlayerView = {
@@ -56,7 +56,8 @@ export type PlayerView = {
 };
 
 /** `gun` is null for shrapnel. */
-export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
+/** `turret` names the turret that fired it, and is left off a player's round. */
+export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null; turret?: TurretKind };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
 export type WallView = { x: number; y: number; w: number; h: number; built: boolean };
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
@@ -67,9 +68,15 @@ export type Dash = { dirX: number; dirY: number; leftMs: number };
 
 /** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
 export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
-/** `hp` is tenths of full health, 1..10. */
-export type BuildingView = { kind: BuildingKind; cx: number; cy: number; hp: number };
-export type RunReport = { night: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[] };
+/**
+ * `hp` is tenths of full health, 1..10, and a turret's `ammo` tenths of a full load, 0 once it cannot fire.
+ * A turret's aim is not here: it turns only to fire, and each `turret` event carries its angle, so this sticky field stays unchanged while it fires.
+ */
+export type BuildingView = { cx: number; cy: number; hp: number } & ({ kind: 'wall' } | { kind: TurretKind; ammo: number });
+/** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. */
+export type RunReport = {
+  night: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>;
+};
 /**
  * `phaseEndsAt` is the server time the day ends or the next run starts, and null at night, which ends when the wave is dead.
  * `waveLeft` counts the night's zombies alive or still to come; `report` is set once the core has fallen.
@@ -107,8 +114,10 @@ export type GameEvent =
   | { e: 'boom'; x: number; y: number; r: number }
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
-  /** A zombie died; `by` is the squad player credited, null for none. */
+  /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
   | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null }
+  /** A turret at cell center (`x`, `y`) fired toward `angle`. */
+  | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number }
   /** A squad player went down, was revived (`by` the reviver), or bled out. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut'; by: number | null };
 
@@ -226,10 +235,13 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const loadout = parseLoadout(v.loadout);
       return loadout ? { t: 'respawn', loadout } : null;
     }
-    case 'build':
+    case 'build': {
+      const cx = gridCell(v.cx), cy = gridCell(v.cy);
+      return cx === null || cy === null || !oneOf(BUILDING_KINDS, v.kind) ? null : { t: 'build', kind: v.kind, cx, cy };
+    }
     case 'demolish': {
       const cx = gridCell(v.cx), cy = gridCell(v.cy);
-      return cx === null || cy === null ? null : { t: v.t, cx, cy };
+      return cx === null || cy === null ? null : { t: 'demolish', cx, cy };
     }
     default:
       return null;

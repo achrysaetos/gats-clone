@@ -97,7 +97,7 @@ test('squads: a wall built over the socket shows up in the squad\'s snapshots', 
   const dx = self.x - 1500, dy = self.y - 1500;
   const out = Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx) * 2, 0] : [0, Math.sign(dy) * 2];
   const cx = Math.floor(self.x / ZOM.cell) + out[0]!, cy = Math.floor(self.y / ZOM.cell) + out[1]!;
-  p.ws.send(JSON.stringify({ t: 'build', cx, cy }));
+  p.ws.send(JSON.stringify({ t: 'build', kind: 'wall', cx, cy }));
   const built = (await p.next((m) => m.t === 'snap' && !!(m as Snapshot).buildings?.length)) as Snapshot;
   assert.deepEqual(built.buildings?.map((b) => [b.cx, b.cy]), [[cx, cy]]);
   await closeAll([p]);

@@ -251,10 +251,22 @@ export const ZOMBIES: Record<ZombieKind, {
   brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 1, aggroPx: 0, score: 60, scrap: 10, firstNight: 3 },
 };
 
-export const BUILDING_KINDS = ['wall'] as const;
+export const TURRET_KINDS = ['sentry', 'cannon'] as const;
+export type TurretKind = (typeof TURRET_KINDS)[number];
+export const BUILDING_KINDS = ['wall', ...TURRET_KINDS] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
-export const BUILDINGS: Record<BuildingKind, { name: string; cost: number; hp: number }> = {
-  wall: { name: 'Wall', cost: 20, hp: 2000 },
+export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TURRET_KINDS.map((k) => [k, f(k)])) as Record<TurretKind, T>;
+
+/** A turret holds `ammo` rounds and fires its nearest zombie in `range` one round every `fireMs`; a refill costs `scrapPerRound`. */
+export type TurretDef = {
+  range: number; fireMs: number; damage: number; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
+  bullet: { r: number; color: string };
+};
+type BuildingDef = { name: string; cost: number; hp: number };
+export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> = {
+  wall: { name: 'Wall', cost: 20, hp: 2000, turret: null },
+  sentry: { name: 'Sentry', cost: 50, hp: 1000, turret: { range: 420, fireMs: 140, damage: 12, bulletSpeed: 2000, spread: 0.06, ammo: 150, scrapPerRound: 0.1, bullet: { r: 1.8, color: '#a88600' } } },
+  cannon: { name: 'Cannon', cost: 140, hp: 1500, turret: { range: 560, fireMs: 1600, damage: 260, bulletSpeed: 2600, spread: 0.01, ammo: 16, scrapPerRound: 2.5, bullet: { r: 4.2, color: '#3b3f4a' } } },
 };
 
 export const ZOM = {
@@ -278,6 +290,8 @@ export const ZOM = {
   reviveHpFrac: 0.4,
   repairHpPerSec: 80,
   repairScrapPerHp: 0.05,
+  /** How long holding use takes to fill an empty turret. */
+  refillMs: 2500,
   /** Dearer than a wall's, so the core wears down over the nights instead of being made whole every day. */
   coreRepairScrapPerHp: 0.2,
   demolishRefund: 0.5,

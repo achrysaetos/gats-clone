@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, WORLD, ZOM } from '../src/shared/defs.ts';
+import { BUILDINGS, TURRET_KINDS, WORLD, ZOM } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { build, demolish } from '../src/shared/sim/run.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
@@ -19,7 +19,7 @@ function dayWorld() {
 test('a wall goes up on a clear cell by day for its cost, counts toward the builder, and blocks the way', () => {
   const { w, p } = dayWorld();
   const scrap = w.run!.scrap, version = w.buildingsVersion;
-  assert.equal(build(w, p.id, CELL.cx, CELL.cy), null);
+  assert.equal(build(w, p.id, 'wall', CELL.cx, CELL.cy), null);
   assert.deepEqual(w.buildings.map((b) => [b.kind, b.cx, b.cy, b.hp]), [['wall', CELL.cx, CELL.cy, BUILDINGS.wall.hp]]);
   assert.equal(scrap - w.run!.scrap, BUILDINGS.wall.cost);
   assert.ok(w.buildingsVersion > version);
@@ -47,14 +47,14 @@ for (const [reason, arrange] of refusals) {
     const { cx, cy, by } = arrange(w);
     if (by) { p.x = by.x; p.y = by.y; }
     const scrap = w.run!.scrap, walls = w.buildings.length;
-    assert.equal(build(w, p.id, cx, cy), reason);
+    assert.equal(build(w, p.id, 'wall', cx, cy), reason);
     assert.deepEqual([w.run!.scrap, w.buildings.length], [scrap, walls]);
   });
 }
 
 test('a wall comes down by day for half its cost back, but not at night', () => {
   const { w, p } = dayWorld();
-  build(w, p.id, CELL.cx, CELL.cy);
+  build(w, p.id, 'wall', CELL.cx, CELL.cy);
   const scrap = w.run!.scrap;
   w.run!.phase = { k: 'night', toSpawn: ['walker'], nextSpawnAt: Infinity };
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), false);
@@ -63,11 +63,31 @@ test('a wall comes down by day for half its cost back, but not at night', () => 
   assert.deepEqual([w.buildings.length, w.run!.scrap - scrap], [0, BUILDINGS.wall.cost * ZOM.demolishRefund]);
 });
 
+for (const kind of TURRET_KINDS) {
+  test(`a ${kind} goes up like a wall for its own cost, loaded and firing for its builder, blocks the way, and comes down for half back`, () => {
+    const { w, p } = dayWorld();
+    w.run!.scrap = BUILDINGS[kind].cost - 1;
+    assert.equal(build(w, p.id, kind, CELL.cx, CELL.cy), 'scrap');
+    w.run!.scrap = 1000;
+    assert.equal(build(w, p.id, kind, CELL.cx, CELL.cy), null);
+    assert.equal(1000 - w.run!.scrap, BUILDINGS[kind].cost);
+    assert.deepEqual(w.buildings.map((b) => ({ ...b, id: 0 })), [{ id: 0, kind, cx: CELL.cx, cy: CELL.cy, hp: BUILDINGS[kind].hp, owner: p.id, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0 }]);
+    assert.equal(build(w, p.id, 'wall', CELL.cx, CELL.cy), 'taken');
+    assert.equal(w.run!.stats.get(p.id)?.built, 1);
+    press(w, p, { left: true });
+    run(w, 1000);
+    assert.ok(p.x >= (CELL.cx + 1) * ZOM.cell + 24 - 0.01, `walked into the ${kind} to x ${p.x.toFixed(1)}`);
+    const scrap = w.run!.scrap;
+    assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
+    assert.deepEqual([w.buildings.length, w.run!.scrap - scrap], [0, Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund)]);
+  });
+}
+
 test('build and demolish messages carry whole grid cells only', () => {
-  assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'build', cx: 3, cy: 59 })), { t: 'build', cx: 3, cy: 59 });
+  assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'build', kind: 'sentry', cx: 3, cy: 59 })), { t: 'build', kind: 'sentry', cx: 3, cy: 59 });
   assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'demolish', cx: 0, cy: 0 })), { t: 'demolish', cx: 0, cy: 0 });
-  for (const bad of [{ cx: 1.5, cy: 2 }, { cx: -1, cy: 2 }, { cx: 60, cy: 2 }, { cx: '3', cy: 2 }, { cy: 2 }]) {
-    assert.equal(parseClientMsg(JSON.stringify({ t: 'build', ...bad })), null, JSON.stringify(bad));
+  for (const bad of [{ cx: 1.5, cy: 2 }, { cx: -1, cy: 2 }, { cx: 60, cy: 2 }, { cx: '3', cy: 2 }, { cy: 2 }, { cx: 3, cy: 2, kind: 'tower' }, { cx: 3, cy: 2, kind: undefined }]) {
+    assert.equal(parseClientMsg(JSON.stringify({ t: 'build', kind: 'wall', ...bad })), null, JSON.stringify(bad));
   }
 });
 

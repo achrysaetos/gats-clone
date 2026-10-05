@@ -1,4 +1,4 @@
-import { PERK_TIERS, WORLD, ZOM, type Blast, type BuildingKind, type GunId, type ModeId, type PlayerKind, type Tier, type ZombieKind } from '../defs.ts';
+import { byTurret, PERK_TIERS, WORLD, ZOM, type Blast, type GunId, type ModeId, type PlayerKind, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -67,6 +67,8 @@ export type Bullet = {
   id: number; owner: number; team: Team; x: number; y: number; vx: number; vy: number;
   left: number; damage: number; piercing: boolean; label: string;
   gun: GunId | null;
+  /** The turret that fired it, null for a player's own round. */
+  turret: TurretKind | null;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
   blast: Blast | null;
@@ -87,7 +89,10 @@ export type LifeRecord = { id: number; name: string; kills: number; score: numbe
 
 export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number };
 
-export type Building = { id: number; kind: BuildingKind; cx: number; cy: number; hp: number };
+type Cell = { id: number; cx: number; cy: number; hp: number };
+/** A turret fires for `owner`, its builder, who gets the score for its kills. */
+export type Turret = Cell & { kind: TurretKind; owner: number; ammo: number; nextFireAt: number };
+export type Building = (Cell & { kind: 'wall' }) | Turret;
 
 type RunPhase =
   | { k: 'day'; endsAt: number }
@@ -108,6 +113,7 @@ export type Run = {
   startedAt: number;
   flow: Flow | null;
   stats: Map<number, RunStats>;
+  turretKills: Record<TurretKind, Record<ZombieKind, number>>;
 };
 
 export type Pose = { x: number; y: number };
@@ -180,6 +186,7 @@ export function newRun(now: number): Run {
   return {
     core: { hp: ZOM.coreHp }, scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
+    turretKills: byTurret(() => ({ walker: 0, brute: 0 })),
   };
 }
 

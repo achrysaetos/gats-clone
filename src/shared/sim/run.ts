@@ -1,6 +1,7 @@
-import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../defs.ts';
+import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type TurretKind, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { tickHorde } from './horde.ts';
+import { tickTurrets } from './turrets.ts';
 import { buildRefusal, type BuildRefusal, type BuildSite } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
@@ -47,17 +48,26 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
 }
 
-/** Holding use mends the nearest worn wall or core in reach, as far as the scrap goes. */
-function repair(w: World, run: Run, p: Player, dtMs: number) {
+const needsService = (b: Building) => b.hp < BUILDINGS[b.kind].hp || (b.kind !== 'wall' && b.ammo < BUILDINGS[b.kind].turret.ammo);
+
+/** Holding use mends the nearest worn building or core in reach, or reloads the nearest turret short of a full load, as far as the scrap goes. A worn turret is mended before it is reloaded. */
+function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
   const coreD = dist2(p.x, p.y, core.x, core.y);
   let best: Building | Run['core'] | null = null, bestD = ZOM.reachPx ** 2;
   if (run.core.hp < ZOM.coreHp && coreD <= bestD) { best = run.core; bestD = coreD; }
   for (const b of w.buildings) {
     const d = dist2(p.x, p.y, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell);
-    if (b.hp < BUILDINGS[b.kind].hp && d <= bestD) { best = b; bestD = d; }
+    if (needsService(b) && d <= bestD) { best = b; bestD = d; }
   }
   if (!best) return;
+  if ('kind' in best && best.kind !== 'wall' && best.hp >= BUILDINGS[best.kind].hp) {
+    const def = BUILDINGS[best.kind].turret;
+    const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - best.ammo, run.scrap / def.scrapPerRound);
+    best.ammo += rounds;
+    run.scrap -= rounds * def.scrapPerRound;
+    return;
+  }
   const [max, perHp] = 'kind' in best ? [BUILDINGS[best.kind].hp, ZOM.repairScrapPerHp] : [ZOM.coreHp, ZOM.coreRepairScrapPerHp];
   const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - best.hp, run.scrap / perHp);
   best.hp += hp;
@@ -67,7 +77,7 @@ function repair(w: World, run: Run, p: Player, dtMs: number) {
 function tickSquad(w: World, run: Run, dtMs: number) {
   const revivers = new Set<Player>();
   for (const p of w.players.values()) tickDowned(w, run, p, dtMs, revivers);
-  for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) repair(w, run, p, dtMs);
+  for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) service(w, run, p, dtMs);
 }
 
 const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
@@ -77,18 +87,19 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
     ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
     ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
   ];
-  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, walls: w.buildings, scrap: run.scrap };
+  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: w.buildings, scrap: run.scrap };
 }
 
-export function build(w: World, id: number, cx: number, cy: number): BuildRefusal | null {
+export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number): BuildRefusal | null {
   const p = w.players.get(id);
   const run = w.run;
   const core = coreRect(w);
   if (!p || !run || !core) return 'notDay';
-  const refusal = buildRefusal(siteFor(w, run, p, core), cx, cy);
+  const refusal = buildRefusal(siteFor(w, run, p, core), kind, cx, cy);
   if (refusal) return refusal;
-  run.scrap -= BUILDINGS.wall.cost;
-  w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });
+  run.scrap -= BUILDINGS[kind].cost;
+  const at = { id: newId(w), cx, cy, hp: BUILDINGS[kind].hp };
+  w.buildings.push(kind === 'wall' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0 });
   w.buildingsVersion++;
   statsFor(run, p).built++;
   return null;
@@ -116,24 +127,24 @@ function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
 }
 
 /**
- * A zombie's death pays its killer score toward the gun ladder and the squad scrap for walls.
- * `marked` sends the hit to the client; a blast leaves it off, since its boom already shows and a crowd would fill the snapshot with hits.
+ * A zombie's death pays the squad scrap and its attacker score toward the gun ladder. A turret's kill pays its builder the score but counts as the turret's.
+ * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
  */
-export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, marked = true) {
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | TurretKind = 'hit') {
   const run = w.run;
   if (!run || z.hp <= 0) return;
   const dealt = Math.min(z.hp, amount);
   z.hp -= amount;
-  if (marked) markHit(w, z, dealt, attacker?.id ?? null);
+  if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
+  const turret = via === 'hit' || via === 'blast' ? null : via;
   w.zombies = w.zombies.filter((o) => o !== z);
   run.scrap += def.scrap;
-  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: attacker?.id ?? null });
-  if (!attacker) return;
-  attacker.kills++;
-  statsFor(run, attacker).kills++;
-  addScore(w, attacker, def.score);
+  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: turret ? null : attacker?.id ?? null });
+  if (turret) run.turretKills[turret][z.kind]++;
+  else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
+  if (attacker) addScore(w, attacker, def.score);
 }
 
 function buildWave(w: World, night: number): ZombieKind[] {
@@ -210,6 +221,7 @@ export function tickRun(w: World, dtMs: number) {
       return;
   }
   tickHorde(w, run, dtMs);
+  tickTurrets(w, dtMs);
   tickSquad(w, run, dtMs);
   if (run.core.hp <= 0) {
     for (const p of w.players.values()) statsFor(run, p);

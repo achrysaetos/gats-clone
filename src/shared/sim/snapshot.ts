@@ -1,6 +1,6 @@
-import { BUILDINGS, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { BUILDINGS, byTurret, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  BuildingView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
@@ -113,7 +113,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   }
   const bullets: BulletView[] = w.bullets
     .filter((b) => inView(b.x, b.y, 100))
-    .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
+    .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun, ...(b.turret && { turret: b.turret }) }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
     .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size }));
@@ -158,7 +158,10 @@ function runView(w: World, run: Run): RunView {
     aliveZombies: w.zombies.length,
     waveLeft: w.zombies.length + (phase.k === 'night' ? phase.toSpawn.length : 0),
     report: phase.k === 'over'
-      ? { night: phase.night, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })) }
+      ? {
+        night: phase.night, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
+        turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)),
+      }
       : null,
   };
 }
@@ -169,6 +172,9 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
     zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night))]);
   }
-  const buildings = w.buildings.map((b) => ({ kind: b.kind, cx: b.cx, cy: b.cy, hp: tenths(b.hp, BUILDINGS[b.kind].hp) }));
+  const buildings = w.buildings.map((b): BuildingView => {
+    const at = { cx: b.cx, cy: b.cy, hp: tenths(b.hp, BUILDINGS[b.kind].hp) };
+    return b.kind === 'wall' ? { ...at, kind: b.kind } : { ...at, kind: b.kind, ammo: Math.ceil((Math.floor(b.ammo) / BUILDINGS[b.kind].turret.ammo) * 10) };
+  });
   return { zombies, buildings, run: runView(w, run) };
 }

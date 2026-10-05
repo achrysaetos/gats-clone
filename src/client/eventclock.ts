@@ -14,6 +14,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
     case 'shot': return { kind: 'flash', ...muzzleTip(ev.x, ev.y, ev.angle, ev.gun, WORLD.playerRadius), angle: ev.angle };
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
+    case 'turret':
     case 'hunted':
     case 'life': return null;
     case 'kill': {

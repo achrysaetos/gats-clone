@@ -326,7 +326,8 @@ type Watch = {
   post: { x: number; y: number };
   zombie: { id: number; x: number; y: number; d: number } | null;
   downed: PlayerView | null;
-  damagedWall: { x: number; y: number } | null;
+  /** The nearest building that is worn, or a turret short of ammo. */
+  wornBuilding: { x: number; y: number } | null;
   /** The core is worn and the bank can pay to mend it. */
   coreWorn: boolean;
 };
@@ -342,10 +343,10 @@ const KITE_PX = 140;
 const mendAt = (s: Watch, at: { x: number; y: number }): Errand => ({ ...at, use: Math.hypot(at.x - s.me.x, at.y - s.me.y) <= ZOM.reachPx - 60 });
 const hordeFar = (s: Watch) => !s.zombie || s.zombie.d > BUSY_ZOMBIE_PX;
 
-/** A squad bot's errands, first match wins: get a downed squadmate up, mend a wall and then the core while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
+/** A squad bot's errands, first match wins: get a downed squadmate up, mend a building or reload a turret and then mend the core while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
 const SIEGE_RULES: readonly ((s: Watch) => Errand | null)[] = [
   (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 },
-  (s) => s.damagedWall && hordeFar(s) ? mendAt(s, s.damagedWall) : null,
+  (s) => s.wornBuilding && hordeFar(s) ? mendAt(s, s.wornBuilding) : null,
   (s) => s.coreWorn && hordeFar(s) ? mendAt(s, s.core) : null,
   (s) => {
     const post = { ...s.post, use: false };
@@ -377,11 +378,11 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonl
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
-  const damaged = (snap.buildings ?? [])
-    .filter((b) => b.hp < 10)
+  const worn = (snap.buildings ?? [])
+    .filter((b) => b.hp < 10 || (b.kind !== 'wall' && b.ammo < 10 && run.scrap > 0))
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, damagedWall: nearest(me, damaged), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
+  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, wornBuilding: nearest(me, worn), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
 
   const next = { ...mem };

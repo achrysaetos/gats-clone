@@ -57,7 +57,7 @@ const me = () => now().players.find((p) => p.id === welcome!.id)!;
 const scrapBefore = now().run!.scrap;
 const out = Math.abs(me().x - 1500) > Math.abs(me().y - 1500) ? [Math.sign(me().x - 1500) * 2, 0] : [0, Math.sign(me().y - 1500) * 2];
 const cell = { cx: Math.floor(me().x / ZOM.cell) + out[0]!, cy: Math.floor(me().y / ZOM.cell) + out[1]! };
-ws.send(JSON.stringify({ t: 'build', ...cell }));
+ws.send(JSON.stringify({ t: 'build', kind: 'wall', ...cell }));
 await sleep(300);
 const afterBuild = now();
 check(!!afterBuild.buildings?.some((b) => b.cx === cell.cx && b.cy === cell.cy), `a build message put a wall on cell ${cell.cx},${cell.cy}`);

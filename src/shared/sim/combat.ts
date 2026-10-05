@@ -148,7 +148,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const r = ZOMBIES[z.kind].radius;
     const d = Math.sqrt(dist2(z.x, z.y, x, y));
     if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
-    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker, false);
+    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker, 'blast');
   }
 }
 
@@ -189,7 +189,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
-        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.damage, owner),
+        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.damage, owner, b.turret ?? 'hit'),
       })),
   ];
   const hits = candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);

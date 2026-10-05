@@ -122,7 +122,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'input': setInput(world, id, msg.seq, msg.input, msg.viewAt, rewindCapMs); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
-      case 'build': build(world, id, msg.cx, msg.cy); return;
+      case 'build': build(world, id, msg.kind, msg.cx, msg.cy); return;
       case 'demolish': demolish(world, id, msg.cx, msg.cy); return;
       case 'chat': {
         const now = Date.now();

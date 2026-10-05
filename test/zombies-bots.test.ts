@@ -67,6 +67,18 @@ test('a squad bot mends a damaged wall near the core while no zombie is close', 
   assert.equal(w.buildings.length, 1, 'and builds nothing new');
 });
 
+test('a squad bot reloads a turret short of ammo near the core while no zombie is close', () => {
+  const w = nightWorld();
+  farZombie(w);
+  const bot = spawnAt(w, CORE.x - 300, CORE.y);
+  const turret = { id: newId(w), kind: 'sentry' as const, cx: 30, cy: 25, hp: BUILDINGS.sentry.hp, owner: bot.id, ammo: 0, nextFireAt: 0 };
+  w.buildings.push(turret);
+  w.buildingsVersion++;
+  assert.ok(play(w, [bot], 15_000, () => turret.ammo >= BUILDINGS.sentry.turret.ammo * 0.9), `the turret is reloaded, at ${turret.ammo.toFixed(0)}`);
+  assert.ok(w.run!.scrap < ZOM.startScrap, 'for scrap');
+  assert.equal(w.buildings.length, 1, 'and builds nothing new');
+});
+
 test('a squad bot mends the worn core while no zombie is close, spending the bank', () => {
   const w = nightWorld();
   farZombie(w);

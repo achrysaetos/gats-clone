@@ -357,7 +357,7 @@ function toggleBuild(s: Session) {
 
 function buildClick(s: Session, button: number) {
   if (!ghost) return;
-  if (button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', cx: ghost.cx, cy: ghost.cy });
+  if (button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: 'wall', cx: ghost.cx, cy: ghost.cy });
   else if (button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
   else return;
   playClick(s);

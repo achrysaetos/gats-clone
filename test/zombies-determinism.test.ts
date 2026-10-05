@@ -10,7 +10,7 @@ import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { TICK_MS } from './helpers.ts';
 
-/** Plays a bot squad through the first day, a ring of walls and the first nights, hashing every snapshot. */
+/** Plays a bot squad through the first day, walls and turrets and the first nights, hashing every snapshot. */
 function replay(seed: number): { hash: string; nights: number; walls: number } {
   const w = createWorld('ZOM', seed, 'outpost');
   const r = () => rand(w);
@@ -27,7 +27,7 @@ function replay(seed: number): { hash: string; nights: number; walls: number } {
       if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
     }
     const me = w.players.get(builder)!;
-    if (tick % 15 === 0) build(w, builder, Math.floor(me.x / ZOM.cell) + 2, Math.floor(me.y / ZOM.cell) + (tick % 4) - 2);
+    if (tick % 15 === 0) build(w, builder, (['wall', 'wall', 'sentry', 'cannon'] as const)[(tick / 15) % 4]!, Math.floor(me.x / ZOM.cell) + 2, Math.floor(me.y / ZOM.cell) + (tick % 4) - 2);
     step(w, TICK_MS);
     for (const id of bots.keys()) hash.update(JSON.stringify(snapshotFor(w, id)));
   }

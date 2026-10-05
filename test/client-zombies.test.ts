@@ -23,7 +23,7 @@ function squadWorld() {
 const previewOf = (w: World, id: number, cx: number, cy: number) => {
   const p = w.players.get(id)!;
   const site = buildSiteOf(snapshotFor(w, id), wallViews(w), p);
-  return site && buildRefusal(site, cx, cy);
+  return site && buildRefusal(site, 'wall', cx, cy);
 };
 
 test('the build preview judges every cell around the builder as the server does', () => {
@@ -35,7 +35,7 @@ test('the build preview judges every cell around the builder as the server does'
   const seen = new Set<string | null>();
   for (let cy = 24; cy <= 37; cy++) {
     for (let cx = 20; cx <= 33; cx++) {
-      const server = build(structuredClone(w), p.id, cx, cy);
+      const server = build(structuredClone(w), p.id, 'wall', cx, cy);
       seen.add(server);
       assert.equal(previewOf(w, p.id, cx, cy), server, `cell ${cx},${cy}`);
     }
@@ -53,7 +53,7 @@ test('the build preview refuses at night, while down, and when the bank is short
     const { w, p } = squadWorld();
     arrange(w, p.id);
     assert.equal(previewOf(w, p.id, 26, 30), reason);
-    assert.equal(build(w, p.id, 26, 30), reason);
+    assert.equal(build(w, p.id, 'wall', 26, 30), reason);
   }
 });
 
@@ -74,9 +74,9 @@ test('the build preview reads the builder from where the client draws them', () 
   const { w, p } = squadWorld();
   const snap = snapshotFor(w, p.id);
   const far = buildSiteOf(snap, wallViews(w), { x: AT.x - 7 * ZOM.cell, y: AT.y })!;
-  assert.equal(buildRefusal(far, 26, 30), 'outOfReach', 'the drawn position decides reach, not the snapshot\'s');
+  assert.equal(buildRefusal(far, 'wall', 26, 30), 'outOfReach', 'the drawn position decides reach, not the snapshot\'s');
   const near = buildSiteOf(snap, wallViews(w), { x: AT.x, y: AT.y - 3 * ZOM.cell })!;
-  assert.equal(buildRefusal(near, 26, 30), null, 'the builder\'s own body moves with them');
+  assert.equal(buildRefusal(near, 'wall', 26, 30), null, 'the builder\'s own body moves with them');
 });
 
 const runView = (over: Partial<RunView> = {}): RunView => ({
@@ -148,7 +148,7 @@ test('the fall clears every callout, so none shows through behind the report', (
 test('the run report ranks the squad by kills, then revives, and marks you', () => {
   const report = { night: 4, durationMs: 372_000, players: [
     { name: 'Bo', kills: 12, revives: 0, built: 9 }, { name: 'Ann', kills: 30, revives: 1, built: 0 }, { name: 'Cy', kills: 12, revives: 4, built: 7 },
-  ] };
+  ], turretKills: { sentry: 0, cannon: 0 } };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The core fell on night 4');
 });
