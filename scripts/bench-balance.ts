@@ -10,6 +10,7 @@ import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const worlds = Number(process.argv[2] ?? 8);
 const minutes = Number(process.argv[3] ?? 5);
@@ -47,14 +48,14 @@ if (worlds > 0) {
     const bornAt = new Map<number, number>();
     for (let i = 0; i < WORLD.minPlayers; i++) {
       const p = addPlayer(w, `bot${i}`, randomLoadout(r));
-      bots.set(p.id, newBotMemory(r, MAPS[w.map].size));
+      bots.set(p.id, newBotMemory(r));
       bornAt.set(p.id, w.now);
       tally(livesByArmor, p.loadout.armor);
     }
     for (let t = 0; t < minutes * 60_000; t += TICK_MS) {
-      const walls = wallViews(w);
+      const arena = arenaFor(w);
       for (const [id, mem] of bots) {
-        const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+        const d = botThink(snapshotFor(w, id), arena, mem, r);
         bots.set(id, d.mem);
         setInput(w, id, w.tick, d.input);
         if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);

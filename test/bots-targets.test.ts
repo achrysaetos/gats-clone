@@ -4,10 +4,11 @@ import { test } from 'node:test';
 import type { WallView } from '../src/shared/protocol.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
-import { emptyWorld, equip, hpOf, spawnAt, TICK_MS } from './helpers.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
+import { emptyWorld, equip, hpOf, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const CRATE = 40;
 const addCrate = (w: World, cx: number, cy: number) => w.crates.push({ id: 9000 + w.crates.length, x: cx - CRATE / 2, y: cy - CRATE / 2, size: CRATE, hp: 40, respawnAt: null });
@@ -16,12 +17,12 @@ const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) 
 
 function think(w: World, botId: number, seed: number, ticks: number) {
   const r = seeded(seed);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   for (let i = 1; i < ticks; i++) {
-    mem = botThink(snapshotFor(w, botId), [], mem, r, MAPS[w.map].size).mem;
+    mem = botThink(snapshotFor(w, botId), arenaFor(w), mem, r).mem;
     step(w, TICK_MS);
   }
-  return botThink(snapshotFor(w, botId), [], mem, r, MAPS[w.map].size).input;
+  return botThink(snapshotFor(w, botId), arenaFor(w), mem, r).input;
 }
 
 test('a bot aims at a hunted enemy in view over a nearer ordinary one', () => {
@@ -54,6 +55,7 @@ test('a bot chases the nearer of two hunted markers', () => {
   const bot = spawnAt(w, 1500, 1500);
   equip(spawnAt(w, 200, 1500), 'executioner');
   equip(spawnAt(w, 2900, 2900), 'executioner');
+  step(w, TICK_MS);
   const input = think(w, bot.id, 1, 1);
   assert.ok(input.left && !input.right && !input.down, 'heads left to the marker 1300px away, not the one 1980px away');
 });
@@ -63,9 +65,9 @@ test('a bot with nobody in view shoots a crate in the clear and scores for it', 
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   addCrate(w, 1300, 1000);
   const r = seeded(1);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   for (let i = 0; i < 90; i++) {
-    const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
     setInput(w, bot.id, i + 1, d.input);
     step(w, TICK_MS);
@@ -79,7 +81,8 @@ test('a bot holds fire at a crate behind a wall', () => {
   addCrate(w, 1300, 1000);
   const wall: WallView = { x: 1130, y: 900, w: 40, h: 200, built: false, material: 'concrete' };
   const r = seeded(1);
-  assert.ok(!botThink(snapshotFor(w, bot.id), [wall], newBotMemory(r, MAPS[w.map].size), r, MAPS[w.map].size).input.fire, 'no shots into the wall');
+  setWalls(w, [wall]);
+  assert.ok(!botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r), r).input.fire, 'no shots into the wall');
 });
 
 test('a bot keeps half a magazine for enemies instead of emptying it into crates', () => {
@@ -88,7 +91,7 @@ test('a bot keeps half a magazine for enemies instead of emptying it into crates
   addCrate(w, 1300, 1000);
   if (bot.life.k === 'alive') bot.life.ammo = 5;
   const r = seeded(1);
-  const input = botThink(snapshotFor(w, bot.id), [], newBotMemory(r, MAPS[w.map].size), r, MAPS[w.map].size).input;
+  const input = botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r), r).input;
   assert.ok(!input.fire && input.reload, 'reloads rather than shooting the crate');
 });
 
@@ -161,9 +164,9 @@ test('a bot walled off from a hunted marker walks around the wall and fights ins
     equip(hunted, 'executioner');
     const fullHp = hpOf(hunted);
     const r = seeded(seed);
-    let mem = newBotMemory(r, MAPS[w.map].size);
+    let mem = newBotMemory(r);
     for (let i = 1; i <= 20 * 30 && hpOf(hunted) === fullHp; i++) {
-      const d = botThink(snapshotFor(w, bot.id), wallViews(w), mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
       mem = d.mem;
       setInput(w, bot.id, i, d.input);
       step(w, TICK_MS);

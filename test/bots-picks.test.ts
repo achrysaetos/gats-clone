@@ -5,6 +5,7 @@ import type { PickOption, WeaponId } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
@@ -16,7 +17,7 @@ function tierOnePicks(weapon: WeaponId, n: number): Map<PickOption, number> {
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon } });
     bot.level = 1;
     const r = seeded(seed);
-    const option = botThink(snapshotFor(w, bot.id), [], newBotMemory(r, MAPS[w.map].size), r, MAPS[w.map].size).pick?.option;
+    const option = botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r), r).pick?.option;
     assert.ok(option, 'answers the open pick');
     counts.set(option, (counts.get(option) ?? 0) + 1);
   }

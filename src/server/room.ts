@@ -12,6 +12,7 @@ import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
 import { botName, botSeats, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { arenaFor } from './bot/arena.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
@@ -72,7 +73,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       for (let i = mine.length; i < want; i++) {
         const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
         const p = addPlayer(world, name, randomLoadout(botRand), { team });
-        bots.set(p.id, newBotMemory(botRand, MAPS[world.map].size));
+        bots.set(p.id, newBotMemory(botRand));
       }
     }
   }
@@ -147,9 +148,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   }
 
   function thinkBots() {
-    const walls = wallViews(world);
+    const arena = arenaFor(world);
     for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(world, id), walls, mem, botRand, MAPS[world.map].size);
+      const d = botThink(snapshotFor(world, id), arena, mem, botRand);
       bots.set(id, d.mem);
       setInput(world, id, world.tick, d.input);
       if (d.pick) choosePick(world, id, d.pick.level, d.pick.option);

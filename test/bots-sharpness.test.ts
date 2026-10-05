@@ -7,6 +7,7 @@ import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { Player } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, equip, spawnAt, TICK_MS } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
@@ -21,10 +22,10 @@ function duel(seed: number, ticks: number, kind: PlayerKind, dress: (target: Pla
   const target = spawnAt(w, 1500, 1000, { kind });
   dress(target);
   const r = seeded(seed);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   const looks: Look[] = [];
   for (let i = 0; i < ticks; i++) {
-    const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
     looks.push({ tick: i, angle: d.input.angle, fire: d.input.fire, bearing: Math.atan2(target.y - bot.y, target.x - bot.x) });
     step(w, TICK_MS);

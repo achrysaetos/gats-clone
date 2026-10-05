@@ -10,6 +10,7 @@ import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats, levelForScore, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const minutes = Number(process.argv[2] ?? 10);
 const seeds = Number(process.argv[3] ?? 10);
@@ -74,7 +75,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
   };
 }
 
-type Tally = { lives: number[]; levels: number[]; botLevels: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number };
+type Tally = { lives: number[]; levels: number[]; botLevels: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number; damageTaken: number };
 
 /** A stage-2 gun of the human's class, standing in for a human who has reached the hunted stage. */
 const HUNTED_GUN: GunId = EVOLUTIONS[EVOLUTIONS[HUMAN_LOADOUT.weapon][0]!][0]!;
@@ -89,24 +90,24 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
   const w: World = createWorld('FFA', seed, 'plaza');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
-  for (let i = 0; i < WORLD.minPlayers - 1; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
+  for (let i = 0; i < WORLD.minPlayers - 1; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
   const human = addPlayer(w, 'human', HUMAN_LOADOUT, { kind: 'human' });
   arm(human, forcedGun);
   let mind: HumanMind = { target: null, fireAtTick: 0, aimErr: 0, strafe: 1, flipAtTick: 0, seen: null, shots: 0, wanderX: r() * MAPS[w.map].size, wanderY: r() * MAPS[w.map].size };
   let bornAt = w.now;
-  const tally: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
+  const tally: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0, damageTaken: 0 };
   const ticks = Math.round((minutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
-    const walls = wallViews(w);
+    const arena = arenaFor(w);
     for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, id), arena, mem, r);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
       if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
       if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
     }
     const snap = snapshotFor(w, human.id, w.events, HUMAN_VIEW_ASPECT);
-    const h = humanThink(snap, walls, mind, style, r);
+    const h = humanThink(snap, arena.walls, mind, style, r);
     mind = h.mind;
     setInput(w, human.id, w.tick, h.input);
     const pending = pendingPick(human);
@@ -114,6 +115,7 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
     if (canRespawn(w, human.id) && respawn(w, human.id, HUMAN_LOADOUT)) { bornAt = w.now; arm(human, forcedGun); }
     step(w, TICK_MS);
     for (const e of w.events) {
+      if (e.e === 'dmg' && e.kind === 'player' && e.victim === human.id && e.attacker !== human.id) tally.damageTaken += e.amount;
       if (e.e !== 'kill') continue;
       if (e.victimId === human.id) tally.lives.push((w.now - bornAt) / 1000);
       else if (e.killerId === human.id) tally.botsKilledByHuman++;
@@ -143,13 +145,13 @@ const VARIANTS: { label: string; style: HumanStyle; gun: GunId | null }[] = [
 
 console.log(`human (3x health) vs ${WORLD.minPlayers - 1} bots, ${minutes} min x ${seeds} seeds`);
 for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
-  const all: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
+  const all: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0, damageTaken: 0 };
   for (let seed = 1; seed <= seeds; seed++) {
     const t = simulate(seed, style, gun);
     all.lives.push(...t.lives);
     all.levels.push(...t.levels);
     all.botLevels.push(...t.botLevels);
-    all.kills += t.kills; all.deaths += t.deaths; all.botOnBotKills += t.botOnBotKills; all.botsKilledByHuman += t.botsKilledByHuman;
+    all.kills += t.kills; all.deaths += t.deaths; all.botOnBotKills += t.botOnBotKills; all.botsKilledByHuman += t.botsKilledByHuman; all.damageTaken += t.damageTaken;
   }
   const simMinutes = minutes * seeds;
   console.log([
@@ -158,6 +160,7 @@ for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
     `deaths ${all.deaths}`,
     `kills ${all.kills}`,
     `K/D ${(all.kills / Math.max(1, all.deaths)).toFixed(2)}`,
+    `damage taken/min ${(all.damageTaken / simMinutes).toFixed(0)}`,
     `bot-on-bot kills/min ${(all.botOnBotKills / simMinutes).toFixed(1)}`,
     `human lives reaching ${reachLabel(all.levels)}`,
     `bot lives reaching ${reachLabel(all.botLevels)}`,
@@ -171,17 +174,17 @@ function abilityArena(ability: AbilityId, seed: number): { uses: number; kills: 
   const w: World = createWorld('FFA', seed, 'plaza');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
-  for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
+  for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
   let uses = 0, kills = 0, deaths = 0;
   const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
-    const walls = wallViews(w);
+    const arena = arenaFor(w);
     const readyAt = new Map<number, number>();
     for (const [id, mem] of bots) {
       const p = w.players.get(id)!;
       p.perks[3] = ability;
       readyAt.set(id, p.abilityReadyAt);
-      const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, id), arena, mem, r);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
       if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
@@ -223,15 +226,15 @@ function mixedArena(seed: number, kills: Map<AbilityId, number>, deaths: Map<Abi
   const draw = (id: number) => holds.set(id, PERK_TIERS[3][Math.floor(r() * PERK_TIERS[3].length)]!);
   for (let i = 0; i < WORLD.minPlayers; i++) {
     const id = addPlayer(w, `bot${i}`, randomLoadout(r)).id;
-    bots.set(id, newBotMemory(r, MAPS[w.map].size));
+    bots.set(id, newBotMemory(r));
     draw(id);
   }
   const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
-    const walls = wallViews(w);
+    const arena = arenaFor(w);
     for (const [id, mem] of bots) {
       w.players.get(id)!.perks[3] = holds.get(id)!;
-      const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, id), arena, mem, r);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
       if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) draw(id);

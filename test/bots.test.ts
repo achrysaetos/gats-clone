@@ -1,13 +1,14 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, WORLD, type WeaponId } from '../src/shared/defs.ts';
-import { MAPS } from '../src/shared/maps.ts';
-import type { WallView } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import { GUNS, WORLD, type PerkId, type WeaponId } from '../src/shared/defs.ts';
+import type { InputState, WallView } from '../src/shared/protocol.ts';
+import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { botName, botThink, newBotMemory } from '../src/server/bots.ts';
-import { emptyWorld, spawnAt } from './helpers.ts';
+import { botName, botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
+import type { PersonalityId } from '../src/server/bot/intent.ts';
+import { emptyWorld, equip, grantPerks, setWalls, spawnAt } from './helpers.ts';
 
 const rand = (() => { let x = 7; return () => ((x = (x * 16807) % 2147483647) / 2147483647); })();
 
@@ -22,10 +23,11 @@ function watch(opts: { seed: number; ticks: number; weapon?: WeaponId; targetAt:
   const target = spawnAt(w, opts.targetAt.x, opts.targetAt.y);
   const vel = opts.targetVel ?? { x: 0, y: 0 };
   const r = seeded(opts.seed);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   const looks: Look[] = [];
   for (let i = 0; i < opts.ticks; i++) {
-    const d = botThink(snapshotFor(w, bot.id), opts.walls?.(i) ?? [], mem, r, MAPS[w.map].size);
+    if (opts.walls) setWalls(w, opts.walls(i));
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
     const flight = Math.hypot(target.x - bot.x, target.y - bot.y) / GUNS[bot.loadout.weapon].bulletSpeed;
     const leadAngle = Math.atan2(target.y + vel.y * flight - bot.y, target.x + vel.x * flight - bot.x);
@@ -80,12 +82,148 @@ test('a bot ignores an enemy in the snapshot preload margin beyond its 16:9 view
   assert.ok(looks.every((l) => !l.fire), 'never fires at what a player there could not see');
 });
 
-test('a bot in range strafes sideways instead of standing still', () => {
+/** A bot of `persona` at (1000, 1000) fighting a still enemy 400px right in the open, both kept at full health, its inputs fed to the sim. */
+function duel(persona: PersonalityId, seed: number, ticks: number, perks: PerkId[] = []): InputState[] {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-  spawnAt(w, 1300, 1000);
-  const d = botThink(snapshotFor(w, bot.id), [], newBotMemory(rand, MAPS[w.map].size), rand, MAPS[w.map].size);
-  assert.ok(d.input.up || d.input.down, 'moves across the line to the enemy');
+  if (perks.length) grantPerks(w, bot, perks);
+  const enemy = spawnAt(w, 1400, 1000);
+  const r = seeded(seed);
+  let mem: BotMemory = { ...newBotMemory(r), persona };
+  const out: InputState[] = [];
+  for (let i = 0; i < ticks; i++) {
+    for (const p of [bot, enemy]) if (p.life.k === 'alive') p.life.hp = 100;
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+    mem = d.mem;
+    setInput(w, bot.id, i + 1, d.input);
+    out.push(d.input);
+    step(w, TICK_MS);
+  }
+  return out;
+}
+
+const moving = (i: InputState) => i.up || i.down || i.left || i.right;
+const keysOf = (i: InputState) => `${+i.up}${+i.down}${+i.left}${+i.right}`;
+
+const stillShare = (runs: InputState[][]) => {
+  const shots = runs.flat().filter((i) => i.fire);
+  return shots.filter((i) => !moving(i)).length / shots.length;
+};
+
+test('in the open a bot strafes while it shoots, since standing still buys no accuracy, and plants its feet only with a bipod', () => {
+  for (const persona of ['aggressive', 'cautious', 'marksman'] as const) {
+    const bare = stillShare(Array.from({ length: 10 }, (_, s) => duel(persona, s + 1, 150)));
+    assert.ok(bare < 0.1, `${persona}: ${(100 * bare).toFixed(0)}% of shots fired standing still without a bipod`);
+  }
+  const bipod = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, ['bipod'])));
+  assert.ok(bipod > 0.6, `${(100 * bipod).toFixed(0)}% of shots fired standing still with a bipod`);
+});
+
+test('a strafing bot holds each leg\'s keys for at least a third of a second', () => {
+  for (let seed = 1; seed <= 10; seed++) {
+    const keys = duel('aggressive', seed, 150).map(keysOf);
+    const legs: number[] = [];
+    for (let i = 1, run = 1; i <= keys.length; i++) {
+      if (keys[i] === keys[i - 1]) run++;
+      else { legs.push(run); run = 1; }
+    }
+    const short = legs.slice(1, -1).filter((n) => n < 10);
+    assert.deepEqual(short, [], `seed ${seed}: legs of ${legs.join(', ')} ticks`);
+  }
+});
+
+test('a bot\'s movement keys hold for a while instead of flickering tick to tick', () => {
+  for (const persona of ['aggressive', 'cautious', 'marksman'] as const) {
+    for (let seed = 1; seed <= 5; seed++) {
+      const inputs = duel(persona, seed, 150);
+      const changes = inputs.slice(1).filter((i, k) => keysOf(i) !== keysOf(inputs[k]!)).length;
+      assert.ok(changes <= 12, `${persona} seed ${seed}: ${changes} key changes in 5s`);
+    }
+  }
+});
+
+test('a bot stepping out from cover onto the target it hid from fires at once, while one meeting it again in the open reacts afresh', () => {
+  const firstShot = (k: 'peekAndHide' | 'engage') => {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    const enemy = spawnAt(w, 1400, 1000);
+    for (let i = 0; i < 90; i++) step(w, TICK_MS);
+    const r = seeded(4);
+    const mem = newBotMemory(r);
+    const plan = k === 'peekAndHide'
+      ? { k, target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 }
+      : { k, target: enemy.id };
+    const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, bearing: 0, acquiredTick: 0, fireAtTick: 5, aimErrRad: 0 }, engagedSeen: 10 };
+    return botThink(snapshotFor(w, bot.id), arenaFor(w), { ...mem, persona: 'cautious', intent: { ...plan, since: w.tick, holdUntil: 1e9 }, motor: lostLongAgo }, r).input.fire;
+  };
+  assert.equal(firstShot('peekAndHide'), true, 'aim held behind cover');
+  assert.equal(firstShot('engage'), false, 'a fresh reaction first');
+});
+
+test('out on a peek at long range a marksman plants its feet, while a cautious bot sways at the edge of its cover', () => {
+  const peekInputs = (persona: PersonalityId) => {
+    const w = emptyWorld();
+    setWalls(w, [{ x: 940, y: 860, w: 40, h: 100 }]);
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    const enemy = spawnAt(w, 1650, 1000);
+    const r = seeded(5);
+    const plan = { k: 'peekAndHide' as const, target: enemy.id, spot: { x: 1000, y: 910 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 };
+    let mem: BotMemory = { ...newBotMemory(r), persona, intent: { ...plan, since: 0, holdUntil: 1e9 } };
+    const out: InputState[] = [];
+    for (let i = 0; i < 90; i++) {
+      for (const p of [bot, enemy]) if (p.life.k === 'alive') p.life.hp = 100;
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+      mem = d.mem;
+      setInput(w, bot.id, i + 1, d.input);
+      out.push(d.input);
+      step(w, TICK_MS);
+    }
+    return out.slice(30);
+  };
+  const marksman = peekInputs('marksman');
+  assert.ok(marksman.filter(moving).length / marksman.length < 0.2, `marksman moves ${marksman.filter(moving).length} of ${marksman.length} ticks`);
+  const cautious = peekInputs('cautious');
+  assert.ok(cautious.filter(moving).length / cautious.length > 0.5, `cautious moves ${cautious.filter(moving).length} of ${cautious.length} ticks`);
+});
+
+test('a bot fighting one enemy turns on a hunted one who comes into view, and keeps its own target over a mere nearer one', () => {
+  const aimAfter = (hunted: boolean) => {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    const target = spawnAt(w, 1400, 1000);
+    const other = spawnAt(w, 1000, 1250);
+    if (hunted) equip(other, 'executioner');
+    const r = seeded(6);
+    let mem: BotMemory = { ...newBotMemory(r), persona: 'aggressive', intent: { k: 'engage', target: target.id, since: 0, holdUntil: 1e9 } };
+    let angle = 0;
+    for (let i = 0; i < 20; i++) {
+      for (const p of [bot, target, other]) if (p.life.k === 'alive') p.life.hp = 100;
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+      mem = d.mem;
+      angle = d.input.angle;
+      step(w, TICK_MS);
+    }
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  };
+  assert.ok(Math.abs(aimAfter(true) - Math.PI / 2) < 0.4, `aims down at the hunted enemy: ${aimAfter(true).toFixed(2)}`);
+  assert.ok(Math.abs(aimAfter(false)) < 0.4, `stays on its target to the right: ${aimAfter(false).toFixed(2)}`);
+});
+
+test('a bot holding a key straight into a wall\'s end lets go of it and slides round to its goal', () => {
+  const w = emptyWorld();
+  setWalls(w, [{ x: 1000, y: 1000, w: 300, h: 50 }]);
+  const bot = spawnAt(w, 1324, 1017);
+  const goal = { x: 1213, y: 963 };
+  const r = seeded(8);
+  const base = newBotMemory(r);
+  let mem: BotMemory = { ...base, intent: { k: 'patrol', goal, since: 0, holdUntil: 1e9 }, motor: { ...base.motor, dir: 4, dirSince: 0 } };
+  for (let i = 0; i < 90 && Math.hypot(bot.x - goal.x, bot.y - goal.y) > 20; i++) {
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+    mem = d.mem;
+    setInput(w, bot.id, i + 1, d.input);
+    step(w, TICK_MS);
+  }
+  assert.ok(Math.hypot(bot.x - goal.x, bot.y - goal.y) <= 20, `reaches the goal within 3s, ends at (${bot.x.toFixed(0)}, ${bot.y.toFixed(0)})`);
 });
 
 test('a bot leads a target moving across its line of fire', () => {

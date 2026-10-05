@@ -8,6 +8,7 @@ import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor } from '../src/server/bot/arena.ts';
 
 const mode = MODE_IDS.find((m) => m === process.argv[2]) satisfies ModeId | undefined;
 if (!mode || mode === 'ZOM') throw new Error('usage: bench-maps.ts <FFA|TDM|DOM> [maps] [minutes] [players] [heatDir]');
@@ -38,17 +39,17 @@ function fill(map: MapId, seed: number): Sim {
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < players; i++) {
     const p = addPlayer(w, `bot${i}`, randomLoadout(r));
-    bots.set(p.id, newBotMemory(r, sizeOf(map)));
+    bots.set(p.id, newBotMemory(r));
   }
   return { w, bots, r };
 }
 
 function tick({ w, bots, r }: Sim): { respawned: number[]; ms: number } {
   const t0 = performance.now();
-  const walls = wallViews(w);
+  const arena = arenaFor(w);
   const respawned: number[] = [];
   for (const [id, mem] of bots) {
-    const d = botThink(snapshotFor(w, id), walls, mem, r, sizeOf(w.map));
+    const d = botThink(snapshotFor(w, id), arena, mem, r);
     bots.set(id, d.mem);
     setInput(w, id, w.tick, d.input);
     if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
