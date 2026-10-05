@@ -74,7 +74,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
   };
 }
 
-type Tally = { lives: number[]; levels: number[]; botLevels: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number };
+type Tally = { lives: number[]; levels: number[]; botLevels: number[]; kills: number; deaths: number; botOnBotKills: number; botsKilledByHuman: number; damageTaken: number };
 
 /** A stage-2 gun of the human's class, standing in for a human who has reached the hunted stage. */
 const HUNTED_GUN: GunId = EVOLUTIONS[EVOLUTIONS[HUMAN_LOADOUT.weapon][0]!][0]!;
@@ -94,7 +94,7 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
   arm(human, forcedGun);
   let mind: HumanMind = { target: null, fireAtTick: 0, aimErr: 0, strafe: 1, flipAtTick: 0, seen: null, shots: 0, wanderX: r() * MAPS[w.map].size, wanderY: r() * MAPS[w.map].size };
   let bornAt = w.now;
-  const tally: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
+  const tally: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0, damageTaken: 0 };
   const ticks = Math.round((minutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
     const arena = arenaFor(w);
@@ -114,6 +114,7 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
     if (canRespawn(w, human.id) && respawn(w, human.id, HUMAN_LOADOUT)) { bornAt = w.now; arm(human, forcedGun); }
     step(w, TICK_MS);
     for (const e of w.events) {
+      if (e.e === 'dmg' && e.kind === 'player' && e.victim === human.id && e.attacker !== human.id) tally.damageTaken += e.amount;
       if (e.e !== 'kill') continue;
       if (e.victimId === human.id) tally.lives.push((w.now - bornAt) / 1000);
       else if (e.killerId === human.id) tally.botsKilledByHuman++;
@@ -143,13 +144,13 @@ const VARIANTS: { label: string; style: HumanStyle; gun: GunId | null }[] = [
 
 console.log(`human (3x health) vs ${WORLD.minPlayers - 1} bots, ${minutes} min x ${seeds} seeds`);
 for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
-  const all: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0 };
+  const all: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0, damageTaken: 0 };
   for (let seed = 1; seed <= seeds; seed++) {
     const t = simulate(seed, style, gun);
     all.lives.push(...t.lives);
     all.levels.push(...t.levels);
     all.botLevels.push(...t.botLevels);
-    all.kills += t.kills; all.deaths += t.deaths; all.botOnBotKills += t.botOnBotKills; all.botsKilledByHuman += t.botsKilledByHuman;
+    all.kills += t.kills; all.deaths += t.deaths; all.botOnBotKills += t.botOnBotKills; all.botsKilledByHuman += t.botsKilledByHuman; all.damageTaken += t.damageTaken;
   }
   const simMinutes = minutes * seeds;
   console.log([
@@ -158,6 +159,7 @@ for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
     `deaths ${all.deaths}`,
     `kills ${all.kills}`,
     `K/D ${(all.kills / Math.max(1, all.deaths)).toFixed(2)}`,
+    `damage taken/min ${(all.damageTaken / simMinutes).toFixed(0)}`,
     `bot-on-bot kills/min ${(all.botOnBotKills / simMinutes).toFixed(1)}`,
     `human lives reaching ${reachLabel(all.levels)}`,
     `bot lives reaching ${reachLabel(all.botLevels)}`,
