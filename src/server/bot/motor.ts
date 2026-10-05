@@ -6,14 +6,15 @@ import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../
 import { aimSigma, drift, engage, freshAim, HANDS, landingErr, onTarget, sharpnessAgainst, TICK_MS, turn, type AimState, type Engagement, type Hand } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
-import type { Intent, IntentCtx } from './intent.ts';
+import { justLost, type Intent, type IntentCtx } from './intent.ts';
 import { clearShot, findPath, isOpen, walkable, type Point } from './nav.ts';
 
 export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
   dir: number | null;
   dirSince: number;
-  stance: { step: 0 | 1 | -1; until: number; heading: number | null };
+  /** A strafe or sway leg: which way, from and until which tick, and whether the bot is planted between sidesteps rather than strafing. */
+  stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
   stuckTicks: number;
   engaged: Engagement | null;
@@ -23,7 +24,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, stance: { step: 0, until: 0, heading: null }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
+  route: null, dir: null, dirSince: 0, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -66,6 +67,10 @@ const UNDER_FIRE_STEP_ODDS = 0.75;
 const STRAFE_MS: readonly [number, number] = [450, 1000];
 const STRAFE_PX = 120;
 const PEEK_SWAY_PX = 70;
+/** A sway leg crosses PEEK_SWAY_PX and stands this long at the end before stepping back. */
+const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
+/** No leg turns back sooner than a person would choose to. */
+const MIN_LEG_TICKS = Math.round(400 / TICK_MS);
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
@@ -135,16 +140,14 @@ function routeAhead(me: Point, route: Motor['route']): Point | null {
 const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
   spreadFor(v.me.gun, v.self.perks, true) < spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
 
-function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean): Motor['stance'] {
-  const wasPlanted = m.stance.step === 0;
-  if (v.tick < m.stance.until && planted === wasPlanted) return m.stance;
-  if (!planted) {
-    const step = m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : (-m.stance.step as 1 | -1);
-    return { step, until: v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS), heading: null };
-  }
+function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
+  const age = v.tick - m.stance.since;
+  if (planted === m.stance.planted ? v.tick < m.stance.until : age < MIN_LEG_TICKS) return m.stance;
+  const legFor = (step: Motor['stance']['step'], ms: readonly [number, number]) => ({ step, since: v.tick, until: v.tick + Math.max(MIN_LEG_TICKS, Math.round(between(ms, c.rand) / TICK_MS)), heading: null, planted });
+  if (!planted) return legFor(m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : (-m.stance.step as 1 | -1), legMs);
   const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
-  const step = wasPlanted && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
-  return { step, until: v.tick + Math.round(between(step === 0 ? STAND_MS : STEP_MS, c.rand) / TICK_MS), heading: null };
+  const step = m.stance.step === 0 && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
+  return legFor(step, step === 0 ? STAND_MS : STEP_MS);
 }
 
 function legHeading(me: Point, at: Point, step: 1 | -1, advance: boolean): number {
@@ -171,13 +174,12 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const reload = intent.phase === 'hide' && !t && v.self.ammo < v.self.mag;
       const peeking = (to: Point, stance: Motor['stance']) => ({ steer: { to, face, reload, crates: false }, stance });
       if (intent.phase === 'hide') return peeking(intent.spot, m.stance);
-      let stance = nextStance(m, v, c, plants(v, c, t?.d ?? 0, true));
+      const crossMs = (PEEK_SWAY_PX / v.self.speed) * 1000;
+      const stance = nextStance(m, v, c, plants(v, c, t?.d ?? 0, true), [crossMs + SWAY_PAUSE_MS[0], crossMs + SWAY_PAUSE_MS[1]]);
       if (stance.step === 0) return peeking(intent.peek, stance);
       const out = Math.atan2(intent.peek.y - intent.spot.y, intent.peek.x - intent.spot.x);
       const wide = { x: intent.peek.x + Math.cos(out) * PEEK_SWAY_PX, y: intent.peek.y + Math.sin(out) * PEEK_SWAY_PX };
-      const swayTo = (step: number) => (step === 1 && isOpen(c.arena.nav, wide) ? wide : intent.peek);
-      if (dist(me, swayTo(stance.step)) < ARRIVED_PX * 2) stance = { ...stance, step: stance.step === 1 ? -1 : 1, heading: null };
-      return peeking(swayTo(stance.step), stance);
+      return peeking(stance.step === 1 && isOpen(c.arena.nav, wide) ? wide : intent.peek, stance);
     }
     case 'reloadInCover': {
       const safe = v.threats.length === 0 || dist(me, intent.spot) < WAYPOINT_PX * 2;
@@ -189,7 +191,10 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     }
     case 'engage': {
       const t = focus(v, intent.target);
-      if (!t) return { steer: { to: v.lastSeen, face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
+      if (!t) {
+        const leg = justLost(v) && m.stance.heading !== null ? legPoint(me, m.stance.heading, c.arena) : null;
+        return { steer: { to: leg ?? (justLost(v) ? null : v.lastSeen), face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
+      }
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
       if (readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) return { steer: fight(t.p), stance: m.stance };
       const closing = t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal);
@@ -199,9 +204,13 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const heading = stance.heading ?? legHeading(me, t.p, step, closing);
       const ahead = legPoint(me, heading, c.arena);
       if (ahead) return { steer: fight(ahead), stance: { ...stance, heading } };
+      // Blocked: turn back, but only once the leg has run long enough that the turn reads as a choice rather than a twitch.
+      const fresh = stance.since === v.tick;
+      if (!fresh && v.tick - stance.since < MIN_LEG_TICKS) return { steer: fight(null), stance: { ...stance, heading } };
       const back = step === 1 ? -1 : 1;
       const turned = legHeading(me, t.p, back, closing);
-      return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned } };
+      const until = fresh ? stance.until : v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS);
+      return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
     }
   }
 }
@@ -225,8 +234,9 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
+/** A stuck bot tries one side for a whole leg before the other, so it slides off a corner instead of jittering at it. */
 const sidestepOctant = (stuckTicks: number) =>
-  stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor(stuckTicks / BLOCKED_TICKS) % 2 ? 1 : -1;
+  stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor((stuckTicks - 2 * BLOCKED_TICKS) / MIN_LEG_TICKS) % 2 ? -1 : 1;
 
 function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number } {
   const none = { up: false, down: false, left: false, right: false };

@@ -30,6 +30,8 @@ const PAUSE_MS = 500;
 /** How many of the bot's thinks before a reversal can have caused it. */
 const CAUSE_TICKS = 3;
 const NEAR_GOAL_PX = 300;
+/** Faster than a person turns back on purpose. */
+const QUICK_MS = 400;
 
 type Track = {
   angle: number | null; lastDelta: number; target: number | null; targetSince: number; awaitingShot: boolean;
@@ -37,11 +39,11 @@ type Track = {
 };
 type Tally = {
   deltas: number[]; calmDeltas: number[]; calmTicks: number; reversals: number; idleTicks: number; idleReversals: number; swings: number; flickPeaks: number[]; firstShotMs: number[];
-  aliveTicks: number; moveReversals: number; reversalGaps: number[]; causes: Map<string, number>;
+  aliveTicks: number; moveReversals: number; reversalGaps: number[]; causes: Map<string, number>; quickCauses: Map<string, number>;
 };
 const emptyTally = (): Tally => ({
   deltas: [], calmDeltas: [], calmTicks: 0, reversals: 0, idleTicks: 0, idleReversals: 0, swings: 0, flickPeaks: [], firstShotMs: [],
-  aliveTicks: 0, moveReversals: 0, reversalGaps: [], causes: new Map(),
+  aliveTicks: 0, moveReversals: 0, reversalGaps: [], causes: new Map(), quickCauses: new Map(),
 });
 const freshTrack = (): Track => ({ angle: null, lastDelta: 0, target: null, targetSince: -Infinity, awaitingShot: false, pos: null, heading: null, headingAt: -Infinity, lastReversal: null, causes: [] });
 
@@ -62,8 +64,8 @@ function causesOf(a: BotMemory, b: BotMemory, tick: number, me: { x: number; y: 
   }
   if (b.motor.stuckTicks >= 3 || a.motor.stuckTicks >= 3) out.push('wall slide');
   const ra = a.motor.route, rb = b.motor.route;
-  if (rb && (!ra || !near(ra.goal, rb.goal, 1))) out.push(`goal moved${near(me, rb.goal, NEAR_GOAL_PX) ? ' near goal' : ''}${rb.partial ? ' (partial route)' : ''}`);
-  else if (rb && ra && rb !== ra && rb.points.length > ra.points.length) out.push(`replan${rb.partial ? ' (partial route)' : ''}`);
+  if (rb && (!ra || !near(ra.goal, rb.goal, 1))) out.push(`${bi?.k} goal moved${near(me, rb.goal, NEAR_GOAL_PX) ? ' near goal' : ''}${rb.partial ? ' (partial route)' : ''}`);
+  else if (rb && ra && rb !== ra && rb.points.length > ra.points.length) out.push(`${bi?.k} replan${rb.partial ? ' (partial route)' : ''}`);
   else if (rb && ra && rb.points.length < ra.points.length) out.push('next waypoint');
   return out;
 }
@@ -112,10 +114,13 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
           const heading = Math.atan2(me.y - tr.pos.y, me.x - tr.pos.x);
           if (tr.heading !== null && w.now - tr.headingAt <= PAUSE_MS && Math.abs(wrap(heading - tr.heading)) * DEG > MOVE_REVERSAL_DEG) {
             t.moveReversals++;
-            if (tr.lastReversal !== null) t.reversalGaps.push(w.now - tr.lastReversal);
-            tr.lastReversal = w.now;
             const cause = tr.causes.flat()[0] ?? 'other (body contact or a key change with no brain change)';
             t.causes.set(cause, (t.causes.get(cause) ?? 0) + 1);
+            if (tr.lastReversal !== null) {
+              t.reversalGaps.push(w.now - tr.lastReversal);
+              if (w.now - tr.lastReversal < QUICK_MS) t.quickCauses.set(cause, (t.quickCauses.get(cause) ?? 0) + 1);
+            }
+            tr.lastReversal = w.now;
           }
           tr.heading = heading;
           tr.headingAt = w.now;
@@ -165,19 +170,19 @@ function report(label: string, t: Tally) {
     `  ${''.padEnd(12)} move`,
     `reversals ${(t.moveReversals / Math.max(1e-9, aliveSec)).toFixed(2)}/s per bot`,
     `gap between reversals p1 ${Math.round(quantile(t.reversalGaps, 0.01))}ms p5 ${Math.round(quantile(t.reversalGaps, 0.05))}ms p50 ${Math.round(quantile(t.reversalGaps, 0.5))}ms`,
-    `under 400ms ${(100 * t.reversalGaps.filter((g) => g < 400).length / Math.max(1, t.reversalGaps.length)).toFixed(1)}%`,
+    `under ${QUICK_MS}ms ${(100 * t.reversalGaps.filter((g) => g < QUICK_MS).length / Math.max(1, t.reversalGaps.length)).toFixed(1)}%`,
   ].join('  '));
 }
 
-function reportCauses(t: Tally) {
-  const total = [...t.causes.values()].reduce((a, b) => a + b, 0);
-  for (const [cause, n] of [...t.causes].sort((a, b) => b[1] - a[1]).slice(0, 16)) console.log(`    ${((100 * n) / total).toFixed(1).padStart(5)}%  ${cause}`);
+function reportCauses(causes: Map<string, number>) {
+  const total = [...causes.values()].reduce((a, b) => a + b, 0);
+  for (const [cause, n] of [...causes].sort((a, b) => b[1] - a[1]).slice(0, 14)) console.log(`    ${((100 * n) / total).toFixed(1).padStart(5)}% ${String(n).padStart(5)}  ${cause}`);
 }
 
 const merge = (into: Tally, t: Tally) => {
   for (const k of Object.keys(t) as (keyof Tally)[]) {
     const v = t[k];
-    if (v instanceof Map) for (const [c, n] of v) into.causes.set(c, (into.causes.get(c) ?? 0) + n);
+    if (v instanceof Map) for (const [c, n] of v) (into[k] as Map<string, number>).set(c, ((into[k] as Map<string, number>).get(c) ?? 0) + n);
     else if (Array.isArray(v)) for (const x of v) (into[k] as number[]).push(x);
     else (into[k] as number) += v;
   }
@@ -194,5 +199,7 @@ for (const mode of modes) {
   }
   report('all', all);
   console.log('  movement reversals by cause:');
-  reportCauses(all);
+  reportCauses(all.causes);
+  console.log(`  reversals within ${QUICK_MS}ms of the last, by cause:`);
+  reportCauses(all.quickCauses);
 }

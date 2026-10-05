@@ -20,7 +20,7 @@ export const HANDS = {
 } as const satisfies Record<string, Hand>;
 
 const BOT_AIM = {
-  noticeMs: [170, 300],
+  noticeMs: [220, 350],
   baseSigma: 0.03,
   sigmaPerRadPerSec: 0.25,
   unsettledMul: 1.5,
