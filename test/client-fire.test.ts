@@ -13,7 +13,6 @@ const ready = (gun: GunId, o: Partial<ServerGun> = {}): ServerGun =>
   ({ gun, mag: GUNS[gun].mag, ammo: GUNS[gun].mag, reloading: false, reloadFrac: 0, alive: true, armed: true, ...o });
 const armedWith = (gun: GunId, o: Partial<ServerGun> = {}): Firing => settle(NO_FIRING, ready(gun, o), 0, 0, []).firing;
 
-/** What the page does each input: draws a due shot ahead of it, then sends it held as `committed` says. Returns the seqs whose shots were drawn. */
 function play(f: Firing, inputs: readonly TriggerInput[]): { firing: Firing; drawn: number[]; rejected: number[] } {
   const drawn: number[] = [], rejected: number[] = [];
   for (const input of inputs) {
@@ -29,8 +28,7 @@ function play(f: Firing, inputs: readonly TriggerInput[]): { firing: Firing; dra
   return { firing: f, drawn, rejected };
 }
 
-/** The inputs on which the real sim fires for one human given one input per tick, and the page's trigger stepped at the sim's own times. */
-function fires(gun: GunId, inputs: readonly TriggerInput[]): { sim: number[]; page: number[] } {
+function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[]): { sim: number[]; page: number[] } {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);
   equip(p, gun);
@@ -69,7 +67,7 @@ const SCRIPTS: [string, GunId, string][] = [
 
 for (const [name, gun, pattern] of SCRIPTS) {
   test(`the page's trigger fires on the same inputs as the sim's: ${name}`, () => {
-    const { sim, page } = fires(gun, taps(pattern));
+    const { sim, page } = simAndPageFires(gun, taps(pattern));
     assert.ok(sim.length > 0);
     assert.deepEqual(page, sim);
   });

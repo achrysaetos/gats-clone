@@ -42,7 +42,6 @@ export type Session = {
   seq: number;
   shots: number;
   predict: Prediction;
-  /** Your gun's trigger and the shots the page fired ahead of the server. */
   firing: Firing;
   lastSelf: { x: number; y: number };
   effects: Effect[];

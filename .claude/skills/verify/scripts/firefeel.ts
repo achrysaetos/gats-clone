@@ -34,7 +34,7 @@ const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 type Felt = { cue: Cue | 'reject' | 'late'; at: number };
-type Browser = { chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; serverShots: () => number; exceptions: string[] };
+type Browser = { chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; serverShots: () => number; roundOverSnaps: () => number; exceptions: string[] };
 
 async function open(name: string, weapon: GunId): Promise<Browser> {
   const port = await freePort();
@@ -52,7 +52,7 @@ async function open(name: string, weapon: GunId): Promise<Browser> {
   await new Promise((r) => page.once('open', r));
   let nextId = 1;
   let id: number | null = null;
-  let shots = 0;
+  let shots = 0, roundOver = 0;
   const exceptions: string[] = [];
   const pending = new Map<number, (v: any) => void>();
   page.on('message', (raw) => {
@@ -61,6 +61,7 @@ async function open(name: string, weapon: GunId): Promise<Browser> {
     if (m.method === 'Network.webSocketFrameReceived') {
       const msg = JSON.parse(m.params.response.payloadData);
       if (msg.t === 'welcome') id = msg.id;
+      if (msg.t === 'snap' && msg.match?.winner) roundOver++;
       if (msg.t === 'snap') shots += (msg.events ?? []).filter((e: { e: string; owner?: number }) => e.e === 'shot' && e.owner === id).length;
     } else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
   });
@@ -78,7 +79,7 @@ async function open(name: string, weapon: GunId): Promise<Browser> {
   if (id === null) throw new Error(`${name} did not join`);
   await js(`window.downs = []; window.addEventListener('mousedown', () => window.downs.push(performance.now()), { capture: true })`);
   await sleep(1500);
-  return { chrome, cdp, js, id, serverShots: () => shots, exceptions };
+  return { chrome, cdp, js, id, serverShots: () => shots, roundOverSnaps: () => roundOver, exceptions };
 }
 
 const AIM = { x: VIEW.w / 2 + 200, y: VIEW.h / 2 - 60 };
@@ -100,7 +101,6 @@ const respawnIfDead = async (b: Browser) => {
 const felt = async (b: Browser): Promise<Felt[]> => b.js(`skirmishDev.fireFeel()`);
 const downs = async (b: Browser): Promise<number[]> => b.js(`window.downs.splice(0)`);
 
-/** For each mousedown, how long until the first of each cue, if it came before the next mousedown. */
 function latencies(ds: number[], fs: Felt[]): Record<Cue, number[]> {
   const out = { round: [], flash: [], kick: [], sound: [] } as Record<Cue, number[]>;
   ds.forEach((d, i) => {
@@ -126,25 +126,23 @@ function checkLatency(label: string, lat: Record<Cue, number[]>, expected: numbe
   }
 }
 
-/** One sound and one flash per shot the server fired, and none it did not. */
 function checkCounts(label: string, { felt: fs, fired }: { felt: Felt[]; fired: number }) {
   const count = (c: Felt['cue']) => fs.filter((f) => f.cue === c).length;
   log(`${label} counts: server shots ${fired}  sounds ${count('sound')}  flashes ${count('flash')}  kicks ${count('kick')}  rejected predictions ${count('reject')}  drawn late ${count('late')}`);
   check(fired > 0 && count('sound') === fired && count('flash') === fired && count('reject') === 0 && count('late') === 0, `${label}: one sound and one flash per server shot, each drawn on time, none taken back`);
 }
 
-/** Runs a phase until one passes with no death in it, so a bot's kill never reads as a lost or phantom shot. */
-async function phase(label: string, b: Browser, settleMs: number, body: () => Promise<void>): Promise<{ felt: Felt[]; downs: number[]; fired: number }> {
+async function runUndisturbed(label: string, b: Browser, settleMs: number, body: () => Promise<void>): Promise<{ felt: Felt[]; downs: number[]; fired: number }> {
   for (let attempt = 1; ; attempt++) {
     await respawnIfDead(b);
     await felt(b); await downs(b);
-    const deathsBefore = deaths, before = b.serverShots();
+    const deathsBefore = deaths, roundOverBefore = b.roundOverSnaps(), before = b.serverShots();
     await body();
     await sleep(settleMs);
     await respawnIfDead(b);
     const out = { felt: await felt(b), downs: await downs(b), fired: b.serverShots() - before };
-    if (deaths === deathsBefore || attempt === 6) return out;
-    log(`note ${label}: died mid-phase, running it again`);
+    if ((deaths === deathsBefore && b.roundOverSnaps() === roundOverBefore) || attempt === 6) return out;
+    log(`note ${label}: died or the round ended mid-phase, running it again`);
   }
 }
 
@@ -160,7 +158,7 @@ const roundTrip = 2 * LAG + JITTER;
 
 const pistol = await open('Tapper', 'pistol');
 await mouse(pistol, 'mouseReleased');
-let p = await phase('tap', pistol, roundTrip + 400, async () => {
+let p = await runUndisturbed('tap', pistol, roundTrip + 400, async () => {
   for (let i = 0; i < TAPS; i++) {
     await tap(pistol, 40);
     await sleep(GUNS.pistol.fireMs + 60 + Math.random() * 40);
@@ -171,7 +169,7 @@ checkCounts('tap', p);
 
 await reload(pistol);
 await sleep(GUNS.pistol.reloadMs + 400);
-p = await phase('spam', pistol, GUNS.pistol.reloadMs + roundTrip + 600, async () => {
+p = await runUndisturbed('spam', pistol, GUNS.pistol.reloadMs + roundTrip + 600, async () => {
   for (let i = 0; i < 3 * GUNS.pistol.mag; i++) {
     await tap(pistol, 20);
     await sleep(60);
@@ -185,7 +183,7 @@ await pistol.cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouch
 await pistol.js(`window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') window.aimStart = true; }, { capture: true });
   window.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && window.aimStart) { window.aimStart = false; window.downs.push(performance.now()); } }, { capture: true })`);
 const touch = (type: string, points: { x: number; y: number; id: number }[]) => pistol.cdp('Input.dispatchTouchEvent', { type, touchPoints: points });
-p = await phase('touch', pistol, roundTrip + 400, async () => {
+p = await runUndisturbed('touch', pistol, roundTrip + 400, async () => {
   for (let i = 0; i < TAPS; i++) {
     await respawnIfDead(pistol);
     await touch('touchStart', [{ x: VIEW.w - 300, y: VIEW.h / 2, id: 7 }]);
@@ -204,7 +202,7 @@ const smg = await open('Holder', 'smg');
 const gaps: number[] = [];
 const firstSounds: number[] = [];
 for (let i = 0; i < HOLDS; i++) {
-  p = await phase(`hold ${i + 1}`, smg, roundTrip + 300, () => tap(smg, HOLD_MS));
+  p = await runUndisturbed(`hold ${i + 1}`, smg, roundTrip + 300, () => tap(smg, HOLD_MS));
   const sounds = p.felt.filter((x) => x.cue === 'sound').map((x) => x.at);
   gaps.push(...sounds.slice(1).map((t, k) => t - sounds[k]!));
   firstSounds.push(...latencies(p.downs, p.felt).sound);

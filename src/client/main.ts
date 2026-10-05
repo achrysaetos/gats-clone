@@ -329,7 +329,6 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
 
-/** Your own shot leaves the gun where the page draws it, aimed where you aim now, with its sound. */
 function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
   const aim = aimOffset(s);
   const still = !MOVES.some((a) => held.has(a));
@@ -338,33 +337,32 @@ function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, 
   return fire(s, shot, s.lastSelf, Math.atan2(aim.dy, aim.dx), sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
 }
 
-/** What the trigger is doing right now, as the next input will carry it. */
 function triggerInput(s: Session): TriggerInput {
   const active = state.phase === 'playing' && !overlays.typing;
   return { fire: active && (firing || touchAim(sticks) !== null), shots: s.shots, reload: active && held.has('reload') };
 }
 
-/** The aim stick leaving its deadzone is a press, fired on the page at once like a click. */
 function pullTouchTrigger(s: Session) {
   const aiming = state.phase === 'playing' && !overlays.typing && touchAim(sticks) !== null;
   if (aiming && !touchAiming) {
     s.shots++;
-    fireAhead(s, performance.now());
+    fireIfDue(s, performance.now());
   }
   touchAiming = aiming;
 }
 
-/** Fires your next shot on the page once it is due, or at once when the input that fires it is going out now. */
-function fireAhead(s: Session, now: number, sending = false) {
+const fireIfDue = (s: Session, now: number) => fireAheadBy(s, now, now);
+const fireBeforeSending = (s: Session, now: number) => fireAheadBy(s, now, Infinity);
+
+function fireAheadBy(s: Session, now: number, dueBy: number) {
   const due = dueAt(s.firing, triggerInput(s));
   const snap = newestSnap(s.snaps);
-  if (due === null || (now < due && !sending) || !snap) return;
+  if (due === null || due > dueBy || !snap) return;
   const { gun } = s.firing.trigger;
   const rounds = fireOwnShot(s, snap, gun, silencedFor(gun, snap.self.perks), now);
   s.firing = { ...s.firing, ahead: { seq: s.firing.sent.seq + 1, rounds } };
 }
 
-/** A shot the server never fired: its rounds stop where they are. */
 function takeBack(s: Session, shot: PredictedShot) {
   s.rounds = s.rounds.filter((r) => !shot.rounds.includes(r.id));
   if (DEV) fireFeel.push({ cue: 'reject', at: performance.now() });
@@ -409,7 +407,7 @@ setInterval(() => {
   const actions = active ? new Set([...held, ...touchMoves(sticks)]) : new Set<Action>();
   pullTouchTrigger(s);
   const now = performance.now();
-  fireAhead(s, now, true);
+  fireBeforeSending(s, now);
   const input = committed(s.firing, assembleInput(actions, active && (firing || touchAiming), s.shots, aimOffset(s)));
   const sent = sendInput(s.firing, s.seq, input, now);
   s.firing = sent.firing;
@@ -502,7 +500,7 @@ function drawFrame(now: number) {
     drawBackdrop(ctx, view.w, view.h, view.dpr, now);
     return;
   }
-  if (s === sessionOf(state)) fireAhead(s, performance.now());
+  if (s === sessionOf(state)) fireIfDue(s, performance.now());
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
   for (const { fx } of released.due) startEffect(s, fx, now, deathTint(s, fx));
@@ -530,7 +528,7 @@ function drawFrame(now: number) {
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   if (DEV) noteFirstRounds(snap, s.myId, selfAngle);
-  if (DEV) noteOwnFlashes(s, now);
+  if (DEV) noteOwnFlashesAndKicks(s, now);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
@@ -555,8 +553,7 @@ function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null)
   }
 }
 
-/** When a frame first draws each of your muzzle flashes and gun kicks, by the rules `drawEffects` and `kicks` draw them, for `skirmishDev.fireFeel()`. */
-function noteOwnFlashes(s: Session, now: number) {
+function noteOwnFlashesAndKicks(s: Session, now: number) {
   const kick = kicks(s.effects, now).get(s.myId);
   if (kick !== undefined && !feltKicks.has(kick)) {
     feltKicks.add(kick);
@@ -658,7 +655,7 @@ canvas.addEventListener('mousedown', (e) => {
   firing = true;
   if (state.phase !== 'playing' || overlays.typing) return;
   state.s.shots++;
-  fireAhead(state.s, performance.now());
+  fireIfDue(state.s, performance.now());
 });
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());

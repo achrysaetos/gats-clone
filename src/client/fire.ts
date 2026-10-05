@@ -2,13 +2,9 @@ import { GUNS, PRESS_GRACE_MS, WORLD, type GunId } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
-/**
- * Ticks past its input a predicted shot may still be confirmed. The server applies inputs on its own tick clock, so two
- * inputs can land in one tick and its held-trigger shots can trail the page's by a tick or two.
- */
-const CONFIRM_SLACK = 4;
+// The server keeps only the newest input each tick, so a held trigger's shots can trail the page's by a tick or two.
+const CONFIRM_SLACK_TICKS = 4;
 
-/** The server's trigger state for your gun, stepped by the rules of `tickPlayer` in sim.ts. Times are on the input clock, `seq * TICK_MS`. */
 type Trigger = {
   gun: GunId; mag: number; alive: boolean; armed: boolean;
   ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; shotsSeen: number;
@@ -114,17 +110,17 @@ function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigge
 
 /**
  * Takes in a snapshot: its `shots` own shot events confirm the oldest predicted shots, any beyond them are `unmatched`
- * and still need drawing, and a prediction the server has gone `CONFIRM_SLACK` ticks past without firing is `rejected`.
+ * and still need drawing, and a prediction the server has gone `CONFIRM_SLACK_TICKS` ticks past without firing is `rejected`.
  * The trigger is then rebuilt from the server's ammo, reload and life at `ackSeq` and stepped again over the inputs since.
  */
 export function settle(f: Firing, sv: ServerGun, ackSeq: number, shots: number, pending: readonly { seq: number; input: TriggerInput }[]):
   { firing: Firing; unmatched: number; rejected: PredictedShot[] } {
   const waiting = f.unconfirmed.slice(shots);
   const confirmed = f.unconfirmed.slice(0, shots).at(-1);
-  const lag = confirmed ? Math.min(CONFIRM_SLACK - 1, Math.max(0, ackSeq - confirmed.seq)) : f.lag;
+  const lag = confirmed ? Math.min(CONFIRM_SLACK_TICKS - 1, Math.max(0, ackSeq - confirmed.seq)) : f.lag;
   const unmatched = Math.max(0, shots - f.unconfirmed.length);
-  const rejected = waiting.filter((p) => p.seq <= ackSeq - CONFIRM_SLACK);
-  const unconfirmed = waiting.filter((p) => p.seq > ackSeq - CONFIRM_SLACK);
+  const rejected = waiting.filter((p) => p.seq <= ackSeq - CONFIRM_SLACK_TICKS);
+  const unconfirmed = waiting.filter((p) => p.seq > ackSeq - CONFIRM_SLACK_TICKS);
   const late = unconfirmed.filter((p) => p.seq <= ackSeq).length;
   const acked = f.history.filter((h) => h.seq <= ackSeq).at(-1);
   let trigger = rebase(acked?.trigger ?? { ...UNARMED, shotsSeen: f.trigger.shotsSeen }, sv, late, ackSeq * TICK_MS);

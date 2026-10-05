@@ -75,7 +75,7 @@ export function kicks(effects: readonly Effect[], now: number): Map<number, numb
 
 export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Effect[], now: number) {
   for (const fx of effects) {
-    // An effect started after this frame's timestamp, such as your shot's flash on mousedown, draws from its start rather than a frame late.
+    // A flash fired on mousedown is stamped after the timestamp of the frame that first draws it.
     const k = Math.max(0, now - fx.born) / EFFECT_LIFE_MS[fx.kind];
     if (k >= 1) continue;
     switch (fx.kind) {
