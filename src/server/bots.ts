@@ -1,7 +1,8 @@
 import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, ZOM, type AbilityId, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
-import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Loadout, type PlayerView, type RunView, type Snapshot, type WallView } from '../shared/protocol.ts';
+import { VIEW_ASPECT, viewExtents, type BuildingView, type CrateView, type InputState, type Loadout, type PlayerView, type RunView, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
-import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
+import { cellRect } from '../shared/sim/build.ts';
+import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
 
 export type BotMemory = {
   targetX: number; targetY: number; lastX: number; lastY: number; stuckTicks: number;
@@ -322,6 +323,7 @@ export function botName(taken: ReadonlySet<string>, rand: () => number): string 
 type Watch = {
   me: PlayerView;
   core: { x: number; y: number };
+  post: { x: number; y: number };
   zombie: { id: number; x: number; y: number; d: number } | null;
   downed: PlayerView | null;
   damagedWall: { x: number; y: number } | null;
@@ -346,14 +348,25 @@ const SIEGE_RULES: readonly ((s: Watch) => Errand | null)[] = [
   (s) => s.damagedWall && hordeFar(s) ? mendAt(s, s.damagedWall) : null,
   (s) => s.coreWorn && hordeFar(s) ? mendAt(s, s.core) : null,
   (s) => {
-    const post = { x: s.core.x + Math.cos(s.me.id) * POST_RADIUS, y: s.core.y + Math.sin(s.me.id) * POST_RADIUS };
-    if (!s.zombie || s.zombie.d > KITE_PX) return { ...post, use: false };
+    const post = { ...s.post, use: false };
+    if (!s.zombie || s.zombie.d > KITE_PX) return post;
     // Back away from the zombie, or sidestep it where backing away would leave the guard ring.
     const away = Math.atan2(s.me.y - s.zombie.y, s.me.x - s.zombie.x);
     const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
-    return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? { ...post, use: false };
+    return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
   },
 ];
+
+/** A bot's post on its own bearing from the core: POST_RADIUS out, or nearer when a squad wall stands in the way, so the walls shelter the bot instead of shutting it out. */
+function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[]): { x: number; y: number } {
+  const at = (d: number) => ({ x: core.x + Math.cos(bearing) * d, y: core.y + Math.sin(bearing) * d });
+  const nearest = ZOM.coreHalf + WORLD.playerRadius + 1;
+  for (let d = nearest; d <= POST_RADIUS; d += 5) {
+    const { x, y } = at(d);
+    if (buildings.some((b) => circleHitsRect(x, y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return at(Math.max(nearest, d - 5));
+  }
+  return at(POST_RADIUS);
+}
 
 function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonly WallView[], mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
   const sight = viewExtents(snap.self.viewRadius, VIEW_ASPECT.max);
@@ -368,7 +381,7 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, walls: readonl
     .filter((b) => b.hp < 10)
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const watch: Watch = { me, core: run.core, zombie, downed, damagedWall: nearest(me, damaged), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
+  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, damagedWall: nearest(me, damaged), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
 
   const next = { ...mem };

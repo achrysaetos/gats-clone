@@ -76,6 +76,20 @@ test('a squad bot mends the worn core while no zombie is close, spending the ban
   assert.ok(Math.abs(ZOM.startScrap - w.run!.scrap - 400 * ZOM.coreRepairScrapPerHp) < 0.5, 'for scrap');
 });
 
+test('a squad bot posts behind a squad wall on its bearing rather than out past it', () => {
+  const w = nightWorld();
+  farZombie(w);
+  const bot = spawnAt(w, CORE.x, CORE.y);
+  const out = (d: number) => ({ x: CORE.x + Math.cos(bot.id) * d, y: CORE.y + Math.sin(bot.id) * d });
+  Object.assign(bot, out(100));
+  const wallAt = out(170);
+  w.buildings.push({ id: newId(w), kind: 'wall', cx: Math.floor(wallAt.x / ZOM.cell), cy: Math.floor(wallAt.y / ZOM.cell), hp: BUILDINGS.wall.hp });
+  w.buildingsVersion++;
+  play(w, [bot], 8000, () => false);
+  const d = Math.hypot(bot.x - CORE.x, bot.y - CORE.y);
+  assert.ok(d < 150, `the bot stays behind the wall, ${d.toFixed(0)}px from the core`);
+});
+
 test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing', () => {
   const w = nightWorld();
   const bot = spawnAt(w, CORE.x, CORE.y + 320, { loadout: { weapon: 'smg' } });
