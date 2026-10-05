@@ -21,6 +21,7 @@ import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictI
 import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
+import { muzzleTip } from './sprites.ts';
 import { bodyColor, drawBackdrop, drawWorld, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
@@ -81,6 +82,9 @@ const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('j
 const DEV = params.has('dev');
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
+type DrawnRound = { id: number; owner: number; own: boolean; x: number; y: number; muzzle: { x: number; y: number } | null };
+const seenRounds = new Set<number>();
+const firstRounds: DrawnRound[] = [];
 let ghost: Ghost | null = null;
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
@@ -98,7 +102,7 @@ const zombiesView = () => {
     callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
   };
 };
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
 
 /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
 function benchFrames(n: number): number[] {
@@ -441,6 +445,7 @@ function drawFrame(now: number) {
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
+  if (DEV) noteFirstRounds(snap, s.myId, selfAngle);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse));
@@ -450,6 +455,18 @@ function drawFrame(now: number) {
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
+}
+
+/** Each round the first frame it is drawn, with its shooter's drawn muzzle in that frame. */
+function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null) {
+  if (seenRounds.size > 5000) seenRounds.clear();
+  for (const b of snap.bullets) {
+    if (seenRounds.has(b.id)) continue;
+    seenRounds.add(b.id);
+    const p = snap.players.find((q) => q.id === b.owner && q.alive);
+    const angle = p && (p.id === myId && selfAngle !== null ? selfAngle : p.angle);
+    firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, x: b.x, y: b.y, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
+  }
 }
 
 function onKeyDown(e: KeyboardEvent) {
