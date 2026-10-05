@@ -25,8 +25,8 @@ const PANEL_MUTED = '#c4c8d0';
 const PANEL_RADIUS = 6;
 /** Text drawn straight on the world reads dark by day and light under the night wash. */
 const ON_WORLD = {
-  day: { ink: '#454953', muted: '#8d919b', track: '#9b9fa9', glyph: '#4f535d' },
-  night: { ink: '#eef1f6', muted: '#b4bccb', track: 'rgba(210, 216, 230, 0.35)', glyph: '#dfe4ee' },
+  day: { ink: '#454953', muted: '#80848e', track: '#9b9fa9', glyph: '#4f535d', halo: 'rgba(230, 229, 232, 0.9)' },
+  night: { ink: '#eef1f6', muted: '#b4bccb', track: 'rgba(210, 216, 230, 0.35)', glyph: '#dfe4ee', halo: 'rgba(24, 30, 56, 0.6)' },
 } as const;
 type OnWorld = (typeof ON_WORLD)[keyof typeof ON_WORLD];
 const EDGE = 16;
@@ -310,6 +310,19 @@ function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, si
   ctx.fillText(s, x, y);
 }
 
+/** Text straight on the world, edged in the floor's own tone so it still reads where it crosses cover. */
+function worldText(ctx: CanvasRenderingContext2D, on: OnWorld, s: string, x: number, y: number, size: number, color: string, weight: number) {
+  setFont(ctx, weight, size);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = on.halo;
+  ctx.strokeText(s, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(s, x, y);
+}
+
 /** Centered text with a soft dark edge, for what floats over the world: callouts, popups, prompts. */
 function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, weight: number) {
   setFont(ctx, weight, size);
@@ -383,7 +396,7 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
     weapon.draw(x, y);
     x += weapon.width;
     text(ctx, f.victim, x, y, TYPE.label + 1, nameColor(hud, f.victimId), 'left', 650);
-    if (f.bounty) text(ctx, BOUNTY_TAG, x + vw + SPACE.sm, y, TYPE.micro, PALETTE.hunted, 'left', 800);
+    if (f.bounty) text(ctx, BOUNTY_TAG, x + vw + SPACE.sm, y, TYPE.micro, FEED_TEAM.red, 'left', 800);
     ctx.globalAlpha = 1;
   });
 }
@@ -408,7 +421,7 @@ function nameColor({ s, snap, me }: Hud, id: number | null): string {
 }
 
 /** Your body's color, lifted so it reads on the grey panels. */
-const ownColor = (snap: Snapshot, me: PlayerView) => (me.team && !snap.run ? FEED_TEAM[me.team] : tint(COLORS[me.color], 0.5));
+const ownColor = (snap: Snapshot, me: PlayerView) => (me.team && !snap.run ? FEED_TEAM[me.team] : tint(COLORS[me.color], 0.55));
 
 const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
 
@@ -586,9 +599,9 @@ function drawPill(hud: Hud, compact: boolean): number {
     fadePanel(hud, 'score', x, y, side * 2 + mid, ph);
     panel(ctx, x, y, side * 2 + mid, ph);
     for (const [team, bx] of [['red', x], ['blue', x + side + mid]] as const) {
-      text(ctx, String(snap.match.teamScore[team]), bx + side / 2, cy + 1, big, TEAM_COLORS[team], 'center', 800);
+      text(ctx, String(snap.match.teamScore[team]), bx + side / 2, cy + 1, big, FEED_TEAM[team], 'center', 800);
       if (me?.team === team) {
-        ctx.fillStyle = TEAM_COLORS[team];
+        ctx.fillStyle = FEED_TEAM[team];
         ctx.fillRect(bx + side / 2 - 7, y + ph - 4, 14, 2);
       }
     }
@@ -755,7 +768,7 @@ function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   bar(ctx, x, y - VITALS.barH / 2, bw, VITALS.barH, hpFrac, fill, on.track);
   if (me.maxArmor > 0) bar(ctx, x, y + VITALS.barH / 2 + 2, bw, 2, me.armor / me.maxArmor, PALETTE.armor, 'rgba(0, 0, 0, 0)');
   const hpText = `${Math.ceil(me.hp)} / ${me.maxHp}`;
-  text(ctx, hpText, x + bw + 10, y, TYPE.body + 1, hpFrac <= 0.35 ? PALETTE.hpBad : on.muted, 'left', 500);
+  worldText(ctx, on, hpText, x + bw + 10, y, TYPE.body + 1, hpFrac <= 0.35 ? PALETTE.hpBad : on.muted, 500);
   if (me.hunted) {
     setFont(ctx, 500, TYPE.body + 1);
     drawHuntedBadge(ctx, x + bw + 20 + ctx.measureText(hpText).width, y);
@@ -763,20 +776,20 @@ function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   y += VITALS.row;
   drawAmmoGlyph(ctx, x, y, on.glyph);
   if (self.reloading) {
-    text(ctx, 'reloading', x + 34, y, TYPE.body, PALETTE.gold, 'left', 700);
+    worldText(ctx, on, 'reloading', x + 34, y, TYPE.body, PALETTE.gold, 700);
     bar(ctx, x + 104, y - 2, 60, 4, self.reloadFrac, PALETTE.gold, on.track);
   } else {
-    text(ctx, `${self.ammo} / ${self.mag}`, x + 34, y + 1, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : on.ink, 'left', 750);
+    worldText(ctx, on, `${self.ammo} / ${self.mag}`, x + 34, y + 1, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : on.ink, 750);
   }
   y += 24;
   const lp = levelProgress(me.level, me.score);
   const gun = GUNS[me.gun];
   setFont(ctx, 700, TYPE.micro);
   const gunName = gun.name.toUpperCase();
-  text(ctx, gunName, x, y, TYPE.micro, gun.stage ? gun.look.accent : on.muted, 'left', 700);
+  worldText(ctx, on, gunName, x, y, TYPE.micro, gun.stage ? gun.look.accent : on.muted, 700);
   let lx = x + ctx.measureText(gunName).width + 6;
   if (gun.stage) { drawStagePips(ctx, me.gun, lx, y); lx += gun.stage * 9 + 4; }
-  text(ctx, `LV ${lp.displayLevel}`, lx + 4, y, TYPE.micro, on.muted, 'left', 700);
+  worldText(ctx, on, `LV ${lp.displayLevel}`, lx + 4, y, TYPE.micro, on.muted, 700);
   bar(ctx, lx + 36, y - 1.5, 44, 3, lp.frac, PALETTE.gold, on.track);
   y += 22;
   drawAbility(ctx, x, y, self, on);
@@ -801,7 +814,7 @@ function abilityWidth(ctx: CanvasRenderingContext2D, self: SelfView): number {
 /** The ability's icon with SPACE when ready, its cooldown while it recharges, or where it unlocks before you have one. */
 function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, on: OnWorld) {
   if (!self.ability) {
-    text(ctx, abilityLabel(self), x, y, TYPE.micro, on.muted, 'left', 600);
+    worldText(ctx, on, abilityLabel(self), x, y, TYPE.micro, on.muted, 600);
     return;
   }
   const ready = self.abilityReadyIn <= 0;
@@ -816,7 +829,7 @@ function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: 
   ctx.arc(x + 8, y, 10, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
   ctx.stroke();
   strokeIcon(ctx, PERK_ICONS[self.ability], x + 8, y, 11, ready ? PALETTE.gold : on.muted, 2.2);
-  text(ctx, abilityLabel(self), x + 22, y, TYPE.micro, ready ? PALETTE.gold : on.ink, 'left', 700);
+  worldText(ctx, on, abilityLabel(self), x + 22, y, TYPE.micro, ready ? PALETTE.gold : on.ink, 700);
 }
 
 function drawHuntedBadge(ctx: CanvasRenderingContext2D, x: number, y: number) {
