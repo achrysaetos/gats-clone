@@ -157,7 +157,8 @@ kbd {
   align-items: center;
   gap: var(--s3);
   margin-top: var(--s3);
-  color: var(--muted);
+  color: #e4e7ec;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   font-size: var(--t-label);
   font-weight: 700;
   letter-spacing: 0.18em;
