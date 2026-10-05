@@ -1,23 +1,25 @@
-import { COLORS, GUNS, WORLD, ZOM } from '../shared/defs.ts';
-import type { BulletView, CrateView, PlayerView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
+import { COLORS, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
+import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
-import { drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes } from './effects.ts';
+import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
 import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
-import { ARMOR_BAND, INK, PALETTE, shade, TEAM_COLORS, teamColor } from './palette.ts';
+import { ARMOR_BAND, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
 import { serverNow } from './interp.ts';
-import { drawBuildings, drawCore, drawDowned, drawGhost, drawZombies, faceZombies, wallFlashes } from './siege.ts';
-import { drawGun, gripsOf } from './sprites.ts';
+import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, faceZombies, wallFlashes } from './siege.ts';
+import { drawContactShadows, drawSphere, sphereSprite } from './spheres.ts';
+import { drawGun } from './sprites.ts';
 import type { Session } from './state.ts';
+import { buildingSolid, coreSolid, crateSolid, createShadowCache, curbSolids, drawCrateShadows, drawShadowLayer, drawSolids, faceDepth, wallSolids, type Solid } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
-import { crateDamage, crateSprite, floorCracks, PLAYER_SHADOW, SLAB, slabLevels, WALL_SHADOW } from './textures.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
-const CURB = 18;
-const WALL_FACE = 7;
+const GRID = 32;
+const MAJOR_EVERY = 5;
 const CULL_MARGIN = 80;
-export const TRACER = { tail: 0.07, core: 0.022 } as const;
+export const TRACER = { tail: 0.05, core: 0.018 } as const;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
@@ -25,6 +27,23 @@ type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
+const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w, s.h + faceDepth(s.kind));
+
+const shadows = createShadowCache();
+export const shadowBakes = shadows.bakes;
+
+/** How far into night the world is drawn, eased so dusk and dawn take a moment rather than a frame. */
+let night = 0;
+let nightAt = 0;
+const NIGHT_FADE_MS = 1500;
+
+function easeNight(run: RunView | undefined, now: number): number {
+  const target = run?.phase === 'night' ? 1 : 0;
+  const step = Math.min(1, Math.max(0, now - nightAt) / NIGHT_FADE_MS);
+  nightAt = now;
+  night = night < target ? Math.min(target, night + step) : Math.max(target, night - step);
+  return night;
+}
 
 export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const { cam, dpr, snap, s, now } = f;
@@ -33,8 +52,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const tl = screenToWorld(cam, { x: 0, y: 0 });
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
+  const dark = easeNight(snap.run, now);
   drawGround(ctx, s.worldSize, tl, br);
-  const toScreen = (x: number, y: number) => ({ x: Math.round(dpr * ((x - cam.x) * cam.scale + cam.w / 2)), y: Math.round(dpr * ((y - cam.y) * cam.scale + cam.h / 2)) });
 
   const mine = snap.players.find((p) => p.id === s.myId);
   const myTeam = mine?.team ?? null;
@@ -42,45 +61,57 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const colorOf = (p: PlayerView) => (snap.run ? COLORS[p.color] : bodyColor(p));
   for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
-  const crates = snap.crates.filter((c) => inView(view, c.x, c.y, c.size, c.size));
-  if (crates.length) {
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    for (const c of crates) drawCrate(ctx, c, k, toScreen);
-    ctx.restore();
-  }
-  const walls = s.walls.filter((w) => inView(view, w.x, w.y, w.w + WALL_SHADOW.x, w.h + WALL_SHADOW.y));
-  drawWallShadows(ctx, walls);
-  for (const w of walls) drawWall(ctx, w);
-  if (snap.buildings && snap.run) {
-    drawBuildings(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now);
-  }
-  if (snap.run) drawCore(ctx, snap.run, now, s.coreHitAt);
+  if (snap.run) drawCoreGlow(ctx, snap.run, now);
+
+  const siege = snap.run ? [...(snap.buildings ?? []).map(buildingSolid), coreSolid(snap.run)] : [];
+  const layer = shadows.get(s.walls, s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls)], siege);
+  drawShadowLayer(ctx, layer, view.x0, view.y0, view.x1, view.y1);
+  const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
+  drawCrateShadows(ctx, crates);
+  drawCasings(ctx, s.particles, now);
+
   const alive = snap.players.filter((p) => p.alive && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
   const downed = snap.players.filter((p) => p.downed && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
-  drawPlayerShadows(ctx, alive);
+  const zombies = snap.zombies ?? [];
+  drawContactShadows(ctx, [
+    ...alive.filter((p) => !p.hidden).map((p) => ({ x: p.x, y: p.y, r: R })),
+    ...zombies.map(([, kind, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[kind]].radius })),
+  ], k);
+
+  const walls = wallSolids(s.walls).filter((w) => solidInView(view, w));
+  const standing = siege.filter((b) => solidInView(view, b));
+  drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
+  if (snap.buildings && snap.run) {
+    drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now);
+  }
+  if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt);
+  if (dark > 0) drawNight(ctx, tl, br, dark);
+
   for (const p of snap.players) drawTrail(ctx, colorOf(p), s.trails.get(p.id), now);
   drawTracers(ctx, snap.bullets, s.myId);
 
   const flashes = hitFlashes(s.effects, now);
-  if (snap.zombies) {
-    faceZombies(s.zombieFaces, snap.zombies, snap.run?.core ?? s.lastSelf);
-    drawZombies(ctx, snap.zombies, s.zombieFaces, flashes, now);
+  if (zombies.length) {
+    faceZombies(s.zombieFaces, zombies, snap.run?.core ?? s.lastSelf);
+    drawZombies(ctx, zombies, s.zombieFaces, flashes, now, k);
   }
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId);
+  const recoil = kicks(s.effects, now);
   for (const p of alive) {
     const self = p.id === s.myId;
     const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
     const flash = flashes.get(p.id);
+    const kick = recoil.get(p.id);
     drawPlayer(ctx, { ...p, angle }, colorOf(p), {
-      self, friendly: !self && p.team !== null && p.team === myTeam, rival: !self && p.team === null && p.color === mine?.color, flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, now,
+      self, friendly: !self && p.team !== null && p.team === myTeam, rival: !self && p.team === null && p.color === mine?.color,
+      flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k,
     });
   }
   for (const t of snap.thrown) if (t.kind !== 'landMine' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects, now);
   drawParticles(ctx, s.particles, now);
-  for (const p of [...downed, ...alive]) if (!p.hidden) drawLabel(ctx, p, p.id === s.myId);
+  for (const p of [...downed, ...alive]) if (!p.hidden) drawLabel(ctx, p, p.id === s.myId, dark);
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now);
@@ -88,7 +119,23 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawLetterbox(ctx, cam, dpr);
 }
 
+/** The world under night: multiplied toward a cool blue, so the floor and cover sink while the bodies and fire drawn after stay bright. */
+function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: number) {
+  const v = parseInt(NIGHT.tint.slice(1), 16);
+  const mix = (sh: number) => Math.round(255 - (255 - ((v >> sh) & 255)) * dark * NIGHT.strength * 1.6);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = `rgb(${mix(16)}, ${mix(8)}, ${mix(0)})`;
+  ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+  ctx.globalCompositeOperation = 'source-over';
+}
+
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
+const BACKDROP_MAP = MAPS.boneyard;
+const backdropSolids: Solid[] = [
+  ...curbSolids(WORLD.size),
+  ...BACKDROP_MAP.walls.map((w): Solid => ({ kind: 'concrete', ...w })),
+];
+const backdropCrates: Solid[] = BACKDROP_MAP.crates.map((c) => ({ kind: 'crate', x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
 
 export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, now: number) {
   const zoom = Math.max(BACKDROP.zoom, w / (WORLD.size * BACKDROP.fill), h / (WORLD.size * BACKDROP.fill));
@@ -99,6 +146,9 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const k = dpr * zoom;
   ctx.setTransform(k, 0, 0, k, -x * k, -y * k);
   drawFloor(ctx, WORLD.size, { x, y }, { x: x + viewW, y: y + viewH });
+  drawShadowLayer(ctx, shadows.get(BACKDROP_MAP, WORLD.size, () => backdropSolids, []), x, y, x + viewW, y + viewH);
+  drawCrateShadows(ctx, backdropCrates);
+  drawSolids(ctx, [...backdropSolids, ...backdropCrates]);
 }
 
 function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
@@ -109,87 +159,24 @@ function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) 
   if (barH >= 1) { ctx.fillRect(0, 0, cam.w, barH); ctx.fillRect(0, cam.h - barH, cam.w, barH); }
 }
 
-const SLAB_SPREAD = 0.028;
-const SLAB_COLORS = [0, -1, 1, -0.5].map((i) => shade(PALETTE.floor, 1 + i * SLAB_SPREAD));
-const PLAIN_SLABS = 0.55;
-const CRACKS_PER_SLAB = 0.08;
-const TONE_PATCH = 2 * SLAB;
-
-/** Per tone, flat [patchX, patchY, length] runs of same-tone patches in a row, reused every frame. */
-const slabRuns: number[][] = SLAB_COLORS.map(() => []);
-
-type FloorPlan = { size: number; patchesPerRow: number; levels: number[]; cracks: number[][] };
-let floorPlan: FloorPlan | null = null;
-
-function planFor(size: number): FloorPlan {
-  if (floorPlan?.size !== size) {
-    const patchesPerRow = Math.ceil(size / TONE_PATCH);
-    const slabs = (size / SLAB) ** 2;
-    floorPlan = { size, patchesPerRow, levels: slabLevels(7, patchesPerRow ** 2, SLAB_COLORS.length, PLAIN_SLABS), cracks: floorCracks(11, size, Math.round(slabs * CRACKS_PER_SLAB)) };
-  }
-  return floorPlan;
-}
-
 function drawGround(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: Point) {
   ctx.fillStyle = PALETTE.outside;
   ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
   drawFloor(ctx, size, tl, br);
-  ctx.fillStyle = PALETTE.shadow;
-  ctx.fillRect(0, 0, size, 14);
-  ctx.fillRect(0, 14, 12, size - 14);
-  ctx.fillStyle = PALETTE.curb;
-  ctx.fillRect(-CURB, -CURB, size + CURB * 2, CURB);
-  ctx.fillRect(-CURB, size, size + CURB * 2, CURB);
-  ctx.fillRect(-CURB, 0, CURB, size);
-  ctx.fillRect(size, 0, CURB, size);
-  ctx.fillStyle = PALETTE.curbTop;
-  ctx.fillRect(-CURB, -CURB, size + CURB * 2, 4);
-  ctx.fillRect(-CURB, size, size + CURB * 2, 4);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(-1.5, -1.5, size + 3, size + 3);
-  ctx.strokeRect(-CURB, -CURB, size + CURB * 2, size + CURB * 2);
 }
 
-/** Axis-aligned fillRect stays on the rasterizer's fast path; one path of many rects does not. */
+/** Thin fillRects rather than stroked paths, which keep the rasterizer on its fast path. */
 function drawFloor(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: Point) {
-  const plan = planFor(size);
   const x0 = Math.max(0, tl.x), x1 = Math.min(size, br.x), y0 = Math.max(0, tl.y), y1 = Math.min(size, br.y);
   if (x1 <= x0 || y1 <= y0) return;
-  ctx.fillStyle = SLAB_COLORS[0]!;
+  ctx.fillStyle = PALETTE.floor;
   ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-  const ix0 = Math.floor(x0 / TONE_PATCH), ix1 = Math.min(plan.patchesPerRow - 1, Math.floor(x1 / TONE_PATCH));
-  const iy0 = Math.floor(y0 / TONE_PATCH), iy1 = Math.min(plan.patchesPerRow - 1, Math.floor(y1 / TONE_PATCH));
-  for (const runs of slabRuns) runs.length = 0;
-  for (let iy = iy0; iy <= iy1; iy++) {
-    const row = iy * plan.patchesPerRow;
-    for (let ix = ix0; ix <= ix1;) {
-      const level = plan.levels[row + ix]!;
-      let end = ix + 1;
-      while (end <= ix1 && plan.levels[row + end] === level) end++;
-      if (level) slabRuns[level]!.push(ix, iy, end - ix);
-      ix = end;
-    }
+  for (const major of [false, true]) {
+    ctx.fillStyle = major ? PALETTE.gridMajor : PALETTE.gridMinor;
+    const step = major ? GRID * MAJOR_EVERY : GRID;
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) if (major || x % (GRID * MAJOR_EVERY)) ctx.fillRect(x - 0.5, y0, 1, y1 - y0);
+    for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) if (major || y % (GRID * MAJOR_EVERY)) ctx.fillRect(x0, y - 0.5, x1 - x0, 1);
   }
-  for (let level = 1; level < SLAB_COLORS.length; level++) {
-    const runs = slabRuns[level]!;
-    ctx.fillStyle = SLAB_COLORS[level]!;
-    for (let i = 0; i < runs.length; i += 3) ctx.fillRect(runs[i]! * TONE_PATCH, runs[i + 1]! * TONE_PATCH, runs[i + 2]! * TONE_PATCH, TONE_PATCH);
-  }
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = PALETTE.speck;
-  ctx.globalAlpha = 0.3;
-  ctx.beginPath();
-  for (const c of plan.cracks) {
-    if (c[0]! < x0 - SLAB || c[0]! > x1 + SLAB || c[1]! < y0 - SLAB || c[1]! > y1 + SLAB) continue;
-    ctx.moveTo(c[0]!, c[1]!);
-    for (let i = 2; i < c.length; i += 2) ctx.lineTo(c[i]!, c[i + 1]!);
-  }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = PALETTE.seam;
-  for (let x = Math.ceil(x0 / SLAB) * SLAB; x <= x1; x += SLAB) ctx.fillRect(x - 1.25, y0, 2.5, y1 - y0);
-  for (let y = Math.ceil(y0 / SLAB) * SLAB; y <= y1; y += SLAB) ctx.fillRect(x0, y - 1.25, x1 - x0, 2.5);
 }
 
 function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
@@ -197,102 +184,69 @@ function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
   ctx.beginPath();
   ctx.arc(z.x, z.y, z.r, 0, TAU);
   ctx.fillStyle = color;
-  ctx.globalAlpha = 0.14;
+  ctx.globalAlpha = 0.1;
   ctx.fill();
-  ctx.globalAlpha = 0.75;
-  ctx.lineWidth = 6;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 4;
   ctx.strokeStyle = color;
   ctx.stroke();
-  ctx.setLineDash([4, 26]);
-  ctx.lineWidth = 16;
-  ctx.globalAlpha = 0.45;
+  ctx.setLineDash([3, 18]);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 6;
+  ctx.globalAlpha = 0.35;
   ctx.beginPath();
   ctx.arc(z.x, z.y, z.r - 14, 0, TAU);
   ctx.stroke();
   ctx.setLineDash([]);
   const progress = Math.min(1, Math.abs(z.progress));
   if (progress > 0) {
-    ctx.globalAlpha = 0.95;
-    ctx.lineWidth = 12;
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = 8;
     ctx.lineCap = 'butt';
     ctx.strokeStyle = teamColor(z.capturing ?? z.owner);
     ctx.beginPath();
     ctx.arc(z.x, z.y, z.r - 14, -Math.PI / 2, -Math.PI / 2 + progress * TAU);
     ctx.stroke();
   }
-  ctx.globalAlpha = 0.7;
+  ctx.globalAlpha = 0.88;
   ctx.beginPath();
-  ctx.arc(z.x, z.y, 30, 0, TAU);
-  ctx.fillStyle = INK;
+  ctx.roundRect(z.x - 28, z.y - 28, 56, 56, 12);
+  ctx.fillStyle = 'rgba(28, 32, 40, 0.82)';
   ctx.fill();
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 3;
   ctx.strokeStyle = color;
   ctx.stroke();
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 1;
   ctx.fillStyle = '#ffffff';
-  ctx.font = '800 34px system-ui, sans-serif';
+  ctx.font = '800 30px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String.fromCharCode(65 + index), z.x, z.y + 2);
-  ctx.globalAlpha = 1;
-}
-
-const SPRITE_SCALE_STEP = 20;
-
-function drawCrate(ctx: CanvasRenderingContext2D, c: CrateView, pxPerUnit: number, toScreen: (x: number, y: number) => Point) {
-  const sprite = crateSprite(c.size, crateDamage(c.hp / WORLD.crateHp), Math.round(pxPerUnit * SPRITE_SCALE_STEP) / SPRITE_SCALE_STEP);
-  const at = toScreen(c.x - sprite.pad, c.y - sprite.pad);
-  ctx.drawImage(sprite.image, at.x, at.y);
-}
-
-function drawWallShadows(ctx: CanvasRenderingContext2D, walls: readonly WallView[]) {
-  ctx.fillStyle = PALETTE.shadow;
-  ctx.beginPath();
-  for (const w of walls) ctx.rect(w.x + WALL_SHADOW.x, w.y + WALL_SHADOW.y, w.w, w.h);
-  ctx.fill();
-}
-
-function drawWall(ctx: CanvasRenderingContext2D, w: WallView) {
-  const [top, face, edge] = w.built ? [PALETTE.builtTop, PALETTE.builtFace, PALETTE.builtEdge] : [PALETTE.wallTop, PALETTE.wallFace, PALETTE.wallEdge];
-  const faceH = Math.min(WALL_FACE, w.h / 3);
-  ctx.fillStyle = face;
-  ctx.fillRect(w.x, w.y, w.w, w.h);
-  ctx.fillStyle = top;
-  ctx.fillRect(w.x, w.y, w.w, w.h - faceH);
-  ctx.fillStyle = edge;
-  ctx.fillRect(w.x, w.y, w.w, 2.5);
-  ctx.fillRect(w.x, w.y, 2.5, w.h - faceH);
-  if (w.built) {
-    ctx.strokeStyle = face;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const along = w.w >= w.h;
-    const span = along ? w.w : w.h - faceH;
-    for (let d = 24; d < span; d += 24) {
-      if (along) { ctx.moveTo(w.x + d, w.y + 3); ctx.lineTo(w.x + d, w.y + w.h - faceH - 1); }
-      else { ctx.moveTo(w.x + 3, w.y + d); ctx.lineTo(w.x + w.w - 1, w.y + d); }
-    }
-    ctx.stroke();
-  }
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(w.x, w.y, w.w, w.h);
 }
 
 function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   switch (t.kind) {
     case 'gasCloud': return drawGas(ctx, t, now);
     case 'landMine': {
+      ctx.fillStyle = PALETTE.contact;
+      ctx.beginPath();
+      ctx.arc(t.x + 3, t.y + 4, 14, 0, TAU);
+      ctx.fill();
+      const body = ctx.createRadialGradient(t.x - 4, t.y - 5, 1, t.x, t.y, 13);
+      body.addColorStop(0, '#8a919d');
+      body.addColorStop(1, '#2c313b');
+      ctx.fillStyle = body;
       ctx.beginPath();
       ctx.arc(t.x, t.y, 13, 0, TAU);
-      ctx.fillStyle = '#3d424b';
       ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = INK;
-      ctx.stroke();
+      const on = Math.floor(now / 400) % 2;
       ctx.beginPath();
-      ctx.arc(t.x, t.y, 5, 0, TAU);
-      ctx.fillStyle = Math.floor(now / 400) % 2 ? '#ff4d4f' : '#7a1f21';
+      ctx.arc(t.x, t.y, on ? 7 : 5, 0, TAU);
+      ctx.fillStyle = on ? 'rgba(255, 77, 79, 0.35)' : 'rgba(0, 0, 0, 0)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 4, 0, TAU);
+      ctx.fillStyle = on ? '#ff4d4f' : '#7a1f21';
       ctx.fill();
       return;
     }
@@ -301,31 +255,29 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
     case 'gasGrenade': {
       if (t.kind !== 'gasGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
       const band = t.kind === 'gasGrenade' ? '#7bb33a' : t.kind === 'fragGrenade' ? '#e07a22' : '#c7c9cc';
-      ctx.fillStyle = PALETTE.shadow;
+      ctx.fillStyle = PALETTE.contact;
       ctx.beginPath();
-      ctx.arc(t.x + 4, t.y + 6, 11, 0, TAU);
+      ctx.arc(t.x + 5, t.y + 6, 11, 0, TAU);
       ctx.fill();
       if (t.kind === 'fragGrenade') {
         ctx.fillStyle = INK;
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * TAU + now / 300;
-          ctx.fillRect(t.x + Math.cos(a) * 12 - 2.5, t.y + Math.sin(a) * 12 - 2.5, 5, 5);
+          ctx.fillRect(t.x + Math.cos(a) * 13 - 2, t.y + Math.sin(a) * 13 - 2, 4, 4);
         }
       }
+      const body = ctx.createRadialGradient(t.x - 4, t.y - 4, 1, t.x, t.y, 11);
+      body.addColorStop(0, '#7d8592');
+      body.addColorStop(1, '#262a31');
+      ctx.fillStyle = body;
       ctx.beginPath();
       ctx.arc(t.x, t.y, 11, 0, TAU);
-      ctx.fillStyle = '#3a3f47';
       ctx.fill();
       ctx.fillStyle = band;
-      ctx.fillRect(t.x - 11, t.y - 3, 22, 6);
+      ctx.fillRect(t.x - 10.5, t.y - 2.5, 21, 5);
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
       ctx.beginPath();
-      ctx.arc(t.x, t.y, 11, 0, TAU);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = INK;
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.beginPath();
-      ctx.arc(t.x - 4, t.y - 4, 3, 0, TAU);
+      ctx.arc(t.x - 4, t.y - 4, 2.5, 0, TAU);
       ctx.fill();
       return;
     }
@@ -376,7 +328,7 @@ function drawTrail(ctx: CanvasRenderingContext2D, color: string, trail: { x: num
   for (const pt of trail) {
     const age = (now - pt.at) / TRAIL_MS;
     if (age >= 1) continue;
-    ctx.globalAlpha = 0.35 * (1 - age);
+    ctx.globalAlpha = 0.3 * (1 - age);
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, R * (1 - age * 0.4), 0, TAU);
     ctx.fill();
@@ -386,13 +338,14 @@ function drawTrail(ctx: CanvasRenderingContext2D, color: string, trail: { x: num
 
 export const TRAIL_MS = 260;
 
-/** Class guns and shrapnel keep the plain tracer, orange for your own; an evolved gun's rounds wear its own color and size. */
+/** Class guns and shrapnel fire warm tracers, a touch brighter for your own; an evolved gun's rounds wear its own color and size. */
 function tracerLook(b: BulletView, myId: number): { r: number; color: string; own: boolean } {
   const own = b.owner === myId;
   if (b.gun && GUNS[b.gun].stage > 0) return { ...GUNS[b.gun].look.bullet, own };
-  return { r: 1.6, color: own ? PALETTE.ownBullet : PALETTE.bullet, own };
+  return { r: 1.6, color: own ? PALETTE.ownTracer : PALETTE.tracer, own };
 }
 
+/** A wide faint glow and a bright core per look, each one path, then a white-hot head on every round. */
 function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], myId: number) {
   ctx.lineCap = 'round';
   const groups = new Map<string, { look: ReturnType<typeof tracerLook>; bullets: BulletView[] }>();
@@ -404,49 +357,43 @@ function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView
     else groups.set(key, { look, bullets: [b] });
   }
   for (const { look, bullets: group } of groups.values()) {
-    for (const [len, width, alpha] of [[TRACER.tail, look.r * 1.9, 0.28], [TRACER.core, look.r * 3.1, 1]] as const) {
+    for (const [len, width, alpha] of [[TRACER.tail, look.r * 4.5, 0.22], [TRACER.tail, look.r * 1.5, 0.55], [TRACER.core, look.r * 2.4, 1]] as const) {
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = look.color;
+      ctx.strokeStyle = len === TRACER.core && look.color === PALETTE.tracer ? PALETTE.tracerCore : look.color;
       ctx.lineWidth = width;
       ctx.beginPath();
       for (const b of group) { ctx.moveTo(b.x - b.vx * len, b.y - b.vy * len); ctx.lineTo(b.x, b.y); }
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    ctx.fillStyle = look.own ? '#fff1c4' : '#f4efe6';
+    ctx.fillStyle = PALETTE.tracerHead;
     ctx.beginPath();
-    for (const b of group) { ctx.moveTo(b.x + look.r, b.y); ctx.arc(b.x, b.y, look.r, 0, TAU); }
+    for (const b of group) { ctx.moveTo(b.x + look.r * 1.2, b.y); ctx.arc(b.x, b.y, look.r * 1.2, 0, TAU); }
     ctx.fill();
   }
 }
 
-function drawPlayerShadows(ctx: CanvasRenderingContext2D, players: readonly PlayerView[]) {
-  ctx.fillStyle = PALETTE.shadow;
-  ctx.beginPath();
-  for (const p of players) {
-    if (p.hidden) continue;
-    ctx.moveTo(p.x + PLAYER_SHADOW.x + PLAYER_SHADOW.r, p.y + PLAYER_SHADOW.y);
-    ctx.arc(p.x + PLAYER_SHADOW.x, p.y + PLAYER_SHADOW.y, PLAYER_SHADOW.r, 0, TAU);
-  }
-  ctx.fill();
-}
-
-/** `rival` marks a free-for-all enemy wearing your color, so it never reads as you. */
-type PlayerLook = { self: boolean; friendly: boolean; rival: boolean; flash: number; now: number };
+/** `rival` marks a free-for-all enemy wearing your color, so it never reads as you. `kick` is how much of the last shot's recoil is left. */
+type PlayerLook = { self: boolean; friendly: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number };
 const TIER_COLORS = { 1: '#d8dee9', 2: PALETTE.gold } as const;
+const RECOIL = R * 0.22;
+
+/** The name sits this far above a body's center, its health bar between; markers stack above the name. */
+const LABEL = { font: 13, name: R + 18, bar: R + 11, barW: 48, barH: 5 } as const;
+const MARK_BASE = -LABEL.name - 16;
 
 function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2, top: number) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  for (const [width, color] of [[10, INK], [5, TIER_COLORS[stage]]] as const) {
+  for (const [width, color] of [[7, 'rgba(28, 31, 38, 0.75)'], [3.5, TIER_COLORS[stage]]] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
     ctx.beginPath();
     for (let i = 0; i < stage; i++) {
-      const y = top - i * 11;
-      ctx.moveTo(-13, y);
-      ctx.lineTo(0, y - 9);
-      ctx.lineTo(13, y);
+      const y = top - i * 9;
+      ctx.moveTo(-10, y);
+      ctx.lineTo(0, y - 7);
+      ctx.lineTo(10, y);
     }
     ctx.stroke();
   }
@@ -454,10 +401,10 @@ function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2, top: number) 
 
 function drawHuntedMark(ctx: CanvasRenderingContext2D, now: number) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 150);
-  const r = R + 14 + 3 * pulse;
+  const r = R + 13 + 3 * pulse;
   const spin = now / 900;
   ctx.lineCap = 'round';
-  for (const [width, color, alpha] of [[8, INK, 0.5], [4, PALETTE.hunted, 0.65 + 0.35 * pulse]] as const) {
+  for (const [width, color, alpha] of [[7, 'rgba(120, 10, 10, 0.35)', 1], [3.5, PALETTE.hunted, 0.7 + 0.3 * pulse]] as const) {
     ctx.globalAlpha = alpha;
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
@@ -466,104 +413,68 @@ function drawHuntedMark(ctx: CanvasRenderingContext2D, now: number) {
       const a = spin + (i * Math.PI) / 2;
       ctx.moveTo(Math.cos(a - 0.45) * r, Math.sin(a - 0.45) * r);
       ctx.arc(0, 0, r, a - 0.45, a + 0.45);
-      ctx.moveTo(Math.cos(a) * (r - 7), Math.sin(a) * (r - 7));
-      ctx.lineTo(Math.cos(a) * (r + 7), Math.sin(a) * (r + 7));
+      ctx.moveTo(Math.cos(a) * (r - 6), Math.sin(a) * (r - 6));
+      ctx.lineTo(Math.cos(a) * (r + 6), Math.sin(a) * (r + 6));
     }
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
 }
-const HAND_R = R * 0.27;
 
 function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, look: PlayerLook) {
+  const alpha = p.hidden ? 0.25 : 1;
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.globalAlpha = p.hidden ? 0.25 : 1;
+  ctx.globalAlpha = alpha;
   if (look.self) {
     ctx.beginPath();
-    ctx.arc(0, 0, R + 9, 0, TAU);
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = PALETTE.halo;
+    ctx.arc(0, 0, R + 6 + Math.sin(look.now / 300), 0, TAU);
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = PALETTE.selfRing;
     ctx.stroke();
   }
   if (look.rival) {
     ctx.beginPath();
-    ctx.arc(0, 0, R + 8, 0, TAU);
-    ctx.lineWidth = 4;
+    ctx.arc(0, 0, R + 6, 0, TAU);
+    ctx.lineWidth = 3.5;
     ctx.strokeStyle = PALETTE.rival;
     ctx.stroke();
   }
   ctx.rotate(p.angle);
+  ctx.translate(-RECOIL * Math.max(0, look.kick), 0);
   drawGun(ctx, p.gun, R);
+  ctx.translate(RECOIL * Math.max(0, look.kick), 0);
   ctx.rotate(-p.angle);
-  const band = ARMOR_BAND[p.armorTier];
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, TAU);
-  ctx.fillStyle = band ? shade(color, 0.5) : color;
-  ctx.fill();
-  if (band) {
-    ctx.beginPath();
-    ctx.arc(0, 0, R - band, 0, TAU);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(0, 0, R - band / 2, Math.PI * 0.95, Math.PI * 1.55);
-    ctx.lineWidth = Math.max(1.5, band * 0.35);
-    ctx.strokeStyle = PALETTE.steelLight;
-    ctx.stroke();
-  }
-  ctx.beginPath();
-  ctx.arc(-R * 0.18, -R * 0.2, (R - band) * 0.55, Math.PI * 1.0, Math.PI * 1.5);
-  ctx.lineWidth = 4;
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, TAU);
-  ctx.lineWidth = look.self ? 4 : 3;
-  ctx.strokeStyle = look.self ? '#ffffff' : INK;
-  ctx.stroke();
+  drawSphere(ctx, sphereSprite(color, R, ARMOR_BAND[p.armorTier], look.pxPerUnit), 0, 0, R);
   if (look.flash > 0) {
-    ctx.globalAlpha = look.flash * 0.85;
+    ctx.globalAlpha = look.flash * 0.8 * alpha;
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, TAU);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
-    ctx.globalAlpha = p.hidden ? 0.25 : 1;
+    ctx.globalAlpha = alpha;
   }
-  ctx.rotate(p.angle);
-  ctx.beginPath();
-  for (const [hx, hy] of gripsOf(p.gun)) {
-    ctx.moveTo(hx * R + HAND_R, hy * R);
-    ctx.arc(hx * R, hy * R, HAND_R, 0, TAU);
-  }
-  ctx.fillStyle = shade(color, 0.85);
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = INK;
-  ctx.stroke();
-  ctx.rotate(-p.angle);
   const { stage } = GUNS[p.gun];
   if (p.hunted && !look.self) drawHuntedMark(ctx, look.now);
-  if (stage !== 0) drawTierMark(ctx, stage, look.friendly ? -R - 34 : -R - 12);
-  ctx.globalAlpha = p.hidden ? 0.25 : 1;
+  ctx.globalAlpha = alpha;
   if (look.friendly) {
     ctx.beginPath();
-    ctx.moveTo(-11, -R - 26);
-    ctx.lineTo(11, -R - 26);
-    ctx.lineTo(0, -R - 11);
+    ctx.moveTo(-8, MARK_BASE - 11);
+    ctx.lineTo(8, MARK_BASE - 11);
+    ctx.lineTo(0, MARK_BASE);
     ctx.closePath();
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
     ctx.strokeStyle = '#ffffff';
     ctx.stroke();
   }
+  if (stage !== 0) drawTierMark(ctx, stage, look.friendly ? MARK_BASE - 16 : MARK_BASE);
   if (p.shield) {
     ctx.beginPath();
-    ctx.arc(0, 0, R + 11, p.angle - 1.05, p.angle + 1.05);
-    ctx.lineWidth = 7;
+    ctx.arc(0, 0, R + 10, p.angle - 1.05, p.angle + 1.05);
+    ctx.lineWidth = 6;
     ctx.lineCap = 'round';
     ctx.strokeStyle = PALETTE.shield;
     ctx.stroke();
@@ -575,48 +486,45 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
   const pulse = 0.5 + 0.5 * Math.sin(now / 160);
   ctx.globalAlpha = 0.7 + 0.3 * pulse;
   ctx.beginPath();
-  ctx.arc(p.x, p.y, R + 16 + 3 * pulse, 0, TAU);
-  ctx.lineWidth = 4;
+  ctx.arc(p.x, p.y, R + 14 + 3 * pulse, 0, TAU);
+  ctx.lineWidth = 3.5;
   ctx.strokeStyle = PALETTE.hunted;
   ctx.stroke();
   ctx.globalAlpha = 1;
-  ctx.font = '850 15px system-ui, sans-serif';
+  ctx.font = '800 13px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = INK;
-  const y = p.y - R - (GUNS[p.gun].stage ? 50 : 26);
-  ctx.strokeText('KILLER', p.x, y);
+  ctx.textBaseline = 'middle';
+  const y = p.y + MARK_BASE - (GUNS[p.gun].stage ? 30 : 10);
+  const w = ctx.measureText('KILLER').width + 14;
   ctx.fillStyle = PALETTE.hunted;
-  ctx.fillText('KILLER', p.x, y);
+  ctx.beginPath();
+  ctx.roundRect(p.x - w / 2, y - 10, w, 20, 6);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('KILLER', p.x, y + 1);
 }
 
-const LABEL = { font: 15, barW: 56, barH: 7 } as const;
-
-function drawLabel(ctx: CanvasRenderingContext2D, p: PlayerView, self: boolean) {
-  ctx.font = `${self ? 800 : 650} ${LABEL.font}px system-ui, sans-serif`;
+function drawLabel(ctx: CanvasRenderingContext2D, p: PlayerView, self: boolean, dark: number) {
+  ctx.font = `${self ? 750 : 600} ${LABEL.font}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = PALETTE.halo;
-  ctx.strokeText(p.name, p.x, p.y + R + 24);
-  ctx.fillStyle = PALETTE.text;
-  ctx.fillText(p.name, p.x, p.y + R + 24);
+  ctx.fillStyle = dark > 0.5 ? NIGHT.label : PALETTE.label;
+  ctx.fillText(p.name, p.x, p.y - LABEL.name);
   const x = p.x - LABEL.barW / 2;
-  const y = p.y + R + 31;
+  const y = p.y - LABEL.bar - LABEL.barH;
   const armored = p.maxArmor > 0;
-  ctx.fillStyle = INK;
+  ctx.fillStyle = dark > 0.5 ? 'rgba(230, 235, 245, 0.25)' : 'rgba(40, 44, 52, 0.22)';
   ctx.beginPath();
-  ctx.roundRect(x - 2, y - 2, LABEL.barW + 4, LABEL.barH + (armored ? 8 : 4), 4);
+  ctx.roundRect(x, y, LABEL.barW, LABEL.barH + (armored ? 3 : 0), 2.5);
   ctx.fill();
   const frac = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.fillStyle = frac > 0.35 ? PALETTE.hpGood : PALETTE.hpBad;
-  ctx.fillRect(x, y, LABEL.barW * frac, LABEL.barH);
+  ctx.beginPath();
+  ctx.roundRect(x, y, Math.max(LABEL.barH, LABEL.barW * frac), LABEL.barH, 2.5);
+  ctx.fill();
   if (armored) {
     ctx.fillStyle = PALETTE.armor;
-    ctx.fillRect(x, y + LABEL.barH + 1, LABEL.barW * Math.max(0, p.armor / p.maxArmor), 3);
+    ctx.fillRect(x + 1, y + LABEL.barH + 0.5, (LABEL.barW - 2) * Math.max(0, p.armor / p.maxArmor), 2);
   }
 }
 
@@ -629,13 +537,13 @@ function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly Dama
     if (k < 0 || k >= 1) continue;
     const player = n.kind === 'player';
     ctx.globalAlpha = 1 - k * k;
-    ctx.font = `800 ${player ? 26 : 18}px system-ui, sans-serif`;
+    ctx.font = `800 ${player ? 24 : 17}px system-ui, sans-serif`;
     const label = String(Math.max(1, Math.round(n.amount)));
-    const y = n.y - R - 24 - numberHeight(n, now);
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = INK;
+    const y = n.y + MARK_BASE - 8 - numberHeight(n, now);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(28, 31, 38, 0.85)';
     ctx.strokeText(label, n.x, y);
-    ctx.fillStyle = player ? PALETTE.gold : '#f3e2c4';
+    ctx.fillStyle = player ? PALETTE.gold : '#fff3dc';
     ctx.fillText(label, n.x, y);
   }
   ctx.globalAlpha = 1;

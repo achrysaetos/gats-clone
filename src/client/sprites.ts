@@ -2,10 +2,9 @@ import { byGun, GUN_IDS, GUNS, type GunId, type WeaponId } from '../shared/defs.
 import { INK } from './palette.ts';
 
 type Part = { x: number; y: number; w: number; h: number; tone: 0 | 1 | 2 | 'accent' };
-type Point = readonly [x: number, y: number];
 
-const TONES = ['#2a2d34', '#4a505c', '#7b8494'] as const;
-const OUTLINE = 0.16;
+const TONES = ['#1c1f26', '#2c313b', '#4a515e'] as const;
+const OUTLINE = 0.08;
 
 const BASE_PARTS: Record<WeaponId, readonly Part[]> = {
   pistol: [
@@ -41,16 +40,6 @@ const BASE_PARTS: Record<WeaponId, readonly Part[]> = {
   ],
 };
 
-/** Where the rear (trigger) and fore hands hold each base gun, in body radii from the body's center, facing +x. */
-const BASE_GRIPS: Record<WeaponId, readonly [rear: Point, fore: Point]> = {
-  pistol: [[0.66, 0.2], [0.78, -0.18]],
-  smg: [[0.86, 0.3], [1.42, 0.02]],
-  shotgun: [[0.62, 0.18], [1.38, 0.17]],
-  assault: [[0.92, 0.32], [1.55, 0.0]],
-  sniper: [[0.66, 0.16], [1.5, 0.0]],
-  lmg: [[0.9, 0.36], [1.62, 0.04]],
-};
-
 const rearOf = (parts: readonly Part[]) => Math.min(...parts.map((p) => p.x));
 
 /** The base silhouette stretched by the gun's look: longer and thicker, its muzzle part repeated per barrel, and an accent stripe on the receiver. */
@@ -75,14 +64,6 @@ function partsOf(gun: GunId): Part[] {
 }
 
 const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
-
-export function gripsOf(gun: GunId): readonly [rear: Point, fore: Point] {
-  const { base, look } = GUNS[gun];
-  const rear = rearOf(BASE_PARTS[base]);
-  const [r, f] = BASE_GRIPS[base];
-  const at = ([x, y]: Point): Point => [rear + (x - rear) * look.length, y * look.width];
-  return [at(r), at(f)];
-}
 
 export function drawGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flat?: string) {
   const parts = GUN_PARTS[gun];
@@ -121,6 +102,16 @@ export function drawSilhouette(canvas: HTMLCanvasElement, gun: GunId, color: str
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
   ctx.translate((canvas.width - (maxX + minX) * r) / 2, (canvas.height - (maxY + minY) * r) / 2);
+  drawGun(ctx, gun, r, color);
+  ctx.restore();
+}
+
+/** The gun's silhouette in one flat color, fit inside `width` by `height` px from `x` and centered on `y`; the HUD's weapon glyph. */
+export function drawGunGlyph(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, width: number, height: number, color: string) {
+  const { minX, maxX, minY, maxY } = bounds(GUN_PARTS[gun]);
+  const r = Math.min(width / (maxX - minX), height / (maxY - minY));
+  ctx.save();
+  ctx.translate(x - minX * r, y - ((minY + maxY) / 2) * r);
   drawGun(ctx, gun, r, color);
   ctx.restore();
 }

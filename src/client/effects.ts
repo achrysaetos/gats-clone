@@ -1,7 +1,7 @@
 import { BUILDINGS, WORLD, ZOMBIES, type TurretKind } from '../shared/defs.ts';
 import type { DamageKind } from '../shared/protocol.ts';
 import type { EffectSpec } from './eventclock.ts';
-import { INK, PALETTE, ZOMBIE_LOOK } from './palette.ts';
+import { PALETTE, ZOMBIE_LOOK } from './palette.ts';
 import { burst, isLive, particleAt, type BurstKind, type ParticlePool } from './particles.ts';
 import { EFFECT_LIFE_MS, type Effect, type Session } from './state.ts';
 
@@ -21,7 +21,11 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       return;
     case 'death': burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint); return;
     case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
-    case 'flash':
+    case 'flash': {
+      const back = WORLD.playerRadius * 0.9;
+      burst(s.particles, 'casing', spec.x - Math.cos(spec.angle) * back, spec.y - Math.sin(spec.angle) * back, spec.angle + Math.PI / 2 + 0.25, now);
+      return;
+    }
     case 'slash':
     case 'tracer':
       return;
@@ -35,6 +39,18 @@ export function hitFlashes(effects: readonly Effect[], now: number): Map<number,
     flashes.set(fx.victim, Math.max(flashes.get(fx.victim) ?? -Infinity, fx.born));
   }
   return flashes;
+}
+
+export const KICK_MS = 110;
+
+/** Each shooter's newest shot still kicking their gun back, by when it left the muzzle. */
+export function kicks(effects: readonly Effect[], now: number): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const fx of effects) {
+    if (fx.kind !== 'flash' || now - fx.born >= KICK_MS) continue;
+    out.set(fx.owner, Math.max(out.get(fx.owner) ?? -Infinity, fx.born));
+  }
+  return out;
 }
 
 export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Effect[], now: number) {
@@ -65,25 +81,36 @@ function drawTurretRound(ctx: CanvasRenderingContext2D, kind: TurretKind, x: num
   if (head > reach) return;
   const tail = Math.max(0, head - bulletSpeed * TRAIL_S);
   const c = Math.cos(angle), s = Math.sin(angle);
-  ctx.globalAlpha = 1;
   ctx.lineCap = 'round';
-  ctx.strokeStyle = bullet.color;
-  ctx.lineWidth = bullet.r * 2.4;
+  ctx.strokeStyle = PALETTE.tracer;
+  for (const [width, alpha] of [[bullet.r * 4.5, 0.22], [bullet.r * 2, 1]] as const) {
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x + c * tail, y + s * tail);
+    ctx.lineTo(x + c * head, y + s * head);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = PALETTE.tracerHead;
   ctx.beginPath();
-  ctx.moveTo(x + c * tail, y + s * tail);
-  ctx.lineTo(x + c * head, y + s * head);
-  ctx.stroke();
-  ctx.fillStyle = '#f4efe6';
-  ctx.beginPath();
-  ctx.arc(x + c * head, y + s * head, bullet.r, 0, TAU);
+  ctx.arc(x + c * head, y + s * head, bullet.r * 1.2, 0, TAU);
   ctx.fill();
 }
 
+/** The brief flash where a round strikes cover: a warm glow around a white-hot core. */
 function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, k: number) {
-  ctx.globalAlpha = 1 - k;
-  ctx.fillStyle = '#fff4c2';
+  const fade = Math.max(0, 1 - k * 2);
+  if (fade <= 0) return;
+  ctx.globalAlpha = 0.35 * fade;
+  ctx.fillStyle = '#ffc93a';
   ctx.beginPath();
-  ctx.arc(x, y, 7 * (1 - k), 0, TAU);
+  ctx.arc(x, y, 16 * (0.6 + 0.4 * fade), 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = '#fff6c8';
+  ctx.beginPath();
+  ctx.arc(x, y, 6 * fade + 1, 0, TAU);
   ctx.fill();
 }
 
@@ -109,29 +136,28 @@ function drawBoom(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.beginPath();
   ctx.arc(x, y, r * (0.4 + 0.75 * wave), 0, TAU);
   ctx.stroke();
-  ctx.globalAlpha = (1 - k) * 0.35;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(x, y, r * (0.4 + 0.75 * wave) + 6, 0, TAU);
-  ctx.stroke();
 }
 
 function drawMuzzleFlash(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, k: number) {
   const c = Math.cos(angle), s = Math.sin(angle);
-  const len = 26 * (1 - k * 0.4), wide = 8;
-  ctx.globalAlpha = 1;
+  const fade = 1 - k;
+  const len = 28 * (1 - k * 0.4), wide = 7;
+  ctx.globalAlpha = 0.3 * fade;
+  ctx.fillStyle = '#ffc93a';
   ctx.beginPath();
-  ctx.moveTo(x - c * 4, y - s * 4);
-  ctx.lineTo(x + c * len * 0.35 - s * wide, y + s * len * 0.35 + c * wide);
+  ctx.arc(x + c * 6, y + s * 6, 18, 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = fade;
+  ctx.beginPath();
+  ctx.moveTo(x - c * 2 - s * wide * 0.7, y - s * 2 + c * wide * 0.7);
   ctx.lineTo(x + c * len, y + s * len);
-  ctx.lineTo(x + c * len * 0.35 + s * wide, y + s * len * 0.35 - c * wide);
+  ctx.lineTo(x - c * 2 + s * wide * 0.7, y - s * 2 - c * wide * 0.7);
   ctx.closePath();
-  ctx.fillStyle = '#ff9d1f';
+  ctx.fillStyle = '#fff2b0';
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x + c * 5, y + s * 5, 7, 0, TAU);
-  ctx.fillStyle = '#fff6c8';
+  ctx.arc(x + c * 3, y + s * 3, 4.5, 0, TAU);
+  ctx.fillStyle = '#ffffff';
   ctx.fill();
 }
 
@@ -144,7 +170,7 @@ function drawSlash(ctx: CanvasRenderingContext2D, x: number, y: number, angle: n
   ctx.globalAlpha = 1 - k;
   ctx.lineCap = 'round';
   ctx.lineWidth = 12 * (1 - k * 0.5);
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = 'rgba(28, 31, 38, 0.35)';
   ctx.beginPath();
   ctx.arc(x, y, SLASH_RADIUS, from, to);
   ctx.stroke();
@@ -156,8 +182,8 @@ function drawSlash(ctx: CanvasRenderingContext2D, x: number, y: number, angle: n
 }
 
 function drawDeathRing(ctx: CanvasRenderingContext2D, x: number, y: number, k: number) {
-  ctx.globalAlpha = (1 - k) * 0.7;
-  ctx.strokeStyle = PALETTE.text;
+  ctx.globalAlpha = (1 - k) * 0.6;
+  ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 3 * (1 - k) + 0.5;
   ctx.beginPath();
   ctx.arc(x, y, WORLD.playerRadius * (0.8 + 1.4 * Math.sqrt(k)), 0, TAU);
@@ -170,9 +196,9 @@ function drawSplat(ctx: CanvasRenderingContext2D, x: number, y: number, color: s
   ctx.beginPath();
   ctx.arc(x, y, r * (0.9 + 0.5 * Math.sqrt(k)), 0, TAU);
   ctx.fill();
-  ctx.globalAlpha = 1 - k;
-  ctx.lineWidth = 4 * (1 - k) + 1;
-  ctx.strokeStyle = INK;
+  ctx.globalAlpha = (1 - k) * 0.5;
+  ctx.lineWidth = 3 * (1 - k) + 1;
+  ctx.strokeStyle = color;
   ctx.beginPath();
   ctx.arc(x, y, r * (1 + 1.2 * Math.sqrt(k)), 0, TAU);
   ctx.stroke();
@@ -190,7 +216,7 @@ export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool,
   }
   ctx.lineCap = 'round';
   for (const p of pool.slots) {
-    if (p.shape === 'smoke' || !isLive(p, now)) continue;
+    if (p.shape === 'smoke' || p.shape === 'casing' || !isLive(p, now)) continue;
     const { x, y, k } = particleAt(p, now);
     ctx.globalAlpha = 1 - k * k;
     const r = p.size * (1 - k * 0.5);
@@ -208,4 +234,30 @@ export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool,
     }
   }
   ctx.globalAlpha = 1;
+}
+
+const CASING_SETTLE = 0.75;
+
+/** Brass ejected from each shot, drawn on the floor beneath bodies: it tumbles out, comes to rest and fades. Resting casings share one path. */
+export function drawCasings(ctx: CanvasRenderingContext2D, pool: ParticlePool, now: number) {
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 2.6;
+  ctx.strokeStyle = PALETTE.brass;
+  ctx.beginPath();
+  for (const p of pool.slots) {
+    if (p.shape !== 'casing' || !isLive(p, now)) continue;
+    const { x, y, k } = particleAt(p, now);
+    const spin = Math.atan2(p.vy, p.vx) + Math.hypot(x - p.x, y - p.y) * 0.35;
+    const dx = (Math.cos(spin) * p.size) / 2, dy = (Math.sin(spin) * p.size) / 2;
+    if (k < CASING_SETTLE) { ctx.moveTo(x - dx, y - dy); ctx.lineTo(x + dx, y + dy); continue; }
+    ctx.stroke();
+    ctx.globalAlpha = (1 - k) / (1 - CASING_SETTLE);
+    ctx.beginPath();
+    ctx.moveTo(x - dx, y - dy);
+    ctx.lineTo(x + dx, y + dy);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+  }
+  ctx.stroke();
 }

@@ -23,7 +23,7 @@ import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { muzzleTip } from './sprites.ts';
 import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundLive, roundScene, type Shot, type ShotEvent } from './rounds.ts';
-import { bodyColor, drawBackdrop, drawWorld, TRAIL_MS } from './render.ts';
+import { bodyColor, drawBackdrop, drawWorld, shadowBakes, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
@@ -104,7 +104,7 @@ const zombiesView = () => {
     callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
   };
 };
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, shadowBakes, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
 
 /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
 function benchFrames(n: number): number[] {
@@ -334,7 +334,7 @@ function fire(s: Session, shot: Shot, at: { x: number; y: number }, angle: numbe
   const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextRoundId);
   nextRoundId -= rounds.length;
   s.rounds.push(...rounds);
-  startEffect(s, { kind: 'flash', ...muzzle, angle }, now);
+  startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner }, now);
 }
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
