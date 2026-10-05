@@ -64,6 +64,8 @@ type ShadowLayer = { canvas: HTMLCanvasElement; x: number; y: number; scale: num
 const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
 const BLUR_PX = 7;
+/** The cast shadow's darkness where it is solid; the blur feathers its edge. */
+const SHADOW_ALPHA = 0.22;
 
 function layerCanvas(size: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
@@ -118,7 +120,7 @@ export function createShadowCache() {
     }
     const [out, o] = layerCanvas(size);
     o.filter = `blur(${BLUR_PX * LAYER_SCALE}px)`;
-    o.globalAlpha = 0.22;
+    o.globalAlpha = SHADOW_ALPHA;
     o.drawImage(source, 0, 0);
     bakes++;
     layer = { canvas: out, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE };
@@ -149,7 +151,7 @@ export function drawCrateShadows(ctx: CanvasRenderingContext2D, crates: readonly
       image.width = image.height = Math.ceil(side * LAYER_SCALE);
       const g = image.getContext('2d')!;
       g.filter = `blur(${BLUR_PX * LAYER_SCALE}px)`;
-      g.globalAlpha = 0.22;
+      g.globalAlpha = SHADOW_ALPHA;
       g.setTransform(LAYER_SCALE, 0, 0, LAYER_SCALE, pad * LAYER_SCALE, pad * LAYER_SCALE);
       fillHulls(g, [{ kind: 'crate', x: 0, y: 0, w: c.w, h: c.h }]);
       crateShadows.set(c.w, image);
