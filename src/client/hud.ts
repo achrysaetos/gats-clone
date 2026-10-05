@@ -18,12 +18,10 @@ import type { Session } from './state.ts';
 const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 17 } as const;
 const SPACE = { sm: 8, md: 12, lg: 16 } as const;
-/** The panels are a quiet dark grey, as in the reference; text on them is near white. */
 const PANEL_FILL = 'rgba(96, 101, 112, 0.94)';
 const PANEL_INK = '#f1f2f5';
 const PANEL_MUTED = '#c4c8d0';
 const PANEL_RADIUS = 6;
-/** Text drawn straight on the world reads dark by day and light under the night wash. */
 const ON_WORLD = {
   day: { ink: '#454953', muted: '#80848e', track: '#9b9fa9', glyph: '#4f535d', halo: 'rgba(230, 229, 232, 0.9)' },
   night: { ink: '#eef1f6', muted: '#b4bccb', track: 'rgba(210, 216, 230, 0.35)', glyph: '#dfe4ee', halo: 'rgba(24, 30, 56, 0.6)' },
@@ -94,7 +92,6 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
   if (!hurt) return;
   const k = (now - hurt.born) / HURT_MS;
   if (k < 0 || k >= 1) return;
-  // A thin warm edge only: deeper or stronger, it tints the pale floor pink and frames the untouched middle as a box.
   const depth = Math.min(w, h) * 0.06;
   const step = depth / HURT_BANDS;
   ctx.fillStyle = 'rgb(200, 40, 40)';
@@ -311,7 +308,6 @@ function text(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, si
   ctx.fillText(s, x, y);
 }
 
-/** Text straight on the world, edged in the floor's own tone so it still reads where it crosses cover. */
 function worldText(ctx: CanvasRenderingContext2D, on: OnWorld, s: string, x: number, y: number, size: number, color: string, weight: number) {
   setFont(ctx, weight, size);
   ctx.textAlign = 'left';
@@ -324,7 +320,6 @@ function worldText(ctx: CanvasRenderingContext2D, on: OnWorld, s: string, x: num
   ctx.fillText(s, x, y);
 }
 
-/** Centered text with a soft dark edge, for what floats over the world: callouts, popups, prompts. */
 function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, weight: number) {
   setFont(ctx, weight, size);
   ctx.textAlign = 'center';
@@ -355,7 +350,6 @@ function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: numb
 
 const LIFE_LINE = { downed: PALETTE.hunted, revived: PALETTE.hpGood, bledOut: PANEL_MUTED } as const;
 
-/** Small grey rows under the leaderboard, right-aligned, fading out after a few seconds. A row that mentions you is edged in gold. */
 function drawKillFeed(hud: Hud, top: number, rows: number) {
   const { ctx, w, s, now } = hud;
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
@@ -414,21 +408,18 @@ function feedRow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
 
 const FEED_TEAM = { red: '#ffb0b2', blue: '#b5c6ff' } as const;
 
-/** You read in your own color; in team modes everyone else reads in their team's, so the feed shows who traded with whom. */
 function nameColor({ s, snap, me }: Hud, id: number | null): string {
   if (id === s.myId) return me ? ownColor(snap, me) : PALETTE.gold;
   const team = id === null ? null : snap.leaderboard.find((r) => r.id === id)?.team ?? null;
   return team && !snap.run ? FEED_TEAM[team] : PANEL_INK;
 }
 
-/** Your body's color, lifted so it reads on the grey panels. */
 const ownColor = (snap: Snapshot, me: PlayerView) => (me.team && !snap.run ? FEED_TEAM[me.team] : tint(COLORS[me.color], 0.55));
 
 const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
 
 const BOARD = { w: 168, compactW: 140, row: 21, pad: 10 } as const;
 
-/** Top right: the top five and your own place, or the whole board while Tab is held; your row in your color. Returns its bottom edge. */
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const { ctx, w, h, snap, s, me } = hud;
   const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null);
@@ -485,7 +476,6 @@ type PanelId = 'score' | 'board' | 'minimap';
 const panelAlpha: Record<PanelId, number> = { score: PANEL_ALPHA.rest, board: PANEL_ALPHA.rest, minimap: PANEL_ALPHA.rest };
 const fadeRects: Partial<Record<PanelId, Rect>> = {};
 
-/** Where each panel that fades over a body was last drawn, in CSS px, so a driver can tell when a player is under one. */
 export const drawnPanels = (): Readonly<Partial<Record<PanelId, Rect>>> => fadeRects;
 
 function fadePanel({ ctx, snap, cam, dt }: Hud, id: PanelId, x: number, y: number, w: number, h: number): number {
@@ -504,7 +494,6 @@ function fadePanel({ ctx, snap, cam, dt }: Hud, id: PanelId, x: number, y: numbe
 const PING_WAVE_MS = 700;
 const DIAMOND_R = 5;
 
-/** Bottom right: grey blocks, a white dot for you and colored dots for everyone else on the radar. */
 function drawMinimap(hud: Hud, size: number) {
   const { ctx, w, h, snap, s, me } = hud;
   const k = size / s.worldSize;
@@ -587,7 +576,6 @@ function drawMinimap(hud: Hud, size: number) {
   ctx.globalAlpha = 1;
 }
 
-/** The score pill at the top center: red and blue scores either side of the clock in team modes, the run's phase in zombies, the clock in FFA. Returns its bottom edge. */
 function drawPill(hud: Hud, compact: boolean): number {
   const { ctx, w, snap, me, s, now } = hud;
   const ph = compact ? 24 : 28, y = EDGE;
@@ -630,7 +618,6 @@ function drawPill(hud: Hud, compact: boolean): number {
   return y + ph;
 }
 
-/** While Tab holds the board open, the map and objective in a small panel under the pill; the next-map notice whenever it runs. Returns the bottom edge of what it drew. */
 function drawObjectiveLine(hud: Hud, top: number, full: boolean): number {
   const { ctx, w, snap, me } = hud;
   if (!me) return top;
@@ -649,7 +636,6 @@ function drawObjectiveLine(hud: Hud, top: number, full: boolean): number {
   return y - 4;
 }
 
-/** Zombies: scrap and the core's health on one line under the objective, the downed prompt, use hints and the build bar. */
 function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, compact: boolean) {
   const { ctx, w, h, s, me, now, on } = hud;
   const y = top + 17;
@@ -690,7 +676,6 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   } else if (run.phase === 'day') hintBar(ctx, s, [{ key: 'B', what: 'build walls and turrets' }], w / 2, row, null);
 }
 
-/** A row of key chips centered on `cx`; `label` leads a build-mode bar. A chip with `pick` lights up when its kind is picked and takes a click. */
 function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {
   setFont(ctx, 650, TYPE.label);
   const parts = hints.map((p) => ({ ...p, kw: ctx.measureText(p.key).width + 10, ww: ctx.measureText(p.what).width }));
@@ -735,7 +720,6 @@ function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; 
 
 const VITALS = { bar: 200, compactBar: 140, barH: 9, row: 30 } as const;
 
-/** Bullets standing in a row, the reference's ammo glyph. */
 function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -751,17 +735,12 @@ function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, colo
   ctx.fill();
 }
 
-/**
- * Top left, straight on the world as in the reference: the health bar with its numbers, ammo under it, then one small line of the
- * gun, its evolution and your level, and the ability and perks once you have them.
- */
 function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   if (!me) return;
   const self = snap.self;
   const x = EDGE + 4;
   let y = EDGE + 10;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
-  // No panel backs the vitals, but edge markers must still keep clear of them.
   panels.push({ x: EDGE, y: EDGE, w: bw + 150, h: 4 * VITALS.row });
   const hpFrac = me.hp / me.maxHp;
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
@@ -813,7 +792,6 @@ function abilityWidth(ctx: CanvasRenderingContext2D, self: SelfView): number {
   return 22 + ctx.measureText(abilityLabel(self)).width;
 }
 
-/** The ability's icon with SPACE when ready, its cooldown while it recharges, or where it unlocks before you have one. */
 function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, on: OnWorld) {
   if (!self.ability) {
     worldText(ctx, on, abilityLabel(self), x, y, TYPE.micro, on.muted, 600);

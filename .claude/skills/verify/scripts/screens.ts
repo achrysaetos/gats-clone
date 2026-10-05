@@ -1,7 +1,4 @@
 /// <reference types="node" />
-// Usage: node screens.ts <run-dir> <out-dir> [view ...]   Screenshots each art view through real play, so an art change can be compared before and after.
-// Views: menu ffa tdm dom (default), board (TDM while Tab holds the whole leaderboard open), death (FFA until a bot kills you), levelup and evolve
-// (the perk and evolve docks, then `evolved` after the pick; need a scratch copy with low LEVELS), and zom-day zom-night, which start a squad and need a scratch copy whose night brings a full horde (see features/zombies.md).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -82,7 +79,6 @@ async function enter(start: string) {
   if (!me()) throw new Error('never joined');
 }
 
-/** Walks toward `goal` (or the nearest enemy) a step at a time while aiming and firing at the nearest enemy. */
 async function play(ms: number, goal: (() => { x: number; y: number } | null) | null, foes: () => { x: number; y: number }[], fire = true) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -118,7 +114,6 @@ const pickFirst = async () => {
   await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
 };
 
-/** Plays until a frame has at least `bullets` rounds and an enemy in view, then screenshots it; after `ms` it screenshots anyway. */
 async function fightShot(name: string, ms: number, goal: (() => { x: number; y: number } | null) | null) {
   const end = Date.now() + ms;
   await play(4000, goal, enemies);

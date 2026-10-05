@@ -147,7 +147,6 @@ export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow
 
 const BOARD_TOP = 5;
 
-/** The leaderboard's rows with their places: the top three plus your own row when you rank lower, or the first `full` rows while the whole board is asked for. */
 export function boardRows(rows: readonly LeaderRow[], myId: number, full: number | null): { place: number; row: LeaderRow }[] {
   const ranked = rankRows(rows).map((row, i) => ({ place: i + 1, row }));
   if (full !== null) return ranked.slice(0, full);

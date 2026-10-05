@@ -1,5 +1,3 @@
-/** Seeded textures for the floor and every solid's top, painted once and repeated, so every client bakes the same ones. */
-
 function seeded(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -11,7 +9,6 @@ function seeded(seed: number): () => number {
   };
 }
 
-/** How a material's top is speckled, per 10,000 square units, and what seams cut it; `tile` is the repeat in world units. */
 export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | null; tile: number };
 
 function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -20,7 +17,6 @@ function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   return [c, c.getContext('2d')!];
 }
 
-/** Draws `paint` at (x, y) and again across every edge it overlaps, so the tile repeats without a seam. */
 function wrap(tile: number, x: number, y: number, reach: number, paint: (x: number, y: number) => void) {
   for (const dx of [-tile, 0, tile]) {
     for (const dy of [-tile, 0, tile]) {
@@ -49,7 +45,6 @@ function scratch(g: CanvasRenderingContext2D, rand: () => number, x: number, y: 
   }
 }
 
-/** Fine grit: mostly faint single dots, with an occasional darker fleck. */
 function speckle(g: CanvasRenderingContext2D, rand: () => number, tile: number, count: number, dark: string, light: string) {
   for (let i = 0; i < count; i++) {
     const fleck = rand() < 0.04;
@@ -61,7 +56,6 @@ function speckle(g: CanvasRenderingContext2D, rand: () => number, tile: number, 
   g.globalAlpha = 1;
 }
 
-/** A material's top: its color, mottled and speckled, with hairline scratches and any seams. */
 export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasElement {
   const { tile } = grain;
   const [c, g] = canvas(tile);
@@ -95,7 +89,6 @@ export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasE
   return c;
 }
 
-/** A dense bed of leaves over a dark ground, mostly deep greens with a few lit ones on top, as tight as the planters' in the reference. */
 export function paintFoliage(ground: string, leaves: readonly (readonly [string, number])[], tile: number, seed: number): HTMLCanvasElement {
   const [c, g] = canvas(tile);
   const rand = seeded(seed);
@@ -118,7 +111,6 @@ export function paintFoliage(ground: string, leaves: readonly (readonly [string,
 
 const FLOOR = { base: '#e5e4e6', stains: 40, specks: 40, scratches: 0.25 } as const;
 
-/** The floor inside the arena, in world units, onto a context already scaled to them: pale concrete with faint stains, grit and scratches. */
 export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: number) {
   const rand = seeded(seed);
   g.fillStyle = FLOOR.base;

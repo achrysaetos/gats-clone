@@ -1,10 +1,8 @@
 import { INK, PALETTE, shade, tint } from './palette.ts';
 import { LIGHT } from './tilt.ts';
 
-/** Bodies are flat discs with a breath of shading toward the light and a thin dark rim, each look painted once per screen scale. */
 const SCALE_STEP = 20;
 const RIM = 1.8;
-/** A body's shadow is its own disc, pushed along the light by this share of its radius and feathered at the edge. */
 const SHADOW_SHIFT = 0.55;
 const SHADOW_FEATHER = 1.3;
 
@@ -32,7 +30,6 @@ function disc(g: CanvasRenderingContext2D, r: number, fill: string | CanvasGradi
   g.fill();
 }
 
-/** A body of `color` and `radius`; armor thickens its rim by `armor`. */
 export function bodySprite(color: string, radius: number, armor: number, pxPerUnit: number): HTMLCanvasElement {
   return cached(`${color}|${radius}|${armor}`, pxPerUnit, (px) => {
     const [c, g] = canvas((radius + 1) * 2 * px);
@@ -66,7 +63,6 @@ function shadowSprite(radius: number, pxPerUnit: number): HTMLCanvasElement {
   });
 }
 
-/** Soft shadows on the floor beneath bodies, pushed along the light. */
 export function drawBodyShadows(ctx: CanvasRenderingContext2D, bodies: readonly { x: number; y: number; r: number }[], pxPerUnit: number) {
   for (const b of bodies) {
     const reach = b.r * SHADOW_FEATHER;

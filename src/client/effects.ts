@@ -10,7 +10,6 @@ import { EFFECT_LIFE_MS, type Effect, type Session } from './state.ts';
 const TAU = Math.PI * 2;
 export const HIT_FLASH_MS = 120;
 
-/** Everything a round can strike that is not a body, as the newest snapshot has it. */
 function coverOf(s: Session) {
   const snap = newestSnap(s.snaps);
   return [
@@ -65,7 +64,6 @@ export function hitFlashes(effects: readonly Effect[], now: number): Map<number,
 
 export const KICK_MS = 110;
 
-/** Each shooter's newest shot still kicking their gun back, by when it left the muzzle. */
 export function kicks(effects: readonly Effect[], now: number): Map<number, number> {
   const out = new Map<number, number>();
   for (const fx of effects) {
@@ -120,7 +118,6 @@ function drawTurretRound(ctx: CanvasRenderingContext2D, kind: TurretKind, x: num
   ctx.fill();
 }
 
-/** The brief flash where a round strikes cover: a small warm glow around a white-hot point. */
 function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, k: number) {
   const fade = Math.max(0, 1 - k * 2.5);
   if (fade <= 0) return;
@@ -260,7 +257,6 @@ export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool,
 
 const CASING_SETTLE = 0.75;
 
-/** Casings ejected from each shot, drawn on the floor beneath bodies: it tumbles out, comes to rest and fades. Those not yet fading share one path. */
 export function drawCasings(ctx: CanvasRenderingContext2D, pool: ParticlePool, now: number) {
   ctx.lineCap = 'butt';
   ctx.lineWidth = 2.6;

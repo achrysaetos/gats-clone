@@ -5,7 +5,6 @@ import { createGroundCache, drawSolids, LIGHT, LIP, MATERIALS, shadowHull, type 
 
 type Call = { name: string; args: number[]; fill: unknown };
 
-/** A context that records every rect it is asked to fill or path, with the fill style at the time. */
 function recorder(): { ctx: CanvasRenderingContext2D; calls: Call[] } {
   const calls: Call[] = [];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
@@ -18,7 +17,6 @@ function recorder(): { ctx: CanvasRenderingContext2D; calls: Call[] } {
   return { ctx, calls };
 }
 
-/** Textures paint into canvases of their own, kept apart from the context under test. */
 Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => recorder().ctx }) } });
 
 test('a solid casts its shadow from its own rect, as far along the light as it is tall', () => {

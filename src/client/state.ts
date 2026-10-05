@@ -17,7 +17,6 @@ export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
   | { kind: 'death'; x: number; y: number; victim: number; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
-  /** A shot leaving `owner`'s muzzle at (`x`, `y`). */
   | { kind: 'flash'; x: number; y: number; angle: number; owner: number; born: number }
   | { kind: 'slash'; x: number; y: number; angle: number; born: number }
   | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number }
@@ -57,7 +56,6 @@ export type Session = {
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;
-  /** When each body last took a hit, so its health shows for a moment. */
   hurtAt: Map<number, number>;
   cracks: CrackPool;
   /** The level whose pick was sent and not yet confirmed by a snapshot. */

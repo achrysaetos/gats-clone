@@ -11,7 +11,6 @@ type Particle = {
 
 export type ParticlePool = { readonly slots: readonly Particle[]; next: number };
 
-/** Rubble and casings live longest, so under heavy fire they are the slots reused first. */
 const PARTICLE_CAP = 500;
 
 const deadParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 0, born: -Infinity, life: 0, size: 0, grow: 0, color: '', shape: 'chip' });
@@ -46,7 +45,6 @@ type BurstSpec = {
 /** `spread` is the cone half-angle in radians around the burst direction; π sprays all round. */
 export const BURSTS: Record<BurstKind, BurstSpec> = {
   spark: { count: 3, speed: [200, 420], life: [90, 180], size: [1.4, 2.2], grow: 0, drag: 9, spread: 1.0, colors: ['#fff3c4', '#ffffff'], shape: 'spark' },
-  /** Grey chips knocked off cover: they skid a short way, settle on the floor and fade over seconds. */
   rubble: { count: 5, speed: [70, 230], life: [2600, 4200], size: [1.6, 3.6], grow: 0, drag: 10, spread: 1.1, colors: ['#5f636c', '#7d818a', '#9a9ea6', '#4c5059'], shape: 'chip' },
   debris: { count: 22, speed: [240, 720], life: [380, 720], size: [4, 9], grow: 0, drag: 4.5, spread: Math.PI, colors: ['#3a3631', '#5a5249', '#ffb347', '#ff7a2f'], shape: 'chip' },
   smoke: { count: 7, speed: [40, 150], life: [600, 1000], size: [12, 22], grow: 1.4, drag: 2.5, spread: Math.PI, colors: ['#a3a09a', '#8c8984', '#b6b3ad'], shape: 'smoke' },

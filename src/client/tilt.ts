@@ -4,17 +4,11 @@ import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { paintFloor, paintFoliage, paintGrain, type Grain } from './grain.ts';
 import { PALETTE } from './palette.ts';
 
-/**
- * The fixed-tilt look: every solid's top face is exactly its collision rect, a thin dark lip shows its bottom and right sides,
- * and one fixed light casts its shadow down and to the right.
- */
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
 const SHADOW_PER_HEIGHT = 2.2;
-/** How far the lip reaches past a solid's rect, down and to the right. Nothing of a solid is drawn further out than this. */
 export const LIP = 4;
 
 type SolidKind = 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core';
-/** A planter's bed of leaves sits `inset` inside its rim. */
 type Bed = { inset: number; ground: string; leaves: readonly (readonly [string, number])[] };
 type Material = { top: string; grain: Grain; height: number; bed?: Bed };
 
@@ -35,10 +29,8 @@ const INK_EDGE = 'rgba(26, 28, 34, 0.92)';
 const LIP_COLOR = '#4a4f5a';
 const HIGHLIGHT = 'rgba(255, 255, 255, 0.75)';
 
-/** `wear` runs from 0 (whole) to 1 (about to break) on solids that can be worn down. */
 export type Solid = { kind: SolidKind; x: number; y: number; w: number; h: number; wear?: number };
 
-/** The rect swept along the light by its height, as flat x,y pairs. With both light components positive, the hull of the rect and its moved copy is this hexagon. */
 export function shadowHull({ kind, x, y, w, h }: Solid): number[] {
   const len = MATERIALS[kind].height * SHADOW_PER_HEIGHT;
   const dx = LIGHT.x * len, dy = LIGHT.y * len;
@@ -46,14 +38,12 @@ export function shadowHull({ kind, x, y, w, h }: Solid): number[] {
 }
 
 const CURB = 18;
-/** Blocks no longer than this times their width are cut from sandstone; longer walls are poured concrete. */
 const BLOCKY = 1.6;
 
 const mapWallKind = (w: WallView): SolidKind => (w.built ? 'slate' : Math.max(w.w, w.h) <= BLOCKY * Math.min(w.w, w.h) ? 'sandstone' : 'concrete');
 
 export const wallSolids = (walls: readonly WallView[]): Solid[] => walls.map((w) => ({ kind: mapWallKind(w), x: w.x, y: w.y, w: w.w, h: w.h }));
 
-/** The low rim drawn around the arena, outside the playable square. */
 export const curbSolids = (size: number): Solid[] => [
   { kind: 'curb', x: -CURB, y: -CURB, w: size + CURB * 2, h: CURB },
   { kind: 'curb', x: -CURB, y: 0, w: CURB, h: size },
@@ -65,18 +55,15 @@ export const crateSolid = (c: CrateView): Solid => ({ kind: 'planter', x: c.x, y
 
 const BUILDING_SOLID: Record<BuildingKind, SolidKind> = { wall: 'brick', sentry: 'pad', cannon: 'pad' };
 
-/** A building's health arrives in tenths. */
 export const buildingSolid = (b: BuildingView): Solid => ({ kind: BUILDING_SOLID[b.kind], ...cellRect(b.cx, b.cy), wear: 1 - b.hp / 10 });
 
 export const coreSolid = (run: RunView): Solid => ({ kind: 'core', ...coreRectAt(run.core) });
 
 type GroundLayer = { canvas: HTMLCanvasElement; x: number; y: number; scale: number };
 
-/** How far the layer reaches past the arena, so the curb's shadow fits. */
 const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
 const BLUR_PX = 12;
-/** The cast shadow's darkness where it is solid; the blur feathers its edge. */
 const SHADOW_ALPHA = 0.3;
 const FLOOR_SEED = 7;
 
@@ -102,12 +89,6 @@ function fillHulls(g: CanvasRenderingContext2D, solids: readonly Solid[]) {
 
 const solidKey = (solids: readonly Solid[]) => solids.map((s) => `${s.kind}${s.x},${s.y},${s.w},${s.h}`).join('|');
 
-/**
- * The ground under everything: the arena's floor with every cast shadow already on it, rendered off screen at half scale,
- * so a frame draws floor and shadows with one image copy. The floor is painted and the map's solids traced once per layout
- * (`statics` is read only when `layout` changes); the squad's buildings and core re-blur the shadows only when the set of them
- * changes. Overlapping shadows merge instead of darkening each other.
- */
 export function createGroundCache() {
   let layout: object | null = null;
   let size = 0;
@@ -154,7 +135,6 @@ export function createGroundCache() {
   return { get, bakes: () => bakes };
 }
 
-/** Copies the part of the layer inside the world-space view rect, and fills any of the view the layer does not reach. */
 export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0: number, y0: number, x1: number, y1: number) {
   const lx1 = layer.x + layer.canvas.width / layer.scale, ly1 = layer.y + layer.canvas.height / layer.scale;
   if (x0 < layer.x || y0 < layer.y || x1 > lx1 || y1 > ly1) {
@@ -164,7 +144,6 @@ export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0
   const ax = Math.max(layer.x, x0), ay = Math.max(layer.y, y0);
   const bx = Math.min(lx1, x1), by = Math.min(ly1, y1);
   if (bx <= ax || by <= ay) return;
-  // Nearest-pixel scaling keeps the floor's grit crisp and skips most of a software canvas's per-pixel work; the shadows are blurred already.
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(layer.canvas, (ax - layer.x) * layer.scale, (ay - layer.y) * layer.scale, (bx - ax) * layer.scale, (by - ay) * layer.scale, ax, ay, bx - ax, by - ay);
   ctx.imageSmoothingEnabled = true;
@@ -172,7 +151,6 @@ export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0
 
 const crateShadows = new Map<number, HTMLCanvasElement>();
 
-/** Crates arrive and leave with the view, so each draws its own pre-blurred shadow rather than re-blurring the layer. */
 export function drawCrateShadows(ctx: CanvasRenderingContext2D, crates: readonly Solid[]) {
   const pad = BLUR_PX * 2;
   for (const c of crates) {
@@ -195,14 +173,12 @@ export function drawCrateShadows(ctx: CanvasRenderingContext2D, crates: readonly
 const tops = new Map<SolidKind, CanvasPattern>();
 const beds = new Map<SolidKind, CanvasPattern>();
 
-/** Each material's grain as a pattern anchored to the world, so it never swims as the camera moves. */
 function patternOf(ctx: CanvasRenderingContext2D, cache: Map<SolidKind, CanvasPattern>, kind: SolidKind, paint: () => HTMLCanvasElement): CanvasPattern {
   let p = cache.get(kind);
   if (!p) cache.set(kind, (p = ctx.createPattern(paint(), 'repeat')!));
   return p;
 }
 
-/** Every lip first, then every top, so a solid nearer the bottom of the screen covers the lip of one behind it; outlines and highlights go on last. */
 export function drawSolids(ctx: CanvasRenderingContext2D, solids: readonly Solid[]) {
   const byKind = new Map<SolidKind, Solid[]>();
   for (const s of solids) {
@@ -250,7 +226,6 @@ function drawTops(ctx: CanvasRenderingContext2D, kind: SolidKind, list: readonly
   drawWearCracks(ctx, list);
 }
 
-/** The leaves sit sunk in the rim: a dark line along the bed's top and left edges reads as the rim's inner wall. */
 function drawBeds(ctx: CanvasRenderingContext2D, kind: SolidKind, bed: Bed, list: readonly Solid[]) {
   ctx.fillStyle = patternOf(ctx, beds, kind, () => paintFoliage(bed.ground, bed.leaves, 64, 31));
   ctx.beginPath();
@@ -270,7 +245,6 @@ function drawBeds(ctx: CanvasRenderingContext2D, kind: SolidKind, bed: Bed, list
 const CRACK_STEPS = [0.15, 0.45, 0.75] as const;
 const crackCache = new Map<string, number[][]>();
 
-/** A worn solid's cracks, fixed by where it stands so it cracks the same way every frame. */
 function cracksAt(s: Solid): number[][] {
   const key = `${s.x},${s.y},${s.w}`;
   let lines = crackCache.get(key);

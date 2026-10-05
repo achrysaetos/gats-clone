@@ -1,7 +1,6 @@
 import { byGun, GUN_IDS, GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
 import { INK } from './palette.ts';
 
-/** A gun is a few rects in units of the body's radius; only an evolved gun's accent stripe is not plain ink. */
 type Part = { x: number; y: number; w: number; h: number; accent?: true };
 
 const BASE_PARTS: Record<WeaponId, readonly Part[]> = {
@@ -63,7 +62,6 @@ function partsOf(gun: GunId): Part[] {
 
 const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
 
-/** In the world a gun is ink with its accent stripe; `flat` paints the bare silhouette in one color, for the HUD and the menus. */
 export function drawGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flat?: string) {
   for (const p of GUN_PARTS[gun]) {
     if (flat && p.accent) continue;
@@ -99,7 +97,6 @@ export function drawSilhouette(canvas: HTMLCanvasElement, gun: GunId, color: str
   ctx.restore();
 }
 
-/** The gun's silhouette in one flat color, fit inside `width` by `height` px from `x` and centered on `y`; the HUD's weapon glyph. */
 export function drawGunGlyph(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, width: number, height: number, color: string) {
   const { minX, maxX, minY, maxY } = bounds(GUN_PARTS[gun]);
   const r = Math.min(width / (maxX - minX), height / (maxY - minY));

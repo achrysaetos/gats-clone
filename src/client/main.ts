@@ -68,7 +68,6 @@ let aimCamera: Camera | null = null;
 let viewTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 const held = new Set<Action>();
-/** Whether Tab is held, which opens the whole leaderboard. */
 let fullBoard = false;
 let firing = false;
 let touchWasAiming = false;
@@ -429,7 +428,6 @@ function resize() {
   }, VIEW_RESEND_MS);
 }
 
-/** Every body you can see leaves a trail; a ghillie-hidden one leaves none but your own. Trails of bodies gone from view fade out. */
 function updateTrails(s: Session, snap: Snapshot, now: number) {
   for (const p of snap.players) {
     if (!p.alive || (p.hidden && p.id !== s.myId)) continue;

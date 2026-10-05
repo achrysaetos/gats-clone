@@ -20,12 +20,10 @@ const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
 const GRID = 80;
 const CULL_MARGIN = 80;
-/** A tracer's dash is as long as its round flies in `tail` seconds. */
 export const TRACER = { tail: 0.022 } as const;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-/** `hover` is where the aim points in the world, when a mouse aims. */
 type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null; hover: Point | null; ghost?: Ghost | null };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
@@ -35,12 +33,10 @@ const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w + LIP, s.h + 
 const ground = createGroundCache();
 export const shadowBakes = ground.bakes;
 
-/** How far into night the world is drawn, eased so dusk and dawn take a moment rather than a frame. */
 let night = 0;
 let nightAt = 0;
 const NIGHT_FADE_MS = 1500;
 
-/** How far into night the last frame was drawn, 0 to 1, so the HUD can switch what it writes straight on the world to light ink. */
 export const nightAmount = () => night;
 
 function easeNight(run: RunView | undefined, now: number): number {
@@ -124,7 +120,6 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawLetterbox(ctx, cam, dpr);
 }
 
-/** The world under night: a cool blue laid over the floor and cover, so they sink while the bodies and fire drawn after stay bright. A plain blend, since a multiply costs a software canvas over a millisecond a frame. */
 function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: number) {
   ctx.globalAlpha = dark * NIGHT.alpha;
   ctx.fillStyle = NIGHT.shade;
@@ -159,7 +154,6 @@ function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) 
   if (barH >= 1) { ctx.fillRect(0, 0, cam.w, barH); ctx.fillRect(0, cam.h - barH, cam.w, barH); }
 }
 
-/** The floor's faint grid, crisp over the baked ground: thin fillRects rather than stroked paths, which keep the rasterizer on its fast path. */
 function drawGrid(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: Point) {
   const x0 = Math.max(0, tl.x), x1 = Math.min(size, br.x), y0 = Math.max(0, tl.y), y1 = Math.min(size, br.y);
   if (x1 <= x0 || y1 <= y0) return;
@@ -314,7 +308,6 @@ function drawBlastRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: n
 const TRAIL_BANDS = 4;
 const TRAIL_INK = '#ffffff';
 
-/** Every trail's dashes in one stroke per fade band; a stretch covered by the dash ability is a wider unbroken streak. */
 function drawTrails(ctx: CanvasRenderingContext2D, trails: ReadonlyMap<number, readonly TrailPoint[]>, now: number) {
   const dashes = [...trails.values()].flatMap((t) => trailDashes(t, now));
   if (!dashes.length) return;
@@ -340,17 +333,12 @@ type TracerLook = { r: number; glow: string; color: string; hot: string };
 
 const CLASS_TRACER: TracerLook = { r: 1.6, glow: PALETTE.tracerGlow, color: PALETTE.tracer, hot: PALETTE.tracerHot };
 
-/**
- * Every round is a short glowing dash: warm white for class guns and shrapnel, an evolved gun's in its own hue. The guns' hues are
- * dark, chosen for ink on a pale floor, so a tracer takes the hue at full saturation and lifted lightness, and a near-white at the head.
- */
 function tracerLook(b: BulletView): TracerLook {
   if (!b.gun || GUNS[b.gun].stage === 0) return CLASS_TRACER;
   const { r, color } = GUNS[b.gun].look.bullet;
   return { r, glow: glow(color, 0.62), color: glow(color, 0.72), hot: glow(color, 0.92) };
 }
 
-/** The dash's passes from its far end in: [from, to] as shares of `TRACER.tail` behind the head, then width in radii, alpha and which color. */
 const TRACER_PASSES = [
   [1, 0, 5, 0.16, 'glow'],
   [1, 0.5, 1.5, 0.45, 'color'],
@@ -358,7 +346,6 @@ const TRACER_PASSES = [
   [0.6, 0, 1, 1, 'hot'],
 ] as const;
 
-/** Each look's passes are one path apiece, so a dash brightens from a faint tail into a white-hot head inside a soft glow. */
 function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[]) {
   ctx.lineCap = 'round';
   const groups = new Map<string, { look: TracerLook; bullets: BulletView[] }>();
@@ -386,11 +373,9 @@ function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView
   ctx.globalAlpha = 1;
 }
 
-/** `rival` marks a free-for-all enemy wearing your color, so it never reads as you. `kick` is how much of the last shot's recoil is left. */
 type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number };
 const TIER_COLORS = { 1: '#c9ced8', 2: PALETTE.gold } as const;
 const RECOIL = R * 0.22;
-/** Marks sit just above a body: evolution chevrons first, the killer's name above them. */
 const MARK_Y = -R - 8;
 const RING = R + 5;
 
@@ -411,7 +396,6 @@ function drawTierMark(ctx: CanvasRenderingContext2D, stage: 1 | 2) {
   }
 }
 
-/** A thin red ring with four ticks, breathing slowly. */
 function drawHuntedMark(ctx: CanvasRenderingContext2D, now: number) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 220);
   const r = R + 9;
@@ -490,14 +474,11 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
   ctx.fillText(`KILLER · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
 }
 
-/** A body's health shows for this long after it is hit, fading over the last part. */
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
-/** How near the aim must come to a body to name it. */
 const HOVER_REACH = R * 1.8;
 const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 21, font: 11 } as const;
 
-/** Bodies wear no labels; a hit shows the victim's health for a moment, and aiming at a body names it. */
 function drawTags(ctx: CanvasRenderingContext2D, bodies: readonly PlayerView[], s: Session, hover: Point | null, now: number, dark: number) {
   const named = hover && bodies.filter((p) => p.id !== s.myId && !p.hidden).sort((a, b) => Math.hypot(a.x - hover.x, a.y - hover.y) - Math.hypot(b.x - hover.x, b.y - hover.y))[0];
   const hovered = named && Math.hypot(named.x - hover.x, named.y - hover.y) <= HOVER_REACH ? named : null;

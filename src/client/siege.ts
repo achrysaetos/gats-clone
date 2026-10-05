@@ -64,7 +64,6 @@ const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: st
   cannon: { head: '#6e6052', barrel: '#22262d', accent: '#e5484d', ammo: '#ff9f43' },
 };
 
-/** The gun that turns on a turret's base plate: a dark barrel under a lit dome, kicked back by its last shot. */
 function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, pxPerUnit: number) {
   const look = TURRET_LOOK[kind];
   ctx.save();
@@ -104,7 +103,6 @@ function drawAmmo(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: Turre
   ctx.fill();
 }
 
-/** What sits on the buildings once every solid is drawn: turret heads, ammo, and a white flash where one was just bitten. */
 export function drawSiegeTops(
   ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, aims: Map<string, TurretAim>, core: { x: number; y: number }, now: number, pxPerUnit: number,
 ) {
@@ -125,7 +123,6 @@ export function drawSiegeTops(
   }
 }
 
-/** The light the core throws on the floor around it, drawn before any solid. */
 export function drawCoreGlow(ctx: CanvasRenderingContext2D, run: RunView, now: number) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 420);
   ctx.globalAlpha = 0.14 + 0.08 * pulse;
@@ -136,7 +133,6 @@ export function drawCoreGlow(ctx: CanvasRenderingContext2D, run: RunView, now: n
   ctx.globalAlpha = 1;
 }
 
-/** The core's crystal and health ring on its top face; a bite flashes it and jolts the crystal. */
 export function drawCoreTop(ctx: CanvasRenderingContext2D, run: RunView, now: number, hitAt: number) {
   const { x, y } = run.core;
   const r = coreRectAt(run.core);
@@ -209,7 +205,6 @@ function addCircles(ctx: CanvasRenderingContext2D, xyr: readonly number[], pad: 
   }
 }
 
-/** Bodies come from the shared sprite cache; arms and eyes stay one path per kind, so a full horde costs a few fills plus a copy per zombie. */
 export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], faces: ReadonlyMap<number, { a: number }>, flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
   ZOMBIE_KINDS.forEach((kind, k) => {
     const look = ZOMBIE_LOOK[kind];
@@ -272,7 +267,6 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
   }
 }
 
-/** A downed body lies flat and squashed with a white cross, ringed by the revive under way and its bleed-out clock. */
 export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, serverNow: number | null, self: boolean) {
   const down = p.downed;
   if (!down) return;

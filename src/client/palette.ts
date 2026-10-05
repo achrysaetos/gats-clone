@@ -25,12 +25,10 @@ export const PALETTE = {
   rival: '#f2555a',
 } as const;
 
-/** Zombies' night: the world darkens toward this cool blue while the HUD stays as it is. */
 export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as const;
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };
 
-/** Armor thickens a body's dark rim by this much. */
 export const ARMOR_RIM: Record<ArmorId, number> = { none: 0, light: 0.8, medium: 1.6, heavy: 2.4 };
 
 export function shade(hex: string, f: number): string {
@@ -39,14 +37,12 @@ export function shade(hex: string, f: number): string {
   return `rgb(${c(16)}, ${c(8)}, ${c(0)})`;
 }
 
-/** Mixes `hex` toward white by `k` (0 keeps it, 1 is white). */
 export function tint(hex: string, k: number): string {
   const v = parseInt(hex.slice(1), 16);
   const c = (s: number) => Math.round(((v >> s) & 255) + (255 - ((v >> s) & 255)) * k);
   return `rgb(${c(16)}, ${c(8)}, ${c(0)})`;
 }
 
-/** `hex`'s hue at full saturation and lightness `l` (0..1), as rgb: a dark ink hue made to glow. */
 export function glow(hex: string, l: number): string {
   const v = parseInt(hex.slice(1), 16);
   const [r, g, b] = [16, 8, 0].map((s) => ((v >> s) & 255) / 255);

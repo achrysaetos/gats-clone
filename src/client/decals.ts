@@ -1,7 +1,4 @@
-/** Hairline cracks that rounds leave on the tops of cover: a fixed ring of slots, so heavy fire reuses the oldest instead of growing. */
-
 type Rect = { x: number; y: number; w: number; h: number };
-/** `host` names the solid it lies on, so a crack on a crate that breaks goes with it. `lines` holds x0,y0,x1,y1 in world units. */
 type Crack = { born: number; host: string; lines: readonly number[] };
 export type CrackPool = { readonly slots: (Crack | null)[]; next: number };
 
@@ -11,20 +8,16 @@ export const createCracks = (cap: number = CRACKS.cap): CrackPool => ({ slots: A
 
 export const hostKey = (r: Rect) => `${r.x},${r.y}`;
 
-/** 1 while fresh, easing to 0 over the last `fadeMs` of its life. */
 export const crackFade = (c: Crack, now: number) => Math.max(0, Math.min(1, (CRACKS.lifeMs - (now - c.born)) / CRACKS.fadeMs));
 
-/** The solid whose edge (x, y) lies on or just inside, if any. */
 export const hostOf = (solids: readonly Rect[], x: number, y: number): Rect | null =>
   solids.find((r) => x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2) ?? null;
 
-/** The way into `r` from the edge nearest (x, y). */
 export function inward(r: Rect, x: number, y: number): number {
   const edges = [[x - r.x, 0], [r.x + r.w - x, Math.PI], [y - r.y, Math.PI / 2], [r.y + r.h - y, -Math.PI / 2]] as const;
   return edges.reduce((a, b) => (b[0] < a[0] ? b : a))[1];
 }
 
-/** Cracks `host`'s top where a round struck at (x, y): a jagged trunk running inward with a branch or two, every point kept inside the rect. */
 export function addCrack(pool: CrackPool, host: Rect, x: number, y: number, now: number, rand: () => number = Math.random) {
   const clampX = (v: number) => Math.min(host.x + host.w - 1, Math.max(host.x + 1, v));
   const clampY = (v: number) => Math.min(host.y + host.h - 1, Math.max(host.y + 1, v));
@@ -49,7 +42,6 @@ export function addCrack(pool: CrackPool, host: Rect, x: number, y: number, now:
 
 const FADE_BANDS = 3;
 
-/** Draws every live crack whose host still stands, one stroke per fade band. */
 export function drawCracks(ctx: CanvasRenderingContext2D, pool: CrackPool, now: number, standing: ReadonlySet<string>) {
   ctx.lineWidth = 0.8;
   ctx.lineCap = 'round';
