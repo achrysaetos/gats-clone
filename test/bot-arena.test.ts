@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAPS } from '../src/shared/maps.ts';
 import { loadMap } from '../src/shared/sim/world.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { arenaFor, takeReplan } from '../src/server/bot/arena.ts';
 import { findPath, isOpen } from '../src/server/bot/nav.ts';
 import { emptyWorld, setWalls } from './helpers.ts';
 
@@ -38,4 +38,12 @@ test('a new map rebuilds the arena\'s cover', () => {
   assert.notEqual(second.cover, first.cover);
   const block = MAPS.oldtown.walls[0]!;
   assert.ok(!isOpen(second.nav, { x: block.x + block.w / 2, y: block.y + block.h / 2 }), 'old town\'s first wall is solid');
+});
+
+test('a room plans only a few new bot routes a tick, and plans again the next tick', () => {
+  const a = arenaFor(emptyWorld());
+  const granted = (tick: number) => Array.from({ length: 6 }, () => takeReplan(a, tick)).filter(Boolean).length;
+  assert.equal(granted(10), 3);
+  assert.equal(granted(10), 0, 'the same tick has none left');
+  assert.equal(granted(11), 3, 'the next tick has a fresh allowance');
 });

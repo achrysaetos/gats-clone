@@ -4,13 +4,15 @@ export type Point = { x: number; y: number };
 
 export type NavGrid = {
   size: number; cell: number; n: number; open: Uint8Array;
-  scratch: { g: Float64Array; from: Int32Array; seen: Uint32Array; stamp: number };
+  scratch: { g: Float64Array; from: Int32Array; seen: Uint32Array; stamp: number; heapC: number[]; heapF: number[] };
 };
 
 const NAV_CELL = 25;
 const ORTH = 1, DIAG = Math.SQRT2;
 const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
 const SNAP_CELLS = 4;
+// Among routes of equal length, prefer cells nearer the goal, so a search across open ground runs straight at it instead of flooding sideways.
+const TIE_BREAK = 1.001;
 
 export function navGrid(size: number, solids: readonly Rect[], radius: number, cell = NAV_CELL): NavGrid {
   const n = Math.ceil(size / cell);
@@ -23,7 +25,7 @@ export function navGrid(size: number, solids: readonly Rect[], radius: number, c
     }
   }
   for (const r of solids) stamp(open, n, cell, radius, r);
-  return { size, cell, n, open, scratch: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0 } };
+  return { size, cell, n, open, scratch: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0, heapC: [], heapF: [] } };
 }
 
 function stamp(open: Uint8Array, n: number, cell: number, radius: number, r: Rect) {
@@ -72,7 +74,11 @@ export function walkable(nav: NavGrid, a: Point, b: Point): boolean {
   return true;
 }
 
-export function findPath(nav: NavGrid, from: Point, to: Point): Point[] | null {
+/**
+ * With `maxExpansions` a search that runs long stops and returns the route to the cell it reached nearest the goal,
+ * which ends short of `to`; the caller walks it and plans again from there.
+ */
+export function findPath(nav: NavGrid, from: Point, to: Point, maxExpansions = Infinity): Point[] | null {
   const start = nearestOpen(nav, from), goal = nearestOpen(nav, to);
   if (start === null || goal === null) return null;
   const end = nav.open[cellOf(nav, to)] ? to : centreOf(nav, goal);
@@ -85,29 +91,41 @@ export function findPath(nav: NavGrid, from: Point, to: Point): Point[] | null {
     const dx = Math.abs((c % n) - gx), dy = Math.abs(Math.floor(c / n) - gy);
     return Math.max(dx, dy) + (DIAG - 1) * Math.min(dx, dy);
   };
-  const heap: { c: number; f: number }[] = [];
+  const hc = s.heapC, hf = s.heapF;
+  hc.length = 0;
+  hf.length = 0;
   const push = (c: number, f: number) => {
-    heap.push({ c, f });
-    for (let i = heap.length - 1; i > 0;) {
+    let i = hc.length;
+    hc.push(c);
+    hf.push(f);
+    while (i > 0) {
       const up = (i - 1) >> 1;
-      if (heap[up]!.f <= f) break;
-      [heap[i], heap[up]] = [heap[up]!, heap[i]!];
+      if (hf[up]! <= f) break;
+      hc[i] = hc[up]!;
+      hf[i] = hf[up]!;
       i = up;
     }
+    hc[i] = c;
+    hf[i] = f;
   };
-  const pop = () => {
-    const top = heap[0]!, last = heap.pop()!;
-    if (heap.length > 0) {
-      heap[0] = last;
-      for (let i = 0; ;) {
+  const pop = (): number => {
+    const top = hc[0]!;
+    const c = hc.pop()!, f = hf.pop()!;
+    const len = hc.length;
+    if (len > 0) {
+      let i = 0;
+      for (;;) {
         const l = 2 * i + 1, r = l + 1;
-        let m = i;
-        if (l < heap.length && heap[l]!.f < heap[m]!.f) m = l;
-        if (r < heap.length && heap[r]!.f < heap[m]!.f) m = r;
-        if (m === i) break;
-        [heap[i], heap[m]] = [heap[m]!, heap[i]!];
+        let m = -1, mf = f;
+        if (l < len && hf[l]! < mf) { m = l; mf = hf[l]!; }
+        if (r < len && hf[r]! < mf) { m = r; mf = hf[r]!; }
+        if (m < 0) break;
+        hc[i] = hc[m]!;
+        hf[i] = hf[m]!;
         i = m;
       }
+      hc[i] = c;
+      hf[i] = f;
     }
     return top;
   };
@@ -115,12 +133,16 @@ export function findPath(nav: NavGrid, from: Point, to: Point): Point[] | null {
   s.seen[start] = s.stamp;
   s.g[start] = 0;
   s.from[start] = -1;
-  push(start, h(start));
-  let found = false;
-  while (heap.length > 0) {
-    const { c, f } = pop();
+  push(start, h(start) * TIE_BREAK);
+  let found = false, expanded = 0, best = start, bestH = h(start);
+  while (hc.length > 0) {
+    const f = hf[0]!;
+    const c = pop();
     if (c === goal) { found = true; break; }
-    if (f > s.g[c]! + h(c) + 1e-9) continue;
+    if (++expanded > maxExpansions) break;
+    const hc0 = h(c);
+    if (hc0 < bestH) { best = c; bestH = hc0; }
+    if (f > s.g[c]! + h(c) * TIE_BREAK + 1e-9) continue;
     const cx = c % n, cy = Math.floor(c / n);
     for (const [dx, dy] of NEIGHBORS) {
       const x = cx + dx, y = cy + dy;
@@ -133,14 +155,15 @@ export function findPath(nav: NavGrid, from: Point, to: Point): Point[] | null {
       s.seen[next] = s.stamp;
       s.g[next] = g;
       s.from[next] = c;
-      push(next, g + h(next));
+      push(next, g + h(next) * TIE_BREAK);
     }
   }
-  if (!found) return null;
+  if (!found && (expanded <= maxExpansions || best === start)) return null;
+  const last = found ? goal : best;
   const cells: Point[] = [];
-  for (let c = goal; c !== start; c = s.from[c]!) cells.push(centreOf(nav, c));
+  for (let c = last; c !== start; c = s.from[c]!) cells.push(centreOf(nav, c));
   cells.reverse();
-  cells[cells.length - 1] = end;
+  if (found) cells[cells.length - 1] = end;
   return smooth(nav, from, cells);
 }
 

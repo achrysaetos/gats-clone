@@ -13,7 +13,18 @@ export type BotArena = {
   walls: readonly WallView[];
   nav: NavGrid;
   cover: CoverIndex;
+  replans: { tick: number; left: number };
 };
+
+// A route across a 6000 px map can take A* a few ms, so a room plans only this many new routes a tick; a bot that misses out keeps walking its old one.
+const REPLANS_PER_TICK = 3;
+
+export function takeReplan(a: BotArena, tick: number): boolean {
+  if (a.replans.tick !== tick) a.replans = { tick, left: REPLANS_PER_TICK };
+  if (a.replans.left <= 0) return false;
+  a.replans.left--;
+  return true;
+}
 
 type Layout = { walls: readonly Wall[]; crates: readonly Crate[]; nav: NavGrid; cover: CoverIndex };
 
@@ -30,7 +41,7 @@ export function arenaFor(w: World): BotArena {
   const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : buildLayout(size, mapWalls, w.crates);
   const built = w.walls.filter((wall) => wall.built);
   const arena: BotArena = {
-    size, version: w.wallsVersion, walls: wallViews(w), cover: layout.cover,
+    size, version: w.wallsVersion, walls: wallViews(w), cover: layout.cover, replans: { tick: -1, left: 0 },
     nav: built.length ? withSolids(layout.nav, built, WORLD.playerRadius) : layout.nav,
   };
   ARENAS.set(w, { arena, layout });

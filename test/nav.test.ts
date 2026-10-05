@@ -61,3 +61,17 @@ test('the grid follows the size it is given, not a global world size', () => {
   const end = findPath(navGrid(3000, [], R), { x: 100, y: 100 }, { x: 5900, y: 5900 })?.at(-1);
   assert.ok(end && end.x < 3000 && end.y < 3000, `a 3000 grid stops at its own edge: ${JSON.stringify(end)}`);
 });
+
+test('a search capped short of a far goal returns the walkable start of the way there, ending nearer the goal', () => {
+  const wall = { x: 3000, y: 0, w: 40, h: 5500 };
+  const nav = navGrid(6000, [wall], R);
+  const from = { x: 500, y: 500 }, to = { x: 5500, y: 500 };
+  const full = findPath(nav, from, to);
+  assert.ok(full && full.at(-1)!.x === to.x, 'uncapped, it reaches the goal');
+  const part = findPath(nav, from, to, 500);
+  assert.ok(part && part.length > 0, 'capped, it still gives a route');
+  const end = part.at(-1)!;
+  assert.ok(Math.hypot(end.x - to.x, end.y - to.y) < Math.hypot(from.x - to.x, from.y - to.y) - 200, `ends nearer the goal: ${JSON.stringify(end)}`);
+  assert.ok(Math.hypot(end.x - to.x, end.y - to.y) > 100, 'but short of it');
+  assert.equal(firstClash(from, part, [wall]), null, 'clear of the wall');
+});

@@ -4,13 +4,13 @@ import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { spreadFor } from '../../shared/sim/stats.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { engage, sharpnessAgainst, TICK_MS, type Engagement } from './aim.ts';
-import type { BotArena } from './arena.ts';
+import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import type { Intent, IntentCtx } from './intent.ts';
 import { clearShot, findPath, isOpen, walkable, type Point } from './nav.ts';
 
 export type Motor = {
-  route: { goal: Point; points: readonly Point[]; version: number } | null;
+  route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
   dir: number | null;
   dirSince: number;
   stance: { step: 0 | 1 | -1; until: number; heading: number | null };
@@ -57,6 +57,7 @@ const STUCK_TICKS = 12;
 const BLOCKED_TICKS = 3;
 const REPLAN_PX = 48;
 const NEAR_GOAL_PX = 300;
+const MAX_EXPANSIONS = 6000;
 const STAND_MS: readonly [number, number] = [700, 1500];
 const STEP_MS: readonly [number, number] = [300, 700];
 const UNDER_FIRE_STEP_ODDS = 0.75;
@@ -176,13 +177,21 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
   }
 }
 
-function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena): { at: Point; route: Motor['route']; replanned: boolean } {
+function plan(arena: BotArena, me: Point, to: Point): NonNullable<Motor['route']> {
+  const found = isOpen(arena.nav, me) || walkable(arena.nav, me, to) ? findPath(arena.nav, me, to, MAX_EXPANSIONS) : null;
+  const last = found?.[found.length - 1];
+  return { goal: to, points: found ?? [to], version: arena.version, partial: last !== undefined && dist(last, to) > WAYPOINT_PX };
+}
+
+function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: number): { at: Point; route: Motor['route']; replanned: boolean } {
   const old = m.route;
-  const fresh = !old || old.version !== arena.version || dist(old.goal, to) > REPLAN_PX || m.stuckTicks > STUCK_TICKS;
-  const route = fresh || !old
-    ? { goal: to, points: (isOpen(arena.nav, me) || walkable(arena.nav, me, to) ? findPath(arena.nav, me, to) : null) ?? [to], version: arena.version }
-    : old;
-  let points = dist(me, to) < NEAR_GOAL_PX && walkable(arena.nav, me, to) ? [to] : [...route.points.slice(0, -1), to];
+  const wallsMoved = old !== null && old.version !== arena.version && !walkable(arena.nav, me, old.points[0] ?? to);
+  const partEnded = old !== null && old.partial && dist(me, old.points[old.points.length - 1]!) < WAYPOINT_PX * 2;
+  const wanted = !old || wallsMoved || partEnded || dist(old.goal, to) > REPLAN_PX || m.stuckTicks > STUCK_TICKS;
+  const fresh = wanted && (!old || takeReplan(arena, tick));
+  const route = fresh || !old ? plan(arena, me, to) : { ...old, version: arena.version };
+  const tail = route.partial ? route.points : [...route.points.slice(0, -1), to];
+  let points = dist(me, to) < NEAR_GOAL_PX && walkable(arena.nav, me, to) ? [to] : tail;
   while (points.length > 1 && dist(me, points[0]!) < WAYPOINT_PX) points = points.slice(1);
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
@@ -206,7 +215,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const me = v.me;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
-  const way = s.to ? nextWaypoint(m, me, s.to, c.arena) : { at: null, route: m.route, replanned: false };
+  const way = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick) : { at: null, route: m.route, replanned: false };
   const drive = keysToward(m, me, way.at, v.tick);
   const moved = dist(me, m.last);
   const pressing = drive.dir !== null;
