@@ -1,7 +1,8 @@
 :root {
   --bg: #121419;
-  --panel: rgba(19, 21, 27, 0.9);
-  --panel-2: #1c2028;
+  --panel: rgba(28, 32, 40, 0.82);
+  --panel-solid: rgb(28, 32, 40);
+  --panel-2: #22262f;
   --well: #0f1115;
   --line: #2c323d;
   --line-strong: #444c5a;
@@ -11,7 +12,7 @@
   --accent-deep: #c98f00;
   --accent-ink: #1d1a0b;
   --danger: #ff6b6b;
-  --radius: 12px;
+  --radius: 10px;
   --radius-sm: 8px;
   --t-micro: 11px;
   --t-label: 12px;
@@ -131,7 +132,7 @@ kbd {
   inset: 0;
   overflow-y: auto;
   padding: 24px 16px;
-  background: radial-gradient(ellipse at 50% 10%, rgba(18, 20, 25, 0.5), rgba(18, 20, 25, 0.94) 72%);
+  background: radial-gradient(ellipse at 50% 10%, rgba(20, 24, 32, 0.3), rgba(20, 24, 32, 0.82) 72%);
 }
 .menu-card { max-width: 980px; margin: 0 auto; }
 .brand { display: grid; justify-items: center; margin: var(--s2) 0 var(--s5); }
@@ -226,7 +227,7 @@ kbd {
 .squad-pitch { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); align-items: center; font-size: var(--t-label); color: var(--muted); }
 .invite { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); }
 .invite input { font-size: var(--t-label); padding: 8px var(--s3); }
-.squad-chip { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px 12px; border-radius: 10px; background: rgba(17, 19, 24, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); font-size: var(--t-label); font-weight: 700; }
+.squad-chip { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px 12px; border-radius: var(--radius); background: var(--panel); font-size: var(--t-label); font-weight: 700; }
 .squad-chip button { padding: 4px 10px; font-size: var(--t-label); }
 
 .auth { display: grid; gap: 8px; margin-top: 10px; }
@@ -267,21 +268,21 @@ a.wordmark { text-decoration: none; }
 .hud { position: fixed; inset: 0; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 
-/* Docked in the strip between the vitals panel (left, 352px wide) and the minimap (right, 182px), clear of the aim area. */
+/* Docked in the strip between the vitals panel (left, 312px wide) and the weapon panel and ability slot (right, 308px), clear of the aim area. */
 .perk-panel {
   position: absolute;
   z-index: 2;
   bottom: 12px;
-  left: 364px;
-  right: 194px;
+  left: 324px;
+  right: 320px;
   width: fit-content;
-  max-width: calc(100vw - 558px);
+  max-width: calc(100vw - 644px);
   margin-inline: auto;
   background: var(--panel);
   border: 1px solid var(--accent);
   border-radius: var(--radius);
   padding: 6px;
-  box-shadow: var(--edge), 0 0 24px -8px rgba(255, 211, 77, 0.5);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 24px -8px rgba(255, 211, 77, 0.5);
 }
 /* A zombies run draws its key hints along the bottom (drawSiege in hud.ts), so the dock sits above them. */
 .perk-panel.siege { bottom: 52px; }
@@ -320,9 +321,9 @@ a.wordmark { text-decoration: none; }
 }
 .chat-log { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 13px; }
 .chat-log li {
-  background: rgba(17, 19, 24, 0.72);
+  background: rgba(28, 32, 40, 0.72);
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: 7px;
   width: fit-content;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -339,7 +340,7 @@ a.wordmark { text-decoration: none; }
 .chat-name:hover:not(:disabled) { background: none; text-decoration: underline; }
 .chat-log li.muted-line { color: var(--muted); }
 .muted-tag { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.06em; }
-.chat-input { pointer-events: auto; background: rgba(18, 21, 26, 0.92); }
+.chat-input { pointer-events: auto; background: rgba(28, 32, 40, 0.92); }
 
 .banner {
   position: absolute;
@@ -370,7 +371,7 @@ a.wordmark { text-decoration: none; }
 
 .objective {
   position: absolute;
-  top: 96px;
+  top: 88px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100vw - 24px);
@@ -385,7 +386,7 @@ a.wordmark { text-decoration: none; }
   pointer-events: none;
   animation: objective ease-out forwards;
 }
-.objective.siege { top: 124px; }
+.objective.siege { top: 120px; }
 @keyframes objective {
   0% { opacity: 0; transform: translate(-50%, -8px); }
   8%, 80% { opacity: 1; transform: translate(-50%, 0); }
@@ -410,16 +411,16 @@ a.wordmark { text-decoration: none; }
   text-align: center;
 }
 
-/* Docked left under the kill feed so the killer, usually near the screen center, stays in view. */
+/* Docked left under the minimap so the killer, usually near the screen center, stays in view. */
 .death {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: flex-start;
-  padding: 160px 16px 16px;
+  padding: 206px 12px 16px;
   overflow-y: auto;
   pointer-events: none;
-  background: linear-gradient(90deg, rgba(12, 13, 16, 0.6), transparent 560px);
+  background: linear-gradient(90deg, rgba(20, 24, 32, 0.45), transparent 560px);
 }
 .death-card {
   pointer-events: auto;
@@ -433,7 +434,7 @@ a.wordmark { text-decoration: none; }
   box-shadow: var(--edge), 0 24px 60px -16px rgba(0, 0, 0, 0.8);
 }
 .death[inert] .death-card { opacity: 0.7; }
-.death-card { background: rgb(19, 21, 27); }
+.death-card { background: var(--panel-solid); }
 .death-cause { font-weight: 700; }
 .death-lost { margin-top: 2px; color: var(--accent); font-size: var(--t-label); }
 .death-card .loadout h2 { margin: var(--s3) 0 var(--s1); }
@@ -458,7 +459,7 @@ a.wordmark { text-decoration: none; }
   }
 }
 @media (max-width: 900px) {
-  .perk-panel, .perk-panel.siege { left: 12px; right: 12px; bottom: 128px; max-width: calc(100vw - 24px); }
+  .perk-panel, .perk-panel.siege { left: 12px; right: 12px; bottom: 136px; max-width: calc(100vw - 24px); }
 }
 @media (max-width: 639px) {
   .perk-panel.siege { bottom: 172px; }
@@ -480,7 +481,7 @@ a.wordmark { text-decoration: none; }
   .touch-buttons { display: flex; position: fixed; right: 18px; bottom: 150px; gap: 14px; flex-direction: column; }
   .touch-buttons button {
     width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
-    background: rgba(20,24,32,.55); color: #fff; font: 700 22px system-ui, sans-serif; touch-action: none;
+    background: rgba(28,32,40,.6); color: #fff; font: 700 22px system-ui, sans-serif; touch-action: none;
   }
   .touch-buttons button:active { background: rgba(245,196,0,.7); }
 }
