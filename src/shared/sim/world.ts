@@ -257,8 +257,10 @@ function defendedPoints(solids: readonly Rect[], core: Center): Pose[] {
     if (border && open(cx, cy, WORLD.playerRadius)) { seen[cy * n + cx] = 1; queue.push([cx, cy]); }
   }
   const points: Pose[] = [];
+  const walkable: Pose[] = [];
   for (let i = 0; i < queue.length && points.length < SQUAD_SPAWN_CHOICES; i++) {
     const [cx, cy] = queue[i]!;
+    if (walkable.length < SQUAD_SPAWN_CHOICES) walkable.push({ x: center(cx), y: center(cy) });
     if (open(cx, cy, WORLD.playerRadius + SPAWN_CLEARANCE)) points.push({ x: center(cx), y: center(cy) });
     for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]] as const) {
       if (nx < 1 || ny < 1 || nx >= n - 1 || ny >= n - 1 || seen[ny * n + nx] || !open(nx, ny, WORLD.playerRadius)) continue;
@@ -266,7 +268,8 @@ function defendedPoints(solids: readonly Rect[], core: Center): Pose[] {
       queue.push([nx, ny]);
     }
   }
-  return points;
+  // A ring built tight around the core leaves no fully clear cell inside; standing room inside still beats the far side of the wall.
+  return points.length ? points : walkable;
 }
 
 /** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */

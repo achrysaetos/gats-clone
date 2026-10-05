@@ -86,7 +86,7 @@ test('a wall ring over the squad spawn strips sends a squad spawn to clear groun
 
 test('a squad respawns inside a closed wall ring, not on the far side of it', () => {
   const w = createWorld('ZOM', 1, 'outpost');
-  const lo = 25, hi = 34;
+  const lo = 27, hi = 32;
   for (let c = lo; c <= hi; c++) for (const [cx, cy] of [[c, lo], [c, hi], [lo, c], [hi, c]] as const) {
     if (!w.buildings.some((b) => b.cx === cx && b.cy === cy)) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });
   }
