@@ -1,19 +1,19 @@
 :root {
-  --bg: #121419;
-  --panel: rgba(28, 32, 40, 0.94);
-  --panel-solid: rgb(28, 32, 40);
-  --panel-2: #22262f;
-  --well: #0f1115;
-  --line: #2c323d;
-  --line-strong: #444c5a;
-  --ink: #f2f3f5;
-  --muted: #9ba2ae;
+  --bg: #d9dade;
+  --panel: rgba(96, 101, 112, 0.95);
+  --panel-solid: rgb(96, 101, 112);
+  --panel-2: #6b717c;
+  --well: #555a64;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.28);
+  --ink: #f1f2f5;
+  --muted: #c4c8d0;
   --accent: #ffd34d;
   --accent-deep: #c98f00;
   --accent-ink: #1d1a0b;
-  --danger: #ff6b6b;
-  --radius: 10px;
-  --radius-sm: 8px;
+  --danger: #ff8a7e;
+  --radius: 8px;
+  --radius-sm: 6px;
   --t-micro: 11px;
   --t-label: 12px;
   --t-body: 14px;
@@ -24,7 +24,8 @@
   --s3: 12px;
   --s4: 16px;
   --s5: 24px;
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --lift: 0 8px 24px -12px rgba(30, 32, 38, 0.45);
   color-scheme: dark;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: var(--t-body);
@@ -77,27 +78,27 @@ button {
   box-shadow: var(--edge);
   transition: border-color 0.12s, background 0.12s, transform 0.06s, box-shadow 0.12s;
 }
-button:hover:not(:disabled) { border-color: var(--line-strong); background: #222733; }
+button:hover:not(:disabled) { border-color: var(--line-strong); background: #747a86; }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: 0.55; cursor: default; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-button[aria-pressed="true"] { border-color: var(--accent); background: #2a2a22; box-shadow: var(--edge), 0 0 0 1px var(--accent), 0 0 18px -6px rgba(255, 211, 77, 0.6); }
+button[aria-pressed="true"] { border-color: var(--accent); background: #5f6068; box-shadow: var(--edge), 0 0 0 1px var(--accent); }
 
 button.primary {
-  background: linear-gradient(180deg, #ffe07a, var(--accent) 45%, #f0bd1c);
+  background: var(--accent);
   color: var(--accent-ink);
   border-color: var(--accent-deep);
-  font-weight: 900;
-  font-size: var(--t-title);
+  font-weight: 850;
+  font-size: var(--t-body);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   padding: var(--s3) var(--s5);
   width: 100%;
   margin-top: var(--s3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 3px 0 var(--accent-deep), 0 10px 24px -8px rgba(255, 211, 77, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
-button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffe892, #ffda5c 45%, #f5c52e); border-color: var(--accent-deep); }
-button.primary:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 0 var(--accent-deep); }
+button.primary:hover:not(:disabled) { background: #ffdb66; border-color: var(--accent-deep); }
+button.primary:active:not(:disabled) { transform: translateY(1px); }
 button.secondary { background: transparent; }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
 
@@ -107,7 +108,7 @@ input {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 10px var(--s3);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 kbd {
@@ -132,39 +133,32 @@ kbd {
   inset: 0;
   overflow-y: auto;
   padding: 24px 16px;
-  background: radial-gradient(ellipse at 50% 10%, rgba(20, 24, 32, 0.3), rgba(20, 24, 32, 0.82) 72%);
+  background: radial-gradient(ellipse at 50% 10%, rgba(229, 228, 230, 0.1), rgba(60, 64, 72, 0.45) 75%);
 }
 .menu-card { max-width: 980px; margin: 0 auto; }
 .brand { display: grid; justify-items: center; margin: var(--s2) 0 var(--s5); }
 .wordmark { display: flex; align-items: center; gap: clamp(10px, 2vw, 18px); }
-.emblem { width: clamp(44px, 8vw, 72px); height: auto; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.5)); }
+.emblem { width: clamp(40px, 7vw, 60px); height: auto; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.25)); }
 .logo {
-  font-size: clamp(42px, 9vw, 80px);
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: 0.06em;
+  font-size: clamp(38px, 8vw, 68px);
+  font-weight: 850;
+  letter-spacing: 0.08em;
   line-height: 1;
-  padding-right: 0.06em;
-  background: linear-gradient(180deg, #ffffff 0%, #e9ebef 52%, #b9bec8 53%, #d7dbe2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 3px 0 var(--accent-deep)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.5));
+  color: #3f434c;
 }
-.logo em { font-style: inherit; background: linear-gradient(180deg, #ffe58a, var(--accent) 52%, #f2b600 53%, #ffcf3a); -webkit-background-clip: text; background-clip: text; }
+.logo em { font-style: inherit; color: #e5574f; }
 .tagline {
   display: flex;
   align-items: center;
   gap: var(--s3);
   margin-top: var(--s3);
-  color: #e4e7ec;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  color: #4f535d;
   font-size: var(--t-label);
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
-.tagline::before, .tagline::after { content: ""; width: 36px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, transparent, var(--accent)); }
+.tagline::before, .tagline::after { content: ""; width: 36px; height: 1px; background: linear-gradient(90deg, transparent, #7c808a); }
 .tagline::after { transform: scaleX(-1); }
 
 .menu-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: var(--s4); align-items: start; }
@@ -174,7 +168,7 @@ kbd {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--s4);
-  box-shadow: var(--edge), 0 18px 40px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--edge), var(--lift);
 }
 .panel > h2:first-child { margin-top: 0; }
 
@@ -185,7 +179,7 @@ kbd {
   padding: 0 16px 16px;
   background: var(--panel-2);
   border-radius: 0 0 var(--radius) var(--radius);
-  box-shadow: 0 -10px 18px -10px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 -8px 14px -10px rgba(30, 32, 38, 0.4);
 }
 .play-actions .status:empty { display: none; }
 
@@ -196,7 +190,7 @@ kbd {
 .tile { display: grid; gap: var(--s1); justify-items: center; text-align: center; padding: 10px var(--s2); }
 .tile b { font-size: var(--t-body); }
 .tile small { color: var(--muted); font-size: var(--t-micro); }
-.weapon { background: radial-gradient(ellipse at 50% 30%, #262b35, var(--panel-2) 70%); }
+.weapon { background: var(--panel-2); }
 .gun-art { width: 100%; max-width: 120px; height: auto; aspect-ratio: 120 / 48; }
 
 .swatches { display: flex; gap: var(--s3); flex-wrap: wrap; }
@@ -205,10 +199,10 @@ kbd {
   height: 40px;
   padding: 0;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.35), transparent 45%), var(--swatch);
-  border: 3px solid #1b1d22;
+  background: var(--swatch);
+  border: 2px solid #26282e;
 }
-.swatch[aria-pressed="true"] { background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.35), transparent 45%), var(--swatch); border-color: #ffffff; box-shadow: 0 0 0 3px var(--accent), 0 0 18px -4px var(--swatch); }
+.swatch[aria-pressed="true"] { background: var(--swatch); border-color: #ffffff; box-shadow: 0 0 0 2px var(--accent); }
 
 .armors { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
 .meter { display: block; width: 100%; height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; }
@@ -219,16 +213,16 @@ kbd {
 .server .count { color: var(--muted); font-size: var(--t-label); }
 .server .count small { font-size: 11px; }
 .mode { font-size: var(--t-micro); font-weight: 900; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.08em; }
-.mode-ffa { background: #4a3a12; color: #ffd34d; }
-.mode-tdm { background: #3a1c22; color: #ff8b8f; }
-.mode-dom { background: #1c2848; color: #8eaaff; }
-.mode-zom { background: #22361a; color: #a6d96a; }
+.mode-ffa { background: #4f4a3a; color: #ffd86a; }
+.mode-tdm { background: #4f4045; color: #ffadb0; }
+.mode-dom { background: #3f475c; color: #b5c6ff; }
+.mode-zom { background: #43503d; color: #c3e392; }
 
 .squad { display: grid; gap: var(--s2); }
 .squad-pitch { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); align-items: center; font-size: var(--t-label); color: var(--muted); }
 .invite { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); }
 .invite input { font-size: var(--t-label); padding: 8px var(--s3); }
-.squad-chip { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px 12px; border-radius: var(--radius); background: var(--panel); font-size: var(--t-label); font-weight: 700; }
+.squad-chip { position: absolute; top: 132px; left: 16px; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px 12px; border-radius: var(--radius); background: var(--panel); font-size: var(--t-label); font-weight: 700; }
 .squad-chip button { padding: 4px 10px; font-size: var(--t-label); }
 
 .auth { display: grid; gap: 8px; margin-top: 10px; }
@@ -252,7 +246,7 @@ a.wordmark { text-decoration: none; }
   padding: var(--s3) var(--s4);
   border: 1px solid var(--accent-deep);
   border-radius: var(--radius-sm);
-  background: #2a2a22;
+  background: #5f6068;
   color: var(--accent);
 }
 .doc { line-height: 1.55; }
@@ -269,25 +263,24 @@ a.wordmark { text-decoration: none; }
 .hud { position: fixed; inset: 0; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 
-/* Docked in the strip between the vitals panel (left, 312px wide) and the weapon panel and ability slot (right, 308px), clear of the aim area. */
+/* Docked at the bottom between the chat (left) and the minimap (right, 192px wide), clear of the aim area. */
 .perk-panel {
   position: absolute;
   z-index: 2;
-  bottom: 12px;
-  left: 324px;
-  right: 320px;
+  bottom: 16px;
+  left: 210px;
+  right: 210px;
   width: fit-content;
-  max-width: calc(100vw - 644px);
+  max-width: calc(100vw - 420px);
   margin-inline: auto;
   background: var(--panel);
-  border: 1px solid var(--accent);
   border-radius: var(--radius);
   padding: 6px;
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 24px -8px rgba(255, 211, 77, 0.5);
+  box-shadow: var(--lift);
 }
 /* A zombies run draws its key hints along the bottom (drawSiege in hud.ts), so the dock sits above them. */
 .perk-panel.siege { bottom: 52px; }
-.perk-panel h2 { margin: 0 2px 5px; font-size: var(--t-micro); color: var(--accent); }
+.perk-panel h2 { margin: 0 2px 5px; font-size: var(--t-micro); color: var(--ink); }
 .perk-panel h2::before { display: none; }
 .perk-panel h2 span { color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
 .perk-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
@@ -302,8 +295,8 @@ a.wordmark { text-decoration: none; }
   align-items: center;
 }
 .perk kbd { justify-self: start; min-width: 0; padding: 0 4px; font-size: 10px; }
-.perk-icon { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.perk:hover:not(:disabled) .perk-icon { stroke: #ffe58a; }
+.perk-icon { width: 20px; height: 20px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.perk:hover:not(:disabled) .perk-icon { stroke: var(--accent); }
 .perk b { max-width: 100%; font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .perk-desc { margin: 0 2px 5px; min-height: 1.3em; font-size: 12px; color: var(--muted); }
 .perk-desc strong { color: var(--accent); }
@@ -315,16 +308,16 @@ a.wordmark { text-decoration: none; }
 
 .chat {
   position: absolute;
-  left: 12px;
-  bottom: 140px;
+  left: 16px;
+  bottom: 16px;
   width: min(380px, calc(100vw - 24px));
   pointer-events: none;
 }
 .chat-log { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 13px; }
 .chat-log li {
-  background: rgba(28, 32, 40, 0.72);
-  padding: 3px 8px;
-  border-radius: 7px;
+  background: rgba(96, 101, 112, 0.85);
+  padding: 2px 8px;
+  border-radius: 5px;
   width: fit-content;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -341,7 +334,7 @@ a.wordmark { text-decoration: none; }
 .chat-name:hover:not(:disabled) { background: none; text-decoration: underline; }
 .chat-log li.muted-line { color: var(--muted); }
 .muted-tag { margin-left: 6px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.06em; }
-.chat-input { pointer-events: auto; background: rgba(28, 32, 40, 0.92); }
+.chat-input { pointer-events: auto; background: var(--panel); }
 
 .banner {
   position: absolute;
@@ -350,19 +343,19 @@ a.wordmark { text-decoration: none; }
   transform: translate(-50%, -50%);
   text-align: center;
   background: var(--panel);
-  border: 1px solid var(--accent);
   border-radius: var(--radius);
-  padding: 18px 28px;
+  padding: 16px 26px;
+  box-shadow: var(--lift);
   pointer-events: none;
 }
-.banner h2 { margin: 0 0 4px; font-size: var(--t-display); font-weight: 900; color: var(--accent); text-transform: none; letter-spacing: 0; justify-content: center; }
+.banner h2 { margin: 0 0 4px; font-size: var(--t-title); font-weight: 800; color: var(--accent); text-transform: none; letter-spacing: 0; justify-content: center; }
 .banner h2::before, .death-card > h2:first-child::before { display: none; }
 .podium { margin: 10px 0 12px; padding: 0; list-style: none; counter-reset: podium; min-width: 220px; }
 .podium li { display: flex; gap: 16px; align-items: baseline; padding: 4px 0; font-size: 16px; counter-increment: podium; }
 .podium li::before { content: counter(podium) "."; color: var(--muted); min-width: 1.2em; text-align: left; }
 .podium li span { flex: 1; text-align: left; font-weight: 600; overflow-wrap: anywhere; }
 .podium li b { font-variant-numeric: tabular-nums; }
-.report { border-color: var(--danger); min-width: min(420px, calc(100vw - 32px)); }
+.report { border-top: 3px solid var(--danger); min-width: min(420px, calc(100vw - 32px)); }
 .report h2 { color: var(--danger); }
 .report table { width: 100%; margin: 12px 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .report th { font-size: var(--t-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; padding: 4px 8px; text-align: right; }
@@ -372,22 +365,21 @@ a.wordmark { text-decoration: none; }
 
 .objective {
   position: absolute;
-  top: 88px;
+  top: 84px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100vw - 24px);
-  padding: 10px 18px;
-  border: 2px solid var(--accent);
+  padding: 8px 16px;
   border-radius: var(--radius);
   background: var(--panel);
-  font-size: var(--t-title);
-  font-weight: 750;
+  font-size: var(--t-body);
+  font-weight: 650;
   text-align: center;
-  box-shadow: var(--edge), 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--lift);
   pointer-events: none;
   animation: objective ease-out forwards;
 }
-.objective.siege { top: 120px; }
+.objective.siege { top: 104px; }
 @keyframes objective {
   0% { opacity: 0; transform: translate(-50%, -8px); }
   8%, 80% { opacity: 1; transform: translate(-50%, 0); }
@@ -406,22 +398,22 @@ a.wordmark { text-decoration: none; }
   border-top: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: var(--edge), 0 24px 60px -16px rgba(0, 0, 0, 0.8), 0 0 0 100vmax rgba(12, 13, 16, 0.45);
+  box-shadow: var(--lift), 0 0 0 100vmax rgba(40, 42, 48, 0.35);
   font-size: var(--t-title);
   font-weight: 700;
   text-align: center;
 }
 
-/* Docked left under the minimap so the killer, usually near the screen center, stays in view. */
+/* Docked top left, where the vitals sit while alive, so the killer, usually near the screen center, stays in view. */
 .death {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: flex-start;
-  padding: 206px 12px 16px;
+  padding: 16px;
   overflow-y: auto;
   pointer-events: none;
-  background: linear-gradient(90deg, rgba(20, 24, 32, 0.45), transparent 560px);
+  background: linear-gradient(90deg, rgba(60, 64, 72, 0.3), transparent 520px);
 }
 .death-card {
   pointer-events: auto;
@@ -432,7 +424,7 @@ a.wordmark { text-decoration: none; }
   border-top: 3px solid var(--danger);
   border-radius: var(--radius);
   padding: var(--s4) 18px 18px;
-  box-shadow: var(--edge), 0 24px 60px -16px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--lift);
 }
 .death[inert] .death-card { opacity: 0.7; }
 .death-card { background: var(--panel-solid); }
@@ -444,7 +436,7 @@ a.wordmark { text-decoration: none; }
 .death-card .gun-art { max-width: 84px; }
 .death-card .swatch { width: 30px; height: 30px; }
 .death-card #respawn { margin-top: var(--s3); }
-.death-card > h2:first-child { margin: 0 0 var(--s1); font-size: var(--t-display); font-weight: 900; color: var(--danger); text-transform: none; letter-spacing: 0; }
+.death-card > h2:first-child { margin: 0 0 var(--s1); font-size: var(--t-title); font-weight: 800; color: var(--ink); text-transform: none; letter-spacing: 0; }
 
 @media (min-width: 1700px) {
   .perk:not(.evolve) { width: 104px; height: auto; min-height: 58px; gap: 2px; padding: 3px 5px 5px; }
@@ -461,6 +453,7 @@ a.wordmark { text-decoration: none; }
 }
 @media (max-width: 900px) {
   .perk-panel, .perk-panel.siege { left: 12px; right: 12px; bottom: 136px; max-width: calc(100vw - 24px); }
+  .chat { bottom: 136px; }
 }
 @media (max-width: 639px) {
   .perk-panel.siege { bottom: 172px; }
@@ -482,7 +475,11 @@ a.wordmark { text-decoration: none; }
   .touch-buttons { display: flex; position: fixed; right: 18px; bottom: 150px; gap: 14px; flex-direction: column; }
   .touch-buttons button {
     width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
-    background: rgba(28,32,40,.6); color: #fff; font: 700 22px system-ui, sans-serif; touch-action: none;
+    background: rgba(96,101,112,.7); color: #fff; font: 700 22px system-ui, sans-serif; touch-action: none;
   }
   .touch-buttons button:active { background: rgba(245,196,0,.7); }
+}
+/* Clear of the full-size minimap in the bottom right corner once the screen is tall enough to draw it. */
+@media (pointer: coarse) and (min-height: 520px) and (min-width: 640px) {
+  .touch-buttons { bottom: 216px; }
 }
