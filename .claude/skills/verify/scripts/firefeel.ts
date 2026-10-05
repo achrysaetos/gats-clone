@@ -34,7 +34,7 @@ const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 type Felt = { cue: Cue | 'reject' | 'late'; at: number };
-type Browser = { chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; serverShots: () => number; roundOverSnaps: () => number; exceptions: string[] };
+type Browser = { gun: GunId; chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; serverShots: () => number; roundOverSnaps: () => number; exceptions: string[] };
 
 async function open(name: string, weapon: GunId): Promise<Browser> {
   const port = await freePort();
@@ -79,7 +79,7 @@ async function open(name: string, weapon: GunId): Promise<Browser> {
   if (id === null) throw new Error(`${name} did not join`);
   await js(`window.downs = []; window.addEventListener('mousedown', () => window.downs.push(performance.now()), { capture: true })`);
   await sleep(1500);
-  return { chrome, cdp, js, id, serverShots: () => shots, roundOverSnaps: () => roundOver, exceptions };
+  return { gun: weapon, chrome, cdp, js, id, serverShots: () => shots, roundOverSnaps: () => roundOver, exceptions };
 }
 
 const AIM = { x: VIEW.w / 2 + 200, y: VIEW.h / 2 - 60 };
@@ -135,6 +135,9 @@ function checkCounts(label: string, { felt: fs, fired }: { felt: Felt[]; fired: 
 async function runUndisturbed(label: string, b: Browser, settleMs: number, body: () => Promise<void>): Promise<{ felt: Felt[]; downs: number[]; fired: number }> {
   for (let attempt = 1; ; attempt++) {
     await respawnIfDead(b);
+    // An attempt cut short by a death leaves the magazine part spent, and a reload mid-phase would delay a press.
+    await reload(b);
+    await sleep(GUNS[b.gun].reloadMs + 300);
     await felt(b); await downs(b);
     const deathsBefore = deaths, roundOverBefore = b.roundOverSnaps(), before = b.serverShots();
     await body();
@@ -167,8 +170,6 @@ let p = await runUndisturbed('tap', pistol, roundTrip + 400, async () => {
 checkLatency('tap', latencies(p.downs, p.felt), TAPS);
 checkCounts('tap', p);
 
-await reload(pistol);
-await sleep(GUNS.pistol.reloadMs + 400);
 p = await runUndisturbed('spam', pistol, GUNS.pistol.reloadMs + roundTrip + 600, async () => {
   for (let i = 0; i < 3 * GUNS.pistol.mag; i++) {
     await tap(pistol, 20);
@@ -177,8 +178,6 @@ p = await runUndisturbed('spam', pistol, GUNS.pistol.reloadMs + roundTrip + 600,
 });
 checkCounts('spam through empty mag and reload', p);
 
-await reload(pistol);
-await sleep(GUNS.pistol.reloadMs + 400);
 await pistol.cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 await pistol.js(`window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') window.aimStart = true; }, { capture: true });
   window.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && window.aimStart) { window.aimStart = false; window.downs.push(performance.now()); } }, { capture: true })`);
@@ -207,8 +206,6 @@ for (let i = 0; i < HOLDS; i++) {
   gaps.push(...sounds.slice(1).map((t, k) => t - sounds[k]!));
   firstSounds.push(...latencies(p.downs, p.felt).sound);
   checkCounts(`hold ${i + 1}`, p);
-  await reload(smg);
-  await sleep(GUNS.smg.reloadMs + 300);
 }
 const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
 log(`hold first sound: ${fmt(firstSounds)}`);
