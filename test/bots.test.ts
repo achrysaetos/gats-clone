@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, WORLD, type WeaponId } from '../src/shared/defs.ts';
-import { MAPS } from '../src/shared/maps.ts';
-import type { WallView } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import type { InputState, WallView } from '../src/shared/protocol.ts';
+import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { botName, botThink, newBotMemory } from '../src/server/bots.ts';
-import { emptyWorld, spawnAt } from './helpers.ts';
+import { arenaFor, botName, botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import type { PersonalityId } from '../src/server/bot/intent.ts';
+import { emptyWorld, setWalls, spawnAt } from './helpers.ts';
 
 const rand = (() => { let x = 7; return () => ((x = (x * 16807) % 2147483647) / 2147483647); })();
 
@@ -22,10 +22,11 @@ function watch(opts: { seed: number; ticks: number; weapon?: WeaponId; targetAt:
   const target = spawnAt(w, opts.targetAt.x, opts.targetAt.y);
   const vel = opts.targetVel ?? { x: 0, y: 0 };
   const r = seeded(opts.seed);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   const looks: Look[] = [];
   for (let i = 0; i < opts.ticks; i++) {
-    const d = botThink(snapshotFor(w, bot.id), opts.walls?.(i) ?? [], mem, r, MAPS[w.map].size);
+    if (opts.walls) setWalls(w, opts.walls(i));
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
     const flight = Math.hypot(target.x - bot.x, target.y - bot.y) / GUNS[bot.loadout.weapon].bulletSpeed;
     const leadAngle = Math.atan2(target.y + vel.y * flight - bot.y, target.x + vel.x * flight - bot.x);
@@ -80,12 +81,44 @@ test('a bot ignores an enemy in the snapshot preload margin beyond its 16:9 view
   assert.ok(looks.every((l) => !l.fire), 'never fires at what a player there could not see');
 });
 
-test('a bot in range strafes sideways instead of standing still', () => {
+/** A bot of `persona` at (1000, 1000) fighting a still enemy 400px right in the open, both kept at full health, its inputs fed to the sim. */
+function duel(persona: PersonalityId, seed: number, ticks: number): InputState[] {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-  spawnAt(w, 1300, 1000);
-  const d = botThink(snapshotFor(w, bot.id), [], newBotMemory(rand, MAPS[w.map].size), rand, MAPS[w.map].size);
-  assert.ok(d.input.up || d.input.down, 'moves across the line to the enemy');
+  const enemy = spawnAt(w, 1400, 1000);
+  const r = seeded(seed);
+  let mem: BotMemory = { ...newBotMemory(r), persona };
+  const out: InputState[] = [];
+  for (let i = 0; i < ticks; i++) {
+    for (const p of [bot, enemy]) if (p.life.k === 'alive') p.life.hp = 100;
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+    mem = d.mem;
+    setInput(w, bot.id, i + 1, d.input);
+    out.push(d.input);
+    step(w, TICK_MS);
+  }
+  return out;
+}
+
+const moving = (i: InputState) => i.up || i.down || i.left || i.right;
+const keysOf = (i: InputState) => `${+i.up}${+i.down}${+i.left}${+i.right}`;
+
+test('a bot in its range plants its feet to shoot', () => {
+  for (const persona of ['cautious', 'marksman'] as const) {
+    const shots = Array.from({ length: 10 }, (_, s) => duel(persona, s + 1, 150)).flat().filter((i) => i.fire);
+    const still = shots.filter((i) => !moving(i)).length / shots.length;
+    assert.ok(still > 0.6, `${persona}: ${(100 * still).toFixed(0)}% of shots fired standing still`);
+  }
+});
+
+test('a bot\'s movement keys hold for a while instead of flickering tick to tick', () => {
+  for (const persona of ['aggressive', 'cautious', 'marksman'] as const) {
+    for (let seed = 1; seed <= 5; seed++) {
+      const inputs = duel(persona, seed, 150);
+      const changes = inputs.slice(1).filter((i, k) => keysOf(i) !== keysOf(inputs[k]!)).length;
+      assert.ok(changes <= 12, `${persona} seed ${seed}: ${changes} key changes in 5s`);
+    }
+  }
 });
 
 test('a bot leads a target moving across its line of fire', () => {

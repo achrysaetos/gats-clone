@@ -13,7 +13,7 @@ import { choosePick } from '../src/shared/sim/stats.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
 import { createWorld, newId, rand, type World } from '../src/shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../src/shared/wire.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const seeds = (process.argv[2] ?? '1,2,3').split(',').map(Number);
 const squad = Number(process.argv[3] ?? ZOM.squadSize);
@@ -31,7 +31,7 @@ function newSquad(seed: number): Squad {
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < squad; i++) {
     const p = addPlayer(w, `bot${i}`, randomLoadout(r), { kind: squad === 1 ? 'human' : 'bot' });
-    bots.set(p.id, newBotMemory(r, MAPS[w.map].size));
+    bots.set(p.id, newBotMemory(r));
   }
   return { w, bots, r, encoders: new Map([...bots.keys()].map((id) => [id, makeSnapshotEncoder()])) };
 }
@@ -39,9 +39,9 @@ function newSquad(seed: number): Squad {
 /** One server tick as a room runs it: bot brains, the step, and every squad player's encoded snapshot. */
 function tick({ w, bots, r, encoders }: Squad) {
   const started = performance.now();
-  const walls = wallViews(w);
+  const arena = arenaFor(w);
   for (const [id, mem] of bots) {
-    const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+    const d = botThink(snapshotFor(w, id), arena, mem, r);
     bots.set(id, d.mem);
     setInput(w, id, w.tick, d.input);
     if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);

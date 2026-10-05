@@ -9,7 +9,7 @@ import { circleHitsRect, segmentEntersRectAt, type Rect } from '../src/shared/si
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats } from '../src/shared/sim/stats.ts';
 import { coverRects, createWorld, isEnemy, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const minutes = Number(process.argv[2] ?? 4);
 const seeds = Number(process.argv[3] ?? 3);
@@ -31,7 +31,7 @@ function makeBrain(w: World, ids: readonly number[]): Brain {
   const mems = new Map<number, BotMemory>(ids.map((id) => [id, newBotMemory(r)]));
   return {
     think(w, id) {
-      const d = botThink(snapshotFor(w, id), wallViews(w), mems.get(id)!, r);
+      const d = botThink(snapshotFor(w, id), arenaFor(w), mems.get(id)!, r);
       mems.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
       if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);

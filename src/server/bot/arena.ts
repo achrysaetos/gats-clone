@@ -1,4 +1,5 @@
 import { WORLD } from '../../shared/defs.ts';
+import { MAPS } from '../../shared/maps.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { crateRect, type World } from '../../shared/sim/world.ts';
@@ -23,8 +24,8 @@ const ARENAS = new WeakMap<World, BotArena>();
 export function arenaFor(w: World): BotArena {
   const cached = ARENAS.get(w);
   if (cached && cached.version === w.wallsVersion) return cached;
-  // The one place bot code reads how big the world is; a per-map size replaces this line.
-  const size = WORLD.size;
+  // The one place bot code reads how big the world is.
+  const size = MAPS[w.map].size;
   const walls = wallViews(w);
   const solids: Rect[] = [...walls, ...w.crates.map(crateRect)];
   const nav = navGrid(size, solids, WORLD.playerRadius);

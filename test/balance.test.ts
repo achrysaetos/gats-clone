@@ -6,8 +6,8 @@ import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/si
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { choosePick, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
-import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { ROTATION, type MapId } from '../src/shared/maps.ts';
+import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { emptyWorld, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 test('a bolt-action hit kills an unarmored full-health player', () => {
@@ -43,12 +43,12 @@ function botLifeLevels(seed: number, map: MapId, minutes: number): number[] {
   const w = createWorld('FFA', seed, map);
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
-  for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
+  for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
   const levels: number[] = [];
   for (let t = 0; t < minutes * 60_000; t += TICK_MS) {
-    const walls = wallViews(w);
+    const arena = arenaFor(w);
     for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, id), arena, mem, r);
       bots.set(id, d.mem);
       setInput(w, id, w.tick, d.input);
       if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);

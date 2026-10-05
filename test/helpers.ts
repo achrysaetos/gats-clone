@@ -4,6 +4,7 @@ import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId, type PlayerKi
 import { ROTATION } from '../src/shared/maps.ts';
 import type { ClientMsg, InputState, Loadout, ServerMsg, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
+import type { Rect } from '../src/shared/sim/movement.ts';
 import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
 
@@ -84,4 +85,10 @@ export function fakeSocket() {
     pong: (data: string) => { ws.emit('pong', Buffer.from(data)); },
     close: () => { ws.emit('close'); },
   };
+}
+
+/** Puts exactly these walls in the world, as the map would, so the sim and the bots' arena both see them. */
+export function setWalls(w: World, walls: readonly Rect[]) {
+  w.walls = walls.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, built: false, material: 'concrete' as const, expiresAt: Infinity }));
+  w.wallsVersion++;
 }

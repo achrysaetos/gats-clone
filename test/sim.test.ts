@@ -6,7 +6,7 @@ import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/si
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { explode } from '../src/shared/sim/combat.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
 import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -342,11 +342,11 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
   const w = createWorld('FFA', 3, 'plaza');
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
-  for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
+  for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
   let kills = 0;
   for (let t = 0; t < 60_000 && kills === 0; t += TICK_MS) {
     for (const [id, mem] of mems) {
-      const d = botThink(snapshotFor(w, id), wallViews(w), mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, id), arenaFor(w), mem, r);
       mems.set(id, d.mem);
       setInput(w, id, t, d.input);
     }

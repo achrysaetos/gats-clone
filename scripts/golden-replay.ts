@@ -9,7 +9,7 @@ import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '..
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { abilityOf, choosePick, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { arenaFor, botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 
 const TICKS = 4000;
 const SEEDS = [7, 8];
@@ -65,7 +65,7 @@ for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
     const w = createWorld(mode, seed, ROTATION[mode][0]);
     const r = () => rand(w);
     const bots = new Map<number, BotMemory>();
-    const addBot = (name: string) => bots.set(addPlayer(w, name, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
+    const addBot = (name: string) => bots.set(addPlayer(w, name, randomLoadout(r)).id, newBotMemory(r));
     for (let i = 0; i < 8; i++) addBot(`bot${i}`);
     const humans = [
       addPlayer(w, 'lagged', { weapon: 'assault', armor: 'light', color: 'red' }, { kind: 'human', at: { x: MAPS[w.map].size / 2, y: MAPS[w.map].size / 2 } }),
@@ -74,9 +74,9 @@ for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
     for (const h of humans) h.level = LEVELS.length - 1;
     let seq = 1;
     for (let tick = 0; tick < TICKS; tick++) {
-      const walls = wallViews(w);
+      const arena = arenaFor(w);
       for (const [id, mem] of bots) {
-        const d = botThink(snapshotFor(w, id), walls, mem, r, MAPS[w.map].size);
+        const d = botThink(snapshotFor(w, id), arena, mem, r);
         bots.set(id, d.mem);
         setInput(w, id, w.tick, d.input);
         if (d.pick && choosePick(w, id, d.pick.level, d.pick.option)) seen.picks++;

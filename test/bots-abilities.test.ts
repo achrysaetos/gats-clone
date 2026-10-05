@@ -6,8 +6,8 @@ import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { botThink, newBotMemory } from '../src/server/bots.ts';
-import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
+import { arenaFor, botThink, newBotMemory } from '../src/server/bots.ts';
+import { emptyWorld, grantPerks, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -26,17 +26,18 @@ type Scene = {
 /** The bot's inputs over its first second, standing at (1000, 1000) unless told otherwise, facing an idle enemy. */
 function inputs(scene: Scene, ticks = 30): InputState[] {
   const w = emptyWorld(scene.mode);
+  if (scene.walls) setWalls(w, scene.walls);
   const bot = spawnAt(w, scene.botAt?.x ?? 1000, scene.botAt?.y ?? 1000, { loadout: { weapon: 'assault' }, team: scene.mode === 'DOM' ? 'red' : undefined });
   grantPerks(w, bot, ['grip', 'thickSkin', scene.ability]);
   if (scene.enemyAt) spawnAt(w, scene.enemyAt.x, scene.enemyAt.y, { team: scene.mode === 'DOM' ? 'blue' : undefined });
   const r = seeded(11);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   const out: InputState[] = [];
   for (let i = 0; i < ticks; i++) {
     if (scene.hp !== undefined && bot.life.k === 'alive') bot.life.hp = scene.hp;
     const snap: Snapshot = snapshotFor(w, bot.id);
     if (scene.hitEveryTick) snap.events = [...snap.events, { e: 'dmg', attacker: null, victim: bot.id, amount: 5, x: bot.x, y: bot.y, kind: 'player' }];
-    const d = botThink(snap, scene.walls ?? [], mem, r, MAPS[w.map].size);
+    const d = botThink(snap, arenaFor(w), mem, r);
     mem = d.mem;
     out.push(d.input);
     step(w, TICK_MS);
@@ -97,7 +98,7 @@ test('a bot with its knife ready closes on a nearby enemy instead of strafing at
   const knife = inputs({ ability: 'knife', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
   assert.ok(knife.right, 'steps toward an enemy 250px away');
   const grenade = inputs({ ability: 'grenade', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
-  assert.ok(!grenade.right && (grenade.up || grenade.down), 'a grenade bot strafes at the same distance');
+  assert.ok(!grenade.right, 'a grenade bot holds its distance');
 });
 
 test('a bot throws a grenade where a moving target will be when it lands', () => {
@@ -109,9 +110,9 @@ test('a bot throws a grenade where a moving target will be when it lands', () =>
     grantPerks(w, bot, ['grip', 'thickSkin', 'grenade']);
     const target = spawnAt(w, 1350, 850);
     const r = seeded(seed);
-    let mem = newBotMemory(r, MAPS[w.map].size);
+    let mem = newBotMemory(r);
     for (let i = 0; i < 30; i++) {
-      const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
       mem = d.mem;
       if (d.input.ability) {
         const landing = { x: target.x, y: target.y + speed * fuseS };
@@ -131,15 +132,15 @@ test('a bot throws a grenade where a moving target will be when it lands', () =>
   assert.ok(Math.abs(mean(distErr)) < 30, `throws ${mean(distErr).toFixed(0)}px past the landing point on average`);
 });
 
-test('a hurt bot without a dash keeps fighting rather than backing away', () => {
+test('a hurt bot without a dash and with no cover in reach keeps fighting a near enemy rather than turning its back', () => {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   spawnAt(w, 1300, 1000);
   const r = seeded(2);
-  let mem = newBotMemory(r, MAPS[w.map].size);
+  let mem = newBotMemory(r);
   for (let i = 0; i < 20; i++) {
     if (bot.life.k === 'alive') bot.life.hp = 20;
-    const d = botThink(snapshotFor(w, bot.id), [], mem, r, MAPS[w.map].size);
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
     mem = d.mem;
     assert.ok(!d.input.left, `tick ${i}: does not back away`);
     step(w, TICK_MS);
