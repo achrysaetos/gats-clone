@@ -217,7 +217,7 @@ export const WORLD = {
   size: 3000,
   playerRadius: 24,
   baseHp: 100,
-  baseSpeed: 300,
+  baseSpeed: 255,
   regenDelayMs: 4000,
   regenPerSec: 5,
   tickHz: 30,

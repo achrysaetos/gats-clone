@@ -27,7 +27,7 @@ function victimThatSteppedAside(walls: Wall[] = []): { w: World; shooter: Player
   run(w, 500);
   const sawAt = w.now - 100;
   press(w, victim, { down: true });
-  run(w, 150);
+  while (victim.y - 500 <= WORLD.playerRadius * 2 + 2) step(w, TICK_MS);
   press(w, victim, {});
   return { w, shooter, victim, sawAt };
 }
@@ -67,7 +67,7 @@ function latestHitAfterCover(rewindCapMs: number, range: number): number {
     w.walls.push({ x: 600, y: 400, w: 20, h: 300, built: false, expiresAt: Infinity });
     run(w, 300);
     press(w, victim, { down: true });
-    while (victim.y - 380 <= WORLD.playerRadius) step(w, TICK_MS);
+    while (victim.y - 380 <= WORLD.playerRadius + range * GUNS.pistol.spread) step(w, TICK_MS);
     press(w, victim, {});
     const coveredAt = w.now;
     run(w, delayMs);
