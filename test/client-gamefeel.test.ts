@@ -11,6 +11,7 @@ import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import { EMPTY_BUFFER } from '../src/client/interp.ts';
 import type { Session } from '../src/client/state.ts';
 import { createPool } from '../src/client/particles.ts';
+import { createCracks } from '../src/client/decals.ts';
 import { PALETTE } from '../src/client/palette.ts';
 import { drawWorld } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
@@ -146,8 +147,8 @@ function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
-  const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), effects: [], particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
-  drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
+  const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
+  drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId, hover: null });
   return strokes;
 }
 
@@ -223,6 +224,7 @@ const lightness = (color: unknown): number => {
 };
 
 test("every gun's rounds glow: no tracer pass is drawn darker than mid-grey, evolved hues included", () => {
+  worldStrokes(snap());
   for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
     const base = worldStrokes(snap({ players: [player(2, { gun })] }));
     const frame = snap({ players: [player(2, { gun })] });

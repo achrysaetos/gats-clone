@@ -4,25 +4,19 @@ import type { Team } from '../shared/protocol.ts';
 export const INK = '#1c1f26';
 
 export const PALETTE = {
-  outside: '#959ba5',
+  outside: '#c3c6cc',
   letterbox: '#16181d',
-  floor: '#e3e5e9',
-  gridMinor: 'rgba(60, 70, 90, 0.07)',
-  gridMajor: 'rgba(60, 70, 90, 0.14)',
-  contact: 'rgba(20, 24, 32, 0.34)',
-  tracer: '#ffc43a',
-  tracerCore: '#ffe58a',
-  tracerHead: '#fffbe6',
-  ownTracer: '#fff1b8',
-  brass: '#c9962f',
+  grid: 'rgba(70, 74, 90, 0.1)',
+  contact: 'rgba(20, 24, 32, 0.3)',
+  tracerGlow: '#ffc65a',
+  tracer: '#ffe6a6',
+  tracerHot: '#fffcf0',
+  casing: '#5d616a',
   label: '#2a2e36',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
   armor: '#5b8def',
-  steel: '#9aa3b2',
-  steelDark: '#5d6573',
   shield: 'rgba(110, 180, 255, 0.9)',
-  selfRing: 'rgba(64, 156, 255, 0.6)',
   gas: 'rgba(132, 186, 64, 0.16)',
   gasEdge: 'rgba(92, 140, 36, 0.6)',
   neutral: '#7a808b',
@@ -36,7 +30,8 @@ export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as cons
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };
 
-export const ARMOR_BAND: Record<ArmorId, number> = { none: 0, light: 3.5, medium: 5, heavy: 7 };
+/** Armor thickens a body's dark rim by this much. */
+export const ARMOR_RIM: Record<ArmorId, number> = { none: 0, light: 0.8, medium: 1.6, heavy: 2.4 };
 
 export function shade(hex: string, f: number): string {
   const v = parseInt(hex.slice(1), 16);

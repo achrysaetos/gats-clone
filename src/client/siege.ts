@@ -3,8 +3,8 @@ import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '..
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 import { HIT_FLASH_MS } from './effects.ts';
-import { PALETTE, shade, ZOMBIE_LOOK } from './palette.ts';
-import { drawSphere, sphereSprite } from './spheres.ts';
+import { INK, PALETTE, shade, ZOMBIE_LOOK } from './palette.ts';
+import { bodySprite, drawBody } from './bodies.ts';
 import type { Effect } from './state.ts';
 import { LIGHT } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
@@ -83,7 +83,7 @@ function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: num
   ctx.fill();
   ctx.restore();
   const r = kind === 'sentry' ? 11 : 14;
-  drawSphere(ctx, sphereSprite(look.head, r, 0, pxPerUnit), cx, cy, r);
+  drawBody(ctx, bodySprite(look.head, r, 0, pxPerUnit), cx, cy, r);
   ctx.fillStyle = look.accent;
   ctx.beginPath();
   ctx.arc(cx, cy, 3.5, 0, TAU);
@@ -209,7 +209,7 @@ function addCircles(ctx: CanvasRenderingContext2D, xyr: readonly number[], pad: 
   }
 }
 
-/** Bodies are lit spheres from the shared sprite cache; arms and eyes stay one path per kind, so a full horde costs a few fills plus a copy per zombie. */
+/** Bodies come from the shared sprite cache; arms and eyes stay one path per kind, so a full horde costs a few fills plus a copy per zombie. */
 export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], faces: ReadonlyMap<number, { a: number }>, flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
   ZOMBIE_KINDS.forEach((kind, k) => {
     const look = ZOMBIE_LOOK[kind];
@@ -234,8 +234,8 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
     ctx.beginPath();
     addCircles(ctx, limbs, 0);
     ctx.fill();
-    const body = sphereSprite(look.body, r, 0, pxPerUnit);
-    for (const [, , x, y] of mine) drawSphere(ctx, body, x, y, r);
+    const body = bodySprite(look.body, r, 0, pxPerUnit);
+    for (const [, , x, y] of mine) drawBody(ctx, body, x, y, r);
     ctx.fillStyle = look.eye;
     ctx.beginPath();
     for (const [id, , x, y] of mine) {
@@ -272,6 +272,7 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
   }
 }
 
+/** A downed body lies flat and squashed with a white cross, ringed by the revive under way and its bleed-out clock. */
 export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, serverNow: number | null, self: boolean) {
   const down = p.downed;
   if (!down) return;
@@ -279,51 +280,44 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
   ctx.translate(p.x, p.y);
   ctx.fillStyle = PALETTE.contact;
   ctx.beginPath();
-  ctx.ellipse(LIGHT.x * 6, LIGHT.y * 6, R * 1.1, R * 0.75, 0, 0, TAU);
+  ctx.ellipse(LIGHT.x * 8, LIGHT.y * 8, R, R * 0.66, 0, 0, TAU);
   ctx.fill();
-  const body = ctx.createRadialGradient(-R * 0.3, -R * 0.25, 1, 0, 0, R);
-  body.addColorStop(0, shade(color, 0.95));
-  body.addColorStop(1, shade(color, 0.45));
-  ctx.fillStyle = body;
+  ctx.fillStyle = shade(color, 0.8);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.ellipse(0, 0, R * 0.95, R * 0.62, 0, 0, TAU);
   ctx.fill();
-  if (self) {
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = PALETTE.selfRing;
-    ctx.stroke();
-  }
+  ctx.stroke();
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(-6, 0); ctx.lineTo(6, 0);
-  ctx.moveTo(0, -6); ctx.lineTo(0, 6);
+  ctx.moveTo(-5, 0); ctx.lineTo(5, 0);
+  ctx.moveTo(0, -5); ctx.lineTo(0, 5);
   ctx.stroke();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = 'rgba(28, 31, 38, 0.3)';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = self ? color : 'rgba(28, 31, 38, 0.25)';
   ctx.beginPath();
-  ctx.arc(0, 0, R + 12, 0, TAU);
+  ctx.arc(0, 0, R + 10, 0, TAU);
   ctx.stroke();
   if (down.revive > 0) {
     ctx.strokeStyle = PALETTE.hpGood;
     ctx.beginPath();
-    ctx.arc(0, 0, R + 12, -Math.PI / 2, -Math.PI / 2 + down.revive * TAU);
+    ctx.arc(0, 0, R + 10, -Math.PI / 2, -Math.PI / 2 + down.revive * TAU);
     ctx.stroke();
   }
   if (serverNow !== null) {
     const left = down.bleedOutAt - serverNow;
-    const label = clock(left);
-    ctx.font = '800 14px system-ui, sans-serif';
+    ctx.font = '750 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const w = ctx.measureText(label).width + 14;
-    ctx.fillStyle = left < 8000 ? PALETTE.hunted : 'rgba(28, 32, 40, 0.82)';
-    ctx.beginPath();
-    ctx.roundRect(-w / 2, -R - 60, w, 20, 6);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(label, 0, -R - 49);
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(28, 31, 38, 0.7)';
+    ctx.strokeText(clock(left), 0, -R - 22);
+    ctx.fillStyle = left < 8000 ? PALETTE.hunted : '#ffffff';
+    ctx.fillText(clock(left), 0, -R - 22);
   }
   ctx.restore();
 }

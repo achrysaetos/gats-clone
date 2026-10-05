@@ -1,3 +1,5 @@
+import { PALETTE } from './palette.ts';
+
 type ParticleShape = 'chip' | 'spark' | 'smoke' | 'casing';
 
 /** Launch conditions only: position at any time follows from them, so redrawing a frame never advances anything. */
@@ -9,8 +11,8 @@ type Particle = {
 
 export type ParticlePool = { readonly slots: readonly Particle[]; next: number };
 
-/** Casings live longest, so under heavy fire they are the slots reused first. */
-const PARTICLE_CAP = 400;
+/** Rubble and casings live longest, so under heavy fire they are the slots reused first. */
+const PARTICLE_CAP = 500;
 
 const deadParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 0, born: -Infinity, life: 0, size: 0, grow: 0, color: '', shape: 'chip' });
 
@@ -34,7 +36,7 @@ export function particleAt(p: Particle, now: number): { x: number; y: number; k:
   return { x: p.x + p.vx * travel, y: p.y + p.vy * travel, k: (now - p.born) / p.life };
 }
 
-export type BurstKind = 'spark' | 'splinter' | 'hit' | 'debris' | 'smoke' | 'puff' | 'gore' | 'casing';
+export type BurstKind = 'spark' | 'rubble' | 'debris' | 'smoke' | 'puff' | 'gore' | 'casing';
 
 type BurstSpec = {
   count: number; speed: [number, number]; life: [number, number]; size: [number, number];
@@ -43,14 +45,14 @@ type BurstSpec = {
 
 /** `spread` is the cone half-angle in radians around the burst direction; π sprays all round. */
 export const BURSTS: Record<BurstKind, BurstSpec> = {
-  spark: { count: 8, speed: [220, 520], life: [160, 340], size: [2, 3.2], grow: 0, drag: 7, spread: 1.2, colors: ['#ffe9a8', '#ffc93a', '#ffffff'], shape: 'spark' },
-  splinter: { count: 6, speed: [120, 300], life: [260, 460], size: [3, 6], grow: 0, drag: 6, spread: 1.4, colors: ['#b98247', '#8d5c2c', '#d9a868'], shape: 'chip' },
-  hit: { count: 7, speed: [120, 320], life: [200, 360], size: [2.5, 5], grow: 0, drag: 8, spread: 0.9, colors: ['#b3152b', '#7d0d1d', '#e0435a'], shape: 'chip' },
+  spark: { count: 3, speed: [200, 420], life: [90, 180], size: [1.4, 2.2], grow: 0, drag: 9, spread: 1.0, colors: ['#fff3c4', '#ffffff'], shape: 'spark' },
+  /** Grey chips knocked off cover: they skid a short way, settle on the floor and fade over seconds. */
+  rubble: { count: 5, speed: [70, 230], life: [2600, 4200], size: [1.6, 3.6], grow: 0, drag: 10, spread: 1.1, colors: ['#5f636c', '#7d818a', '#9a9ea6', '#4c5059'], shape: 'chip' },
   debris: { count: 22, speed: [240, 720], life: [380, 720], size: [4, 9], grow: 0, drag: 4.5, spread: Math.PI, colors: ['#3a3631', '#5a5249', '#ffb347', '#ff7a2f'], shape: 'chip' },
-  smoke: { count: 10, speed: [40, 160], life: [700, 1200], size: [16, 30], grow: 1.6, drag: 2.5, spread: Math.PI, colors: ['#7d7a74', '#5f5c57', '#9a968e'], shape: 'smoke' },
+  smoke: { count: 7, speed: [40, 150], life: [600, 1000], size: [12, 22], grow: 1.4, drag: 2.5, spread: Math.PI, colors: ['#a3a09a', '#8c8984', '#b6b3ad'], shape: 'smoke' },
   gore: { count: 12, speed: [140, 380], life: [260, 520], size: [3, 7], grow: 0, drag: 7, spread: Math.PI, colors: ['#4c6e22', '#2f3a1c', '#a3c766'], shape: 'chip' },
   puff: { count: 16, speed: [90, 300], life: [360, 560], size: [4, 6], grow: 0, drag: 5, spread: Math.PI, colors: ['#ffffff'], shape: 'spark' },
-  casing: { count: 1, speed: [90, 160], life: [2600, 3200], size: [5, 5], grow: 0, drag: 5, spread: 0.4, colors: ['#c9962f'], shape: 'casing' },
+  casing: { count: 1, speed: [90, 160], life: [1400, 1800], size: [4, 4], grow: 0, drag: 5, spread: 0.4, colors: [PALETTE.casing], shape: 'casing' },
 };
 
 const between = ([lo, hi]: [number, number], r: number) => lo + (hi - lo) * r;

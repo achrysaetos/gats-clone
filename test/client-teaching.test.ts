@@ -8,6 +8,7 @@ import { BLAST_RADIUS } from '../src/shared/sim/abilities.ts';
 import { abilityHint } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { createPool } from '../src/client/particles.ts';
+import { createCracks } from '../src/client/decals.ts';
 import { drawWorld } from '../src/client/render.ts';
 import type { Session } from '../src/client/state.ts';
 import { emptyWorld, hpOf, spawnAt, TICK_MS } from './helpers.ts';
@@ -38,8 +39,8 @@ function arcsDrawnFor(kind: ThrownKind): Arc[] {
     players: [], bullets: [], crates: [], zones: [], minimap: [], leaderboard: [], events: [],
     thrown: [{ id: 1, kind, x: 1234, y: 987, r: 10, owner: 2 }],
   } as unknown as Snapshot;
-  const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), effects: [], particles: createPool(), feedback: { numbers: [] } } as unknown as Session;
-  drawWorld(ctx, { snap, s, cam: makeCamera({ x: 1234, y: 987 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId: null });
+  const s = { myId: 1, worldSize: WORLD.size, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: { numbers: [] } } as unknown as Session;
+  drawWorld(ctx, { snap, s, cam: makeCamera({ x: 1234, y: 987 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId: null, hover: null });
   return arcs.filter((a) => a.x === 1234 && a.y === 987);
 }
 

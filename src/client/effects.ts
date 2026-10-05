@@ -1,20 +1,42 @@
 import { BUILDINGS, WORLD, ZOMBIES, type TurretKind } from '../shared/defs.ts';
-import type { DamageKind } from '../shared/protocol.ts';
+import { cellRect, coreRectAt } from '../shared/sim/build.ts';
+import { addCrack, hostOf, inward } from './decals.ts';
 import type { EffectSpec } from './eventclock.ts';
+import { newestSnap } from './interp.ts';
 import { PALETTE, ZOMBIE_LOOK } from './palette.ts';
-import { burst, isLive, particleAt, type BurstKind, type ParticlePool } from './particles.ts';
+import { burst, isLive, particleAt, type ParticlePool } from './particles.ts';
 import { EFFECT_LIFE_MS, type Effect, type Session } from './state.ts';
 
 const TAU = Math.PI * 2;
 export const HIT_FLASH_MS = 120;
 
-const IMPACT_BURST: Record<'wall' | DamageKind, BurstKind> = { wall: 'spark', crate: 'splinter', player: 'hit', zombie: 'hit', building: 'splinter' };
+/** Everything a round can strike that is not a body, as the newest snapshot has it. */
+function coverOf(s: Session) {
+  const snap = newestSnap(s.snaps);
+  return [
+    ...s.walls,
+    ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
+    ...(snap?.buildings ?? []).map((b) => cellRect(b.cx, b.cy)),
+    ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
+  ];
+}
 
 export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: string) {
   s.effects.push({ ...spec, born: now } as Effect);
   const angle = Math.random() * TAU;
   switch (spec.kind) {
-    case 'impact': burst(s.particles, IMPACT_BURST[spec.surface], spec.x, spec.y, angle, now); return;
+    case 'impact': {
+      if (spec.victim !== null) {
+        s.hurtAt.set(spec.victim, now);
+        return;
+      }
+      const host = hostOf(coverOf(s), spec.x, spec.y);
+      const away = host ? inward(host, spec.x, spec.y) + Math.PI : angle;
+      if (host) addCrack(s.cracks, host, spec.x, spec.y, now);
+      burst(s.particles, 'rubble', spec.x, spec.y, away, now);
+      burst(s.particles, 'spark', spec.x, spec.y, away, now);
+      return;
+    }
     case 'boom':
       burst(s.particles, 'debris', spec.x, spec.y, angle, now);
       burst(s.particles, 'smoke', spec.x, spec.y, angle, now);
@@ -58,7 +80,7 @@ export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Eff
     const k = (now - fx.born) / EFFECT_LIFE_MS[fx.kind];
     if (k < 0 || k >= 1) continue;
     switch (fx.kind) {
-      case 'impact': if (fx.surface === 'wall') drawSpark(ctx, fx.x, fx.y, k); break;
+      case 'impact': if (fx.victim === null) drawSpark(ctx, fx.x, fx.y, k); break;
       case 'boom': drawBoom(ctx, fx.x, fx.y, fx.r, k); break;
       case 'flash': drawMuzzleFlash(ctx, fx.x, fx.y, fx.angle, k); break;
       case 'slash': drawSlash(ctx, fx.x, fx.y, fx.angle, k); break;
@@ -92,25 +114,25 @@ function drawTurretRound(ctx: CanvasRenderingContext2D, kind: TurretKind, x: num
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  ctx.fillStyle = PALETTE.tracerHead;
+  ctx.fillStyle = PALETTE.tracerHot;
   ctx.beginPath();
   ctx.arc(x + c * head, y + s * head, bullet.r * 1.2, 0, TAU);
   ctx.fill();
 }
 
-/** The brief flash where a round strikes cover: a warm glow around a white-hot core. */
+/** The brief flash where a round strikes cover: a small warm glow around a white-hot point. */
 function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, k: number) {
-  const fade = Math.max(0, 1 - k * 2);
+  const fade = Math.max(0, 1 - k * 2.5);
   if (fade <= 0) return;
-  ctx.globalAlpha = 0.35 * fade;
-  ctx.fillStyle = '#ffc93a';
+  ctx.globalAlpha = 0.3 * fade;
+  ctx.fillStyle = '#ffd56a';
   ctx.beginPath();
-  ctx.arc(x, y, 16 * (0.6 + 0.4 * fade), 0, TAU);
+  ctx.arc(x, y, 9 * (0.6 + 0.4 * fade), 0, TAU);
   ctx.fill();
   ctx.globalAlpha = fade;
-  ctx.fillStyle = '#fff6c8';
+  ctx.fillStyle = '#fffbe8';
   ctx.beginPath();
-  ctx.arc(x, y, 6 * fade + 1, 0, TAU);
+  ctx.arc(x, y, 3 * fade + 0.8, 0, TAU);
   ctx.fill();
 }
 
@@ -238,11 +260,11 @@ export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool,
 
 const CASING_SETTLE = 0.75;
 
-/** Brass ejected from each shot, drawn on the floor beneath bodies: it tumbles out, comes to rest and fades. Those not yet fading share one path. */
+/** Casings ejected from each shot, drawn on the floor beneath bodies: it tumbles out, comes to rest and fades. Those not yet fading share one path. */
 export function drawCasings(ctx: CanvasRenderingContext2D, pool: ParticlePool, now: number) {
   ctx.lineCap = 'butt';
   ctx.lineWidth = 2.6;
-  ctx.strokeStyle = PALETTE.brass;
+  ctx.strokeStyle = PALETTE.casing;
   ctx.beginPath();
   for (const p of pool.slots) {
     if (p.shape !== 'casing' || !isLive(p, now)) continue;

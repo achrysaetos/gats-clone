@@ -1,42 +1,40 @@
 import { byGun, GUN_IDS, GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
 import { INK } from './palette.ts';
 
-type Part = { x: number; y: number; w: number; h: number; tone: 0 | 1 | 2 | 'accent' };
-
-const TONES = ['#1c1f26', '#2c313b', '#4a515e'] as const;
-const OUTLINE = 0.08;
+/** A gun is a few rects in units of the body's radius; only an evolved gun's accent stripe is not plain ink. */
+type Part = { x: number; y: number; w: number; h: number; accent?: true };
 
 const BASE_PARTS: Record<WeaponId, readonly Part[]> = {
   pistol: [
-    { x: 0.55, y: -0.17, w: 0.55, h: 0.34, tone: 1 },
-    { x: 1.0, y: -0.11, w: 0.45, h: 0.22, tone: 0 },
+    { x: 0.55, y: -0.17, w: 0.55, h: 0.34 },
+    { x: 1.0, y: -0.11, w: 0.45, h: 0.22 },
   ],
   smg: [
-    { x: 0.5, y: -0.2, w: 0.75, h: 0.4, tone: 1 },
-    { x: 0.8, y: 0.15, w: 0.18, h: 0.4, tone: 0 },
-    { x: 1.2, y: -0.12, w: 0.55, h: 0.24, tone: 0 },
+    { x: 0.5, y: -0.2, w: 0.75, h: 0.4 },
+    { x: 0.8, y: 0.15, w: 0.18, h: 0.4 },
+    { x: 1.2, y: -0.12, w: 0.55, h: 0.24 },
   ],
   shotgun: [
-    { x: 0.45, y: -0.2, w: 0.6, h: 0.4, tone: 2 },
-    { x: 1.0, y: -0.17, w: 0.95, h: 0.34, tone: 0 },
-    { x: 1.1, y: 0.1, w: 0.55, h: 0.15, tone: 1 },
+    { x: 0.45, y: -0.2, w: 0.6, h: 0.4 },
+    { x: 1.0, y: -0.17, w: 0.95, h: 0.34 },
+    { x: 1.1, y: 0.1, w: 0.55, h: 0.15 },
   ],
   assault: [
-    { x: 0.45, y: -0.19, w: 0.85, h: 0.38, tone: 1 },
-    { x: 0.85, y: 0.15, w: 0.2, h: 0.45, tone: 0 },
-    { x: 1.25, y: -0.11, w: 0.8, h: 0.22, tone: 0 },
-    { x: 0.75, y: -0.33, w: 0.35, h: 0.14, tone: 2 },
+    { x: 0.45, y: -0.19, w: 0.85, h: 0.38 },
+    { x: 0.85, y: 0.15, w: 0.2, h: 0.45 },
+    { x: 1.25, y: -0.11, w: 0.8, h: 0.22 },
+    { x: 0.75, y: -0.33, w: 0.35, h: 0.14 },
   ],
   sniper: [
-    { x: 0.45, y: -0.17, w: 0.85, h: 0.34, tone: 2 },
-    { x: 1.25, y: -0.08, w: 1.35, h: 0.16, tone: 0 },
-    { x: 0.7, y: -0.42, w: 0.6, h: 0.2, tone: 0 },
+    { x: 0.45, y: -0.17, w: 0.85, h: 0.34 },
+    { x: 1.25, y: -0.08, w: 1.35, h: 0.16 },
+    { x: 0.7, y: -0.42, w: 0.6, h: 0.2 },
   ],
   lmg: [
-    { x: 0.4, y: -0.25, w: 0.95, h: 0.5, tone: 1 },
-    { x: 0.7, y: 0.2, w: 0.45, h: 0.35, tone: 2 },
-    { x: 1.3, y: -0.14, w: 0.95, h: 0.28, tone: 0 },
-    { x: 1.9, y: 0.12, w: 0.08, h: 0.3, tone: 0 },
+    { x: 0.4, y: -0.25, w: 0.95, h: 0.5 },
+    { x: 0.7, y: 0.2, w: 0.45, h: 0.35 },
+    { x: 1.3, y: -0.14, w: 0.95, h: 0.28 },
+    { x: 1.9, y: 0.12, w: 0.08, h: 0.3 },
   ],
 };
 
@@ -48,7 +46,7 @@ function partsOf(gun: GunId): Part[] {
   const src = BASE_PARTS[base];
   const rear = rearOf(src);
   const muzzle = src.reduce((a, b) => (b.x + b.w > a.x + a.w ? b : a));
-  const stretched = (p: Part): Part => ({ x: rear + (p.x - rear) * look.length, y: p.y * look.width, w: p.w * look.length, h: p.h * look.width, tone: p.tone });
+  const stretched = (p: Part): Part => ({ x: rear + (p.x - rear) * look.length, y: p.y * look.width, w: p.w * look.length, h: p.h * look.width });
   const parts: Part[] = [];
   for (const p of src) {
     const s = stretched(p);
@@ -58,23 +56,18 @@ function partsOf(gun: GunId): Part[] {
   }
   if (GUNS[gun].stage > 0) {
     const body = stretched(src[0]!);
-    parts.push({ x: body.x + body.w * 0.15, y: body.y + body.h * 0.3, w: body.w * 0.7, h: body.h * 0.4, tone: 'accent' });
+    parts.push({ x: body.x + body.w * 0.15, y: body.y + body.h * 0.3, w: body.w * 0.7, h: body.h * 0.4, accent: true });
   }
   return parts;
 }
 
 const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
 
+/** In the world a gun is ink with its accent stripe; `flat` paints the bare silhouette in one color, for the HUD and the menus. */
 export function drawGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flat?: string) {
-  const parts = GUN_PARTS[gun];
-  if (!flat) {
-    const o = OUTLINE * radius;
-    ctx.fillStyle = INK;
-    for (const p of parts) ctx.fillRect(p.x * radius - o, p.y * radius - o, p.w * radius + o * 2, p.h * radius + o * 2);
-  }
-  for (const p of parts) {
-    if (flat && p.tone === 'accent') continue;
-    ctx.fillStyle = flat ?? (p.tone === 'accent' ? GUNS[gun].look.accent : TONES[p.tone]);
+  for (const p of GUN_PARTS[gun]) {
+    if (flat && p.accent) continue;
+    ctx.fillStyle = flat ?? (p.accent ? GUNS[gun].look.accent : INK);
     ctx.fillRect(p.x * radius, p.y * radius, p.w * radius, p.h * radius);
   }
 }

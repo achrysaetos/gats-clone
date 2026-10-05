@@ -10,6 +10,8 @@ import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
 import type { LocalRound, ShotEvent } from './rounds.ts';
 import type { TurretAim } from './siege.ts';
+import type { TrailPoint } from './trails.ts';
+import type { CrackPool } from './decals.ts';
 
 export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
@@ -26,7 +28,6 @@ export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, dea
 
 type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
-type TrailPoint = { x: number; y: number; at: number };
 
 /** Everything needed to join the same room again as the same player. */
 export type Rejoin = { room: string; name: string; loadout: Loadout; token: string | undefined };
@@ -56,6 +57,9 @@ export type Session = {
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;
+  /** When each body last took a hit, so its health shows for a moment. */
+  hurtAt: Map<number, number>;
+  cracks: CrackPool;
   /** The level whose pick was sent and not yet confirmed by a snapshot. */
   pickSentFor: number | null;
   particles: ParticlePool;

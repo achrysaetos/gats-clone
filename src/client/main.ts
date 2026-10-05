@@ -23,7 +23,9 @@ import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { muzzleTip } from './sprites.ts';
 import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundLive, roundScene, type Shot, type ShotEvent } from './rounds.ts';
-import { bodyColor, drawBackdrop, drawWorld, shadowBakes, TRAIL_MS } from './render.ts';
+import { bodyColor, drawBackdrop, drawWorld, shadowBakes } from './render.ts';
+import { recordTrail, TRAIL } from './trails.ts';
+import { createCracks } from './decals.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
@@ -273,7 +275,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
+    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, particles: createPool(),
     coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
@@ -427,18 +429,15 @@ function resize() {
   }, VIEW_RESEND_MS);
 }
 
+/** Every body you can see leaves a trail; a ghillie-hidden one leaves none but your own. Trails of bodies gone from view fade out. */
 function updateTrails(s: Session, snap: Snapshot, now: number) {
   for (const p of snap.players) {
-    if (!p.dashing || !p.alive) continue;
-    const trail = s.trails.get(p.id) ?? [];
-    trail.push({ x: p.x, y: p.y, at: now });
-    s.trails.set(p.id, trail);
+    if (!p.alive || (p.hidden && p.id !== s.myId)) continue;
+    let trail = s.trails.get(p.id);
+    if (!trail) s.trails.set(p.id, (trail = []));
+    recordTrail(trail, p.x, p.y, now, p.dashing);
   }
-  for (const [id, trail] of s.trails) {
-    const live = trail.filter((pt) => now - pt.at < TRAIL_MS);
-    if (live.length) s.trails.set(id, live);
-    else s.trails.delete(id);
-  }
+  for (const [id, trail] of s.trails) if (!trail.length || now - trail.at(-1)!.at >= TRAIL.lifeMs) s.trails.delete(id);
 }
 
 function frame(now: number) {
@@ -486,7 +485,7 @@ function drawFrame(now: number) {
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse));
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost, hover: mouseAiming ? screenToWorld(aimCamera, mouse) : null });
   const moving = MOVES.some((a) => held.has(a));
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, !moving) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
