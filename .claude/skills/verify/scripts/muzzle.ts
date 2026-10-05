@@ -25,6 +25,7 @@ const VIEW = { w: 1280, h: 800 };
 const TAP_MS = GUNS.pistol.fireMs + 40;
 const STRAFE_MS = 500;
 const TURN_RAD_PER_S = 3;
+const MAX_OWN_GAP = 25;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
@@ -113,14 +114,14 @@ const collect = async () => {
   rounds.push(...((await shooter.js(`skirmishDev.firstRounds()`)) as Round[]));
 };
 const until = performance.now() + SECONDS * 1000;
-let shotSaved = false;
 await Promise.all([
   play(shooter, until, async (n) => {
-    if (n === 12 && !shotSaved) {
-      await sleep(2 * LAG + 150);
+    if (n !== 5) return;
+    const start = performance.now();
+    for (const after of [30, 80, 150]) {
+      await sleep(start + 2 * LAG + after - performance.now());
       const { data } = await shooter.cdp('Page.captureScreenshot', { format: 'png' });
-      writeFileSync(join(EV, `muzzle-lag${LAG}.png`), Buffer.from(data, 'base64'));
-      shotSaved = true;
+      writeFileSync(join(EV, `muzzle-lag${LAG}-${after}ms.png`), Buffer.from(data, 'base64'));
     }
   }),
   play(other, until, async () => {}),
@@ -135,11 +136,16 @@ const stats = (label: string, rs: Round[]) => {
   if (!g.length) return log(`${label}: no rounds with a visible shooter`);
   const q = (k: number) => Math.round(g[Math.min(g.length - 1, Math.floor(g.length * k))]!);
   log(`${label}: n ${g.length}  median ${q(0.5)}px  p90 ${q(0.9)}px  max ${Math.round(g[g.length - 1]!)}px`);
+  return q(0.5);
 };
 log(`LAG=${LAG} JITTER=${JITTER} ${SECONDS}s`);
-stats('own rounds', rounds.filter((r) => r.own));
+const ownMedian = stats('own rounds', rounds.filter((r) => r.own));
 stats('lagged human Other', rounds.filter((r) => !r.own && r.owner === other.id));
 stats('bots', rounds.filter((r) => !r.own && r.owner !== other.id));
-for (const e of [...shooter.exceptions, ...other.exceptions]) log(`page exception: ${e}`);
+const exceptions = [...shooter.exceptions, ...other.exceptions];
+for (const e of exceptions) log(`page exception: ${e}`);
+const pass = ownMedian !== undefined && ownMedian <= MAX_OWN_GAP && exceptions.length === 0;
+log(`${pass ? 'ok  ' : 'FAIL'} own rounds start within ${MAX_OWN_GAP}px of the drawn muzzle (median ${ownMedian ?? 'none'}px)`);
+log(pass ? 'RESULT PASS' : 'RESULT FAIL');
 shooter.chrome.kill(); other.chrome.kill();
-process.exit(0);
+process.exit(pass ? 0 : 1);
