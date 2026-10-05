@@ -61,6 +61,7 @@ test('the horde walks round to a gap in the walls rather than chew through them'
 test('a core walled in all round gets a wall chewed open before the core is bitten', () => {
   const w = nightWorld();
   ring(w, 3);
+  for (const b of w.buildings) b.hp = 100;
   const walls = w.buildings.length;
   addZombie(w, 'walker', 300, CORE.y);
   let wallsWhenCoreBitten: number | null = null;
@@ -69,7 +70,7 @@ test('a core walled in all round gets a wall chewed open before the core is bitt
   assert.equal(wallsWhenCoreBitten, walls - 1, 'exactly one wall fell first');
 });
 
-test('a brute tears through walls three times as hard as it bites', () => {
+test('a brute bites a wall for its building share of its bite', () => {
   const w = nightWorld();
   for (let cy = 0; cy < 60; cy++) addWall(w, 10, cy);
   const wall = w.buildings.find((b) => b.cy === 30)!;
@@ -132,7 +133,7 @@ test('a player behind a wall does not draw a zombie off its march', () => {
 test('a diagonal line of walls closes the way: the horde chews through it rather than wedging between corners', () => {
   const w = nightWorld();
   const mid = (CORE_CELL.lo + CORE_CELL.hi) / 2;
-  for (let cy = 0; cy < 60; cy++) for (let cx = 0; cx < 60; cx++) if (Math.abs(cx - mid) + Math.abs(cy - mid) === 6) addWall(w, cx, cy);
+  for (let cy = 0; cy < 60; cy++) for (let cx = 0; cx < 60; cx++) if (Math.abs(cx - mid) + Math.abs(cy - mid) === 6) addWall(w, cx, cy).hp = 100;
   const walls = w.buildings.length;
   // Outside the line, one diagonal step from a cell inside it, across the corner two walls meet at.
   addZombie(w, 'walker', (mid - 2.5 + 0.5) * ZOM.cell, (mid - 4.5 + 0.5) * ZOM.cell);
@@ -157,6 +158,6 @@ test('the core\'s armor shrugs off its share of each bite', () => {
   const w = nightWorld();
   const z = addZombie(w, 'walker', CORE.x, CORE.y + ZOM.coreHalf + ZOMBIES.walker.radius + 2);
   step(w, TICK_MS);
-  assert.equal(ZOM.coreHp - w.run!.core.hp, ZOMBIES.walker.damage * (1 - ZOM.coreArmor));
+  assert.ok(Math.abs(ZOM.coreHp - w.run!.core.hp - ZOMBIES.walker.damage * (1 - ZOM.coreArmor)) < 1e-9);
   assert.ok(z.attackAt > w.now, 'that was its bite');
 });

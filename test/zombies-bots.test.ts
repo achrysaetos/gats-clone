@@ -59,7 +59,7 @@ test('a squad bot mends a damaged wall near the core while no zombie is close', 
   const w = nightWorld();
   farZombie(w);
   const bot = spawnAt(w, CORE.x - 300, CORE.y);
-  const wall = { id: newId(w), kind: 'wall' as const, cx: 30, cy: 25, hp: 50 };
+  const wall = { id: newId(w), kind: 'wall' as const, cx: 30, cy: 25, hp: BUILDINGS.wall.hp - 400 };
   w.buildings.push(wall);
   w.buildingsVersion++;
   assert.ok(play(w, [bot], 15_000, () => wall.hp >= BUILDINGS.wall.hp * 0.9), `the wall is mended, at ${wall.hp.toFixed(0)}`);

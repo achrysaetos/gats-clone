@@ -247,14 +247,14 @@ export type ZombieKind = (typeof ZOMBIE_KINDS)[number];
 export const ZOMBIES: Record<ZombieKind, {
   name: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; aggroPx: number; score: number; scrap: number; firstNight: number;
 }> = {
-  walker: { name: 'Walker', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 1, aggroPx: 120, score: 10, scrap: 2, firstNight: 1 },
-  brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 3, aggroPx: 0, score: 60, scrap: 10, firstNight: 3 },
+  walker: { name: 'Walker', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 0.5, aggroPx: 120, score: 10, scrap: 2, firstNight: 1 },
+  brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 1, aggroPx: 0, score: 60, scrap: 10, firstNight: 3 },
 };
 
 export const BUILDING_KINDS = ['wall'] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
 export const BUILDINGS: Record<BuildingKind, { name: string; cost: number; hp: number }> = {
-  wall: { name: 'Wall', cost: 20, hp: 400 },
+  wall: { name: 'Wall', cost: 20, hp: 2000 },
 };
 
 export const ZOM = {
@@ -262,7 +262,7 @@ export const ZOM = {
   cell: 50,
   coreHp: 4000,
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
-  coreArmor: 0.5,
+  coreArmor: 0.6,
   /** Half the side of the square core at the map's center. */
   coreHalf: 50,
   dayMs: 40_000,
@@ -291,7 +291,7 @@ export const ZOM = {
   wallCostCells: 40,
   spawnGapMs: (night: number) => Math.max(150, 900 - 50 * night),
   /** A squad of four bots meets the base wave; a human, with triple health and better aim than a bot, counts for one and a half. */
-  waveSize: (night: number, squad: { humans: number; bots: number }) => Math.max(1, Math.round(((8 + 6 * night + 0.8 * night * night) * (squad.bots + 1.5 * squad.humans)) / 4)),
+  waveSize: (night: number, squad: { humans: number; bots: number }) => Math.max(1, Math.round(((12 + 6 * night + 0.5 * night * night) * (squad.bots + 1.5 * squad.humans)) / 4)),
   /** Brutes join from their first night and make up a growing share after. */
   share: (kind: ZombieKind, night: number) => (night < ZOMBIES[kind].firstNight ? 0 : kind === 'walker' ? 1 : 0.05 * (night - ZOMBIES[kind].firstNight + 1)),
   nightMul: (night: number) => ({ hp: 1 + 0.1 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
