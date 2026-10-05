@@ -64,8 +64,8 @@ const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: st
   cannon: { head: '#6e6052', barrel: '#22262d', accent: '#e5484d', ammo: '#ff9f43' },
 };
 
-/** The gun that turns on a turret's base plate: a dark barrel under a shaded dome, kicked back by its last shot. */
-function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, wear: number) {
+/** The gun that turns on a turret's base plate: a dark barrel under a lit dome, kicked back by its last shot. */
+function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, pxPerUnit: number) {
   const look = TURRET_LOOK[kind];
   ctx.save();
   ctx.translate(cx, cy);
@@ -83,14 +83,7 @@ function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: num
   ctx.fill();
   ctx.restore();
   const r = kind === 'sentry' ? 11 : 14;
-  const dome = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, 1, cx, cy, r);
-  dome.addColorStop(0, '#e6e9ee');
-  dome.addColorStop(0.35, shade(look.head, wear));
-  dome.addColorStop(1, shade(look.head, 0.55 * wear));
-  ctx.fillStyle = dome;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, TAU);
-  ctx.fill();
+  drawSphere(ctx, sphereSprite(look.head, r, 0, pxPerUnit), cx, cy, r);
   ctx.fillStyle = look.accent;
   ctx.beginPath();
   ctx.arc(cx, cy, 3.5, 0, TAU);
@@ -113,13 +106,13 @@ function drawAmmo(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: Turre
 
 /** What sits on the buildings once every solid is drawn: turret heads, ammo, and a white flash where one was just bitten. */
 export function drawSiegeTops(
-  ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, aims: Map<string, TurretAim>, core: { x: number; y: number }, now: number,
+  ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, aims: Map<string, TurretAim>, core: { x: number; y: number }, now: number, pxPerUnit: number,
 ) {
   for (const b of buildings) {
     const { x, y, w, h } = cellRect(b.cx, b.cy);
     if (b.kind !== 'wall') {
       const barrel = barrelOf(aims, b, core, now);
-      drawTurretHead(ctx, b.kind, x + w / 2, y + h / 2, barrel.angle, barrel.recoil, 1 - 0.4 * (1 - b.hp / 10));
+      drawTurretHead(ctx, b.kind, x + w / 2, y + h / 2, barrel.angle, barrel.recoil, pxPerUnit);
       drawAmmo(ctx, b, now);
     }
     const hit = flashes.get(`${b.cx},${b.cy}`);
@@ -337,7 +330,7 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
 
 const GHOST_LOOK = { ok: PALETTE.hpGood, no: PALETTE.hpBad, down: '#ff9f43' } as const;
 
-export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x: number; y: number }, core: { x: number; y: number }, now: number) {
+export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x: number; y: number }, core: { x: number; y: number }, now: number, pxPerUnit: number) {
   ctx.setLineDash([12, 10]);
   ctx.lineDashOffset = -now / 60;
   ctx.lineWidth = 3;
@@ -354,7 +347,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   const color = ghost.refusal === null ? GHOST_LOOK.ok : ghost.refusal === 'taken' ? GHOST_LOOK.down : GHOST_LOOK.no;
   if (ghost.kind !== 'wall' && ghost.refusal !== 'taken') {
     ctx.globalAlpha = 0.6;
-    drawTurretHead(ctx, ghost.kind, x + w / 2, y + h / 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, 1);
+    drawTurretHead(ctx, ghost.kind, x + w / 2, y + h / 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, pxPerUnit);
   }
   ctx.globalAlpha = 0.3 + 0.1 * Math.sin(now / 160);
   ctx.fillStyle = color;

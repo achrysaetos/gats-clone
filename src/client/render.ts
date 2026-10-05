@@ -82,7 +82,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const standing = siege.filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
   if (snap.buildings && snap.run) {
-    drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now);
+    drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
   }
   if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt);
   if (dark > 0) drawNight(ctx, tl, br, dark);
@@ -112,7 +112,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawEffects(ctx, s.effects, now);
   drawParticles(ctx, s.particles, now);
   for (const p of [...downed, ...alive]) if (!p.hidden) drawLabel(ctx, p, p.id === s.myId, dark);
-  if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now);
+  if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now);
   drawDamageNumbers(ctx, s.feedback.numbers, now);
