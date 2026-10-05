@@ -283,6 +283,8 @@ a.wordmark { text-decoration: none; }
   padding: 6px;
   box-shadow: var(--edge), 0 0 24px -8px rgba(255, 211, 77, 0.5);
 }
+/* A zombies run draws its key hints along the bottom (drawSiege in hud.ts), so the dock sits above them. */
+.perk-panel.siege { bottom: 52px; }
 .perk-panel h2 { margin: 0 2px 5px; font-size: var(--t-micro); color: var(--accent); }
 .perk-panel h2::before { display: none; }
 .perk-panel h2 span { color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
@@ -456,7 +458,10 @@ a.wordmark { text-decoration: none; }
   }
 }
 @media (max-width: 900px) {
-  .perk-panel { left: 12px; right: 12px; bottom: 128px; max-width: calc(100vw - 24px); }
+  .perk-panel, .perk-panel.siege { left: 12px; right: 12px; bottom: 128px; max-width: calc(100vw - 24px); }
+}
+@media (max-width: 639px) {
+  .perk-panel.siege { bottom: 172px; }
 }
 @media (max-width: 760px), (max-height: 720px) {
   .death { padding-top: 16px; justify-content: center; }

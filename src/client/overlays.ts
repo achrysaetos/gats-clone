@@ -274,6 +274,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     update(state: ClientState, s: Session, snap: Snapshot, now: number, muted: MutedNames) {
       const pending = snap.self.pending;
       const gun = selfOf(snap)?.gun;
+      perkPanel.classList.toggle('siege', !!snap.run);
       renderPick(state.phase === 'playing' && gun && pending?.level !== s.pickSentFor ? pending : null, gun ?? 'pistol');
       const selfName = snap.players.find((p) => p.id === snap.self.id)?.name ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.name;
       renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
