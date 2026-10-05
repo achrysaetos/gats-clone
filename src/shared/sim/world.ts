@@ -233,5 +233,18 @@ export function spawnPoint(w: World, team: Team): Pose {
     return { x, y };
   }
   const fallback = regions[0];
-  return { x: fallback.x + fallback.w / 2, y: fallback.y + fallback.h / 2 };
+  return clearPointNear(solids, fallback.x + fallback.w / 2, fallback.y + fallback.h / 2, WORLD.playerRadius + SPAWN_CLEARANCE);
+}
+
+/** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */
+function clearPointNear(solids: readonly Rect[], x: number, y: number, r: number): Pose {
+  const clear = (px: number, py: number) => px >= r && py >= r && px <= WORLD.size - r && py <= WORLD.size - r && !solids.some((b) => circleHitsRect(px, py, r, b));
+  for (let ring = 0; ring * ZOM.cell < WORLD.size; ring++) {
+    const points: Pose[] = [];
+    for (let i = -ring; i <= ring; i++) for (let j = -ring; j <= ring; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) === ring && clear(x + i * ZOM.cell, y + j * ZOM.cell)) points.push({ x: x + i * ZOM.cell, y: y + j * ZOM.cell });
+    }
+    if (points.length) return points.reduce((a, b) => (dist2(a.x, a.y, x, y) <= dist2(b.x, b.y, x, y) ? a : b));
+  }
+  return { x, y };
 }

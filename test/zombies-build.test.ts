@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
+import { BUILDINGS, WORLD, ZOM } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { build, demolish } from '../src/shared/sim/run.ts';
-import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
+import { circleHitsRect } from '../src/shared/sim/movement.ts';
+import { createWorld, newId, solidRects, spawnPoint, type World } from '../src/shared/sim/world.ts';
 import { press, run, spawnAt } from './helpers.ts';
 
 /** The builder stands just west of the core; cell (26, 30) is beside them. */
@@ -67,5 +68,18 @@ test('build and demolish messages carry whole grid cells only', () => {
   assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'demolish', cx: 0, cy: 0 })), { t: 'demolish', cx: 0, cy: 0 });
   for (const bad of [{ cx: 1.5, cy: 2 }, { cx: -1, cy: 2 }, { cx: 60, cy: 2 }, { cx: '3', cy: 2 }, { cy: 2 }]) {
     assert.equal(parseClientMsg(JSON.stringify({ t: 'build', ...bad })), null, JSON.stringify(bad));
+  }
+});
+
+test('a wall ring over the squad spawn strips sends a squad spawn to clear ground near the core, never into a wall', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  for (let cy = 27; cy <= 32; cy++) for (let cx = 27; cx <= 32; cx++) {
+    if (cx === 27 || cx === 32 || cy === 27 || cy === 32) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });
+  }
+  w.buildingsVersion++;
+  for (let i = 0; i < 20; i++) {
+    const at = spawnPoint(w, 'red');
+    assert.ok(!solidRects(w).some((r) => circleHitsRect(at.x, at.y, WORLD.playerRadius, r)), `spawned inside a solid at ${at.x},${at.y}`);
+    assert.ok(Math.hypot(at.x - WORLD.size / 2, at.y - WORLD.size / 2) < 300, `spawned far from the core at ${at.x},${at.y}`);
   }
 });
