@@ -1,6 +1,7 @@
 /// <reference types="node" />
-// Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build night (default, in order), plus downed and report on request.
-// Drives the zombies client in headless Chrome through real input. downed and report need a scratch copy with fragile humans and a weak core (see features/zombies.md).
+// Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build turrets night (default, in order), plus downed and report on request.
+// Drives the zombies client in headless Chrome through real input. downed and report need a scratch copy with fragile humans and a weak core, and turrets builds a cannon
+// only on a scratch copy with more starting scrap (see features/zombies.md).
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -8,13 +9,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../src/shared/protocol.ts';
+import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 import { BUILDINGS, ZOM } from '../../../../src/shared/defs.ts';
 import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node zombies-ui.ts <run-dir> [step ...]'); process.exit(2); }
-const steps = process.argv.length > 3 ? process.argv.slice(3) : ['menu', 'badlink', 'squad', 'build', 'night'];
+const steps = process.argv.length > 3 ? process.argv.slice(3) : ['menu', 'badlink', 'squad', 'build', 'turrets', 'night'];
 const BASE = `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
 const EV = join(RUN, 'evidence');
 const LOG = join(EV, 'zombies-ui.log');
@@ -42,7 +44,10 @@ for (let i = 0; i < 50 && !target; i++) {
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
-const frames = { welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null };
+const frames = {
+  welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null,
+  turretShots: { sentry: 0, cannon: 0 }, turretKills: 0, lowestAmmo: { sentry: 10, cannon: 10 },
+};
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -51,13 +56,24 @@ page.on('message', (raw) => {
   if (m.method === 'Network.webSocketFrameReceived') {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') { frames.welcome = msg; frames.snap = null; }
-    if (msg.t === 'snap') frames.snap = fillSnapshot(msg, frames.snap) ?? frames.snap;
+    if (msg.t === 'snap') {
+      frames.snap = fillSnapshot(msg, frames.snap) ?? frames.snap;
+      for (const e of frames.snap?.events ?? []) {
+        if (e.e === 'turret') frames.turretShots[e.kind]++;
+        if (e.e === 'zkill' && e.by === null) frames.turretKills++;
+      }
+      for (const b of frames.snap?.buildings ?? []) if (b.kind !== 'wall') frames.lowestAmmo[b.kind] = Math.min(frames.lowestAmmo[b.kind], b.ammo);
+    }
   } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
 });
 const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
 const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
-const shot = async (name: string) => { const { data } = await cdp('Page.captureScreenshot', { format: 'png' }); writeFileSync(join(EV, `${name}.png`), Buffer.from(data, 'base64')); log(`shot ${name}.png`); };
+const shot = async (name: string, clip?: { x: number; y: number; width: number; height: number; scale: number }) => {
+  const { data } = await cdp('Page.captureScreenshot', { format: 'png', ...(clip && { clip }) });
+  writeFileSync(join(EV, `${name}.png`), Buffer.from(data, 'base64'));
+  log(`shot ${name}.png`);
+};
 const until = async (fn: () => unknown, ms = 4000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(100); } return false; };
 const mouse = (type: string, x: number, y: number, button: 'left' | 'right' | 'none' = 'none') => cdp('Input.dispatchMouseEvent', { type, x, y, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
 const click = async (x: number, y: number, button: 'left' | 'right' = 'left') => { await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, button); await mouse('mouseReleased', x, y, button); };
@@ -67,19 +83,60 @@ const clickEl = async (selector: string) => {
   await click(at[0], at[1]);
   return true;
 };
-const VK: Record<string, number> = { KeyB: 66, KeyE: 69, KeyW: 87, KeyA: 65, KeyS: 83, KeyD: 68 };
-const key = async (code: string, type: 'keyDown' | 'keyUp') => cdp('Input.dispatchKeyEvent', { type, code, key: code.slice(3).toLowerCase(), windowsVirtualKeyCode: VK[code] });
+const VK: Record<string, number> = { KeyB: 66, KeyE: 69, KeyW: 87, KeyA: 65, KeyS: 83, KeyD: 68, Digit1: 49, Digit2: 50, Digit3: 51 };
+const key = async (code: string, type: 'keyDown' | 'keyUp') =>
+  cdp('Input.dispatchKeyEvent', { type, code, key: code.startsWith('Digit') ? code.slice(5) : code.slice(3).toLowerCase(), windowsVirtualKeyCode: VK[code] });
 const tap = async (code: string) => { await key(code, 'keyDown'); await sleep(60); await key(code, 'keyUp'); };
 const status = () => js(`document.getElementById('menu-status').textContent`) as Promise<string>;
 const me = () => frames.snap?.players.find((p) => p.id === frames.welcome?.id);
 const run = (): RunView | undefined => frames.snap?.run;
-type ZombiesDev = { building: boolean; ghost: { cx: number; cy: number; refusal: string | null; label: string } | null; coreAlert: boolean; callouts: string[] };
+type ZombiesDev = {
+  building: boolean; buildKind: BuildingKind; chips: { kind: BuildingKind; x: number; y: number; w: number; h: number }[]; use: string | null;
+  ghost: { kind: BuildingKind; cx: number; cy: number; refusal: string | null; label: string } | null; coreAlert: boolean; callouts: string[];
+};
 const zdev = () => js(`skirmishDev.zombies()`) as Promise<ZombiesDev | null>;
 const toScreen = (x: number, y: number) => js(`skirmishDev.toScreen(${x}, ${y})`) as Promise<{ x: number; y: number } | null>;
 const aimAtWorld = async (x: number, y: number) => { const at = await toScreen(x, y); if (at) await mouse('mouseMoved', at.x, at.y); return at; };
 const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
 const hasWall = (b: readonly BuildingView[] | undefined, cx: number, cy: number) => !!b?.some((w) => w.cx === cx && w.cy === cy);
+const turretAt = (cell: { cx: number; cy: number }) => frames.snap?.buildings?.find((b) => b.cx === cell.cx && b.cy === cell.cy && b.kind !== 'wall');
 let squad = '';
+/** A magnified shot of the screen round a world point, for detail the full view draws too small to judge. */
+async function closeUp(name: string, x: number, y: number) {
+  const at = await toScreen(x, y);
+  if (at) await shot(name, { x: Math.max(0, at.x - 120), y: Math.max(0, at.y - 80), width: 240, height: 160, scale: 3 });
+}
+
+/** The turrets the turrets step put up, for the night to watch. */
+const turrets: { kind: TurretKind; cx: number; cy: number }[] = [];
+
+/** Points the ghost at cells around the player until it shows one the picked kind may go up on. */
+async function buildableCell(): Promise<{ cx: number; cy: number } | null> {
+  const self = me()!;
+  for (const [dx, dy] of [[-2, 0], [-2, 1], [-2, -1], [0, 2], [0, -2], [2, 2], [-3, 0], [0, 3], [2, -2], [-2, 2], [-2, -2], [3, 0], [0, -3]]) {
+    const cx = Math.floor(self.x / ZOM.cell) + dx, cy = Math.floor(self.y / ZOM.cell) + dy;
+    await aimAtWorld(cellCenter(cx, cy).x, cellCenter(cx, cy).y);
+    await sleep(80);
+    const g = (await zdev())?.ghost;
+    if (g?.cx === cx && g.cy === cy && g.refusal === null) return { cx, cy };
+  }
+  return null;
+}
+
+/** Holds the keys toward a world point until the player stands within `near` px of it. */
+async function walkTo(x: number, y: number, near: number, ms = 8000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const self = me();
+    if (!self?.alive) { await sleep(150); continue; }
+    if (Math.hypot(x - self.x, y - self.y) <= near) return true;
+    const keys = [x > self.x + 15 ? 'KeyD' : x < self.x - 15 ? 'KeyA' : null, y > self.y + 15 ? 'KeyS' : y < self.y - 15 ? 'KeyW' : null].filter((k) => k !== null);
+    for (const k of keys) await key(k, 'keyDown');
+    await sleep(120);
+    for (const k of keys) await key(k, 'keyUp');
+  }
+  return false;
+}
 
 await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
 await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
@@ -231,6 +288,40 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('the wall goes back up', await until(() => hasWall(frames.snap?.buildings, cell!.cx, cell!.cy)));
     await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
   },
+  async turrets() {
+    if ((await zdev())?.building !== true) await tap('KeyB');
+    await tap('Digit2');
+    expect('2 picks the sentry in build mode', await until(async () => (await zdev())?.buildKind === 'sentry'));
+    for (const kind of ['sentry', 'cannon'] as const) {
+      if (kind === 'cannon') {
+        const chip = (await zdev())?.chips.find((c) => c.kind === 'cannon');
+        if (chip) await click(chip.x + chip.w / 2, chip.y + chip.h / 2);
+        expect('a click on the hint bar\'s cannon chip picks the cannon', await until(async () => (await zdev())?.buildKind === 'cannon'));
+      }
+      const cost = BUILDINGS[kind].cost;
+      if (run()!.scrap < cost) {
+        await aimAtWorld(me()!.x - 2 * ZOM.cell, me()!.y + 3 * ZOM.cell);
+        const ghost = await until(async () => (await zdev())?.ghost?.label === `${BUILDINGS[kind].name} needs ${cost} scrap`);
+        expect(`the ghost says a ${kind} needs ${cost} scrap when the bank is short`, ghost, `${run()!.scrap} scrap, ${(await zdev())?.ghost?.label}`);
+        await shot(`zom-ghost-${kind}-short`);
+        continue;
+      }
+      const cell = await buildableCell();
+      if (!expect(`the ghost shows a ${kind} over a buildable cell`, cell !== null && (await zdev())?.ghost?.label === `${BUILDINGS[kind].name} · ${cost} scrap`, (await zdev())?.ghost?.label)) continue;
+      await sleep(150);
+      await shot(`zom-ghost-${kind}`);
+      const scrap = run()!.scrap;
+      const at = await toScreen(cellCenter(cell!.cx, cell!.cy).x, cellCenter(cell!.cx, cell!.cy).y);
+      await click(at!.x, at!.y);
+      expect(`a left click puts the ${kind} up on the server, fully loaded`, await until(() => { const t = turretAt(cell!); return t?.kind === kind && t.ammo === 10; }), `cell ${cell!.cx},${cell!.cy}`);
+      expect(`the ${kind} cost its scrap`, await until(() => run()!.scrap === scrap - cost), `${scrap} -> ${run()!.scrap}`);
+      turrets.push({ kind, ...cell! });
+    }
+    await sleep(300);
+    await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
+    await shot('zom-turrets-built');
+    if (turrets[0]) await closeUp('zom-turrets-built-closeup', cellCenter(turrets[0].cx, turrets[0].cy).x, cellCenter(turrets[0].cx, turrets[0].cy).y);
+  },
   async night() {
     const nightAt = Date.now();
     const callout = (title: string) => async () => (await zdev())?.callouts.some((c) => c.startsWith(title)) ?? false;
@@ -243,11 +334,39 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('a Night callout announces the wave', await until(callout('Night 1'), 3000));
     await sleep(300);
     await shot('zom-night-callout');
-    let crowd = false, alerted = false;
+    let crowd = false, alerted = false, firing = false, reload: 'waiting' | 'done' = 'waiting';
+    const shotsAtNight = { ...frames.turretShots };
     await fight(() => run()?.phase === 'day' && run()!.night === 2, 150_000, async () => {
       if (!crowd && (frames.snap?.zombies?.length ?? 0) >= 4 && me()?.alive) { crowd = true; await shot('zom-night'); }
       if (!alerted && (await zdev())?.coreAlert) { alerted = true; await shot('zom-core-alert'); }
+      if (!firing && turrets.length && frames.turretKills > 0 && (frames.snap?.zombies?.length ?? 0) >= 2) {
+        firing = true;
+        await shot('zom-turrets-firing');
+        await closeUp('zom-turrets-firing-closeup', cellCenter(turrets[0]!.cx, turrets[0]!.cy).x, cellCenter(turrets[0]!.cx, turrets[0]!.cy).y);
+      }
+      const low = turrets.find((t) => { const v = turretAt(t); return v?.kind !== 'wall' && (v?.ammo ?? 10) < 10; });
+      if (reload === 'waiting' && low && me()?.alive) {
+        reload = 'done';
+        const name = BUILDINGS[low.kind].name.toLowerCase();
+        await mouse('mouseReleased', VIEW.w / 2, VIEW.h / 2, 'left');
+        await walkTo(cellCenter(low.cx, low.cy).x, cellCenter(low.cx, low.cy).y + ZOM.cell, 50);
+        expect(`by the low ${name} the hint offers to reload it`, await until(async () => (await zdev())?.use === `Hold E to reload the ${name}`, 2000), String((await zdev())?.use));
+        await shot('zom-reload-hint');
+        const scrap = run()!.scrap, from = (turretAt(low) as { ammo: number } | undefined)?.ammo;
+        await key('KeyE', 'keyDown');
+        const full = await until(() => { const t = turretAt(low); return t?.kind === low.kind && t.ammo === 10; }, ZOM.refillMs + 3000);
+        await key('KeyE', 'keyUp');
+        expect(`holding E reloads the ${name} for scrap`, full && run()!.scrap < scrap, `ammo ${from} -> 10/10, scrap ${scrap} -> ${run()!.scrap}`);
+      }
     });
+    for (const t of turrets) {
+      const fired = frames.turretShots[t.kind] - shotsAtNight[t.kind];
+      expect(`the ${t.kind} fired at the horde`, fired > 0, `${fired} rounds`);
+      // Squad bots reload a turret faster than it fires while the horde is far from them, so its bar may never move.
+      log(`note the ${t.kind}'s ammo bar went as low as ${frames.lowestAmmo[t.kind]}/10`);
+    }
+    if (turrets.length && reload === 'waiting') log('note no turret ran low enough to reload by hand');
+    if (turrets.length) expect('turrets killed zombies for the squad', frames.turretKills > 0, `${frames.turretKills} kills`);
     expect('the squad saw zombies in view', crowd);
     expect('the driven player shot zombies through real input', (frames.snap?.self.kills ?? 0) > 0, `${frames.snap?.self.kills} kills`);
     log(`note core alert ${alerted ? 'seen' : 'not seen'} on night 1`);

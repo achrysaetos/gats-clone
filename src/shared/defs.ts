@@ -270,11 +270,11 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
   wall: { name: 'Wall', cost: 20, hp: 2000, turret: null },
   sentry: {
     name: 'Sentry', cost: 70, hp: 1000,
-    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: { walker: 14, brute: 4 }, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, muzzle: 22, bullet: { r: 1.8, color: '#a88600' } },
+    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: { walker: 14, brute: 4 }, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, muzzle: 28, bullet: { r: 1.8, color: '#a88600' } },
   },
   cannon: {
     name: 'Cannon', cost: 180, hp: 1500,
-    turret: { prefers: 'brute', range: 560, fireMs: 2200, damage: { walker: 260, brute: 260 }, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 4, muzzle: 28, bullet: { r: 4.2, color: '#3b3f4a' } },
+    turret: { prefers: 'brute', range: 560, fireMs: 2200, damage: { walker: 260, brute: 260 }, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 4, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' } },
   },
 };
 

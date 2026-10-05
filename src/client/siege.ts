@@ -71,8 +71,8 @@ function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: numb
 }
 
 const TURRET_LOOK: Record<TurretKind, { plate: string; ring: string; barrel: string; accent: string; ammo: string }> = {
-  sentry: { plate: '#6b7280', ring: '#454b57', barrel: '#2e333c', accent: '#f5c400', ammo: '#f5c400' },
-  cannon: { plate: '#5a5248', ring: '#3d3730', barrel: '#24272d', accent: '#e5484d', ammo: '#ff9f43' },
+  sentry: { plate: '#7a8291', ring: '#4b5260', barrel: '#59606e', accent: '#f5c400', ammo: '#f5c400' },
+  cannon: { plate: '#7a6a58', ring: '#4a4036', barrel: '#3b3f48', accent: '#e5484d', ammo: '#ff9f43' },
 };
 
 export function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, angle: number, recoil: number, now: number) {
@@ -87,12 +87,6 @@ export function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { ki
   ctx.lineWidth = 3;
   ctx.strokeStyle = INK;
   ctx.stroke();
-  ctx.fillStyle = shade(look.ring, wear);
-  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    ctx.beginPath();
-    ctx.arc(cx + dx * 16, cy + dy * 16, 2.5, 0, TAU);
-    ctx.fill();
-  }
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
@@ -100,22 +94,22 @@ export function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { ki
   ctx.fillStyle = INK;
   ctx.strokeStyle = INK;
   ctx.lineWidth = 2.5;
+  ctx.fillStyle = look.barrel;
   if (b.kind === 'sentry') {
     for (const side of [-1, 1]) {
       ctx.beginPath();
-      ctx.rect(4, side * 4 - 2.5, BUILDINGS.sentry.turret.muzzle - 4, 5);
-      ctx.fillStyle = look.barrel;
+      ctx.rect(4, side * 5 - 3, BUILDINGS.sentry.turret.muzzle - 4, 6);
       ctx.fill();
       ctx.stroke();
     }
   } else {
+    const reach = BUILDINGS.cannon.turret.muzzle;
     ctx.beginPath();
-    ctx.rect(2, -6.5, BUILDINGS.cannon.turret.muzzle - 6, 13);
-    ctx.fillStyle = look.barrel;
+    ctx.rect(2, -7.5, reach - 8, 15);
     ctx.fill();
     ctx.stroke();
     ctx.beginPath();
-    ctx.rect(BUILDINGS.cannon.turret.muzzle - 7, -8.5, 7, 17);
+    ctx.rect(reach - 9, -10, 9, 20);
     ctx.fill();
     ctx.stroke();
   }

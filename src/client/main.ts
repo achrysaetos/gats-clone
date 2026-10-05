@@ -9,7 +9,7 @@ import { killOf, lossOf, selfOf } from './derive.ts';
 import { spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
 import { addMoments, CALLOUT_MS, NO_MOMENTS } from './moments.ts';
-import { buildChipAt, drawHud, drawSticks } from './hud.ts';
+import { buildChipAt, drawHud, drawnBuildChips, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
@@ -27,7 +27,7 @@ import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, CORE_ALERT_MS, nextCoreHitAt } from './siege.ts';
-import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
+import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, useHint, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -92,8 +92,9 @@ const liveNumbers = () => {
 const zombiesView = () => {
   const s = drawnSessionOf(state);
   const now = performance.now();
+  const snap = s && newestSnap(s.snaps);
   return s && {
-    building: s.building, buildKind: s.buildKind, ghost, coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
+    building: s.building, buildKind: s.buildKind, chips: drawnBuildChips(), use: snap && useHint(snap, s.lastSelf), ghost, coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
     callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
   };
 };
@@ -480,12 +481,12 @@ function onKeyDown(e: KeyboardEvent) {
     if (!muted) playClick(s);
     return;
   }
-  const kind = state.phase === 'playing' && s.building ? buildKindForKey(e.code) : null;
-  if (kind) {
-    pickBuildKind(s, kind);
+  const slot = perkSlotForKey(e.code);
+  if (slot !== null && state.phase === 'playing' && s.building) {
+    const kind = buildKindForKey(e.code);
+    if (kind) pickBuildKind(s, kind);
     return;
   }
-  const slot = perkSlotForKey(e.code);
   if (slot !== null) {
     pick(slot);
     return;

@@ -276,7 +276,8 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       const pending = snap.self.pending;
       const gun = selfOf(snap)?.gun;
       perkPanel.classList.toggle('siege', !!snap.run);
-      renderPick(state.phase === 'playing' && gun && pending?.level !== s.pickSentFor ? pending : null, gun ?? 'pistol');
+      // Build mode takes the number keys and the strip above the hints, so the dock waits until it is done.
+      renderPick(state.phase === 'playing' && !s.building && gun && pending?.level !== s.pickSentFor ? pending : null, gun ?? 'pistol');
       const selfName = snap.players.find((p) => p.id === snap.self.id)?.name ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.name;
       renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
       renderBanner(snap);

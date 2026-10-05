@@ -133,7 +133,7 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose): Ghost {
 export const BUILD_HINTS: readonly { key: string; what: string; pick?: BuildingKind }[] = [
   ...BUILDING_KINDS.map((kind, i) => ({ key: `${i + 1}`, what: `${BUILDINGS[kind].name} ${BUILDINGS[kind].cost}`, pick: kind })),
   { key: 'Left click', what: 'build' },
-  { key: 'Right click', what: 'take down · half back' },
+  { key: 'Right click', what: 'take down' },
   { key: 'B', what: 'done' },
 ];
 

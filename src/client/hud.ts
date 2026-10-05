@@ -631,19 +631,25 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean
     return;
   }
   if (!me?.alive) return;
-  const hints = s.building ? BUILD_HINTS : run.phase === 'day' ? [{ key: 'B', what: 'build walls and turrets' }] : [];
   const use = useHint(hud.snap, s.lastSelf);
   const row = h - (compact ? 150 : 28);
   if (use) outlined(ctx, use, w / 2, h * 0.64, TYPE.title + 1, PALETTE.gold, 800);
-  if (!hints.length) return;
+  if (s.building) {
+    hintBar(ctx, s, BUILD_HINTS.filter((p) => p.pick), w / 2, row - 36, null);
+    hintBar(ctx, s, BUILD_HINTS.filter((p) => !p.pick), w / 2, row, 'BUILD');
+  } else if (run.phase === 'day') hintBar(ctx, s, [{ key: 'B', what: 'build walls and turrets' }], w / 2, row, null);
+}
+
+/** A row of key chips centered on `cx`; `label` leads a build-mode bar, which wears the gold edge. A chip with `pick` lights up when its kind is picked and takes a click. */
+function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {
   setFont(ctx, 700, TYPE.label);
   const parts = hints.map((p) => ({ ...p, kw: ctx.measureText(p.key).width + 12, ww: ctx.measureText(p.what).width }));
-  const total = parts.reduce((t, p) => t + p.kw + p.ww + 26, s.building ? 70 : 0) + 8;
-  let hx = w / 2 - total / 2;
+  const total = parts.reduce((t, p) => t + p.kw + p.ww + 26, label ? 70 : 0) + 8;
+  let hx = cx - total / 2;
   panel(ctx, hx, row - 14, total, 28, s.building ? PALETTE.gold : undefined);
   hx += 12;
-  if (s.building) {
-    text(ctx, 'BUILD', hx, row, TYPE.label, PALETTE.gold, 'left', 900);
+  if (label) {
+    text(ctx, label, hx, row, TYPE.label, PALETTE.gold, 'left', 900);
     hx += 58;
   }
   for (const p of parts) {
@@ -661,6 +667,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, compact: boolean
 
 /** The build bar's kind chips as last drawn, in CSS px, so a click on one picks its kind. */
 let buildChips: (Rect & { kind: BuildingKind })[] = [];
+export const drawnBuildChips = (): readonly (Rect & { kind: BuildingKind })[] => buildChips;
 export const buildChipAt = (x: number, y: number): BuildingKind | null =>
   buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.kind ?? null;
 
