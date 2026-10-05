@@ -44,6 +44,8 @@ for (let i = 0; i < 50 && !target; i++) {
 }
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
+const abort = (why: string) => { log(`FAIL ${why}`); log('RESULT FAIL'); process.exit(1); };
+page.on('close', () => abort('the page target closed'));
 
 type Stamped<T> = T & { at: number };
 const frames = { welcome: null as null | { id: number; worldSize: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number; dashing: boolean }>[] };
@@ -65,7 +67,8 @@ page.on('message', (raw) => {
       const self = frames.last?.players.find((p) => p.id === frames.welcome?.id);
       if (self) frames.selves.push({ x: self.x, y: self.y, dashing: self.dashing, at });
     }
-  } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
+  } else if (m.method === 'Inspector.targetCrashed') abort('the page crashed');
+  else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
 });
 const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
@@ -87,7 +90,7 @@ const clearLane = (x: number, y: number, angle: number, len: number) => {
 };
 const aimAt = (angle: number) => mouse('mouseMoved', W / 2 + Math.cos(angle) * 200, H / 2 + Math.sin(angle) * 200);
 
-await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
+await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable'); await cdp('Inspector.enable');
 await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 log(`abilities ${new Date().toISOString()} base=${BASE} abilities=${WANTED.join(',')}`);
 
@@ -281,5 +284,5 @@ for (const ability of WANTED) {
 }
 for (const p of problems.filter((p) => p.startsWith('page') || p.startsWith('console'))) log(p);
 log(problems.length ? `RESULT FAIL (${problems.length})` : 'RESULT PASS');
-page.close(); chrome.kill();
+page.removeAllListeners('close'); page.close(); chrome.kill();
 process.exit(problems.length ? 1 : 0);
