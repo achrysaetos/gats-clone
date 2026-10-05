@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: LAG=<one-way ms> JITTER=<ms> node muzzle.ts <run-dir> [seconds=15]
-// A real browser strafes, turns and taps the pistol in FFA while a second lagged browser does the same. For every round the
-// shooter's page draws, it measures how far its first drawn position sits from the drawn muzzle of whoever fired it.
+// Two lagged browsers walk together in FFA, then strafe, turn and tap the pistol beside each other. For every round the
+// first page draws, it measures how far its first drawn position sits from the drawn muzzle of whoever fired it.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -25,7 +25,9 @@ const VIEW = { w: 1280, h: 800 };
 const TAP_MS = GUNS.pistol.fireMs + 40;
 const STRAFE_MS = 500;
 const TURN_RAD_PER_S = 3;
-const MAX_OWN_GAP = 25;
+const MAX_GAP = 25;
+const NEAR = 380;
+const MIN_ROUNDS = 5;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
@@ -74,21 +76,57 @@ async function open(name: string): Promise<Browser> {
   return { chrome, cdp, js, id, exceptions };
 }
 
-const KEYS = { left: ['KeyA', 'a', 65], right: ['KeyD', 'd', 68] } as const;
+const KEYS = { left: ['KeyA', 'a', 65], right: ['KeyD', 'd', 68], up: ['KeyW', 'w', 87], down: ['KeyS', 's', 83] } as const;
+type Key = keyof typeof KEYS;
 const key = (b: Browser, type: 'keyDown' | 'keyUp', k: keyof typeof KEYS) => b.cdp('Input.dispatchKeyEvent', { type, code: KEYS[k][0], key: KEYS[k][1], windowsVirtualKeyCode: KEYS[k][2] });
 
-async function play(b: Browser, untilAt: number, onTap: (n: number) => Promise<void>) {
+const where = async (b: Browser): Promise<{ x: number; y: number }> => b.js(`skirmishDev.drawnSelf()`);
+const respawnIfDead = async (b: Browser) => {
+  if (await b.js(`!document.getElementById('death').hidden && !document.getElementById('respawn').disabled`)) await b.js(`document.getElementById('respawn').click()`);
+};
+
+/** The keys that walk `b` toward `partner`, or none when they are already close. */
+async function towards(b: Browser, partner: Browser): Promise<Key[]> {
+  const [a, p] = await Promise.all([where(b), where(partner)]);
+  const dx = p.x - a.x, dy = p.y - a.y;
+  if (Math.hypot(dx, dy) < NEAR) return [];
+  const keys: Key[] = [];
+  if (Math.abs(dx) > 60) keys.push(dx > 0 ? 'right' : 'left');
+  if (Math.abs(dy) > 60) keys.push(dy > 0 ? 'down' : 'up');
+  return keys;
+}
+
+async function gather(a: Browser, b: Browser, untilAt: number) {
+  while (performance.now() < untilAt) {
+    await respawnIfDead(a); await respawnIfDead(b);
+    const [ka, kb] = await Promise.all([towards(a, b), towards(b, a)]);
+    if (!ka.length && !kb.length) return true;
+    await Promise.all([hold(a, ka, 300), hold(b, kb, 300)]);
+  }
+  return false;
+}
+
+async function hold(b: Browser, keys: Key[], ms: number) {
+  for (const k of keys) await key(b, 'keyDown', k);
+  await sleep(ms);
+  for (const k of keys) await key(b, 'keyUp', k);
+}
+
+async function play(b: Browser, partner: Browser, untilAt: number, onTap: (n: number) => Promise<void>) {
   const start = performance.now();
-  let dir: keyof typeof KEYS = 'right';
-  await key(b, 'keyDown', dir);
+  let held: Key[] = ['right'];
+  let strafe: Key = 'right';
+  await key(b, 'keyDown', 'right');
   let nextSwitch = start + STRAFE_MS, nextTap = start, taps = 0;
   while (performance.now() < untilAt) {
     const now = performance.now();
-    if (await b.js(`!document.getElementById('death').hidden && !document.getElementById('respawn').disabled`)) await b.js(`document.getElementById('respawn').click()`);
+    await respawnIfDead(b);
     if (now >= nextSwitch) {
-      await key(b, 'keyUp', dir);
-      dir = dir === 'right' ? 'left' : 'right';
-      await key(b, 'keyDown', dir);
+      for (const k of held) await key(b, 'keyUp', k);
+      const back = await towards(b, partner);
+      strafe = strafe === 'right' ? 'left' : 'right';
+      held = back.length ? back : [strafe];
+      for (const k of held) await key(b, 'keyDown', k);
       nextSwitch = now + STRAFE_MS;
     }
     const a = ((now - start) / 1000) * TURN_RAD_PER_S;
@@ -102,29 +140,31 @@ async function play(b: Browser, untilAt: number, onTap: (n: number) => Promise<v
     }
     await sleep(16);
   }
-  await key(b, 'keyUp', dir);
+  for (const k of held) await key(b, 'keyUp', k);
 }
 
 const shooter = await open('Shooter');
 const other = await open('Other');
-await sleep(1500);
+const met = await gather(shooter, other, performance.now() + 30_000);
+log(`${met ? 'ok  ' : 'FAIL'} the two browsers met within ${NEAR}px`);
 await shooter.js(`skirmishDev.firstRounds()`);
 const rounds: Round[] = [];
+/** The shooter's view `after` ms past a shot's round trip. */
+async function screenshots(whose: string, afters: number[]) {
+  const start = performance.now();
+  for (const after of afters) {
+    await sleep(start + 2 * LAG + after - performance.now());
+    const { data } = await shooter.cdp('Page.captureScreenshot', { format: 'png' });
+    writeFileSync(join(EV, `muzzle-${whose}-lag${LAG}-${after}ms.png`), Buffer.from(data, 'base64'));
+  }
+}
 const collect = async () => {
   rounds.push(...((await shooter.js(`skirmishDev.firstRounds()`)) as Round[]));
 };
 const until = performance.now() + SECONDS * 1000;
 await Promise.all([
-  play(shooter, until, async (n) => {
-    if (n !== 5) return;
-    const start = performance.now();
-    for (const after of [30, 80, 150]) {
-      await sleep(start + 2 * LAG + after - performance.now());
-      const { data } = await shooter.cdp('Page.captureScreenshot', { format: 'png' });
-      writeFileSync(join(EV, `muzzle-lag${LAG}-${after}ms.png`), Buffer.from(data, 'base64'));
-    }
-  }),
-  play(other, until, async () => {}),
+  play(shooter, other, until, (n) => (n === 5 ? screenshots('own', [30, 80, 150]) : Promise.resolve())),
+  play(other, shooter, until, (n) => (n === 8 ? screenshots('other', [130, 180]) : Promise.resolve())),
   (async () => { while (performance.now() < until) { await collect(); await sleep(100); } })(),
 ]);
 await sleep(500);
@@ -133,22 +173,29 @@ await collect();
 const gap = (r: Round) => (r.muzzle ? Math.hypot(r.x - r.muzzle.x, r.y - r.muzzle.y) : null);
 const stats = (label: string, rs: Round[]) => {
   const g = rs.map(gap).filter((v): v is number => v !== null).sort((a, b) => a - b);
-  if (!g.length) return log(`${label}: no rounds with a visible shooter`);
+  if (!g.length) { log(`${label}: no rounds with a visible shooter`); return undefined; }
   const q = (k: number) => Math.round(g[Math.min(g.length - 1, Math.floor(g.length * k))]!);
   log(`${label}: n ${g.length}  median ${q(0.5)}px  p90 ${q(0.9)}px  max ${Math.round(g[g.length - 1]!)}px`);
-  return q(0.5);
+  return { median: q(0.5), n: g.length };
 };
+function check(label: string, r: { median: number; n: number } | undefined) {
+  const ok = !!r && r.n >= MIN_ROUNDS && r.median <= MAX_GAP;
+  log(`${ok ? 'ok  ' : 'FAIL'} ${label} (median ${r ? `${r.median}px over ${r.n}` : 'none'})`);
+  return ok;
+}
 log(`LAG=${LAG} JITTER=${JITTER} ${SECONDS}s`);
 const ownMedian = stats('own rounds', rounds.filter((r) => r.own));
-stats('lagged human Other', rounds.filter((r) => !r.own && r.owner === other.id));
+const otherMedian = stats('lagged human Other', rounds.filter((r) => !r.own && r.owner === other.id));
 stats('bots', rounds.filter((r) => !r.own && r.owner !== other.id));
 const exceptions = [...shooter.exceptions, ...other.exceptions];
 for (const e of exceptions) log(`page exception: ${e}`);
-const near = ownMedian !== undefined && ownMedian <= MAX_OWN_GAP;
-log(`${near ? 'ok  ' : 'FAIL'} own rounds start within ${MAX_OWN_GAP}px of the drawn muzzle (median ${ownMedian ?? 'none'}px)`);
+const checks = [
+  check(`own rounds start within ${MAX_GAP}px of the drawn muzzle`, ownMedian),
+  check(`the other human's rounds start within ${MAX_GAP}px of their drawn muzzle`, otherMedian),
+];
 const serverCopies = rounds.filter((r) => r.own && r.id > 0).length;
 log(`${serverCopies === 0 ? 'ok  ' : 'FAIL'} the server's copies of own rounds are not drawn (${serverCopies} drawn)`);
-const pass = near && serverCopies === 0 && exceptions.length === 0;
+const pass = met && checks.every(Boolean) && serverCopies === 0 && exceptions.length === 0;
 log(pass ? 'RESULT PASS' : 'RESULT FAIL');
 shooter.chrome.kill(); other.chrome.kill();
 process.exit(pass ? 0 : 1);
