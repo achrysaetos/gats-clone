@@ -80,7 +80,7 @@ window.renderMap = (id, px, heat) => {
   ctx.setTransform(k, 0, 0, k, 0, 0);
   const walls = wallSolids(m.walls.map((w) => ({ ...w, built: false })));
   const curbs = curbSolids(size);
-  drawGround(ctx, createGroundCache().get(m, size, () => [...curbs, ...walls], []), 0, 0, size, size);
+  drawGround(ctx, createGroundCache().get(m, size, () => [...curbs, ...walls], null), 0, 0, size, size);
   ctx.fillStyle = PALETTE.grid;
   for (let x = GRID; x < size; x += GRID) ctx.fillRect(x - 0.5 / k, 0, 1 / k, size);
   for (let y = GRID; y < size; y += GRID) ctx.fillRect(0, y - 0.5 / k, size, 1 / k);

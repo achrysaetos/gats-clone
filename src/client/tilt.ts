@@ -95,8 +95,9 @@ export function createGroundCache() {
   let movingKey: string | null = null;
   let layer: GroundLayer | null = null;
   let bakes = 0;
-  const get = (nextLayout: unknown, worldSize: number, statics: () => readonly Solid[], moving: readonly Solid[]): GroundLayer => {
-    const key = solidKey(moving);
+  /** `moving` is null on a map that never has buildings, so the floor and hull layers under the bake can go once it is done. */
+  const get = (nextLayout: unknown, worldSize: number, statics: () => readonly Solid[], moving: readonly Solid[] | null): GroundLayer => {
+    const key = solidKey(moving ?? []);
     if (nextLayout === layout && worldSize === size && key === movingKey && layer) return layer;
     if (nextLayout !== layout || worldSize !== size || !floor || !hard) {
       layout = nextLayout;
@@ -112,7 +113,7 @@ export function createGroundCache() {
     }
     movingKey = key;
     let source = hard;
-    if (moving.length) {
+    if (moving?.length) {
       const [all, g] = layerCanvas(size);
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.drawImage(hard, 0, 0);
@@ -127,6 +128,7 @@ export function createGroundCache() {
     o.globalAlpha = SHADOW_ALPHA;
     o.drawImage(source, 0, 0);
     bakes++;
+    if (!moving) floor = hard = null;
     layer = { canvas: out, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE };
     return layer;
   };
