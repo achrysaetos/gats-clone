@@ -136,7 +136,7 @@ test('no shot is drawn while reloading, with an empty magazine, dead, or after t
     ['dead', { alive: false }],
     ['round over', { armed: false }],
   ] as const) {
-    const f = armedWith('pistol', sv);
+    const f = settle(armedWith('pistol'), ready('pistol', sv), 0, 0, []).firing;
     assert.equal(dueAt(f, held(1)), null, why);
     assert.deepEqual(play(f, [held(1), held(2), held(3)]).drawn, [], why);
   }
