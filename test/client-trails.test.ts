@@ -15,11 +15,11 @@ test('a trail samples only real travel, keeps at most its cap, and starts over a
   recordTrail(trail, TRAIL.step - 1, 0, 10, false);
   assert.equal(trail.length, 1, 'standing still or creeping adds nothing');
   recordTrail(trail, TRAIL.step, 0, 20, false);
-  assert.deepEqual(trail.map((p) => p.d), [0, TRAIL.step], 'each point carries the distance walked');
+  assert.deepEqual(trail.map((p) => p.walked), [0, TRAIL.step], 'each point carries the distance walked');
   walk(trail, TRAIL.step * 2, TRAIL.step * (TRAIL.cap + 20), TRAIL.step, 1, 30);
   assert.equal(trail.length, TRAIL.cap);
   recordTrail(trail, 10_000, 0, 200, false);
-  assert.deepEqual(trail.map((p) => [p.x, p.d]), [[10_000, 0]], 'a respawn across the map is no trail');
+  assert.deepEqual(trail.map((p) => [p.x, p.walked]), [[10_000, 0]], 'a respawn across the map is no trail');
 });
 
 test('points fade out of the trail once older than its life', () => {
