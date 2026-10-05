@@ -55,7 +55,7 @@ Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`.
 node .claude/skills/verify/scripts/screens.ts "$RUN" <out-dir> [view ...]
 ```
 
-One muted headless Chrome screenshots each art view through real play at 1600x900 (`W=` and `H=` override): `menu`, then `ffa`, `tdm` and `dom` once a frame holds four rounds and two enemies (DOM walks to the nearest zone), by default. `zom-day` and `zom-night` start a squad and need a scratch copy whose night brings a full horde, as in [the zombies feature file](features/zombies.md); pre-placing buildings in its `loadMap` puts turrets and walls in the day shot. Run it against the old and the new build to compare an art change. It proves nothing about gameplay.
+One muted headless Chrome screenshots each art view through real play at 1600x900 (`W=` and `H=` override): `menu`, then `ffa`, `tdm` and `dom` once a frame holds four rounds and two enemies (DOM walks to the nearest zone), by default. `board` shoots TDM while Tab holds the whole leaderboard open. `zom-day` and `zom-night` start a squad and need a scratch copy whose night brings a full horde, as in [the zombies feature file](features/zombies.md); pre-placing buildings in its `loadMap` puts turrets and walls in the day shot. Run it against the old and the new build to compare an art change. It proves nothing about gameplay.
 
 ### Muzzle
 

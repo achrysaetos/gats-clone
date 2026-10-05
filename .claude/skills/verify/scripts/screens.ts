@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Usage: node screens.ts <run-dir> <out-dir> [view ...]   Screenshots each art view through real play, so an art change can be compared before and after.
-// Views: menu ffa tdm dom (default), and zom-day zom-night, which start a squad and need a scratch copy whose night brings a full horde (see features/zombies.md).
+// Views: menu ffa tdm dom (default), board (TDM while Tab holds the whole leaderboard open), and zom-day zom-night, which start a squad and need a scratch copy whose night brings a full horde (see features/zombies.md).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -126,6 +126,15 @@ for (const view of VIEWS) {
     case 'menu': await openMenu(); await sleep(1500); await shot('menu'); break;
     case 'ffa': await enter(serverOf('ffa')); await fightShot('ffa', 30_000, null); break;
     case 'tdm': await enter(serverOf('tdm')); await fightShot('tdm', 30_000, null); break;
+    case 'board': {
+      await enter(serverOf('tdm'));
+      await play(3000, null, enemies, false);
+      await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Tab', key: 'Tab', windowsVirtualKeyCode: 9 });
+      await sleep(300);
+      await shot('board');
+      await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Tab', key: 'Tab', windowsVirtualKeyCode: 9 });
+      break;
+    }
     case 'dom': {
       await enter(serverOf('dom'));
       const zone = () => { const self = me(), zones = latest()?.zones ?? []; return self && zones.length ? [...zones].sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0]! : null; };
