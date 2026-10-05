@@ -238,7 +238,7 @@ export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool,
 
 const CASING_SETTLE = 0.75;
 
-/** Brass ejected from each shot, drawn on the floor beneath bodies: it tumbles out, comes to rest and fades. Resting casings share one path. */
+/** Brass ejected from each shot, drawn on the floor beneath bodies: it tumbles out, comes to rest and fades. Those not yet fading share one path. */
 export function drawCasings(ctx: CanvasRenderingContext2D, pool: ParticlePool, now: number) {
   ctx.lineCap = 'butt';
   ctx.lineWidth = 2.6;
