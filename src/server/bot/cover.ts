@@ -81,19 +81,19 @@ export function pickCover(
 ): CoverPick | null {
   const main = threats[0];
   if (!main) return null;
-  let best: CoverPick | null = null, bestScore = Infinity;
+  const ranked: { c: CoverPoint; score: number }[] = [];
   for (const c of coverNear(index, me, opts.reach)) {
     if (!(c.shieldedBearings & (1 << bearingIndex(c, main)))) continue;
     if (opts.taken?.some((t) => Math.hypot(t.x - c.x, t.y - c.y) < TAKEN_PX)) continue;
     const toMain = Math.hypot(main.x - c.x, main.y - c.y);
     const walk = Math.hypot(c.x - me.x, c.y - me.y);
-    const score = opts.peek ? walk + Math.abs(toMain - opts.range) * 0.7 : walk - toMain * 0.5;
-    if (score >= bestScore) continue;
+    ranked.push({ c, score: opts.peek ? walk + Math.abs(toMain - opts.range) * 0.7 : walk - toMain * 0.5 });
+  }
+  ranked.sort((x, y) => x.score - y.score);
+  for (const { c } of ranked) {
     if (threats.some((t) => clearShot(solids, c, t))) continue;
     const peek = opts.peek ? peekFrom(nav, solids, c, main) : null;
-    if (opts.peek && !peek) continue;
-    best = { spot: c, peek };
-    bestScore = score;
+    if (!opts.peek || peek) return { spot: c, peek };
   }
-  return best;
+  return null;
 }
