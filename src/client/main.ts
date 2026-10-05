@@ -1,4 +1,4 @@
-import { pickOptions, WORLD, type BuildingKind, type GunId } from '../shared/defs.ts';
+import { GUNS, pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -22,7 +22,7 @@ import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { muzzleTip } from './sprites.ts';
-import { drawnRounds, fireOwnRounds, roundLive, roundScene } from './rounds.ts';
+import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundLive, roundScene, type Shot, type ShotEvent } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, TRAIL_MS } from './render.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
@@ -87,7 +87,7 @@ type DrawnRound = { id: number; owner: number; own: boolean; x: number; y: numbe
 const seenRounds = new Set<number>();
 const firstRounds: DrawnRound[] = [];
 let ghost: Ghost | null = null;
-let ownRoundId = -1;
+let nextRoundId = -1;
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
 const liveNumbers = () => {
@@ -271,7 +271,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], ownRounds: [], pendingFx: [], feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
+    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), pickSentFor: null, particles: createPool(),
     coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
@@ -292,9 +292,14 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
-  s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS, s.myId));
-  s.ownRounds = s.ownRounds.filter((r) => roundLive(r, now));
-  for (const ev of snap.events) if (ev.e === 'shot' && ev.owner === s.myId) fireFromMuzzle(s, snap, ev.gun, ev.angle, now);
+  s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
+  s.rounds = s.rounds.filter((r) => roundLive(r, now));
+  for (const ev of snap.events) {
+    if (ev.e !== 'shot') continue;
+    s.lastShotAt.set(ev.owner, snap.tick * TICK_MS);
+    if (ev.owner === s.myId) fireOwnShot(s, snap, ev, now);
+    else s.pendingShots.push({ at: snap.tick * TICK_MS, shot: ev });
+  }
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
@@ -307,16 +312,28 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
 
-/** Your own shot leaves the gun where the page draws it, aimed where you aim now; the server still decides what it hits. */
-function fireFromMuzzle(s: Session, snap: Snapshot, gun: GunId, shotAngle: number, now: number) {
+/** Your own shot leaves the gun where the page draws it, aimed where you aim now, as soon as its event arrives. */
+function fireOwnShot(s: Session, snap: Snapshot, ev: ShotEvent, now: number) {
   const aim = aimOffset(s);
-  const angle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : shotAngle;
-  const muzzle = muzzleTip(s.lastSelf.x, s.lastSelf.y, angle, gun, WORLD.playerRadius);
-  const seen = sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap;
+  const angle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : ev.angle;
   const still = !MOVES.some((a) => held.has(a));
-  const rounds = fireOwnRounds(gun, rangeFor(gun, snap.self.perks), spreadFor(gun, snap.self.perks, still), muzzle, angle, roundScene(seen, s.walls, s.myId), now, ownRoundId);
-  ownRoundId -= rounds.length;
-  s.ownRounds.push(...rounds);
+  const shot = { owner: s.myId, gun: ev.gun, range: rangeFor(ev.gun, snap.self.perks), spread: spreadFor(ev.gun, snap.self.perks, still) };
+  fire(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
+}
+
+/** Another player's shot leaves their gun where the page draws them when the render clock reaches it. Their perks are unknown, so it takes the gun's own range and spread. */
+function fireOthersShot(s: Session, ev: ShotEvent, seen: Snapshot, now: number) {
+  const p = seen.players.find((q) => q.id === ev.owner && q.alive);
+  const shot = { owner: ev.owner, gun: ev.gun, range: GUNS[ev.gun].range, spread: GUNS[ev.gun].spread };
+  fire(s, shot, p ?? ev, p?.angle ?? ev.angle, seen, now);
+}
+
+/** The hits are the server's; these rounds and the flash only show the shot leaving the drawn gun. */
+function fire(s: Session, shot: Shot, at: { x: number; y: number }, angle: number, seen: Snapshot, now: number) {
+  const muzzle = muzzleTip(at.x, at.y, angle, shot.gun, WORLD.playerRadius);
+  const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextRoundId);
+  nextRoundId -= rounds.length;
+  s.rounds.push(...rounds);
   startEffect(s, { kind: 'flash', ...muzzle, angle }, now);
 }
 
@@ -439,13 +456,15 @@ function drawFrame(now: number) {
   }
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
-  for (const spec of released.due) startEffect(s, spec, now, deathTint(s, spec));
+  for (const { fx } of released.due) startEffect(s, fx, now, deathTint(s, fx));
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
-  const bullets = drawnRounds(interpolated.bullets, s.ownRounds, s.myId, now);
-  const snap = drawn
-    ? { ...interpolated, bullets, players: interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) }
-    : { ...interpolated, bullets };
+  const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
+  const shots = releaseDue(s.pendingShots, renderTime(s.snaps, now));
+  s.pendingShots = shots.rest;
+  for (const { shot } of shots.due) fireOthersShot(s, shot, { ...interpolated, players }, now);
+  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
+  const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive || me?.downed) s.lastSelf = { x: me.x, y: me.y };
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };

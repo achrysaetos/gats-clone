@@ -1,7 +1,6 @@
-import { BUILDINGS, WORLD, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { BUILDINGS, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
 import { segmentEntersCircleAt } from '../shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../shared/protocol.ts';
-import { muzzleTip } from './sprites.ts';
 import type { Effect } from './state.ts';
 
 export type EffectSpec = Effect extends infer E ? (E extends Effect ? Omit<E, 'born'> : never) : never;
@@ -12,7 +11,6 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
     case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null };
     case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null };
     case 'boom': return { kind: 'boom', x: ev.x, y: ev.y, r: ev.r };
-    case 'shot': return { kind: 'flash', ...muzzleTip(ev.x, ev.y, ev.angle, ev.gun, WORLD.playerRadius), angle: ev.angle };
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
     case 'turret': {
@@ -23,6 +21,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
       const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]].radius) ?? 1));
       return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: hit * def.range };
     }
+    case 'shot':
     case 'hunted':
     case 'life': return null;
     case 'kill': {
@@ -32,23 +31,14 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
   }
 }
 
-/** Every effect waits for the render clock to reach its tick. Your own shots are left out, since main.ts draws them from your drawn muzzle. */
-export function scheduleEffects(snap: Snapshot, serverMs: number, myId: number): PendingEffect[] {
-  const later: PendingEffect[] = [];
-  for (const ev of snap.events) {
-    if (ev.e === 'shot' && ev.owner === myId) continue;
+/** Every effect waits for the render clock to reach its tick. Shots are left out, since main.ts draws them from the shooter's drawn muzzle. */
+export function scheduleEffects(snap: Snapshot, serverMs: number): PendingEffect[] {
+  return snap.events.flatMap((ev) => {
     const fx = effectOf(ev, snap);
-    if (fx) later.push({ at: serverMs, fx });
-  }
-  return later;
+    return fx ? [{ at: serverMs, fx }] : [];
+  });
 }
 
-export function releaseDue(queue: readonly PendingEffect[], renderMs: number): { due: EffectSpec[]; rest: PendingEffect[] } {
-  const due: EffectSpec[] = [];
-  const rest: PendingEffect[] = [];
-  for (const p of queue) {
-    if (p.at <= renderMs) due.push(p.fx);
-    else rest.push(p);
-  }
-  return { due, rest };
+export function releaseDue<T extends { at: number }>(queue: readonly T[], renderMs: number): { due: T[]; rest: T[] } {
+  return { due: queue.filter((p) => p.at <= renderMs), rest: queue.filter((p) => p.at > renderMs) };
 }

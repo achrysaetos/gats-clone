@@ -8,7 +8,7 @@ import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
 import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
-import type { OwnRound } from './rounds.ts';
+import type { LocalRound, ShotEvent } from './rounds.ts';
 import type { TurretAim } from './siege.ts';
 
 export type Effect =
@@ -42,8 +42,14 @@ export type Session = {
   predict: Prediction;
   lastSelf: { x: number; y: number };
   effects: Effect[];
-  ownRounds: OwnRound[];
+  rounds: LocalRound[];
+  /** Whether each of the server's gun rounds in view is drawn locally instead, from `coverServerRounds`. */
+  roundCover: Map<number, boolean>;
   pendingFx: PendingEffect[];
+  /** Other players' shots, waiting for the render clock to reach their tick. */
+  pendingShots: { at: number; shot: ShotEvent }[];
+  /** The server time of each shooter's last shot event, for `recentShooters`. */
+  lastShotAt: Map<number, number>;
   feedback: Feedback;
   moments: Moments;
   feed: FeedLine[];

@@ -38,6 +38,9 @@ export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, stil
   return spread;
 }
 
+/** The most any one perk stretches a gun's range. */
+export const MAX_RANGE_MUL = Math.max(...Object.values(PERK_MODS).map((m) => m.rangeMul ?? 1));
+
 export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((range, perk) => range * (PERK_MODS[perk].rangeMul ?? 1), GUNS[gun].range);
 

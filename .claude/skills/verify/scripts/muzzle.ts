@@ -193,8 +193,10 @@ const checks = [
   check(`own rounds start within ${MAX_GAP}px of the drawn muzzle`, ownMedian),
   check(`the other human's rounds start within ${MAX_GAP}px of their drawn muzzle`, otherMedian),
 ];
-const serverCopies = rounds.filter((r) => r.own && r.id > 0).length;
-log(`${serverCopies === 0 ? 'ok  ' : 'FAIL'} the server's copies of own rounds are not drawn (${serverCopies} drawn)`);
+const serverCopies = rounds.filter((r) => (r.own || r.owner === other.id) && r.id > 0).length;
+log(`${serverCopies === 0 ? 'ok  ' : 'FAIL'} the server's copies of the two humans' rounds are not drawn (${serverCopies} drawn)`);
+const botCopies = rounds.filter((r) => !r.own && r.owner !== other.id && r.id > 0);
+log(`note ${botCopies.length} server copies of bot rounds drawn, ${botCopies.filter((r) => r.muzzle).length} with their shooter in view`);
 const pass = met && checks.every(Boolean) && serverCopies === 0 && exceptions.length === 0;
 log(pass ? 'RESULT PASS' : 'RESULT FAIL');
 shooter.chrome.kill(); other.chrome.kill();
