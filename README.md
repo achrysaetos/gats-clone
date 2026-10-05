@@ -26,7 +26,7 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | Space | Use ability |
 | 1-9, 0 | Pick a perk or an evolution (or click its tile) |
 | B | Zombies: build mode by day (left click builds, right click takes your wall down) |
-| E | Zombies: hold to revive a downed squadmate or repair a wall |
+| E | Zombies: hold to revive a downed squadmate or repair a wall or the core |
 | Enter | Chat |
 | M | Mute sound |
 
@@ -38,11 +38,11 @@ Zombies is a co-op mode for a private squad of up to four. Start a squad from th
 
 The squad defends a core at the center of the Outpost map. A run opens on a 40-second day. Night follows, and a wave walks in from the four map edges toward the core. The night ends once the whole wave has spawned and died, and the next day starts. Each night's wave is bigger and its zombies tougher, so every run ends when the core falls. The run's score is the night it fell on. A report of the night reached, the run's length and each player's kills, revives and walls built shows for 20 seconds, and then a fresh run starts on a reset map.
 
-Walkers come from the first night and brutes from the third. A brute has far more health and hits walls three times as hard. A zombie bites a squad player it can see within 120 px, else the core once it reaches it, and otherwise follows a flow field to the core that goes round the squad's walls while there is an open way and breaks through the cheapest wall when there is not. Zombie kills pay score up the same level ladder as the versus modes, and each kill adds scrap to the squad's shared bank. A player's level, perks and gun last for the whole run.
+Walkers come from the first night and brutes from the third. A walker bites a squad player it can see within 120 px. A brute has far more health, ignores the squad and marches on the core. Otherwise a zombie bites the core once it reaches it, and the core shrugs off 60% of each bite. On the way it follows a flow field to the core that goes round the squad's walls while there is an open way and breaks through the cheapest wall when there is not. Zombie kills pay score up the same level ladder as the versus modes, and each kill adds scrap to the squad's shared bank. A player's level, perks and gun last for the whole run.
 
-By day a player can build a wall on a 50 px grid cell within 600 px of the core and 250 px of themselves, for 20 scrap, on a cell clear of cover, the core, bodies and other walls. A wall can come down by day for half its cost back. Walls block bodies, zombies included, but the squad's bullets and grenades pass over them. Holding use beside a damaged wall repairs it at 80 hp a second for 1 scrap per 20 hp.
+By day a player can build a wall on a 50 px grid cell within 600 px of the core and 250 px of themselves, for 20 scrap, on a cell clear of cover, the core, bodies and other walls. A wall has 2000 hp. A walker bites it for half its damage and a brute for its full damage. A wall can come down by day for half its cost back. Walls block bodies, zombies included, but the squad's bullets and grenades pass over them. Holding use repairs the nearest damaged wall or the core within 250 px at 80 hp a second, day or night. A wall costs 1 scrap per 20 hp and the core 1 scrap per 5 hp.
 
-A player whose health runs out goes down instead of dying. A downed player crawls, cannot shoot and is ignored by the horde. A squadmate holding use within 70 px for 3 seconds revives them with 40% health. A downed player nobody revives within 25 seconds bleeds out and returns at the core at dawn. Bots fight, revive and repair, and never build.
+A player whose health runs out goes down instead of dying. A downed player crawls, cannot shoot and is ignored by the horde. A squadmate holding use within 70 px for 3 seconds revives them with 40% health. A downed player nobody revives within 25 seconds bleeds out and returns at the core at dawn. A human who joins or rejoins during the night sits out the same way until dawn. Bots fight, revive, repair walls and the core while no zombie is close, and post behind the squad's walls. They never build.
 
 ## Layout
 
