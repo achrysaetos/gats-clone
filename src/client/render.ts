@@ -336,35 +336,37 @@ function drawTrail(ctx: CanvasRenderingContext2D, color: string, trail: { x: num
 
 export const TRAIL_MS = 260;
 
-type TracerLook = { r: number; glow: string; core: string };
+type TracerLook = { r: number; color: string; hot: string };
 
 /**
- * Every round is a glowing tracer: class guns and shrapnel in warm gold, a touch whiter for your own, and an evolved gun's in
- * its own hue. The guns' hues are dark, chosen for ink on a pale floor, so the glow and core take the hue at full saturation and lifted lightness.
+ * Every round is a glowing tracer: class guns and shrapnel in warm gold, a touch whiter at the head for your own, and an evolved
+ * gun's in its own hue. The guns' hues are dark, chosen for ink on a pale floor, so a tracer takes the hue at full saturation and
+ * lifted lightness, and a near-white of it at the head.
  */
 function tracerLook(b: BulletView, myId: number): TracerLook {
   if (b.gun && GUNS[b.gun].stage > 0) {
     const { r, color } = GUNS[b.gun].look.bullet;
-    return { r, glow: glow(color, 0.62), core: glow(color, 0.85) };
+    return { r, color: glow(color, 0.62), hot: glow(color, 0.88) };
   }
-  return { r: 1.6, glow: PALETTE.tracer, core: b.owner === myId ? PALETTE.ownTracer : PALETTE.tracerCore };
+  return { r: 1.6, color: PALETTE.tracer, hot: b.owner === myId ? PALETTE.ownTracer : PALETTE.tracerCore };
 }
 
 /** The tail's passes from its far end in: [from, to] as shares of `TRACER.tail` behind the head, then width in radii, alpha and which color. */
 const TRACER_PASSES = [
-  [1, 0, 4.5, 0.18, 'glow'],
-  [1, 0.55, 1.3, 0.3, 'glow'],
-  [0.55, 0, 1.8, 0.7, 'core'],
-  [TRACER.core / TRACER.tail, 0, 2.4, 1, 'core'],
+  [1, 0, 3.6, 0.14, 'color'],
+  [1, 0.6, 1, 0.3, 'color'],
+  [0.6, 0.25, 1.6, 0.6, 'color'],
+  [0.25, 0, 2.2, 0.95, 'color'],
+  [TRACER.core / TRACER.tail, 0, 1.4, 1, 'hot'],
 ] as const;
 
-/** Each look's passes are one path apiece, so the tail fades from a faint glow to a bright core, then a white-hot head on every round. */
+/** Each look's passes are one path apiece, so the tail fades in from a faint glow to a bright core, then a white-hot head on every round. */
 function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], myId: number) {
   ctx.lineCap = 'round';
   const groups = new Map<string, { look: TracerLook; bullets: BulletView[] }>();
   for (const b of bullets) {
     const look = tracerLook(b, myId);
-    const key = `${look.glow}|${look.core}|${look.r}`;
+    const key = `${look.color}|${look.hot}|${look.r}`;
     const group = groups.get(key);
     if (group) group.bullets.push(b);
     else groups.set(key, { look, bullets: [b] });

@@ -445,7 +445,7 @@ function drawLeaderboard(hud: Hud, top: number, compact: boolean, full: boolean)
   });
 }
 
-export const PANEL_ALPHA = { rest: 0.85, covering: 0.3 } as const;
+export const PANEL_ALPHA = { rest: 0.97, covering: 0.3 } as const;
 const PANEL_FADE_MS = 180;
 
 export function approachAlpha(alpha: number, covering: boolean, dtMs: number): number {
