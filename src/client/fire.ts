@@ -2,7 +2,6 @@ import { GUNS, PRESS_GRACE_MS, WORLD, type GunId } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
-// The server keeps only the newest input each tick, so a held trigger's shots can trail the page's by a tick or two.
 const CONFIRM_SLACK_TICKS = 4;
 
 type Trigger = {

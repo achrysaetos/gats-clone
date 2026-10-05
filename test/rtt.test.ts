@@ -21,6 +21,7 @@ test('a client\'s rewind is capped by the round trip its pongs measure, and only
   let seq = 1;
   const capAfterInput = () => {
     ws.send({ t: 'input', seq: seq++, input: IDLE_INPUT, viewAt: 0 });
+    room.tick();
     return me.rewindCapMs;
   };
 
