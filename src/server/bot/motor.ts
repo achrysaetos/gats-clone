@@ -54,6 +54,7 @@ const ARRIVED_PX = 14;
 const MIN_HOLD_TICKS = 3;
 const HOLD_SLACK = (35 * Math.PI) / 180;
 const STUCK_TICKS = 12;
+const BLOCKED_TICKS = 3;
 const REPLAN_PX = 48;
 const NEAR_GOAL_PX = 300;
 const STAND_MS: readonly [number, number] = [700, 1500];
@@ -192,8 +193,11 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys
   const want = Math.atan2(at.y - me.y, at.x - me.x);
   const octant = ((Math.round(want / (Math.PI / 4)) % 8) + 8) % 8;
   const off = m.dir === null ? Infinity : Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
-  const hold = m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
-  const dir = hold && m.dir !== null ? m.dir : octant;
+  const blocked = m.stuckTicks >= BLOCKED_TICKS;
+  const hold = !blocked && m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
+  // Pressed against a wall, a bot first drops the key it was holding for the exact heading, then tries the headings either side to slide off.
+  const slide = m.stuckTicks >= 2 * BLOCKED_TICKS ? (Math.floor(m.stuckTicks / BLOCKED_TICKS) % 2 ? 1 : -1) : 0;
+  const dir = hold && m.dir !== null ? m.dir : (octant + slide + 8) % 8;
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
   return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick };
 }

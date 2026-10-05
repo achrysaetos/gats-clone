@@ -209,6 +209,23 @@ test('a bot fighting one enemy turns on a hunted one who comes into view, and ke
   assert.ok(Math.abs(aimAfter(false)) < 0.4, `stays on its target to the right: ${aimAfter(false).toFixed(2)}`);
 });
 
+test('a bot holding a key straight into a wall\'s end lets go of it and slides round to its goal', () => {
+  const w = emptyWorld();
+  setWalls(w, [{ x: 1000, y: 1000, w: 300, h: 50 }]);
+  const bot = spawnAt(w, 1324, 1030);
+  const goal = { x: 1150, y: 900 };
+  const r = seeded(8);
+  const base = newBotMemory(r);
+  let mem: BotMemory = { ...base, intent: { k: 'patrol', goal, since: 0, holdUntil: 1e9 }, motor: { ...base.motor, dir: 4, dirSince: 0 } };
+  for (let i = 0; i < 90 && Math.hypot(bot.x - goal.x, bot.y - goal.y) > 40; i++) {
+    const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+    mem = d.mem;
+    setInput(w, bot.id, i + 1, d.input);
+    step(w, TICK_MS);
+  }
+  assert.ok(Math.hypot(bot.x - goal.x, bot.y - goal.y) <= 40, `reaches the goal within 3s, ends at (${bot.x.toFixed(0)}, ${bot.y.toFixed(0)})`);
+});
+
 test('a bot leads a target moving across its line of fire', () => {
   const offsets: number[] = [];
   for (let seed = 1; seed <= 10; seed++) {
