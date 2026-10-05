@@ -3,26 +3,28 @@ import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapsho
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { spreadFor } from '../../shared/sim/stats.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
-import { engage, sharpnessAgainst, TICK_MS, type Engagement } from './aim.ts';
+import { aimSigma, bearingSpin, drift, engage, freshAim, handFor, HANDS, landingErr, leadSeconds, onTarget, sharpnessAgainst, TICK_MS, turn, type AimState, type Engagement, type Hand } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
-import type { Intent, IntentCtx } from './intent.ts';
+import { justLost, type Intent, type IntentCtx } from './intent.ts';
 import { clearShot, findPath, isOpen, walkable, type Point } from './nav.ts';
 
 export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
   dir: number | null;
   dirSince: number;
-  stance: { step: 0 | 1 | -1; until: number; heading: number | null };
+  pace: { lastDir: number | null; lastTurnBackTick: number };
+  stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
   stuckTicks: number;
   engaged: Engagement | null;
   engagedSeen: number;
+  aim: AimState | null;
   shots: number;
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, stance: { step: 0, until: 0, heading: null }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, shots: 0,
+  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -31,8 +33,8 @@ export type Situation = { threat: { d: number } | null; hurting: boolean; underF
 /** Lunge plus reach, leaving the target's radius as slack so a strafing target is still caught. */
 const KNIFE_REACH_PX = KNIFE_LUNGE + KNIFE_REACH;
 /** Grenades land where they were aimed when the fuse runs out, so bots aim where the target will be then. */
-const GRENADE_FUSE_TICKS = Math.round(GRENADE_FUSE_MS / TICK_MS);
 const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
+export const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'knife', 'engineer']);
 const throwRange = (s: Situation) => s.threat !== null && s.threat.d >= 150 && s.threat.d <= 450;
 
 export const ABILITY_RULES: Record<AbilityId, (s: Situation) => boolean> = {
@@ -64,6 +66,9 @@ const UNDER_FIRE_STEP_ODDS = 0.75;
 const STRAFE_MS: readonly [number, number] = [450, 1000];
 const STRAFE_PX = 120;
 const PEEK_SWAY_PX = 70;
+const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
+export const MIN_TURN_BACK_MS = 400;
+const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
@@ -103,19 +108,39 @@ function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly R
 
 type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean };
 
+type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
+
+const LOOK_HOLD_INSIDE_PX = 150;
+const LOOK_AHEAD_PX = 400;
+
+function lookAt(at: Point | null, me: Point, mine: Point, minPx = LOOK_HOLD_INSIDE_PX): { want: number; spin: number; d: number } | null {
+  if (!at || dist(at, me) < Math.max(1, minPx)) return null;
+  const rx = at.x - me.x, ry = at.y - me.y;
+  return { want: Math.atan2(ry, rx), spin: bearingSpin(rx, ry, -mine.x, -mine.y), d: dist(at, me) };
+}
+
+function routeAhead(me: Point, route: Motor['route']): Point | null {
+  let from = me, left = LOOK_AHEAD_PX;
+  for (const p of route?.points ?? []) {
+    const d = dist(from, p);
+    if (d >= left) return { x: from.x + ((p.x - from.x) * left) / d, y: from.y + ((p.y - from.y) * left) / d };
+    left -= d;
+    from = p;
+  }
+  return from === me ? null : from;
+}
+
 const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
   spreadFor(v.me.gun, v.self.perks, true) < spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
 
-function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean): Motor['stance'] {
-  const wasPlanted = m.stance.step === 0;
-  if (v.tick < m.stance.until && planted === wasPlanted) return m.stance;
-  if (!planted) {
-    const step = m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : (-m.stance.step as 1 | -1);
-    return { step, until: v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS), heading: null };
-  }
+function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
+  const age = v.tick - m.stance.since;
+  if (planted === m.stance.planted ? v.tick < m.stance.until : age < MIN_LEG_TICKS) return m.stance;
+  const legFor = (step: Motor['stance']['step'], ms: readonly [number, number]) => ({ step, since: v.tick, until: v.tick + Math.max(MIN_LEG_TICKS, Math.round(between(ms, c.rand) / TICK_MS)), heading: null, planted });
+  if (!planted) return legFor(m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : (-m.stance.step as 1 | -1), legMs);
   const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
-  const step = wasPlanted && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
-  return { step, until: v.tick + Math.round(between(step === 0 ? STAND_MS : STEP_MS, c.rand) / TICK_MS), heading: null };
+  const step = m.stance.step === 0 && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
+  return legFor(step, step === 0 ? STAND_MS : STEP_MS);
 }
 
 function legHeading(me: Point, at: Point, step: 1 | -1, advance: boolean): number {
@@ -142,13 +167,12 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const reload = intent.phase === 'hide' && !t && v.self.ammo < v.self.mag;
       const peeking = (to: Point, stance: Motor['stance']) => ({ steer: { to, face, reload, crates: false }, stance });
       if (intent.phase === 'hide') return peeking(intent.spot, m.stance);
-      let stance = nextStance(m, v, c, plants(v, c, t?.d ?? 0, true));
+      const crossMs = (PEEK_SWAY_PX / v.self.speed) * 1000;
+      const stance = nextStance(m, v, c, plants(v, c, t?.d ?? 0, true), [crossMs + SWAY_PAUSE_MS[0], crossMs + SWAY_PAUSE_MS[1]]);
       if (stance.step === 0) return peeking(intent.peek, stance);
       const out = Math.atan2(intent.peek.y - intent.spot.y, intent.peek.x - intent.spot.x);
       const wide = { x: intent.peek.x + Math.cos(out) * PEEK_SWAY_PX, y: intent.peek.y + Math.sin(out) * PEEK_SWAY_PX };
-      const swayTo = (step: number) => (step === 1 && isOpen(c.arena.nav, wide) ? wide : intent.peek);
-      if (dist(me, swayTo(stance.step)) < ARRIVED_PX * 2) stance = { ...stance, step: stance.step === 1 ? -1 : 1, heading: null };
-      return peeking(swayTo(stance.step), stance);
+      return peeking(stance.step === 1 && isOpen(c.arena.nav, wide) ? wide : intent.peek, stance);
     }
     case 'reloadInCover': {
       const safe = v.threats.length === 0 || dist(me, intent.spot) < WAYPOINT_PX * 2;
@@ -160,7 +184,10 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     }
     case 'engage': {
       const t = focus(v, intent.target);
-      if (!t) return { steer: { to: v.lastSeen, face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
+      if (!t) {
+        const leg = justLost(v) && m.stance.heading !== null ? legPoint(me, m.stance.heading, c.arena) : null;
+        return { steer: { to: leg ?? (justLost(v) ? null : v.lastSeen), face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
+      }
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
       if (readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) return { steer: fight(t.p), stance: m.stance };
       const closing = t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal);
@@ -172,7 +199,8 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       if (ahead) return { steer: fight(ahead), stance: { ...stance, heading } };
       const back = step === 1 ? -1 : 1;
       const turned = legHeading(me, t.p, back, closing);
-      return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned } };
+      const until = v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS);
+      return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
     }
   }
 }
@@ -197,19 +225,28 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
 }
 
 const sidestepOctant = (stuckTicks: number) =>
-  stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor(stuckTicks / BLOCKED_TICKS) % 2 ? 1 : -1;
+  stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor((stuckTicks - 2 * BLOCKED_TICKS) / MIN_LEG_TICKS) % 2 ? -1 : 1;
 
-function keysToward(m: Motor, me: Point, at: Point | null, tick: number): { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number } {
+type Drive = { keys: Pick<InputState, 'up' | 'down' | 'left' | 'right'>; dir: number | null; dirSince: number; pace: Motor['pace'] };
+
+const octantGap = (a: number, b: number) => Math.min((a - b + 8) % 8, (b - a + 8) % 8);
+
+function keysToward(m: Motor, me: Point, at: Point | null, tick: number): Drive {
   const none = { up: false, down: false, left: false, right: false };
-  if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick };
+  if (!at || dist(me, at) < ARRIVED_PX) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
   const want = Math.atan2(at.y - me.y, at.x - me.x);
   const octant = ((Math.round(want / (Math.PI / 4)) % 8) + 8) % 8;
   const off = m.dir === null ? Infinity : Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
   const blocked = m.stuckTicks >= BLOCKED_TICKS;
   const hold = !blocked && m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
   const dir = hold && m.dir !== null ? m.dir : (octant + sidestepOctant(m.stuckTicks) + 8) % 8;
+  const turnsBack = m.pace.lastDir !== null && octantGap(dir, m.pace.lastDir) >= 3;
+  if (turnsBack && tick - m.pace.lastTurnBackTick < MIN_LEG_TICKS) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
-  return { keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick };
+  return {
+    keys: { up: cy < -0.38, down: cy > 0.38, left: cx < -0.38, right: cx > 0.38 }, dir, dirSince: hold ? m.dirSince : tick,
+    pace: { lastDir: dir, lastTurnBackTick: turnsBack ? tick : m.pace.lastTurnBackTick },
+  };
 }
 
 export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot): { input: InputState; motor: Motor } {
@@ -226,28 +263,33 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const aimSurvivesCover = (id: number) => intent.k === 'peekAndHide' && intent.target === id;
   const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || aimSurvivesCover(id));
   let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;
-  let angle = s.face ? Math.atan2(s.face.y - me.y, s.face.x - me.x) : way.at ? Math.atan2(way.at.y - me.y, way.at.x - me.x) : me.angle;
-  let aimDist = s.face ? Math.max(1, dist(me, s.face)) : 300;
-  let fire = false;
+  const before = m.aim ?? freshAim(me.angle);
+  const mine = m.aim ? { x: (me.x - m.last.x) * WORLD.tickHz, y: (me.y - m.last.y) * WORLD.tickHz } : { x: 0, y: 0 };
+  const idle = lookAt(s.face ?? v.lastSeen ?? v.lead ?? routeAhead(me, way.route), me, mine);
+  let look: Look = { ...(idle ?? { want: before.want, spin: 0, d: 300 }), hand: HANDS.calm, err: before.err };
+  let wantsFire = false;
   let threat: Situation['threat'] = null;
   let throwAt: { x: number; y: number; err: number } | null = null;
   if (t) {
     const tracked = held(t.p.id) ? m.engaged : null;
-    engaged = engage(tracked, t.p, sharpnessAgainst(t.p), me, v.tick, c.rand);
-    const vel = tracked ? { x: t.p.x - tracked.x, y: t.p.y - tracked.y } : { x: 0, y: 0 };
-    const flightTicks = (t.d / gun.bulletSpeed) * WORLD.tickHz;
-    angle = Math.atan2(t.p.y + vel.y * flightTicks - me.y, t.p.x + vel.x * flightTicks - me.x) + engaged.aimErrRad;
-    aimDist = t.d;
-    const reacted = v.tick >= engaged.fireAtTick;
-    fire = reacted && t.d < gun.range * 0.95;
-    if (reacted) threat = { d: t.d };
-    throwAt = { x: t.p.x + vel.x * GRENADE_FUSE_TICKS, y: t.p.y + vel.y * GRENADE_FUSE_TICKS, err: engaged.aimErrRad };
+    const sharp = sharpnessAgainst(t.p);
+    engaged = engage(tracked, t.p, sharp, v.tick, c.rand);
+    if (v.tick >= engaged.noticeAtTick) {
+      const sigma = aimSigma(engaged, me, sharp, v.tick);
+      const err = v.tick === engaged.noticeAtTick ? landingErr(sigma, c.rand) : drift(before.err, sigma, TICK_MS, c.rand);
+      const flight = leadSeconds(t.d, gun.bulletSpeed);
+      const rx = t.p.x + engaged.vx * flight - me.x, ry = t.p.y + engaged.vy * flight - me.y;
+      look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx - mine.x, engaged.vy - mine.y), hand: handFor(sharp), d: t.d, err };
+      wantsFire = t.d < gun.range * 0.95;
+      threat = { d: t.d };
+      const fuse = GRENADE_FUSE_MS / 1000;
+      throwAt = { x: t.p.x + engaged.vx * fuse, y: t.p.y + engaged.vy * fuse, err };
+    }
   } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
     const crate = crateInSight(me, snap.crates, c.arena.walls, gun.range * 0.95, viewExtents(snap.self.viewRadius, VIEW_ASPECT.max));
     if (crate) {
-      angle = Math.atan2(crate.y - me.y, crate.x - me.x);
-      aimDist = dist(crate, me);
-      fire = true;
+      look = { ...look, ...lookAt(crate, me, mine, 0) };
+      wantsFire = true;
     }
   }
 
@@ -255,23 +297,27 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     threat, hurting: v.hpFrac < HURTING_HP_FRAC, underFire: v.underFire,
     onContestedZone: v.zones.some((z) => z.owner !== me.team && dist(z, me) < z.r),
   };
-  const ability = readyAbility !== null && ABILITY_RULES[readyAbility](situation);
+  const wantsAbility = readyAbility !== null && ABILITY_RULES[readyAbility](situation);
   let keys = drive.keys;
-  if (ability && readyAbility === 'dash' && t) {
+  if (wantsAbility && readyAbility === 'dash' && t) {
     const away = awayFrom(me, t.p, c.arena, RETREAT_STEP);
-    keys = keysToward({ ...m, dir: null, stuckTicks: 0 }, me, away, v.tick).keys;
+    keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity } }, me, away, v.tick).keys;
   }
-  if (ability && throwAt && GRENADES.has(readyAbility)) {
-    angle = Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err;
-    aimDist = Math.hypot(throwAt.x - me.x, throwAt.y - me.y);
+  if (wantsAbility && throwAt && GRENADES.has(readyAbility)) {
+    look = { ...look, want: Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err, spin: 0, d: Math.hypot(throwAt.x - me.x, throwAt.y - me.y) };
   }
+  const aim = turn({ ...before, err: look.err }, look.want, look.spin, look.hand, TICK_MS);
+  const aimed = onTarget(aim, look.d);
+  const fire = wantsFire && aimed;
+  const ability = wantsAbility && (aimed || !AIMED_ABILITIES.has(readyAbility));
+  const angle = aim.angle, aimDist = Math.max(1, look.d);
   const shots = m.shots + (fire ? 1 : 0);
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && (s.reload || (!t && snap.self.ammo < snap.self.mag / 2));
   return {
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false },
     motor: {
-      route: way.route, dir: drive.dir, dirSince: drive.dirSince, stance, last: { x: me.x, y: me.y },
-      stuckTicks: pressing && moved < 1 && !way.replanned ? m.stuckTicks + 1 : 0, engaged, engagedSeen: t ? v.tick : m.engagedSeen, shots,
+      route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
+      stuckTicks: pressing && moved < 1 && !way.replanned ? m.stuckTicks + 1 : 0, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
     },
   };
 }

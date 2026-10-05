@@ -74,6 +74,7 @@ const ARRIVED_PX = 60;
 const COVER_REACH_PX = 320;
 const RETREAT_REACH_PX = 600;
 const CORNERED_PX = 220;
+const FLEE_FROM_PX = CORNERED_PX + 60;
 const OPEN_ESCAPE_PX = 500;
 const OUTNUMBERED_BY = 2;
 const OUTNUMBERED_HP = 0.3;
@@ -83,6 +84,9 @@ const ticks = (ms: number) => Math.round(ms / TICK_MS);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const pos = (t: Threat): Point => ({ x: t.p.x, y: t.p.y });
+
+const LOST_GRACE_MS = 500;
+export const justLost = (v: Perception) => v.lastSeen !== null && (v.tick - v.lastSeen.seenTick) * TICK_MS < LOST_GRACE_MS;
 
 export function startIntent(plan: Plan, c: IntentCtx): Intent {
   return { ...plan, since: c.tick, holdUntil: c.tick + ticks(MIN_COMMIT_MS[plan.k] * c.persona.commitMul) };
@@ -149,7 +153,7 @@ type Interrupt = (cur: Intent, v: Perception, c: IntentCtx) => Plan | null;
 
 const fleeLosingFight: Interrupt = (cur, v, c) => {
   const near = v.threats[0];
-  if (cur.k === 'retreatAndHeal' || !losing(v, c.persona) || (near && near.d < CORNERED_PX)) return null;
+  if (cur.k === 'retreatAndHeal' || !losing(v, c.persona) || (near && near.d < FLEE_FROM_PX)) return null;
   const threat = near ? pos(near) : v.lastSeen ?? v.me;
   const spot = hideFrom(v, c, threat);
   if (!spot && near && near.d < OPEN_ESCAPE_PX) return null;
@@ -200,7 +204,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   takePosition: (_cur, v, c) => idlePlan(v, c),
   engage: (cur, v, c) => {
     const t = v.threats[0];
-    if (!t) return lostSight(v, c, cur.target);
+    if (!t) return justLost(v) ? null : lostSight(v, c, cur.target);
     if (v.weapon === 'shotgun' || t.d < c.band.headOn * 0.7 || c.rand() >= c.persona.peekOdds) return null;
     return peekPlan(v, c, t);
   },

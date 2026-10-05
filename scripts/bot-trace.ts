@@ -19,7 +19,7 @@ const seconds = Number(process.argv[4] ?? 120);
 const seed = Number(process.argv[5] ?? 1);
 const out = process.argv[6] ?? 'bot-trace.html';
 const TICK_MS = 1000 / WORLD.tickHz;
-const EVERY = 2;
+const EVERY = 1;
 
 const w = createWorld(mode, seed, map);
 const r = () => rand(w);
@@ -61,7 +61,7 @@ for (let tick = 0; tick < (seconds * 1000) / TICK_MS; tick++) {
     const i = mem.intent;
     const m = i && alive ? marks(i) : { to: null, lookAt: null };
     const phase = i?.k === 'peekAndHide' ? i.phase : '';
-    return [id, Math.round(p.x), Math.round(p.y), p.team ?? '', alive ? Math.round((p.life.k === 'alive' ? p.life.hp : 0)) : 0, alive && i ? i.k : 'dead', phase, mem.persona, p.loadout.weapon, m.to, m.lookAt];
+    return [id, Math.round(p.x), Math.round(p.y), p.team ?? '', alive ? Math.round((p.life.k === 'alive' ? p.life.hp : 0)) : 0, alive && i ? i.k : 'dead', phase, mem.persona, p.loadout.weapon, m.to, m.lookAt, Math.round(p.angle * 100) / 100];
   });
   frames.push({ t: Math.round(w.now) / 1000, bots, shots: fired });
 }
@@ -87,11 +87,12 @@ g.fillStyle='#3a3f48';for(const z of D.zones){g.beginPath();g.arc(z[0]*k,z[1]*k,
 g.fillStyle='#6b7280';for(const r of D.walls)g.fillRect(r[0]*k,r[1]*k,r[2]*k,r[3]*k);
 g.fillStyle='#8a6d3b';for(const r of D.crates)g.fillRect(r[0]*k,r[1]*k,r[2]*k,r[3]*k);
 g.strokeStyle='rgba(255,230,120,.5)';for(const sh of f.shots){g.beginPath();g.moveTo(sh[0]*k,sh[1]*k);g.lineTo((sh[0]+Math.cos(sh[2])*120)*k,(sh[1]+Math.sin(sh[2])*120)*k);g.stroke();}
-for(const b of f.bots){const[id,x,y,team,hp,kind,phase,persona,weapon,to,lookAt]=b;if(kind==='dead')continue;const col=C[kind];
+for(const b of f.bots){const[id,x,y,team,hp,kind,phase,persona,weapon,to,lookAt,angle]=b;if(kind==='dead')continue;const col=C[kind];
 if(to){g.setLineDash([4,4]);g.strokeStyle=col;g.beginPath();g.moveTo(x*k,y*k);g.lineTo(to[0]*k,to[1]*k);g.stroke();g.setLineDash([]);g.strokeRect(to[0]*k-3,to[1]*k-3,6,6);}
 if(lookAt){g.strokeStyle=col+'88';g.beginPath();g.arc(lookAt[0]*k,lookAt[1]*k,5,0,7);g.stroke();}
 g.fillStyle=col;g.beginPath();g.arc(x*k,y*k,24*k+2,0,7);g.fill();
 g.lineWidth=3;g.strokeStyle=team==='red'?'#e63946':team==='blue'?'#4361ee':'#fff';g.beginPath();g.arc(x*k,y*k,24*k+4,0,7);g.stroke();g.lineWidth=1;
+g.strokeStyle='#fff';g.lineWidth=2;g.beginPath();g.moveTo(x*k,y*k);g.lineTo((x+Math.cos(angle)*70)*k,(y+Math.sin(angle)*70)*k);g.stroke();g.lineWidth=1;
 g.fillStyle='#fff';g.fillText(id+' '+Math.round(hp),x*k+10,y*k-8);}
 document.getElementById('head').innerHTML='<b>'+D.mode+' '+D.map+'</b> t='+f.t.toFixed(1)+'s';
 document.getElementById('list').innerHTML=f.bots.map(b=>'<div class="k"><span class="sw" style="background:'+C[b[5]]+'"></span>'+b[0]+' '+b[7]+' '+b[8]+' '+b[5]+(b[6]?'/'+b[6]:'')+' hp '+b[4]+'</div>').join('');

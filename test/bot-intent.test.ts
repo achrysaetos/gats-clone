@@ -7,7 +7,8 @@ import type { World } from '../src/shared/sim/world.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx, type Personality, type Plan } from '../src/server/bot/intent.ts';
-import { emptyWorld, setWalls, spawnAt } from './helpers.ts';
+import { step } from '../src/shared/sim.ts';
+import { emptyWorld, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
 
@@ -225,4 +226,29 @@ test('a search lasts long enough to walk to a far lead and look round, and a nea
   const far = giveUpAfterS(5000), close = giveUpAfterS(1300);
   assert.ok(far > walkS, `a lead 4000px off is kept ${far.toFixed(1)}s, longer than the ${walkS.toFixed(1)}s walk`);
   assert.ok(close < far - walkS / 2, `a lead 300px off is kept ${close.toFixed(1)}s`);
+});
+
+test('a hurt bot that turned on its pursuer keeps fighting while it backs off a step, and flees only once it has real distance', () => {
+  const at = (d: number) => {
+    const w = emptyWorld();
+    setWalls(w, [pillarWest]);
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    spawnAt(w, 1000 + d, 1000);
+    if (bot.life.k === 'alive') bot.life.hp = 10;
+    return decide(w, bot.id, { k: 'engage', target: 0 }).k;
+  };
+  assert.equal(at(250), 'engage', 'just past the cornered range it holds');
+  assert.equal(at(400), 'retreatAndHeal', 'with room it breaks off');
+});
+
+test('a bot whose target slips out of sight for a moment keeps fighting, and gives up the fight once it has been gone a while', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  for (let i = 0; i < 90; i++) step(w, TICK_MS);
+  const lost = (agoMs: number) => {
+    const aware: Awareness = { ...freshAwareness(), contacts: [{ id: 99, x: 1500, y: 1000, seenTick: w.tick - Math.round(agoMs / TICK_MS), gun: 'assault' }] };
+    return decide(w, bot.id, { k: 'engage', target: 99, since: 0, holdUntil: 0 }, { aware, tick: w.tick }).k;
+  };
+  assert.equal(lost(TICK_MS), 'engage', 'one tick out of sight');
+  assert.notEqual(lost(1000), 'engage', 'a second out of sight');
 });
