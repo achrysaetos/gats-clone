@@ -171,12 +171,15 @@ async function earnAbility(ability: AbilityId): Promise<boolean> {
 async function proveDash() {
   if (!(await earnAbility('dash'))) { expect('dash: reached tier 3 and picked Dash', false); return; }
   expect('dash: reached tier 3 and picked Dash on the server', selfView()?.ability === 'dash', `perks ${JSON.stringify(selfView()?.perks)}`);
-  for (let attempt = 0; attempt < 6; attempt++) {
+  const start = Date.now();
+  while (Date.now() - start < 150_000) {
     await ensureAlive();
     const self = me();
-    if (!self || selfView()?.ability !== 'dash' || (selfView()?.abilityReadyIn ?? 1) > 0) { await sleep(500); continue; }
+    if (!self) { await sleep(200); continue; }
+    if (selfView()?.ability !== 'dash') { if (!(await earnAbility('dash'))) break; continue; }
+    if ((selfView()?.abilityReadyIn ?? 1) > 0) { await sleep(200); continue; }
     const angle = [...Array(16).keys()].map((i) => (i / 16) * Math.PI * 2).find((a) => clearLane(self.x, self.y, a, 300));
-    if (angle === undefined) { await sleep(500); continue; }
+    if (angle === undefined) { const mid = (frames.welcome?.worldSize ?? 0) / 2; await walkToward(self, { x: mid, y: mid }); continue; }
     await aimAt(angle);
     await sleep(150);
     await js(`window.maxCorrection = 0; window.watching = true; (function watch() { maxCorrection = Math.max(maxCorrection, skirmishDev.drawnSelf().correction); if (watching) requestAnimationFrame(watch); })(); 0`);
