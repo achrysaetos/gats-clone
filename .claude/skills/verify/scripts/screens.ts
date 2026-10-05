@@ -40,7 +40,6 @@ await new Promise((r) => page.once('open', r));
 let nextId = 1;
 let myId: number | null = null;
 let full = null as Snapshot | null;
-const latest = () => full;
 const exceptions: string[] = [];
 const pending = new Map<number, (v: any) => void>();
 page.on('message', (raw) => {
@@ -113,6 +112,11 @@ async function play(ms: number, goal: (() => { x: number; y: number } | null) | 
 const enemies = () => full?.players.filter((p) => p.id !== myId && p.alive && (p.team === null || p.team !== me()?.team)) ?? [];
 const zombies = () => (full?.zombies ?? []).map(([, , x, y]) => ({ x, y }));
 const serverOf = (mode: string) => `document.querySelector('#servers .server .mode-${mode}').closest('.server').click(); document.getElementById('play').click()`;
+const nearCore = () => { const c = full?.run?.core; return c ? { x: c.x + 220, y: c.y + 160 } : null; };
+const pickFirst = async () => {
+  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
+  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
+};
 
 /** Plays until a frame has at least `bullets` rounds and an enemy in view, then screenshots it; after `ms` it screenshots anyway. */
 async function fightShot(name: string, ms: number, goal: (() => { x: number; y: number } | null) | null) {
@@ -138,7 +142,7 @@ for (const view of VIEWS) {
     }
     case 'dom': {
       await enter(serverOf('dom'));
-      const zone = () => { const self = me(), zones = latest()?.zones ?? []; return self && zones.length ? [...zones].sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0]! : null; };
+      const zone = () => { const self = me(), zones = full?.zones ?? []; return self && zones.length ? [...zones].sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0]! : null; };
       await fightShot('dom', 30_000, zone);
       break;
     }
@@ -158,14 +162,13 @@ for (const view of VIEWS) {
       for (let i = 0; i < 400; i++) {
         const title: string = await dock();
         if (title.includes(want)) break;
-        if (title) { await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 }); await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 }); await sleep(300); continue; }
+        if (title) { await pickFirst(); await sleep(300); continue; }
         await play(400, null, enemies);
       }
       await play(600, null, enemies, false);
       await shot(view);
       if (view === 'evolve') {
-        await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
-        await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
+        await pickFirst();
         await sleep(700);
         await shot('evolved');
       }
@@ -173,17 +176,15 @@ for (const view of VIEWS) {
     }
     case 'zom-day': {
       await enter(`document.getElementById('squad-start').click()`);
-      for (let i = 0; i < 60 && latest()?.run?.phase !== 'day'; i++) await sleep(100);
-      const core = () => latest()?.run?.core ?? null;
-      await play(2500, () => { const c = core(); return c && { x: c.x + 220, y: c.y + 160 }; }, () => [], false);
+      for (let i = 0; i < 60 && full?.run?.phase !== 'day'; i++) await sleep(100);
+      await play(2500, nearCore, () => [], false);
       await shot('zom-day');
       break;
     }
     case 'zom-night': {
-      if (!latest()?.run) await enter(`document.getElementById('squad-start').click()`);
-      const core = () => latest()?.run?.core ?? null;
-      for (let i = 0; i < 1200 && !(latest()?.run?.phase === 'night' && zombies().length >= 40); i++) await play(300, () => { const c = core(); return c && { x: c.x + 220, y: c.y + 160 }; }, zombies, latest()?.run?.phase === 'night');
-      await play(1500, () => { const c = core(); return c && { x: c.x + 220, y: c.y + 160 }; }, zombies);
+      if (!full?.run) await enter(`document.getElementById('squad-start').click()`);
+      for (let i = 0; i < 1200 && !(full?.run?.phase === 'night' && zombies().length >= 40); i++) await play(300, nearCore, zombies, full?.run?.phase === 'night');
+      await play(1500, nearCore, zombies);
       await shot('zom-night');
       break;
     }
