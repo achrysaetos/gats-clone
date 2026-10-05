@@ -175,7 +175,7 @@ test('DOM zone capture scores for the team, declares a winner, then resets', () 
   assert.ok(w.teamScore.red > 0);
   assert.equal(w.teamScore.blue, 0);
 
-  for (let t = 0; t < 300_000 && w.match.k === 'playing'; t += TICK_MS) step(w, TICK_MS);
+  for (let t = 0; t < 700_000 && w.match.k === 'playing'; t += TICK_MS) step(w, TICK_MS);
   const match = snapshotFor(w, p.id).match;
   assert.equal(match.winner?.name, 'Red team');
   assert.ok(match.teamScore.red >= WORLD.domWinScore);

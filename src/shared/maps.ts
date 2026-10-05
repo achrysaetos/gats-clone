@@ -78,7 +78,7 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
 };
 
 /** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
-export const MAP_MS: Record<ModeId, number> = { FFA: 6 * 60_000, TDM: 10 * 60_000, DOM: Infinity, ZOM: Infinity };
+export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: Infinity, ZOM: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
 export function nextMap(mode: ModeId, current: MapId): MapId {

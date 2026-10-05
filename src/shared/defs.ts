@@ -229,10 +229,10 @@ export const WORLD = {
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,
   respawnMs: 3000,
-  domWinScore: 1000,
-  tdmWinScore: 50,
+  domWinScore: 3000,
+  tdmWinScore: 150,
   /** A human who reaches this ends the FFA round early; otherwise the round runs until MAP_MS.FFA and the top killer, bot or human, wins. */
-  ffaWinKills: 20,
+  ffaWinKills: 30,
   roundRestartMs: 8000,
   minPlayers: 18,
 } as const;
