@@ -77,6 +77,8 @@ const MIN_COMMIT_MS: Record<IntentKind, number> = {
 };
 const SEARCH_MS = 9000;
 const FLANK_MS = 8000;
+/** A peek duel still going after this long is a stalemate, which a bot may break by going round. */
+const STALEMATE_MS = 6000;
 const ARRIVED_PX = 60;
 const COVER_REACH_PX = 320;
 const RETREAT_REACH_PX = 600;
@@ -84,7 +86,7 @@ const RETREAT_REACH_PX = 600;
 const CORNERED_PX = 220;
 /** With no cover in reach, a bot only runs from an enemy this far off, which it can hope to break sight with. */
 const OPEN_ESCAPE_PX = 500;
-/** Two or more enemies in sight make a fight worth leaving at this much health, not just at the personality's line. */
+/** Two more enemies in sight than teammates make a fight worth leaving at this much health, not just at the personality's line. */
 const OUTNUMBERED_HP = 0.65;
 const LOW_AMMO = 0.25;
 
@@ -100,11 +102,11 @@ export function startIntent(plan: Plan, c: IntentCtx): Intent {
 /** The spot furthest from the threat among cover hiding the bot from every enemy in sight, or a step straight away when there is none. */
 function hideFrom(v: Perception, c: IntentCtx, threat: Point): Point | null {
   const threats = v.threats.length ? v.threats.map(pos) : [threat];
-  return pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, threats, { reach: RETREAT_REACH_PX, range: 0, peek: false })?.spot ?? null;
+  return pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, threats, { reach: RETREAT_REACH_PX, range: 0, peek: false, taken: v.allies })?.spot ?? null;
 }
 
 function peekPlan(v: Perception, c: IntentCtx, t: Threat): Plan | null {
-  const pick = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [pos(t)], { reach: COVER_REACH_PX, range: c.band.ideal, peek: true });
+  const pick = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [pos(t)], { reach: COVER_REACH_PX, range: c.band.ideal, peek: true, taken: v.allies });
   if (!pick?.peek) return null;
   const travel = dist(v.me, pick.spot) / v.self.speed * 1000;
   return { k: 'peekAndHide', target: t.p.id, spot: pick.spot, peek: pick.peek, phase: 'hide', phaseUntil: c.tick + ticks(travel + between(c.persona.hideMs, c.rand)) };
@@ -155,7 +157,7 @@ function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
 const losing = (v: Perception, p: Personality) => {
   const lone = v.threats.length === 1 ? v.threats[0]!.p : null;
   if (lone && lone.hp / lone.maxHp < v.hpFrac) return false;
-  return (v.threats.length > 0 || v.underFire) && (v.hpFrac < p.retreatHp || (v.threats.length >= 2 && v.hpFrac < OUTNUMBERED_HP));
+  return (v.threats.length > 0 || v.underFire) && (v.hpFrac < p.retreatHp || (v.threats.length >= v.allies.length + 2 && v.hpFrac < OUTNUMBERED_HP));
 };
 
 /** Checked every think, in order, whatever the commitment: a losing fight, a retreat caught up with or found in its hiding spot, an empty gun in a fight, and an enemy walking into view. */
@@ -211,6 +213,8 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   peekAndHide: (cur, v, c) => {
     const t = v.threats.find((x) => x.p.id === cur.target) ?? v.threats[0];
     if (t && t.d < c.band.min * 0.7) return { k: 'engage', target: t.p.id };
+    const at = t ? pos(t) : v.lastSeen;
+    if (at && v.tick - cur.since === ticks(STALEMATE_MS) && c.rand() < c.persona.flankOdds) return flankPlan(v, c, cur.target, at);
     if (t || (v.lastSeen && v.tick - v.lastSeen.seenTick < ticks(2500))) return null;
     return lostSight(v, c, cur.target);
   },

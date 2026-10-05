@@ -41,6 +41,8 @@ export type Perception = {
   zones: readonly ZoneView[];
   /** What stops a shot right now: walls and the crates in view. */
   solids: readonly Rect[];
+  /** Teammates in view, who count against being outnumbered and whose spots a bot leaves to them. */
+  allies: readonly Point[];
 };
 
 const FORGET_MS = 8000;
@@ -109,7 +111,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     awareness: { contacts: live, heard, mates, hitTick },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
-      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS, zones: snap.zones, solids,
+      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS, zones: snap.zones, solids, allies: mates,
     },
   };
 }

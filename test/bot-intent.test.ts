@@ -121,3 +121,28 @@ test('a flank that reaches its side point goes to search where the target was la
   const next = decide(w, bot.id, flank, { tick: flank.holdUntil });
   assert.ok(next.k === 'search' && next.at.x === 1500 && next.at.y === 1400, JSON.stringify(next));
 });
+
+test('a peek duel that drags on is broken by a flank when the personality goes round', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const enemy = spawnAt(w, 1500, 1000);
+  const peek = startIntent({ k: 'peekAndHide', target: enemy.id, spot: { x: 1000, y: 1000 }, peek: { x: 1000, y: 1060 }, phase: 'hide', phaseUntil: 1e9 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
+  const at = (tick: number, flankOdds: number) => decide(w, bot.id, peek, { persona: { ...PERSONALITIES.cautious, flankOdds }, tick }).k;
+  assert.equal(at(90, 1), 'peekAndHide', 'three seconds in it keeps peeking');
+  assert.equal(at(180, 1), 'flank', 'six seconds in it goes round');
+  assert.equal(at(180, 0), 'peekAndHide', 'a bot that never flanks keeps peeking');
+});
+
+test('a hurt bot leaves the hiding spot a teammate is already in', () => {
+  const w = emptyWorld('TDM');
+  setWalls(w, [pillarWest]);
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, team: 'red' });
+  spawnAt(w, 1500, 1000, { team: 'blue' });
+  if (bot.life.k === 'alive') bot.life.hp = 20;
+  const alone = decide(w, bot.id, { k: 'engage', target: 0 });
+  assert.ok(alone.k === 'retreatAndHeal' && alone.spot, 'retreats to cover');
+  const spot = alone.k === 'retreatAndHeal' ? alone.spot! : { x: 0, y: 0 };
+  spawnAt(w, spot.x, spot.y, { team: 'red' });
+  const shared = decide(w, bot.id, { k: 'engage', target: 0 });
+  assert.ok(shared.k === 'retreatAndHeal' && shared.spot && Math.hypot(shared.spot.x - spot.x, shared.spot.y - spot.y) >= 60, `picks another spot: ${JSON.stringify(shared)}`);
+});

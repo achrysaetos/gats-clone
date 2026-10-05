@@ -16,6 +16,8 @@ const SPACING = 50;
 /** A shot from a bearing is stopped when its line meets cover this close to the spot, which a wall the bot is hugging always is. */
 const SHIELD_PX = 90;
 const BUCKET_PX = 250;
+/** A spot this close to someone already there is theirs. */
+const TAKEN_PX = 60;
 /** How far beside a cover spot a bot steps out to see round its edge. */
 const PEEK_STEPS = [40, 65, 90] as const;
 
@@ -89,13 +91,14 @@ export type CoverPick = { spot: CoverPoint; peek: Point | null };
  */
 export function pickCover(
   index: CoverIndex, nav: NavGrid, solids: readonly Rect[], me: Point, threats: readonly Point[],
-  opts: { reach: number; range: number; peek: boolean },
+  opts: { reach: number; range: number; peek: boolean; taken?: readonly Point[] },
 ): CoverPick | null {
   const main = threats[0];
   if (!main) return null;
   let best: CoverPick | null = null, bestScore = Infinity;
   for (const c of coverNear(index, me, opts.reach)) {
     if (!(c.blocks & (1 << bearingIndex(c, main)))) continue;
+    if (opts.taken?.some((t) => Math.hypot(t.x - c.x, t.y - c.y) < TAKEN_PX)) continue;
     const toMain = Math.hypot(main.x - c.x, main.y - c.y);
     const walk = Math.hypot(c.x - me.x, c.y - me.y);
     const score = opts.peek ? walk + Math.abs(toMain - opts.range) * 0.7 : walk - toMain * 0.5;
