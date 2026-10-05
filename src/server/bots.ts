@@ -2,7 +2,7 @@ import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, WORLD, Z
 import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type Loadout, type PlayerView, type RunView, type Snapshot } from '../shared/protocol.ts';
 import { cellRect } from '../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../shared/sim/movement.ts';
-import { aimSigma, drift, engage, freshAim, HANDS, onTarget, SHARPNESS, TICK_MS, turn, type Engagement, type Hand } from './bot/aim.ts';
+import { aimSigma, bearingSpin, drift, engage, freshAim, HANDS, onTarget, SHARPNESS, TICK_MS, turn, type Engagement, type Hand } from './bot/aim.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
@@ -176,7 +176,7 @@ function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotAren
       err = drift(err, aimSigma(engaged, me, SHARPNESS[0]!, snap.tick), TICK_MS, rand);
       const rx = zombie.x - me.x, ry = zombie.y - me.y;
       want = Math.atan2(ry, rx) + err;
-      spin = (rx * engaged.vy - ry * engaged.vx) / Math.max(1, rx * rx + ry * ry);
+      spin = bearingSpin(rx, ry, engaged.vx, engaged.vy);
       hand = HANDS.flick;
       aimDist = zombie.d;
       wantsFire = zombie.d < GUNS[me.gun].range * 0.95;

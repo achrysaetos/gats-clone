@@ -57,6 +57,9 @@ const gaussian = (rand: () => number) => Math.sqrt(-2 * Math.log(1 - rand())) * 
 export const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = (x: number, lim: number) => Math.max(-lim, Math.min(lim, x));
 
+/** How fast the bearing to something turns (rad/s), given its offset from the bot and its velocity relative to the bot. */
+export const bearingSpin = (rx: number, ry: number, vx: number, vy: number) => (rx * vy - ry * vx) / Math.max(1, rx * rx + ry * ry);
+
 export const freshAim = (angle: number): AimState => ({ angle, spin: 0, want: angle, err: 0 });
 
 /** Turns the gun toward `want`, which itself turns at `wantSpin`, so a smooth track carries no lag. Fixed substeps keep it the same at any tick rate. */

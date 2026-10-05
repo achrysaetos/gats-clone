@@ -3,7 +3,7 @@ import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapsho
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { spreadFor } from '../../shared/sim/stats.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
-import { aimSigma, drift, engage, freshAim, handFor, HANDS, landingErr, leadSeconds, onTarget, sharpnessAgainst, TICK_MS, turn, type AimState, type Engagement, type Hand } from './aim.ts';
+import { aimSigma, bearingSpin, drift, engage, freshAim, handFor, HANDS, landingErr, leadSeconds, onTarget, sharpnessAgainst, TICK_MS, turn, type AimState, type Engagement, type Hand } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
@@ -117,9 +117,6 @@ type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 /** A look point nearer than this would whip the gun round as the bot walks past it, so the gun holds where it was. */
 const LOOK_MIN_PX = 150;
 const LOOK_AHEAD_PX = 400;
-
-/** How fast the bearing to something turns (rad/s), given its velocity relative to the bot. */
-const bearingSpin = (rx: number, ry: number, vx: number, vy: number) => (rx * vy - ry * vx) / Math.max(1, rx * rx + ry * ry);
 
 function lookAt(at: Point | null, me: Point, mine: Point, minPx = LOOK_MIN_PX): { want: number; spin: number; d: number } | null {
   if (!at || dist(at, me) < Math.max(1, minPx)) return null;

@@ -87,7 +87,7 @@ const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const pos = (t: Threat): Point => ({ x: t.p.x, y: t.p.y });
 
 /** An enemy flickering at the edge of sight is still being fought, so one lost tick does not start a search. */
-export const LOST_GRACE_MS = 500;
+const LOST_GRACE_MS = 500;
 export const justLost = (v: Perception) => v.lastSeen !== null && (v.tick - v.lastSeen.seenTick) * TICK_MS < LOST_GRACE_MS;
 
 export function startIntent(plan: Plan, c: IntentCtx): Intent {
