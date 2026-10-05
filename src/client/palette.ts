@@ -51,6 +51,20 @@ export function tint(hex: string, k: number): string {
   return `rgb(${c(16)}, ${c(8)}, ${c(0)})`;
 }
 
+/** `hex`'s hue at full saturation and lightness `l` (0..1), as rgb: a dark ink hue made to glow. */
+export function glow(hex: string, l: number): string {
+  const v = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [16, 8, 0].map((s) => ((v >> s) & 255) / 255);
+  const max = Math.max(r!, g!, b!), min = Math.min(r!, g!, b!), d = max - min;
+  const h = d === 0 ? 0 : max === r ? ((g! - b!) / d + 6) % 6 : max === g ? (b! - r!) / d + 2 : (r! - g!) / d + 4;
+  const c = (1 - Math.abs(2 * l - 1)) * 0.9;
+  const ch = (n: number) => {
+    const k = (n + h) % 6;
+    return Math.round(255 * (l - c / 2 + c * Math.max(0, Math.min(1, Math.abs(k - 3) - 1))));
+  };
+  return `rgb(${ch(0)}, ${ch(4)}, ${ch(2)})`;
+}
+
 export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
 export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string }> = {

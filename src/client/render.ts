@@ -5,7 +5,7 @@ import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
 import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
-import { ARMOR_BAND, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor, tint } from './palette.ts';
+import { ARMOR_BAND, glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
 import { serverNow } from './interp.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, faceZombies, wallFlashes } from './siege.ts';
 import { drawContactShadows, drawSphere, sphereSprite } from './spheres.ts';
@@ -340,12 +340,12 @@ type TracerLook = { r: number; glow: string; core: string };
 
 /**
  * Every round is a glowing tracer: class guns and shrapnel in warm gold, a touch whiter for your own, and an evolved gun's in
- * its own hue. The guns' hues are dark, chosen for ink on a pale floor, so the glow and core are lifted toward white.
+ * its own hue. The guns' hues are dark, chosen for ink on a pale floor, so the glow and core take the hue at full saturation and lifted lightness.
  */
 function tracerLook(b: BulletView, myId: number): TracerLook {
   if (b.gun && GUNS[b.gun].stage > 0) {
     const { r, color } = GUNS[b.gun].look.bullet;
-    return { r, glow: tint(color, 0.35), core: tint(color, 0.75) };
+    return { r, glow: glow(color, 0.62), core: glow(color, 0.85) };
   }
   return { r: 1.6, glow: PALETTE.tracer, core: b.owner === myId ? PALETTE.ownTracer : PALETTE.tracerCore };
 }
