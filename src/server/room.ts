@@ -13,7 +13,7 @@ import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
 import { botName, botSeats, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { arenaFor } from './bot/arena.ts';
-import { enqueueInput, type QueuedInput } from './inputs.ts';
+import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
@@ -29,7 +29,7 @@ const BOTS_PER_HUMAN = 3;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; aspect: number; encode: (snap: Snapshot) => string; inputs: QueuedInput[] };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; aspect: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -112,7 +112,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: [] });
+      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() });
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
       return;
@@ -121,7 +121,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     switch (msg.t) {
       case 'join': return;
       case 'view': client.aspect = msg.aspect; return;
-      case 'input': enqueueInput(client.inputs, { seq: msg.seq, input: msg.input, viewAt: msg.viewAt, rewindCapMs }); return;
+      case 'input': enqueueInput(client.inputs, { seq: msg.seq, input: msg.input, viewAt: msg.viewAt, rewindCapMs, arrivedTick: world.tick }); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
       case 'build': build(world, id, msg.kind, msg.cx, msg.cy); return;
@@ -161,7 +161,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   function applyInputs() {
     for (const c of joined()) {
-      const next = c.inputs.shift();
+      const next = takeInput(c.inputs, world.tick);
       if (next) setInput(world, c.playerId, next.seq, next.input, next.viewAt, next.rewindCapMs);
     }
   }

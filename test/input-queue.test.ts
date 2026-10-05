@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import type { Accounts } from '../src/server/accounts.ts';
 import { LIMITS } from '../src/server/limits.ts';
-import { enqueueInput, INPUT_QUEUE_CAP, type QueuedInput } from '../src/server/inputs.ts';
+import { DRAIN_WINDOW_TICKS, enqueueInput, INPUT_QUEUE_CAP, newInputQueue, takeInput, type QueuedInput } from '../src/server/inputs.ts';
+import { WORLD } from '../src/shared/defs.ts';
+import { MAX_REWIND_MS } from '../src/shared/sim/combat.ts';
 import { createRoom } from '../src/server/room.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
@@ -70,14 +72,50 @@ test('a burst past the cap merges the oldest inputs: one step a tick, the newest
   assert.ok(steps.every((d) => d === steps[0] && d > 0), `one equal step a tick, never two (${steps})`);
 });
 
+const queued = (seq: number, input: Partial<InputState> = {}, arrivedTick = 0): QueuedInput =>
+  ({ seq, input: { ...IDLE_INPUT, ...input }, viewAt: seq * 10, rewindCapMs: 100, arrivedTick });
+
 test('a merge keeps the newer aim and movement and every held button of both', () => {
-  const queue: QueuedInput[] = [];
-  const at = (seq: number, input: Partial<InputState>) => ({ seq, input: { ...IDLE_INPUT, ...input }, viewAt: seq * 10, rewindCapMs: 100 });
-  enqueueInput(queue, at(1, { left: true, angle: 1, shots: 3, ability: true, reload: true }));
-  for (let seq = 2; seq <= INPUT_QUEUE_CAP; seq++) enqueueInput(queue, at(seq, {}));
-  enqueueInput(queue, at(INPUT_QUEUE_CAP + 1, { right: true, angle: 2, shots: 4, use: true }));
-  assert.equal(queue.length, INPUT_QUEUE_CAP);
-  assert.equal(queue[0]!.seq, 2);
-  assert.deepEqual(queue[0]!.input, { ...IDLE_INPUT, shots: 3, ability: true, reload: true });
-  assert.equal(queue[0]!.viewAt, 20);
+  const q = newInputQueue();
+  enqueueInput(q, queued(1, { left: true, angle: 1, shots: 3, ability: true, reload: true }));
+  for (let seq = 2; seq <= INPUT_QUEUE_CAP; seq++) enqueueInput(q, queued(seq));
+  enqueueInput(q, queued(INPUT_QUEUE_CAP + 1, { right: true, angle: 2, shots: 4, use: true }));
+  assert.equal(q.waiting.length, INPUT_QUEUE_CAP);
+  assert.equal(q.waiting[0]!.seq, 2);
+  assert.deepEqual(q.waiting[0]!.input, { ...IDLE_INPUT, shots: 3, ability: true, reload: true });
+  assert.equal(q.waiting[0]!.viewAt, 20);
+});
+
+/** Arrives `backlog` inputs at once, then one a tick for a whole drain window, those due on `late` ticks arriving with the next; returns how many still wait. */
+function standingBacklog(backlog: number, input: Partial<InputState>, late: number[] = []): number {
+  const q = newInputQueue();
+  let seq = 0, owed = backlog;
+  for (let tick = 0; tick < DRAIN_WINDOW_TICKS; tick++) {
+    owed++;
+    if (!late.includes(tick)) for (; owed > 0; owed--) enqueueInput(q, queued(++seq, input, tick));
+    takeInput(q, tick);
+  }
+  return q.waiting.length;
+}
+
+test('a backlog that never ran dry for a whole window drains by one merge', () => {
+  assert.equal(standingBacklog(3, { right: true }), 2);
+});
+
+test('a backlog that ran dry in the window is jitter cushion and stays', () => {
+  assert.equal(standingBacklog(3, { right: true }, [10, 11, 12]), 3);
+});
+
+test('a held trigger is never drained, since merging it would shorten the hold', () => {
+  assert.equal(standingBacklog(3, { fire: true }), 3);
+});
+
+test('an input may rewind as much further as it waited in the queue, up to the rewind cap', () => {
+  const q = newInputQueue();
+  enqueueInput(q, queued(1, {}, 5));
+  enqueueInput(q, { ...queued(2, {}, 5), rewindCapMs: MAX_REWIND_MS - 10 });
+  assert.equal(takeInput(q, 5)!.rewindCapMs, 100);
+  assert.equal(takeInput(q, 6)!.rewindCapMs, MAX_REWIND_MS);
+  enqueueInput(q, queued(3, {}, 6));
+  assert.equal(takeInput(q, 8)!.rewindCapMs, 100 + 2 * (1000 / WORLD.tickHz));
 });
