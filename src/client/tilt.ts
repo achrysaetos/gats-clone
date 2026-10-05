@@ -220,7 +220,10 @@ function drawTops(ctx: CanvasRenderingContext2D, kind: SolidKind, list: readonly
   ctx.fillStyle = patternOf(ctx, tops, kind, () => paintGrain(m.top, m.grain, kind.length * 7919));
   ctx.beginPath();
   for (const s of list) ctx.rect(s.x, s.y, s.w, s.h);
+  // Grain needs no filtering, and filtered pattern fills cost a software canvas 2-3ms a frame across the 6000 maps' big blocks.
+  ctx.imageSmoothingEnabled = false;
   ctx.fill();
+  ctx.imageSmoothingEnabled = true;
   if (m.bed) drawBeds(ctx, kind, m.bed, list);
   for (const s of list) {
     if (!s.wear) continue;
