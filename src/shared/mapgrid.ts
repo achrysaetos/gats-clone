@@ -1,7 +1,7 @@
 import type { Center, MapDef, MapWall, WallMaterial } from './maps.ts';
 import type { Rect } from './sim/movement.ts';
 
-export const MAP_CELL = 50;
+const MAP_CELL = 50;
 
 type Layer = WallMaterial | 'red' | 'blue' | 'ffa';
 type Cell = { layers: readonly Layer[]; crate: boolean; zone: boolean };
