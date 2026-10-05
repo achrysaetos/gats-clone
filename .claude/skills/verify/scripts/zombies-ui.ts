@@ -92,24 +92,42 @@ const openMenu = async (query = '') => {
 };
 const showSquadMenu = () => js(`document.getElementById('squad').scrollIntoView({ block: 'center' })`);
 
-/** Holds fire on the nearest zombie and strafes beside the core until `done`, respawning nothing: a run brings its players back itself. */
+/** Clear of the HUD panels and DOM overlays round the edges, so a press always reaches the canvas. */
+const AIM_BOX = { x0: 200, y0: 150, x1: VIEW.w - 240, y1: VIEW.h - 150 };
+
+/** A point toward `to` from the player's spot on screen, pulled in along that line until it sits in AIM_BOX over the canvas, so the shot keeps its heading. */
+async function aimPoint(from: { x: number; y: number }, to: { x: number; y: number }): Promise<{ x: number; y: number } | null> {
+  for (const k of [1, 0.7, 0.5, 0.35, 0.25]) {
+    const at = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
+    if (at.x < AIM_BOX.x0 || at.x > AIM_BOX.x1 || at.y < AIM_BOX.y0 || at.y > AIM_BOX.y1) continue;
+    if (Math.hypot(at.x - from.x, at.y - from.y) < 40) return null;
+    if (await js(`document.elementFromPoint(${at.x}, ${at.y})?.id === 'game'`)) return at;
+  }
+  return null;
+}
+
+/** Holds fire on the nearest zombie and strafes beside the core until `done`, respawning nothing: a run brings its players back itself. A press whose gun never fires is let go and pressed again. */
 async function fight(done: () => Promise<boolean> | boolean, ms: number, onTick: () => Promise<void> = async () => {}) {
   const end = Date.now() + ms;
   let pressed = false;
   let step = 0;
+  let ammo = { left: -1, since: Date.now() };
   while (Date.now() < end && !(await done())) {
     const self = me();
     const horde: ZombieView[] = frames.snap?.zombies ?? [];
     const near = self && horde.length ? horde.reduce((a, b) => (Math.hypot(a[2] - self.x, a[3] - self.y) <= Math.hypot(b[2] - self.x, b[3] - self.y) ? a : b)) : null;
-    if (self?.alive && near) {
-      const raw = await toScreen(near[2], near[3]);
-      const at = raw && { x: Math.min(VIEW.w - 20, Math.max(20, raw.x)), y: Math.min(VIEW.h - 20, Math.max(20, raw.y)) };
-      if (at) await mouse('mouseMoved', at.x, at.y);
-      if (at && !pressed) { await mouse('mousePressed', at.x, at.y, 'left'); pressed = true; }
-    } else if (pressed) {
+    const from = self && await toScreen(self.x, self.y);
+    const to = near && await toScreen(near[2], near[3]);
+    const at = self?.alive && from && to ? await aimPoint(from, to) : null;
+    const left = frames.snap?.self.ammo ?? -1;
+    if (left !== ammo.left || frames.snap?.self.reloading) ammo = { left, since: Date.now() };
+    if (pressed && (!at || Date.now() - ammo.since > 1000)) {
       await mouse('mouseReleased', VIEW.w / 2, VIEW.h / 2, 'left');
       pressed = false;
+      ammo.since = Date.now();
     }
+    if (at) await mouse('mouseMoved', at.x, at.y);
+    if (at && !pressed) { await mouse('mousePressed', at.x, at.y, 'left'); pressed = true; }
     if (++step % 10 === 0 && self?.alive && run()) {
       const core = run()!.core;
       const k = Math.hypot(core.x - self.x, core.y - self.y) > 220 ? (core.x > self.x ? 'KeyD' : 'KeyA') : null;
@@ -227,7 +245,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('zom-night-callout');
     let crowd = false, alerted = false;
     await fight(() => run()?.phase === 'day' && run()!.night === 2, 150_000, async () => {
-      if (!crowd && (frames.snap?.zombies?.length ?? 0) >= 6 && me()?.alive) { crowd = true; await shot('zom-night'); }
+      if (!crowd && (frames.snap?.zombies?.length ?? 0) >= 4 && me()?.alive) { crowd = true; await shot('zom-night'); }
       if (!alerted && (await zdev())?.coreAlert) { alerted = true; await shot('zom-core-alert'); }
     });
     expect('the squad saw zombies in view', crowd);
