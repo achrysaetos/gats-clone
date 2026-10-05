@@ -133,6 +133,29 @@ test('a peek duel that drags on is broken by a flank when the personality goes r
   assert.equal(at(180, 0), 'peekAndHide', 'a bot that never flanks keeps peeking');
 });
 
+test('a bot hears gunfire it cannot see, a silenced shot only up close, and remembers it for a few seconds', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const heardAt = (shot: { x: number; y: number; silenced: boolean }, aware = freshAwareness()) => {
+    const snap = snapshotFor(w, bot.id);
+    snap.events = [{ e: 'shot', x: shot.x, y: shot.y, angle: 0, silenced: shot.silenced, owner: 777, gun: 'assault' }];
+    const me = snap.players.find((p) => p.id === bot.id)!;
+    return perceive(snap, arenaFor(w), me, aware);
+  };
+  const loud = heardAt({ x: 1800, y: 1300, silenced: false }).view.lead;
+  assert.ok(loud && loud.x === 1800 && loud.y === 1300, 'an unsilenced shot 850px off is heard where it was fired');
+  assert.equal(heardAt({ x: 1800, y: 1300, silenced: true }).view.lead, null, 'a silenced one that far is not');
+  assert.ok(heardAt({ x: 1200, y: 1100, silenced: true }).view.lead, 'a silenced one 220px off is');
+  const remembered = heardAt({ x: 1800, y: 1300, silenced: false }).awareness;
+  const later = snapshotFor(w, bot.id);
+  later.tick += 60;
+  assert.ok(perceive(later, arenaFor(w), later.players.find((p) => p.id === bot.id)!, remembered).view.lead, 'still a lead two seconds on');
+  later.tick += 120;
+  assert.equal(perceive(later, arenaFor(w), later.players.find((p) => p.id === bot.id)!, remembered).view.lead, null, 'forgotten after six');
+  const patrol = decide(w, bot.id, { k: 'patrol', goal: { x: 200, y: 200 } }, { aware: remembered });
+  assert.ok(patrol.k === 'search' && patrol.at.x === 1800, `goes to look: ${JSON.stringify(patrol)}`);
+});
+
 test('a hurt bot leaves the hiding spot a teammate is already in', () => {
   const w = emptyWorld('TDM');
   setWalls(w, [pillarWest]);
