@@ -110,9 +110,9 @@ function nextCell(flow: Uint16Array, c: number, walled: (c: number) => boolean):
 
 const distToRect = (x: number, y: number, r: Rect) => Math.sqrt(dist2(x, y, clamp(x, r.x, r.x + r.w), clamp(y, r.y, r.y + r.h)));
 
-/** The nearest squad player standing within aggro range with nothing solid between. Downed players are left to their squad. */
+/** The nearest squad player standing within the zombie's aggro range with nothing solid between. Downed players are left to their squad. */
 function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
-  let best: Player | null = null, bestD = ZOM.aggroPx ** 2;
+  let best: Player | null = null, bestD = ZOMBIES[z.kind].aggroPx ** 2;
   for (const p of w.players.values()) {
     if (p.life.k !== 'alive') continue;
     const d = dist2(p.x, p.y, z.x, z.y);

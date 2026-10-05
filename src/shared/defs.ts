@@ -240,12 +240,15 @@ export const WORLD = {
 
 export const ZOMBIE_KINDS = ['walker', 'brute'] as const;
 export type ZombieKind = (typeof ZOMBIE_KINDS)[number];
-/** `damage` is per bite and `buildingDamageMul` scales it against walls; `hp` and `damage` grow each night (see `ZOM.nightMul`). */
+/**
+ * `damage` is per bite and `buildingDamageMul` scales it against walls; `hp` and `damage` grow each night (see `ZOM.nightMul`).
+ * A zombie turns on a squad player within `aggroPx`, in sight, instead of marching on the core; a brute never does.
+ */
 export const ZOMBIES: Record<ZombieKind, {
-  name: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; score: number; scrap: number; firstNight: number;
+  name: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; aggroPx: number; score: number; scrap: number; firstNight: number;
 }> = {
-  walker: { name: 'Walker', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 1, score: 10, scrap: 2, firstNight: 1 },
-  brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 3, score: 60, scrap: 10, firstNight: 3 },
+  walker: { name: 'Walker', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 1, aggroPx: 120, score: 10, scrap: 2, firstNight: 1 },
+  brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 3, aggroPx: 0, score: 60, scrap: 10, firstNight: 3 },
 };
 
 export const BUILDING_KINDS = ['wall'] as const;
@@ -282,8 +285,6 @@ export const ZOM = {
   squadSize: 4,
   /** Spawning waits while this many zombies are alive. */
   maxAlive: 200,
-  /** A zombie turns on a squad player this close, in sight, instead of marching on the core. */
-  aggroPx: 120,
   /** How far past touching a zombie's bite reaches. */
   biteReach: 10,
   /** What walking through a wall cell costs the flow field, in orthogonal steps; high enough that the horde takes any open way round. */

@@ -100,11 +100,22 @@ test('a zombie turns on a squad player it can see close by and bites at its own 
   w.run!.core.hp = 1e9;
   const p = spawnAt(w, 800, 800);
   const before = hpOf(p);
-  addZombie(w, 'walker', 800 + ZOM.aggroPx - 10, 800);
+  addZombie(w, 'walker', 800 + ZOMBIES.walker.aggroPx - 10, 800);
   stepFor(w, 1000);
   assert.equal(before - hpOf(p), ZOMBIES.walker.damage, 'one bite in the first second');
   stepFor(w, ZOMBIES.walker.attackMs);
   assert.equal(before - hpOf(p), 2 * ZOMBIES.walker.damage, 'a second bite after the attack interval');
+});
+
+test('a brute walks past a squad player beside it, on to the core', () => {
+  const w = nightWorld();
+  w.run!.core.hp = 1e9;
+  const p = spawnAt(w, 800, 800);
+  const z = addZombie(w, 'brute', 800 + ZOMBIES.brute.radius + 30, 800);
+  const before = hpOf(p);
+  stepFor(w, 3000);
+  assert.equal(hpOf(p), before, 'never bitten');
+  assert.ok(Math.hypot(z.x - 800, z.y - 800) > 150, 'it marched on');
 });
 
 test('a player behind a wall does not draw a zombie off its march', () => {
@@ -113,7 +124,7 @@ test('a player behind a wall does not draw a zombie off its march', () => {
   const p = spawnAt(w, 8.5 * ZOM.cell, 30.5 * ZOM.cell);
   for (let cy = 27; cy <= 33; cy++) addWall(w, 9, cy);
   const z = addZombie(w, 'walker', 10.5 * ZOM.cell, 30.5 * ZOM.cell);
-  assert.ok(Math.hypot(p.x - z.x, p.y - z.y) < ZOM.aggroPx);
+  assert.ok(Math.hypot(p.x - z.x, p.y - z.y) < ZOMBIES.walker.aggroPx);
   stepFor(w, 2000);
   assert.ok(z.x > 10.5 * ZOM.cell + 150, `the zombie headed for the core, at x ${z.x.toFixed(0)}`);
 });
