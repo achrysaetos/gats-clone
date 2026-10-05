@@ -4,7 +4,7 @@
 // how long the leader takes to reach each score, time to first contact, time between fights and tick time. With heatDir it
 // writes heat-<map>-<mode>.json (damage and death points) for scripts/map-overview.ts.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { WORLD, MODE_IDS, type ModeId } from '../src/shared/defs.ts';
+import { GUN_IDS, GUNS, MODE_IDS, WORLD, type ModeId } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -29,6 +29,8 @@ const quantile = (xs: readonly number[], q: number) => {
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.floor(q * s.length))]!;
 };
+const pct = (n: number, total: number) => `${((100 * n) / Math.max(1, total)).toFixed(0)}%`;
+const RANGE_BUCKETS = [200, 400, 600, 900, 1200, 1800, Infinity];
 const sec = (ms: number) => (Number.isFinite(ms) ? (ms / 1000).toFixed(1) : '-');
 const sizeOf = (map: MapId) => MAPS[map].size;
 
@@ -63,7 +65,7 @@ function tick({ w, bots, r }: Sim): { respawned: number[]; ms: number } {
 
 /** Per player: when its life began and the last time it hurt or was hurt by another player. */
 type Contact = { bornAt: number; lastAt: number | null };
-type Tally = { firstContact: number[]; betweenFights: number[]; tickMs: number[]; dmg: number[]; death: number[] };
+type Tally = { firstContact: number[]; betweenFights: number[]; tickMs: number[]; dmg: number[]; death: number[]; range: number[] };
 
 function watch(sim: Sim, contact: Map<number, Contact>, t: Tally, respawned: readonly number[]) {
   const { w } = sim;
@@ -80,6 +82,8 @@ function watch(sim: Sim, contact: Map<number, Contact>, t: Tally, respawned: rea
       touched.add(e.attacker);
       touched.add(e.victim);
       t.dmg.push(Math.round(e.x), Math.round(e.y));
+      const shooter = w.players.get(e.attacker);
+      if (shooter) t.range.push(Math.hypot(shooter.x - e.x, shooter.y - e.y));
     } else if (e.e === 'kill') {
       const v = w.players.get(e.victimId);
       if (v) t.death.push(Math.round(v.x), Math.round(v.y));
@@ -91,8 +95,10 @@ function watch(sim: Sim, contact: Map<number, Contact>, t: Tally, respawned: rea
 const leader = (w: World) => (mode === 'FFA' ? Math.max(0, ...[...w.players.values()].map((p) => p.kills)) : Math.max(w.teamScore.red, w.teamScore.blue));
 
 console.log(`bench-maps ${mode}: ${players} bots, ${minutes} min held open per seed, seeds ${SEEDS.join(',')}`);
+const ranges = [...new Set(GUN_IDS.map((id) => GUNS[id].range))].sort((a, b) => a - b);
+console.log(`gun ranges (px, guns at each): ${ranges.map((r) => `${r} x${GUN_IDS.filter((id) => GUNS[id].range === r).length}`).join(', ')}; view radius ${WORLD.viewRadius}`);
 for (const map of maps) {
-  const t: Tally = { firstContact: [], betweenFights: [], tickMs: [], dmg: [], death: [] };
+  const t: Tally = { firstContact: [], betweenFights: [], tickMs: [], dmg: [], death: [], range: [] };
   const rounds: { ms: number; winner: string }[] = [];
   const reach = new Map<number, number[]>();
   let kills = 0;
@@ -129,6 +135,8 @@ for (const map of maps) {
   console.log(`  kills/min ${(kills / (simMs / 60_000)).toFixed(1)}`);
   console.log(`  first contact after spawn: median ${sec(quantile(t.firstContact, 0.5))}s  p75 ${sec(quantile(t.firstContact, 0.75))}s  (${t.firstContact.length} lives)`);
   console.log(`  time between fights: median ${sec(quantile(t.betweenFights, 0.5))}s  p75 ${sec(quantile(t.betweenFights, 0.75))}s  (${t.betweenFights.length} gaps over ${FIGHT_GAP_MS / 1000}s)`);
+  const buckets = RANGE_BUCKETS.map((b, i) => `<${b} ${pct(t.range.filter((d) => d >= (RANGE_BUCKETS[i - 1] ?? 0) && d < b).length, t.range.length)}`);
+  console.log(`  shooter to victim on damaging hits: p50 ${quantile(t.range, 0.5).toFixed(0)}  p90 ${quantile(t.range, 0.9).toFixed(0)}  max ${Math.max(...t.range).toFixed(0)}px  ${buckets.join('  ')}`);
   console.log(`  tick (bots think + step): p50 ${quantile(t.tickMs, 0.5).toFixed(2)}ms  p95 ${quantile(t.tickMs, 0.95).toFixed(2)}ms  max ${Math.max(...t.tickMs).toFixed(2)}ms`);
   if (heatDir) {
     mkdirSync(heatDir, { recursive: true });

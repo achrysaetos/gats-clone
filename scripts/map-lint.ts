@@ -3,7 +3,7 @@
 // Prints each map's layout problems: places a player cannot walk to, spawns a player cannot stand in, spawns in sight of the enemy's,
 // a team map that is not the same after a half turn, and DOM zones off the map, out of reach or overlapping walls.
 import { fileURLToPath } from 'node:url';
-import { WORLD } from '../src/shared/defs.ts';
+import { GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
 
@@ -146,9 +146,40 @@ export function lintMap(def: MapDef): string[] {
   return problems;
 }
 
+/**
+ * The clear straight lines across a map along rows, columns and both diagonals, sampled every 50px: each runs between walls or
+ * the edge (crates break, so they do not cut one). Not a problem in itself; a line longer than any gun reaches plus the view is ground nobody can use.
+ */
+function sightlines(def: MapDef): { from: Center; to: Center; length: number }[] {
+  const step = 50, lines: { from: Center; to: Center; length: number }[] = [];
+  const inside = (p: Center) => p.x > 0 && p.y > 0 && p.x < def.size && p.y < def.size;
+  const blocked = (p: Center) => def.walls.some((w) => p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h);
+  const starts: { p: Center; d: Center }[] = [];
+  for (let v = step / 2; v < def.size; v += step) {
+    starts.push({ p: { x: 0.5, y: v }, d: { x: 1, y: 0 } }, { p: { x: v, y: 0.5 }, d: { x: 0, y: 1 } });
+    starts.push({ p: { x: v, y: 0.5 }, d: { x: 1, y: 1 } }, { p: { x: 0.5, y: v }, d: { x: 1, y: 1 } });
+    starts.push({ p: { x: v, y: 0.5 }, d: { x: -1, y: 1 } }, { p: { x: def.size - 0.5, y: v }, d: { x: -1, y: 1 } });
+  }
+  for (const { p, d } of starts) {
+    const unit = step / Math.hypot(d.x, d.y) / Math.SQRT2;
+    let from: Center | null = null, last = p;
+    for (let q = p; inside(q); q = { x: q.x + d.x * unit, y: q.y + d.y * unit }) {
+      if (blocked(q)) { if (from) lines.push({ from, to: last, length: Math.hypot(last.x - from.x, last.y - from.y) }); from = null; } else from ??= q;
+      last = q;
+    }
+    if (from) lines.push({ from, to: last, length: Math.hypot(last.x - from.x, last.y - from.y) });
+  }
+  return lines;
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const reach = Math.max(...GUN_IDS.map((g) => GUNS[g].range));
   for (const id of MAP_IDS) {
     const problems = lintMap(MAPS[id]);
     console.log(problems.length ? `${id}: ${problems.length} problem(s)\n${problems.map((p) => `  ${p}`).join('\n')}` : `${id}: ok`);
+    const lines = sightlines(MAPS[id]).sort((a, b) => b.length - a.length);
+    const over = (min: number) => lines.filter((l) => l.length > min).length;
+    const top = lines[0];
+    if (top) console.log(`  longest sightline ${Math.round(top.length)}px ${where(top.from)} to ${where(top.to)}; ${over(reach)} lines past the longest gun (${reach}px), ${over(reach + WORLD.viewRadius)} past it plus the view (${reach + WORLD.viewRadius}px)`);
   }
 }
