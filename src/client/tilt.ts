@@ -164,7 +164,10 @@ export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0
   const ax = Math.max(layer.x, x0), ay = Math.max(layer.y, y0);
   const bx = Math.min(lx1, x1), by = Math.min(ly1, y1);
   if (bx <= ax || by <= ay) return;
+  // Nearest-pixel scaling keeps the floor's grit crisp and skips most of a software canvas's per-pixel work; the shadows are blurred already.
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(layer.canvas, (ax - layer.x) * layer.scale, (ay - layer.y) * layer.scale, (bx - ax) * layer.scale, (by - ay) * layer.scale, ax, ay, bx - ax, by - ay);
+  ctx.imageSmoothingEnabled = true;
 }
 
 const crateShadows = new Map<number, HTMLCanvasElement>();
