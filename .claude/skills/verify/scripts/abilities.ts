@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { PERK_TIERS, WORLD, type AbilityId } from '../../../../src/shared/defs.ts';
+import { GUNS, PERK_TIERS, WORLD, type AbilityId } from '../../../../src/shared/defs.ts';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
@@ -113,7 +113,9 @@ async function shootNearest() {
     ...snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })),
   ].filter((t) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, t.x - self.x, t.y - self.y, w) !== null));
   const t = targets.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
-  if (!t) { await walkUpAndAcrossTowardMiddle(self.x); return; }
+  const mid = (frames.welcome?.worldSize ?? 0) / 2;
+  if (!t) { await walkToward(self, { x: mid, y: mid }); return; }
+  if (Math.hypot(t.x - self.x, t.y - self.y) > GUNS[self.gun].range * 0.8) { await walkToward(self, t); return; }
   await aimAt(Math.atan2(t.y - self.y, t.x - self.x));
   await mouse('mousePressed', W / 2, H / 2);
   await sleep(60);
@@ -121,11 +123,18 @@ async function shootNearest() {
   await sleep(250);
 }
 
-async function walkUpAndAcrossTowardMiddle(x: number) {
-  const [code, k, vk] = x < (frames.welcome?.worldSize ?? 0) / 2 ? ['KeyD', 'd', 68] : ['KeyA', 'a', 65];
-  await key('keyDown', code, k, vk); await key('keyDown', 'KeyW', 'w', 87);
-  await sleep(500);
-  await key('keyUp', code, k, vk); await key('keyUp', 'KeyW', 'w', 87);
+const KEY = { right: ['KeyD', 'd', 68], left: ['KeyA', 'a', 65], up: ['KeyW', 'w', 87], down: ['KeyS', 's', 83] } as const;
+let lastWalk = { x: NaN, y: NaN, sidestep: 0 };
+
+async function walkToward(from: { x: number; y: number }, to: { x: number; y: number }) {
+  const held: (keyof typeof KEY)[] = [];
+  if (Math.abs(to.x - from.x) > 60) held.push(to.x > from.x ? 'right' : 'left');
+  if (Math.abs(to.y - from.y) > 60) held.push(to.y > from.y ? 'down' : 'up');
+  if (Math.hypot(from.x - lastWalk.x, from.y - lastWalk.y) < 30) held.push(lastWalk.sidestep++ % 4 < 2 ? 'up' : 'down');
+  lastWalk = { ...lastWalk, x: from.x, y: from.y };
+  for (const k of held) { const [c, n, v] = KEY[k]; await key('keyDown', c, n, v); }
+  await sleep(400);
+  for (const k of held) { const [c, n, v] = KEY[k]; await key('keyUp', c, n, v); }
 }
 
 async function earnAbility(ability: AbilityId): Promise<boolean> {
@@ -193,6 +202,7 @@ async function proveKnife() {
     }
     const enemy = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team) && !blocked(self.x, self.y, p.x - self.x, p.y - self.y))
       .sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
+    if (!enemy) { const mid = (frames.welcome?.worldSize ?? 0) / 2; await walkToward(self, { x: mid, y: mid }); continue; }
     const walk = enemy ? [
       ...(enemy.x - self.x > 40 ? [['KeyD', 'd']] : enemy.x - self.x < -40 ? [['KeyA', 'a']] : []),
       ...(enemy.y - self.y > 40 ? [['KeyS', 's']] : enemy.y - self.y < -40 ? [['KeyW', 'w']] : []),
