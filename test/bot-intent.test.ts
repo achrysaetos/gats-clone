@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { effectiveStats } from '../src/shared/sim/stats.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
@@ -210,4 +211,18 @@ test('a bot holding a spot goes to gunfire it just heard, unless it is far off o
   assert.equal(after(1900, 1300, 20).k, 'takePosition', 'an older shot does not pull it off its spot');
   assert.equal(after(2900, 2900, 30).k, 'takePosition', 'gunfire across the map does not');
   assert.equal(after(1050, 300, 30).k, 'takePosition', 'gunfire where it is already watching does not');
+});
+
+test('a search lasts long enough to walk to a far lead and look round, and a near one ends sooner', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const giveUpAfterS = (x: number) => {
+    const s = decide(w, bot.id, { k: 'patrol', goal: { x: 200, y: 200 } }, { tick: 30, aware: { ...freshAwareness(), heard: [{ x, y: 1000, tick: 30, hunted: false }] } });
+    assert.equal(s.k, 'search');
+    return s.k === 'search' ? (s.giveUpAt - 30) / 30 : 0;
+  };
+  const walkS = 4000 / effectiveStats(bot).speed;
+  const far = giveUpAfterS(5000), close = giveUpAfterS(1300);
+  assert.ok(far > walkS, `a lead 4000px off is kept ${far.toFixed(1)}s, longer than the ${walkS.toFixed(1)}s walk`);
+  assert.ok(close < far - walkS / 2, `a lead 300px off is kept ${close.toFixed(1)}s`);
 });

@@ -108,7 +108,8 @@ function flankPlan(v: Perception, c: IntentCtx, target: number, at: Point): Plan
   return { k: 'flank', target, via, lastKnown: at };
 }
 
-const searchPlan = (c: IntentCtx, at: Point): Plan => ({ k: 'search', at, giveUpAt: c.tick + ticks(SEARCH_MS) });
+/** A search lasts the walk there plus a look round, so a lead across a big map is not given up halfway. */
+const searchPlan = (v: Perception, c: IntentCtx, at: Point): Plan => ({ k: 'search', at, giveUpAt: c.tick + ticks(SEARCH_MS + (dist(v.me, at) / v.self.speed) * 1000) });
 
 function zoneToHold(v: Perception, c: IntentCtx): ZoneView | null {
   const owned = v.zones.filter((z) => z.owner === v.team), open = v.zones.filter((z) => z.owner !== v.team);
@@ -120,7 +121,7 @@ function idlePlan(v: Perception, c: IntentCtx): Plan {
   const centre = { x: c.arena.size / 2, y: c.arena.size / 2 };
   const zone = zoneToHold(v, c);
   if (zone) return { k: 'takePosition', spot: openSpot(c.arena, c.rand, { at: zone, r: zone.r * 0.6 }), facing: centre };
-  if (v.lead && c.role !== 'anchor') return searchPlan(c, v.lead);
+  if (v.lead && c.role !== 'anchor') return searchPlan(v, c, v.lead);
   if (c.role === 'anchor' || (v.weapon === 'sniper' && c.persona.rangeMul > 1)) {
     const spots = coverNear(c.arena.cover, openSpot(c.arena, c.rand, { at: centre, r: c.arena.size / 4 }), 300);
     const spot = spots.length ? spots[Math.floor(c.rand() * spots.length)]! : openSpot(c.arena, c.rand, { at: centre, r: c.arena.size / 4 });
@@ -133,7 +134,7 @@ function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
   const last = v.lastSeen;
   if (!last) return idlePlan(v, c);
   if (c.rand() < c.persona.flankOdds) return flankPlan(v, c, target, last);
-  if (c.rand() < c.persona.pushOdds) return searchPlan(c, last);
+  if (c.rand() < c.persona.pushOdds) return searchPlan(v, c, last);
   const spot = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [last], { reach: COVER_REACH_PX, range: c.band.ideal, peek: false })?.spot ?? v.me;
   return { k: 'takePosition', spot, facing: last };
 }
@@ -187,7 +188,7 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   const idle = cur.k === 'patrol' || (cur.k === 'takePosition' && v.zones.length === 0);
   if (!idle || c.role === 'anchor' || !v.lead || v.lead.tick !== v.tick || dist(v.lead, v.me) > GUNFIRE_PULL_PX) return null;
   if (cur.k === 'takePosition' && dist(v.lead, cur.facing) < GUNFIRE_PULL_PX / 3) return null;
-  return searchPlan(c, v.lead);
+  return searchPlan(v, c, v.lead);
 };
 
 const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
@@ -215,20 +216,20 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   reloadInCover: (_cur, v, c) => {
     if (v.self.reloading || v.self.ammo < v.self.mag * 0.9) return null;
     const t = v.threats[0];
-    return t ? { k: 'engage', target: t.p.id } : v.lastSeen ? searchPlan(c, v.lastSeen) : idlePlan(v, c);
+    return t ? { k: 'engage', target: t.p.id } : v.lastSeen ? searchPlan(v, c, v.lastSeen) : idlePlan(v, c);
   },
   retreatAndHeal: (cur, v, c) => {
-    if (v.hpFrac >= c.persona.healedHp) return v.lastSeen && c.rand() < c.persona.pushOdds ? searchPlan(c, v.lastSeen) : idlePlan(v, c);
+    if (v.hpFrac >= c.persona.healedHp) return v.lastSeen && c.rand() < c.persona.pushOdds ? searchPlan(v, c, v.lastSeen) : idlePlan(v, c);
     if (!v.underFire) return null;
     const threat = v.threats[0] ? pos(v.threats[0]) : cur.threat;
     return { k: 'retreatAndHeal', spot: hideFrom(v, c, threat), threat };
   },
   flank: (cur, v, c) => {
-    if (v.tick - cur.since > ticks(FLANK_MS) || dist(v.me, cur.via) < ARRIVED_PX) return searchPlan(c, cur.lastKnown);
+    if (v.tick - cur.since > ticks(FLANK_MS) || dist(v.me, cur.via) < ARRIVED_PX) return searchPlan(v, c, cur.lastKnown);
     return null;
   },
   search: (cur, v, c) => {
-    if (v.lead && dist(v.lead, cur.at) > 300 && v.lead.tick === v.tick) return searchPlan(c, v.lead);
+    if (v.lead && dist(v.lead, cur.at) > 300 && v.lead.tick === v.tick) return searchPlan(v, c, v.lead);
     return dist(v.me, cur.at) < ARRIVED_PX * 1.5 || v.tick > cur.giveUpAt ? idlePlan(v, c) : null;
   },
 };
