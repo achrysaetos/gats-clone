@@ -206,12 +206,9 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const heading = stance.heading ?? legHeading(me, t.p, step, closing);
       const ahead = legPoint(me, heading, c.arena);
       if (ahead) return { steer: fight(ahead), stance: { ...stance, heading } };
-      // Blocked: turn back, but only once the leg has run long enough that the turn reads as a choice rather than a twitch.
-      const fresh = stance.since === v.tick;
-      if (!fresh && v.tick - stance.since < MIN_LEG_TICKS) return { steer: fight(null), stance: { ...stance, heading } };
       const back = step === 1 ? -1 : 1;
       const turned = legHeading(me, t.p, back, closing);
-      const until = fresh ? stance.until : v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS);
+      const until = v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS);
       return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
     }
   }
