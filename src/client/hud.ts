@@ -761,6 +761,8 @@ function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   const x = EDGE + 4;
   let y = EDGE + 10;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
+  // No panel backs the vitals, but edge markers must still keep clear of them.
+  panels.push({ x: EDGE, y: EDGE, w: bw + 150, h: 4 * VITALS.row });
   const hpFrac = me.hp / me.maxHp;
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
   fill.addColorStop(0, HP_FILL[0]);
