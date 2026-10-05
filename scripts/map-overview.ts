@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node scripts/map-overview.ts <outDir> [mapId|all] [heat.json ...]
+// Usage: node scripts/map-overview.ts <outDir> [mapId,...|all|none] [heat.json ...]
 // Draws each map whole, top down, with the game's own ground, shadows and materials (src/client/tilt.ts) in a muted
 // headless Chrome, and saves <outDir>/overview-<map>.png. Each heat file from scripts/bench-maps.ts adds
 // <outDir>/heat-<map>-<mode>.png: the same overview with where players took damage as a heat layer and deaths as dots.
@@ -15,8 +15,8 @@ import { MAP_IDS, type MapId } from '../src/shared/maps.ts';
 import { killOnExit } from './kill-on-exit.ts';
 
 const [OUT, which = 'all', ...heatFiles] = process.argv.slice(2);
-if (!OUT) { console.error('usage: node scripts/map-overview.ts <outDir> [mapId|all] [heat.json ...]'); process.exit(2); }
-const maps: MapId[] = which === 'all' ? [...MAP_IDS] : (which.split(',') as MapId[]);
+if (!OUT) { console.error('usage: node scripts/map-overview.ts <outDir> [mapId,...|all|none] [heat.json ...]'); process.exit(2); }
+const maps: MapId[] = which === 'all' ? [...MAP_IDS] : which === 'none' ? [] : (which.split(',') as MapId[]);
 const PX = Number(process.env.PX ?? 2400);
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 mkdirSync(OUT, { recursive: true });
