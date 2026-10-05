@@ -12,7 +12,7 @@ import { EMPTY_BUFFER } from '../src/client/interp.ts';
 import type { Session } from '../src/client/state.ts';
 import { createPool } from '../src/client/particles.ts';
 import { createCracks } from '../src/client/decals.ts';
-import { PALETTE } from '../src/client/palette.ts';
+import { glow, PALETTE } from '../src/client/palette.ts';
 import { drawWorld } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
@@ -110,6 +110,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
       if (prop in target) return target[prop];
       if (prop === 'fillText') return (text: string) => drawn.push({ text, color: target.fillStyle });
       if (prop === 'measureText') return (text: string) => ({ width: text.length * 7 });
+      if (typeof prop === 'string' && prop.startsWith('create')) return () => ({ addColorStop() {} });
       return () => {};
     },
     set(target, prop, value) { target[prop] = value; return true; },
@@ -123,7 +124,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
 test('the kill feed spells out an evolved gun in its accent color and keeps the icon for a class gun', () => {
   const line = (weapon: string) => ({ ...kill({ weapon }), at: 1000 });
   const evolved = hudTexts(snap(), { feed: [line('Hornet')] });
-  assert.deepEqual(evolved.filter((d) => d.text === 'Hornet').map((d) => d.color), [GUNS.hornet.look.accent]);
+  assert.deepEqual(evolved.filter((d) => d.text === 'Hornet').map((d) => d.color), [glow(GUNS.hornet.look.accent, 0.74)], 'its accent hue, lifted to read on the grey row');
   const base = hudTexts(snap(), { feed: [line('SMG')] });
   assert.equal(base.some((d) => d.text === 'SMG'), false, 'a class gun is drawn as its icon, not its name');
 });

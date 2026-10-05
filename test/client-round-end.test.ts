@@ -74,11 +74,11 @@ test('the leaderboard breaks a kill tie on fewer deaths', () => {
   assert.deepEqual(topScorers(rows, 2).map((r) => r.name), ['Bo', 'Ann']);
 });
 
-test('the compact leaderboard shows the top three plus your own place, and the whole board on request', () => {
-  const rows: LeaderRow[] = [5, 9, 1, 7, 3, 2].map((kills, i) => ({ id: i + 1, name: `P${i + 1}`, score: 0, kills, deaths: 0, team: null }));
+test('the compact leaderboard shows the top five plus your own place, and the whole board on request', () => {
+  const rows: LeaderRow[] = [5, 9, 1, 7, 3, 2, 0].map((kills, i) => ({ id: i + 1, name: `P${i + 1}`, score: 0, kills, deaths: 0, team: null }));
   const view = (myId: number, full: number | null) => boardRows(rows, myId, full).map((r) => [r.place, r.row.name]);
-  assert.deepEqual(view(5, null), [[1, 'P2'], [2, 'P4'], [3, 'P1'], [4, 'P5']], 'fourth place joins the top three with its place');
-  assert.deepEqual(view(2, null), [[1, 'P2'], [2, 'P4'], [3, 'P1']], 'a top-three player is not listed twice');
-  assert.equal(view(99, null).length, 3, 'a viewer off the board sees only the top three');
-  assert.deepEqual(view(5, 10).map(([p]) => p), [1, 2, 3, 4, 5, 6], 'the whole board in order');
+  assert.deepEqual(view(3, null), [[1, 'P2'], [2, 'P4'], [3, 'P1'], [4, 'P5'], [5, 'P6'], [6, 'P3']], 'sixth place joins the top five with its place');
+  assert.deepEqual(view(5, null), [[1, 'P2'], [2, 'P4'], [3, 'P1'], [4, 'P5'], [5, 'P6']], 'a top-five player is not listed twice');
+  assert.equal(view(99, null).length, 5, 'a viewer off the board sees only the top five');
+  assert.deepEqual(view(5, 10).map(([p]) => p), [1, 2, 3, 4, 5, 6, 7], 'the whole board in order');
 });

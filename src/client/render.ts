@@ -40,6 +40,9 @@ let night = 0;
 let nightAt = 0;
 const NIGHT_FADE_MS = 1500;
 
+/** How far into night the last frame was drawn, 0 to 1, so the HUD can switch what it writes straight on the world to light ink. */
+export const nightAmount = () => night;
+
 function easeNight(run: RunView | undefined, now: number): number {
   const target = run?.phase === 'night' ? 1 : 0;
   const step = Math.min(1, Math.max(0, now - nightAt) / NIGHT_FADE_MS);
@@ -488,7 +491,7 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
 }
 
 /** A body's health shows for this long after it is hit, fading over the last part. */
-export const HURT_SHOW_MS = 1800;
+const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
 /** How near the aim must come to a body to name it. */
 const HOVER_REACH = R * 1.8;
