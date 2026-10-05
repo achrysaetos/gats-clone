@@ -19,10 +19,7 @@ function merge(older: QueuedInput, newer: QueuedInput): QueuedInput {
   };
 }
 
-/** Queues an input behind the ones still waiting. One no newer than the last queued is dropped. */
 export function enqueueInput(queue: QueuedInput[], next: QueuedInput): void {
-  const last = queue.at(-1);
-  if (last && next.seq <= last.seq) return;
   queue.push(next);
   if (queue.length > INPUT_QUEUE_CAP) queue.splice(0, 2, merge(queue[0]!, queue[1]!));
 }
