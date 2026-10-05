@@ -5,7 +5,7 @@ type Rect = { x: number; y: number; w: number; h: number };
 type Crack = { born: number; host: string; lines: readonly number[] };
 export type CrackPool = { readonly slots: (Crack | null)[]; next: number };
 
-export const CRACKS = { cap: 72, lifeMs: 14_000, fadeMs: 4000, reach: 18 } as const;
+export const CRACKS = { cap: 48, lifeMs: 10_000, fadeMs: 3000, reach: 18 } as const;
 
 export const createCracks = (cap: number = CRACKS.cap): CrackPool => ({ slots: Array.from({ length: cap }, () => null), next: 0 });
 
