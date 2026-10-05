@@ -12,7 +12,8 @@ export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number } | null;
   dir: number | null;
   dirSince: number;
-  stance: { step: 0 | 1 | -1; until: number };
+  /** `heading` is the octant a strafe leg holds, fixed when the leg starts so its keys never change mid-leg. */
+  stance: { step: 0 | 1 | -1; until: number; heading: number | null };
   last: Point;
   stuckTicks: number;
   engaged: Engagement | null;
@@ -21,7 +22,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, stance: { step: 0, until: 0 }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, shots: 0,
+  route: null, dir: null, dirSince: 0, stance: { step: 0, until: 0, heading: null }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -54,9 +55,13 @@ const MIN_HOLD_TICKS = 3;
 const HOLD_SLACK = (35 * Math.PI) / 180;
 const STUCK_TICKS = 12;
 const REPLAN_PX = 48;
+const NEAR_GOAL_PX = 300;
 const STAND_MS: readonly [number, number] = [700, 1500];
 const STEP_MS: readonly [number, number] = [300, 700];
 const UNDER_FIRE_STEP_ODDS = 0.75;
+const STRAFE_MS: readonly [number, number] = [450, 1000];
+const STRAFE_PX = 120;
+const PEEK_SWAY_PX = 70;
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
@@ -96,6 +101,34 @@ function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly R
 
 type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean };
 
+// The sim gives no accuracy for standing still except to a bipod, so only a bipod, or a marksman picking at range from cover, plants its feet.
+const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
+  Object.values(v.self.perks).includes('bipod') || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
+
+/** A planted bot stands and now and then steps; anyone else strafes in legs held for a while, turning back at the end of each. */
+function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean): Motor['stance'] {
+  const wasPlanted = m.stance.step === 0;
+  if (v.tick < m.stance.until && planted === wasPlanted) return m.stance;
+  if (!planted) {
+    const step = m.stance.step === 0 ? (c.rand() < 0.5 ? 1 : -1) : (-m.stance.step as 1 | -1);
+    return { step, until: v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS), heading: null };
+  }
+  const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
+  const step = wasPlanted && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
+  return { step, until: v.tick + Math.round(between(step === 0 ? STAND_MS : STEP_MS, c.rand) / TICK_MS), heading: null };
+}
+
+/** The octant square across the line to `at`, or with `advance` 45 degrees in toward it. */
+function legHeading(me: Point, at: Point, step: 1 | -1, advance: boolean): number {
+  const a = Math.atan2(at.y - me.y, at.x - me.x) + (step * Math.PI) / (advance ? 4 : 2);
+  return Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
+}
+
+function legPoint(me: Point, heading: number, arena: BotArena): Point | null {
+  const p = { x: me.x + Math.cos(heading) * STRAFE_PX, y: me.y + Math.sin(heading) * STRAFE_PX };
+  return isOpen(arena.nav, p) && walkable(arena.nav, me, p) ? p : null;
+}
+
 function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbility: AbilityId | null): { steer: Steer; stance: Motor['stance'] } {
   const me = v.me;
   const idle = (to: Point | null, face: Point | null): Steer => ({ to, face, reload: false, crates: true });
@@ -108,7 +141,15 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const t = v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0];
       const face = t ? t.p : v.lastSeen ?? intent.peek;
       const reload = intent.phase === 'hide' && !t && v.self.ammo < v.self.mag;
-      return { steer: { to: intent.phase === 'hide' ? intent.spot : intent.peek, face, reload, crates: false }, stance: m.stance };
+      const peeking = (to: Point, stance: Motor['stance']) => ({ steer: { to, face, reload, crates: false }, stance });
+      if (intent.phase === 'hide') return peeking(intent.spot, m.stance);
+      let stance = nextStance(m, v, c, plants(v, c, t?.d ?? 0, true));
+      if (stance.step === 0) return peeking(intent.peek, stance);
+      const out = Math.atan2(intent.peek.y - intent.spot.y, intent.peek.x - intent.spot.x);
+      const wide = { x: intent.peek.x + Math.cos(out) * PEEK_SWAY_PX, y: intent.peek.y + Math.sin(out) * PEEK_SWAY_PX };
+      const swayTo = (step: number) => (step === 1 && isOpen(c.arena.nav, wide) ? wide : intent.peek);
+      if (dist(me, swayTo(stance.step)) < ARRIVED_PX * 2) stance = { ...stance, step: stance.step === 1 ? -1 : 1, heading: null };
+      return peeking(swayTo(stance.step), stance);
     }
     case 'reloadInCover': {
       const safe = v.threats.length === 0 || dist(me, intent.spot) < WAYPOINT_PX * 2;
@@ -122,18 +163,17 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const t = v.threats.find((x) => x.p.id === intent.target) ?? v.threats[0];
       if (!t) return { steer: { to: v.lastSeen, face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
-      if ((readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) || t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal)) {
-        return { steer: fight(t.p), stance: m.stance };
-      }
-      let stance = m.stance;
-      if (v.tick >= stance.until) {
-        const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
-        const step = stance.step === 0 && c.rand() < odds ? (c.rand() < 0.5 ? 1 : -1) : 0;
-        stance = { step, until: v.tick + Math.round(between(step === 0 ? STAND_MS : STEP_MS, c.rand) / TICK_MS) };
-      }
-      if (stance.step === 0) return { steer: fight(null), stance };
-      const a = Math.atan2(t.p.y - me.y, t.p.x - me.x) + (stance.step * Math.PI) / 2;
-      return { steer: fight({ x: me.x + Math.cos(a) * 120, y: me.y + Math.sin(a) * 120 }), stance };
+      if (readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) return { steer: fight(t.p), stance: m.stance };
+      const closing = t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal);
+      const stance = nextStance(m, v, c, !closing && plants(v, c, t.d, false));
+      const step = stance.step;
+      if (step === 0) return { steer: fight(null), stance };
+      const heading = stance.heading ?? legHeading(me, t.p, step, closing);
+      const ahead = legPoint(me, heading, c.arena);
+      if (ahead) return { steer: fight(ahead), stance: { ...stance, heading } };
+      const back = step === 1 ? -1 : 1;
+      const turned = legHeading(me, t.p, back, closing);
+      return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned } };
     }
   }
 }
@@ -144,7 +184,7 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena): { at: Po
   const route = fresh || !old
     ? { goal: to, points: (isOpen(arena.nav, me) || walkable(arena.nav, me, to) ? findPath(arena.nav, me, to) : null) ?? [to], version: arena.version }
     : old;
-  let points = route.points;
+  let points = dist(me, to) < NEAR_GOAL_PX && walkable(arena.nav, me, to) ? [to] : [...route.points.slice(0, -1), to];
   while (points.length > 1 && dist(me, points[0]!) < WAYPOINT_PX) points = points.slice(1);
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }

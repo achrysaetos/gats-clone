@@ -24,11 +24,10 @@ function tierOnePicks(weapon: WeaponId, n: number): Map<PickOption, number> {
   return counts;
 }
 
-test('a bot never takes long range, which does nothing for a bot, and does take bipod and ghillie now that it stands still', () => {
+test('a bot never takes a perk that does nothing for a bot', () => {
   for (const weapon of ['assault', 'sniper', 'smg'] as const) {
     const counts = tierOnePicks(weapon, 300);
-    assert.equal(counts.get('longRange') ?? 0, 0, `${weapon} took long range`);
-    for (const still of ['bipod', 'ghillie'] as const) assert.ok((counts.get(still) ?? 0) > 0, `${weapon} never took ${still}`);
+    for (const useless of ['bipod', 'ghillie', 'longRange'] as const) assert.equal(counts.get(useless) ?? 0, 0, `${weapon} took ${useless}`);
   }
 });
 

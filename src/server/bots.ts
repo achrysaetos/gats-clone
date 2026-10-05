@@ -23,7 +23,7 @@ const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
-const PERK_WEIGHT: Partial<Record<PerkId, number>> = { longRange: 0 };
+const PERK_WEIGHT: Partial<Record<PerkId, number>> = { bipod: 0, ghillie: 0, longRange: 0 };
 const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { sniper: { grip: 0 } };
 
 function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {

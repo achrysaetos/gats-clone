@@ -19,13 +19,14 @@ export type Personality = {
   flankOdds: number;
   pushOdds: number;
   sidestepOdds: number;
+  plantsFromCover: boolean;
   commitMul: number;
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
-  aggressive: { rangeMul: 0.8, retreatHp: 0.25, healedHp: 0.6, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.35, flankOdds: 0.5, pushOdds: 0.9, sidestepOdds: 0.8, commitMul: 0.8 },
-  cautious: { rangeMul: 1, retreatHp: 0.4, healedHp: 0.8, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.9, flankOdds: 0.2, pushOdds: 0.45, sidestepOdds: 0.5, commitMul: 1.2 },
-  marksman: { rangeMul: 1.15, retreatHp: 0.35, healedHp: 0.75, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.8, flankOdds: 0.1, pushOdds: 0.3, sidestepOdds: 0.2, commitMul: 1.3 },
+  aggressive: { rangeMul: 0.8, retreatHp: 0.25, healedHp: 0.6, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.35, flankOdds: 0.5, pushOdds: 0.9, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8 },
+  cautious: { rangeMul: 1, retreatHp: 0.4, healedHp: 0.8, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.9, flankOdds: 0.2, pushOdds: 0.45, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2 },
+  marksman: { rangeMul: 1.15, retreatHp: 0.35, healedHp: 0.75, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.8, flankOdds: 0.1, pushOdds: 0.3, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
 };
 
 const WEAPON_BAND: Record<WeaponId, Band> = {
