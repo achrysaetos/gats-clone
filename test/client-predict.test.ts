@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf, type Prediction } from '../src/client/predict.ts';
-import { ABILITY_COOLDOWN_MS } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, WORLD } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
@@ -161,4 +161,10 @@ test('a downed player\'s crawl is predicted as the server moves it', () => {
   assert.ok(downed && 1525 - server.y > 40, `the crawl moved them (to ${server.x.toFixed(1)},${server.y.toFixed(1)})`);
   assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
   assert.deepEqual(pred.afterNewest, server);
+});
+
+test('the local player walks up to the edge of the map in play, however big it is', () => {
+  const walkRight = (size: number) => predictInput(at(size - 30, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS, ability: null }, [], 300, 0, size).afterNewest!.x;
+  assert.equal(walkRight(3000), 3000 - WORLD.playerRadius);
+  assert.equal(walkRight(6000), 6000 - WORLD.playerRadius);
 });
