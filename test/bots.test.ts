@@ -122,6 +122,24 @@ test('a bot\'s movement keys hold for a while instead of flickering tick to tick
   }
 });
 
+test('a bot stepping out from cover onto the target it hid from fires at once, while one meeting it again in the open reacts afresh', () => {
+  const firstShot = (k: 'peekAndHide' | 'engage') => {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    const enemy = spawnAt(w, 1400, 1000);
+    for (let i = 0; i < 90; i++) step(w, TICK_MS);
+    const r = seeded(4);
+    const mem = newBotMemory(r);
+    const plan = k === 'peekAndHide'
+      ? { k, target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 }
+      : { k, target: enemy.id };
+    const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, bearing: 0, acquiredTick: 0, fireAtTick: 5, aimErrRad: 0 }, engagedSeen: 10 };
+    return botThink(snapshotFor(w, bot.id), arenaFor(w), { ...mem, persona: 'cautious', intent: { ...plan, since: w.tick, holdUntil: 1e9 }, motor: lostLongAgo }, r).input.fire;
+  };
+  assert.equal(firstShot('peekAndHide'), true, 'aim held behind cover');
+  assert.equal(firstShot('engage'), false, 'a fresh reaction first');
+});
+
 test('a bot leads a target moving across its line of fire', () => {
   const offsets: number[] = [];
   for (let seed = 1; seed <= 10; seed++) {

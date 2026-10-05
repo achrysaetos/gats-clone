@@ -168,3 +168,33 @@ test('a hurt bot leaves the hiding spot a teammate is already in', () => {
   const shared = decide(w, bot.id, { k: 'engage', target: 0 });
   assert.ok(shared.k === 'retreatAndHeal' && shared.spot && Math.hypot(shared.spot.x - spot.x, shared.spot.y - spot.y) >= 60, `picks another spot: ${JSON.stringify(shared)}`);
 });
+
+test('a hurt bot keeps fighting a lone enemy who is worse off, but leaves when outnumbered with nobody beside it', () => {
+  const w = emptyWorld('TDM');
+  setWalls(w, [pillarWest]);
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, team: 'red' });
+  const foe = spawnAt(w, 1500, 1000, { team: 'blue' });
+  const hp = (p: typeof bot, v: number) => { if (p.life.k === 'alive') p.life.hp = v; };
+  hp(bot, 30);
+  hp(foe, 10);
+  assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'engage', 'finishes a weaker lone enemy');
+  hp(foe, 100);
+  assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'retreatAndHeal', 'leaves a stronger one');
+
+  hp(bot, 60);
+  spawnAt(w, 1500, 1150, { team: 'blue' });
+  assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'retreatAndHeal', 'two on one at 60% is a fight to leave');
+  spawnAt(w, 1000, 1150, { team: 'red' });
+  assert.equal(decide(w, bot.id, { k: 'engage', target: foe.id }).k, 'engage', 'with a teammate beside it, it stays');
+});
+
+test('a peek that nobody answers stays out, and one that draws fire tucks back in', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const enemy = spawnAt(w, 1500, 1000);
+  const out = startIntent({ k: 'peekAndHide', target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek', phaseUntil: 10 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
+  const quiet = decide(w, bot.id, out, { tick: 10 });
+  assert.ok(quiet.k === 'peekAndHide' && quiet.phase === 'peek', 'unanswered: keeps shooting');
+  const shot = decide(w, bot.id, out, { tick: 10, aware: { ...freshAwareness(), hitTick: 10 } });
+  assert.ok(shot.k === 'peekAndHide' && shot.phase === 'hide', 'shot at: ducks');
+});
