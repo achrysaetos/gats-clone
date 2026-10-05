@@ -339,7 +339,7 @@ test('players collide with walls and map edges', () => {
 });
 
 test('bots fighting each other produce a kill within 60 simulated seconds', () => {
-  const w = createWorld('FFA', 3, 'boneyard');
+  const w = createWorld('FFA', 3, 'plaza');
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, MAPS[w.map].size));
@@ -357,7 +357,7 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
 });
 
 test('snapshots report the armor tier picked and how far through a reload the player is', () => {
-  const w = createWorld('FFA', 1, 'boneyard');
+  const w = createWorld('FFA', 1, 'plaza');
   w.walls = []; w.crates = [];
   const p = addPlayer(w, 'Tank', { weapon: 'lmg', armor: 'medium', color: 'red' }, { at: { x: 1000, y: 1000 } });
   assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.armorTier, 'medium', 'tier comes from the loadout, not reverse-engineered from points');

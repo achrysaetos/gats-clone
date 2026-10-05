@@ -84,10 +84,9 @@ test('a map wall is drawn in its own material whatever its shape, and a built wa
   assert.deepEqual(kinds, ['sandstone', 'concrete', 'slate']);
 });
 
-test('the rect maps keep the look their shapes gave them: blocky walls sandstone, long walls concrete', () => {
-  const kinds = new Map(wallSolids(MAPS.boneyard.walls.map((w) => ({ ...w, built: false }))).map((s) => [`${s.w}x${s.h}`, s.kind]));
-  assert.equal(kinds.get('120x120'), 'sandstone');
-  assert.equal(kinds.get('80x80'), 'sandstone');
-  assert.equal(kinds.get('260x50'), 'concrete');
-  assert.equal(kinds.get('50x280'), 'concrete');
+test('Outpost keeps the look its shapes gave it: blocky walls sandstone, long walls concrete', () => {
+  const kinds = new Map(wallSolids(MAPS.outpost.walls.map((w) => ({ ...w, built: false }))).map((s) => [`${s.w}x${s.h}`, s.kind]));
+  assert.equal(kinds.get('100x100'), 'sandstone');
+  assert.equal(kinds.get('150x50'), 'concrete');
+  assert.equal(kinds.get('50x200'), 'concrete');
 });

@@ -99,7 +99,7 @@ if (worlds > 0) {
 const DUEL_SEEDS = 25;
 const DUEL_CAP_MS = 15_000;
 function timeToKill(gun: GunId, armor: ArmorId, range: number, seed: number, kind: PlayerKind = 'bot'): number {
-  const w = createWorld('FFA', seed, 'boneyard');
+  const w = createWorld('FFA', seed, 'plaza');
   w.walls = [];
   w.crates = [];
   const shooter = addPlayer(w, 'shooter', { weapon: GUNS[gun].base, armor: 'none', color: 'red' }, { at: { x: 500, y: 1500 } });
@@ -158,7 +158,7 @@ const PERK_SCENARIOS: readonly PerkScenario[] = [
 ];
 /** 1 when `first` wins, 0 when `second` does, 0.5 for a trade or a stalemate. `swap` puts `second` on the left and first in tick order. */
 function perkDuel(weapon: WeaponId, first: Tier2, second: Tier2, seed: number, swap: boolean, s: PerkScenario): number {
-  const w = createWorld('FFA', seed, 'boneyard');
+  const w = createWorld('FFA', seed, 'plaza');
   w.walls = [];
   w.crates = [];
   const join = (name: string, x: number) => addPlayer(w, name, { weapon, armor: 'none', color: 'red' }, { at: { x, y: 1500 } });

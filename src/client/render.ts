@@ -129,7 +129,7 @@ function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: nu
 }
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
-const BACKDROP_MAP = MAPS.boneyard;
+const BACKDROP_MAP = MAPS.plaza;
 const backdropSolids: Solid[] = [...curbSolids(BACKDROP_MAP.size), ...wallSolids(BACKDROP_MAP.walls.map((w) => ({ ...w, built: false })))];
 const backdropCrates: Solid[] = BACKDROP_MAP.crates.map((c) => ({ kind: 'planter', x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
 

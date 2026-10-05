@@ -58,7 +58,7 @@ test('squadmates see a downed player with the revive and bleed-out clocks; nobod
 });
 
 test('versus snapshots carry no zombie fields at all', () => {
-  const w = createWorld('FFA', 1, 'boneyard');
+  const w = createWorld('FFA', 1, 'plaza');
   const p = spawnAt(w, 1500, 1500);
   const snap = snapshotFor(w, p.id);
   assert.deepEqual(['zombies', 'buildings', 'run'].filter((k) => k in snap), []);

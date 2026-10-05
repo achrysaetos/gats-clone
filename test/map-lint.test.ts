@@ -5,18 +5,9 @@ import { MAP_IDS, MAPS, type MapDef, type MapId } from '../src/shared/maps.ts';
 import { gridMap } from '../src/shared/mapgrid.ts';
 import { lintMap } from '../scripts/map-lint.ts';
 
-/** The 3000px rect maps put each team's spawn down a whole edge in sight of the other's; they are being replaced by grid maps. */
-const KNOWN: Partial<Record<MapId, RegExp>> = {
-  boneyard: /^the red spawn at .* can see the blue spawn at /,
-  causeway: /^the red spawn at .* can see the blue spawn at /,
-  oldtown: /^the red spawn at .* can see the blue spawn at /,
-  citadel: /^the red spawn at .* can see the blue spawn at /,
-};
-
 for (const id of MAP_IDS) {
   test(`${MAPS[id].name} passes the map lint`, () => {
-    const known = KNOWN[id];
-    assert.deepEqual(lintMap(MAPS[id]).filter((p) => !known?.test(p)), []);
+    assert.deepEqual(lintMap(MAPS[id]), []);
   });
 }
 
