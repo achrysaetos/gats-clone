@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { GUNS, PERK_TIERS, WORLD, type AbilityId } from '../../../../src/shared/defs.ts';
-import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
+import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
@@ -209,7 +209,7 @@ async function proveDash() {
 async function proveKnife() {
   if (!(await earnAbility('knife'))) { expect('knife: reached tier 3 and picked Knife', false); return; }
   expect('knife: reached tier 3 and picked Knife on the server', selfView()?.ability === 'knife', `perks ${JSON.stringify(selfView()?.perks)}`);
-  let hit = false, seen = frames.events.length;
+  let hit = false, seen = frames.events.length, gap = Infinity;
   const slashes: string[] = [];
   const start = Date.now();
   while (Date.now() - start < 150_000 && !(hit && slashes.length > 0)) {
@@ -223,12 +223,13 @@ async function proveKnife() {
     const enemy = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team) && !blocked(self.x, self.y, p.x - self.x, p.y - self.y))
       .sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
     if (!enemy) { const mid = (frames.welcome?.worldSize ?? 0) / 2; await walkToward(self, { x: mid, y: mid }); continue; }
-    const walk = enemy ? [
+    const walk = [
       ...(enemy.x - self.x > 40 ? [['KeyD', 'd']] : enemy.x - self.x < -40 ? [['KeyA', 'a']] : []),
       ...(enemy.y - self.y > 40 ? [['KeyS', 's']] : enemy.y - self.y < -40 ? [['KeyW', 'w']] : []),
-    ] : [];
-    if (enemy) await aimAt(Math.atan2(enemy.y - self.y, enemy.x - self.x));
-    await key('keyDown', 'Space', ' ', 32);
+    ];
+    gap = Math.hypot(enemy.x - self.x, enemy.y - self.y);
+    await aimAt(Math.atan2(enemy.y - self.y, enemy.x - self.x));
+    await key(gap <= KNIFE_LUNGE + KNIFE_REACH ? 'keyDown' : 'keyUp', 'Space', ' ', 32);
     for (const [code, k] of walk) await key('keyDown', code, k, k.toUpperCase().charCodeAt(0));
     await sleep(120);
     for (const [code, k] of walk) await key('keyUp', code, k, k.toUpperCase().charCodeAt(0));
@@ -240,7 +241,7 @@ async function proveKnife() {
       const burst: string[] = [];
       if (slashes.length < 2 || (dmg && !hit)) for (const tag of ['a', 'b', 'c', 'd']) { burst.push(await shot(`knife-slash-${slashes.length + 1}${tag}`)); await sleep(50); }
       slashes.push(burst[0] ?? '');
-      log(`     slash ${slashes.length}: ${dmg?.e === 'dmg' ? `hit player ${dmg.victim} for ${dmg.amount}${knifeKill ? ', kill feed credits Knife' : ''}` : 'whiff'}${burst.length ? `; screenshots ${burst.join(' ')}` : ''}`);
+      log(`     slash ${slashes.length}: ${dmg?.e === 'dmg' ? `hit player ${dmg.victim} for ${dmg.amount}${knifeKill ? ', kill feed credits Knife' : ''}` : `whiff (nearest enemy ${gap.toFixed(0)}px before the slash)`}${burst.length ? `; screenshots ${burst.join(' ')}` : ''}`);
       hit ||= !!dmg;
     }
   }
