@@ -289,7 +289,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   for (const spec of fx.now) startEffect(s, spec, now, deathTint(s, spec));
   s.pendingFx.push(...fx.later);
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
-  if (prev?.run && snap.run && snap.run.core.hp < prev.run.core.hp && snap.run.phase !== 'over') s.coreHitAt = now;
+  if (snap.run?.phase === 'over') s.coreHitAt = -Infinity;
+  else if (prev?.run && snap.run && snap.run.core.hp < prev.run.core.hp) s.coreHitAt = now;
   if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 

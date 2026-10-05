@@ -34,10 +34,10 @@ export function useHint(snap: Snapshot, at: Pose): string | null {
   return nearest && `Hold E to repair the ${nearest.what}`;
 }
 
-export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' | 'fell' };
+export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' };
 const NIGHT_WARNING_MS = 10_000;
 
-/** The run's turning points between two snapshots, timed on the server's clock (`prevAt`, `nextAt`). */
+/** The run's turning points between two snapshots; the fall has the report instead, timed on the server's clock (`prevAt`, `nextAt`). */
 export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number): RunCallout[] {
   if (!prev || !next) return [];
   const out: RunCallout[] = [];
@@ -50,7 +50,6 @@ export function runCallouts(prev: RunView | undefined, next: RunView | undefined
     const core = Math.round((100 * next.core.hp) / next.core.maxHp);
     out.push({ title: 'Dawn', line: `Night ${prev.night} held · core ${core}% · ${next.scrap} scrap to build with`, tone: 'dawn' });
   }
-  if (prev.phase !== 'over' && next.phase === 'over') out.push({ title: 'The core fell', line: `The squad held out to night ${next.night}`, tone: 'fell' });
   return out;
 }
 

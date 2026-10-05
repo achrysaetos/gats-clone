@@ -5,7 +5,7 @@ import { TICK_MS } from './interp.ts';
 import { PALETTE } from './palette.ts';
 import { runCallouts, type RunCallout } from './zombies.ts';
 
-const TONE: Record<RunCallout['tone'], string> = { night: '#a08cff', dawn: PALETTE.gold, warn: '#ff9f43', fell: PALETTE.hunted };
+const TONE: Record<RunCallout['tone'], string> = { night: '#a08cff', dawn: PALETTE.gold, warn: '#ff9f43' };
 
 /** A centered announcement; `ring` also bursts a ring around your player. */
 export type Callout = { title: string; line: string; color: string; ring: boolean; born: number };
@@ -26,7 +26,8 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
   const announce = (c: Omit<Callout, 'born'>) => callouts.push({ ...c, born: Math.max(now, (callouts.at(-1)?.born ?? -Infinity) + CALLOUT_STAGGER_MS) });
   const popups = m.popups.filter((p) => now - p.born < POPUP_MS);
   const me = selfOf(next);
-  if (!me?.alive && !me?.downed) return { callouts: [], popups };
+  // The report card holds the screen once the core falls.
+  if ((!me?.alive && !me?.downed) || next.run?.phase === 'over') return { callouts: [], popups };
   for (const c of runCallouts(prev?.run, next.run, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS)) {
     announce({ title: c.title, line: c.line, color: TONE[c.tone], ring: c.tone !== 'warn' });
   }

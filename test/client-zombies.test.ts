@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { outTillDawnText, buildSiteOf, downedLine, inviteLink, phaseLine, reportRows, reportTitle, runCallouts, squadFromSearch, useHint, withSquad } from '../src/client/zombies.ts';
+import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import type { RunView } from '../src/shared/protocol.ts';
 import { BUILDINGS, ZOM } from '../src/shared/defs.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
@@ -119,7 +120,7 @@ test('holding E is offered for the worn core in reach, after a nearer worn wall,
   assert.equal(useHint(snapshotFor(w, p.id), p), null, 'out of reach of the core');
 });
 
-test('the run announces the night ten seconds ahead, nightfall with its wave, dawn with the core, and the fall', () => {
+test('the run announces the night ten seconds ahead, nightfall with its wave and dawn with the core', () => {
   const titles = (prev: RunView, next: RunView, prevAt: number, nextAt: number) => runCallouts(prev, next, prevAt, nextAt).map((c) => c.title);
   assert.deepEqual(titles(runView(), runView(), 39_000, 40_000), ['Night falls in 10']);
   assert.deepEqual(titles(runView(), runView(), 40_000, 41_000), [], 'once, as the countdown crosses ten seconds');
@@ -128,8 +129,19 @@ test('the run announces the night ten seconds ahead, nightfall with its wave, da
   assert.deepEqual(call.map((c) => [c.title, c.line]), [['Night 2', '31 zombies are coming · hold the core']]);
   const dawn = runCallouts(night, runView({ night: 3, scrap: 96 }), 90_000, 91_000);
   assert.deepEqual(dawn.map((c) => [c.title, c.line]), [['Dawn', 'Night 2 held · core 75% · 96 scrap to build with']]);
-  assert.deepEqual(titles(night, runView({ phase: 'over', phaseEndsAt: 110_000 }), 90_000, 91_000), ['The core fell']);
+  assert.deepEqual(titles(night, runView({ phase: 'over', phaseEndsAt: 110_000 }), 90_000, 91_000), [], 'the report announces the fall');
   assert.deepEqual(runCallouts(undefined, night, 0, 1), [], 'nothing on the first snapshot of a session');
+});
+
+test('the fall clears every callout, so none shows through behind the report', () => {
+  const { w, p } = squadWorld();
+  const day = snapshotFor(w, p.id);
+  w.run!.phase = { k: 'night', toSpawn: ['walker'], nextSpawnAt: Infinity };
+  const night = snapshotFor(w, p.id);
+  const announced = addMoments(NO_MOMENTS, day, night, 1000);
+  assert.deepEqual(announced.callouts.map((c) => c.title), ['Night 1']);
+  w.run!.phase = { k: 'over', night: 1, restartAt: Infinity };
+  assert.deepEqual(addMoments(announced, night, snapshotFor(w, p.id), 1100).callouts, []);
 });
 
 test('the run report ranks the squad by kills, then revives, and marks you', () => {
