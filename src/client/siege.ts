@@ -91,7 +91,6 @@ export function drawTurret(ctx: CanvasRenderingContext2D, b: BuildingView & { ki
   ctx.translate(cx, cy);
   ctx.rotate(angle);
   ctx.translate(-recoil * 5, 0);
-  ctx.fillStyle = INK;
   ctx.strokeStyle = INK;
   ctx.lineWidth = 2.5;
   ctx.fillStyle = look.barrel;

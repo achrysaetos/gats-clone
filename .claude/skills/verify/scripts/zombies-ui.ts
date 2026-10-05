@@ -99,7 +99,8 @@ const toScreen = (x: number, y: number) => js(`skirmishDev.toScreen(${x}, ${y})`
 const aimAtWorld = async (x: number, y: number) => { const at = await toScreen(x, y); if (at) await mouse('mouseMoved', at.x, at.y); return at; };
 const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
 const hasWall = (b: readonly BuildingView[] | undefined, cx: number, cy: number) => !!b?.some((w) => w.cx === cx && w.cy === cy);
-const turretAt = (cell: { cx: number; cy: number }) => frames.snap?.buildings?.find((b) => b.cx === cell.cx && b.cy === cell.cy && b.kind !== 'wall');
+const turretAt = (cell: { cx: number; cy: number }) =>
+  frames.snap?.buildings?.find((b): b is Extract<BuildingView, { ammo: number }> => b.cx === cell.cx && b.cy === cell.cy && b.kind !== 'wall');
 let squad = '';
 /** A magnified shot of the screen round a world point, for detail the full view draws too small to judge. */
 async function closeUp(name: string, x: number, y: number) {
@@ -334,7 +335,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('a Night callout announces the wave', await until(callout('Night 1'), 3000));
     await sleep(300);
     await shot('zom-night-callout');
-    let crowd = false, alerted = false, firing = false, reload: 'waiting' | 'done' = 'waiting';
+    let crowd = false, alerted = false, firing = false, reload: 'waiting' | 'done' = 'waiting', beaten = 0;
     const shotsAtNight = { ...frames.turretShots };
     await fight(() => run()?.phase === 'day' && run()!.night === 2, 150_000, async () => {
       if (!crowd && (frames.snap?.zombies?.length ?? 0) >= 4 && me()?.alive) { crowd = true; await shot('zom-night'); }
@@ -344,15 +345,18 @@ const STEPS: Record<string, () => Promise<void>> = {
         await shot('zom-turrets-firing');
         await closeUp('zom-turrets-firing-closeup', cellCenter(turrets[0]!.cx, turrets[0]!.cy).x, cellCenter(turrets[0]!.cx, turrets[0]!.cy).y);
       }
-      const low = turrets.find((t) => { const v = turretAt(t); return v?.kind !== 'wall' && (v?.ammo ?? 10) < 10; });
-      if (reload === 'waiting' && low && me()?.alive) {
-        reload = 'done';
+      const low = turrets.find((t) => (turretAt(t)?.ammo ?? 10) < 10);
+      if (reload === 'waiting' && low && me()?.alive && run()!.scrap > 0) {
         const name = BUILDINGS[low.kind].name.toLowerCase();
         await mouse('mouseReleased', VIEW.w / 2, VIEW.h / 2, 'left');
         await walkTo(cellCenter(low.cx, low.cy).x, cellCenter(low.cx, low.cy).y + ZOM.cell, 50);
+        const left = turretAt(low);
+        // A squad bot reloads a turret far faster than it fires, so it often gets there first; wait for the next drop.
+        if ((left?.ammo ?? 10) === 10) { beaten++; return; }
+        reload = 'done';
         expect(`by the low ${name} the hint offers to reload it`, await until(async () => (await zdev())?.use === `Hold E to reload the ${name}`, 2000), String((await zdev())?.use));
         await shot('zom-reload-hint');
-        const scrap = run()!.scrap, from = (turretAt(low) as { ammo: number } | undefined)?.ammo;
+        const scrap = run()!.scrap, from = turretAt(low)?.ammo;
         await key('KeyE', 'keyDown');
         const full = await until(() => { const t = turretAt(low); return t?.kind === low.kind && t.ammo === 10; }, ZOM.refillMs + 3000);
         await key('KeyE', 'keyUp');
@@ -365,7 +369,7 @@ const STEPS: Record<string, () => Promise<void>> = {
       // Squad bots reload a turret faster than it fires while the horde is far from them, so its bar may never move.
       log(`note the ${t.kind}'s ammo bar went as low as ${frames.lowestAmmo[t.kind]}/10`);
     }
-    if (turrets.length && reload === 'waiting') log('note no turret ran low enough to reload by hand');
+    if (turrets.length && reload === 'waiting') log(`note no turret stayed low long enough to reload by hand (bots got there first ${beaten} times)`);
     if (turrets.length) expect('turrets killed zombies for the squad', frames.turretKills > 0, `${frames.turretKills} kills`);
     expect('the squad saw zombies in view', crowd);
     expect('the driven player shot zombies through real input', (frames.snap?.self.kills ?? 0) > 0, `${frames.snap?.self.kills} kills`);

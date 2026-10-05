@@ -20,7 +20,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
       const x = ev.x + Math.cos(ev.angle) * def.muzzle, y = ev.y + Math.sin(ev.angle) * def.muzzle;
       const dx = Math.cos(ev.angle) * def.range, dy = Math.sin(ev.angle) * def.range;
       // The round stops in the first zombie on its line, as the server's does.
-      const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]!].radius) ?? 1));
+      const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]].radius) ?? 1));
       return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: hit * def.range };
     }
     case 'hunted':

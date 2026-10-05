@@ -279,7 +279,7 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
 };
 
 export const ZOM = {
-  /** One grid cell in px; a wall fills one cell and the horde's flow field runs on the same grid. */
+  /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
@@ -287,9 +287,9 @@ export const ZOM = {
   /** Half the side of the square core at the map's center. */
   coreHalf: 50,
   dayMs: 40_000,
-  /** How far from the core's center a wall may stand. */
+  /** How far from the core's center a building may stand. */
   buildRadius: 600,
-  /** How far from the builder's center a wall may be placed or repaired. */
+  /** How far from the builder's center a building may be placed, repaired or reloaded. */
   reachPx: 250,
   reviveMs: 3000,
   reviveRange: 70,
