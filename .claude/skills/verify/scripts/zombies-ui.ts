@@ -11,7 +11,7 @@ import WebSocket from 'ws';
 import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../src/shared/protocol.ts';
 import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { BUILDINGS, ZOM } from '../../../../src/shared/defs.ts';
+import { BUILDINGS, ZOM, ZOMBIES } from '../../../../src/shared/defs.ts';
 import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
@@ -46,7 +46,7 @@ await new Promise((r) => page.once('open', r));
 
 const frames = {
   welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null,
-  turretShots: { sentry: 0, cannon: 0 }, turretKills: 0, lowestAmmo: { sentry: 10, cannon: 10 },
+  turretShots: { sentry: 0, cannon: 0 }, turretKills: 0, lowestAmmo: { sentry: 10, cannon: 10 }, scrapEarned: 0,
 };
 let nextId = 1;
 const pending = new Map<number, (v: any) => void>();
@@ -61,6 +61,7 @@ page.on('message', (raw) => {
       for (const e of frames.snap?.events ?? []) {
         if (e.e === 'turret') frames.turretShots[e.kind]++;
         if (e.e === 'zkill' && e.by === null) frames.turretKills++;
+        if (e.e === 'zkill') frames.scrapEarned += ZOMBIES[e.kind].scrap;
       }
       for (const b of frames.snap?.buildings ?? []) if (b.kind !== 'wall') frames.lowestAmmo[b.kind] = Math.min(frames.lowestAmmo[b.kind], b.ammo);
     }
@@ -356,11 +357,13 @@ const STEPS: Record<string, () => Promise<void>> = {
         reload = 'done';
         expect(`by the low ${name} the hint offers to reload it`, await until(async () => (await zdev())?.use === `Hold E to reload the ${name}`, 2000), String((await zdev())?.use));
         await shot('zom-reload-hint');
-        const scrap = run()!.scrap, from = turretAt(low)?.ammo;
+        const scrap = run()!.scrap, earned = frames.scrapEarned, from = turretAt(low)?.ammo;
         await key('KeyE', 'keyDown');
         const full = await until(() => { const t = turretAt(low); return t?.kind === low.kind && t.ammo === 10; }, ZOM.refillMs + 3000);
         await key('KeyE', 'keyUp');
-        expect(`holding E reloads the ${name} for scrap`, full && run()!.scrap < scrap, `ammo ${from} -> 10/10, scrap ${scrap} -> ${run()!.scrap}`);
+        // Kills meanwhile pay into the bank, so the spend is what the bank lacks beyond them.
+        const spent = scrap + frames.scrapEarned - earned - run()!.scrap;
+        expect(`holding E reloads the ${name} for scrap`, full && spent > 0, `ammo ${from} -> 10/10, ${spent} scrap spent`);
       }
     });
     for (const t of turrets) {
