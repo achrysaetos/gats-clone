@@ -13,7 +13,7 @@ export const PALETTE = {
   tracer: '#ffc43a',
   tracerCore: '#ffe58a',
   tracerHead: '#fffbe6',
-  ownTracer: '#ffd75e',
+  ownTracer: '#fff1b8',
   brass: '#c9962f',
   label: '#2a2e36',
   hpGood: '#35c46a',

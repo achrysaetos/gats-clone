@@ -5,7 +5,7 @@ import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
 import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
-import { ARMOR_BAND, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
+import { ARMOR_BAND, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor, tint } from './palette.ts';
 import { serverNow } from './interp.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, faceZombies, wallFlashes } from './siege.ts';
 import { drawContactShadows, drawSphere, sphereSprite } from './spheres.ts';
@@ -336,31 +336,50 @@ function drawTrail(ctx: CanvasRenderingContext2D, color: string, trail: { x: num
 
 export const TRAIL_MS = 260;
 
-/** Class guns and shrapnel fire warm tracers, a touch brighter for your own; an evolved gun's rounds wear its own color and size. */
-function tracerLook(b: BulletView, myId: number): { r: number; color: string; own: boolean } {
-  const own = b.owner === myId;
-  if (b.gun && GUNS[b.gun].stage > 0) return { ...GUNS[b.gun].look.bullet, own };
-  return { r: 1.6, color: own ? PALETTE.ownTracer : PALETTE.tracer, own };
+type TracerLook = { r: number; glow: string; core: string };
+
+/**
+ * Every round is a glowing tracer: class guns and shrapnel in warm gold, a touch whiter for your own, and an evolved gun's in
+ * its own hue. The guns' hues are dark, chosen for ink on a pale floor, so the glow and core are lifted toward white.
+ */
+function tracerLook(b: BulletView, myId: number): TracerLook {
+  if (b.gun && GUNS[b.gun].stage > 0) {
+    const { r, color } = GUNS[b.gun].look.bullet;
+    return { r, glow: tint(color, 0.35), core: tint(color, 0.75) };
+  }
+  return { r: 1.6, glow: PALETTE.tracer, core: b.owner === myId ? PALETTE.ownTracer : PALETTE.tracerCore };
 }
 
-/** A wide faint glow and a bright core per look, each one path, then a white-hot head on every round. */
+/** The tail's passes from its far end in: [from, to] as shares of `TRACER.tail` behind the head, then width in radii, alpha and which color. */
+const TRACER_PASSES = [
+  [1, 0, 4.5, 0.18, 'glow'],
+  [1, 0.55, 1.3, 0.3, 'glow'],
+  [0.55, 0, 1.8, 0.7, 'core'],
+  [TRACER.core / TRACER.tail, 0, 2.4, 1, 'core'],
+] as const;
+
+/** Each look's passes are one path apiece, so the tail fades from a faint glow to a bright core, then a white-hot head on every round. */
 function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], myId: number) {
   ctx.lineCap = 'round';
-  const groups = new Map<string, { look: ReturnType<typeof tracerLook>; bullets: BulletView[] }>();
+  const groups = new Map<string, { look: TracerLook; bullets: BulletView[] }>();
   for (const b of bullets) {
     const look = tracerLook(b, myId);
-    const key = `${look.color}|${look.r}|${look.own}`;
+    const key = `${look.glow}|${look.core}|${look.r}`;
     const group = groups.get(key);
     if (group) group.bullets.push(b);
     else groups.set(key, { look, bullets: [b] });
   }
   for (const { look, bullets: group } of groups.values()) {
-    for (const [len, width, alpha] of [[TRACER.tail, look.r * 4.5, 0.22], [TRACER.tail, look.r * 1.5, 0.55], [TRACER.core, look.r * 2.4, 1]] as const) {
+    for (const [from, to, width, alpha, color] of TRACER_PASSES) {
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = len === TRACER.core && look.color === PALETTE.tracer ? PALETTE.tracerCore : look.color;
-      ctx.lineWidth = width;
+      ctx.strokeStyle = look[color];
+      ctx.lineWidth = look.r * width;
       ctx.beginPath();
-      for (const b of group) { ctx.moveTo(b.x - b.vx * len, b.y - b.vy * len); ctx.lineTo(b.x, b.y); }
+      for (const b of group) {
+        const far = TRACER.tail * from, near = TRACER.tail * to;
+        ctx.moveTo(b.x - b.vx * far, b.y - b.vy * far);
+        ctx.lineTo(b.x - b.vx * near, b.y - b.vy * near);
+      }
       ctx.stroke();
     }
     ctx.globalAlpha = 1;

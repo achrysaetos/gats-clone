@@ -215,3 +215,22 @@ test('an edge marker that would land on a HUD panel slides back along its bearin
   const clearSpot = { x: 1246, y: 400 };
   assert.deepEqual(clearOfRects(from, clearSpot, [feed], 16), clearSpot, 'a marker clear of every panel stays put');
 });
+
+const lightness = (color: unknown): number => {
+  const s = String(color);
+  const [r, g, b] = s.startsWith('#') ? [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)) : s.match(/\d+/g)!.slice(0, 3).map(Number);
+  return (r! + g! + b!) / (3 * 255);
+};
+
+test("every gun's rounds glow: no tracer pass is drawn darker than mid-grey, evolved hues included", () => {
+  for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
+    const base = worldStrokes(snap({ players: [player(2, { gun })] }));
+    const frame = snap({ players: [player(2, { gun })] });
+    frame.bullets = [{ id: 9, x: 140, y: 0, vx: 1500, vy: 0, owner: 2, gun }];
+    const strokes = worldStrokes(frame);
+    const from = strokes.findIndex((c, i) => c !== base[i]);
+    const tracer = strokes.slice(from, from + strokes.length - base.length);
+    assert.ok(tracer.length > 0, `${gun} draws a tracer`);
+    for (const c of tracer) assert.ok(lightness(c) >= 0.5, `${gun} tracer pass ${String(c)} glows`);
+  }
+});
