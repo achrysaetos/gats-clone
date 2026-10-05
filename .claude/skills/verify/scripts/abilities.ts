@@ -44,7 +44,7 @@ const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
 
 type Stamped<T> = T & { at: number };
-const frames = { welcome: null as null | { id: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number }>[] };
+const frames = { welcome: null as null | { id: number; worldSize: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number }>[] };
 let nextId = 1;
 let socketId = '';
 const pending = new Map<number, (v: any) => void>();
@@ -113,12 +113,20 @@ async function shootNearest() {
     ...snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })),
   ].filter((t) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, t.x - self.x, t.y - self.y, w) !== null));
   const t = targets.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
-  if (!t) { await sleep(200); return; }
+  if (!t) { await walkTowardMiddle(self.x); return; }
   await aimAt(Math.atan2(t.y - self.y, t.x - self.x));
   await mouse('mousePressed', W / 2, H / 2);
   await sleep(60);
   await mouse('mouseReleased', W / 2, H / 2);
   await sleep(250);
+}
+
+/** Nothing in sight from a spawn on a 6000px map, so head for the middle: diagonally, so the walk slides round the spawn screens. */
+async function walkTowardMiddle(x: number) {
+  const [code, k, vk] = x < (frames.welcome?.worldSize ?? 0) / 2 ? ['KeyD', 'd', 68] : ['KeyA', 'a', 65];
+  await key('keyDown', code, k, vk); await key('keyDown', 'KeyW', 'w', 87);
+  await sleep(500);
+  await key('keyUp', code, k, vk); await key('keyUp', 'KeyW', 'w', 87);
 }
 
 async function earnAbility(ability: AbilityId): Promise<boolean> {
