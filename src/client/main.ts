@@ -18,7 +18,7 @@ import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, rende
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
-import { startEffect } from './effects.ts';
+import { kicks, startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { muzzleTip } from './sprites.ts';
@@ -91,6 +91,10 @@ const seenRounds = new Set<number>();
 const firstRounds: DrawnRound[] = [];
 let ghost: Ghost | null = null;
 let nextRoundId = -1;
+type FeelCue = 'round' | 'flash' | 'kick' | 'sound';
+const fireFeel: { cue: FeelCue; at: number }[] = [];
+const feltFlashes = new Set<number>();
+const feltKicks = new Set<number>();
 const FRAME_COST_CAP = 4000;
 const frameCosts: number[] = [];
 const liveNumbers = () => {
@@ -107,7 +111,7 @@ const zombiesView = () => {
     callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
   };
 };
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, panels: drawnPanels, shadowBakes, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
+if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, panels: drawnPanels, shadowBakes, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
 
 /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
 function benchFrames(n: number): number[] {
@@ -280,6 +284,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
 }
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
+  if (DEV && cues.some((c) => c.self && c.id.startsWith('shot:'))) fireFeel.push({ cue: 'sound', at: performance.now() });
   audio.play(cues, s.lastSelf, viewRadius);
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
@@ -480,6 +485,7 @@ function drawFrame(now: number) {
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   if (DEV) noteFirstRounds(snap, s.myId, selfAngle);
+  if (DEV) noteOwnFlashes(s, now);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
@@ -499,7 +505,24 @@ function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null)
     seenRounds.add(b.id);
     const p = snap.players.find((q) => q.id === b.owner && q.alive);
     const angle = p && (p.id === myId && selfAngle !== null ? selfAngle : p.angle);
+    if (b.owner === myId && b.gun !== null) fireFeel.push({ cue: 'round', at: performance.now() });
     firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, gun: b.gun, x: b.x, y: b.y, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
+  }
+}
+
+/** When a frame first draws each of your muzzle flashes and gun kicks, by the rules `drawEffects` and `kicks` draw them, for `skirmishDev.fireFeel()`. */
+function noteOwnFlashes(s: Session, now: number) {
+  const kick = kicks(s.effects, now).get(s.myId);
+  if (kick !== undefined && !feltKicks.has(kick)) {
+    feltKicks.add(kick);
+    fireFeel.push({ cue: 'kick', at: performance.now() });
+  }
+  for (const fx of s.effects) {
+    if (fx.kind !== 'flash' || fx.owner !== s.myId || feltFlashes.has(fx.born)) continue;
+    const age = now - fx.born;
+    if (age < 0 || age >= EFFECT_LIFE_MS.flash) continue;
+    feltFlashes.add(fx.born);
+    fireFeel.push({ cue: 'flash', at: performance.now() });
   }
 }
 
