@@ -196,7 +196,7 @@ const checks = [
 // A shooter out of view sends no shot event, so their rounds can only come from the server.
 const copies = rounds.filter((r) => (r.own || r.owner === other.id) && r.id > 0 && r.muzzle);
 const serverCopies = copies.length;
-log(`${serverCopies === 0 ? 'ok  ' : 'FAIL'} the server's copies of the two humans' rounds are not drawn while the page draws them (${serverCopies} drawn${serverCopies ? `: ${JSON.stringify(copies)}` : ''})`);
+log(`${serverCopies === 0 ? 'ok  ' : 'FAIL'} the server's copies of the two humans' rounds are not drawn while the page draws them (${serverCopies} drawn${serverCopies ? `, first: ${JSON.stringify(copies.slice(0, 3))}` : ''})`);
 const botCopies = rounds.filter((r) => !r.own && r.owner !== other.id && r.id > 0);
 log(`note ${botCopies.length} server copies of bot rounds drawn, ${botCopies.filter((r) => r.muzzle).length} with their shooter in view`);
 const pass = checks.every(Boolean) && serverCopies === 0 && exceptions.length === 0;

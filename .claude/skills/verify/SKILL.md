@@ -55,7 +55,7 @@ Real input goes through `Input.dispatchKeyEvent` and `Input.dispatchMouseEvent`.
 LAG=80 JITTER=0 node .claude/skills/verify/scripts/muzzle.ts "$RUN" [seconds]
 ```
 
-One muted browser strafes, turns and taps the pistol in FFA beside a second lagged browser. `skirmishDev.firstRounds()` lists each round the first frame the page draws it, with its shooter's drawn muzzle. The script logs the median, p90 and max gap for own rounds, the second browser's and the bots', and fails when own rounds start more than 25px from the muzzle or any server copy of an own round is drawn. Its log is `$RUN/evidence/muzzle.log`, with screenshots `muzzle-lag<L>-<ms>ms.png` taken that long after a shot's round trip.
+One muted browser strafes, turns and taps the pistol in FFA beside a second lagged browser. `skirmishDev.firstRounds()` lists each round the first frame the page draws it, with its shooter's drawn muzzle. Shrapnel is left out. The script logs the median, p90 and max gap for own rounds, the second browser's and the bots', and fails when the median gap for own rounds or the second browser's passes 25px, or when the page draws a server copy of either human's gun rounds while their shooter is in view. Its log is `$RUN/evidence/muzzle.log`, with screenshots `muzzle-<own|other>-lag<L>-<ms>ms.png` taken that long after a shot's round trip.
 
 ### Zombies
 
