@@ -58,7 +58,7 @@ test('a shotgun fires one round per pellet, each its own id', () => {
 
 test('a round passes through its shooter and their teammates and stops at their enemies, crates and zombies', () => {
   const p = (id: number, x: number, team: PlayerView['team']) => ({ id, x, y: 100, alive: true, team }) as PlayerView;
-  const scene = roundScene({ players: [p(ME, 100, 'red'), p(2, 200, 'red'), p(3, 300, 'blue')], crates: [{ id: 9, x: 500, y: 90, hp: 1, size: 20 }], zombies: [[4, 0, 600, 100, 10]] }, [], 3);
+  const scene = roundScene({ players: [p(ME, 100, 'red'), p(2, 200, 'red'), p(3, 300, 'blue'), p(4, 400, 'blue')], crates: [{ id: 9, x: 500, y: 90, hp: 1, size: 20 }], zombies: [[4, 0, 600, 100, 10]] }, [], 3);
   assert.deepEqual(scene.bodies.map((b) => b.x), [100, 200, 600]);
   assert.deepEqual(scene.solids, [{ x: 500, y: 90, w: 20, h: 20 }]);
 });
