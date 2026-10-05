@@ -27,6 +27,7 @@ Each room rotates through four maps: Boneyard (open ground with scattered cover)
 | 1-9, 0 | Pick a perk or an evolution (or click its tile) |
 | B | Zombies: build mode by day (left click builds, right click takes your wall down) |
 | E | Zombies: hold to revive a downed squadmate or repair a wall or the core |
+| Tab | Hold for the whole leaderboard |
 | Enter | Chat |
 | M | Mute sound |
 
