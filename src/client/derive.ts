@@ -61,7 +61,9 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
   const side = team ?? 'no';
   const Side = side[0]!.toUpperCase() + side.slice(1);
   const FFA_GOAL = `${mostKillsText(leftMs)} · first player to ${WORLD.ffaWinKills} ends it`;
-  const TDM_GOAL = `first to ${WORLD.tdmWinScore} kills ${leftMs === null ? `or most in ${clock(MAP_MS.TDM)}` : `· ${clock(leftMs)} left`}`;
+  const orMost = (ms: number) => (leftMs === null ? `or most in ${clock(ms)}` : `· ${clock(leftMs)} left`);
+  const TDM_GOAL = `first to ${WORLD.tdmWinScore} kills ${orMost(MAP_MS.TDM)}`;
+  const DOM_GOAL = `first to ${WORLD.domWinScore} ${orMost(MAP_MS.DOM)}`;
   switch (mode) {
     case 'FFA':
       return { banner: `Free for all: ${FFA_GOAL}`, line: `FFA · ${FFA_GOAL}` };
@@ -72,8 +74,8 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
       };
     case 'DOM':
       return {
-        banner: `Domination: you are ${side.toUpperCase()}, hold A B C, first to ${WORLD.domWinScore}`,
-        line: `DOM · ${Side} team · hold A B C · first to ${WORLD.domWinScore}`,
+        banner: `Domination: you are ${side.toUpperCase()}, hold A B C, ${DOM_GOAL}`,
+        line: `DOM · ${Side} team · hold A B C · ${DOM_GOAL}`,
       };
     case 'ZOM':
       return { banner: 'Zombies: build walls and turrets by day, hold the core by night', line: 'ZOM · defend the core' };

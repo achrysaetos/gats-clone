@@ -140,7 +140,7 @@ test('the snapshot carries when the round\'s clock runs out, unchanged through t
   run(w, WORLD.roundRestartMs + 100);
   assert.ok(endsAt()! - w.now > MAP_MS.TDM - 1000, 'the next round starts a full clock');
   const dom = createWorld('DOM', 1, ROTATION.DOM[0]);
-  assert.equal(snapshotFor(dom, addPlayer(dom, 'd', PISTOL).id).match.roundEndsAt, null, 'DOM has no clock');
+  assert.equal(snapshotFor(dom, addPlayer(dom, 'd', PISTOL).id).match.roundEndsAt, MAP_MS.DOM, 'DOM runs a clock too');
 });
 
 test('FFA: a timer finish with no kills starts a fresh round on the next map without a winner', () => {
