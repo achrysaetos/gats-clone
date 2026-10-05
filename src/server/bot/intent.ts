@@ -30,19 +30,19 @@ export type Personality = {
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
-  aggressive: { rangeMul: 0.8, retreatHp: 0.25, healedHp: 0.7, peekMs: [900, 1500], hideMs: [300, 600], peekOdds: 0.35, flankOdds: 0.5, pushOdds: 0.9, sidestepOdds: 0.8, commitMul: 0.8 },
-  cautious: { rangeMul: 1, retreatHp: 0.5, healedHp: 0.95, peekMs: [500, 900], hideMs: [700, 1300], peekOdds: 0.9, flankOdds: 0.2, pushOdds: 0.45, sidestepOdds: 0.5, commitMul: 1.2 },
-  marksman: { rangeMul: 1.15, retreatHp: 0.4, healedHp: 0.85, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.8, flankOdds: 0.1, pushOdds: 0.3, sidestepOdds: 0.2, commitMul: 1.3 },
+  aggressive: { rangeMul: 0.8, retreatHp: 0.25, healedHp: 0.6, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.35, flankOdds: 0.5, pushOdds: 0.9, sidestepOdds: 0.8, commitMul: 0.8 },
+  cautious: { rangeMul: 1, retreatHp: 0.4, healedHp: 0.8, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.9, flankOdds: 0.2, pushOdds: 0.45, sidestepOdds: 0.5, commitMul: 1.2 },
+  marksman: { rangeMul: 1.15, retreatHp: 0.35, healedHp: 0.75, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.8, flankOdds: 0.1, pushOdds: 0.3, sidestepOdds: 0.2, commitMul: 1.3 },
 };
 
 /** Where each class likes to fight from, in px: inside `min` it backs off, beyond `max` it closes in, and it settles round `ideal`. */
 export const WEAPON_BAND: Record<WeaponId, { min: number; ideal: number; max: number }> = {
-  pistol: { min: 200, ideal: 400, max: 600 },
-  smg: { min: 100, ideal: 280, max: 450 },
+  pistol: { min: 180, ideal: 340, max: 500 },
+  smg: { min: 90, ideal: 240, max: 380 },
   shotgun: { min: 0, ideal: 150, max: 260 },
-  assault: { min: 250, ideal: 500, max: 720 },
-  sniper: { min: 450, ideal: 750, max: 1100 },
-  lmg: { min: 220, ideal: 460, max: 680 },
+  assault: { min: 220, ideal: 420, max: 580 },
+  sniper: { min: 400, ideal: 700, max: 1000 },
+  lmg: { min: 200, ideal: 400, max: 560 },
 };
 
 export type Band = { min: number; ideal: number; max: number };
@@ -238,6 +238,8 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
 /** Changes inside an intent that are not transitions: a peek's hide and peek phases taking turns. */
 function tend(cur: Intent, v: Perception, c: IntentCtx): Intent {
   if (cur.k !== 'peekAndHide' || v.tick < cur.phaseUntil) return cur;
+  // Out on a peek that nobody is answering, a bot keeps shooting until it is shot at or loses sight.
+  if (cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target)) return cur;
   const phase = cur.phase === 'hide' ? 'peek' : 'hide';
   const ms = between(phase === 'peek' ? c.persona.peekMs : c.persona.hideMs, c.rand);
   return { ...cur, phase, phaseUntil: v.tick + ticks(ms) };

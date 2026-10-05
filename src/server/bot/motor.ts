@@ -136,9 +136,9 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       if (!t) return { steer: { to: v.lastSeen, face: v.lastSeen, reload: false, crates: false }, stance: m.stance };
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
       if ((readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) || t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal)) {
-        return { steer: fight(t.p), stance: { step: 0, until: v.tick } };
+        return { steer: fight(t.p), stance: m.stance };
       }
-      if (t.d < c.band.min) return { steer: fight(awayFrom(me, t.p, c.arena, BACKOFF_STEP)), stance: { step: 0, until: v.tick } };
+      if (t.d < c.band.min) return { steer: fight(awayFrom(me, t.p, c.arena, BACKOFF_STEP)), stance: m.stance };
       let stance = m.stance;
       if (v.tick >= stance.until) {
         const odds = v.underFire ? Math.max(UNDER_FIRE_STEP_ODDS, c.persona.sidestepOdds) : c.persona.sidestepOdds;
