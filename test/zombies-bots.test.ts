@@ -53,8 +53,12 @@ test('a squad bot shoots the zombies coming at the core', () => {
   const w = nightWorld();
   const bot = spawnAt(w, CORE.x, CORE.y + 320);
   w.zombies.push({ id: newId(w), kind: 'walker', x: CORE.x, y: CORE.y + 900, hp: 200, attackAt: 0 });
-  assert.ok(play(w, [bot], 10_000, () => w.zombies.length === 0), 'the zombie died');
-  assert.equal(bot.kills, 1);
+  let dealt = 0;
+  assert.ok(play(w, [bot], 10_000, () => {
+    dealt += w.events.filter((e) => e.e === 'dmg' && e.kind === 'zombie' && e.attacker === bot.id).reduce((sum, e) => sum + (e.e === 'dmg' ? e.amount : 0), 0);
+    return w.zombies.length === 0;
+  }), 'the zombie died');
+  assert.ok(dealt >= 100, `the bot did most of it (${dealt.toFixed(0)} of 200), not just the Bastion's own gun`);
   assert.ok(Math.hypot(bot.x - CORE.x, bot.y - CORE.y) < 600, 'without leaving the core');
 });
 
