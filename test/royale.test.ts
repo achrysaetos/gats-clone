@@ -55,8 +55,12 @@ test('a player with a squadmate standing is knocked, not killed, and the knock p
   assert.equal(shooter.kills, 1, 'the finish pays no second kill');
 });
 
-test('a squad is out once nobody in it stands: its knocked players die with it and it places below the squads still in', () => {
+const LAST_LIVES = RING.findIndex((row) => row.lives === 'last');
+const WHOLE_MAP = { x: 3000, y: 3000, r: 4300 };
+
+test('once lives are last a squad is out when nobody in it stands: its knocked players die with it and it places below the squads still in', () => {
   const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES);
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const first = spawnAt(w, 1200, 1000, { team: 'red' });
   const last = spawnAt(w, 1000, 1200, { team: 'red' });
@@ -75,6 +79,7 @@ test('a squad is out once nobody in it stands: its knocked players die with it a
 
 test('the last squad standing wins, and every squad reads back the place it went out in', () => {
   const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES);
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const green = spawnAt(w, 1200, 1000, { team: 'green' });
   const red = spawnAt(w, 1000, 1200, { team: 'red' });
@@ -145,6 +150,55 @@ test('once the third ring phase closes nobody redeploys: last lives', () => {
   assert.equal(view.redeploys, false);
   assert.equal(view.redeployAt, null);
   run(w, 25_000);
+  assert.equal(lifeOf(victim).k, 'dead');
+});
+
+test('a squad wiped while lives are many regroups together on the edge, away from its killers, with class guns', () => {
+  const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES - 1);
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const first = spawnAt(w, 1200, 1000, { team: 'red', loadout: { weapon: 'smg' } });
+  const last = spawnAt(w, 1000, 1200, { team: 'red' });
+  first.gun = 'heavySmg';
+  first.score = 250;
+  finish(w, shooter, first);
+  const events: GameEvent[] = [];
+  for (let i = 0; i < 40 && lifeOf(last).k === 'alive'; i++) { shootOnce(w, shooter, Math.PI / 2, 0); events.push(...w.events, ...collect(w, 300)); }
+  assert.deepEqual(events.filter((e) => e.e === 'wiped'), [{ e: 'wiped', team: 'red', place: null }]);
+  const view = snapshotFor(w, first.id).royale!;
+  const red = view.squads.find((sq) => sq.team === 'red')!;
+  assert.equal(red.place, null, 'not out');
+  assert.ok(red.regroupAt! > w.now);
+  assert.equal(view.redeployAt, red.regroupAt);
+  assert.equal(snapshotFor(w, last.id).royale!.redeployAt, red.regroupAt, 'the whole squad comes back at once');
+  run(w, red.regroupAt! - w.now - 500);
+  assert.equal(lifeOf(first).k, 'dead');
+  assert.equal(w.match.k, 'playing');
+  run(w, 600);
+  assert.equal(lifeOf(first).k, 'alive');
+  assert.equal(lifeOf(last).k, 'alive');
+  assert.ok(Math.hypot(first.x - last.x, first.y - last.y) < 250, 'together');
+  const out = Math.hypot(first.x - WHOLE_MAP.x, first.y - WHOLE_MAP.y);
+  assert.ok(Math.abs(out - ROYALE.edgeR) < 250, `on the edge, ${out.toFixed(0)} px out`);
+  assert.ok(Math.hypot(first.x - shooter.x, first.y - shooter.y) > ROYALE.edgeR, 'away from the squad that wiped them');
+  assert.equal(first.gun, 'smg');
+  assert.equal(first.score, 0);
+  assert.equal(snapshotFor(w, first.id).royale!.squads.find((sq) => sq.team === 'red')!.regroupAt, null);
+});
+
+test('a squad still waiting to regroup when lives turn last is out', () => {
+  const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES - 1);
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
+  spawnAt(w, 4000, 4000, { team: 'green' });
+  finish(w, shooter, victim);
+  step(w, TICK_MS);
+  assert.ok(w.royale!.regroupAt.has('red'));
+  w.royale!.ring = { k: 'shrinking', phase: LAST_LIVES - 1, from: WHOLE_MAP, to: WHOLE_MAP, startAt: w.now, closeAt: w.now + 100 };
+  const events = collect(w, 200);
+  assert.deepEqual(events.filter((e) => e.e === 'wiped'), [{ e: 'wiped', team: 'red', place: 3 }]);
+  run(w, ROYALE.regroupMs);
   assert.equal(lifeOf(victim).k, 'dead');
 });
 

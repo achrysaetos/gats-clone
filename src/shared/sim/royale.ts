@@ -12,7 +12,7 @@ const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} 
 const standing = (w: World, team: Team) => [...w.players.values()].some((p) => p.team === team && p.life.k === 'alive');
 
 export const closedPhases = (ring: Ring) => (ring.k === 'closed' ? RING.length : ring.phase);
-export const redeploysOpen = (r: Royale) => closedPhases(r.ring) < ROYALE.redeployPhases;
+export const redeploysOpen = (r: Royale) => RING[closedPhases(r.ring)]?.lives === 'many';
 
 export function ringView(ring: Ring): RingView {
   switch (ring.k) {
@@ -95,7 +95,7 @@ export function newRoyale(w: World): Royale {
   stockCrates(w, spin);
   const r: Royale = {
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
-    squads: [], out: [], redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(), spin,
+    squads: [], out: [], redeployAt: new Map(), regroupAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(), spin,
   };
   scheduleDrop(w, r, next);
   return r;
@@ -167,7 +167,7 @@ function advanceRing(w: World, r: Royale) {
       r.ring = { k: 'waiting', phase, circle: ring.to, next, shrinkAt: w.now + row.waitMs };
       scheduleDrop(w, r, next);
     }
-    if (!redeploysOpen(r)) r.redeployAt.clear();
+    if (!redeploysOpen(r)) { r.redeployAt.clear(); r.regroupAt.clear(); }
   }
 }
 
@@ -207,17 +207,26 @@ function tickKnocked(w: World, r: Royale, dtMs: number) {
   }
 }
 
+function bringBack(w: World, p: Player) {
+  resetProgress(p);
+  p.lifeKills = 0;
+  moveTo(p, spawnPoint(w, p.team));
+  p.life = freshLife(p, w.now);
+  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'redeployed', by: null });
+}
+
 function redeploy(w: World, r: Royale) {
+  for (const [team, at] of r.regroupAt) {
+    if (w.now < at) continue;
+    r.regroupAt.delete(team);
+    for (const p of w.players.values()) if (p.team === team && p.life.k === 'dead') bringBack(w, p);
+  }
   for (const [id, at] of r.redeployAt) {
     const p = w.players.get(id);
     if (!p || p.life.k !== 'dead') { r.redeployAt.delete(id); continue; }
     if (w.now < at || !standing(w, p.team)) continue;
     r.redeployAt.delete(id);
-    resetProgress(p);
-    p.lifeKills = 0;
-    moveTo(p, spawnPoint(w, p.team));
-    p.life = freshLife(p, w.now);
-    w.events.push({ e: 'life', id: p.id, name: p.name, k: 'redeployed', by: null });
+    bringBack(w, p);
   }
 }
 
@@ -225,15 +234,17 @@ const teamKills = (w: World, team: ColorId) => [...w.players.values()].reduce((n
 
 function eliminate(w: World, r: Royale) {
   for (const p of w.players.values()) if (p.team && !r.squads.includes(p.team)) r.squads.push(p.team);
-  const fallen = r.squads.filter((s) => !r.out.includes(s) && !standing(w, s))
+  const regroups = redeploysOpen(r);
+  const fallen = r.squads.filter((s) => !r.out.includes(s) && !r.regroupAt.has(s) && !standing(w, s))
     .sort((a, b) => teamKills(w, a) - teamKills(w, b) || COLOR_IDS.indexOf(b) - COLOR_IDS.indexOf(a));
   for (const team of fallen) {
-    const place = r.squads.length - r.out.length;
-    r.out.push(team);
+    const place = regroups ? null : r.squads.length - r.out.length;
+    if (regroups) r.regroupAt.set(team, w.now + ROYALE.regroupMs);
+    else r.out.push(team);
     for (const p of w.players.values()) {
       if (p.team !== team) continue;
-      r.redeployAt.delete(p.id);
       if (p.life.k === 'downed') perish(w, r, p, null);
+      r.redeployAt.delete(p.id);
     }
     w.events.push({ e: 'wiped', team, place });
   }

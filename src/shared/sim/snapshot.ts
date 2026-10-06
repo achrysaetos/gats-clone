@@ -147,8 +147,8 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
   return {
     ring: ringView(r.ring),
     redeploys: redeploysOpen(r),
-    squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team) })),
-    redeployAt: r.redeployAt.get(me.id) ?? null,
+    squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team), regroupAt: r.regroupAt.get(team) ?? null })),
+    redeployAt: r.redeployAt.get(me.id) ?? (me.team && me.life.k === 'dead' ? r.regroupAt.get(me.team) : undefined) ?? null,
     drops: [
       ...r.drops.filter((d) => d.landsAt - w.now <= ROYALE.dropNoticeMs),
       ...w.crates.filter((c) => c.tier === 'drop' && c.respawnAt === null).map((c) => ({ x: c.x + half, y: c.y + half, landsAt: 0 })),

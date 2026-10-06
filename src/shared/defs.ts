@@ -467,22 +467,23 @@ export const ZOM = {
 /**
  * Last Squad's ring, one row per phase: the safe circle holds for `waitMs`, then closes over `shrinkMs` to `radius`, inside the circle it closes from.
  * Outside the circle a body loses `dps` of its max health a second, through armor and the spawn shield, and does not regenerate.
+ * Until a phase with `lives: 'many'` closes the dead redeploy and a wiped squad regroups; once the ring is past them every life is the last and a wiped squad is out.
  */
-export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number };
+export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number; lives: 'many' | 'last' };
 export const RING: readonly RingPhase[] = [
-  { waitMs: 60_000, shrinkMs: 30_000, radius: 3200, dps: 0.02 },
-  { waitMs: 45_000, shrinkMs: 25_000, radius: 2500, dps: 0.03 },
-  { waitMs: 40_000, shrinkMs: 20_000, radius: 1900, dps: 0.05 },
-  { waitMs: 30_000, shrinkMs: 20_000, radius: 1300, dps: 0.08 },
-  { waitMs: 25_000, shrinkMs: 15_000, radius: 700, dps: 0.12 },
-  { waitMs: 20_000, shrinkMs: 15_000, radius: 0, dps: 0.2 },
+  { waitMs: 60_000, shrinkMs: 30_000, radius: 3200, dps: 0.02, lives: 'many' },
+  { waitMs: 45_000, shrinkMs: 25_000, radius: 2500, dps: 0.03, lives: 'many' },
+  { waitMs: 40_000, shrinkMs: 20_000, radius: 1900, dps: 0.05, lives: 'many' },
+  { waitMs: 30_000, shrinkMs: 20_000, radius: 1300, dps: 0.08, lives: 'last' },
+  { waitMs: 25_000, shrinkMs: 15_000, radius: 700, dps: 0.12, lives: 'last' },
+  { waitMs: 20_000, shrinkMs: 15_000, radius: 0, dps: 0.2, lives: 'last' },
 ];
 
 export const ROYALE = {
   squadSize: 3,
-  /** Redeploys stay open until this many ring phases have closed; after that every life is the last. */
-  redeployPhases: 3,
   redeployMs: (deaths: number) => 15_000 + 10_000 * Math.max(0, deaths - 1),
+  /** A squad wiped while lives are many comes back together on the edge this long after. */
+  regroupMs: 15_000,
   /** A knocked player's own health, as a share of their max, which enemies shoot through to finish them. */
   knockHpFrac: 0.5,
   /** Each phase's supply drop lands this long into the phase's wait; minimaps show it `dropNoticeMs` before it lands. */

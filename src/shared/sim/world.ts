@@ -152,13 +152,14 @@ export type RoyaleStats = { name: string; kills: number; knocks: number; revives
 
 /**
  * `squads` are those that have fielded a player this match and `out` the ones with nobody left standing, first out first.
- * `redeployAt` holds each dead player still coming back; `killers` who took each player's life, so a wiped squad can watch them; `watching` whom each dead player's camera follows.
+ * `redeployAt` holds each dead player still coming back beside a squadmate, `regroupAt` each wiped squad coming back together; `killers` who took each player's life, so a wiped squad can watch them; `watching` whom each dead player's camera follows.
  */
 export type Royale = {
   ring: Ring;
   squads: ColorId[];
   out: ColorId[];
   redeployAt: Map<number, number>;
+  regroupAt: Map<ColorId, number>;
   drops: Drop[];
   stats: Map<number, RoyaleStats>;
   killers: Map<number, number>;

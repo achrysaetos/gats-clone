@@ -127,7 +127,8 @@ export type GameEvent =
   /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */
-  | { e: 'wiped'; team: ColorId; place: number };
+  /** `place` is null when the squad regroups instead of going out. */
+  | { e: 'wiped'; team: ColorId; place: number | null };
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -143,12 +144,12 @@ export const ringAt = (ring: RingView, now: number): Circle => {
   return { x: lerp(ring.from.x, ring.to.x), y: lerp(ring.from.y, ring.to.y), r: lerp(ring.from.r, ring.to.r) };
 };
 export type Pip = 'up' | 'down' | 'dead';
-/** `place` once the squad is out, 1 for the winner. */
-export type SquadView = { team: ColorId; pips: Pip[]; place: number | null };
+/** `place` once the squad is out, 1 for the winner; `regroupAt` the server time a wiped squad comes back together, else null. */
+export type SquadView = { team: ColorId; pips: Pip[]; place: number | null; regroupAt: number | null };
 /** Where a Last Squad match ended for you: `place` of `of` squads. */
 export type RoyaleResult = { place: number; of: number; kills: number; knocks: number; revives: number };
 /**
- * `redeploys` stays true until the third phase closes. `redeployAt` is the server time you come back, null when no redeploy is coming.
+ * `redeploys` stays true until the third phase closes. `redeployAt` is the server time you come back, alone or with your regrouping squad, null when no redeploy is coming.
  * `drops` are supply drops about to land or landed and still standing; `watch` is the player your camera follows while you are dead.
  */
 export type RoyaleView = {

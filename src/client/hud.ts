@@ -388,7 +388,7 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
       return;
     }
     if (f.e === 'wiped') {
-      const line = `${squadLabel(f.team)} is out · #${f.place}`;
+      const line = f.place === null ? `${squadLabel(f.team)} wiped · regrouping` : `${squadLabel(f.team)} is out · #${f.place}`;
       const pw = ctx.measureText(line).width + SPACE.md * 2 + 8;
       feedRow(ctx, right - pw, y, pw, hud.me?.team === f.team);
       ctx.fillStyle = TEAM_COLORS[f.team];

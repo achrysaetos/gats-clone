@@ -26,7 +26,7 @@ const freshActivity = (): Activity => ({ aliveTicks: 0, still: 0, travel: 0, sho
 
 type Spec = { map: MapId; seed: number; proxy: boolean };
 type Result = {
-  spec: Spec; won: boolean; ms: number; ringDeaths: number; playerDeaths: number; ringWipes: number; wipes: number;
+  spec: Spec; won: boolean; ms: number; ringDeaths: number; playerDeaths: number; ringWipes: number; wipes: number; regroups: number;
   takedownsByPhase: number[]; phaseMs: number[];
   squadsLeftByMinute: number[]; lastFightPhase: number; survivorStages: number[];
   drops: number; contested: number; thinkMs: number; ticks: number; proxyTeam: ColorId | null; winner: ColorId | null; activity: Activity[];
@@ -47,7 +47,7 @@ function play(spec: Spec): Result {
     }
   }
   const res: Result = {
-    spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringWipes: 0, wipes: 0, takedownsByPhase: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
+    spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringWipes: 0, wipes: 0, regroups: 0, takedownsByPhase: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
     squadsLeftByMinute: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, thinkMs: 0, ticks: 0, proxyTeam, winner: null, activity: [],
   };
   const dropSeen = new Map<number, boolean>();
@@ -71,7 +71,8 @@ function play(spec: Spec): Result {
         lastCause.set(victim, ringBlow(e) ? 'ring' : 'player');
       }
       if (e.e === 'kill' && e.weapon !== 'Ring') { res.takedownsByPhase[phase]++; res.lastFightPhase = phase; }
-      if (e.e === 'wiped') {
+      if (e.e === 'wiped' && e.place === null) res.regroups++;
+      else if (e.e === 'wiped') {
         res.wipes++;
         const members = [...w.players.values()].filter((p) => p.team === e.team);
         if (members.every((p) => lastCause.get(p.id) === 'ring')) res.ringWipes++;
@@ -154,7 +155,7 @@ if (!isMainThread) {
     const proxied = rs.filter((x) => x.proxyTeam);
     const stages = rs.flatMap((x) => x.survivorStages);
     console.log(`${label.padEnd(10)} matches ${rs.length}  winner ${won.length}/${rs.length}  median ${min(median(rs.map((x) => x.ms)))} min (${min(Math.min(...rs.map((x) => x.ms)))}..${min(Math.max(...rs.map((x) => x.ms)))})` +
-      `  ring deaths ${pc(sum(rs.map((x) => x.ringDeaths)) / Math.max(1, deaths))} of ${deaths}  ring wipes ${sum(rs.map((x) => x.ringWipes))}/${sum(rs.map((x) => x.wipes))}` +
+      `  ring deaths ${pc(sum(rs.map((x) => x.ringDeaths)) / Math.max(1, deaths))} of ${deaths}  ring wipes ${sum(rs.map((x) => x.ringWipes))}/${sum(rs.map((x) => x.wipes))}  regroups ${sum(rs.map((x) => x.regroups))}` +
       `  last fight in last two phases ${lastTwo}/${won.length}  drops contested ${sum(rs.map((x) => x.contested))}/${sum(rs.map((x) => x.drops))}` +
       `  think ${(sum(rs.map((x) => x.thinkMs)) / sum(rs.map((x) => x.ticks))).toFixed(2)} ms/tick` +
       (proxied.length ? `  proxy wins ${proxied.filter((x) => x.winner === x.proxyTeam).length}/${proxied.length} (${pc(proxied.filter((x) => x.winner === x.proxyTeam).length / proxied.length)})` : ''));
