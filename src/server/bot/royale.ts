@@ -4,7 +4,7 @@ import type { BotDecision, BotMemory } from '../bots.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
 import { perceive } from './awareness.ts';
-import { bandFor, HOME_LEASH_PX, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx } from './intent.ts';
+import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx } from './intent.ts';
 import { act } from './motor.ts';
 import { dist, isOpen, type Point } from './nav.ts';
 
@@ -13,8 +13,10 @@ const SPARE_MS = 15_000;
 /** Walking takes longer than the straight line says. */
 const DETOUR = 1.4;
 const EDGE_PX = 120;
-/** How far out from the circle's centre a squad's anchor may sit, as a share of the radius. */
+/** How far out from the circle's centre a squad's anchor may sit: this far in from the edge, or this share of the radius on a small circle. */
+const ANCHOR_EDGE_PX = 400;
 const ANCHOR_REACH = 0.6;
+/** A bot holds cover this close to its squad's anchor; any plan of its own that goes farther is dropped. */
 const HOME_R = 220;
 const REVIVE_REACH_PX = 900;
 const REVIVE_STOP_PX = ZOM.reviveRange - 20;
@@ -40,10 +42,11 @@ function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
   const mates = [me, ...snap.minimap.filter((m) => m.team === team && m.pingAge === null)];
   const at = { x: mates.reduce((s, m) => s + m.x, 0) / mates.length, y: mates.reduce((s, m) => s + m.y, 0) / mates.length };
   const squad = COLOR_IDS.indexOf(team);
-  const drop = royale.drops.find((d, i) => inside(d, circle, 0) && dist(d, at) < DROP_REACH_PX && ((squad * 7 + royale.ring.phase * 3 + i * 5) % 10) / 10 < DROP_ODDS);
+  const drop = royale.drops.find((d) => inside(d, circle, 0) && dist(d, at) < DROP_REACH_PX && ((squad * 7 + royale.ring.phase * 3 + Math.floor(d.x + d.y)) % 10) / 10 < DROP_ODDS);
   if (drop) return drop;
   const d = dist(at, circle);
-  const k = d > circle.r * ANCHOR_REACH ? (circle.r * ANCHOR_REACH) / d : 1;
+  const reach = Math.max(circle.r - ANCHOR_EDGE_PX, circle.r * ANCHOR_REACH);
+  const k = d > reach ? reach / d : 1;
   for (let f = k; f >= 0; f -= 0.1) {
     const p = { x: circle.x + (at.x - circle.x) * f, y: circle.y + (at.y - circle.y) * f };
     if (p.x > 0 && p.y > 0 && p.x < arena.size && p.y < arena.size && isOpen(arena.nav, p)) return p;
@@ -54,11 +57,8 @@ function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
 const goalOf = (i: Intent): Point | null => {
   switch (i.k) {
     case 'patrol': return i.goal;
-    case 'takePosition': case 'peekAndHide': case 'reloadInCover': return i.spot;
-    case 'retreatAndHeal': return i.spot;
-    case 'search': return i.at;
-    case 'flank': return i.via;
-    case 'engage': return null;
+    case 'takePosition': case 'peekAndHide': case 'reloadInCover': case 'retreatAndHeal': return i.spot;
+    case 'search': case 'flank': case 'engage': return null;
   }
 };
 
@@ -77,7 +77,7 @@ export function crawlThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, m
 }
 
 /**
- * The versus brain, held to the squad: idle bots patrol round the squad's anchor inside the ring, any plan that strays out of the ring or far from the anchor is dropped,
+ * The versus brain, held to the squad: idle bots hold cover round the squad's anchor inside the ring, any plan that strays out of the ring or far from the anchor is dropped,
  * a bot caught outside walks back in whatever it is fighting, and a knocked squadmate in reach is revived once nobody standing is in sight.
  */
 export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
@@ -85,7 +85,7 @@ export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
   const { circle, urgent } = goalCircle(royale.ring, me, snap.self.speed, now);
-  const home = { at: anchorFor(snap, royale, me, circle, arena), r: HOME_R };
+  const home = { at: anchorFor(snap, royale, me, circle, arena), r: HOME_R, face: { x: circle.x, y: circle.y } };
   const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand, home };
   const current = ringAt(royale.ring, now);
   const outside = !inside(me, circle, EDGE_PX) && (urgent || dist(me, current) > current.r);
@@ -98,8 +98,10 @@ export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, 
   else if (downed && !fighting) intent = walkTo(downed, 30);
   else {
     intent = nextIntent(prev, view, ctx);
+    // Squads that hunt leads and flank across the map wipe each other out long before the last circles, so a bot fights from its squad's cover.
     const goal = goalOf(intent);
-    if (goal && (!inside(goal, circle, EDGE_PX) || dist(goal, home.at) > HOME_LEASH_PX)) intent = startIntent({ k: 'patrol', goal: openSpot(arena, rand, home) }, ctx);
+    const strays = intent.k === 'search' || intent.k === 'flank' || (goal !== null && (!inside(goal, circle, EDGE_PX) || dist(goal, home.at) > HOME_R));
+    if (strays) intent = startIntent({ k: 'patrol', goal: openSpot(arena, rand, home) }, ctx);
   }
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   const reviving = !outside && !fighting && downed !== null && dist(me, downed) <= REVIVE_STOP_PX;

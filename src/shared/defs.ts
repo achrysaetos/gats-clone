@@ -469,12 +469,16 @@ export const ZOM = {
  * Outside the circle a body loses `dps` of its max health a second, through armor and the spawn shield, and does not regenerate.
  */
 export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number };
+/**
+ * Measured with scripts/bench-royale.ts: the first draft's circles (2600, 1600, 900, 450, 150) packed five squads into 900 px by the third phase,
+ * where they wiped each other out before the last two phases in every match.
+ */
 export const RING: readonly RingPhase[] = [
-  { waitMs: 60_000, shrinkMs: 30_000, radius: 2600, dps: 0.02 },
-  { waitMs: 45_000, shrinkMs: 25_000, radius: 1600, dps: 0.03 },
-  { waitMs: 40_000, shrinkMs: 20_000, radius: 900, dps: 0.05 },
-  { waitMs: 30_000, shrinkMs: 20_000, radius: 450, dps: 0.08 },
-  { waitMs: 25_000, shrinkMs: 15_000, radius: 150, dps: 0.12 },
+  { waitMs: 60_000, shrinkMs: 30_000, radius: 3200, dps: 0.02 },
+  { waitMs: 45_000, shrinkMs: 25_000, radius: 2500, dps: 0.03 },
+  { waitMs: 40_000, shrinkMs: 20_000, radius: 1900, dps: 0.05 },
+  { waitMs: 30_000, shrinkMs: 20_000, radius: 1300, dps: 0.08 },
+  { waitMs: 25_000, shrinkMs: 15_000, radius: 700, dps: 0.12 },
   { waitMs: 20_000, shrinkMs: 15_000, radius: 0, dps: 0.2 },
 ];
 
