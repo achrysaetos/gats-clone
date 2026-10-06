@@ -27,18 +27,18 @@ function hitsTaken(armor: ArmorId, shots: number, kinds: { shooter?: PlayerKind;
   return taken;
 }
 
-test('heavy armor takes 70% of what no armor takes from the same shot, on every hit of the life', () => {
+test('heavy armor takes 76% of what no armor takes from the same shot, on every hit of the life', () => {
   const bare = hitsTaken('none', 3);
   const heavy = hitsTaken('heavy', 3);
   assert.deepEqual(bare, [PISTOL_DMG, PISTOL_DMG, PISTOL_DMG]);
-  for (const [i, h] of heavy.entries()) assert.ok(Math.abs(h - 0.7 * bare[i]!) < 1e-9, `hit ${i + 1}: heavy took ${h}, bare took ${bare[i]}`);
+  for (const [i, h] of heavy.entries()) assert.ok(Math.abs(h - 0.76 * bare[i]!) < 1e-9, `hit ${i + 1}: heavy took ${h}, bare took ${bare[i]}`);
 });
 
-test('armor blocks after the human rule: a human shot on a heavy human takes the human multiple of 70% of the raw damage, a bot shot 70%', () => {
+test('armor blocks after the human rule: a human shot on a heavy human takes the human multiple of 76% of the raw damage, a bot shot 76%', () => {
   const [byHuman] = hitsTaken('heavy', 1, { shooter: 'human', victim: 'human' });
   const [byBot] = hitsTaken('heavy', 1, { victim: 'human' });
-  assert.ok(Math.abs(byHuman! - HP_MULTIPLIER.human * 0.7 * PISTOL_DMG) < 1e-9, `human on human took ${byHuman}`);
-  assert.ok(Math.abs(byBot! - 0.7 * PISTOL_DMG) < 1e-9, `bot on human took ${byBot}`);
+  assert.ok(Math.abs(byHuman! - HP_MULTIPLIER.human * 0.76 * PISTOL_DMG) < 1e-9, `human on human took ${byHuman}`);
+  assert.ok(Math.abs(byBot! - 0.76 * PISTOL_DMG) < 1e-9, `bot on human took ${byBot}`);
 });
 
 test('piercing bullets bypass armor entirely', () => {

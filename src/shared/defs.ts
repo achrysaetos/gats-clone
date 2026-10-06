@@ -144,9 +144,9 @@ export type ArmorId = (typeof ARMOR_IDS)[number];
 /** Armor is a fixed loadout status: it blocks `blockFrac` of every hit that does not pierce, for the whole life, and slows by `speedMul`. */
 export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; speedMul: number }> = {
   none: { name: 'No armor', blockFrac: 0, speedMul: 1.0 },
-  light: { name: 'Light', blockFrac: 0.1, speedMul: 0.93 },
-  medium: { name: 'Medium', blockFrac: 0.2, speedMul: 0.86 },
-  heavy: { name: 'Heavy', blockFrac: 0.3, speedMul: 0.79 },
+  light: { name: 'Light', blockFrac: 0.08, speedMul: 0.93 },
+  medium: { name: 'Medium', blockFrac: 0.16, speedMul: 0.86 },
+  heavy: { name: 'Heavy', blockFrac: 0.24, speedMul: 0.79 },
 };
 
 export const COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
