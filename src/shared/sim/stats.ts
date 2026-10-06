@@ -47,7 +47,6 @@ function bloomMul({ bloom }: GunRules, sprayShot: number): number {
 /** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */
 export const isSteady = (gun: GunId, sinceMoveMs: number): boolean => sinceMoveMs > 0 && sinceMoveMs >= rulesOf(GUNS[gun]).steadyMs;
 
-/** A scope stretches the view only once its owner is steady, so seeing past everyone else costs standing still. */
 export function viewRadiusOf(p: Player, now: number): number {
   const view = effectiveStats(p).viewRadius;
   return p.life.k === 'alive' && isSteady(p.gun, now - p.life.lastMoveAt) ? view * rulesOf(GUNS[p.gun]).viewMul : view;

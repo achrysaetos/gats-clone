@@ -29,7 +29,7 @@ console.log(`kill@d: a person's expected seconds to kill a bare person strafing 
 console.log(row(cols.map(([c]) => c)));
 for (const id of TREE_ORDER) {
   const g = GUNS[id], o = old[id];
-  const k = (hp: number, armor: 'none' | 'heavy') => { const r = perfectKill(id, hp, armor); return `${r.hits}/${s(r.ms)}`; };
+  const k = (hp: number, armor: 'none' | 'heavy') => { const r = perfectKill(id, hp, armor); return `${r.hits}/${s(r.firstToLastMs)}`; };
   console.log(row([
     `${'  '.repeat(g.stage)}${g.name}`, String(pull(g)), msPerRound(g).toFixed(0), ((pull(g) * 1000) / msPerRound(g)).toFixed(0),
     String(g.range), (WORLD.viewRadius * rulesOf(g).viewMul).toFixed(0), String(g.mag), String(g.reloadMs), g.moveMul.toFixed(2),
