@@ -205,3 +205,29 @@ test('a human who joins or rejoins by night sits out until dawn, so leaving cann
   assert.equal(w.run!.phase.k, 'day');
   assert.equal(lifeOf(back.p).k, 'alive', 'up at dawn');
 });
+
+test('a player who bleeds out at night is sent back from the Bastion after a wait, for survivors, and waits for dawn once too few are left', () => {
+  const w = nightWorld();
+  holdNight(w);
+  const p = spawnAt(w, X, Y + 600);
+  downByBite(w, p);
+  w.zombies = w.zombies.filter((z) => z.attackAt === Infinity);
+  run(w, ZOM.bleedOutMs + 500);
+  assert.equal(lifeOf(p).k, 'dead');
+  const before = w.run!.survivors;
+  run(w, ZOM.reinforce.ms - 1000);
+  assert.equal(lifeOf(p).k, 'dead', 'not before the wait');
+  run(w, 1500);
+  assert.equal(lifeOf(p).k, 'alive', 'back after the wait');
+  const core = MAPS.outpost.siege!.core;
+  assert.ok(Math.hypot(p.x - core.x, p.y - core.y) < 200, 'at the Bastion');
+  assert.equal(w.run!.survivors, before - ZOM.reinforce.survivors);
+  assert.equal(w.run!.lost, ZOM.reinforce.survivors);
+
+  w.run!.survivors = ZOM.reinforce.survivors;
+  downByBite(w, p);
+  w.zombies = w.zombies.filter((z) => z.attackAt === Infinity);
+  run(w, ZOM.bleedOutMs + ZOM.reinforce.ms + 1000);
+  assert.equal(lifeOf(p).k, 'dead', 'nobody left to send');
+  assert.equal(w.run!.survivors, ZOM.reinforce.survivors);
+});

@@ -31,7 +31,7 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   const life = p.life;
   if (life.k !== 'downed') return;
   if (w.now >= life.bleedOutAt) {
-    p.life = { k: 'dead', respawnAt: Infinity };
+    p.life = { k: 'dead', respawnAt: w.now + ZOM.reinforce.ms };
     p.deaths++;
     w.events.push({ e: 'life', id: p.id, name: p.name, k: 'bledOut', by: null });
     return;
@@ -75,7 +75,19 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
   run.scrap -= hp * perHp;
 }
 
+function reinforce(w: World, run: Run) {
+  for (const p of w.players.values()) {
+    if (p.life.k !== 'dead' || w.now < p.life.respawnAt || run.survivors <= ZOM.reinforce.survivors) continue;
+    run.survivors -= ZOM.reinforce.survivors;
+    run.lost += ZOM.reinforce.survivors;
+    placeAtCore(w, p);
+    p.life = freshLife(p, w.now);
+    w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: null });
+  }
+}
+
 function tickSquad(w: World, run: Run, dtMs: number) {
+  if (run.phase.k === 'night') reinforce(w, run);
   const revivers = new Set<Player>();
   for (const p of w.players.values()) tickDowned(w, run, p, dtMs, revivers);
   for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) service(w, run, p, dtMs);

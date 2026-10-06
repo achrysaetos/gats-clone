@@ -409,6 +409,8 @@ export const ZOM = {
   /** Who shelters in the core: one is lost for each `coreHp / survivors` it falls below whole, and each one left pays `scrapPerSurvivor` at dawn. */
   survivors: 50,
   scrapPerSurvivor: 2,
+  /** A squad player who bleeds out at night is back at the Bastion after `ms`, and `survivors` of those sheltering there are lost to send them; with too few left they wait for dawn. */
+  reinforce: { ms: 15_000, survivors: 3 },
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
   coreArmor: 0.6,
   /** Half the side of the square core at the map's center. */

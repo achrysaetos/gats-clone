@@ -20,6 +20,7 @@ type Watch = {
   zombie: { id: number; x: number; y: number; d: number } | null;
   downed: PlayerView | null;
   needsTending: { x: number; y: number } | null;
+  dry: { x: number; y: number } | null;
   coreMendable: boolean;
   next: { kind: BuildingKind; cx: number; cy: number; x: number; y: number } | null;
 };
@@ -38,6 +39,8 @@ type Rule = (s: Watch) => Errand | null;
 
 const revive: Rule = (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 };
 const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.needsTending) : null;
+/** A turret run dry mid-fight is worth more than a bot's own rounds, so it is reloaded unless a zombie is already on the bot. */
+const refillDry: Rule = (s) => s.dry && (!s.zombie || s.zombie.d > KITE_PX) ? mendAt(s, s.dry) : null;
 const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
 const buildNext: Rule = (s) => s.next && { x: s.next.x, y: s.next.y, use: false };
 const holdPost: Rule = (s) => {
@@ -48,7 +51,7 @@ const holdPost: Rule = (s) => {
   return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
 };
 
-const SIEGE_RULES: readonly Rule[] = [revive, mendBuilding, buildNext, mendCore, holdPost];
+const SIEGE_RULES: readonly Rule[] = [revive, refillDry, mendBuilding, buildNext, mendCore, holdPost];
 
 /** What the squad's bots put up, in order, in cells out from the core's center: a sentry each side first, then a turret for each new kind of night. */
 const BASTION_PLAN: readonly { kind: BuildingKind; dx: number; dy: number }[] = [
@@ -109,11 +112,15 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     .filter((b) => b.hp < 10 || (b.kind !== 'wall' && b.ammo < 10 && run.scrap > 0))
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
+  const dry = run.scrap > 0 ? (snap.buildings ?? [])
+    .filter((b) => b.kind !== 'wall' && b.ammo <= 2)
+    .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
+    .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS) : [];
   // The bank is the humans' to spend when there are any; bots build only for a squad of bots, or for the one player they stand in for.
   const plan = snap.players.some((p) => p.kind === 'human' && p.id !== me.id) ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const watch: Watch = {
-    me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), next: buildable,
+    me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), dry: nearest(me, dry), next: buildable,
     coreMendable: run.core.hp < run.core.maxHp && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0),
   };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;

@@ -242,7 +242,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     respawn.hidden = deathLoadout.hidden = !!run;
     if (run) {
       // Dawn gets everyone up, so a death this run can only be tonight's bleed-out; a night joiner has none.
-      const text = outTillDawnText(run, snap.self.deaths > 0);
+      const text = outTillDawnText(run, snap.self.deaths > 0, snap.self.respawnIn);
       deathTitle.textContent = text.title;
       deathSub.textContent = text.sub;
       deathCause.hidden = deathLost.hidden = true;
