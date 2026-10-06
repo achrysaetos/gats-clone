@@ -26,7 +26,7 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
   const aim = Math.atan2(at.y - y, at.x - x);
   const reach = def.lobbed ? Math.max(0, Math.hypot(at.x - x, at.y - y) - def.muzzle) : def.range;
   for (let i = 0; i < def.pellets; i++) {
-    const a = aim + (rand(w) - 0.5) * def.spread * 2;
+    const a = aim + (def.pellets === 1 ? (rand(w) - 0.5) * def.spread * 2 : pelletOffset(i, def.pellets, def.spread));
     w.bullets.push({
       id: newId(w), owner: by.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
       vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: reach, damage: def.damage, piercing: false,
@@ -38,6 +38,9 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
 
 const nextShot = (at: number, now: number, dtMs: number, gapMs: number) => (now - at < dtMs ? at : now) + gapMs;
 
+
+/** A many-pellet turret fires an even fan, so the tracers a client draws from the shot event are where the rounds go. */
+export const pelletOffset = (i: number, pellets: number, spread: number): number => (i / (pellets - 1) - 0.5) * spread * 2;
 export function tickTurrets(w: World, run: Run, core: { x: number; y: number }, dtMs: number) {
   if (w.zombies.length === 0) return;
   const cover = coverRects(w);

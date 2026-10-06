@@ -4,6 +4,7 @@ import { BASTION_GUN, BUILDINGS, ZOM, ZOMBIES, type TurretKind, type ZombieKind 
 import { removePlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type Turret, type World } from '../src/shared/sim/world.ts';
+import { scheduleEffects } from '../src/client/eventclock.ts';
 import { press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 /** A turret on open ground well west of the core. */
@@ -97,7 +98,11 @@ test('a scatter fires a fan of pellets in one shot, and only at close range', ()
   const z = addZombie(w, 'walker', TX, TY - 120);
   step(w, TICK_MS);
   assert.equal(shotsIn(w).length, 1, 'one shot');
-  assert.equal(w.bullets.filter((b) => b.turret === 'scatter').length, BUILDINGS.scatter.turret.pellets);
+  const rounds = w.bullets.filter((b) => b.turret === 'scatter');
+  assert.equal(rounds.length, BUILDINGS.scatter.turret.pellets);
+  const viewer = w.players.values().next().value!;
+  const drawn = scheduleEffects(snapshotFor(w, viewer.id, w.events), 0).flatMap(({ fx }) => (fx.kind === 'tracer' && fx.turret === 'scatter' ? [fx.angle] : []));
+  assert.deepEqual(rounds.map((b) => Math.atan2(b.vy, b.vx).toFixed(1)), drawn.map((a) => a.toFixed(1)), 'the tracers a client draws are where the pellets fly');
   assert.equal(t.ammo, BUILDINGS.scatter.turret.ammo - 1, 'for one round of ammo');
   run(w, 300);
   assert.ok(1e9 - z.hp >= 3 * BUILDINGS.scatter.turret.damage, `most pellets hit up close, ${1e9 - z.hp}`);

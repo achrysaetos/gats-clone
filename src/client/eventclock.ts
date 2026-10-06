@@ -1,5 +1,6 @@
 import { BUILDINGS, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
 import { segmentEntersCircleAt } from '../shared/sim/movement.ts';
+import { pelletOffset } from '../shared/sim/turrets.ts';
 import type { GameEvent, Snapshot } from '../shared/protocol.ts';
 import type { Effect } from './state.ts';
 
@@ -20,7 +21,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
         return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: ev.reach };
       }
       return Array.from({ length: def.pellets }, (_, i) => {
-        const angle = ev.angle + (def.pellets === 1 ? 0 : (i / (def.pellets - 1) - 0.5) * def.spread * 2);
+        const angle = ev.angle + (def.pellets === 1 ? 0 : pelletOffset(i, def.pellets, def.spread));
         const x = ev.x + Math.cos(angle) * def.muzzle, y = ev.y + Math.sin(angle) * def.muzzle;
         const dx = Math.cos(angle) * def.range, dy = Math.sin(angle) * def.range;
         const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]].radius) ?? 1));
