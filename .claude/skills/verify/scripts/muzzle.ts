@@ -2,16 +2,11 @@
 // Usage: LAG=<one-way ms> JITTER=<ms> node muzzle.ts <run-dir> [seconds=15]
 // Two lagged browsers walk the map's paths to each other in FFA (failing when they never meet), then strafe, turn and tap the pistol beside each other. For every round the
 // first page draws, shrapnel aside, it measures how far its first drawn position sits from the drawn muzzle of whoever fired it.
-import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import WebSocket from 'ws';
-import { GUNS, WORLD } from '../../../../src/shared/defs.ts';
+import { GUNS } from '../../../../src/shared/defs.ts';
 import type { WallView } from '../../../../src/shared/protocol.ts';
-import { findPath, navGrid, type NavGrid } from '../../../../src/server/bot/nav.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { dirKey, hold, joinFromMenu, navGridFor, openPage, pathStep, respawnIfDead, sleep, type Dir, type Page } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: LAG=<ms> JITTER=<ms> node muzzle.ts <run-dir> [seconds]'); process.exit(2); }
@@ -22,7 +17,6 @@ const BASE = `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}
 const EV = join(RUN, 'evidence');
 mkdirSync(EV, { recursive: true });
 const LOG = join(EV, 'muzzle.log');
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const VIEW = { w: 1280, h: 800 };
 const TAP_MS = GUNS.pistol.fireMs + 40;
 const STRAFE_MS = 500;
@@ -30,84 +24,39 @@ const TURN_RAD_PER_S = 3;
 const MAX_GAP = 25;
 const NEAR = 380;
 const MIN_ROUNDS = 5;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 type Round = { id: number; own: boolean; owner: number; gun: string | null; x: number; y: number; muzzle: { x: number; y: number } | null };
 type Arena = { worldSize: number; walls: WallView[] };
-type Browser = {
-  chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; exceptions: string[];
-  map: () => Arena | null; navFor: { walls: WallView[]; grid: NavGrid } | null;
-};
+type Browser = Page & { id: number; map: () => Arena | null };
 
 async function open(name: string): Promise<Browser> {
-  const port = await freePort();
-  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-muzzle-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-  let target = '';
-  for (let i = 0; i < 50 && !target; i++) {
-    try {
-      const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-      target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-    } catch {}
-    if (!target) await sleep(200);
-  }
-  const page = new WebSocket(target);
-  await new Promise((r) => page.once('open', r));
-  let nextId = 1;
   let id: number | null = null;
   let map: Arena | null = null;
-  const exceptions: string[] = [];
-  const pending = new Map<number, (v: any) => void>();
-  page.on('message', (raw) => {
-    const m = JSON.parse(String(raw));
-    if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-    if (m.method === 'Network.webSocketFrameReceived') {
-      const msg = JSON.parse(m.params.response.payloadData);
+  const page = await openPage({
+    profile: 'skirmish-muzzle-',
+    viewport: { width: VIEW.w, height: VIEW.h },
+    onEvent: (method, params) => {
+      if (method !== 'Network.webSocketFrameReceived') return;
+      const msg = JSON.parse(params.response.payloadData);
       if (msg.t === 'welcome') id = msg.id;
       if (msg.t === 'welcome' || msg.t === 'walls') map = { worldSize: msg.worldSize, walls: msg.walls };
-    } else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    },
   });
-  const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const i = nextId++; pending.set(i, r); page.send(JSON.stringify({ id: i, method, params })); });
-  const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.value;
-  await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-  await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-  await cdp('Page.navigate', { url: `${BASE}/?dev&lag=${LAG}&jitter=${JITTER}` });
-  for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-  await js(`localStorage.setItem('skirmish.loadout', JSON.stringify({ weapon: 'pistol', armor: 'none', color: 'red' })); location.reload()`);
-  await sleep(500);
-  for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-  await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${name}'; document.getElementById('play').click()`);
+  await page.cdp('Page.navigate', { url: `${BASE}/?dev&lag=${LAG}&jitter=${JITTER}` });
+  await joinFromMenu(page, { name, loadout: { weapon: 'pistol', armor: 'none', color: 'red' } });
   for (let i = 0; i < 50 && id === null; i++) await sleep(100);
   if (id === null) throw new Error(`${name} did not join`);
-  return { chrome, cdp, js, id, exceptions, map: () => map, navFor: null };
+  return { ...page, id, map: () => map };
 }
-
-const KEYS = { left: ['KeyA', 'a', 65], right: ['KeyD', 'd', 68], up: ['KeyW', 'w', 87], down: ['KeyS', 's', 83] } as const;
-type Key = keyof typeof KEYS;
-const key = (b: Browser, type: 'keyDown' | 'keyUp', k: keyof typeof KEYS) => b.cdp('Input.dispatchKeyEvent', { type, code: KEYS[k][0], key: KEYS[k][1], windowsVirtualKeyCode: KEYS[k][2] });
 
 const where = async (b: Browser): Promise<{ x: number; y: number }> => b.js(`skirmishDev.drawnSelf()`);
-const respawnIfDead = async (b: Browser) => {
-  if (await b.js(`!document.getElementById('death').hidden && !document.getElementById('respawn').disabled`)) await b.js(`document.getElementById('respawn').click()`);
-};
 
-function nav(b: Browser): NavGrid {
-  const m = b.map(), walls = m?.walls ?? [];
-  if (b.navFor?.walls !== walls) b.navFor = { walls, grid: navGrid(m?.worldSize ?? 0, walls, WORLD.playerRadius) };
-  return b.navFor.grid;
-}
-
-async function towards(b: Browser, partner: Browser): Promise<Key[]> {
+async function towards(b: Browser, partner: Browser): Promise<Dir[]> {
   const [a, p] = await Promise.all([where(b), where(partner)]);
   if (Math.hypot(p.x - a.x, p.y - a.y) < NEAR) return [];
-  const next = findPath(nav(b), a, p, 20_000)?.find((q) => Math.hypot(q.x - a.x, q.y - a.y) > 30) ?? p;
-  const dx = next.x - a.x, dy = next.y - a.y, len = Math.hypot(dx, dy);
-  const keys: Key[] = [];
-  if (Math.abs(dx) > Math.max(20, len * 0.38)) keys.push(dx > 0 ? 'right' : 'left');
-  if (Math.abs(dy) > Math.max(20, len * 0.38)) keys.push(dy > 0 ? 'down' : 'up');
-  return keys;
+  const m = b.map();
+  return pathStep(navGridFor(m?.worldSize ?? 0, m?.walls ?? []), a, p);
 }
 
 async function gather(a: Browser, b: Browser, untilAt: number) {
@@ -120,27 +69,21 @@ async function gather(a: Browser, b: Browser, untilAt: number) {
   return false;
 }
 
-async function hold(b: Browser, keys: Key[], ms: number) {
-  for (const k of keys) await key(b, 'keyDown', k);
-  await sleep(ms);
-  for (const k of keys) await key(b, 'keyUp', k);
-}
-
 async function play(b: Browser, partner: Browser, untilAt: number, onTap: (n: number) => Promise<void>) {
   const start = performance.now();
-  let held: Key[] = ['right'];
-  let strafe: Key = 'right';
-  await key(b, 'keyDown', 'right');
+  let held: Dir[] = ['right'];
+  let strafe: Dir = 'right';
+  await dirKey(b, 'keyDown', 'right');
   let nextSwitch = start + STRAFE_MS, nextTap = start, taps = 0;
   while (performance.now() < untilAt) {
     const now = performance.now();
     await respawnIfDead(b);
     if (now >= nextSwitch) {
-      for (const k of held) await key(b, 'keyUp', k);
+      for (const k of held) await dirKey(b, 'keyUp', k);
       const back = await towards(b, partner);
       strafe = strafe === 'right' ? 'left' : 'right';
       held = back.length ? back : [strafe];
-      for (const k of held) await key(b, 'keyDown', k);
+      for (const k of held) await dirKey(b, 'keyDown', k);
       nextSwitch = now + STRAFE_MS;
     }
     const a = ((now - start) / 1000) * TURN_RAD_PER_S;
@@ -154,14 +97,14 @@ async function play(b: Browser, partner: Browser, untilAt: number, onTap: (n: nu
     }
     await sleep(16);
   }
-  for (const k of held) await key(b, 'keyUp', k);
+  for (const k of held) await dirKey(b, 'keyUp', k);
 }
 
 const shooter = await open('Shooter');
 const other = await open('Other');
 const met = await gather(shooter, other, performance.now() + 45_000);
 log(`${met ? 'ok  ' : 'FAIL'} the two browsers met within ${NEAR}px before shooting`);
-if (!met) { log('RESULT FAIL'); shooter.chrome.kill(); other.chrome.kill(); process.exit(1); }
+if (!met) { log('RESULT FAIL'); shooter.close(); other.close(); process.exit(1); }
 await shooter.js(`skirmishDev.firstRounds()`);
 const rounds: Round[] = [];
 /** The shooter's view `after` ms past a shot's round trip. */
@@ -216,5 +159,5 @@ const botCopies = rounds.filter((r) => !r.own && r.owner !== other.id && r.id > 
 log(`note ${botCopies.length} server copies of bot rounds drawn, ${botCopies.filter((r) => r.muzzle).length} with their shooter in view`);
 const pass = checks.every(Boolean) && serverCopies === 0 && exceptions.length === 0;
 log(pass ? 'RESULT PASS' : 'RESULT FAIL');
-shooter.chrome.kill(); other.chrome.kill();
+shooter.close(); other.close();
 process.exit(pass ? 0 : 1);
