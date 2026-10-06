@@ -1,5 +1,6 @@
 /// <reference types="node" />
 // Usage: node drive.ts <run-dir> [step ...]   Steps: menu account join move fire latency chat leave (default, in order), plus touch, mute, loadout (before join), restart, reconnect and expire on request.
+// reconnect needs the page in a match: put it after join with no leave or restart between (restart reloads to the menu).
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
@@ -364,7 +365,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('HUD is back and the overlay is gone', await until(async () => js(`document.getElementById('reconnect').hidden && document.getElementById('menu').hidden && !document.getElementById('hud').hidden`)));
     expect('own player present in snapshots from the new server', await until(() => !!me()));
     expect('observer on the restarted server lists the player', await until(() => observerBoard.includes(NAME), 6000));
-    expect('chat says the player reconnected', (await js(`document.getElementById('chat-log').textContent`)).includes('Reconnected.'));
+    expect('chat says the player reconnected', await until(async () => (await js(`document.getElementById('chat-log').textContent`)).includes('Reconnected.')));
     await shot('reconnected');
   },
   async expire() {
