@@ -1,4 +1,4 @@
-import { BUILDING_KINDS, BUILDINGS, nightOf, SIDES, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, nightOf, SIDES, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
 import { buildRefusal, cellOf, coreRectAt, refundFor, serviceTarget, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -21,11 +21,17 @@ const sidesOf = (night: number) => {
   return from.length === SIDES.length ? 'every side' : `the ${listOf(from)}`;
 };
 
-/** What a night brings and from where, by the night table: the worst kinds first, so walkers come last. */
-export function forecast(night: number): string {
+/** The squad's share of each night's horde, as the server will scale it. */
+export const squadShare = (players: readonly Pick<PlayerView, 'kind'>[]) =>
+  ZOM.hordeShare({ humans: players.filter((p) => p.kind === 'human').length, bots: players.filter((p) => p.kind !== 'human').length });
+
+/** What a night brings for a squad with this `share` of the horde and from where, by the night table: the deadliest kinds first, by what each pays, then how many in all. */
+export function forecast(night: number, share: number): string {
   const def = nightOf(night);
-  const kinds = listOf([...ZOMBIE_KINDS].reverse().filter((k) => def.horde[k]).map((k) => ZOMBIES[k].many));
-  return `${kinds[0]!.toUpperCase()}${kinds.slice(1)} from ${sidesOf(night)}`;
+  const present = ZOMBIE_KINDS.filter((k) => def.horde[k]).sort((a, b) => ZOMBIES[b].score - ZOMBIES[a].score);
+  const kinds = listOf(present.map((k) => ZOMBIES[k].many));
+  const size = present.reduce((n, k) => n + hordeCount(k, def.horde[k]!, share), 0);
+  return `${kinds[0]!.toUpperCase()}${kinds.slice(1)} from ${sidesOf(night)} · ${size} strong`;
 }
 
 /** The day's hint for N: how many of the squad's humans are ready for night, and whether you are. */
@@ -58,12 +64,12 @@ export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' |
 const NIGHT_WARNING_MS = 10_000;
 
 /** The run's turning points between two snapshots; the fall has the report instead, timed on the server's clock (`prevAt`, `nextAt`). */
-export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number): RunCallout[] {
+export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number, share: number): RunCallout[] {
   if (!prev || !next) return [];
   const out: RunCallout[] = [];
   if (prev.phase === 'day' && next.phase === 'day' && prev.phaseEndsAt !== null && next.phaseEndsAt !== null
     && prev.phaseEndsAt - prevAt > NIGHT_WARNING_MS && next.phaseEndsAt - nextAt <= NIGHT_WARNING_MS) {
-    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: forecast(next.night), tone: 'warn' });
+    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: forecast(next.night, share), tone: 'warn' });
   }
   if (prev.phase === 'day' && next.phase === 'night') {
     out.push({ title: nightOf(next.night).name ?? `Night ${next.night}`, line: `${next.waveLeft} zombies from ${sidesOf(next.night)} · hold the Bastion`, tone: 'night' });
@@ -71,7 +77,7 @@ export function runCallouts(prev: RunView | undefined, next: RunView | undefined
   if (prev.phase === 'night' && next.phase === 'day') {
     const lost = next.lost ? `${next.lost} lost · ` : '';
     out.push({ title: 'Dawn', line: `Night ${prev.night} held · ${lost}${next.survivors} survivors · +${next.scrap - prev.scrap} scrap`, tone: 'dawn' });
-    out.push({ title: 'Tonight', line: forecast(next.night), tone: 'warn' });
+    out.push({ title: 'Tonight', line: forecast(next.night, share), tone: 'warn' });
   }
   return out;
 }

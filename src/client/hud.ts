@@ -11,7 +11,7 @@ import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { glow, PALETTE, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, useHint } from './zombies.ts';
+import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, useHint } from './zombies.ts';
 import { drawGunGlyph } from './sprites.ts';
 import type { Session } from './state.ts';
 
@@ -672,7 +672,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   if (mourned) text(ctx, mourned, x + peopleW + 66, y, TYPE.label, PALETTE.hpBad, 'left', 700);
   if (alert) drawCoreAlert(hud, run.core, y + 26);
   if (run.phase === 'over') return;
-  if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night)}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);
+  if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night, squadShare(hud.snap.players))}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);
   if (me?.downed) {
     const k = 0.5 + 0.5 * Math.sin(now / 260);
     outlined(ctx, "You're down", w / 2, h * 0.64, 22, PALETTE.hunted, 850);

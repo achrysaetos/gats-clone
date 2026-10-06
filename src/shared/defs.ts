@@ -356,6 +356,10 @@ export const NIGHTS: readonly NightDef[] = [
   { name: 'The Tide', horde: { walker: 66, runner: 28, plated: 13, bloater: 10, brute: 13, colossus: 1 }, from: SIDES },
 ];
 export const nightOf = (night: number): NightDef => NIGHTS[Math.min(night, NIGHTS.length) - 1]!;
+/** A boss is a kind that walks alone (`pack: 1`): it comes as listed for any squad, its health scaled by the squad's share instead. */
+export const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
+/** How many of a kind listed `listed` times come for a squad with this share of the horde. */
+export const hordeCount = (kind: ZombieKind, listed: number, share: number) => (!listed || isBoss(kind) ? listed : Math.max(1, Math.round(listed * share)));
 
 export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar'] as const;
 export type TurretKind = (typeof TURRET_KINDS)[number];

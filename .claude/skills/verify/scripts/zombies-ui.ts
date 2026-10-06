@@ -9,7 +9,7 @@ import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../sr
 import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 import { BUILDINGS, byTurret, nightOf, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../../../../src/shared/defs.ts';
-import { forecast } from '../../../../src/client/zombies.ts';
+import { forecast, squadShare } from '../../../../src/client/zombies.ts';
 import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const RUN = process.argv[2];
@@ -301,7 +301,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     if (run()?.phase === 'day') {
       expect('a warning callout comes ten seconds before night', await until(callout('Night falls in'), 45_000));
       const said = (await zdev())?.callouts.find((c) => c.startsWith('Night falls in')) ?? '';
-      expect('the warning forecasts tonight from the night table', said.endsWith(forecast(run()!.night)), said);
+      expect('the warning forecasts tonight from the night table', said.endsWith(forecast(run()!.night, squadShare(frames.snap!.players))), said);
       await shot('zom-dusk-warning');
     }
     const tonight = nightOf(run()!.night);
@@ -367,7 +367,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('a Dawn callout sums up the night', await until(callout('Dawn'), 3000));
     const dawnSaid = (await zdev())?.callouts.find((c) => c.startsWith('Dawn')) ?? '';
     expect('the Dawn callout counts the survivors and their scrap', / survivors · \+\d+ scrap$/.test(dawnSaid), dawnSaid);
-    expect('dawn forecasts the coming night', await until(async () => (await zdev())?.callouts.some((c) => c === `Tonight · ${forecast(2)}`) ?? false, 6000));
+    expect('dawn forecasts the coming night', await until(async () => (await zdev())?.callouts.some((c) => c === `Tonight · ${forecast(2, squadShare(frames.snap!.players))}`) ?? false, 6000));
     await sleep(300);
     await shot('zom-dawn');
   },

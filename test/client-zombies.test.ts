@@ -7,7 +7,7 @@ import {
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
 import type { RunView } from '../src/shared/protocol.ts';
-import { BUILDING_KINDS, BUILDINGS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind } from '../src/shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
 import { build } from '../src/shared/sim/run.ts';
@@ -195,17 +195,17 @@ test('holding E is offered for the worn core in reach, after a nearer worn wall,
 });
 
 test('the run forecasts tonight ten seconds ahead and at dawn, announces nightfall with its wave and sides, and dawn with the survivors and their scrap', () => {
-  const titles = (prev: RunView, next: RunView, prevAt: number, nextAt: number) => runCallouts(prev, next, prevAt, nextAt).map((c) => c.title);
-  assert.deepEqual(runCallouts(runView(), runView(), 39_000, 40_000).map((c) => [c.title, c.line]), [['Night falls in 10', forecast(2)]]);
+  const titles = (prev: RunView, next: RunView, prevAt: number, nextAt: number) => runCallouts(prev, next, prevAt, nextAt, 1).map((c) => c.title);
+  assert.deepEqual(runCallouts(runView(), runView(), 39_000, 40_000, 1).map((c) => [c.title, c.line]), [['Night falls in 10', forecast(2, 1)]]);
   assert.deepEqual(titles(runView(), runView(), 40_000, 41_000), [], 'once, as the countdown crosses ten seconds');
   const night = runView({ phase: 'night', phaseEndsAt: null, waveLeft: 31 });
-  const call = runCallouts(runView(), night, 49_000, 50_000);
+  const call = runCallouts(runView(), night, 49_000, 50_000, 1);
   assert.deepEqual(call.map((c) => [c.title, c.line]), [['Night 2', `31 zombies from the ${NIGHTS[1]!.from.join(' and ')} · hold the Bastion`]]);
-  const dawn = runCallouts({ ...night, scrap: 60 }, runView({ night: 3, scrap: 96, survivors: 36, lost: 2 }), 90_000, 91_000);
-  assert.deepEqual(dawn.map((c) => [c.title, c.line]), [['Dawn', 'Night 2 held · 2 lost · 36 survivors · +36 scrap'], ['Tonight', forecast(3)]]);
-  assert.equal(runCallouts(runView({ night: 4 }), runView({ phase: 'night', night: 5, phaseEndsAt: null }), 0, 1)[0]!.title, 'The Colossus', 'a boss night goes by its name');
+  const dawn = runCallouts({ ...night, scrap: 60 }, runView({ night: 3, scrap: 96, survivors: 36, lost: 2 }), 90_000, 91_000, 1);
+  assert.deepEqual(dawn.map((c) => [c.title, c.line]), [['Dawn', 'Night 2 held · 2 lost · 36 survivors · +36 scrap'], ['Tonight', forecast(3, 1)]]);
+  assert.equal(runCallouts(runView({ night: 4 }), runView({ phase: 'night', night: 5, phaseEndsAt: null }), 0, 1, 1)[0]!.title, 'The Colossus', 'a boss night goes by its name');
   assert.deepEqual(titles(night, runView({ phase: 'over', phaseEndsAt: 110_000 }), 90_000, 91_000), [], 'the report announces the fall');
-  assert.deepEqual(runCallouts(undefined, night, 0, 1), [], 'nothing on the first snapshot of a session');
+  assert.deepEqual(runCallouts(undefined, night, 0, 1, 1), [], 'nothing on the first snapshot of a session');
 });
 
 test('the fall clears every callout, so none shows through behind the report', () => {
@@ -238,12 +238,26 @@ test('the core alert starts on a bite by night and clears the moment dawn or the
 
 test('the forecast names each night\'s kinds and sides from the night table, and nothing else', () => {
   NIGHTS.forEach((row, i) => {
-    const line = forecast(i + 1).toLowerCase();
+    const line = forecast(i + 1, 1).toLowerCase();
     for (const kind of ZOMBIE_KINDS) assert.equal(line.includes(ZOMBIES[kind].many), kind in row.horde, `night ${i + 1}: ${line} and the ${kind}`);
     for (const side of SIDES) assert.equal(line.includes(side), row.from.length < SIDES.length && row.from.includes(side), `night ${i + 1}: ${line} and the ${side}`);
   });
-  assert.equal(forecast(1), 'Walkers from the north');
-  assert.equal(forecast(NIGHTS.length).endsWith('from every side'), true);
+  assert.equal(forecast(1, 1), `Walkers from the north · ${NIGHTS[0]!.horde.walker} strong`);
+  assert.ok(forecast(NIGHTS.length, 1).includes('from every side'));
+});
+
+test('the forecast puts the deadliest kinds first and sizes the horde for the squad, so one night reads apart from the next', () => {
+  const kinds = (line: string) => line.split(' from ')[0]!.toLowerCase().split(/, | and /);
+  for (let night = 1; night <= NIGHTS.length; night++) {
+    const order = kinds(forecast(night, 1)).map((many) => ZOMBIE_KINDS.find((k) => ZOMBIES[k].many === many)!);
+    assert.deepEqual(order, [...order].sort((a, b) => ZOMBIES[b].score - ZOMBIES[a].score), `night ${night}: ${forecast(night, 1)}`);
+  }
+  assert.ok(kinds(forecast(3, 1)).indexOf('brutes') < kinds(forecast(3, 1)).indexOf('runners'), 'brutes before runners');
+  const size = (night: number, share: number) => Number(/· (\d+) strong$/.exec(forecast(night, share))![1]);
+  const all = (night: number, share: number) => Object.entries(NIGHTS[night - 1]!.horde).reduce((n, [k, listed]) => n + hordeCount(k as ZombieKind, listed, share), 0);
+  assert.equal(size(9, 1), all(9, 1));
+  assert.equal(size(9, 0.375), all(9, 0.375), 'a lone human hears of a smaller horde');
+  assert.notEqual(size(8, 1), size(9, 1));
 });
 
 test('the N hint counts the humans ready for night', () => {

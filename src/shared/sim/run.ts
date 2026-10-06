@@ -1,4 +1,4 @@
-import { BUILDINGS, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
+import { BUILDINGS, hordeCount, isBoss, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
@@ -14,8 +14,6 @@ function squadOf(w: World) {
   return squad;
 }
 
-/** A boss, a kind that walks alone, has its health scaled by the squad's share of the horde; every other kind comes in greater or fewer numbers instead. */
-const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
 export const zombieMaxHp = (kind: ZombieKind, night: number, share: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp * (isBoss(kind) ? share : 1);
 
 function statsFor(run: Run, p: Player): RunStats {
@@ -177,8 +175,7 @@ function hordeOf(w: World, night: number, share: number): HordeUnit[] {
   const def = nightOf(night);
   const units: HordeUnit[] = [];
   for (const kind of ZOMBIE_KINDS) {
-    const listed = def.horde[kind] ?? 0;
-    for (let left = isBoss(kind) ? listed : listed && Math.max(1, Math.round(listed * share)); left > 0; left -= ZOMBIES[kind].pack) {
+    for (let left = hordeCount(kind, def.horde[kind] ?? 0, share); left > 0; left -= ZOMBIES[kind].pack) {
       units.push({ kind, side: def.from[Math.floor(rand(w) * def.from.length)]!, n: Math.min(left, ZOMBIES[kind].pack) });
     }
   }
