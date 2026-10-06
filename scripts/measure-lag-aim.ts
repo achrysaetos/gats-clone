@@ -2,9 +2,8 @@
 // Usage: node scripts/measure-lag-aim.ts [seconds per condition=60] [lag:jitter ...=0:0 100:40]
 // A real browser taps the pistol at a scripted target strafing in a bot-free FFA room. It aims where the page draws the
 // target, leading only by the bullet's flight time over the drawn velocity, the lead a human can see on screen.
-import { execSync, spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import WebSocket from 'ws';
@@ -14,12 +13,11 @@ import type { GameEvent, Loadout } from '../src/shared/protocol.ts';
 import { canRespawn, respawn } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { startServer } from '../src/server/main.ts';
-import { killOnExit } from './kill-on-exit.ts';
 import { median, quantile } from './lib/stats.ts';
+import { joinFromMenu, openPage, sleep } from '../.claude/skills/verify/scripts/lib/browser.ts';
 
 const SECONDS = Number(process.argv[2] ?? 60);
 const CONDITIONS = (process.argv.length > 3 ? process.argv.slice(3) : ['0:0', '100:40']).map((c) => c.split(':').map(Number) as [number, number]);
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const VIEW = { w: 1280, h: 800 };
 const RANGE = 350;
 const STRAFE_MS = 1200;
@@ -27,8 +25,6 @@ const STRAFE_HALF = (WORLD.baseSpeed * STRAFE_MS) / 2000;
 const TAP_MS = GUNS.pistol.fireMs + 30;
 const WARMUP_MS = 1500;
 const TARGET_LOADOUT: Loadout = { weapon: 'pistol', armor: 'none', color: 'red' };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 execSync('npm run --silent build', { cwd: resolve(import.meta.dirname, '..'), stdio: 'ignore' });
 const server = await startServer({ port: 0, dataDir: mkdtempSync(join(tmpdir(), 'skirmish-lagaim-')), limits: { minPlayers: 0 } });
@@ -48,40 +44,22 @@ function arenaCenter(): { x: number; y: number } {
 }
 
 async function openShooter(lag: number, jitter: number) {
-  const port = await freePort();
-  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-lagaim-chrome-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-  let target = '';
-  for (let i = 0; i < 50 && !target; i++) {
-    try {
-      const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-      target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-    } catch {}
-    if (!target) await sleep(200);
-  }
-  const page = new WebSocket(target);
-  await new Promise((r) => page.once('open', r));
-  let nextId = 1;
-  const pending = new Map<number, (v: any) => void>();
   const frames = { id: null as number | null, events: [] as GameEvent[] };
-  page.on('message', (raw) => {
-    const m = JSON.parse(String(raw));
-    if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-    if (m.method !== 'Network.webSocketFrameReceived') return;
-    const msg = JSON.parse(m.params.response.payloadData);
-    if (msg.t === 'welcome') frames.id = msg.id;
-    if (msg.t === 'snap') frames.events.push(...(msg.events as GameEvent[]));
+  const page = await openPage({
+    profile: 'skirmish-lagaim-chrome-',
+    viewport: { width: VIEW.w, height: VIEW.h },
+    onEvent: (method, params) => {
+      if (method !== 'Network.webSocketFrameReceived') return;
+      const msg = JSON.parse(params.response.payloadData);
+      if (msg.t === 'welcome') frames.id = msg.id;
+      if (msg.t === 'snap') frames.events.push(...(msg.events as GameEvent[]));
+    },
   });
-  const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
-  const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.value;
-  await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-  await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-  await cdp('Page.navigate', { url: `http://localhost:${server.port}/?dev&lag=${lag}&jitter=${jitter}` });
-  for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-  await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = 'Shooter'; document.getElementById('play').click()`);
+  await page.cdp('Page.navigate', { url: `http://localhost:${server.port}/?dev&lag=${lag}&jitter=${jitter}` });
+  await joinFromMenu(page, { name: 'Shooter' });
   for (let i = 0; i < 50 && frames.id === null; i++) await sleep(100);
   if (frames.id === null) throw new Error('shooter did not join');
-  return { chrome, cdp, js, frames, id: frames.id };
+  return { ...page, frames, id: frames.id };
 }
 
 async function openTarget(): Promise<{ ws: WebSocket; id: number }> {
@@ -156,7 +134,7 @@ async function measure(lag: number, jitter: number) {
   const hits = shooter.frames.events.filter((e): e is Extract<GameEvent, { e: 'dmg' }> => e.e === 'dmg' && e.attacker === shooter.id && e.victim === target.id && e.kind === 'player');
   const damage = hits.reduce((sum, e) => sum + e.amount, 0);
   target.ws.close();
-  shooter.chrome.kill();
+  shooter.close();
   await sleep(300);
   const viewLag = viewLagMs.length ? `${Math.round(median(viewLagMs))}ms (p90 ${Math.round(quantile(viewLagMs, 0.9))}ms)` : 'unreported';
   return { lag, jitter, shots, hits: hits.length, damage, aliveMs, viewLag };

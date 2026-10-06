@@ -3,13 +3,11 @@
 // reconnect needs the page in a match: put it after join with no leave or restart between (restart reloads to the menu).
 // LAG=<one-way ms> and JITTER=<ms> shape the page's own socket through the client's dev-only ?lag/?jitter params.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { GUNS, WEAPON_IDS, type GunId, type WeaponId } from '../../../../src/shared/defs.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { joinFromMenu, key, openPage, respawnIfDead, serversListed, sleep } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node drive.ts <run-dir> [step ...]'); process.exit(2); }
@@ -23,53 +21,33 @@ const EV = join(RUN, 'evidence');
 const LOG = join(EV, 'drive.log');
 mkdirSync(EV, { recursive: true });
 const NAME = `Verifier${Math.floor(Math.random() * 1e4)}`;
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const problems: string[] = [];
 
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
-const debugPort = await freePort();
-const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-verify-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-
-let target = '';
-for (let i = 0; i < 50 && !target; i++) {
-  try {
-    const list = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-    target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-  } catch {}
-  if (!target) await sleep(200);
-}
-const page = new WebSocket(target);
-await new Promise((r) => page.once('open', r));
-
 type Snap = { t: 'snap'; self: { id: number; ammo: number; reloading: boolean }; players: { id: number; name: string; x: number; y: number; alive: boolean; gun: GunId }[] };
 const frames = { welcome: null as null | { id: number; account: string | null }, last: null as null | Snap, sent: 0, snapAt: [] as number[], chat: [] as { from: string; text: string }[] };
-let nextId = 1;
-const pending = new Map<number, (v: any) => void>();
-page.on('message', (raw) => {
-  const m = JSON.parse(String(raw));
-  if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-  if (m.method === 'Network.webSocketFrameReceived') {
-    const msg = JSON.parse(m.params.response.payloadData);
-    if (msg.t === 'welcome') frames.welcome = msg;
-    if (msg.t === 'snap') { frames.last = msg; frames.snapAt.push(m.params.timestamp * 1000); }
-    if (msg.t === 'chat') frames.chat.push(msg);
-  } else if (m.method === 'Network.webSocketFrameSent') frames.sent++;
-  else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
-  else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
+const page = await openPage({
+  profile: 'skirmish-verify-',
+  viewport: { width: 1280, height: 800 },
+  onEvent: (method, params) => {
+    if (method === 'Network.webSocketFrameReceived') {
+      const msg = JSON.parse(params.response.payloadData);
+      if (msg.t === 'welcome') frames.welcome = msg;
+      if (msg.t === 'snap') { frames.last = msg; frames.snapAt.push(params.timestamp * 1000); }
+      if (msg.t === 'chat') frames.chat.push(msg);
+    } else if (method === 'Network.webSocketFrameSent') frames.sent++;
+  },
+  onProblem: (kind, detail) => problems.push(`${kind}: ${detail}`),
 });
-const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
-const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
+const { cdp, js } = page;
 const shot = async (name: string) => { const { data } = await cdp('Page.captureScreenshot', { format: 'png' }); writeFileSync(join(EV, `${name}.png`), Buffer.from(data, 'base64')); };
 const expect = (label: string, ok: boolean, detail = '') => { log(`${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? `  (${detail})` : ''}`); if (!ok) problems.push(label); };
 const until = async (fn: () => boolean | Promise<boolean>, ms = 4000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(100); } return false; };
-const key = async (code: string, k: string, holdMs: number) => {
-  const vk = k === 'Enter' ? 13 : k.toUpperCase().charCodeAt(0);
-  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k, windowsVirtualKeyCode: vk });
+const press = async (code: string, k: string, holdMs: number) => {
+  const vk = k === 'Enter' ? 13 : undefined;
+  await key(page, 'keyDown', code, k, vk);
   await sleep(holdMs);
-  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k, windowsVirtualKeyCode: vk });
+  await key(page, 'keyUp', code, k, vk);
 };
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const welcomed = () => frames.welcome;
@@ -77,8 +55,7 @@ const me = () => frames.last?.players.find((p) => p.id === frames.welcome?.id);
 const ensureAlive = async () => {
   if (me()?.alive) return;
   log('note driven player is dead, respawning through the death screen');
-  await until(async () => js(`!document.getElementById('respawn').disabled && !document.getElementById('death').hidden`), 8000);
-  await js(`document.getElementById('respawn').click()`);
+  await respawnIfDead(page, 8000);
   await until(() => !!me()?.alive, 4000);
   await sleep(300);
 };
@@ -99,18 +76,10 @@ const openObserver = () => {
   return ws;
 };
 let observer = openObserver();
-const clickPlay = async () => {
-  await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${NAME}'`);
-  // A real press, like a player's: the page's first user gesture unlocks audio, which a synthetic .click() never triggers.
-  const [px, py] = await js(`(() => { const b = document.getElementById('play'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
-  await mouse('mousePressed', px, py);
-  await mouse('mouseReleased', px, py);
-};
+const clickPlay = () => joinFromMenu(page, { name: NAME, press: true });
 
-await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 await cdp('Page.navigate', { url: `${BASE}/?dev&lag=${Number(process.env.LAG ?? 0)}&jitter=${Number(process.env.JITTER ?? 0)}` });
-await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+await serversListed(page, 4000);
 log(`drive ${new Date().toISOString()} base=${BASE} name=${NAME} steps=${steps.join(',')}`);
 
 /** Stops the server this run started and starts it again on the same port and data dir. `whileDown` runs between the two. */
@@ -186,7 +155,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await ensureAlive();
     await until(() => !!me());
     const before = me()!;
-    await key('KeyD', 'd', 700);
+    await press('KeyD', 'd', 700);
     await sleep(200);
     const after = me()!;
     expect('holding D moves the player right on the server', !!after && after.x > before.x + 50, `x ${before.x.toFixed(0)} -> ${after?.x.toFixed(0)}`);
@@ -208,7 +177,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     for (let attempt = 0; attempt < 3; attempt++) {
       await ensureAlive();
       weapon = GUNS[me()!.gun];
-      if (frames.last!.self.ammo < CLICKS) { await key('KeyR', 'r', 60); await until(() => !frames.last!.self.reloading && frames.last!.self.ammo >= CLICKS, weapon.reloadMs + 2000); }
+      if (frames.last!.self.ammo < CLICKS) { await press('KeyR', 'r', 60); await until(() => !frames.last!.self.reloading && frames.last!.self.ammo >= CLICKS, weapon.reloadMs + 2000); }
       await sleep(weapon.fireMs);
       before = frames.last!.self.ammo;
       for (let i = 0; i < CLICKS; i++) {
@@ -241,7 +210,7 @@ const STEPS: Record<string, () => Promise<void>> = {
         };
         requestAnimationFrame(poll);
       }, { once: true, capture: true })); 0`);
-      await key(code, k, 250);
+      await press(code, k, 250);
       const ms = await js('window.probe');
       if (typeof ms === 'number') samples.push(ms); else misses++;
       await sleep(500);
@@ -258,9 +227,9 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async chat() {
     const text = `hello ${Date.now()}`;
-    await key('Enter', 'Enter', 30);
+    await press('Enter', 'Enter', 30);
     await cdp('Input.insertText', { text });
-    await key('Enter', 'Enter', 30);
+    await press('Enter', 'Enter', 30);
     expect('own chat log shows the message', await until(async () => (await js(`document.getElementById('chat-log').textContent`)).includes(text)));
     expect('observer in the same room receives it', await until(() => observerChat.some((c) => c.from === NAME && c.text === text)));
     await shot('chat');
@@ -296,7 +265,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('chat-muted');
 
     await cdp('Page.reload', { ignoreCache: true });
-    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    await serversListed(page, 4000);
     expect('menu lists the muted player after a reload', await until(async () => js(`!document.getElementById('muted').hidden && document.getElementById('muted').textContent.includes(${JSON.stringify(sender)})`)));
     await shot('menu-muted-list');
     frames.welcome = null;
@@ -342,7 +311,7 @@ const STEPS: Record<string, () => Promise<void>> = {
   async restart() {
     await restartServer();
     await cdp('Page.reload', { ignoreCache: true });
-    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    await serversListed(page, 4000);
     expect('menu still shows signed in after the restart', (await js(`document.getElementById('account').textContent`)).includes(`Signed in as ${NAME}`));
     await shot('account-after-restart');
   },
@@ -371,7 +340,7 @@ const STEPS: Record<string, () => Promise<void>> = {
   async expire() {
     await js(`localStorage.setItem('skirmish.token', 'forged.token'); localStorage.setItem('skirmish.account', '${NAME}')`);
     await cdp('Page.reload', { ignoreCache: true });
-    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    await serversListed(page, 4000);
     frames.welcome = null;
     await clickPlay();
     expect('server joins a forged session as a guest (welcome.account null)', await until(() => frames.welcome !== null) && welcomed()?.account === null);
@@ -379,7 +348,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('chat tells the player the session expired', await until(async () => (await js(`document.getElementById('chat-log').textContent`)).includes('Session expired')));
     await shot('session-expired-chat');
     await cdp('Page.reload', { ignoreCache: true });
-    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3);
+    await serversListed(page, 4000);
     expect('menu shows signed out after an expired session', (await js(`document.getElementById('account').textContent`)).includes('Log in to keep stats'));
   },
   async leave() {
@@ -396,5 +365,5 @@ for (const s of steps) {
 }
 for (const p of problems.filter((p) => p.startsWith('page') || p.startsWith('console'))) log(p);
 log(problems.length ? `RESULT FAIL (${problems.length})` : 'RESULT PASS');
-observer.close(); page.close(); chrome.kill();
+observer.close(); page.close();
 process.exit(problems.length ? 1 : 0);

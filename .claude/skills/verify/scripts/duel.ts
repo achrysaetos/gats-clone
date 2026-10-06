@@ -1,17 +1,13 @@
 /// <reference types="node" />
 // Usage: node duel.ts <run-dir>   Two real browsers join FFA and walk the map's paths to each other; A shoots B once it has a clear line, until each side's own socket proves the hit.
-import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import WebSocket from 'ws';
 import { WORLD } from '../../../../src/shared/defs.ts';
 import type { GameEvent, Snapshot, WallView } from '../../../../src/shared/protocol.ts';
 import type { Rect } from '../../../../src/shared/sim/movement.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { clearShot, findPath, navGrid, withSolids, type NavGrid, type Point } from '../../../../src/server/bot/nav.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { clearShot, withSolids, type Point } from '../../../../src/server/bot/nav.ts';
+import { hold, joinFromMenu, navGridFor, openPage, pathStep, respawnIfDead, sleep, type Page } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node duel.ts <run-dir>'); process.exit(2); }
@@ -21,96 +17,53 @@ const BASE = existsSync(join(RUN, 'url'))
 const EV = join(RUN, 'evidence');
 mkdirSync(EV, { recursive: true });
 const LOG = join(EV, 'duel.log');
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const VIEW = { w: 1280, h: 800 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const problems: string[] = [];
 const expect = (label: string, ok: boolean, detail = '') => { log(`${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? `  (${detail})` : ''}`); if (!ok) problems.push(label); };
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 type Dmg = Extract<GameEvent, { e: 'dmg' }>;
-type Player = {
-  label: string; name: string; chrome: ChildProcess;
-  cdp: (method: string, params?: object) => Promise<any>;
-  js: (expr: string) => Promise<any>;
+type Player = Page & {
+  label: string; name: string;
   id: () => number | null; snap: () => Snapshot | null; dmg: Dmg[];
   map: () => { worldSize: number; walls: WallView[] } | null;
-  navFor: { walls: WallView[]; grid: NavGrid } | null;
 };
 
 async function openPlayer(label: string, name: string): Promise<Player> {
-  const port = await freePort();
-  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-duel-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-  let target = '';
-  for (let i = 0; i < 50 && !target; i++) {
-    try {
-      const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-      target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-    } catch {}
-    if (!target) await sleep(200);
-  }
-  const page = new WebSocket(target);
-  await new Promise((r) => page.once('open', r));
-  let nextId = 1;
   let welcomeId: number | null = null;
   let full: Snapshot | null = null;
   let map: { worldSize: number; walls: WallView[] } | null = null;
   const dmg: Dmg[] = [];
-  const pending = new Map<number, (v: any) => void>();
-  page.on('message', (raw) => {
-    const m = JSON.parse(String(raw));
-    if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-    if (m.method === 'Network.webSocketFrameReceived') {
-      const msg = JSON.parse(m.params.response.payloadData);
+  const page = await openPage({
+    profile: 'skirmish-duel-',
+    viewport: { width: VIEW.w, height: VIEW.h },
+    onProblem: (kind, detail) => { if (kind === 'page exception') problems.push(`${label} page exception: ${detail}`); },
+    onEvent: (method, params) => {
+      if (method !== 'Network.webSocketFrameReceived') return;
+      const msg = JSON.parse(params.response.payloadData);
       if (msg.t === 'welcome') welcomeId = msg.id;
       if (msg.t === 'welcome' || msg.t === 'walls') map = { worldSize: msg.worldSize, walls: msg.walls };
       if (msg.t === 'snap') {
         full = fillSnapshot(msg, full) ?? full;
         for (const e of msg.events as GameEvent[]) if (e.e === 'dmg') dmg.push(e);
       }
-    } else if (m.method === 'Runtime.exceptionThrown') problems.push(`${label} page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
+    },
   });
-  const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
-  const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
-  await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-  await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-  await cdp('Page.navigate', { url: BASE });
-  for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-  await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${name}'`);
-  const [px, py] = await js(`(() => { const b = document.getElementById('play'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
-  await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: px, y: py, button: 'left', clickCount: 1 });
-  await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px, y: py, button: 'left', clickCount: 1 });
-  return { label, name, chrome, cdp, js, id: () => welcomeId, snap: () => full, dmg, map: () => map, navFor: null };
+  await page.cdp('Page.navigate', { url: BASE });
+  await joinFromMenu(page, { name, press: true });
+  return { ...page, label, name, id: () => welcomeId, snap: () => full, dmg, map: () => map };
 }
 
 const selfOf = (p: Player) => p.snap()?.players.find((v) => v.id === p.id());
-const KEY = { right: ['KeyD', 'd', 68], left: ['KeyA', 'a', 65], down: ['KeyS', 's', 83], up: ['KeyW', 'w', 87] } as const;
-async function hold(p: Player, dirs: (keyof typeof KEY)[], ms: number) {
-  for (const d of dirs) await p.cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: KEY[d][0], key: KEY[d][1], windowsVirtualKeyCode: KEY[d][2] });
-  await sleep(ms);
-  for (const d of dirs) await p.cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: KEY[d][0], key: KEY[d][1], windowsVirtualKeyCode: KEY[d][2] });
-}
 const crates = (p: Player): Rect[] => (p.snap()?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }));
 const solids = (p: Player): Rect[] => [...(p.map()?.walls ?? []), ...crates(p)];
-function nav(p: Player): NavGrid {
-  const m = p.map(), walls = m?.walls ?? [];
-  if (p.navFor?.walls !== walls) p.navFor = { walls, grid: navGrid(m?.worldSize ?? 0, walls, WORLD.playerRadius) };
-  return withSolids(p.navFor.grid, crates(p), WORLD.playerRadius);
-}
 async function walkToward(p: Player, from: Point, to: Point) {
-  const next = findPath(nav(p), from, to, 20_000)?.find((q) => Math.hypot(q.x - from.x, q.y - from.y) > 30) ?? to;
-  const dx = next.x - from.x, dy = next.y - from.y, len = Math.hypot(dx, dy);
-  const dirs: (keyof typeof KEY)[] = [];
-  if (Math.abs(dx) > Math.max(20, len * 0.38)) dirs.push(dx > 0 ? 'right' : 'left');
-  if (Math.abs(dy) > Math.max(20, len * 0.38)) dirs.push(dy > 0 ? 'down' : 'up');
-  await hold(p, dirs, 350);
+  const m = p.map();
+  await hold(p, pathStep(withSolids(navGridFor(m?.worldSize ?? 0, m?.walls ?? []), crates(p), WORLD.playerRadius), from, to), 350);
 }
-async function respawnIfDead(p: Player) {
+async function respawnIfDeadOnServer(p: Player) {
   if (selfOf(p)?.alive !== false) return;
-  for (let i = 0; i < 80 && (await p.js(`document.getElementById('respawn').disabled || document.getElementById('death').hidden`)); i++) await sleep(100);
-  await p.js(`document.getElementById('respawn').click()`);
+  await respawnIfDead(p, 8000);
   await sleep(500);
 }
 const shot = async (p: Player, name: string) => {
@@ -126,7 +79,7 @@ expect('both browsers joined the same room', !!selfOf(a) && !!selfOf(b), `${a.na
 const deadline = Date.now() + 180_000;
 let sawEachOther = false, hitSeenByA: Dmg | undefined, hitSeenByB: Dmg | undefined, shots = 0;
 while (Date.now() < deadline && !(hitSeenByA && hitSeenByB)) {
-  await respawnIfDead(a); await respawnIfDead(b);
+  await respawnIfDeadOnServer(a); await respawnIfDeadOnServer(b);
   const pa = selfOf(a), pb = selfOf(b);
   if (!pa?.alive || !pb?.alive) { await sleep(200); continue; }
   const dx = pb.x - pa.x, dy = pb.y - pa.y, dist = Math.hypot(dx, dy);
@@ -154,5 +107,5 @@ expect("hunter's socket shows a dmg event naming the target", !!hitSeenByA, hitS
 expect("target's socket shows the same hit from the hunter", !!hitSeenByB, hitSeenByB ? `-${hitSeenByB.amount}` : '');
 for (const p of problems.filter((x) => x.includes('exception'))) log(p);
 log(problems.length ? `RESULT FAIL (${problems.length})` : 'RESULT PASS');
-a.chrome.kill(); b.chrome.kill();
+a.close(); b.close();
 process.exit(problems.length ? 1 : 0);

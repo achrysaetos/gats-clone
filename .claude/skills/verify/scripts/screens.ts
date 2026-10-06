@@ -1,13 +1,9 @@
 /// <reference types="node" />
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import WebSocket from 'ws';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const [RUN, OUT, ...asked] = process.argv.slice(2);
 if (!RUN || !OUT) { console.error('usage: node screens.ts <run-dir> <out-dir> [view ...]'); process.exit(2); }
@@ -16,46 +12,21 @@ const VIEW = { w: Number(process.env.W ?? 1600), h: Number(process.env.H ?? 900)
 const BASE = existsSync(join(RUN, 'url'))
   ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '')
   : `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 mkdirSync(OUT, { recursive: true });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
-const port = await freePort();
-const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-screens-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-let target = '';
-for (let i = 0; i < 50 && !target; i++) {
-  try {
-    const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-    target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-  } catch {}
-  if (!target) await sleep(200);
-}
-const page = new WebSocket(target);
-await new Promise((r) => page.once('open', r));
-let nextId = 1;
 let myId: number | null = null;
 let full = null as Snapshot | null;
-const exceptions: string[] = [];
-const pending = new Map<number, (v: any) => void>();
-page.on('message', (raw) => {
-  const m = JSON.parse(String(raw));
-  if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-  if (m.method === 'Network.webSocketFrameReceived') {
-    const msg = JSON.parse(m.params.response.payloadData);
+const page = await openPage({
+  profile: 'skirmish-screens-',
+  viewport: { width: VIEW.w, height: VIEW.h },
+  onEvent: (method, params) => {
+    if (method !== 'Network.webSocketFrameReceived') return;
+    const msg = JSON.parse(params.response.payloadData);
     if (msg.t === 'welcome') { myId = msg.id; full = null; }
     if (msg.t === 'snap') full = fillSnapshot(msg, full) ?? full;
-  } else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+  },
 });
-const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
-const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
-await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-
-const KEYS = { right: ['KeyD', 'd', 68], down: ['KeyS', 's', 83], left: ['KeyA', 'a', 65], up: ['KeyW', 'w', 87] } as const;
-type Dir = keyof typeof KEYS;
-const key = (type: 'keyDown' | 'keyUp', d: Dir) => cdp('Input.dispatchKeyEvent', { type, code: KEYS[d][0], key: KEYS[d][1], windowsVirtualKeyCode: KEYS[d][2] });
+const { cdp, js } = page;
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const me = () => full?.players.find((p) => p.id === myId);
 const shot = async (name: string) => {
@@ -67,7 +38,7 @@ const shot = async (name: string) => {
 
 async function openMenu() {
   await cdp('Page.navigate', { url: `${BASE}/?dev` });
-  for (let i = 0; i < 80 && (await js(`document.querySelectorAll('#servers .server').length`)) < 3; i++) await sleep(100);
+  await serversListed(page, 8000);
   await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.getElementById('name').value = 'You'`);
 }
 
@@ -98,9 +69,7 @@ async function play(ms: number, goal: (() => { x: number; y: number } | null) | 
       if (Math.abs(to.x - self.x) > 80) dirs.push(to.x > self.x ? 'right' : 'left');
       if (Math.abs(to.y - self.y) > 80) dirs.push(to.y > self.y ? 'down' : 'up');
     }
-    for (const d of dirs) await key('keyDown', d);
-    await sleep(160);
-    for (const d of dirs) await key('keyUp', d);
+    await hold(page, dirs, 160);
     if (fire) await mouse('mouseReleased', mx, my);
   }
 }
@@ -109,10 +78,7 @@ const enemies = () => full?.players.filter((p) => p.id !== myId && p.alive && (p
 const zombies = () => (full?.zombies ?? []).map(([, , x, y]) => ({ x, y }));
 const serverOf = (mode: string) => `document.querySelector('#servers .server .mode-${mode}').closest('.server').click(); document.getElementById('play').click()`;
 const nearCore = () => { const c = full?.run?.core; return c ? { x: c.x + 220, y: c.y + 160 } : null; };
-const pickFirst = async () => {
-  await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
-  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Digit1', key: '1', windowsVirtualKeyCode: 49 });
-};
+const pickFirst = async () => { await key(page, 'keyDown', 'Digit1', '1'); await key(page, 'keyUp', 'Digit1', '1'); };
 
 async function fightShot(name: string, ms: number, goal: (() => { x: number; y: number } | null) | null) {
   const end = Date.now() + ms;
@@ -129,10 +95,10 @@ for (const view of VIEWS) {
     case 'board': {
       await enter(serverOf('tdm'));
       await play(3000, null, enemies, false);
-      await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Tab', key: 'Tab', windowsVirtualKeyCode: 9 });
+      await key(page, 'keyDown', 'Tab', 'Tab', 9);
       await sleep(300);
       await shot('board');
-      await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Tab', key: 'Tab', windowsVirtualKeyCode: 9 });
+      await key(page, 'keyUp', 'Tab', 'Tab', 9);
       break;
     }
     case 'dom': {
@@ -186,6 +152,6 @@ for (const view of VIEWS) {
     default: console.error(`unknown view ${view}`);
   }
 }
-chrome.kill();
-for (const e of exceptions) console.log(`exception: ${e}`);
-process.exit(exceptions.length ? 1 : 0);
+page.close();
+for (const e of page.exceptions) console.log(`exception: ${e}`);
+process.exit(page.exceptions.length ? 1 : 0);

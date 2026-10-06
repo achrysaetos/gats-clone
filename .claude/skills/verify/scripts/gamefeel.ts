@@ -1,16 +1,12 @@
 /// <reference types="node" />
 // Usage: node gamefeel.ts <run-dir> [seconds]   Plays FFA as a real user and screenshots each game-feel cue the moment it happens.
-import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import WebSocket from 'ws';
-import { GUN_IDS, GUNS } from '../../../../src/shared/defs.ts';
+import { GUN_IDS, GUNS, type ColorId } from '../../../../src/shared/defs.ts';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { joinFromMenu, key, openPage, sleep } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node gamefeel.ts <run-dir> [seconds]'); process.exit(2); }
@@ -21,47 +17,31 @@ const BASE = `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}
 const EV = join(RUN, 'evidence');
 mkdirSync(EV, { recursive: true });
 const LOG = join(EV, 'gamefeel.log');
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const t0 = Date.now();
 const log = (line: string) => { const l = `[${((Date.now() - t0) / 1000).toFixed(1)}s] ${line}`; console.log(l); appendFileSync(LOG, l + '\n'); };
 let failures = 0;
 const expect = (name: string, ok: boolean, detail = '') => { if (!ok) failures++; log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ` (${detail})` : ''}`); };
 
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
-const debugPort = await freePort();
-const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-gamefeel-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-let target = '';
-for (let i = 0; i < 50 && !target; i++) {
-  try { target = ((await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[]).find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? ''; } catch {}
-  if (!target) await sleep(200);
-}
-const page = new WebSocket(target);
-await new Promise((r) => page.once('open', r));
-
 const st = { id: -1, worldSize: 0, walls: [] as Rect[], last: null as Snapshot | null, fresh: [] as GameEvent[], respawnsSent: 0 };
-let nextId = 1, socketId = '';
-const pending = new Map<number, (v: any) => void>();
-page.on('message', (raw) => {
-  const m = JSON.parse(String(raw));
-  if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-  if (m.method === 'Network.webSocketCreated') { socketId = m.params.requestId; st.last = null; }
-  else if (m.method === 'Network.webSocketFrameReceived' && m.params.requestId === socketId) {
-    const msg = JSON.parse(m.params.response.payloadData);
-    if (msg.t === 'welcome') { st.id = msg.id; st.walls = msg.walls; st.worldSize = msg.worldSize; }
-    if (msg.t === 'walls') st.walls = msg.walls;
-    if (msg.t === 'snap') {
-      st.last = fillSnapshot(msg, st.last) ?? st.last;
-      st.fresh.push(...msg.events);
-    }
-  } else if (m.method === 'Network.webSocketFrameSent' && m.params.requestId === socketId && m.params.response.payloadData.includes('"t":"respawn"')) {
-    st.respawnsSent++;
-  } else if (m.method === 'Runtime.exceptionThrown') expect('no page exception', false, m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-  else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') expect('no console.error', false, JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value)));
+let socketId = '';
+const page = await openPage({
+  profile: 'skirmish-gamefeel-',
+  viewport: { width: W, height: H },
+  onEvent: (method, params) => {
+    if (method === 'Network.webSocketCreated') { socketId = params.requestId; st.last = null; }
+    else if (method === 'Network.webSocketFrameReceived' && params.requestId === socketId) {
+      const msg = JSON.parse(params.response.payloadData);
+      if (msg.t === 'welcome') { st.id = msg.id; st.walls = msg.walls; st.worldSize = msg.worldSize; }
+      if (msg.t === 'walls') st.walls = msg.walls;
+      if (msg.t === 'snap') {
+        st.last = fillSnapshot(msg, st.last) ?? st.last;
+        st.fresh.push(...msg.events);
+      }
+    } else if (method === 'Network.webSocketFrameSent' && params.requestId === socketId && params.response.payloadData.includes('"t":"respawn"')) st.respawnsSent++;
+  },
+  onProblem: (kind, detail) => expect(`no ${kind}`, false, detail),
 });
-const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
-const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
+const { cdp, js } = page;
 const shot = async (name: string) => {
   const file = join(EV, `${name}.png`);
   const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
@@ -81,21 +61,14 @@ async function capture(tag: string, delayMs = 0, note = '') {
 const until = async (fn: () => boolean | Promise<boolean>, ms = 4000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(30); } return false; };
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const click = async (x: number, y: number) => { await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); };
-const key = (type: 'keyDown' | 'keyUp', code: string, k: string) => cdp('Input.dispatchKeyEvent', { type, code, key: k, windowsVirtualKeyCode: k.toUpperCase().charCodeAt(0) });
-const tap = async (d: number) => { for (const type of ['keyDown', 'keyUp']) await cdp('Input.dispatchKeyEvent', { type, code: `Digit${d}`, key: String(d), windowsVirtualKeyCode: 48 + d }); };
+const tap = async (d: number) => { for (const type of ['keyDown', 'keyUp'] as const) await key(page, type, `Digit${d}`, String(d)); };
 const me = () => st.last?.players.find((p) => p.id === st.id);
 const visible = (ax: number, ay: number, bx: number, by: number) => !st.walls.some((w) => segmentEntersRectAt(ax, ay, bx - ax, by - ay, w) !== null);
 const GUN_NAMES = new Map<string, number>(GUN_IDS.map((id) => [GUNS[id].name, GUNS[id].stage]));
 
-await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 log(`gamefeel ${W}x${H} ${SECONDS}s at ${BASE}`);
 await cdp('Page.navigate', { url: `${BASE}/?dev` });
-await sleep(800);
-await js(`localStorage.setItem('skirmish.loadout', JSON.stringify({ weapon: 'smg', armor: 'medium', color: '${COLOR}' }))`);
-await cdp('Page.reload');
-await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3, 6000);
-await js(`document.querySelectorAll('#servers .server')[0].click(); document.getElementById('name').value = 'Feel'; document.getElementById('play').click()`);
+await joinFromMenu(page, { name: 'Feel', loadout: { weapon: 'smg', armor: 'medium', color: COLOR as ColorId } });
 expect('joined FFA', await until(() => !!me(), 6000));
 if (st.last?.match.winner) log('note joined during a round end, so the objective waits for the next round');
 else expect('objective banner introduces the round on join', await until(async () => js(`!document.getElementById('objective').hidden`), 1500));
@@ -106,8 +79,8 @@ expect('the canvas hides the OS cursor while playing', (await js(`getComputedSty
 
 const held = new Set<string>();
 async function setKeys(want: string[]) {
-  for (const k of [...held]) if (!want.includes(k)) { await key('keyUp', `Key${k.toUpperCase()}`, k); held.delete(k); }
-  for (const k of want) if (!held.has(k)) { await key('keyDown', `Key${k.toUpperCase()}`, k); held.add(k); }
+  for (const k of [...held]) if (!want.includes(k)) { await key(page, 'keyUp', `Key${k.toUpperCase()}`, k); held.delete(k); }
+  for (const k of want) if (!held.has(k)) { await key(page, 'keyDown', `Key${k.toUpperCase()}`, k); held.add(k); }
 }
 
 async function onEvents() {
@@ -274,5 +247,4 @@ log(`missing: ${missing.join(', ') || 'none'}`);
 if (missing.length) failures++;
 log(failures ? `RESULT FAIL (${failures})` : 'RESULT PASS');
 page.close();
-chrome.kill();
 process.exit(failures ? 1 : 0);

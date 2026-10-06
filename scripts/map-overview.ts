@@ -1,21 +1,16 @@
 /// <reference types="node" />
 // Usage: node scripts/map-overview.ts <outDir> [mapId,...|all|none] [heat.json ...]
-import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
-import WebSocket from 'ws';
 import { MAP_IDS, type MapId } from '../src/shared/maps.ts';
-import { killOnExit } from './kill-on-exit.ts';
+import { openPage } from '../.claude/skills/verify/scripts/lib/browser.ts';
 
 const [OUT, which = 'all', ...heatFiles] = process.argv.slice(2);
 if (!OUT) { console.error('usage: node scripts/map-overview.ts <outDir> [mapId,...|all|none] [heat.json ...]'); process.exit(2); }
 const maps: MapId[] = which === 'all' ? [...MAP_IDS] : which === 'none' ? [] : (which.split(',') as MapId[]);
 const PX = Number(process.env.PX ?? 2400);
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 mkdirSync(OUT, { recursive: true });
 
 const PAGE = `
@@ -126,28 +121,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const bundle = await build({ stdin: { contents: PAGE, resolveDir: here, loader: 'ts' }, bundle: true, write: false, format: 'iife', logLevel: 'error' });
 const script = bundle.outputFiles[0]!.text;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const port = await new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
-const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-overview-'))}`,
-  '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' }));
-let target = '';
-for (let i = 0; i < 50 && !target; i++) {
-  try {
-    const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-    target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-  } catch {}
-  if (!target) await sleep(200);
-}
-const page = new WebSocket(target);
-await new Promise((r) => page.once('open', r));
-let nextId = 1;
-const pending = new Map<number, (v: any) => void>();
-page.on('message', (raw) => { const m = JSON.parse(String(raw)); if (m.id && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); } });
+const page = await openPage({ profile: 'skirmish-overview-' });
 const evaluate = async (expression: string): Promise<string> => {
-  const m = await new Promise<any>((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } })); });
-  const ex = m.result?.exceptionDetails;
+  const { result, exceptionDetails: ex } = await page.cdp('Runtime.evaluate', { expression, returnByValue: true });
   if (ex) throw new Error(ex.exception?.description ?? ex.text);
-  return m.result.result.value;
+  return result.value;
 };
 const save = (file: string, dataUrl: string) => { writeFileSync(file, Buffer.from(dataUrl.split(',')[1]!, 'base64')); console.log(`saved ${file}`); };
 
@@ -158,4 +136,3 @@ for (const file of heatFiles) {
   save(join(OUT, `heat-${heat.map}-${heat.mode}.png`), await evaluate(`renderMap(${JSON.stringify(heat.map)}, ${PX}, ${JSON.stringify(heat)})`));
 }
 page.close();
-chrome.kill();
