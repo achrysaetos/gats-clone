@@ -94,6 +94,7 @@ function timeToKill(gun: GunId, armor: ArmorId, range: number, seed: number, kin
   shooter.gun = gun;
   if (shooter.life.k === 'alive') shooter.life.ammo = effectiveStats(shooter).mag;
   const target = addPlayer(w, 'target', { weapon: 'pistol', armor, color: 'blue' }, { at: { x: 500 + range, y: 1500 }, kind });
+  if (target.life.k === 'alive') target.life.shieldUntil = -Infinity;
   for (let t = 0, shots = 1; t < DUEL_CAP_MS; t += TICK_MS, shots++) {
     setInput(w, shooter.id, shots, { ...IDLE_INPUT, fire: true, shots });
     step(w, TICK_MS);
@@ -149,7 +150,11 @@ function perkDuel(weapon: WeaponId, first: Tier2, second: Tier2, seed: number, s
   const w = createWorld('FFA', seed, 'plaza');
   w.walls = [];
   w.crates = [];
-  const join = (name: string, x: number) => addPlayer(w, name, { weapon, armor: 'none', color: 'red' }, { at: { x, y: 1500 } });
+  const join = (name: string, x: number) => {
+    const p = addPlayer(w, name, { weapon, armor: 'none', color: 'red' }, { at: { x, y: 1500 } });
+    if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
+    return p;
+  };
   const [left, right] = [join('left', 500), join('right', 500 + PERK_DUEL_RANGE)];
   const [a, b] = swap ? [right, left] : [left, right];
   for (const [p, perk] of [[a, first], [b, second]] as const) {

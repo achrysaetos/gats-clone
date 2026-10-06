@@ -91,6 +91,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   const armed = w.match.k === 'playing';
   if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
+    life.shieldUntil = -Infinity;
     const muzzle = WORLD.playerRadius + 4;
     const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
@@ -114,6 +115,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const ability = abilityOf(p);
   if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
+    if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
   }
 
   if (p.life.k === 'alive' && w.now - p.life.lastDamageAt >= stats.regenDelayMs) {

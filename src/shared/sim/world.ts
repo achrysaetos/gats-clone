@@ -20,6 +20,7 @@ export type Life =
     spin: number;
     lastDamageAt: number;
     lastMoveAt: number;
+    shieldUntil: number;
     dash: Dash | null;
     pressUntil: number;
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
@@ -249,7 +250,8 @@ export function solidRects(w: World): Rect[] {
 }
 
 const SPAWN_CLEARANCE = 10;
-const SPAWN_ENEMY_DIST = 400;
+/** Clear spots a spawn weighs, taking the one farthest from any enemy. */
+const SPAWN_CANDIDATES = 12;
 
 export function spawnPoint(w: World, team: Team): Pose {
   const { spawns, siege, size } = MAPS[w.map];
@@ -260,14 +262,18 @@ export function spawnPoint(w: World, team: Team): Pose {
     const inside = defendedPoints(solids, core, size);
     if (inside.length) return inside[Math.floor(rand(w) * Math.min(inside.length, SQUAD_SPAWN_CHOICES))]!;
   }
-  for (let i = 0; i < 200; i++) {
+  const enemies = [...w.players.values()].filter((p) => p.life.k === 'alive' && (team === null || p.team !== team));
+  const safety = (x: number, y: number) => Math.min(Infinity, ...enemies.map((p) => dist2(p.x, p.y, x, y)));
+  let best: (Pose & { safety: number }) | null = null;
+  for (let i = 0, found = 0; i < 200 && found < SPAWN_CANDIDATES; i++) {
     const r = regions[Math.floor(rand(w) * regions.length)];
     const x = r.x + rand(w) * r.w, y = r.y + rand(w) * r.h;
     if (solids.some((b) => circleHitsRect(x, y, WORLD.playerRadius + SPAWN_CLEARANCE, b))) continue;
-    const tooClose = [...w.players.values()].some((p) => p.life.k === 'alive' && (team === null || p.team !== team) && dist2(p.x, p.y, x, y) < SPAWN_ENEMY_DIST ** 2);
-    if (tooClose && i < 150) continue;
-    return { x, y };
+    found++;
+    const s = safety(x, y);
+    if (!best || s > best.safety) best = { x, y, safety: s };
   }
+  if (best) return { x: best.x, y: best.y };
   const fallback = regions[0];
   return clearPointNear(solids, fallback.x + fallback.w / 2, fallback.y + fallback.h / 2, WORLD.playerRadius + SPAWN_CLEARANCE, size);
 }

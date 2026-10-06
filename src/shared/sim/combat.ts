@@ -33,6 +33,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
   if (w.run && src.team !== null) return;
   const life = victim.life;
+  if (!w.run && w.now < life.shieldUntil) return;
   const before = life.hp;
   const stats = effectiveStats(victim);
   if (stats.shield && src.via === 'bullet') {

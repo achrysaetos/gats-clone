@@ -457,6 +457,15 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   if (p.hunted && !look.self) drawHuntedMark(ctx, look.now);
   ctx.globalAlpha = alpha;
   if (stage !== 0) drawTierMark(ctx, stage);
+  if (p.spawnShield) {
+    ctx.globalAlpha = alpha * (0.55 + 0.25 * Math.sin(look.now / 120));
+    ctx.beginPath();
+    ctx.arc(0, 0, R + 5, 0, TAU);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = PALETTE.shield;
+    ctx.stroke();
+    ctx.globalAlpha = alpha;
+  }
   if (p.shield) {
     ctx.beginPath();
     ctx.arc(0, 0, R + 6, p.angle - 1.05, p.angle + 1.05);

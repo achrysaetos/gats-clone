@@ -35,7 +35,7 @@ function duel(spec: DuelSpec): DuelResult {
   const join = (gun: GunId, x: number) => {
     const p = addPlayer(w, gun, { weapon: GUNS[gun].base, armor: spec.armor, color: 'red' }, { at: { x, y: mid } });
     p.gun = gun;
-    if (p.life.k === 'alive') p.life.ammo = effectiveStats(p).mag;
+    if (p.life.k === 'alive') Object.assign(p.life, { ammo: effectiveStats(p).mag, shieldUntil: -Infinity });
     mems.set(p.id, { ...newBotMemory(r), persona: personas[mems.size]! });
     return p;
   };

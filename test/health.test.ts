@@ -47,6 +47,7 @@ test('humans kill each other as fast as bots kill each other, armored or not, an
     const w = emptyWorld();
     const shooter = addPlayer(w, 'S', { ...PISTOL, weapon: 'smg' }, { kind: shooterKind, at: { x: 500, y: 500 } });
     const victim = addPlayer(w, 'V', { ...PISTOL, armor }, { kind: victimKind, at: { x: 700, y: 500 } });
+    if (victim.life.k === 'alive') victim.life.shieldUntil = -Infinity;
     press(w, shooter, { angle: 0, fire: true, shots: 1 });
     let t = 0;
     for (; victim.life.k === 'alive' && t < 20_000; t += TICK_MS) step(w, TICK_MS);
@@ -66,6 +67,7 @@ function rawDamageToKill(shooterKind: PlayerKind, victimKind: PlayerKind, armor:
   const w = emptyWorld();
   const shooter = addPlayer(w, 'S', PISTOL, { kind: shooterKind, at: { x: 500, y: 500 } });
   const victim = addPlayer(w, 'V', { ...PISTOL, armor }, { kind: victimKind, at: { x: 900, y: 500 } });
+  if (victim.life.k === 'alive') victim.life.shieldUntil = -Infinity;
   let raw = 0;
   while (victim.life.k === 'alive' && raw < 10_000) {
     damagePlayer(w, victim, RAW_STEP, { attacker: shooter, team: null, label: 'test', piercing: false, via: 'bullet', fromX: 500, fromY: 500 });

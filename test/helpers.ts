@@ -18,8 +18,11 @@ export function emptyWorld(mode: ModeId = 'FFA'): World {
   return w;
 }
 
-export function spawnAt(w: World, x: number, y: number, opts: { loadout?: Partial<Loadout>; team?: Team; name?: string; kind?: PlayerKind } = {}): Player {
-  return addPlayer(w, opts.name ?? `p${w.nextId}`, { ...PISTOL, ...opts.loadout }, { at: { x, y }, team: opts.team, kind: opts.kind });
+/** A body placed for a test, its spawn shield already spent unless `shielded`. */
+export function spawnAt(w: World, x: number, y: number, opts: { loadout?: Partial<Loadout>; team?: Team; name?: string; kind?: PlayerKind; shielded?: true } = {}): Player {
+  const p = addPlayer(w, opts.name ?? `p${w.nextId}`, { ...PISTOL, ...opts.loadout }, { at: { x, y }, team: opts.team, kind: opts.kind });
+  if (!opts.shielded && p.life.k === 'alive') p.life.shieldUntil = -Infinity;
+  return p;
 }
 
 let seq = 1;

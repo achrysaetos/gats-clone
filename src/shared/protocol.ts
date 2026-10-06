@@ -53,6 +53,8 @@ export type PlayerView = {
   kind: PlayerKind;
   /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
   hunted: boolean;
+  /** Fresh from a spawn and not yet firing: takes no damage. */
+  spawnShield?: true;
   /** Zombies only, while down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. */
   downed?: { revive: number; bleedOutAt: number };
 };
