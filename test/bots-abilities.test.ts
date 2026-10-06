@@ -29,7 +29,7 @@ function inputs(scene: Scene, ticks = 30): InputState[] {
   const w = emptyWorld(scene.mode);
   if (scene.walls) setWalls(w, scene.walls);
   const bot = spawnAt(w, scene.botAt?.x ?? 1000, scene.botAt?.y ?? 1000, { loadout: { weapon: 'assault' }, team: scene.mode === 'DOM' ? 'red' : undefined });
-  grantPerks(w, bot, ['grip', 'thickSkin', scene.ability]);
+  grantPerks(w, bot, ['extended', 'thickSkin', scene.ability]);
   if (scene.enemyAt) spawnAt(w, scene.enemyAt.x, scene.enemyAt.y, { team: scene.mode === 'DOM' ? 'blue' : undefined });
   const r = seeded(11);
   let mem = newBotMemory(r);
@@ -108,7 +108,7 @@ test('a bot throws a grenade where a moving target will be when it lands', () =>
   for (let seed = 1; seed <= 20; seed++) {
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-    grantPerks(w, bot, ['grip', 'thickSkin', 'grenade']);
+    grantPerks(w, bot, ['extended', 'thickSkin', 'grenade']);
     const target = spawnAt(w, 1350, 850);
     const r = seeded(seed);
     let mem = newBotMemory(r);

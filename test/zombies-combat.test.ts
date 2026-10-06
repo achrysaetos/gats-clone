@@ -85,7 +85,7 @@ test('a blast hurts every zombie in its radius, less with distance, and credits 
 test('knife, gas and land mines work on zombies too', () => {
   const knifeWorld = nightWorld();
   const knifer = spawnAt(knifeWorld, X, Y);
-  grantPerks(knifeWorld, knifer, ['bipod', 'shield', 'knife']);
+  grantPerks(knifeWorld, knifer, ['optics', 'shield', 'knife']);
   const cut = addZombie(knifeWorld, 'brute', X, Y + 100, 1000);
   press(knifeWorld, knifer, { ability: true, angle: DOWN });
   run(knifeWorld, TICK_MS);

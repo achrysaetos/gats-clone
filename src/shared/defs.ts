@@ -41,8 +41,35 @@ export type GunDef = {
   silenced?: true;
   /** Hits that kill a full-health target through heavy armor; a pellet gun counts a whole point-blank blast as one hit. */
   breakpoint?: 1 | 2;
+  /** Overrides the class's `GUN_RULES` for this gun. */
+  rules?: Partial<GunRules>;
   look: GunLook;
 };
+
+/**
+ * How a class handles beyond its numbers. `movingSpreadMul` scales spread while walking. Under `bloom` each shot of a spray
+ * after the first `free` widens spread by `perShot` of itself, up to `maxMul`, and letting go of the trigger takes it back to
+ * nothing within `recoverMs`. Under `spinUp` holding the trigger takes the shot interval from `startMul` times `fireMs` down to
+ * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see.
+ */
+export type GunRules = {
+  movingSpreadMul: number;
+  bloom: { free: number; perShot: number; maxMul: number; recoverMs: number } | null;
+  spinUp: { startMul: number; upMs: number; downMs: number } | null;
+  viewMul: number;
+};
+
+const STEADY: GunRules = { movingSpreadMul: 1, bloom: null, spinUp: null, viewMul: 1 };
+export const GUN_RULES: Record<WeaponId, GunRules> = {
+  pistol: STEADY,
+  smg: STEADY,
+  shotgun: STEADY,
+  assault: { ...STEADY, movingSpreadMul: 1.3, bloom: { free: 3, perShot: 0.12, maxMul: 2, recoverMs: 250 } },
+  sniper: { ...STEADY, movingSpreadMul: 4, viewMul: 1.35 },
+  lmg: { ...STEADY, movingSpreadMul: 2 },
+};
+
+export const rulesOf = (def: GunDef): GunRules => (def.rules ? { ...GUN_RULES[def.base], ...def.rules } : GUN_RULES[def.base]);
 
 const BASE_BULLET = { r: 1.6, color: '#25211c' };
 const BASE_LOOK: GunLook = { length: 1, width: 1, barrels: 1, accent: '#7b8494', bullet: BASE_BULLET };
@@ -94,24 +121,30 @@ export const GUNS: Record<GunId, GunDef> = {
   battleRifle: { name: 'Battle Rifle', desc: 'One clean burst drops the unarmored', base: 'assault', stage: 1, from: 'assault', damage: 34, fireMs: 420, pellets: 1, spread: 0.035, range: 850, bulletSpeed: 1800, mag: 24, reloadMs: 1700, moveMul: 0.92, auto: true, burst: { count: 3, gapMs: 70 },
     look: { length: 1.15, width: 1.1, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
   carbine: { name: 'Carbine', desc: 'Lighter and quicker, steady on the move', base: 'assault', stage: 1, from: 'assault', damage: 16, fireMs: 90, pellets: 1, spread: 0.055, range: 720, bulletSpeed: 1700, mag: 30, reloadMs: 1200, moveMul: 1.0, auto: true,
+    rules: { movingSpreadMul: 1 },
     look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   marksman: { name: 'Marksman', desc: 'Precise single shots, long reach', base: 'assault', stage: 2, from: 'battleRifle', damage: 55, fireMs: 300, pellets: 1, spread: 0.015, range: 900, bulletSpeed: 2300, mag: 12, reloadMs: 1700, moveMul: 0.9, auto: false,
     look: { length: 1.4, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#b3261e' } } },
   grenadier: { name: 'Grenadier', desc: 'Bursts of exploding rounds', base: 'assault', stage: 2, from: 'battleRifle', damage: 24, fireMs: 450, pellets: 1, spread: 0.05, range: 750, bulletSpeed: 1500, mag: 18, reloadMs: 1800, moveMul: 0.89, auto: true, burst: { count: 3, gapMs: 70 }, blast: { radius: 55, damage: 14 },
     look: { length: 1.2, width: 1.35, barrels: 1, accent: '#f76b15', bullet: { r: 2.8, color: '#e0661a' } } },
   specter: { name: 'Specter', desc: 'Suppressed and light', base: 'assault', stage: 2, from: 'carbine', damage: 19, fireMs: 88, pellets: 1, spread: 0.055, range: 700, bulletSpeed: 1700, mag: 30, reloadMs: 1200, moveMul: 1.02, auto: true, silenced: true,
+    rules: { movingSpreadMul: 1 },
     look: { length: 1.2, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.5, color: '#5a2d85' } } },
   scout: { name: 'Scout', desc: 'Scoped carbine, sees and hits farther', base: 'assault', stage: 2, from: 'carbine', damage: 22, fireMs: 120, pellets: 1, spread: 0.035, range: 900, bulletSpeed: 1900, mag: 25, reloadMs: 1300, moveMul: 1.0, auto: true,
+    rules: { movingSpreadMul: 1, viewMul: 1.25 },
     look: { length: 1.2, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
 
   sniper: { name: 'Bolt-action', desc: 'One shot, one kill; plant your feet', base: 'sniper', stage: 0, from: null, damage: 135, fireMs: 1300, pellets: 1, spread: 0.01, range: 1200, bulletSpeed: 2600, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false, breakpoint: 1, look: BASE_LOOK },
   longshot: { name: 'Longshot', desc: 'Heavier rounds, farther, faster', base: 'sniper', stage: 1, from: 'sniper', damage: 160, fireMs: 1700, pellets: 1, spread: 0.008, range: 1300, bulletSpeed: 3200, mag: 5, reloadMs: 2100, moveMul: 0.88, auto: false, breakpoint: 1,
+    rules: { viewMul: 1.5 },
     look: { length: 1.2, width: 1.05, barrels: 1, accent: '#c8553d', bullet: { r: 2.2, color: '#7a2e1f' } } },
   semiAuto: { name: 'Semi-auto Rifle', desc: 'Two hits drop anyone, quick follow-ups', base: 'sniper', stage: 1, from: 'sniper', damage: 68, fireMs: 450, pellets: 1, spread: 0.015, range: 1150, bulletSpeed: 2500, mag: 10, reloadMs: 1900, moveMul: 0.92, auto: false, breakpoint: 2,
     look: { length: 1, width: 1.1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.8, color: '#1f5560' } } },
   piercer: { name: 'Piercer', desc: 'Rounds pass through three bodies', base: 'sniper', stage: 2, from: 'longshot', damage: 160, fireMs: 1700, pellets: 1, spread: 0.006, range: 1400, bulletSpeed: 3600, mag: 5, reloadMs: 2200, moveMul: 0.86, auto: false, penetrate: 3, breakpoint: 1,
+    rules: { viewMul: 1.6 },
     look: { length: 1.45, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#ff3b30' } } },
   artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast', base: 'sniper', stage: 2, from: 'longshot', damage: 100, fireMs: 1500, pellets: 1, spread: 0.01, range: 1300, bulletSpeed: 1800, mag: 4, reloadMs: 2300, moveMul: 0.86, auto: false, blast: { radius: 130, damage: 80 }, breakpoint: 1,
+    rules: { viewMul: 1.5 },
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#f76b15', bullet: { r: 4, color: '#e0661a' } } },
   repeater: { name: 'Repeater', desc: 'Fastest follow-ups, lighter rounds', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 280, pellets: 1, spread: 0.018, range: 1100, bulletSpeed: 2600, mag: 14, reloadMs: 1800, moveMul: 0.95, auto: false,
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
@@ -122,14 +155,18 @@ export const GUNS: Record<GunId, GunDef> = {
   heavyLmg: { name: 'Heavy LMG', desc: 'Bigger rounds, holds a lane', base: 'lmg', stage: 1, from: 'lmg', damage: 21, fireMs: 100, pellets: 1, spread: 0.055, range: 900, bulletSpeed: 1700, mag: 100, reloadMs: 3800, moveMul: 0.78, auto: true,
     look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2.1, color: '#7a2e1f' } } },
   lightMg: { name: 'Light MG', desc: 'Lighter build, fires on the walk', base: 'lmg', stage: 1, from: 'lmg', damage: 14, fireMs: 75, pellets: 1, spread: 0.07, range: 800, bulletSpeed: 1600, mag: 80, reloadMs: 3000, moveMul: 0.9, auto: true,
+    rules: { movingSpreadMul: 1.3 },
     look: { length: 0.95, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
-  minigun: { name: 'Minigun', desc: 'Spins up into a torrent of lead', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 10, fireMs: 30, pellets: 1, spread: 0.1, range: 750, bulletSpeed: 1600, mag: 200, reloadMs: 4500, moveMul: 0.75, auto: true,
+  minigun: { name: 'Minigun', desc: 'Spins up into a torrent of lead', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 10, fireMs: 33, pellets: 1, spread: 0.1, range: 750, bulletSpeed: 1600, mag: 200, reloadMs: 4500, moveMul: 0.75, auto: true,
+    rules: { spinUp: { startMul: 3, upMs: 1200, downMs: 800 } },
     look: { length: 1.2, width: 1.25, barrels: 3, accent: '#f5c400', bullet: { r: 1.6, color: '#a88600' } } },
   juggernaut: { name: 'Juggernaut', desc: 'Biggest rounds, huge belt, slowest feet', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 28, fireMs: 105, pellets: 1, spread: 0.05, range: 900, bulletSpeed: 1800, mag: 150, reloadMs: 4500, moveMul: 0.72, auto: true,
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#e5484d', bullet: { r: 2.3, color: '#b3261e' } } },
   ranger: { name: 'Ranger', desc: 'Lightest MG, accurate on the move', base: 'lmg', stage: 2, from: 'lightMg', damage: 16, fireMs: 75, pellets: 1, spread: 0.06, range: 800, bulletSpeed: 1650, mag: 75, reloadMs: 2400, moveMul: 0.95, auto: true,
+    rules: { movingSpreadMul: 1 },
     look: { length: 1, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   twinMg: { name: 'Twin MG', desc: 'Paired barrels, double rounds', base: 'lmg', stage: 2, from: 'lightMg', damage: 12, fireMs: 85, pellets: 2, spread: 0.1, range: 760, bulletSpeed: 1600, mag: 100, reloadMs: 3200, moveMul: 0.88, auto: true,
+    rules: { movingSpreadMul: 1.3 },
     look: { length: 1.05, width: 1.3, barrels: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
 };
 
@@ -157,7 +194,7 @@ export const COLORS: Record<ColorId, string> = {
 };
 
 export const PERK_TIERS = {
-  1: ['bipod', 'optics', 'thermal', 'ghillie', 'piercing', 'extended', 'grip', 'silencer', 'lightweight', 'longRange'],
+  1: ['optics', 'thermal', 'ghillie', 'piercing', 'extended', 'grip', 'silencer', 'lightweight', 'longRange', 'quickReload', 'choke'],
   2: ['shield', 'thickSkin', 'firstAid'],
   3: ['grenade', 'fragGrenade', 'gasGrenade', 'landMine', 'knife', 'engineer', 'dash'],
 } as const;
@@ -166,7 +203,6 @@ export type PerkId = (typeof PERK_TIERS)[Tier][number];
 export type AbilityId = (typeof PERK_TIERS)[3][number];
 
 export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
-  bipod: { name: 'Bipod', desc: 'Half spread while standing still' },
   optics: { name: 'Optics', desc: 'See further' },
   thermal: { name: 'Thermal', desc: 'Reveal hidden enemies' },
   ghillie: { name: 'Ghillie suit', desc: 'Nearly invisible while still' },
@@ -176,6 +212,8 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   silencer: { name: 'Silencer', desc: 'Firing does not reveal you on the minimap' },
   lightweight: { name: 'Lightweight', desc: '+10% move speed' },
   longRange: { name: 'Long range', desc: '+40% bullet range' },
+  quickReload: { name: 'Quick reload', desc: 'Reload 35% faster' },
+  choke: { name: 'Choke', desc: '-40% pellet spread' },
   shield: { name: 'Shield', desc: 'Blocks 33% of bullet damage from the front' },
   thickSkin: { name: 'Thick skin', desc: '+40 max health' },
   firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster, starting 1.6s after a hit' },
@@ -206,7 +244,28 @@ export const LEVELS = [
   { score: 300, pick: { k: 'perk', tier: 2 } }, { score: 400, pick: { k: 'perk', tier: 3 } }, { score: 550, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
-export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] => (pick.k === 'perk' ? PERK_TIERS[pick.tier] : EVOLUTIONS[gun]);
+type Attachment = (typeof PERK_TIERS)[1][number];
+
+/** The tier-1 perks each class is offered. */
+export const ATTACHMENTS: Record<WeaponId, readonly Attachment[]> = {
+  pistol: ['extended', 'longRange', 'silencer', 'lightweight', 'optics'],
+  smg: ['grip', 'extended', 'silencer', 'longRange', 'lightweight'],
+  shotgun: ['choke', 'quickReload', 'extended', 'lightweight', 'piercing'],
+  assault: ['grip', 'extended', 'silencer', 'optics', 'piercing'],
+  sniper: ['optics', 'thermal', 'ghillie', 'silencer', 'quickReload'],
+  lmg: ['quickReload', 'grip', 'lightweight', 'piercing', 'thermal'],
+};
+
+/** An attachment that would change nothing on this gun is never offered. */
+const DOES_NOTHING: Partial<Record<Attachment, (def: GunDef) => boolean>> = {
+  silencer: (def) => def.silenced ?? false,
+  choke: (def) => def.pellets < 2,
+};
+
+export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] =>
+  pick.k === 'evolve' ? EVOLUTIONS[gun]
+    : pick.tier === 1 ? ATTACHMENTS[GUNS[gun].base].filter((perk) => !DOES_NOTHING[perk]?.(GUNS[gun]))
+      : PERK_TIERS[pick.tier];
 
 export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(PERK_INFO, option);
 

@@ -29,7 +29,7 @@ test('four kills and ten crates in one life open the ability pick', () => {
     shootOnce(w, a, 0);
   }
   assert.equal(a.score, 4 * WORLD.killScore + 10 * WORLD.crateScore);
-  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
   assert.deepEqual(pendingOf(w, a), { level: 4, k: 'perk', tier: 3 }, 'the ability pick is open');
@@ -58,7 +58,7 @@ test('no pick is offered or taken during the round-end ceasefire, since the rest
   assert.deepEqual(pendingOf(w, a), { level: 1, k: 'perk', tier: 1 }, 'open while the round plays');
   w.match = { k: 'over', winner: { name: a.name, id: a.id, note: null }, restartAt: w.now + WORLD.roundRestartMs };
   assert.equal(pendingOf(w, a), null, 'the dock has nothing to show');
-  assert.equal(choosePick(w, a.id, 1, 'grip'), false, 'a pick sent from an older snapshot is refused');
+  assert.equal(choosePick(w, a.id, 1, 'lightweight'), false, 'a pick sent from an older snapshot is refused');
   assert.deepEqual(a.perks, {});
 });
 
@@ -69,9 +69,9 @@ test('a stale, duplicate or foreign pick changes nothing', () => {
   assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'the evolve pick waits behind the open perk pick');
   assert.equal(choosePick(w, a.id, 1, 'shield'), false, 'a tier 2 perk does not fill tier 1');
   assert.equal(choosePick(w, a.id, 1, 'handCannon'), false, 'a gun does not fill a perk pick');
-  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.equal(choosePick(w, a.id, 1, 'optics'), false, 'a repeated pick for the same level');
-  assert.deepEqual(snapshotFor(w, a.id).self.perks, { 1: 'grip' });
+  assert.deepEqual(snapshotFor(w, a.id).self.perks, { 1: 'lightweight' });
   assert.equal(choosePick(w, a.id, 2, 'executioner'), false, 'no skipping to stage 2');
   assert.equal(choosePick(w, a.id, 2, 'slugGun'), false, 'another class\'s branch');
   assert.ok(choosePick(w, a.id, 2, 'machinePistol'));
@@ -86,7 +86,7 @@ test('evolving swaps in the new gun with its own stats and keeps the loaded shar
   const target = spawnAt(w, 750, 500);
   a.level = 2;
   for (let i = 0; i < 6; i++) shootOnce(w, a, Math.PI, GUNS.pistol.fireMs);
-  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   const self = snapshotFor(w, a.id).self;
   assert.deepEqual([self.ammo, self.mag], [GUNS.handCannon.mag / 2, GUNS.handCannon.mag], 'half a pistol magazine becomes half a hand cannon magazine');
@@ -98,7 +98,7 @@ test('evolving during a reload neither finishes nor cancels it', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   a.level = 2;
-  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   shootOnce(w, a, 0, GUNS.pistol.fireMs);
   press(w, a, { reload: true });
   step(w, TICK_MS);
@@ -114,7 +114,7 @@ test('a max-health perk keeps the share of health you had, not a free heal', () 
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   a.level = 3;
-  assert.ok(choosePick(w, a.id, 1, 'grip'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   if (a.life.k === 'alive') a.life.hp = WORLD.baseHp / 2;
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));

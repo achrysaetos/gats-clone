@@ -85,7 +85,7 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
   const a = spawnAt(w, 300, 300, { name: 'Kestrel' });
   const far = spawnAt(w, 2700, 2700);
   a.level = 5;
-  for (const [level, option] of [[1, 'grip'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
+  for (const [level, option] of [[1, 'lightweight'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   const shipped = () => { step(w, TICK_MS); return snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'); };
   assert.deepEqual(shipped(), [], 'stage 1 is not hunted');
   assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
@@ -95,13 +95,13 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
 
 test('a hunted player cannot vanish in a ghillie suit', () => {
   const w = emptyWorld();
-  const camper = spawnAt(w, 500, 500);
+  const camper = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' } });
   const enemy = spawnAt(w, 900, 500);
   grantPerks(w, camper, ['ghillie']);
   const seen = () => snapshotFor(w, enemy.id).players.some((p) => p.id === camper.id);
   run(w, 1000);
   assert.equal(seen(), false, 'a still ghillie player with a class gun is hidden');
-  equip(camper, 'executioner');
+  equip(camper, 'ghost');
   assert.equal(seen(), true);
 });
 
@@ -110,7 +110,7 @@ test('a squadmate on a stage-2 gun in a zombies run is never hunted: no announce
   const a = spawnAt(w, 1400, 1400, { name: 'Bramble' });
   const mate = spawnAt(w, 1600, 1400);
   a.level = 5;
-  for (const [level, option] of [[1, 'grip'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
+  for (const [level, option] of [[1, 'lightweight'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
   step(w, TICK_MS);
   const snap = snapshotFor(w, mate.id);

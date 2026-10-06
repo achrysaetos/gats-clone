@@ -15,7 +15,7 @@ test('an engineer wall never spawns on a player, keeps the cooldown ready, and b
   const w = emptyWorld();
   const builder = spawnAt(w, 500, 500);
   const enemy = spawnAt(w, 580, 500);
-  grantPerks(w, builder, ['grip', 'thickSkin', 'engineer']);
+  grantPerks(w, builder, ['extended', 'thickSkin', 'engineer']);
   press(w, builder, { ability: true, angle: 0 });
   run(w, 500);
   assert.equal(builtWalls(w).length, 0, 'no wall over the enemy');
@@ -31,7 +31,7 @@ test('an engineer wall never spawns on a player, keeps the cooldown ready, and b
 
 function knifer(w: World, x = 500, y = 500): Player {
   const p = spawnAt(w, x, y);
-  grantPerks(w, p, ['grip', 'thickSkin', 'knife']);
+  grantPerks(w, p, ['extended', 'thickSkin', 'knife']);
   return p;
 }
 
@@ -84,7 +84,7 @@ test('a whiffed knife still lunges the full distance and emits a slash', () => {
 
 function dasher(w: World, x = 500, y = 500): Player {
   const p = spawnAt(w, x, y);
-  grantPerks(w, p, ['grip', 'thickSkin', 'dash']);
+  grantPerks(w, p, ['extended', 'thickSkin', 'dash']);
   return p;
 }
 
@@ -120,7 +120,7 @@ test('a dash stops at a thin built wall instead of passing through it', () => {
 test('an owner keeps at most two mines, the third replacing the oldest, and loses them all on death', () => {
   const w = emptyWorld();
   const miner = spawnAt(w, 500, 500);
-  grantPerks(w, miner, ['grip', 'thickSkin', 'landMine']);
+  grantPerks(w, miner, ['extended', 'thickSkin', 'landMine']);
   const plant = (x: number) => {
     miner.x = x;
     miner.abilityReadyAt = 0;

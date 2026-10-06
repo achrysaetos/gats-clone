@@ -123,8 +123,11 @@ function routeAhead(me: Point, route: Motor['route']): Point | null {
   return from === me ? null : from;
 }
 
+/** A gun whose spread on the move is at least this much wider is worth planting for; a lighter cost is worth paying to stay a moving target. */
+const PLANT_SPREAD_GAIN = 1.5;
+
 const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
-  spreadFor(v.me.gun, v.self.perks, true) < spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
+  spreadFor(v.me.gun, v.self.perks, true) * PLANT_SPREAD_GAIN <= spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
 
 function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
   const age = v.tick - m.stance.since;

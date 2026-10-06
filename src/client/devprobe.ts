@@ -3,7 +3,7 @@ import type { Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera } from './camera.ts';
 import { kicks } from './effects.ts';
 import { NUMBER_MS, numberHeight } from './feedback.ts';
-import { drawnBuildChips, drawnPanels } from './hud.ts';
+import { drawnBuildChips, drawnPanels, drawnReticleGap } from './hud.ts';
 import { newestSnap } from './interp.ts';
 import { CALLOUT_MS } from './moments.ts';
 import { drawnTags, shadowBakes } from './render.ts';
@@ -105,9 +105,13 @@ export function installDevProbe(page: Page) {
       return performance.now() - start;
     });
   };
+  const trigger = () => {
+    const t = page.session()?.firing.trigger;
+    return t && { gun: t.gun, heat: t.heat, spin: t.spin, reticleGap: drawnReticleGap() };
+  };
   const toScreen = (x: number, y: number) => {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
 }

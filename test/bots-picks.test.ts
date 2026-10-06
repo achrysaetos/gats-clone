@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { PickOption, WeaponId } from '../src/shared/defs.ts';
+import { ATTACHMENTS, WEAPON_IDS, type PickOption, type WeaponId } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
@@ -25,13 +25,15 @@ function tierOnePicks(weapon: WeaponId, n: number): Map<PickOption, number> {
 }
 
 test('a bot never takes a perk that does nothing for a bot', () => {
-  for (const weapon of ['assault', 'sniper', 'smg'] as const) {
+  for (const weapon of ['pistol', 'sniper', 'smg'] as const) {
     const counts = tierOnePicks(weapon, 300);
-    for (const useless of ['bipod', 'ghillie', 'longRange'] as const) assert.equal(counts.get(useless) ?? 0, 0, `${weapon} took ${useless}`);
+    for (const useless of ['ghillie', 'longRange'] as const) assert.equal(counts.get(useless) ?? 0, 0, `${weapon} took ${useless}`);
   }
 });
 
-test('a bolt-action bot never takes grip, which an smg bot does', () => {
-  assert.equal(tierOnePicks('sniper', 300).get('grip') ?? 0, 0, 'sniper took grip');
-  assert.ok((tierOnePicks('smg', 300).get('grip') ?? 0) > 0, 'smg never took grip');
+test('a bot takes its attachment from its own class menu', () => {
+  for (const weapon of WEAPON_IDS) {
+    for (const option of tierOnePicks(weapon, 60).keys()) assert.ok(ATTACHMENTS[weapon].some((a) => a === option), `${weapon} took ${option}`);
+  }
+  assert.ok((tierOnePicks('shotgun', 300).get('choke') ?? 0) > 0, 'shotgun never took choke');
 });

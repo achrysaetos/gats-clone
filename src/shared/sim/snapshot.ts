@@ -1,4 +1,4 @@
-import { BUILDINGS, byTurret, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { BUILDINGS, byTurret, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
   BuildingView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
@@ -49,7 +49,7 @@ function selfView(w: World, p: Player): SelfView {
     speed: stats.speed,
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
-      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / GUNS[p.gun].reloadMs))
+      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs))
       : 0,
     perks: { ...p.perks },
     // The restart wipes every pick, so none is offered during the round-end ceasefire or a fallen run's report.

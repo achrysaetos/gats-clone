@@ -16,8 +16,8 @@ const CHAT_VISIBLE_MS = 15000;
 
 /** Tile labels short enough for a 58px tile. */
 const PERK_SHORT: Record<PerkId, string> = {
-  bipod: 'Bipod', optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
-  grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', shield: 'Shield', thickSkin: 'Thick skin',
+  optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
+  grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', quickReload: 'Reload', choke: 'Choke', shield: 'Shield', thickSkin: 'Thick skin',
   firstAid: 'First aid', grenade: 'Grenade', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Mine', knife: 'Knife',
   engineer: 'Engineer', dash: 'Dash',
 };

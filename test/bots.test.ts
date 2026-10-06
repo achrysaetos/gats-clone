@@ -84,9 +84,9 @@ test('a bot ignores an enemy in the snapshot preload margin beyond its 16:9 view
 });
 
 /** A bot of `persona` at (1000, 1000) fighting a still enemy 400px right in the open, both kept at full health, its inputs fed to the sim. */
-function duel(persona: PersonalityId, seed: number, ticks: number, perks: PerkId[] = []): InputState[] {
+function duel(persona: PersonalityId, seed: number, ticks: number, perks: PerkId[] = [], weapon: WeaponId = 'assault'): InputState[] {
   const w = emptyWorld();
-  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon } });
   if (perks.length) grantPerks(w, bot, perks);
   const enemy = spawnAt(w, 1400, 1000);
   const r = seeded(seed);
@@ -111,13 +111,15 @@ const stillShare = (runs: InputState[][]) => {
   return shots.filter((i) => !moving(i)).length / shots.length;
 };
 
-test('in the open a bot strafes while it shoots, since standing still buys no accuracy, and plants its feet only with a bipod', () => {
+test('in the open an assault bot strafes while it shoots, since walking costs it little accuracy, and an LMG or sniper bot plants its feet', () => {
   for (const persona of ['aggressive', 'cautious', 'marksman'] as const) {
-    const bare = stillShare(Array.from({ length: 10 }, (_, s) => duel(persona, s + 1, 150)));
-    assert.ok(bare < 0.1, `${persona}: ${(100 * bare).toFixed(0)}% of shots fired standing still without a bipod`);
+    const assault = stillShare(Array.from({ length: 10 }, (_, s) => duel(persona, s + 1, 150)));
+    assert.ok(assault < 0.1, `${persona}: ${(100 * assault).toFixed(0)}% of assault shots fired standing still`);
   }
-  const bipod = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, ['bipod'])));
-  assert.ok(bipod > 0.6, `${(100 * bipod).toFixed(0)}% of shots fired standing still with a bipod`);
+  for (const weapon of ['lmg', 'sniper'] as const) {
+    const planted = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, [], weapon)));
+    assert.ok(planted > 0.6, `${(100 * planted).toFixed(0)}% of ${weapon} shots fired standing still`);
+  }
 });
 
 test('a strafing bot holds each leg\'s keys for at least a third of a second', () => {

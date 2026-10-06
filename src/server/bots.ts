@@ -19,8 +19,8 @@ const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right:
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
-const PERK_WEIGHT: Partial<Record<PerkId, number>> = { bipod: 0, ghillie: 0, longRange: 0 };
-const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { sniper: { grip: 0 } };
+const PERK_WEIGHT: Partial<Record<PerkId, number>> = { ghillie: 0, longRange: 0, quickReload: 1.5, choke: 2 };
+const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { lmg: { quickReload: 2 } };
 
 function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {
   const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : 1);
