@@ -3,6 +3,7 @@ import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, spreadFor, viewRadiusOf } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
+import { median } from './stats.ts';
 
 export const DPS_RANGES = [150, 400, 700, 1000] as const;
 
@@ -139,12 +140,14 @@ export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, a
 }
 
 const SUSTAIN_MS = 5000;
-/** Expected damage per second a person's aim puts on a strafing person at `d` over a five-second hold. */
+/** Expected damage per second a person's aim puts on a strafing person at `d` over the first five seconds of a hold, up to when the next shot is ready. */
 export function aimDps(id: GunId, d: number, still: boolean): number {
   const g = GUNS[id];
   if (d > g.range) return 0;
-  const shots = timeline.get(id)!.filter((s) => s.t < SUSTAIN_MS);
-  return (shots.reduce((sum, s) => sum + hitChance(d, spreadFor(id, {}, still, s.spray), g.bulletSpeed), 0) * perHit(id, 'none') * 1000) / SUSTAIN_MS;
+  const all = timeline.get(id)!;
+  const n = all.findIndex((s) => s.t >= SUSTAIN_MS);
+  const hits = all.slice(0, n).reduce((sum, s) => sum + hitChance(d, spreadFor(id, {}, still, s.spray), g.bulletSpeed), 0);
+  return (hits * perHit(id, 'none') * 1000) / all[n]!.t;
 }
 
 export const AIM_BANDS = [100, 300, 600, 900] as const;
@@ -153,6 +156,7 @@ type Band = (typeof AIM_BANDS)[number];
 /**
  * Each class's job against a person. `cadenceMs` bounds ms per round; `ceiling` caps a stage-0 gun's `aimDps` standing at each
  * band, and an evolution may reach `STAGE_GAIN` of it, so a stage buys more of the class's strength rather than a new one.
+ * Within a stage no sniper or LMG out-damages any SMG at 100 px, and no SMG or pellet shotgun out-damages the median sniper at 600 px.
  */
 export const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: number; ceiling: Record<Band, number> }> = {
   pistol: { cadenceMs: [80, 600], scope: 1, ceiling: { 100: 125, 300: 85, 600: 52, 900: 42 } },
@@ -192,14 +196,14 @@ export function doctrineBreaches(): Breach[] {
   }
   for (const stage of [0, 1, 2] as const) {
     const ids = gunsOfStage(stage);
-    const weakest = (keep: (id: GunId) => boolean, d: Band) => Math.min(...ids.filter(keep).map((id) => aim.get(id)!.get(d)!));
-    const smgFloor = weakest((id) => GUNS[id].base === 'smg', 100);
+    const aimOf = (keep: (id: GunId) => boolean, d: Band) => ids.filter(keep).map((id) => aim.get(id)!.get(d)!);
+    const smgFloor = Math.min(...aimOf((id) => GUNS[id].base === 'smg', 100));
     for (const id of ids.filter((x) => GUNS[x].base === 'sniper' || GUNS[x].base === 'lmg')) {
       if (aim.get(id)!.get(100)! > smgFloor) breach(id, 'close', `${aim.get(id)!.get(100)!.toFixed(0)} dps at 100px beats an SMG's ${smgFloor.toFixed(0)}`);
     }
-    const sniperFloor = weakest((id) => GUNS[id].base === 'sniper', 600);
+    const sniperMid = median(aimOf((id) => GUNS[id].base === 'sniper', 600));
     for (const id of ids.filter((x) => GUNS[x].base === 'smg' || (GUNS[x].base === 'shotgun' && GUNS[x].pellets > 1))) {
-      if (aim.get(id)!.get(600)! > sniperFloor) breach(id, 'falloff', `${aim.get(id)!.get(600)!.toFixed(0)} dps at 600px beats a sniper's ${sniperFloor.toFixed(0)}`);
+      if (aim.get(id)!.get(600)! > sniperMid) breach(id, 'falloff', `${aim.get(id)!.get(600)!.toFixed(0)} dps at 600px beats the median sniper's ${sniperMid.toFixed(0)}`);
     }
   }
   return out;
