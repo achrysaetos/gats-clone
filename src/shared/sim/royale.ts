@@ -264,6 +264,38 @@ export function startRoyale(w: World) {
   }
 }
 
+const SEAT_ORDER = { alive: 0, dead: 1, downed: 2 } as const;
+
+/** The bot whose seat a joining human takes while redeploys are open: in the squad with fewest humans, a standing bot first. Null means the joiner watches until the next match. */
+export function seatFor(w: World): Player | null {
+  const r = w.royale;
+  if (!r || w.match.k !== 'playing' || !redeploysOpen(r)) return null;
+  const humans = (team: Team) => [...w.players.values()].filter((p) => p.team === team && p.kind === 'human').length;
+  const bots = [...w.players.values()].filter((p) => p.kind === 'bot' && p.team !== null && !r.out.includes(p.team));
+  return bots.sort((a, b) => humans(a.team) - humans(b.team) || SEAT_ORDER[a.life.k] - SEAT_ORDER[b.life.k])[0] ?? null;
+}
+
+/** `to` steps into `from`'s place in the match: where they stand, whether they are up, knocked or waiting to redeploy. A standing seat comes with a fresh life and its spawn shield. */
+export function takeSeat(w: World, to: Player, from: Player) {
+  const r = w.royale!;
+  to.team = from.team;
+  to.x = from.x;
+  to.y = from.y;
+  const life = from.life;
+  if (life.k === 'alive') to.life = freshLife(to, w.now);
+  else if (life.k === 'downed') to.life = { ...life, hp: life.hp * (effectiveStats(to).maxHp / effectiveStats(from).maxHp) };
+  else to.life = { k: 'dead', respawnAt: Infinity };
+  const redeploy = r.redeployAt.get(from.id);
+  r.redeployAt.delete(from.id);
+  if (redeploy !== undefined) r.redeployAt.set(to.id, redeploy);
+}
+
+/** A joiner who sits the match out until the next one starts. */
+export function benchUntilNextMatch(p: Player) {
+  p.team = null;
+  p.life = { k: 'dead', respawnAt: Infinity };
+}
+
 export function resultFor(w: World, r: Royale, p: Player): RoyaleResult | null {
   const place = p.team && placeOf(w, r, p.team);
   if (!place) return null;

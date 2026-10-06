@@ -5,7 +5,9 @@ import type { Circle, GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
+import type { Accounts } from '../src/server/accounts.ts';
+import { createRoom } from '../src/server/room.ts';
+import { emptyWorld, fakeSocket, hpOf, PISTOL, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
 /** Reads the life afresh, past what an earlier assertion narrowed it to. */
 const lifeOf = (p: Player) => p.life;
@@ -95,6 +97,69 @@ test('bullets spare a squadmate but hurt every other squad', () => {
   assert.ok(hpOf(rival) < 100);
 });
 
+function finish(w: World, shooter: Player, victim: Player, angle = 0) {
+  shootUntilDead(w, shooter, victim, angle);
+  for (let i = 0; i < 20 && lifeOf(victim).k === 'downed'; i++) shootOnce(w, shooter, angle, 300);
+  assert.equal(lifeOf(victim).k, 'dead');
+}
+
+test('a dead player redeploys beside a standing squadmate, later each death, with the class gun and a spawn shield', () => {
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const victim = spawnAt(w, 1200, 1000, { team: 'red', loadout: { weapon: 'smg' } });
+  const mate = spawnAt(w, 3000, 3000, { team: 'red' });
+  victim.gun = 'heavySmg';
+  finish(w, shooter, victim);
+  assert.ok(snapshotFor(w, victim.id).royale!.redeployAt! > w.now);
+  run(w, 14_000);
+  assert.equal(lifeOf(victim).k, 'dead');
+  run(w, 1500);
+  assert.equal(lifeOf(victim).k, 'alive');
+  assert.ok(Math.hypot(victim.x - mate.x, victim.y - mate.y) < 250, 'beside the squadmate');
+  assert.equal(victim.gun, 'smg');
+  assert.equal(snapshotFor(w, victim.id).players.find((p) => p.id === victim.id)?.spawnShield, true);
+  victim.x = 1200;
+  victim.y = 1000;
+  if (victim.life.k === 'alive') victim.life.shieldUntil = -Infinity;
+  finish(w, shooter, victim);
+  run(w, 20_000);
+  assert.equal(lifeOf(victim).k, 'dead', 'the second wait is longer');
+  run(w, 6000);
+  assert.equal(lifeOf(victim).k, 'alive');
+});
+
+test('once the third ring phase closes nobody redeploys: last lives', () => {
+  const w = emptyWorld('BR');
+  holdRing(w, { x: 3000, y: 3000, r: 3000 }, 2);
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
+  spawnAt(w, 3000, 3000, { team: 'red' });
+  finish(w, shooter, victim);
+  assert.equal(snapshotFor(w, victim.id).royale!.redeploys, true);
+  w.royale!.ring = { k: 'shrinking', phase: 2, from: { x: 3000, y: 3000, r: 3000 }, to: { x: 3000, y: 3000, r: 2900 }, startAt: w.now, closeAt: w.now + 100 };
+  run(w, 200);
+  const view = snapshotFor(w, victim.id).royale!;
+  assert.equal(view.ring.phase, 3);
+  assert.equal(view.redeploys, false);
+  assert.equal(view.redeployAt, null);
+  run(w, 25_000);
+  assert.equal(lifeOf(victim).k, 'dead');
+});
+
+test('a dead player watches a squadmate still up, and the snapshot centres on them', () => {
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
+  const mate = spawnAt(w, 4000, 4000, { team: 'red' });
+  const near = spawnAt(w, 4300, 4000, { team: 'green' });
+  finish(w, shooter, victim);
+  step(w, TICK_MS);
+  const snap = snapshotFor(w, victim.id);
+  assert.equal(snap.royale!.watch, mate.id);
+  assert.ok(snap.players.some((p) => p.id === near.id), 'sees what the watched squadmate sees');
+  assert.ok(!snap.players.some((p) => p.id === shooter.id), 'not what is round its own body');
+});
+
 test('a squadmate holding use beside a knocked player revives them; left alone they bleed out', () => {
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
@@ -109,4 +174,45 @@ test('a squadmate holding use beside a knocked player revives them; left alone t
   shootUntilDead(w, shooter, victim);
   run(w, ZOM.bleedOutMs + 100);
   assert.equal(lifeOf(victim).k, 'dead');
+});
+
+test('a joiner takes a bot\'s seat while redeploys are open, solo humans spread one per squad, and after that they watch until the next match seats them', (t) => {
+  const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as Accounts;
+  const room = createRoom('br-test', 'BR', 1, accounts);
+  const w = room.world;
+  const join = (name: string) => {
+    const ws = fakeSocket();
+    room.connect(ws.socket);
+    t.after(ws.close);
+    ws.send({ t: 'join', name, loadout: PISTOL, aspect: 1.5 });
+    const welcome = ws.sent.find((m) => m.t === 'welcome');
+    return { ws, p: w.players.get(welcome?.t === 'welcome' ? welcome.id : -1)! };
+  };
+  const squadOf = (team: Player['team']) => [...w.players.values()].filter((p) => p.team === team);
+  assert.equal(w.players.size, 18);
+  const ann = join('Ann');
+  const bob = join('Bob');
+  assert.equal(w.players.size, 18, 'each joiner replaces a bot');
+  assert.notEqual(ann.p.team, null);
+  assert.notEqual(ann.p.team, bob.p.team, 'two solo humans land in different squads');
+  assert.deepEqual(squadOf(ann.p.team).map((p) => p.kind).sort(), ['bot', 'bot', 'human']);
+  assert.equal(lifeOf(ann.p).k, 'alive');
+
+  w.royale!.ring = { k: 'waiting', phase: 3, circle: { x: 3000, y: 3000, r: 4300 }, next: { x: 3000, y: 3000, r: 4300 }, shrinkAt: Infinity };
+  const cat = join('Cat');
+  assert.equal(w.players.size, 19, 'no seat once redeploys close');
+  assert.equal(cat.p.team, null);
+  assert.equal(lifeOf(cat.p).k, 'dead');
+  room.tick();
+  const snap = cat.ws.sent.filter((m) => m.t === 'snap').at(-1);
+  assert.ok(snap?.t === 'snap' && snap.royale?.watch !== null, 'watches someone still in');
+
+  w.match = { k: 'over', winner: { name: 'Red squad', id: null, note: null }, restartAt: w.now };
+  w.mapChangeAt = w.now;
+  room.tick();
+  assert.notEqual(cat.p.team, null, 'the next match seats them');
+  assert.equal(lifeOf(cat.p).k, 'alive');
+  assert.equal(w.players.size, 18);
+  assert.equal(new Set([ann.p.team, bob.p.team, cat.p.team]).size, 3);
+  for (const team of new Set([...w.players.values()].map((p) => p.team))) assert.equal(squadOf(team).length, 3, `${team} has three`);
 });
