@@ -3,14 +3,10 @@
 // One muted browser taps the pistol in FFA, then spams it through an empty magazine and a reload, then a second holds
 // the SMG down. Each measures how long after the real mousedown the page draws your round, flash and gun kick and
 // schedules your shot sound, and checks the page plays exactly one sound and one flash per shot the server fired.
-import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import WebSocket from 'ws';
-import { GUNS, type GunId } from '../../../../src/shared/defs.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { GUNS, type GunId, type WeaponId } from '../../../../src/shared/defs.ts';
+import { joinFromMenu, key, openPage, respawnIfDead as respawnWhenReady, sleep, type Page } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: LAG=<ms> JITTER=<ms> node firefeel.ts <run-dir>'); process.exit(2); }
@@ -20,7 +16,6 @@ const BASE = `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}
 const EV = join(RUN, 'evidence');
 mkdirSync(EV, { recursive: true });
 const LOG = join(EV, 'firefeel.log');
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const VIEW = { w: 1280, h: 800 };
 const CUES = ['round', 'flash', 'kick', 'sound'] as const;
 type Cue = (typeof CUES)[number];
@@ -29,65 +24,40 @@ const MAX_P90_MS = 34;
 const TAPS = 10;
 const HOLD_MS = 1200;
 const HOLDS = Number(process.env.HOLDS ?? 3);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 type Felt = { cue: Cue | 'reject' | 'late'; at: number };
-type Browser = { gun: GunId; chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; serverShots: () => number; roundOverSnaps: () => number; exceptions: string[] };
+type Browser = Page & { gun: GunId; id: number; serverShots: () => number; roundOverSnaps: () => number };
 
-async function open(name: string, weapon: GunId): Promise<Browser> {
-  const port = await freePort();
-  const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-firefeel-'))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-  let target = '';
-  for (let i = 0; i < 50 && !target; i++) {
-    try {
-      const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-      target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-    } catch {}
-    if (!target) await sleep(200);
-  }
-  const page = new WebSocket(target);
-  await new Promise((r) => page.once('open', r));
-  let nextId = 1;
+async function open(name: string, weapon: WeaponId): Promise<Browser> {
   let id: number | null = null;
   let shots = 0, roundOver = 0;
-  const exceptions: string[] = [];
-  const pending = new Map<number, (v: any) => void>();
-  page.on('message', (raw) => {
-    const m = JSON.parse(String(raw));
-    if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-    if (m.method === 'Network.webSocketFrameReceived') {
-      const msg = JSON.parse(m.params.response.payloadData);
+  const page = await openPage({
+    profile: 'skirmish-firefeel-',
+    viewport: { width: VIEW.w, height: VIEW.h },
+    onEvent: (method, params) => {
+      if (method !== 'Network.webSocketFrameReceived') return;
+      const msg = JSON.parse(params.response.payloadData);
       if (msg.t === 'welcome') id = msg.id;
       if (msg.t === 'snap' && msg.match?.winner) roundOver++;
       if (msg.t === 'snap') shots += (msg.events ?? []).filter((e: { e: string; owner?: number }) => e.e === 'shot' && e.owner === id).length;
-    } else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    },
   });
-  const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const i = nextId++; pending.set(i, r); page.send(JSON.stringify({ id: i, method, params })); });
-  const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.value;
-  await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-  await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-  await cdp('Page.navigate', { url: `${BASE}/?dev&lag=${LAG}&jitter=${JITTER}` });
-  for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-  await js(`localStorage.setItem('skirmish.loadout', JSON.stringify({ weapon: '${weapon}', armor: 'none', color: 'red' })); location.reload()`);
-  await sleep(500);
-  for (let i = 0; i < 50 && (await js(`document.querySelectorAll('#servers .server').length`)) !== 3; i++) await sleep(100);
-  await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${name}'; document.getElementById('play').click()`);
+  await page.cdp('Page.navigate', { url: `${BASE}/?dev&lag=${LAG}&jitter=${JITTER}` });
+  await joinFromMenu(page, { name, loadout: { weapon, armor: 'none', color: 'red' } });
   for (let i = 0; i < 50 && id === null; i++) await sleep(100);
   if (id === null) throw new Error(`${name} did not join`);
-  await js(`window.downs = []; window.addEventListener('mousedown', () => window.downs.push(performance.now()), { capture: true })`);
+  await page.js(`window.downs = []; window.addEventListener('mousedown', () => window.downs.push(performance.now()), { capture: true })`);
   await sleep(1500);
-  return { gun: weapon, chrome, cdp, js, id, serverShots: () => shots, roundOverSnaps: () => roundOver, exceptions };
+  return { ...page, gun: weapon, id, serverShots: () => shots, roundOverSnaps: () => roundOver };
 }
 
 const AIM = { x: VIEW.w / 2 + 200, y: VIEW.h / 2 - 60 };
 const mouse = (b: Browser, type: 'mousePressed' | 'mouseReleased') => b.cdp('Input.dispatchMouseEvent', { type, ...AIM, button: 'left', clickCount: 1 });
 const reload = async (b: Browser) => {
-  await b.cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyR', key: 'r', windowsVirtualKeyCode: 82 });
+  await key(b, 'keyDown', 'KeyR', 'r');
   await sleep(80);
-  await b.cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyR', key: 'r', windowsVirtualKeyCode: 82 });
+  await key(b, 'keyUp', 'KeyR', 'r');
 };
 const refillMagazine = async (b: Browser) => {
   await reload(b);
@@ -97,8 +67,7 @@ let deaths = 0;
 const respawnIfDead = async (b: Browser) => {
   if (!(await b.js(`!document.getElementById('death').hidden`))) return false;
   deaths++;
-  for (let i = 0; i < 60 && (await b.js(`document.getElementById('respawn').disabled`)); i++) await sleep(100);
-  await b.js(`document.getElementById('respawn').click()`);
+  await respawnWhenReady(b, 6000);
   await sleep(1500);
   return true;
 };
@@ -197,7 +166,7 @@ p = await runUndisturbed('touch', pistol, roundTrip + 400, async () => {
 });
 checkLatency('touch', latencies(p.downs, p.felt), TAPS);
 checkCounts('touch', p);
-pistol.chrome.kill();
+pistol.close();
 
 const smg = await open('Holder', 'smg');
 const gaps: number[] = [];
@@ -214,7 +183,7 @@ log(`hold first sound: ${fmt(firstSounds)}`);
 log(`hold cadence between own shot sounds: ${fmt(gaps)}  mean ${mean.toFixed(1)}ms (fireMs ${GUNS.smg.fireMs})`);
 check(firstSounds.length === HOLDS && q(firstSounds, 0.5) <= MAX_MEDIAN_MS, `hold: first own shot sound within ${MAX_MEDIAN_MS}ms of mousedown`);
 check(Math.abs(mean - GUNS.smg.fireMs) <= GUNS.smg.fireMs * 0.1, `hold: mean gap between own shots within 10% of fireMs (${mean.toFixed(1)}ms)`);
-smg.chrome.kill();
+smg.close();
 
 if (deaths) log(`note respawned ${deaths} times mid-run`);
 const exceptions = [...pistol.exceptions, ...smg.exceptions];
