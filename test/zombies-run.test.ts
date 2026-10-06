@@ -232,7 +232,7 @@ test('a later night sends its packs in waves, several at once', () => {
   step(w, TICK_MS);
   assert.ok(ZOM.packsPerWave(9) > 1);
   assert.equal(packs - night.toSpawn.length, ZOM.packsPerWave(9), 'the first wave brings its packs together');
-  run(w, ZOM.waveGapMs(9) - 2 * TICK_MS);
+  run(w, ZOM.packsPerWave(9) * ZOM.packGapMs(9) - 2 * TICK_MS);
   assert.equal(packs - night.toSpawn.length, ZOM.packsPerWave(9), 'and the next waits its turn');
 });
 

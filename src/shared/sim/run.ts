@@ -274,8 +274,9 @@ export function tickRun(w: World, dtMs: number) {
       break;
     case 'night':
       if (phase.toSpawn.length > 0 && w.now >= phase.nextSpawnAt && w.zombies.length < ZOM.maxAlive) {
-        for (const unit of phase.toSpawn.splice(0, ZOM.packsPerWave(run.night))) spawnUnit(w, run, unit);
-        phase.nextSpawnAt = w.now + ZOM.waveGapMs(run.night);
+        const wave = phase.toSpawn.splice(0, ZOM.packsPerWave(run.night));
+        for (const unit of wave) spawnUnit(w, run, unit);
+        phase.nextSpawnAt = w.now + wave.length * ZOM.packGapMs(run.night);
         if (phase.toSpawn.length === 0) phase.dawnAt = w.now + ZOM.stragglersMs;
       }
       if (w.now >= phase.dawnAt) burnStragglers(w);
