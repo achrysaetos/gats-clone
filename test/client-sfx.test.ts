@@ -111,7 +111,7 @@ test('the first snapshot of a session derives no state-transition sounds', () =>
 });
 
 const run = (over: Partial<RunView> = {}): RunView => ({
-  phase: 'day', night: 1, phaseEndsAt: 40_000, scrap: 100, core: { x: 1500, y: 1500, hp: 4000, maxHp: 4000 }, aliveZombies: 0, waveLeft: 0, report: null, ...over,
+  phase: 'day', night: 1, phaseEndsAt: 40_000, scrap: 100, core: { x: 1500, y: 1500, hp: 4000, maxHp: 4000 }, aliveZombies: 0, waveLeft: 0, survivors: 50, lost: 0, ready: [], report: null, ...over,
 });
 const squad = (r: RunView, o: Parameters<typeof snap>[0] & { buildings?: BuildingView[] } = {}): Snapshot => ({ ...snap(o), run: r, buildings: o.buildings ?? [], zombies: [] });
 

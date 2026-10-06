@@ -1,4 +1,4 @@
-import type { ModeId } from './defs.ts';
+import { SIDES, type ModeId, type Side } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 import { CAUSEWAY } from './maps/causeway.ts';
 import { OLDTOWN } from './maps/oldtown.ts';
@@ -22,13 +22,13 @@ export type MapDef = {
   spawns: { red: readonly Rect[]; blue: readonly Rect[]; ffa: readonly Rect[] };
   crates: readonly Center[];
   /** Zombies only: the core the squad defends and the edge strips the horde walks in from. */
-  siege?: { core: Center; horde: readonly Rect[] };
+  siege?: { core: Center; horde: Readonly<Record<Side, Rect>> };
 };
 
 const BLOCKY = 1.6;
 const outpostMaterialByShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
 
-/** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover. */
+/** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover; the turns go north, east, south, west. */
 const quarterTurn = <T extends Rect>(r: T, size: number): T => ({ ...r, x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
 const fourWays = <T extends Rect>(quarter: readonly T[], size: number): T[] => {
   const out: T[] = [];
@@ -46,7 +46,7 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
     zones: [],
     spawns: { red: squad, blue: squad, ffa: squad },
     crates: [],
-    siege: { core: { x: size / 2, y: size / 2 }, horde: fourWays([quarter.horde], size) },
+    siege: { core: { x: size / 2, y: size / 2 }, horde: Object.fromEntries(fourWays([quarter.horde], size).map((r, i) => [SIDES[i], r])) as Record<Side, Rect> },
   };
 }
 

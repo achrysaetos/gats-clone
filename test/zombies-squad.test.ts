@@ -107,8 +107,8 @@ test('a downed player nobody revives bleeds out, then gets up at the core when d
   run(w, TICK_MS);
   assert.equal(w.run!.phase.k, 'day');
   assert.equal(lifeOf(p).k, 'alive');
-  const squad = MAPS.outpost.spawns.red;
-  assert.ok(squad.some((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h), 'back at the core');
+  const core = MAPS.outpost.siege!.core;
+  assert.ok(Math.hypot(p.x - core.x, p.y - core.y) <= 2 * ZOM.coreHalf + 2 * ZOM.cell, `back at the core, at ${p.x},${p.y}`);
   assert.deepEqual({ score: p.score, level: p.level }, { score: LEVELS[1].score, level: 1 });
 });
 

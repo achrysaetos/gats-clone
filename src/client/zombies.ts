@@ -1,17 +1,39 @@
-import { BUILDING_KINDS, BUILDINGS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, nightOf, SIDES, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
 import type { PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
 import { buildRefusal, cellOf, coreRectAt, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
 
-export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft'>, serverNow: number | null): string {
+export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft' | 'report'>, serverNow: number | null): string {
   const left = run.phaseEndsAt === null || serverNow === null ? null : run.phaseEndsAt - serverNow;
   switch (run.phase) {
     case 'day': return `Day ${run.night}${left === null ? '' : ` · night in ${clock(left)}`}`;
     case 'night': return `Night ${run.night} · ${run.waveLeft} left`;
-    case 'over': return `Core fell${left === null ? '' : ` · next run in ${clock(left)}`}`;
+    case 'over': return `The Bastion ${run.report?.won ? 'held' : 'fell'}${left === null ? '' : ` · next run in ${clock(left)}`}`;
   }
+}
+
+const listOf = (xs: readonly string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+
+const sidesOf = (night: number) => {
+  const from = nightOf(night).from;
+  return from.length === SIDES.length ? 'every side' : `the ${listOf(from)}`;
+};
+
+/** What a night brings and from where, by the night table: the worst kinds first, so walkers come last. */
+export function forecast(night: number): string {
+  const def = nightOf(night);
+  const kinds = listOf([...ZOMBIE_KINDS].reverse().filter((k) => def.horde[k]).map((k) => ZOMBIES[k].many));
+  return `${kinds[0]!.toUpperCase()}${kinds.slice(1)} from ${sidesOf(night)}`;
+}
+
+/** The day's hint for N: how many of the squad's humans are ready for night, and whether you are. */
+export function readyHint(run: Pick<RunView, 'ready'>, players: readonly Pick<PlayerView, 'id' | 'kind' | 'alive'>[], selfId: number): string {
+  const humans = players.filter((p) => p.kind === 'human' && p.alive);
+  const ready = humans.filter((p) => run.ready.includes(p.id)).length;
+  if (!run.ready.includes(selfId)) return humans.length > 1 ? `ready for night · ${ready}/${humans.length}` : 'bring the night now';
+  return `ready · ${ready}/${humans.length} · N to wait`;
 }
 
 export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: number | null): string {
@@ -33,7 +55,7 @@ export function useHint(snap: Snapshot, at: Pose): string | null {
       const job = b.hp < 10 ? `repair the ${nameOf(b.kind)}` : b.kind !== 'wall' && b.ammo < 10 ? `reload the ${nameOf(b.kind)}` : null;
       return job ? [{ job, d: Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) }] : [];
     }),
-    ...(run.core.hp < run.core.maxHp ? [{ job: 'repair the core', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
+    ...(run.core.hp < run.core.maxHp ? [{ job: 'repair the Bastion', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
   ].filter((m) => m.d <= ZOM.reachPx);
   const nearest = jobs.reduce<(typeof jobs)[number] | null>((a, b) => (a && a.d <= b.d ? a : b), null);
   return nearest && `Hold E to ${nearest.job}`;
@@ -48,12 +70,15 @@ export function runCallouts(prev: RunView | undefined, next: RunView | undefined
   const out: RunCallout[] = [];
   if (prev.phase === 'day' && next.phase === 'day' && prev.phaseEndsAt !== null && next.phaseEndsAt !== null
     && prev.phaseEndsAt - prevAt > NIGHT_WARNING_MS && next.phaseEndsAt - nextAt <= NIGHT_WARNING_MS) {
-    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: 'Finish your walls and get by the core', tone: 'warn' });
+    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: forecast(next.night), tone: 'warn' });
   }
-  if (prev.phase === 'day' && next.phase === 'night') out.push({ title: `Night ${next.night}`, line: `${next.waveLeft} zombies are coming · hold the core`, tone: 'night' });
+  if (prev.phase === 'day' && next.phase === 'night') {
+    out.push({ title: nightOf(next.night).name ?? `Night ${next.night}`, line: `${next.waveLeft} zombies from ${sidesOf(next.night)} · hold the Bastion`, tone: 'night' });
+  }
   if (prev.phase === 'night' && next.phase === 'day') {
-    const core = Math.round((100 * next.core.hp) / next.core.maxHp);
-    out.push({ title: 'Dawn', line: `Night ${prev.night} held · core ${core}% · ${next.scrap} scrap to build with`, tone: 'dawn' });
+    const lost = next.lost ? `${next.lost} lost · ` : '';
+    out.push({ title: 'Dawn', line: `Night ${prev.night} held · ${lost}${next.survivors} survivors · +${next.scrap - prev.scrap} scrap`, tone: 'dawn' });
+    out.push({ title: 'Tonight', line: forecast(next.night), tone: 'warn' });
   }
   return out;
 }
@@ -64,7 +89,8 @@ type ReportRow = { name: string; kills: number; revives: number; built: number; 
 export const reportRows = (report: RunReport, selfName: string | undefined): ReportRow[] =>
   [...report.players].sort((a, b) => b.kills - a.kills || b.revives - a.revives || b.built - a.built).map((p) => ({ ...p, you: p.name === selfName }));
 
-export const reportTitle = (report: RunReport) => `The core fell on night ${report.night}`;
+export const reportTitle = (report: RunReport) =>
+  report.won ? `The Bastion held. ${report.survivors} survivors saw the morning.` : `The Bastion fell on night ${report.night}`;
 
 /** The squad's turrets' kills, or null when they killed none. */
 export function turretLine(report: RunReport): string | null {
@@ -106,10 +132,10 @@ const refundOf = (kind: BuildingKind) => Math.floor(BUILDINGS[kind].cost * ZOM.d
 function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingKind | undefined): string {
   switch (refusal) {
     case 'notDay': return 'Build by day';
-    case 'farFromCore': return 'Too far from the core';
+    case 'farFromCore': return 'Too far from the Bastion';
     case 'outOfReach': return 'Out of reach';
     case 'cover': return 'Blocked';
-    case 'core': return 'That is the core';
+    case 'core': return 'That is the Bastion';
     case 'body': return 'Someone is in the way';
     case 'taken': return `Right click to take down the ${nameOf(taken ?? 'wall')} · +${refundOf(taken ?? 'wall')}`;
     case 'scrap': return `${BUILDINGS[kind].name} needs ${BUILDINGS[kind].cost} scrap`;

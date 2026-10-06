@@ -31,8 +31,8 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (victim.life.k !== 'alive' || w.match.k === 'over') return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
-  // The squad fights the horde at arm's length, so in a run only bites hurt it, never its own blasts.
-  if (w.run && src.via !== 'bite') return;
+  // The squad fights the horde at arm's length, so in a run only the horde hurts it, never its own blasts.
+  if (w.run && src.team !== null) return;
   const life = victim.life;
   const before = life.hp;
   const stats = effectiveStats(victim);
@@ -185,10 +185,13 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
-        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.turret ? BUILDINGS[b.turret].turret.damage[z.kind] : b.damage, owner, b.turret ?? 'hit'),
+        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
+        apply: () => damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit'),
       })),
   ];
-  const hits = candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
+  // A lobbed round sails over everything and bursts where it comes down.
+  const lobbed = b.turret !== null && BUILDINGS[b.turret].turret.lobbed !== null;
+  const hits = lobbed ? [] : candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
   for (const hit of hits) {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
     hit.apply(x, y);

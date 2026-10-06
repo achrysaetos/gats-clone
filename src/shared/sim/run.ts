@@ -1,11 +1,12 @@
-import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type TurretKind, type ZombieKind } from '../defs.ts';
+import { BUILDINGS, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
-import { tickHorde } from './horde.ts';
+import { biteBuilding, distToRect, tickHorde } from './horde.ts';
+import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildRefusal, type BuildRefusal, type BuildSite } from './build.ts';
-import { circleHitsRect, dist2, type Rect } from './movement.ts';
+import { buildRefusal, cellRect, type BuildRefusal, type BuildSite } from './build.ts';
+import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
+import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
@@ -145,27 +146,45 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   if (turret) run.turretKills[turret][z.kind]++;
   else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
   if (attacker) addScore(w, attacker, def.score);
+  if (def.burst) burst(w, z, def.burst);
 }
 
-function buildWave(w: World, night: number): ZombieKind[] {
-  const shares = ZOMBIE_KINDS.map((kind) => ZOM.share(kind, night));
-  const total = shares.reduce((a, b) => a + b, 0);
-  return Array.from({ length: ZOM.waveSize(night, squadOf(w)) }, () => {
-    let roll = rand(w) * total;
-    return ZOMBIE_KINDS.find((_, i) => (roll -= shares[i]!) < 0) ?? 'walker';
-  });
+/** A bloater bursts where it dies: a blast that hurts the squad and the horde alike, and a blow to every building it reaches. */
+function burst(w: World, z: Zombie, { radius, damage, building }: Burst) {
+  explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
+  for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
 }
 
-function spawnZombie(w: World, run: Run, kind: ZombieKind) {
-  const horde = MAPS[w.map].siege?.horde ?? [];
+/** Tonight's horde from the night table, scaled to the squad, as packs in a shuffled order, each from one of the night's sides. */
+function hordeOf(w: World, night: number): HordeUnit[] {
+  const def = nightOf(night);
+  const share = ZOM.hordeShare(squadOf(w));
+  const units: HordeUnit[] = [];
+  for (const kind of ZOMBIE_KINDS) {
+    const listed = def.horde[kind] ?? 0;
+    for (let left = listed && Math.max(1, Math.round(listed * share)); left > 0; left -= ZOMBIES[kind].pack) {
+      units.push({ kind, side: def.from[Math.floor(rand(w) * def.from.length)]!, n: Math.min(left, ZOMBIES[kind].pack) });
+    }
+  }
+  for (let i = units.length - 1; i > 0; i--) {
+    const j = Math.floor(rand(w) * (i + 1));
+    [units[i], units[j]] = [units[j]!, units[i]!];
+  }
+  return units;
+}
+
+const PACK_SPREAD = 90;
+
+function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
+  const strip = MAPS[w.map].siege!.horde[side];
   const solids = solidRects(w);
   const r = ZOMBIES[kind].radius;
-  for (let i = 0; i < 20; i++) {
-    const region = horde[Math.floor(rand(w) * horde.length)]!;
-    const x = region.x + rand(w) * region.w, y = region.y + rand(w) * region.h;
+  const ax = strip.x + rand(w) * strip.w, ay = strip.y + rand(w) * strip.h;
+  for (let placed = 0, tries = 0; placed < n && tries < 20 * n; tries++) {
+    const x = clamp(ax + (rand(w) - 0.5) * PACK_SPREAD, strip.x, strip.x + strip.w), y = clamp(ay + (rand(w) - 0.5) * PACK_SPREAD, strip.y, strip.y + strip.h);
     if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
     w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night), attackAt: 0 });
-    return;
+    placed++;
   }
 }
 
@@ -175,8 +194,10 @@ function placeAtCore(w: World, p: Player) {
   p.y = at.y;
 }
 
-/** Everyone down or dead gets up at the core; what they earned this run stays with them. */
+/** Everyone down or dead gets up at the core, what they earned this run stays with them, and each survivor pays the bank. The Tide's dawn ends the run won. */
 function dawn(w: World, run: Run) {
+  if (run.night === NIGHTS.length) { endRun(w, run, true); return; }
+  run.scrap += run.survivors * ZOM.scrapPerSurvivor;
   run.night++;
   run.phase = { k: 'day', endsAt: w.now + ZOM.dayMs };
   for (const p of w.players.values()) {
@@ -184,6 +205,25 @@ function dawn(w: World, run: Run) {
     placeAtCore(w, p);
     p.life = freshLife(p, w.now);
   }
+}
+
+function endRun(w: World, run: Run, won: boolean) {
+  for (const p of w.players.values()) statsFor(run, p);
+  run.phase = { k: 'over', night: run.night, won, restartAt: w.now + ZOM.restartMs };
+  w.zombies = [];
+}
+
+/** A human by day says the squad is ready for night, or takes it back. */
+export function readyUp(w: World, id: number) {
+  const run = w.run, p = w.players.get(id);
+  if (!run || run.phase.k !== 'day' || p?.kind !== 'human') return;
+  if (!run.ready.delete(id)) run.ready.add(id);
+}
+
+/** Night comes early once every human up is ready; bots count as ready, but a squad of bots alone waits out the day. */
+function squadReady(w: World, run: Run) {
+  const humans = [...w.players.values()].filter((p) => p.kind === 'human' && p.life.k === 'alive');
+  return humans.length > 0 && humans.every((p) => run.ready.has(p.id));
 }
 
 function restartRun(w: World) {
@@ -200,18 +240,25 @@ function restartRun(w: World) {
   }
 }
 
-/** The run's state machine: the day counts down to night, the night spawns its wave and turns to day once the wave is dead, and the core's fall ends the run until a fresh one starts. */
+/**
+ * The run's state machine: the day counts down to night unless the squad is ready sooner, the night spawns its horde and turns to day once the horde is dead,
+ * and the core's fall or the Tide's dawn ends the run until a fresh one starts.
+ */
 export function tickRun(w: World, dtMs: number) {
   const run = w.run;
   if (!run) return;
   const phase = run.phase;
   switch (phase.k) {
     case 'day':
-      if (w.now >= phase.endsAt) run.phase = { k: 'night', toSpawn: buildWave(w, run.night), nextSpawnAt: w.now };
+      if (w.now >= phase.endsAt || squadReady(w, run)) {
+        run.phase = { k: 'night', toSpawn: hordeOf(w, run.night), nextSpawnAt: w.now };
+        run.ready.clear();
+        run.lost = 0;
+      }
       break;
     case 'night':
       if (phase.toSpawn.length > 0 && w.now >= phase.nextSpawnAt && w.zombies.length < ZOM.maxAlive) {
-        spawnZombie(w, run, phase.toSpawn.shift()!);
+        spawnUnit(w, run, phase.toSpawn.shift()!);
         phase.nextSpawnAt = w.now + ZOM.spawnGapMs(run.night);
       }
       if (phase.toSpawn.length === 0 && w.zombies.length === 0) dawn(w, run);
@@ -221,11 +268,10 @@ export function tickRun(w: World, dtMs: number) {
       return;
   }
   tickHorde(w, run, dtMs);
-  tickTurrets(w, dtMs);
+  tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);
-  if (run.core.hp <= 0) {
-    for (const p of w.players.values()) statsFor(run, p);
-    run.phase = { k: 'over', night: run.night, restartAt: w.now + ZOM.restartMs };
-    w.zombies = [];
-  }
+  const sheltered = Math.min(run.survivors, Math.ceil((run.core.hp / ZOM.coreHp) * ZOM.survivors));
+  run.lost += run.survivors - sheltered;
+  run.survivors = sheltered;
+  if (run.core.hp <= 0) endRun(w, run, false);
 }

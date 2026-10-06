@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, type BuildingKind, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
@@ -11,7 +11,7 @@ import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { glow, PALETTE, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { BUILD_HINTS, downedLine, phaseLine, useHint } from './zombies.ts';
+import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, useHint } from './zombies.ts';
 import { drawGunGlyph } from './sprites.ts';
 import type { Session } from './state.ts';
 
@@ -268,7 +268,7 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
 }
 
 const MINIMAP = { bg: 'rgba(92, 98, 108, 0.94)', block: '#959aa4', built: '#7f8fb0' } as const;
-const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d' };
+const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff' };
 
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];
@@ -559,7 +559,7 @@ function drawMinimap(hud: Hud, size: number) {
       ctx.fillRect(x + b.cx * ZOM.cell * k, y + b.cy * ZOM.cell * k, Math.max(1.5, ZOM.cell * k), Math.max(1.5, ZOM.cell * k));
     }
     for (const kind of ZOMBIE_KINDS) {
-      const r = kind === 'brute' ? 2.2 : 1.5;
+      const r = Math.max(1.2, ZOMBIES[kind].radius / 10);
       ctx.fillStyle = ZOMBIE_LOOK[kind].body;
       ctx.beginPath();
       for (const [, k2, zx, zy] of snap.zombies ?? []) {
@@ -605,7 +605,7 @@ function drawPill(hud: Hud, compact: boolean): number {
   }
   if (snap.run) {
     const run = snap.run;
-    const [label, color] = run.phase === 'day' ? [`DAY ${run.night}`, PALETTE.gold] : run.phase === 'night' ? [`NIGHT ${run.night}`, '#a99bff'] : ['FALLEN', PALETTE.hunted];
+    const [label, color] = run.phase === 'day' ? [`DAY ${run.night}`, PALETTE.gold] : run.phase === 'night' ? [`NIGHT ${run.night}`, '#a99bff'] : run.report?.won ? ['HELD', PALETTE.hpGood] : ['FALLEN', PALETTE.hunted];
     const until = run.phaseEndsAt === null ? null : run.phaseEndsAt - (serverNow(s.snaps, now) ?? run.phaseEndsAt);
     const center = run.phase === 'night' ? `${run.waveLeft} left` : until === null ? '' : clock(until);
     const lw = compact ? 64 : 78;
@@ -650,7 +650,9 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   const frac = run.core.hp / run.core.maxHp;
   const alert = now - s.coreHitAt < CORE_ALERT_MS;
   const coreColor = alert && Math.floor(now / 200) % 2 ? PALETTE.hunted : frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
-  const total = 16 + scrapW + 44 + 16 + 90;
+  const people = `${run.survivors}`;
+  const peopleW = ctx.measureText(people).width;
+  const total = 16 + scrapW + 44 + 16 + 90 + 14 + peopleW + 58;
   let x = cx - total / 2;
   panel(ctx, x - 10, y - 11, total + 20, 22, 5);
   strokeIcon(ctx, UI_ICONS.scrap, x + 6, y, 12, PALETTE.gold, 2.2);
@@ -660,8 +662,12 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   x += 38;
   strokeIcon(ctx, UI_ICONS.core, x + 6, y, 12, coreColor, 2.2);
   bar(ctx, x + 16, y - 3, 90, 6, frac, coreColor, 'rgba(255, 255, 255, 0.18)');
+  x += 16 + 90 + 14;
+  text(ctx, people, x, y, TYPE.body, alert ? coreColor : PANEL_INK, 'left', 750);
+  text(ctx, 'survivors', x + peopleW + 6, y, TYPE.label, PANEL_MUTED, 'left', 500);
   if (alert) drawCoreAlert(hud, run.core, y + 26);
   if (run.phase === 'over') return;
+  if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night)}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);
   if (me?.downed) {
     const k = 0.5 + 0.5 * Math.sin(now / 260);
     outlined(ctx, "You're down", w / 2, h * 0.64, 22, PALETTE.hunted, 850);
@@ -678,7 +684,9 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   if (s.building) {
     hintBar(ctx, s, BUILD_HINTS.filter((p) => p.pick), w / 2, row - 32, null);
     hintBar(ctx, s, BUILD_HINTS.filter((p) => !p.pick), w / 2, row, 'BUILD');
-  } else if (run.phase === 'day') hintBar(ctx, s, [{ key: 'B', what: 'build walls and turrets' }], w / 2, row, null);
+  } else if (run.phase === 'day') {
+    hintBar(ctx, s, [{ key: 'B', what: 'build walls and turrets' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }], w / 2, row, null);
+  }
 }
 
 function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {

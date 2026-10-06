@@ -357,6 +357,8 @@ a.wordmark { text-decoration: none; }
 .podium li b { font-variant-numeric: tabular-nums; }
 .report { border-top: 3px solid var(--danger); min-width: min(420px, calc(100vw - 32px)); }
 .report h2 { color: var(--danger); }
+.report.won { border-top-color: var(--accent); }
+.report.won h2 { color: var(--accent); }
 .report table { width: 100%; margin: 12px 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .report th { font-size: var(--t-micro); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; padding: 4px 8px; text-align: right; }
 .report td { padding: 5px 8px; text-align: right; font-size: 15px; border-top: 1px solid var(--line); }

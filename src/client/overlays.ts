@@ -202,11 +202,12 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const run = snap.run;
     const done = run?.phase === 'over' && run.report ? run.report : null;
     const left = done && run?.phaseEndsAt != null && clockNow !== null ? seconds(run.phaseEndsAt - clockNow) : null;
-    const key = done ? `${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}|${turretLine(done)}` : '';
+    const key = done ? `${done.won}|${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}|${turretLine(done)}` : '';
     if (key === keys.report) return;
     keys.report = key;
     report.hidden = !done;
     if (!done) return;
+    report.classList.toggle('won', done.won);
     const h = document.createElement('h2');
     h.textContent = reportTitle(done);
     const length = document.createElement('p');

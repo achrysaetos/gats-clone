@@ -7,6 +7,7 @@ import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type Player, type World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
 import { spawnAt, TICK_MS } from './helpers.ts';
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
@@ -115,4 +116,40 @@ test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing'
   let fired = 0;
   play(w, [bot], 3000, () => { fired += shots(); bot.life.k === 'alive' && (bot.life.hp = 1e9); return false; });
   assert.ok(fired > 20, `${fired} shots in 3s`);
+});
+
+test('by day a squad bot walks round the core to put up the next turret of its plan, the first a sentry north of the core', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  spawnAt(w, CORE.x, CORE.y + ZOM.coreHalf + 40);
+  const rand = seeded(5);
+  const mems = new Map([...w.players.keys()].map((id) => [id, newBotMemory(rand)]));
+  for (let t = 0; t < 15_000 && w.buildings.length === 0; t += TICK_MS) {
+    thinkBots(w, mems, rand, { respawn: false });
+    step(w, TICK_MS);
+  }
+  assert.deepEqual(w.buildings.map((b) => [b.kind, b.cy < CORE.y / ZOM.cell - 1]), [['sentry', true]]);
+  assert.equal(w.run!.scrap, ZOM.startScrap - BUILDINGS.sentry.cost);
+});
+
+test('squad bots leave the bank to a human in the squad', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  spawnAt(w, CORE.x, CORE.y + ZOM.coreHalf + 40);
+  const human = spawnAt(w, CORE.x - 200, CORE.y, { kind: 'human' });
+  const rand = seeded(5);
+  const mems = new Map([...w.players.keys()].filter((id) => id !== human.id).map((id) => [id, newBotMemory(rand)]));
+  for (let t = 0; t < 15_000; t += TICK_MS) {
+    thinkBots(w, mems, rand, { respawn: false });
+    step(w, TICK_MS);
+  }
+  assert.deepEqual([w.buildings.length, w.run!.scrap], [0, ZOM.startScrap]);
+});
+
+test('a squad bot with the core between it and a worn turret walks round the core to mend it', () => {
+  const w = nightWorld();
+  farZombie(w);
+  const bot = spawnAt(w, CORE.x + 25, CORE.y + ZOM.coreHalf + 40);
+  const t = { id: newId(w), kind: 'sentry' as const, cx: 30, cy: 26, hp: 100, owner: bot.id, ammo: BUILDINGS.sentry.turret.ammo, nextFireAt: 0 };
+  w.buildings.push(t);
+  w.buildingsVersion++;
+  assert.ok(play(w, [bot], 15_000, () => t.hp > 200), `the turret is mended, the bot at ${bot.x.toFixed(0)},${bot.y.toFixed(0)}`);
 });

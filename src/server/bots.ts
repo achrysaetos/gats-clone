@@ -1,4 +1,4 @@
-import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type BuildingKind, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
 import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
@@ -13,7 +13,8 @@ export type BotMemory = {
   motor: Motor;
 };
 
-export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
+/** `build` is a building a siege bot puts up this tick. */
+export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory; build?: { kind: BuildingKind; cx: number; cy: number } };
 
 const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };
 

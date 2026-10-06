@@ -1,6 +1,6 @@
-import { GUNS, WORLD, ZOM } from '../../shared/defs.ts';
+import { BUILDINGS, GUNS, WORLD, ZOM, type BuildingKind } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
-import { cellRect } from '../../shared/sim/build.ts';
+import { cellOf, cellRect } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
@@ -21,6 +21,7 @@ type Watch = {
   downed: PlayerView | null;
   needsTending: { x: number; y: number } | null;
   coreMendable: boolean;
+  next: { kind: BuildingKind; cx: number; cy: number; x: number; y: number } | null;
 };
 
 type Errand = { x: number; y: number; use: boolean };
@@ -38,6 +39,7 @@ type Rule = (s: Watch) => Errand | null;
 const revive: Rule = (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 };
 const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.needsTending) : null;
 const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
+const buildNext: Rule = (s) => s.next && { x: s.next.x, y: s.next.y, use: false };
 const holdPost: Rule = (s) => {
   const post = { ...s.post, use: false };
   if (!s.zombie || s.zombie.d > KITE_PX) return post;
@@ -46,7 +48,36 @@ const holdPost: Rule = (s) => {
   return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
 };
 
-const SIEGE_RULES: readonly Rule[] = [revive, mendBuilding, mendCore, holdPost];
+const SIEGE_RULES: readonly Rule[] = [revive, mendBuilding, buildNext, mendCore, holdPost];
+
+/** What the squad's bots put up, in order, in cells out from the core's center: a sentry each side first, then a turret for each new kind of night. */
+const BASTION_PLAN: readonly { kind: BuildingKind; dx: number; dy: number }[] = [
+  { kind: 'sentry', dx: 0, dy: -3 }, { kind: 'sentry', dx: 3, dy: 0 }, { kind: 'scatter', dx: 0, dy: 3 }, { kind: 'sentry', dx: -3, dy: 0 },
+  { kind: 'cannon', dx: 3, dy: -3 }, { kind: 'mortar', dx: -3, dy: 3 }, { kind: 'scatter', dx: 0, dy: -4 }, { kind: 'sentry', dx: 0, dy: 4 },
+  { kind: 'cannon', dx: -3, dy: -3 }, { kind: 'mortar', dx: 3, dy: 3 }, { kind: 'scatter', dx: 4, dy: 0 }, { kind: 'scatter', dx: -4, dy: 0 },
+];
+
+/** A builder stands this far to the side of the cell, round the core from it, so its own body never blocks the building and it walks round the core to get there. */
+const BUILD_STANDOFF = 2 * ZOM.cell;
+
+/** The first building of the plan not yet up, with where to stand to build it. By day its cost is what the bots keep in hand before they mend the core. */
+function nextBuild(run: RunView, buildings: readonly BuildingView[]) {
+  const todo = BASTION_PLAN.map((p) => ({ kind: p.kind, ...cellOf(run.core.x + p.dx * ZOM.cell, run.core.y + p.dy * ZOM.cell) }))
+    .find((p) => !buildings.some((b) => b.cx === p.cx && b.cy === p.cy));
+  if (!todo) return null;
+  const x = (todo.cx + 0.5) * ZOM.cell, y = (todo.cy + 0.5) * ZOM.cell, d = Math.hypot(x - run.core.x, y - run.core.y);
+  return { ...todo, x: x - ((y - run.core.y) / d) * BUILD_STANDOFF, y: y + ((x - run.core.x) / d) * BUILD_STANDOFF, cost: BUILDINGS[todo.kind].cost };
+}
+
+/** Where to head for `to`: straight there, or by the nearer corner of the core when the core stands in the way, since a bot pressed square against it would stay stuck. */
+function roundCore(core: { x: number; y: number }, me: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number } {
+  const touch = ZOM.coreHalf + WORLD.playerRadius - 1, clear = touch + 16;
+  if (segmentEntersRectAt(me.x, me.y, to.x - me.x, to.y - me.y, { x: core.x - touch, y: core.y - touch, w: 2 * touch, h: 2 * touch }) === null) return to;
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => ({ x: core.x + sx! * clear, y: core.y + sy! * clear }))
+    .filter((c) => Math.abs(c.x - me.x) > DEAD_ZONE || Math.abs(c.y - me.y) > DEAD_ZONE);
+  const via = (c: { x: number; y: number }) => Math.hypot(c.x - me.x, c.y - me.y) + Math.hypot(to.x - c.x, to.y - c.y);
+  return corners.reduce((a, b) => (via(b) < via(a) ? b : a));
+}
 
 function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[]): { x: number; y: number } {
   const at = (d: number) => ({ x: core.x + Math.cos(bearing) * d, y: core.y + Math.sin(bearing) * d });
@@ -78,8 +109,15 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     .filter((b) => b.hp < 10 || (b.kind !== 'wall' && b.ammo < 10 && run.scrap > 0))
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 };
+  // The bank is the humans' to spend when there are any; bots build only for a squad of bots, or for the one player they stand in for.
+  const plan = snap.players.some((p) => p.kind === 'human' && p.id !== me.id) ? null : nextBuild(run, snap.buildings ?? []);
+  const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
+  const watch: Watch = {
+    me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), next: buildable,
+    coreMendable: run.core.hp < run.core.maxHp && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0),
+  };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
+  const builds = buildable && errand.x === buildable.x && errand.y === buildable.y && Math.hypot(buildable.x - me.x, buildable.y - me.y) <= 2 * DEAD_ZONE;
 
   const outFromCore = { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
   const face = errand.use ? errand : outFromCore;
@@ -104,12 +142,13 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const wanted = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation) ? readyAbility : null;
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire, wanted, mem.motor.shots);
-  const mx = errand.x - me.x, my = errand.y - me.y;
+  const step = roundCore(run.core, me, errand);
+  const mx = step.x - me.x, my = step.y - me.y;
   const still = errand.use;
   const input: InputState = {
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
     angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,
   };
   const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots } };
-  return { input, mem: next };
+  return { input, mem: next, ...(builds && { build: { kind: buildable.kind, cx: buildable.cx, cy: buildable.cy } }) };
 }
