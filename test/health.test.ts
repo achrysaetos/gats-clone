@@ -5,25 +5,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import WebSocket from 'ws';
-import { ARMOR_IDS, ARMORS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { ARMOR_IDS, ARMORS, HP_MULTIPLIER, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+
+const H = HP_MULTIPLIER.human;
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { startServer } from '../src/server/main.ts';
 import { PISTOL, TICK_MS, emptyWorld, grantPerks, hpOf, press, run, spawnAt } from './helpers.ts';
 
-test('humans carry triple health, armor and regen, bots keep the base', () => {
+test('humans carry multiplied health, armor and regen, bots keep the base', () => {
   const w = emptyWorld();
   const human = addPlayer(w, 'Hu', PISTOL, { kind: 'human', at: { x: 500, y: 500 } });
   const bot = addPlayer(w, 'Bo', PISTOL, { at: { x: 900, y: 500 } });
-  assert.equal(effectiveStats(human).maxHp, WORLD.baseHp * 3);
+  assert.equal(effectiveStats(human).maxHp, WORLD.baseHp * H);
   assert.equal(effectiveStats(bot).maxHp, WORLD.baseHp);
   const armored = addPlayer(w, 'Ar', { ...PISTOL, armor: 'medium' }, { kind: 'human', at: { x: 500, y: 900 } });
-  assert.equal(effectiveStats(armored).maxArmor, ARMORS.medium.points * 3);
-  assert.equal(armored.life.k === 'alive' && armored.life.armor, ARMORS.medium.points * 3, 'spawns with full tripled armor');
+  assert.equal(effectiveStats(armored).maxArmor, ARMORS.medium.points * H);
+  assert.equal(armored.life.k === 'alive' && armored.life.armor, ARMORS.medium.points * H, 'spawns with full multiplied armor');
   assert.equal(effectiveStats(human).regenPerSec / effectiveStats(human).maxHp, effectiveStats(bot).regenPerSec / effectiveStats(bot).maxHp, 'healing to full takes the same time');
   grantPerks(w, human, ['optics', 'thickSkin']);
-  assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 40) * 3, 'thick skin is tripled too');
+  assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 40) * H, 'thick skin is multiplied too');
 });
 
 test('first aid starts healing 1.6s after a hit, three times as fast; without it healing waits 4s', () => {
@@ -43,7 +45,7 @@ test('first aid starts healing 1.6s after a hit, three times as fast; without it
   assert.ok(hpOf(plain) > 50, 'plain heals after 4s');
 });
 
-test('humans kill each other as fast as bots kill each other, armored or not, and bots still need triple the time on a human', () => {
+test('humans kill each other as fast as bots kill each other, armored or not, and bots still need the human multiple of the time on a human', () => {
   const ttk = (shooterKind: PlayerKind, victimKind: PlayerKind, armor: ArmorId) => {
     const w = emptyWorld();
     const shooter = addPlayer(w, 'S', { ...PISTOL, weapon: 'smg' }, { kind: shooterKind, at: { x: 500, y: 500 } });
@@ -75,15 +77,15 @@ function rawDamageToKill(shooterKind: PlayerKind, victimKind: PlayerKind, armor:
   return raw;
 }
 
-test('armor scales with health for humans: a bot spends triple the raw damage on an armored human, and humans duel at bot pace in every armor', () => {
+test('armor scales with health for humans: a bot spends the human multiple of the raw damage on an armored human, and humans duel at bot pace in every armor', () => {
   for (const armor of ARMOR_IDS) {
     const botOnBot = rawDamageToKill('bot', 'bot', armor);
-    assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - 3 * botOnBot) <= 3 * RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs 3 x ${botOnBot}`);
+    assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - H * botOnBot) <= H * RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs ${H} x ${botOnBot}`);
     assert.ok(Math.abs(rawDamageToKill('human', 'human', armor) - botOnBot) <= RAW_STEP, `${armor}: human on human ${rawDamageToKill('human', 'human', armor)} vs bot on bot ${botOnBot}`);
   }
 });
 
-test('a player who joins through the server gets triple health while the room bots do not', { timeout: 10_000 }, async () => {
+test('a player who joins through the server gets multiplied health while the room bots do not', { timeout: 10_000 }, async () => {
   const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-hp-')) });
   try {
     const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`);
@@ -98,8 +100,8 @@ test('a player who joins through the server gets triple health while the room bo
       });
     });
     const self = snap.msg.players.find((p: { id: number }) => p.id === snap.me);
-    assert.equal(self.maxHp, WORLD.baseHp * 3);
-    assert.equal(self.hp, WORLD.baseHp * 3, 'spawns at full tripled health');
+    assert.equal(self.maxHp, WORLD.baseHp * H);
+    assert.equal(self.hp, WORLD.baseHp * H, 'spawns at full multiplied health');
     for (const other of snap.msg.players.filter((p: { id: number }) => p.id !== snap.me)) assert.equal(other.maxHp, WORLD.baseHp, `${other.name} is a bot at base health`);
     ws.close();
   } finally {
