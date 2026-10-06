@@ -207,7 +207,7 @@ function drawRingBurst(ctx: CanvasRenderingContext2D, at: Point, color: string, 
   }
 }
 
-const RETICLE = { minGap: 5, maxGap: 90, tick: 7, ring: 6, reloadGap: 12 } as const;
+const RETICLE = { minGap: 5, maxGap: 90, tick: 7, ring: 6, ringClearance: 6 } as const;
 
 /** Ticks sit where the spread cone crosses the cursor's distance, so the reticle opens up with spread and closes with Grip or a planted Bipod. */
 export const reticleGap = (spread: number, distPx: number): number =>
@@ -215,8 +215,7 @@ export const reticleGap = (spread: number, distPx: number): number =>
 
 function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
-  // The ticks step back while reloading so the ring round the dot never touches them; you cannot fire then anyway.
-  const gap = Math.max(reloading ? RETICLE.reloadGap : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
+  const gap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
   ctx.lineCap = 'round';
   for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.5)'], [1.5, '#ffffff']] as const) {
     ctx.lineWidth = width;

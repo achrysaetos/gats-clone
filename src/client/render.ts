@@ -104,7 +104,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   }
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId);
   const tags = bodyTags(alive, s, now);
-  drawNames(ctx, tags, dark);
+  drawNamesUnderBodies(ctx, tags, dark);
   const recoil = kicks(s.effects, now);
   for (const p of alive) {
     const self = p.id === s.myId;
@@ -492,7 +492,6 @@ type Tag = { p: PlayerView; bar: number; name: boolean };
 let tagsDrawn: { id: number; bar: boolean; name: boolean }[] = [];
 export const drawnTags = () => tagsDrawn;
 
-/** Your own bar stays up while you are hurt; another body's shows briefly after each hit. */
 function bodyTags(bodies: readonly PlayerView[], s: Session, now: number): Tag[] {
   const tags = bodies.filter((p) => p.id === s.myId || !p.hidden).map((p) => {
     if (p.id === s.myId) return { p, bar: p.hp < p.maxHp ? 1 : 0, name: false };
@@ -503,8 +502,7 @@ function bodyTags(bodies: readonly PlayerView[], s: Session, now: number): Tag[]
   return tags;
 }
 
-/** Drawn under the bodies, so in a crowd a neighbor hides a name instead of a name smearing across it. */
-function drawNames(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number) {
+function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number) {
   ctx.font = `600 ${TAG.font}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
