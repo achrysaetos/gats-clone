@@ -312,7 +312,8 @@ export const WORLD = {
   minPlayers: 18,
 } as const;
 
-export type Burst = Blast & { building: number };
+/** A burst's blast, and its blows to each building and to the core (before the core's armor) within its radius. */
+export type Burst = Blast & { building: number; core: number };
 export const ZOMBIE_KINDS = ['walker', 'brute', 'runner', 'plated', 'bloater', 'colossus'] as const;
 export type ZombieKind = (typeof ZOMBIE_KINDS)[number];
 /**
@@ -331,7 +332,7 @@ export const ZOMBIES: Record<ZombieKind, {
   plated: { name: 'Plated', many: 'plated', hp: 200, speed: 95, radius: 19, damage: 12, attackMs: 1000, buildingDamageMul: 0.6, aggroPx: 120, score: 30, scrap: 5, plate: 10, burst: null, pack: 3 },
   bloater: {
     name: 'Bloater', many: 'bloaters', hp: 120, speed: 80, radius: 22, damage: 10, attackMs: 1200, buildingDamageMul: 1, aggroPx: 0, score: 25, scrap: 4, plate: 0,
-    burst: { radius: 110, damage: 70, building: 600 }, pack: 2,
+    burst: { radius: 110, damage: 70, building: 600, core: 250 }, pack: 2,
   },
   colossus: { name: 'Colossus', many: 'a colossus', hp: 3500, speed: 55, radius: 40, damage: 80, attackMs: 1600, buildingDamageMul: 2.5, aggroPx: 0, score: 500, scrap: 80, plate: 8, burst: null, pack: 1 },
 };

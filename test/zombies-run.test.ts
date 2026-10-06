@@ -12,8 +12,8 @@ import { step } from '../src/shared/sim.ts';
 const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
 const phaseOf = (w: World) => w.run!.phase.k;
 
-/** The edge a zombie is on, give or take the step and the shove from its pack in the tick it spawns. */
-const STEP = 20;
+/** The edge a zombie is on, give or take the step and the shove from its wave, two packs of which may land together, in the tick it spawns. */
+const STEP = 40;
 const onSide = (side: Side, x: number, y: number) => {
   const r = MAPS.outpost.siege!.horde[side];
   return x >= r.x - STEP && x <= r.x + r.w + STEP && y >= r.y - STEP && y <= r.y + r.h + STEP;

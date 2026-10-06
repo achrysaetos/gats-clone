@@ -196,5 +196,5 @@ test('a bloater that bursts at the core hurts the core through its armor', () =>
   const shooter = spawnAt(w, CORE.x - 600, CORE.y);
   const before = w.run!.core.hp;
   damageZombie(w, bloater, 1e10, shooter);
-  assert.equal(before - w.run!.core.hp, ZOMBIES.bloater.burst!.building * (1 - ZOM.coreArmor));
+  assert.equal(before - w.run!.core.hp, ZOMBIES.bloater.burst!.core * (1 - ZOM.coreArmor));
 });

@@ -171,32 +171,41 @@ function besideIdleHuman(w: World, ms: number, each: () => void = () => {}) {
   }
 }
 
-test('beside a human, squad bots leave a worn core and worn walls to them by day', () => {
+test('beside a human, squad bots leave the human enough for any building, and tend by day only with what is above it', () => {
+  const reserve = Math.max(...Object.values(BUILDINGS).map((b) => b.cost));
   const w = createWorld('ZOM', 1, 'outpost');
   w.run!.core.hp = 3000;
-  w.run!.scrap = 200;
+  w.run!.scrap = reserve - 20;
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 27, cy: 33, hp: 500 });
   w.buildingsVersion++;
   besideIdleHuman(w, 10_000);
-  assert.deepEqual([w.run!.scrap, w.run!.core.hp, w.buildings[0]!.hp], [200, 3000, 500]);
+  assert.deepEqual([w.run!.scrap, w.run!.core.hp, w.buildings[0]!.hp], [reserve - 20, 3000, 500], 'nothing spent under the reserve');
+  const rich = createWorld('ZOM', 1, 'outpost');
+  rich.run!.core.hp = 3000;
+  rich.run!.scrap = reserve + 60;
+  besideIdleHuman(rich, 15_000);
+  assert.ok(rich.run!.scrap < reserve + 60 && rich.run!.scrap >= reserve - 2, `spent down to the reserve and no further, ${rich.run!.scrap.toFixed(1)} left`);
 });
 
 test('beside a human, squad bots mend the core once it is in danger at night, and keep a dry turret firing', () => {
   const w = nightWorld();
   farZombie(w);
   w.run!.core.hp = ZOM.coreHp * 0.6;
-  w.run!.scrap = 500;
   const dry = { id: newId(w), kind: 'sentry' as const, cx: 33, cy: 30, hp: BUILDINGS.sentry.hp, owner: -1, ammo: 0, nextFireAt: 0 };
   w.buildings.push(dry);
   w.buildingsVersion++;
+  w.run!.scrap = 200;
   besideIdleHuman(w, 8000, () => { w.run!.core.hp = Math.min(w.run!.core.hp, ZOM.coreHp * 0.6); });
   assert.ok(dry.ammo >= 1, `the dry sentry got rounds, ${dry.ammo.toFixed(1)}`);
-  const spent = 500 - w.run!.scrap;
+  const spent = 200 - w.run!.scrap;
   assert.ok(spent < 20, `and the bank barely moved for the core above half, ${spent.toFixed(1)} spent`);
 
-  w.run!.core.hp = ZOM.coreHp * 0.4;
-  besideIdleHuman(w, 5000);
-  assert.ok(w.run!.core.hp > ZOM.coreHp * 0.4 + 100, `under half, a bot mends it: ${w.run!.core.hp.toFixed(0)}`);
+  const dire = nightWorld();
+  farZombie(dire);
+  dire.run!.core.hp = ZOM.coreHp * 0.4;
+  dire.run!.scrap = 200;
+  besideIdleHuman(dire, 5000);
+  assert.ok(dire.run!.core.hp > ZOM.coreHp * 0.4 + 100, `under half, a bot mends it: ${dire.run!.core.hp.toFixed(0)}`);
 });
 
 test('the squad bots\' plan stands as far from the core on every side', () => {
