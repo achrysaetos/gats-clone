@@ -147,6 +147,9 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   if (!gun) return false;
   const oldMag = effectiveStats(p).mag;
   p.gun = gun;
+  // An attachment the new gun has no use for, like a silencer on a silenced gun, hands its pick back with the new gun's menu.
+  const attachment = p.perks[1];
+  if (attachment && !pickOptions({ k: 'perk', tier: 1 }, gun).includes(attachment)) delete p.perks[1];
   p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
   p.life.heat = 0;

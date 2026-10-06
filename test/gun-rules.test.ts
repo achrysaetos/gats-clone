@@ -4,7 +4,7 @@ import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, WEAPON_IDS, WORL
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { choosePick, spreadFor } from '../src/shared/sim/stats.ts';
+import { choosePick, pendingPick, spreadFor } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -144,6 +144,23 @@ test('an attachment that would change nothing for the gun in hand is never offer
   }
   assert.ok(pickOptions(TIER_1, 'specter').length === 4 && !pickOptions(TIER_1, 'specter').includes('silencer'));
   assert.ok(!pickOptions(TIER_1, 'slugGun').includes('choke'));
+});
+
+test('evolving into a gun an attachment does nothing for hands the attachment pick back, with the new gun\'s menu', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500, { loadout: { weapon: 'smg' } });
+  p.level = 2;
+  assert.ok(choosePick(w, p.id, 1, 'silencer'));
+  assert.ok(choosePick(w, p.id, 2, 'skirmisher'));
+  assert.equal(p.perks[1], 'silencer', 'the Skirmisher still uses its silencer');
+  p.level = 5;
+  for (const [level, option] of [[3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, p.id, level, option));
+  assert.ok(choosePick(w, p.id, 5, 'phantom'));
+  assert.equal(p.perks[1], undefined, 'the Phantom is silenced already');
+  assert.deepEqual(pendingPick(p), { level: 1, k: 'perk', tier: 1 });
+  assert.ok(choosePick(w, p.id, 1, 'grip'));
+  assert.equal(p.perks[1], 'grip');
+  assert.equal(p.perks[2], 'shield', 'the other picks stay');
 });
 
 test('Choke tightens a shotgun\'s pellets to 60%', () => {
