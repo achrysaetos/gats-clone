@@ -19,15 +19,12 @@ type Watch = {
   post: { x: number; y: number };
   zombie: { id: number; x: number; y: number; d: number } | null;
   downed: PlayerView | null;
-  /** The nearest building that is worn, or a turret short of ammo. */
-  wornBuilding: { x: number; y: number } | null;
-  /** The core is worn and the bank can pay to mend it. */
-  coreWorn: boolean;
+  needsTending: { x: number; y: number } | null;
+  coreMendable: boolean;
 };
 
 type Errand = { x: number; y: number; use: boolean };
 
-/** How far from the core a squad bot will wander, and how close a zombie must be before it stops mending. */
 const GUARD_RADIUS = 550;
 const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
@@ -36,30 +33,35 @@ const KITE_PX = 140;
 const mendAt = (s: Watch, at: { x: number; y: number }): Errand => ({ ...at, use: Math.hypot(at.x - s.me.x, at.y - s.me.y) <= ZOM.reachPx - 60 });
 const hordeFar = (s: Watch) => !s.zombie || s.zombie.d > BUSY_ZOMBIE_PX;
 
-/** A squad bot's errands, first match wins: get a downed squadmate up, mend a building or reload a turret and then mend the core while the horde is far, else hold its post by the core. It shoots the nearest zombie through all of them. */
-const SIEGE_RULES: readonly ((s: Watch) => Errand | null)[] = [
-  (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 },
-  (s) => s.wornBuilding && hordeFar(s) ? mendAt(s, s.wornBuilding) : null,
-  (s) => s.coreWorn && hordeFar(s) ? mendAt(s, s.core) : null,
-  (s) => {
-    const post = { ...s.post, use: false };
-    if (!s.zombie || s.zombie.d > KITE_PX) return post;
-    // Back away from the zombie, or sidestep it where backing away would leave the guard ring.
-    const away = Math.atan2(s.me.y - s.zombie.y, s.me.x - s.zombie.x);
-    const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
-    return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
-  },
-];
+type Rule = (s: Watch) => Errand | null;
 
-/** A bot's post on its own bearing from the core: POST_RADIUS out, or nearer when a squad wall stands in the way, so the walls shelter the bot instead of shutting it out. */
+const revive: Rule = (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 };
+const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.needsTending) : null;
+const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
+const holdPost: Rule = (s) => {
+  const post = { ...s.post, use: false };
+  if (!s.zombie || s.zombie.d > KITE_PX) return post;
+  const away = Math.atan2(s.me.y - s.zombie.y, s.me.x - s.zombie.x);
+  const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
+  return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
+};
+
+const SIEGE_RULES: readonly Rule[] = [revive, mendBuilding, mendCore, holdPost];
+
 function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[]): { x: number; y: number } {
   const at = (d: number) => ({ x: core.x + Math.cos(bearing) * d, y: core.y + Math.sin(bearing) * d });
-  const nearest = ZOM.coreHalf + WORLD.playerRadius + 1;
-  for (let d = nearest; d <= POST_RADIUS; d += 5) {
+  const innermost = ZOM.coreHalf + WORLD.playerRadius + 1;
+  for (let d = innermost; d <= POST_RADIUS; d += 5) {
     const { x, y } = at(d);
-    if (buildings.some((b) => circleHitsRect(x, y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return at(Math.max(nearest, d - 5));
+    if (buildings.some((b) => circleHitsRect(x, y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return at(Math.max(innermost, d - 5));
   }
   return at(POST_RADIUS);
+}
+
+function swingTo(prev: Engagement | null, zombie: NonNullable<Watch['zombie']>, tick: number, rand: () => number): Engagement {
+  if (prev?.id === zombie.id) return engage(prev, zombie, SHARPNESS[0]!, tick, rand);
+  const fresh = engage(null, zombie, SHARPNESS[0]!, tick, rand);
+  return prev ? { ...fresh, acquiredTick: prev.acquiredTick, noticeAtTick: prev.noticeAtTick } : fresh;
 }
 
 export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
@@ -76,7 +78,7 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     .filter((b) => b.hp < 10 || (b.kind !== 'wall' && b.ammo < 10 && run.scrap > 0))
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, wornBuilding: nearest(me, worn), coreWorn: run.core.hp < run.core.maxHp && run.scrap > 0 };
+  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
 
   const outFromCore = { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
@@ -88,9 +90,7 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   let threat: Situation['threat'] = null;
   let engaged: Engagement | null = null;
   if (zombie) {
-    // A bot reacts once when the horde comes into sight, then swings from zombie to zombie without waiting again.
-    const prev = mem.motor.engaged;
-    engaged = prev?.id === zombie.id ? engage(prev, zombie, SHARPNESS[0]!, snap.tick, rand) : { ...engage(null, zombie, SHARPNESS[0]!, snap.tick, rand), ...(prev && { acquiredTick: prev.acquiredTick, noticeAtTick: prev.noticeAtTick }) };
+    engaged = swingTo(mem.motor.engaged, zombie, snap.tick, rand);
     if (snap.tick >= engaged.noticeAtTick) {
       const err = drift(before.err, aimSigma(engaged, me, SHARPNESS[0]!, snap.tick), TICK_MS, rand);
       const rx = zombie.x - me.x, ry = zombie.y - me.y;

@@ -45,12 +45,6 @@ export const SHARPNESS: readonly { aimMul: number; reactionMul: number }[] = [
   { aimMul: 0.15, reactionMul: 0.45 },
 ];
 type Sharpness = (typeof SHARPNESS)[number];
-
-/** Grenades land where they were aimed when the fuse runs out, so bots aim where the target will be then. */
-export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
-const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'knife', 'engineer']);
-
-export type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 export const sharpnessAgainst = (target: PlayerView) =>
   target.kind === 'bot' ? SHARPNESS[0]! : SHARPNESS[target.hunted ? SHARPNESS.length - 1 : Math.min(target.level, SHARPNESS.length - 1)]!;
 
@@ -108,6 +102,11 @@ export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: n
 }
 
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);
+
+export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
+const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'knife', 'engineer']);
+
+export type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 
 export function aimAndTrigger(before: AimState, look: Look, wantsFire: boolean, wanted: AbilityId | null, shots: number): { aim: AimState; fire: boolean; ability: boolean; shots: number } {
   const aim = turn({ ...before, err: look.err }, look.want, look.spin, look.hand, TICK_MS);
