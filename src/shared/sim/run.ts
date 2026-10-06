@@ -3,7 +3,7 @@ import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildRefusal, cellRect, type BuildRefusal, type BuildSite } from './build.ts';
+import { buildingView, buildRefusal, cellRect, refundFor, repairScrapPerHp, serviceTarget, type BuildRefusal, type BuildSite } from './build.ts';
 import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
@@ -49,30 +49,23 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
 }
 
-const needsService = (b: Building) => b.hp < BUILDINGS[b.kind].hp || (b.kind !== 'wall' && b.ammo < BUILDINGS[b.kind].turret.ammo);
-
-/** Holding use mends the nearest worn building or core in reach, or reloads the nearest turret short of a full load, as far as the scrap goes. A worn turret is mended before it is reloaded. */
+/** Holding use tends what `serviceTarget` names, as far as the scrap goes. */
 function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
-  const coreD = dist2(p.x, p.y, core.x, core.y);
-  let best: Building | Run['core'] | null = null, bestD = ZOM.reachPx ** 2;
-  if (run.core.hp < ZOM.coreHp && coreD <= bestD) { best = run.core; bestD = coreD; }
-  for (const b of w.buildings) {
-    const d = dist2(p.x, p.y, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell);
-    if (needsService(b) && d <= bestD) { best = b; bestD = d; }
-  }
-  if (!best) return;
-  if ('kind' in best && best.kind !== 'wall' && best.hp >= BUILDINGS[best.kind].hp) {
-    const def = BUILDINGS[best.kind].turret;
-    const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - best.ammo, run.scrap / def.scrapPerRound);
-    best.ammo += rounds;
-    run.scrap -= rounds * def.scrapPerRound;
-    return;
-  }
-  const [max, perHp] = 'kind' in best ? [BUILDINGS[best.kind].hp, ZOM.repairScrapPerHp] : [ZOM.coreHp, ZOM.coreRepairScrapPerHp];
-  const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - best.hp, run.scrap / perHp);
-  best.hp += hp;
-  run.scrap -= hp * perHp;
+  const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, w.buildings.map((b) => ({ ...buildingView(b), b })));
+  if (!target) return;
+  const mend = (it: { hp: number }, max: number, perHp: number) => {
+    const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - it.hp, run.scrap / perHp);
+    it.hp += hp;
+    run.scrap -= hp * perHp;
+  };
+  if (target.on === 'core') { mend(run.core, ZOM.coreHp, ZOM.coreRepairScrapPerHp); return; }
+  const b = target.on.b;
+  if (target.job === 'repair' || b.kind === 'wall') { mend(b, BUILDINGS[b.kind].hp, repairScrapPerHp(b.kind)); return; }
+  const def = BUILDINGS[b.kind].turret;
+  const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - b.ammo, run.scrap / def.scrapPerRound);
+  b.ammo += rounds;
+  run.scrap -= rounds * def.scrapPerRound;
 }
 
 function reinforce(w: World, run: Run) {
@@ -100,7 +93,7 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
     ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
     ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
   ];
-  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: w.buildings, scrap: run.scrap };
+  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: w.buildings.map(buildingView), scrap: run.scrap };
 }
 
 export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number): BuildRefusal | null {
@@ -121,13 +114,13 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
 export function demolish(w: World, id: number, cx: number, cy: number): boolean {
   const p = w.players.get(id);
   const run = w.run;
-  const wall = w.buildings.find((b) => b.cx === cx && b.cy === cy);
-  if (!p || !run || !wall || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
+  const building = w.buildings.find((b) => b.cx === cx && b.cy === cy);
+  if (!p || !run || !building || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
   const at = cellCenter(cx, cy);
   if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return false;
-  w.buildings = w.buildings.filter((b) => b !== wall);
+  w.buildings = w.buildings.filter((b) => b !== building);
   w.buildingsVersion++;
-  run.scrap += Math.floor(BUILDINGS[wall.kind].cost * ZOM.demolishRefund);
+  run.scrap += refundFor(buildingView(building));
   return true;
 }
 

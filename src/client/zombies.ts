@@ -1,6 +1,6 @@
 import { BUILDING_KINDS, BUILDINGS, nightOf, SIDES, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
-import type { PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
-import { buildRefusal, cellOf, coreRectAt, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
+import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
+import { buildRefusal, cellOf, coreRectAt, refundFor, serviceTarget, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
@@ -43,22 +43,15 @@ export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: n
 
 const nameOf = (kind: BuildingKind) => BUILDINGS[kind].name.toLowerCase();
 
-/** What holding E would do right now, by the same rules the server follows: revive first, else mend the nearest worn building or core in reach, or reload the nearest turret short of ammo; a worn turret is mended first. */
+/** What holding E would do right now: revive first, else what `serviceTarget` names, the rule the server tends by. */
 export function useHint(snap: Snapshot, at: Pose): string | null {
   const run = snap.run;
   if (!run || !snap.self.alive) return null;
   const down = snap.players.find((p) => p.id !== snap.self.id && p.downed && Math.hypot(p.x - at.x, p.y - at.y) <= ZOM.reviveRange);
   if (down) return `Hold E to revive ${down.name}`;
   if (run.scrap <= 0) return null;
-  const jobs = [
-    ...(snap.buildings ?? []).flatMap((b) => {
-      const job = b.hp < 10 ? `repair the ${nameOf(b.kind)}` : b.kind !== 'wall' && b.ammo < 10 ? `reload the ${nameOf(b.kind)}` : null;
-      return job ? [{ job, d: Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) }] : [];
-    }),
-    ...(run.core.hp < run.core.maxHp ? [{ job: 'repair the Bastion', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
-  ].filter((m) => m.d <= ZOM.reachPx);
-  const nearest = jobs.reduce<(typeof jobs)[number] | null>((a, b) => (a && a.d <= b.d ? a : b), null);
-  return nearest && `Hold E to ${nearest.job}`;
+  const target = serviceTarget(at, run.core, snap.buildings ?? []);
+  return target && `Hold E to ${target.job} the ${target.on === 'core' ? 'Bastion' : nameOf(target.on.kind)}`;
 }
 
 export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' };
@@ -129,10 +122,8 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   };
 }
 
-const refundOf = (kind: BuildingKind) => Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund);
-
-/** `taken` names what stands on the cell, since that decides the refund. */
-function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingKind | undefined): string {
+/** `taken` is what stands on the cell, since it decides the refund. */
+function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingView | undefined): string {
   switch (refusal) {
     case 'notDay': return 'Build by day';
     case 'farFromCore': return 'Too far from the Bastion';
@@ -140,7 +131,7 @@ function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingK
     case 'cover': return 'Blocked';
     case 'core': return 'That is the Bastion';
     case 'body': return 'Someone is in the way';
-    case 'taken': return `Right click to take down the ${nameOf(taken ?? 'wall')} · +${refundOf(taken ?? 'wall')}`;
+    case 'taken': return taken ? `Right click to take down the ${nameOf(taken.kind)} · +${refundFor(taken)}` : 'Blocked';
     case 'scrap': return `${BUILDINGS[kind].name} needs ${BUILDINGS[kind].cost} scrap`;
   }
 }
@@ -152,7 +143,7 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize
   const cell = cellOf(at.x, at.y), grid = worldSize / ZOM.cell;
   const cx = Math.min(grid - 1, Math.max(0, cell.cx)), cy = Math.min(grid - 1, Math.max(0, cell.cy));
   const refusal = buildRefusal(site, kind, cx, cy);
-  const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy)?.kind;
+  const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy);
   return { kind, cx, cy, refusal, label: refusal ? refusalText(refusal, kind, taken) : `${BUILDINGS[kind].name} · ${BUILDINGS[kind].cost} scrap` };
 }
 

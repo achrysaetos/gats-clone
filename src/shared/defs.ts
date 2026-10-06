@@ -427,11 +427,13 @@ export const ZOM = {
   /** Health back after a revive, as a share of max. */
   reviveHpFrac: 0.4,
   repairHpPerSec: 80,
-  repairScrapPerHp: 0.05,
+  /** Mending a building costs this share of its price for the share of it that is worn. */
+  repairShare: 0.5,
   /** How long holding use takes to fill an empty turret. */
   refillMs: 2500,
   /** Dearer than a wall's, so the core wears down over the nights instead of being made whole every day. */
   coreRepairScrapPerHp: 0.2,
+  /** The share of a building's price paid back for taking it down whole; a worn one pays back less. */
   demolishRefund: 0.5,
   startScrap: 100,
   squadSize: 4,

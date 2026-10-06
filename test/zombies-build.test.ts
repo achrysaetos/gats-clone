@@ -7,6 +7,7 @@ import { build, demolish } from '../src/shared/sim/run.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
 import { createWorld, newId, solidRects, spawnPoint, type World } from '../src/shared/sim/world.ts';
 import { press, run, spawnAt } from './helpers.ts';
+import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 
 /** The builder stands just west of the core; cell (26, 30) is beside them. */
 const AT = { x: 1380, y: 1525 }, CELL = { cx: 26, cy: 30 };
@@ -121,5 +122,20 @@ test('a squad respawns inside a closed wall ring, not on the far side of it', ()
     const at = spawnPoint(w, 'red');
     assert.ok(at.x > (lo + 1) * 50 && at.x < hi * 50 && at.y > (lo + 1) * 50 && at.y < hi * 50, `spawned outside the ring at ${at.x},${at.y}`);
     assert.ok(!solidRects(w).some((r) => circleHitsRect(at.x, at.y, WORLD.playerRadius, r)), `spawned inside a solid at ${at.x},${at.y}`);
+  }
+});
+
+test('a worn building pays back less when taken down, and mending it costs less than taking it down and building it again', () => {
+  for (const kind of ['wall', ...TURRET_KINDS] as const) {
+    const { w, p } = dayWorld();
+    w.run!.scrap = 1e6;
+    build(w, p.id, kind, CELL.cx, CELL.cy);
+    w.buildings[0]!.hp = BUILDINGS[kind].hp * 0.3;
+    const scrap = w.run!.scrap;
+    assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
+    const refund = w.run!.scrap - scrap;
+    assert.equal(refund, Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund * 0.3), `${kind} at 30% pays back 30% of the whole refund`);
+    const mend = BUILDINGS[kind].hp * 0.7 * repairScrapPerHp(kind);
+    assert.ok(mend < BUILDINGS[kind].cost - refund, `${kind}: mending costs ${mend}, tearing down and building again ${BUILDINGS[kind].cost - refund}`);
   }
 });

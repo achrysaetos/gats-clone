@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { BUILDINGS, LEVELS, ZOM } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { canRespawn, step } from '../src/shared/sim.ts';
+import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { createWorld, newId, type Player, type World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
@@ -124,7 +125,7 @@ test('holding use beside a damaged wall mends it for scrap, and stops when the s
   run(w, 1000);
   const mended = wall.hp - 100;
   assert.ok(Math.abs(mended - ZOM.repairHpPerSec) <= ZOM.repairHpPerSec * TICK_MS / 1000 + 0.01, `mended ${mended}`);
-  assert.ok(Math.abs(10 - w.run!.scrap - mended * ZOM.repairScrapPerHp) < 1e-6);
+  assert.ok(Math.abs(10 - w.run!.scrap - mended * repairScrapPerHp('wall')) < 1e-6);
 
   w.run!.scrap = 0;
   const before = wall.hp;

@@ -8,6 +8,7 @@ import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
+import { buildingView, tenths } from './build.ts';
 import { isEnemy, sameTeam, type Player, type Run, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
@@ -134,7 +135,6 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   };
 }
 
-const tenths = (hp: number, max: number) => Math.max(1, Math.ceil((hp / max) * 10));
 
 function runView(w: World, run: Run): RunView {
   const core = MAPS[w.map].siege!.core;
@@ -165,9 +165,6 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
     zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night))]);
   }
-  const buildings = w.buildings.map((b): BuildingView => {
-    const at = { cx: b.cx, cy: b.cy, hp: tenths(b.hp, BUILDINGS[b.kind].hp) };
-    return b.kind === 'wall' ? { ...at, kind: b.kind } : { ...at, kind: b.kind, ammo: Math.ceil((Math.floor(b.ammo) / BUILDINGS[b.kind].turret.ammo) * 10) };
-  });
+  const buildings = w.buildings.map(buildingView);
   return { zombies, buildings, run: runView(w, run) };
 }

@@ -13,7 +13,7 @@ import { buildRefusal } from '../src/shared/sim/build.ts';
 import { build } from '../src/shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
-import { spawnAt } from './helpers.ts';
+import { press, run, spawnAt } from './helpers.ts';
 
 const AT = { x: 1380, y: 1525 };
 
@@ -62,7 +62,10 @@ test('the ghost judges each kind as the server would build it, and names what it
   }
   const site = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(site, 'sentry', at(26, 30), MAPS[w.map].size).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
-  assert.equal(ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 2}`, 'the refund is the standing building\'s');
+  assert.equal(ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 20}`, 'the refund is the standing building\'s, for the tenth of it left');
+  w.buildings[0]!.hp = BUILDINGS.cannon.hp;
+  const whole = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
+  assert.equal(ghostAt(whole, 'wall', at(26, 31), MAPS[w.map].size).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 2}`, 'half back for a whole one');
   w.run!.scrap = 0;
   assert.equal(ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'cannon', at(26, 30), MAPS[w.map].size).label, `Cannon needs ${BUILDINGS.cannon.cost} scrap`);
 });
@@ -247,4 +250,18 @@ test('the N hint counts the humans ready for night', () => {
   assert.equal(readyHint(runView(), players, 1), 'ready for night · 0/2');
   assert.equal(readyHint(runView({ ready: [1] }), players, 1), 'ready · 1/2 · N to wait');
   assert.equal(readyHint(runView(), players.slice(0, 1), 1), 'bring the night now');
+});
+
+test('holding E names the job the server does, even for a building a sliver short of whole', () => {
+  const { w, p } = squadWorld();
+  w.run!.scrap = 100;
+  const wall = { id: newId(w), kind: 'wall' as const, cx: 26, cy: 30, hp: BUILDINGS.wall.hp - 1 };
+  w.buildings.push(wall);
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the wall');
+  press(w, p, { use: true });
+  run(w, 100);
+  assert.equal(wall.hp, BUILDINGS.wall.hp, 'and the server mends that wall');
+  const sentry = { id: newId(w), kind: 'sentry' as const, cx: 26, cy: 31, hp: BUILDINGS.sentry.hp, owner: p.id, ammo: BUILDINGS.sentry.turret.ammo - 0.5, nextFireAt: 0 };
+  w.buildings = [sentry];
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to reload the sentry');
 });

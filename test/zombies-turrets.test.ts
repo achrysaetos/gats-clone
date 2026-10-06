@@ -228,7 +228,7 @@ test('a turret\'s ammo shows in tenths, and its aim and rounds only in its shot 
   addZombie(w, 'walker', TX, TY - 200);
   step(w, TICK_MS);
   const first = snapshotFor(w, p.id);
-  assert.deepEqual(first.buildings, [{ kind: 'sentry', cx: T.cx, cy: T.cy, hp: 10, ammo: 10 }]);
+  assert.deepEqual(first.buildings, [{ kind: 'sentry', cx: T.cx, cy: T.cy, hp: 10, ammo: 9 }], 'short of a full load after one round');
   assert.deepEqual([first.bullets.length, w.bullets.length], [0, 1], 'its round flies on the server but stays off the wire');
   run(w, 500);
   assert.ok(t.ammo < SENTRY.ammo - 1, 'it kept firing');
