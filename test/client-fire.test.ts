@@ -43,7 +43,7 @@ function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[], setup?: (w
     const pulled = stepTrigger(t, input, w.now);
     t = pulled.t;
     if (pulled.fired) page.push(i + 1);
-    if (p.life.k === 'alive') assert.deepEqual([t.heat, t.spin], [p.life.heat, p.life.spin], `bloom and spin-up after input ${i + 1}`);
+    if (p.life.k === 'alive') assert.deepEqual([t.spray, t.spin], [p.life.spray, p.life.spin], `bloom and spin-up after input ${i + 1}`);
   });
   return { sim, page };
 }

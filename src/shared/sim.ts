@@ -92,7 +92,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const armed = w.match.k === 'playing';
   if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     const muzzle = WORLD.playerRadius + 4;
-    const spread = spreadFor(p.gun, p.perks, !moving, life.heat);
+    const spread = spreadFor(p.gun, p.perks, !moving, life.spray);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

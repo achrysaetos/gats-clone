@@ -15,7 +15,7 @@ export type Life =
     nextFireAt: number;
     /** Rounds still to come from the burst in progress. */
     burstLeft: number;
-    heat: number;
+    spray: number;
     spin: number;
     lastDamageAt: number;
     lastMoveAt: number;

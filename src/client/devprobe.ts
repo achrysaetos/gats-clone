@@ -107,7 +107,7 @@ export function installDevProbe(page: Page) {
   };
   const trigger = () => {
     const t = page.session()?.firing.trigger;
-    return t && { gun: t.gun, heat: t.heat, spin: t.spin, reticleGap: drawnReticleGap() };
+    return t && { gun: t.gun, spray: t.spray, spin: t.spin, reticleGap: drawnReticleGap() };
   };
   const toScreen = (x: number, y: number) => {
     const cam = page.camera();

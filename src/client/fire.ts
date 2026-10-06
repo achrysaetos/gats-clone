@@ -8,11 +8,11 @@ const CONFIRM_SLACK_TICKS = 4;
 
 type Trigger = {
   gun: GunId; mag: number; reloadMs: number; alive: boolean; armed: boolean;
-  ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; heat: number; spin: number; shotsSeen: number;
+  ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; spray: number; spin: number; shotsSeen: number;
 };
 export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'>;
 
-const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, heat: 0, spin: 0 } as const;
+const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, spray: 0, spin: 0 } as const;
 const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, ...FRESH_LIFE };
 
 /** One tick of `tickPlayer`'s trigger at time `now`: whether the server fires a shot on the input that carries `input`. */
@@ -24,7 +24,7 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   return { t: g, fired };
 }
 
-export const nextSprayShot = (f: Firing): number => f.trigger.heat + 1;
+export const nextSprayShot = (f: Firing): number => f.trigger.spray + 1;
 
 /** A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. */
 export type PredictedShot = { seq: number; rounds: readonly number[] };
@@ -87,7 +87,7 @@ export function serverGun(snap: Snapshot): ServerGun {
 function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigger {
   if (!sv.alive) return { ...base, alive: false, armed: sv.armed };
   const t: Trigger = { ...base, ...(base.alive ? {} : FRESH_LIFE), alive: true, armed: sv.armed, gun: sv.gun, mag: sv.mag, reloadMs: sv.reloadMs, ammo: Math.max(0, sv.ammo - late) };
-  if (base.gun !== sv.gun) { t.burstLeft = 0; t.heat = 0; t.spin = 0; }
+  if (base.gun !== sv.gun) { t.burstLeft = 0; t.spray = 0; t.spin = 0; }
   if (sv.reloading !== (t.reloadUntil !== null)) t.reloadUntil = sv.reloading ? now + (1 - sv.reloadFrac) * sv.reloadMs : null;
   return t;
 }

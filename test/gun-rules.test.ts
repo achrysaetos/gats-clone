@@ -55,8 +55,8 @@ test('an assault rifle held down blooms after its first shots, up to double, and
     const out = tick(w, p, { fire: true, shots: 1 });
     if (out.length) held.push(out);
   }
-  const heat = p.life.k === 'alive' ? p.life.heat : 0;
-  assert.equal(spreadFor('assault', {}, true, heat), 2 * GUNS.assault.spread, 'a long spray reaches the cap');
+  const spray = p.life.k === 'alive' ? p.life.spray : 0;
+  assert.equal(spreadFor('assault', {}, true, spray), 2 * GUNS.assault.spread, 'a long spray reaches the cap');
   assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
   assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
@@ -73,13 +73,13 @@ test('an assault rifle held down blooms after its first shots, up to double, and
 test('assault bloom is gone a quarter second after letting go, and a reload clears it', () => {
   const { w, p } = shooter('assault');
   for (let i = 0; i < 40; i++) tick(w, p, { fire: true, shots: 1 });
-  const heatOf = () => (p.life.k === 'alive' ? p.life.heat : -1);
-  assert.ok(heatOf() > 5, `heat ${heatOf()} under held fire`);
+  const sprayOf = () => (p.life.k === 'alive' ? p.life.spray : -1);
+  assert.ok(sprayOf() > 5, `spray ${sprayOf()} under held fire`);
   for (let i = 0; i < 8; i++) tick(w, p, {});
-  assert.equal(heatOf(), 0, 'cooled within 8 ticks');
+  assert.equal(sprayOf(), 0, 'cooled within 8 ticks');
   for (let i = 0; i < 20; i++) tick(w, p, { fire: true, shots: 1 });
   tick(w, p, { fire: true, shots: 1, reload: true });
-  assert.equal(heatOf(), 0, 'reloading clears it even with the trigger held');
+  assert.equal(sprayOf(), 0, 'reloading clears it even with the trigger held');
 });
 
 function gaps(w: World, p: Player, ticks: number): number[] {

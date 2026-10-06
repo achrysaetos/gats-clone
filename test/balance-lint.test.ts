@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { GunId } from '../src/shared/defs.ts';
-import { dominatedPairs, rangeBeyondView, type Pair } from '../scripts/lib/gunscore.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, type GunId } from '../src/shared/defs.ts';
+import { dominatedPairs, edgesOver, rangeBeyondView, type Pair } from '../scripts/lib/gunscore.ts';
 
 const KNOWN_DOMINATED: readonly Pair[] = [];
 const KNOWN_BEYOND_VIEW: readonly GunId[] = [];
@@ -19,4 +19,12 @@ test('no gun outranges its owner\'s horizontal view, beyond the known guns, and 
   const found = rangeBeyondView().map((o) => o.id);
   assert.deepEqual(found.filter((id) => !KNOWN_BEYOND_VIEW.includes(id)), [], 'newly beyond view');
   assert.deepEqual(KNOWN_BEYOND_VIEW.filter((id) => !found.includes(id)), [], 'fixed: remove from KNOWN_BEYOND_VIEW');
+});
+
+test('each of the two choices at an evolution leads the other by at least a fifth somewhere, so the pick is felt in play', () => {
+  const bland = GUN_IDS.flatMap((parent) => {
+    const [a, b] = EVOLUTIONS[parent];
+    return a && b ? [[a, b], [b, a]].filter(([x, y]) => edgesOver(x!, y!).length === 0).map(([x, y]) => `${GUNS[x!].name} over ${GUNS[y!].name}`) : [];
+  });
+  assert.deepEqual(bland, []);
 });

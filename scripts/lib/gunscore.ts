@@ -7,7 +7,7 @@ export const DPS_RANGES = [150, 400, 700, 1000] as const;
 
 export const AXES = [
   ...DPS_RANGES.map((d) => `still@${d}` as const), ...DPS_RANGES.map((d) => `moving@${d}` as const),
-  'perPull', 'moveMul', 'uptime', 'reloadMs', 'penetrate', 'blast', 'silenced',
+  'perPull', 'magSeconds', 'range', 'bulletSpeed', 'moveMul', 'uptime', 'reloadMs', 'penetrate', 'blast', 'silenced',
 ] as const;
 export type Axis = (typeof AXES)[number];
 export type GunScore = Record<Axis, number>;
@@ -32,6 +32,7 @@ export function scoreGun(id: GunId): GunScore {
     'still@150': s150!, 'still@400': s400!, 'still@700': s700!, 'still@1000': s1000!,
     'moving@150': m150!, 'moving@400': m400!, 'moving@700': m700!, 'moving@1000': m1000!,
     perPull: g.pellets * (g.damage + (g.blast?.damage ?? 0)) * (g.burst?.count ?? 1),
+    magSeconds: firing / 1000, range: g.range, bulletSpeed: g.bulletSpeed,
     moveMul: g.moveMul, uptime: firing / (firing + g.reloadMs), reloadMs: g.reloadMs,
     penetrate: g.penetrate ?? 0, blast: g.blast ? 1 : 0, silenced: g.silenced ? 1 : 0,
   };
@@ -60,4 +61,10 @@ export function rangeBeyondView(): { id: GunId; range: number; view: number }[] 
     const s = effectiveStats(p);
     return s.range > s.viewRadius ? [{ id, range: s.range, view: s.viewRadius }] : [];
   });
+}
+
+/** A gun's felt edges over another: every axis it leads by `margin` or more, a lead too small to notice in play being no edge. */
+export function edgesOver(a: GunId, b: GunId, margin = 1.2): Axis[] {
+  const sa = scoreGun(a), sb = scoreGun(b);
+  return AXES.filter((k) => (LOWER_BETTER.has(k) ? sb[k] >= sa[k] * margin && sa[k] > 0 : sa[k] >= Math.max(sb[k], EPS) * margin));
 }

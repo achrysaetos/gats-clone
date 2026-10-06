@@ -146,7 +146,7 @@ export const GUNS: Record<GunId, GunDef> = {
   artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast', base: 'sniper', stage: 2, from: 'longshot', damage: 100, fireMs: 1500, pellets: 1, spread: 0.01, range: 1300, bulletSpeed: 1800, mag: 4, reloadMs: 2300, moveMul: 0.86, auto: false, blast: { radius: 130, damage: 80 }, breakpoint: 1,
     rules: { viewMul: 1.5 },
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#f76b15', bullet: { r: 4, color: '#e0661a' } } },
-  repeater: { name: 'Repeater', desc: 'Fastest follow-ups, lighter rounds', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 280, pellets: 1, spread: 0.018, range: 1100, bulletSpeed: 2600, mag: 14, reloadMs: 1800, moveMul: 0.95, auto: false,
+  repeater: { name: 'Repeater', desc: 'Fastest follow-ups, lighter rounds', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 250, pellets: 1, spread: 0.018, range: 1100, bulletSpeed: 2600, mag: 14, reloadMs: 1800, moveMul: 0.95, auto: false,
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
   ghost: { name: 'Ghost', desc: 'Suppressed marksman rifle', base: 'sniper', stage: 2, from: 'semiAuto', damage: 68, fireMs: 400, pellets: 1, spread: 0.012, range: 1150, bulletSpeed: 2600, mag: 10, reloadMs: 1900, moveMul: 0.95, auto: false, silenced: true, breakpoint: 2,
     look: { length: 1.25, width: 0.95, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.6, color: '#5a2d85' } } },

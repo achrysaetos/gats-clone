@@ -91,7 +91,7 @@ export function effectiveStats(p: Player): Stats {
 export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }> {
   const s = effectiveStats(p);
   return {
-    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, heat: 0, spin: 0,
+    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, spin: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity, hits: [],
   };
 }
@@ -129,6 +129,12 @@ export function resetProgress(p: Player) {
 }
 
 /** Applies `option` only when `level` is the pending pick and `option` is one of its options, so a repeated or stale pick changes nothing. */
+/** An attachment the gun in hand cannot use, like a silencer on a silenced gun, is taken off so the tier-1 pick opens again on the gun's own menu. */
+function reopenUselessAttachment(p: Player) {
+  const attachment = p.perks[1];
+  if (attachment && !pickOptions({ k: 'perk', tier: 1 }, p.gun).includes(attachment)) delete p.perks[1];
+}
+
 export function choosePick(w: World, id: number, level: number, option: PickOption): boolean {
   const p = w.players.get(id);
   const pending = p && pendingPick(p);
@@ -144,11 +150,10 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   if (!gun) return false;
   const oldMag = effectiveStats(p).mag;
   p.gun = gun;
-  const attachment = p.perks[1];
-  if (attachment && !pickOptions({ k: 'perk', tier: 1 }, gun).includes(attachment)) delete p.perks[1];
+  reopenUselessAttachment(p);
   p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
-  p.life.heat = 0;
+  p.life.spray = 0;
   p.life.spin = 0;
   if (isHunted(w, p)) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
   return true;
