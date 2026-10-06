@@ -141,7 +141,6 @@ export const EVOLUTIONS: Record<GunId, readonly GunId[]> = byGun((id) => GUN_IDS
 
 export const ARMOR_IDS = ['none', 'light', 'medium', 'heavy'] as const;
 export type ArmorId = (typeof ARMOR_IDS)[number];
-/** Armor is a fixed loadout status: it blocks `blockFrac` of every hit that does not pierce, for the whole life, and slows by `speedMul`. */
 export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; speedMul: number }> = {
   none: { name: 'No armor', blockFrac: 0, speedMul: 1.0 },
   light: { name: 'Light', blockFrac: 0.08, speedMul: 0.93 },

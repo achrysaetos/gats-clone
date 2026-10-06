@@ -13,7 +13,6 @@ import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, sp
 
 const PISTOL_DMG = GUNS.pistol.damage;
 
-/** Health each of a fresh victim's first `shots` pistol hits takes off, for a shooter and victim of the given kinds. */
 function hitsTaken(armor: ArmorId, shots: number, kinds: { shooter?: PlayerKind; victim?: PlayerKind } = {}): number[] {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500, { kind: kinds.shooter });
@@ -34,7 +33,7 @@ test('heavy armor takes 76% of what no armor takes from the same shot, on every 
   for (const [i, h] of heavy.entries()) assert.ok(Math.abs(h - 0.76 * bare[i]!) < 1e-9, `hit ${i + 1}: heavy took ${h}, bare took ${bare[i]}`);
 });
 
-test('armor blocks after the human rule: a human shot on a heavy human takes the human multiple of 76% of the raw damage, a bot shot 76%', () => {
+test('the human rule still applies through armor: a human shot on a heavy human takes the human multiple of 76% of the raw damage, a bot shot 76%', () => {
   const [byHuman] = hitsTaken('heavy', 1, { shooter: 'human', victim: 'human' });
   const [byBot] = hitsTaken('heavy', 1, { victim: 'human' });
   assert.ok(Math.abs(byHuman! - HP_MULTIPLIER.human * 0.76 * PISTOL_DMG) < 1e-9, `human on human took ${byHuman}`);
