@@ -5,8 +5,9 @@ import { GUNS, type GunId } from '../src/shared/defs.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
-import { committed, dueAt, NO_FIRING, pullTrigger, sendInput, settle, type Firing, type ServerGun, type TriggerInput } from '../src/client/fire.ts';
-import { emptyWorld, equip, spawnAt, TICK_MS } from './helpers.ts';
+import type { Player, World } from '../src/shared/sim/world.ts';
+import { committed, dueAt, NO_FIRING, sendInput, settle, stepTrigger, type Firing, type ServerGun, type TriggerInput } from '../src/client/fire.ts';
+import { emptyWorld, equip, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
 const held = (shots: number, fire = true, reload = false): TriggerInput => ({ fire, shots, reload });
 const ready = (gun: GunId, o: Partial<ServerGun> = {}): ServerGun =>
@@ -28,17 +29,19 @@ function play(f: Firing, inputs: readonly TriggerInput[]): { firing: Firing; dra
   return { firing: f, drawn, rejected };
 }
 
-function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[]): { sim: number[]; page: number[] } {
+function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[], setup?: (w: World, p: Player) => void): { sim: number[]; page: number[] } {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);
+  setup?.(w, p);
   equip(p, gun);
   const sim: number[] = [], page: number[] = [];
-  let t = armedWith(gun, { mag: effectiveStats(p).mag }).trigger;
+  const { mag } = effectiveStats(p);
+  let t = armedWith(gun, { mag, ammo: mag, armed: w.match.k === 'playing' }).trigger;
   inputs.forEach((input, i) => {
     setInput(w, p.id, i + 1, { ...IDLE_INPUT, ...input });
     step(w, TICK_MS);
     if (w.events.some((e) => e.e === 'shot' && e.owner === p.id)) sim.push(i + 1);
-    const pulled = pullTrigger(t, input, w.now);
+    const pulled = stepTrigger(t, input, w.now);
     t = pulled.t;
     if (pulled.fired) page.push(i + 1);
   });
@@ -78,6 +81,18 @@ for (const [name, gun, pattern] of SCRIPTS) {
     assert.deepEqual(rejected, []);
   });
 }
+
+test('the page reloads to the sim\'s perk-extended magazine, not the gun\'s', () => {
+  const { sim, page } = simAndPageFires('pistol', taps('P.'.repeat(150)), (w, p) => grantPerks(w, p, ['extended']));
+  assert.ok(sim.length > GUNS.pistol.mag * 1.5, 'spans a reload of the extended magazine');
+  assert.deepEqual(page, sim);
+});
+
+test('neither the page nor the sim fires once the round is over', () => {
+  const { sim, page } = simAndPageFires('smg', taps('Phhhhhhhhh.P.P'), (w) => { w.match = { k: 'over', winner: { name: 'x', id: null, note: null }, restartAt: Infinity }; });
+  assert.deepEqual(sim, []);
+  assert.deepEqual(page, []);
+});
 
 test('held auto fire keeps the gun\'s rate on average, not the tick\'s', () => {
   const inputs = taps('P' + 'h'.repeat(GUNS.smg.mag * 3));
@@ -180,5 +195,5 @@ test('releasing the trigger after a shot keeps it held for the input the server 
 test('a reload pressed while a drawn shot is owed waits so the server fires that shot first', () => {
   const f = { ...armedWith('pistol', { ammo: 5 }), ahead: { seq: 1, rounds: [-1] } };
   assert.equal(committed(f, held(1, false, true)).reload, false);
-  assert.equal(pullTrigger(f.trigger, held(1, false, true), TICK_MS).fired, false, 'the reload would have beaten the shot');
+  assert.equal(stepTrigger(f.trigger, held(1, false, true), TICK_MS).fired, false, 'the reload would have beaten the shot');
 });

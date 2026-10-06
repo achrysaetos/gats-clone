@@ -1,5 +1,6 @@
-import { GUNS, PRESS_GRACE_MS, WORLD, type GunId } from '../shared/defs.ts';
+import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
+import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CONFIRM_SLACK_TICKS = 4;
@@ -14,32 +15,12 @@ const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pre
 const UNARMED: Trigger = { gun: 'pistol', mag: 0, alive: false, armed: false, ammo: 0, shotsSeen: 0, ...FRESH_LIFE };
 
 /** One tick of `tickPlayer`'s trigger at time `now`: whether the server fires a shot on the input that carries `input`. */
-export function pullTrigger(t: Trigger, input: TriggerInput, now: number): { t: Trigger; fired: boolean } {
-  const pressed = input.shots > t.shotsSeen;
-  const g = { ...t, shotsSeen: Math.max(t.shotsSeen, input.shots) };
+export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: Trigger; fired: boolean } {
+  const g = { ...t };
+  const pressed = consumePresses(g, input.shots);
   if (!g.alive) return { t: g, fired: false };
-  const gun = GUNS[g.gun];
-  if (g.reloadUntil !== null && now >= g.reloadUntil) { g.ammo = g.mag; g.reloadUntil = null; }
-  if (g.reloadUntil === null && (g.ammo <= 0 || (input.reload && g.ammo < g.mag))) {
-    g.reloadUntil = now + gun.reloadMs;
-    g.burstLeft = 0;
-  }
-  if (pressed) {
-    const cooledAt = g.burstLeft > 0 && gun.burst ? g.nextFireAt + (g.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : g.nextFireAt;
-    g.pressUntil = Math.max(now, cooledAt, g.reloadUntil ?? 0) + PRESS_GRACE_MS;
-  }
-  const bursting = g.burstLeft > 0;
-  const wantsShot = bursting || now <= g.pressUntil || (gun.auto && input.fire);
-  if (!g.armed || !wantsShot || g.reloadUntil !== null || g.ammo <= 0 || now < g.nextFireAt) return { t: g, fired: false };
-  if (!bursting) {
-    g.pressUntil = -Infinity;
-    g.burstLeft = gun.burst?.count ?? 1;
-  }
-  g.ammo--;
-  g.burstLeft = g.ammo > 0 ? g.burstLeft - 1 : 0;
-  const from = now - g.nextFireAt < TICK_MS ? g.nextFireAt : now;
-  g.nextFireAt = from + (g.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
-  return { t: g, fired: true };
+  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, armed: g.armed }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
+  return { t: g, fired };
 }
 
 /** A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. */
@@ -68,7 +49,7 @@ export const NO_FIRING: Firing = { trigger: UNARMED, history: [], sent: { seq: 0
 export function dueAt(f: Firing, input: TriggerInput): number | null {
   if (f.ahead) return null;
   const seq = f.sent.seq + 1;
-  if (!pullTrigger(f.trigger, input, seq * TICK_MS).fired) return null;
+  if (!stepTrigger(f.trigger, input, seq * TICK_MS).fired) return null;
   return f.sent.at + Math.max(0, f.trigger.nextFireAt - f.sent.seq * TICK_MS);
 }
 
@@ -78,13 +59,13 @@ export function dueAt(f: Firing, input: TriggerInput): number | null {
  */
 export function committed<I extends TriggerInput>(f: Firing, input: I): I {
   const seq = f.sent.seq + 1;
-  const owed = f.unconfirmed.some((p) => p.seq + f.lag + 1 >= seq) && !pullTrigger(f.trigger, { ...input, fire: true }, seq * TICK_MS).fired;
+  const owed = f.unconfirmed.some((p) => p.seq + f.lag + 1 >= seq) && !stepTrigger(f.trigger, { ...input, fire: true }, seq * TICK_MS).fired;
   return f.ahead || owed ? { ...input, fire: true, reload: false } : input;
 }
 
 /** Steps the trigger on the input just sent. A shot drawn ahead of it that the trigger refuses is returned to be taken back. */
 export function sendInput(f: Firing, seq: number, input: TriggerInput, at: number): { firing: Firing; rejected: PredictedShot | null } {
-  const { t, fired } = pullTrigger(f.trigger, input, seq * TICK_MS);
+  const { t, fired } = stepTrigger(f.trigger, input, seq * TICK_MS);
   const firing = { ...f, trigger: t, history: [...f.history, { seq, trigger: t }], sent: { seq, at }, ahead: null };
   if (!f.ahead) return { firing, rejected: null };
   return fired ? { firing: { ...firing, unconfirmed: [...f.unconfirmed, f.ahead] }, rejected: null } : { firing, rejected: f.ahead };
@@ -126,7 +107,7 @@ export function settle(f: Firing, sv: ServerGun, ackSeq: number, shots: number, 
   const history = [{ seq: ackSeq, trigger }];
   for (const p of pending) {
     if (p.seq <= ackSeq) continue;
-    trigger = pullTrigger(trigger, p.input, p.seq * TICK_MS).t;
+    trigger = stepTrigger(trigger, p.input, p.seq * TICK_MS).t;
     history.push({ seq: p.seq, trigger });
   }
   return { firing: { ...f, trigger, history, unconfirmed, lag }, unmatched, rejected };
