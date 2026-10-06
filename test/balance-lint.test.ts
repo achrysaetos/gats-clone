@@ -1,10 +1,31 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EVOLUTIONS, GUN_IDS, GUNS, type GunId } from '../src/shared/defs.ts';
-import { dominatedPairs, edgesOver, rangeBeyondView, type Pair } from '../scripts/lib/gunscore.ts';
+import { doctrineBreaches, dominatedPairs, edgesOver, rangeBeyondView, type Pair } from '../scripts/lib/gunscore.ts';
 
 const KNOWN_DOMINATED: readonly Pair[] = [];
 const KNOWN_BEYOND_VIEW: readonly GunId[] = [];
+const KNOWN_BREACHES: Partial<Record<GunId, readonly string[]>> = {
+  sniper: ['scope'],
+  lmg: ['aim@100', 'aim@300', 'aim@600', 'close'],
+  executioner: ['aim@300', 'aim@600'],
+  heavySmg: ['aim@600'],
+  ripper: ['aim@600', 'falloff'],
+  bulldog: ['aim@100', 'aim@300', 'aim@600', 'falloff'],
+  scout: ['scope'],
+  longshot: ['scope'],
+  semiAuto: ['cadence', 'scope', 'aim@100', 'aim@300', 'aim@900'],
+  piercer: ['scope'],
+  artillery: ['scope'],
+  repeater: ['cadence', 'scope', 'aim@100', 'aim@300', 'aim@600', 'aim@900'],
+  ghost: ['cadence', 'scope', 'aim@300'],
+  heavyLmg: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
+  lightMg: ['aim@100', 'aim@300', 'aim@600', 'close'],
+  minigun: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
+  juggernaut: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
+  ranger: ['aim@100', 'aim@300', 'aim@600', 'close'],
+  twinMg: ['aim@100', 'aim@300', 'aim@600', 'close'],
+};
 
 const key = ([a, b]: Pair) => `${a} > ${b}`;
 
@@ -27,4 +48,12 @@ test('each of the two choices at an evolution leads the other by at least a fift
     return a && b ? [[a, b], [b, a]].filter(([x, y]) => edgesOver(x!, y!).length === 0).map(([x, y]) => `${GUNS[x!].name} over ${GUNS[y!].name}`) : [];
   });
   assert.deepEqual(bland, []);
+});
+
+test('every gun keeps to its class doctrine against a person, beyond the known breaches, and every known breach still holds', () => {
+  const found = doctrineBreaches();
+  const known = Object.entries(KNOWN_BREACHES).flatMap(([id, rules]) => rules!.map((rule) => `${id} ${rule}`));
+  const keys = found.map((b) => `${b.id} ${b.rule}`);
+  assert.deepEqual(found.filter((b) => !known.includes(`${b.id} ${b.rule}`)).map((b) => `${GUNS[b.id].name} ${b.rule}: ${b.detail}`), [], 'new breaches');
+  assert.deepEqual(known.filter((k) => !keys.includes(k)), [], 'fixed: remove from KNOWN_BREACHES');
 });

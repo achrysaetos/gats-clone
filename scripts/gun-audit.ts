@@ -4,19 +4,18 @@ import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { GUNS, rulesOf, WORLD, type GunDef } from '../src/shared/defs.ts';
-import { aimDps, aimKillMs, HUMAN_HP, perfectKill, TREE_ORDER } from './lib/gunscore.ts';
+import { AIM_BANDS, aimDps, aimKillMs, doctrineBreaches, HUMAN_HP, perfectKill, TREE_ORDER } from './lib/gunscore.ts';
 
 const { values: args } = parseArgs({ options: { old: { type: 'string' }, moving: { type: 'boolean', default: false } } });
 const old: Record<string, GunDef> = args.old ? (await import(pathToFileURL(resolve(args.old)).href)).GUNS : {};
 
-const AIM_RANGES = [150, 300, 600, 900] as const;
 const msPerRound = (g: GunDef) => (g.burst ? ((g.burst.count - 1) * g.burst.gapMs + g.fireMs) / g.burst.count : g.fireMs);
 const pull = (g: GunDef) => g.pellets * (g.damage + (g.blast?.damage ?? 0));
 const s = (ms: number) => (Number.isFinite(ms) ? (ms / 1000).toFixed(2) : '-');
 const cols: [string, number][] = [
   ['gun', 18], ['dmg', 6], ['ms', 6], ['dps', 5], ['range', 6], ['view', 6], ['mag', 4], ['reload', 7], ['move', 5],
-  ['bot', 9], ['botHvy', 9], ['human', 10], ['humHvy', 10], ...AIM_RANGES.map((d) => [`aim@${d}`, 8] as [string, number]),
-  ...AIM_RANGES.map((d) => [`kill@${d}`, 8] as [string, number]), ['  was', 30],
+  ['bot', 9], ['botHvy', 9], ['human', 10], ['humHvy', 10], ...AIM_BANDS.map((d) => [`aim@${d}`, 8] as [string, number]),
+  ...AIM_BANDS.map((d) => [`kill@${d}`, 8] as [string, number]), ['  was', 30],
 ];
 const row = (cells: string[]) => cells.map((c, i) => (i === 0 || i === cols.length - 1 ? c.padEnd(cols[i]![1]) : c.padStart(cols[i]![1]))).join('');
 
@@ -30,7 +29,11 @@ for (const id of TREE_ORDER) {
     `${'  '.repeat(g.stage)}${g.name}`, String(pull(g)), msPerRound(g).toFixed(0), ((pull(g) * 1000) / msPerRound(g)).toFixed(0),
     String(g.range), (WORLD.viewRadius * rulesOf(g).viewMul).toFixed(0), String(g.mag), String(g.reloadMs), g.moveMul.toFixed(2),
     k(WORLD.baseHp, 'none'), k(WORLD.baseHp, 'heavy'), k(HUMAN_HP, 'none'), k(HUMAN_HP, 'heavy'),
-    ...AIM_RANGES.map((d) => aimDps(id, d, !args.moving).toFixed(0)), ...AIM_RANGES.map((d) => s(aimKillMs(id, d, !args.moving))),
+    ...AIM_BANDS.map((d) => aimDps(id, d, !args.moving).toFixed(0)), ...AIM_BANDS.map((d) => s(aimKillMs(id, d, !args.moving))),
     `  ${o ? `${pull(o)} / ${msPerRound(o).toFixed(0)}ms / ${o.range}` : 'new'}`,
   ]));
 }
+
+const breaches = doctrineBreaches();
+console.log(`\n${breaches.length} doctrine breaches (DOCTRINE in scripts/lib/gunscore.ts)`);
+for (const b of breaches) console.log(`  ${GUNS[b.id].name.padEnd(16)}${b.rule.padEnd(9)}${b.detail}`);

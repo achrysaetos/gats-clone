@@ -1,4 +1,4 @@
-import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, HP_MULTIPLIER, WEAPON_IDS, WORLD, type ArmorId, type GunId } from '../../src/shared/defs.ts';
+import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, HP_MULTIPLIER, rulesOf, WEAPON_IDS, WORLD, type ArmorId, type GunId, type WeaponId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
@@ -144,4 +144,62 @@ export function aimDps(id: GunId, d: number, still: boolean): number {
   if (d > g.range) return 0;
   const shots = timeline.get(id)!.filter((s) => s.t < SUSTAIN_MS);
   return (shots.reduce((sum, s) => sum + hitChance(d, spreadFor(id, {}, still, s.spray), g.bulletSpeed), 0) * perHit(id, 'none') * 1000) / SUSTAIN_MS;
+}
+
+export const AIM_BANDS = [100, 300, 600, 900] as const;
+type Band = (typeof AIM_BANDS)[number];
+
+/**
+ * Each class's job against a person. `cadenceMs` bounds ms per round; `ceiling` caps a stage-0 gun's `aimDps` standing at each
+ * band, and an evolution may reach `STAGE_GAIN` of it, so a stage buys more of the class's strength rather than a new one.
+ */
+export const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: number; ceiling: Record<Band, number> }> = {
+  pistol: { cadenceMs: [80, 600], scope: 1, ceiling: { 100: 125, 300: 85, 600: 52, 900: 42 } },
+  smg: { cadenceMs: [33, 100], scope: 1, ceiling: { 100: 160, 300: 90, 600: 45, 900: 0 } },
+  shotgun: { cadenceMs: [250, 900], scope: 1, ceiling: { 100: 165, 300: 80, 600: 55, 900: 42 } },
+  assault: { cadenceMs: [80, 400], scope: 1.1, ceiling: { 100: 130, 300: 105, 600: 60, 900: 42 } },
+  sniper: { cadenceMs: [500, 1800], scope: 1.2, ceiling: { 100: 115, 300: 95, 600: 70, 900: 50 } },
+  lmg: { cadenceMs: [33, 120], scope: 1, ceiling: { 100: 125, 300: 100, 600: 65, 900: 42 } },
+};
+export const STAGE_GAIN = [1, 1.15, 1.3] as const;
+/** A rifle that drops a bot in one hit works its bolt this long, and takes this many hits on a bare person. */
+export const BOLT = { minMs: 1100, humanHits: 3 } as const;
+/** No gun kills a bare person faster than this even with every round landing. */
+export const MIN_HUMAN_KILL_MS = 850;
+
+export type Breach = { id: GunId; rule: string; detail: string };
+
+export function doctrineBreaches(): Breach[] {
+  const out: Breach[] = [];
+  const breach = (id: GunId, rule: string, detail: string) => out.push({ id, rule, detail });
+  const aim = new Map(GUN_IDS.map((id) => [id, new Map(AIM_BANDS.map((d) => [d, aimDps(id, d, true)]))]));
+  for (const id of GUN_IDS) {
+    const g = GUNS[id], doc = DOCTRINE[g.base], ms = msPerRound(id);
+    if (ms < doc.cadenceMs[0] || ms > doc.cadenceMs[1]) breach(id, 'cadence', `${ms.toFixed(0)}ms per round outside ${doc.cadenceMs.join('-')}`);
+    if (g.base === 'sniper' && g.breakpoint === 1) {
+      const hits = perfectKill(id, HUMAN_HP, 'none').hits;
+      if (g.fireMs < BOLT.minMs || hits !== BOLT.humanHits) breach(id, 'bolt', `${g.fireMs}ms, ${hits} hits on a bare person`);
+    }
+    const kill = perfectKill(id, HUMAN_HP, 'none').ms;
+    if (kill < MIN_HUMAN_KILL_MS) breach(id, 'delete', `kills a bare person in ${kill.toFixed(0)}ms`);
+    const scope = rulesOf(g).viewMul;
+    if (scope > doc.scope) breach(id, 'scope', `view x${scope} over x${doc.scope}`);
+    for (const d of AIM_BANDS) {
+      const cap = doc.ceiling[d] * STAGE_GAIN[g.stage];
+      if (aim.get(id)!.get(d)! > cap + EPS) breach(id, `aim@${d}`, `${aim.get(id)!.get(d)!.toFixed(0)} dps over ${cap.toFixed(0)}`);
+    }
+  }
+  for (const stage of [0, 1, 2] as const) {
+    const ids = gunsOfStage(stage);
+    const weakest = (keep: (id: GunId) => boolean, d: Band) => Math.min(...ids.filter(keep).map((id) => aim.get(id)!.get(d)!));
+    const smgFloor = weakest((id) => GUNS[id].base === 'smg', 100);
+    for (const id of ids.filter((x) => GUNS[x].base === 'sniper' || GUNS[x].base === 'lmg')) {
+      if (aim.get(id)!.get(100)! > smgFloor) breach(id, 'close', `${aim.get(id)!.get(100)!.toFixed(0)} dps at 100px beats an SMG's ${smgFloor.toFixed(0)}`);
+    }
+    const sniperFloor = weakest((id) => GUNS[id].base === 'sniper', 600);
+    for (const id of ids.filter((x) => GUNS[x].base === 'smg' || (GUNS[x].base === 'shotgun' && GUNS[x].pellets > 1))) {
+      if (aim.get(id)!.get(600)! > sniperFloor) breach(id, 'falloff', `${aim.get(id)!.get(600)!.toFixed(0)} dps at 600px beats a sniper's ${sniperFloor.toFixed(0)}`);
+    }
+  }
+  return out;
 }
