@@ -11,7 +11,7 @@ for (const pair of args.set?.split(',') ?? []) {
   const [id, field] = path!.split('.') as [GunId, keyof GunDef];
   Object.assign(GUNS[id], { [field]: Number(value) });
 }
-const { AIM_BANDS, aimDps, aimKillMs, classKillMatrix, doctrineBreaches, HUMAN_HP, perfectKill, TREE_ORDER } = await import('./lib/gunscore.ts');
+const { AIM_BANDS, aimDps, aimKillMs, classKillMatrix, doctrineBreaches, HUMAN_HP, perfectKill, POSTURE_BY_BAND, TREE_ORDER } = await import('./lib/gunscore.ts');
 const old: Record<string, GunDef> = args.old ? (await import(pathToFileURL(resolve(args.old)).href)).GUNS : {};
 
 const msPerRound = (g: GunDef) => (g.burst ? ((g.burst.count - 1) * g.burst.gapMs + g.fireMs) / g.burst.count : g.fireMs);
@@ -40,7 +40,7 @@ for (const id of TREE_ORDER) {
 }
 
 const matrix = classKillMatrix();
-console.log(`\nmedian seconds per class for a person to kill a strafing person, walking at 100 and 300 px, standing at 600 and 900 px`);
+console.log(`\nmedian seconds per class for a person to kill a strafing person, the shooter ${AIM_BANDS.map((d) => `${POSTURE_BY_BAND[d]} at ${d}`).join(', ')} px`);
 console.log(`  ${'class'.padEnd(9)}${([0, 1, 2] as const).map((st) => AIM_BANDS.map((d) => `s${st}@${d}`.padStart(9)).join('')).join('  ')}`);
 for (const c of WEAPON_IDS) console.log(`  ${c.padEnd(9)}${([0, 1, 2] as const).map((st) => AIM_BANDS.map((d) => s(matrix[st][c][d] * 1000).padStart(9)).join('')).join('  ')}`);
 

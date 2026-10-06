@@ -155,11 +155,7 @@ const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: 
   lmg: { cadenceMs: [33, 120], scope: 1, fastestKillS: { 100: 2.3, 300: 3.3, 600: 5.5, 900: 8 } },
 };
 const STAGE_GAIN = [1, 1.15, 1.3] as const;
-/**
- * Up to 300 px both people are on each other's screen and a shooter who stands still is the easy target, so a class's hold on
- * those bands is judged walking; from 600 px planting is the class's commitment, so it is judged standing.
- */
-const PLANTED: Record<Band, boolean> = { 100: false, 300: false, 600: true, 900: true };
+export const POSTURE_BY_BAND: Record<Band, 'walking' | 'standing'> = { 100: 'walking', 300: 'walking', 600: 'standing', 900: 'standing' };
 const BAND_OWNERS: Record<Band, readonly WeaponId[]> = { 100: ['smg', 'shotgun'], 300: ['assault'], 600: ['lmg', 'sniper'], 900: ['sniper'] };
 const OWNER_LEAD = 1.15;
 const SNIPER_CLOSE_LAG = 1.4;
@@ -167,7 +163,7 @@ const SNIPER_CLOSE_LAG = 1.4;
 /** Each stage's median expected seconds per class for a person to kill a strafing person, in each band's posture. */
 export function classKillMatrix(): Record<0 | 1 | 2, Record<WeaponId, Record<Band, number>>> {
   const byStage = (stage: 0 | 1 | 2) => Object.fromEntries(WEAPON_IDS.map((c) => [c, Object.fromEntries(AIM_BANDS.map((d) =>
-    [d, median(gunsOfStage(stage).filter((id) => GUNS[id].base === c).map((id) => aimKillMs(id, d, PLANTED[d]) / 1000))]))])) as Record<WeaponId, Record<Band, number>>;
+    [d, median(gunsOfStage(stage).filter((id) => GUNS[id].base === c).map((id) => aimKillMs(id, d, POSTURE_BY_BAND[d] === 'standing') / 1000))]))])) as Record<WeaponId, Record<Band, number>>;
   return { 0: byStage(0), 1: byStage(1), 2: byStage(2) };
 }
 const BOLT = { minFireMs: 1100, bareHumanHits: 3 } as const;
