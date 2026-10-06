@@ -4,8 +4,7 @@ import assert from 'node:assert/strict';
 import { GUNS, type GunId } from '../src/shared/defs.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
-import { IDLE_INPUT } from '../src/shared/sim/world.ts';
-import type { Player, World } from '../src/shared/sim/world.ts';
+import { IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
 import { committed, dueAt, NO_FIRING, sendInput, settle, stepTrigger, type Firing, type ServerGun, type TriggerInput } from '../src/client/fire.ts';
 import { emptyWorld, equip, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
