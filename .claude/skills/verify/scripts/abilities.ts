@@ -7,9 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { GUNS, PERK_TIERS, WORLD, type AbilityId } from '../../../../src/shared/defs.ts';
-import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
+import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { findPath, navGrid, type NavGrid, type Point } from '../../../../src/server/bot/nav.ts';
 import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
@@ -43,9 +44,11 @@ for (let i = 0; i < 50 && !target; i++) {
 }
 const page = new WebSocket(target);
 await new Promise((r) => page.once('open', r));
+const abort = (why: string) => { log(`FAIL ${why}`); log('RESULT FAIL'); process.exit(1); };
+page.on('close', () => abort('the page target closed'));
 
 type Stamped<T> = T & { at: number };
-const frames = { welcome: null as null | { id: number; worldSize: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number }>[] };
+const frames = { welcome: null as null | { id: number; worldSize: number; walls: Rect[] }, last: null as null | Snapshot, events: [] as Stamped<GameEvent>[], selves: [] as Stamped<{ x: number; y: number; dashing: boolean }>[] };
 let nextId = 1;
 let socketId = '';
 const pending = new Map<number, (v: any) => void>();
@@ -56,15 +59,16 @@ page.on('message', (raw) => {
   else if (m.method === 'Network.webSocketFrameReceived' && m.params.requestId === socketId) {
     const msg = JSON.parse(m.params.response.payloadData);
     if (msg.t === 'welcome') frames.welcome = msg;
-    if (msg.t === 'walls') frames.welcome = frames.welcome && { ...frames.welcome, walls: msg.walls };
+    if (msg.t === 'walls') frames.welcome = frames.welcome && { ...frames.welcome, worldSize: msg.worldSize, walls: msg.walls };
     if (msg.t === 'snap') {
       frames.last = fillSnapshot(msg, frames.last) ?? frames.last;
       const at = Date.now();
       for (const e of msg.events) frames.events.push({ ...e, at });
       const self = frames.last?.players.find((p) => p.id === frames.welcome?.id);
-      if (self) frames.selves.push({ x: self.x, y: self.y, at });
+      if (self) frames.selves.push({ x: self.x, y: self.y, dashing: self.dashing, at });
     }
-  } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
+  } else if (m.method === 'Inspector.targetCrashed') abort('the page crashed');
+  else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
   else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
 });
 const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
@@ -80,9 +84,13 @@ const selfView = () => frames.last?.self;
 const solids = (): Rect[] => [...(frames.welcome?.walls ?? []), ...(frames.last?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))];
 const blocked = (x: number, y: number, dx: number, dy: number) =>
   solids().some((b) => segmentEntersRectAt(x, y, dx, dy, { x: b.x - R, y: b.y - R, w: b.w + 2 * R, h: b.h + 2 * R }) !== null);
+const clearLane = (x: number, y: number, angle: number, len: number) => {
+  const ex = x + Math.cos(angle) * len, ey = y + Math.sin(angle) * len, size = frames.welcome?.worldSize ?? 0;
+  return ex >= R && ex <= size - R && ey >= R && ey <= size - R && !blocked(x, y, ex - x, ey - y);
+};
 const aimAt = (angle: number) => mouse('mouseMoved', W / 2 + Math.cos(angle) * 200, H / 2 + Math.sin(angle) * 200);
 
-await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
+await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable'); await cdp('Inspector.enable');
 await cdp('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 log(`abilities ${new Date().toISOString()} base=${BASE} abilities=${WANTED.join(',')}`);
 
@@ -137,10 +145,19 @@ async function shootNearest() {
 const KEY = { right: ['KeyD', 'd', 68], left: ['KeyA', 'a', 65], up: ['KeyW', 'w', 87], down: ['KeyS', 's', 83] } as const;
 let lastWalk = { x: NaN, y: NaN, sidestep: 0 };
 
-async function walkToward(from: { x: number; y: number }, to: { x: number; y: number }) {
+let navFor: { walls: Rect[]; grid: NavGrid } | null = null;
+const nav = () => {
+  const walls = frames.welcome?.walls ?? [];
+  if (navFor?.walls !== walls) navFor = { walls, grid: navGrid(frames.welcome?.worldSize ?? 0, walls, R) };
+  return navFor.grid;
+};
+
+async function walkToward(from: Point, to: Point) {
+  const next = findPath(nav(), from, to, 20_000)?.find((p) => Math.hypot(p.x - from.x, p.y - from.y) > 30) ?? to;
+  const dx = next.x - from.x, dy = next.y - from.y, len = Math.hypot(dx, dy);
   const held: (keyof typeof KEY)[] = [];
-  if (Math.abs(to.x - from.x) > 60) held.push(to.x > from.x ? 'right' : 'left');
-  if (Math.abs(to.y - from.y) > 60) held.push(to.y > from.y ? 'down' : 'up');
+  if (Math.abs(dx) > Math.max(20, len * 0.38)) held.push(dx > 0 ? 'right' : 'left');
+  if (Math.abs(dy) > Math.max(20, len * 0.38)) held.push(dy > 0 ? 'down' : 'up');
   if (Math.hypot(from.x - lastWalk.x, from.y - lastWalk.y) < 30) held.push(lastWalk.sidestep++ % 4 < 2 ? 'up' : 'down');
   lastWalk = { ...lastWalk, x: from.x, y: from.y };
   for (const k of held) { const [c, n, v] = KEY[k]; await key('keyDown', c, n, v); }
@@ -167,23 +184,39 @@ async function earnAbility(ability: AbilityId): Promise<boolean> {
 async function proveDash() {
   if (!(await earnAbility('dash'))) { expect('dash: reached tier 3 and picked Dash', false); return; }
   expect('dash: reached tier 3 and picked Dash on the server', selfView()?.ability === 'dash', `perks ${JSON.stringify(selfView()?.perks)}`);
-  for (let attempt = 0; attempt < 6; attempt++) {
+  const start = Date.now();
+  let waiting = 'never alive with Dash ready';
+  while (Date.now() - start < 150_000) {
     await ensureAlive();
     const self = me();
-    if (!self || selfView()?.ability !== 'dash' || (selfView()?.abilityReadyIn ?? 1) > 0) { await sleep(500); continue; }
-    const angle = [...Array(16).keys()].map((i) => (i / 16) * Math.PI * 2).find((a) => !blocked(self.x, self.y, Math.cos(a) * 300, Math.sin(a) * 300));
-    if (angle === undefined) { await sleep(500); continue; }
+    if (!self) { await sleep(200); continue; }
+    if (selfView()?.ability !== 'dash') { if (!(await earnAbility('dash'))) break; continue; }
+    if ((selfView()?.abilityReadyIn ?? 1) > 0) { await sleep(200); continue; }
+    const lanes = [...Array(16).keys()].map((i) => (i / 16) * Math.PI * 2)
+      .map((a) => ({ a, len: [300, 240, 180, 120, 60].find((len) => clearLane(self.x, self.y, a, len)) ?? 0 }));
+    const best = lanes.reduce((x, y) => (y.len > x.len ? y : x));
+    if (best.len < 300) {
+      waiting = `no clear 300px lane, last at (${self.x.toFixed(0)},${self.y.toFixed(0)})`;
+      await walkToward(self, { x: self.x + Math.cos(best.a) * 200, y: self.y + Math.sin(best.a) * 200 });
+      continue;
+    }
+    const angle = best.a;
     await aimAt(angle);
     await sleep(150);
     await js(`window.maxCorrection = 0; window.watching = true; (function watch() { maxCorrection = Math.max(maxCorrection, skirmishDev.drawnSelf().correction); if (watching) requestAnimationFrame(watch); })(); 0`);
-    const from = { x: me()!.x, y: me()!.y }, t0 = Date.now();
+    const from = { x: me()!.x, y: me()!.y }, mark = frames.selves.length;
+    const dashEnd = () => {
+      const after = frames.selves.slice(mark), started = after.findIndex((s) => s.dashing);
+      return started < 0 ? undefined : after.slice(started).find((s) => !s.dashing);
+    };
     await key('keyDown', 'Space', ' ', 32);
     await sleep(90);
     const trail = await shot('dash-trail');
     await key('keyUp', 'Space', ' ', 32);
-    await sleep(500);
+    await until(() => !!dashEnd(), 3000);
+    await sleep(200);
     const correction = await js(`watching = false; maxCorrection`);
-    const to = frames.selves.filter((s) => s.at <= t0 + 600).at(-1)!;
+    const to = dashEnd() ?? frames.selves.at(-1)!;
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
     const along = (to.x - from.x) * Math.cos(angle) + (to.y - from.y) * Math.sin(angle);
     if (!me()?.alive) continue;
@@ -194,13 +227,13 @@ async function proveDash() {
     log(`     screenshot ${trail} (90ms into the dash; trail behind the player)`);
     return;
   }
-  expect('dash: found a clear lane and dashed', false);
+  expect('dash: found a clear lane and dashed', false, waiting);
 }
 
 async function proveKnife() {
   if (!(await earnAbility('knife'))) { expect('knife: reached tier 3 and picked Knife', false); return; }
   expect('knife: reached tier 3 and picked Knife on the server', selfView()?.ability === 'knife', `perks ${JSON.stringify(selfView()?.perks)}`);
-  let hit = false, seen = frames.events.length;
+  let hit = false, seen = frames.events.length, gap = Infinity;
   const slashes: string[] = [];
   const start = Date.now();
   while (Date.now() - start < 150_000 && !(hit && slashes.length > 0)) {
@@ -211,15 +244,17 @@ async function proveKnife() {
       if (!(await earnAbility('knife'))) break;
       continue;
     }
-    const enemy = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team) && !blocked(self.x, self.y, p.x - self.x, p.y - self.y))
-      .sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
-    if (!enemy) { const mid = (frames.welcome?.worldSize ?? 0) / 2; await walkToward(self, { x: mid, y: mid }); continue; }
-    const walk = enemy ? [
+    const enemies = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team))
+      .sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y));
+    const enemy = enemies.find((p) => !blocked(self.x, self.y, p.x - self.x, p.y - self.y));
+    if (!enemy) { const mid = (frames.welcome?.worldSize ?? 0) / 2; await walkToward(self, enemies[0] ?? { x: mid, y: mid }); continue; }
+    const walk = [
       ...(enemy.x - self.x > 40 ? [['KeyD', 'd']] : enemy.x - self.x < -40 ? [['KeyA', 'a']] : []),
       ...(enemy.y - self.y > 40 ? [['KeyS', 's']] : enemy.y - self.y < -40 ? [['KeyW', 'w']] : []),
-    ] : [];
-    if (enemy) await aimAt(Math.atan2(enemy.y - self.y, enemy.x - self.x));
-    await key('keyDown', 'Space', ' ', 32);
+    ];
+    gap = Math.hypot(enemy.x - self.x, enemy.y - self.y);
+    await aimAt(Math.atan2(enemy.y - self.y, enemy.x - self.x));
+    await key(gap <= KNIFE_LUNGE + KNIFE_REACH ? 'keyDown' : 'keyUp', 'Space', ' ', 32);
     for (const [code, k] of walk) await key('keyDown', code, k, k.toUpperCase().charCodeAt(0));
     await sleep(120);
     for (const [code, k] of walk) await key('keyUp', code, k, k.toUpperCase().charCodeAt(0));
@@ -231,7 +266,7 @@ async function proveKnife() {
       const burst: string[] = [];
       if (slashes.length < 2 || (dmg && !hit)) for (const tag of ['a', 'b', 'c', 'd']) { burst.push(await shot(`knife-slash-${slashes.length + 1}${tag}`)); await sleep(50); }
       slashes.push(burst[0] ?? '');
-      log(`     slash ${slashes.length}: ${dmg?.e === 'dmg' ? `hit player ${dmg.victim} for ${dmg.amount}${knifeKill ? ', kill feed credits Knife' : ''}` : 'whiff'}${burst.length ? `; screenshots ${burst.join(' ')}` : ''}`);
+      log(`     slash ${slashes.length}: ${dmg?.e === 'dmg' ? `hit player ${dmg.victim} for ${dmg.amount}${knifeKill ? ', kill feed credits Knife' : ''}` : `whiff (nearest enemy ${gap.toFixed(0)}px before the slash)`}${burst.length ? `; screenshots ${burst.join(' ')}` : ''}`);
       hit ||= !!dmg;
     }
   }
@@ -249,5 +284,5 @@ for (const ability of WANTED) {
 }
 for (const p of problems.filter((p) => p.startsWith('page') || p.startsWith('console'))) log(p);
 log(problems.length ? `RESULT FAIL (${problems.length})` : 'RESULT PASS');
-page.close(); chrome.kill();
+page.removeAllListeners('close'); page.close(); chrome.kill();
 process.exit(problems.length ? 1 : 0);
