@@ -3,7 +3,7 @@
 import { fileURLToPath } from 'node:url';
 import { GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
-import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
+import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
 const CELL = 25;
 const R = WORLD.playerRadius;
@@ -91,6 +91,13 @@ export function lintMap(def: MapDef): string[] {
   const problems: string[] = [];
   const n = Math.ceil(def.size / CELL);
   const free = standable(def, n);
+  const crates = crateRects(def);
+  const inside = (r: Rect, margin: number) => r.x >= margin && r.y >= margin && r.x + r.w <= def.size - margin && r.y + r.h <= def.size - margin;
+  def.walls.forEach((w, i) => { if (!inside(w, 0)) problems.push(`wall ${i} leaves the world`); });
+  crates.forEach((c, i) => {
+    if (!inside(c, 0)) problems.push(`crate ${i} leaves the world`);
+    if (def.walls.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
+  });
   const spawnSides = Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][];
 
   for (const [side, regions] of spawnSides) {
@@ -112,9 +119,11 @@ export function lintMap(def: MapDef): string[] {
     if (z.x - ZONE_RADIUS < 0 || z.y - ZONE_RADIUS < 0 || z.x + ZONE_RADIUS > def.size || z.y + ZONE_RADIUS > def.size) problems.push(`zone ${i} at ${where(z)} reaches past the map's edge`);
     if (!cellsEitherSide(z.y, n).some((row) => cellsEitherSide(z.x, n).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
     if (def.walls.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
+    if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
   });
 
   if (def.siege) return problems;
+  if (def.zones.length !== 3) problems.push(`${def.zones.length} zones, DOM needs 3`);
 
   const red = def.spawns.red.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
   const blue = def.spawns.blue.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
