@@ -18,7 +18,6 @@ export type PageProblem = 'page exception' | 'console.error';
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
-/** A muted headless Chrome with one page under CDP, Runtime, Page and Network enabled. `onEvent` sees every CDP event; `onProblem` hears page exceptions and console.error calls as they happen. */
 export async function openPage(opts: {
   profile: string;
   debugPort?: number;
@@ -68,7 +67,6 @@ export async function openPage(opts: {
   return { cdp, js, exceptions, close };
 }
 
-/** Polls every 100ms until the menu lists all three public rooms. */
 export async function serversListed(page: Page, ms = 6000): Promise<boolean> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -78,10 +76,7 @@ export async function serversListed(page: Page, ms = 6000): Promise<boolean> {
   return false;
 }
 
-/**
- * Joins the `room`th room from the menu the page is on. A `loadout` is written to localStorage and the menu reloaded first.
- * `press` clicks Play with a real mouse press: the page's first user gesture unlocks audio, which a synthetic .click() never triggers.
- */
+/** `press` clicks Play with a real mouse press: the page's first user gesture unlocks audio, which a synthetic .click() never triggers. */
 export async function joinFromMenu(page: Page, opts: { room?: number; name?: string; loadout?: Loadout; press?: boolean } = {}) {
   await serversListed(page);
   if (opts.loadout) {
@@ -96,7 +91,6 @@ export async function joinFromMenu(page: Page, opts: { room?: number; name?: str
   await page.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 }
 
-/** Clicks Respawn once the death screen shows it enabled, waiting up to `waitMs` for that. True when it clicked. */
 export async function respawnIfDead(page: Page, waitMs = 0): Promise<boolean> {
   const end = Date.now() + waitMs;
   while (!(await page.js(`!document.getElementById('death').hidden && !document.getElementById('respawn').disabled`))) {
@@ -121,19 +115,21 @@ export async function hold(page: Page, dirs: readonly Dir[], ms: number) {
 }
 
 const grids = new WeakMap<readonly Rect[], NavGrid>();
-/** The nav grid for a wall layout, built once per `walls` array the server sent. */
 export function navGridFor(worldSize: number, walls: readonly Rect[]): NavGrid {
   let grid = grids.get(walls);
   if (!grid) grids.set(walls, grid = navGrid(worldSize, walls, WORLD.playerRadius));
   return grid;
 }
 
-/** The keys that walk from `from` toward the next waypoint more than 30px along the path to `to`, or straight at `to` when no path is found. */
+const WAYPOINT_MIN_PX = 30;
+const AXIS_MIN_PX = 20;
+const AXIS_MIN_SHARE = 0.38;
+
 export function pathStep(grid: NavGrid, from: Point, to: Point): Dir[] {
-  const next = findPath(grid, from, to, 20_000)?.find((q) => Math.hypot(q.x - from.x, q.y - from.y) > 30) ?? to;
+  const next = findPath(grid, from, to, 20_000)?.find((q) => Math.hypot(q.x - from.x, q.y - from.y) > WAYPOINT_MIN_PX) ?? to;
   const dx = next.x - from.x, dy = next.y - from.y, len = Math.hypot(dx, dy);
   const dirs: Dir[] = [];
-  if (Math.abs(dx) > Math.max(20, len * 0.38)) dirs.push(dx > 0 ? 'right' : 'left');
-  if (Math.abs(dy) > Math.max(20, len * 0.38)) dirs.push(dy > 0 ? 'down' : 'up');
+  if (Math.abs(dx) > Math.max(AXIS_MIN_PX, len * AXIS_MIN_SHARE)) dirs.push(dx > 0 ? 'right' : 'left');
+  if (Math.abs(dy) > Math.max(AXIS_MIN_PX, len * AXIS_MIN_SHARE)) dirs.push(dy > 0 ? 'down' : 'up');
   return dirs;
 }
