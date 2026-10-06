@@ -669,7 +669,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   x += 16 + 90 + 14;
   text(ctx, people, x, y, TYPE.body, alert ? coreColor : PANEL_INK, 'left', 750);
   text(ctx, 'survivors', x + peopleW + 6, y, TYPE.label, PANEL_MUTED, 'left', 500);
-  if (mourned) text(ctx, mourned, x + peopleW + 66, y, TYPE.label, PALETTE.hpBad, 'left', 700);
+  if (mourned) text(ctx, mourned, x + peopleW + 66, y, TYPE.label, PALETTE.lossOnDark, 'left', 700);
   if (alert) drawCoreAlert(hud, run.core, y + 26);
   if (run.phase === 'over') return;
   if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night, squadShare(hud.snap.players))}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);
