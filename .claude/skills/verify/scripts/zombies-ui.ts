@@ -2,17 +2,14 @@
 // Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build turrets night (default, in order), plus downed and report on request.
 // Drives the zombies client in headless Chrome through real input. downed and report need a scratch copy with fragile humans and a weak core, and turrets builds a cannon
 // only on a scratch copy with more starting scrap (see features/zombies.md).
-import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../src/shared/protocol.ts';
 import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 import { BUILDINGS, ZOM, ZOMBIES } from '../../../../src/shared/defs.ts';
-import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
+import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node zombies-ui.ts <run-dir> [step ...]'); process.exit(2); }
@@ -23,38 +20,20 @@ const LOG = join(EV, 'zombies-ui.log');
 mkdirSync(EV, { recursive: true });
 const VIEW = { w: 1280, h: 800 };
 const NAME = `Zed${Math.floor(Math.random() * 1e4)}`;
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const problems: string[] = [];
 const expect = (label: string, ok: boolean, detail = '') => { log(`${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? `  (${detail})` : ''}`); if (!ok) problems.push(label); return ok; };
-
-const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
-const debugPort = await freePort();
-const chrome = killOnExit(spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'skirmish-zombies-'))}`,
-  '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank'], { stdio: 'ignore' }));
-let target = '';
-for (let i = 0; i < 50 && !target; i++) {
-  try {
-    const list = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-    target = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
-  } catch {}
-  if (!target) await sleep(200);
-}
-const page = new WebSocket(target);
-await new Promise((r) => page.once('open', r));
 
 const frames = {
   welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null,
   turretShots: { sentry: 0, cannon: 0 }, turretKills: 0, lowestAmmo: { sentry: 10, cannon: 10 }, scrapEarned: 0,
 };
-let nextId = 1;
-const pending = new Map<number, (v: any) => void>();
-page.on('message', (raw) => {
-  const m = JSON.parse(String(raw));
-  if (m.id && pending.has(m.id)) { pending.get(m.id)!(m.result); pending.delete(m.id); return; }
-  if (m.method === 'Network.webSocketFrameReceived') {
-    const msg = JSON.parse(m.params.response.payloadData);
+const page = await openPage({
+  profile: 'skirmish-zombies-',
+  viewport: { width: VIEW.w, height: VIEW.h },
+  onEvent: (method, params) => {
+    if (method !== 'Network.webSocketFrameReceived') return;
+    const msg = JSON.parse(params.response.payloadData);
     if (msg.t === 'welcome') { frames.welcome = msg; frames.snap = null; }
     if (msg.t === 'snap') {
       frames.snap = fillSnapshot(msg, frames.snap) ?? frames.snap;
@@ -65,11 +44,10 @@ page.on('message', (raw) => {
       }
       for (const b of frames.snap?.buildings ?? []) if (b.kind !== 'wall') frames.lowestAmmo[b.kind] = Math.min(frames.lowestAmmo[b.kind], b.ammo);
     }
-  } else if (m.method === 'Runtime.exceptionThrown') problems.push(`page exception: ${m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text}`);
-  else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') problems.push(`console.error: ${JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value))}`);
+  },
+  onProblem: (kind, detail) => problems.push(`${kind}: ${detail}`),
 });
-const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const id = nextId++; pending.set(id, r); page.send(JSON.stringify({ id, method, params })); });
-const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
+const { cdp, js } = page;
 const shot = async (name: string, clip?: { x: number; y: number; width: number; height: number; scale: number }) => {
   const { data } = await cdp('Page.captureScreenshot', { format: 'png', ...(clip && { clip }) });
   writeFileSync(join(EV, `${name}.png`), Buffer.from(data, 'base64'));
@@ -84,10 +62,7 @@ const clickEl = async (selector: string) => {
   await click(at[0], at[1]);
   return true;
 };
-const VK: Record<string, number> = { KeyB: 66, KeyE: 69, KeyW: 87, KeyA: 65, KeyS: 83, KeyD: 68, Digit1: 49, Digit2: 50, Digit3: 51 };
-const key = async (code: string, type: 'keyDown' | 'keyUp') =>
-  cdp('Input.dispatchKeyEvent', { type, code, key: code.startsWith('Digit') ? code.slice(5) : code.slice(3).toLowerCase(), windowsVirtualKeyCode: VK[code] });
-const tap = async (code: string) => { await key(code, 'keyDown'); await sleep(60); await key(code, 'keyUp'); };
+const tap = async (code: string, k: string) => { await key(page, 'keyDown', code, k); await sleep(60); await key(page, 'keyUp', code, k); };
 const status = () => js(`document.getElementById('menu-status').textContent`) as Promise<string>;
 const me = () => frames.snap?.players.find((p) => p.id === frames.welcome?.id);
 const run = (): RunView | undefined => frames.snap?.run;
@@ -132,21 +107,17 @@ async function walkTo(x: number, y: number, near: number, ms = 8000) {
     const self = me();
     if (!self?.alive) { await sleep(150); continue; }
     if (Math.hypot(x - self.x, y - self.y) <= near) return true;
-    const keys = [x > self.x + 15 ? 'KeyD' : x < self.x - 15 ? 'KeyA' : null, y > self.y + 15 ? 'KeyS' : y < self.y - 15 ? 'KeyW' : null].filter((k) => k !== null);
-    for (const k of keys) await key(k, 'keyDown');
-    await sleep(120);
-    for (const k of keys) await key(k, 'keyUp');
+    const dirs = ([x > self.x + 15 ? 'right' : x < self.x - 15 ? 'left' : null, y > self.y + 15 ? 'down' : y < self.y - 15 ? 'up' : null] as const).filter((d): d is Dir => d !== null);
+    await hold(page, dirs, 120);
   }
   return false;
 }
 
-await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
 log(`zombies-ui ${new Date().toISOString()} base=${BASE} name=${NAME} steps=${steps.join(',')}`);
 
 const openMenu = async (query = '') => {
   await cdp('Page.navigate', { url: `${BASE}/?dev${query}` });
-  await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3, 6000);
+  await serversListed(page);
   await js(`document.getElementById('name').value = '${NAME}'`);
 };
 const showSquadMenu = () => js(`document.getElementById('squad').scrollIntoView({ block: 'center' })`);
@@ -189,8 +160,7 @@ async function fight(done: () => Promise<boolean> | boolean, ms: number, onTick:
     if (at && !pressed) { await mouse('mousePressed', at.x, at.y, 'left'); pressed = true; }
     if (++step % 10 === 0 && self?.alive && run()) {
       const core = run()!.core;
-      const k = Math.hypot(core.x - self.x, core.y - self.y) > 220 ? (core.x > self.x ? 'KeyD' : 'KeyA') : null;
-      if (k) { await key(k, 'keyDown'); await sleep(200); await key(k, 'keyUp'); }
+      if (Math.hypot(core.x - self.x, core.y - self.y) > 220) await hold(page, [core.x > self.x ? 'right' : 'left'], 200);
     }
     await onTick();
     await sleep(100);
@@ -243,7 +213,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await sleep(800);
     await shot('zom-squad-joined');
     await cdp('Page.reload', { ignoreCache: true });
-    await until(async () => (await js(`document.querySelectorAll('#servers .server').length`)) === 3, 6000);
+    await serversListed(page);
     expect('reopening the invite link selects the squad on the menu', await js(`document.getElementById('squad-room')?.getAttribute('aria-pressed') === 'true'`));
     await sleep(300);
     await shot('zom-menu-squad');
@@ -254,7 +224,7 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async build() {
     await until(() => run()?.phase === 'day' && me()?.alive, 60_000);
-    await tap('KeyB');
+    await tap('KeyB', 'b');
     expect('B turns build mode on by day', await until(async () => (await zdev())?.building === true));
     const self = me()!;
     let cell: { cx: number; cy: number } | null = null;
@@ -291,8 +261,8 @@ const STEPS: Record<string, () => Promise<void>> = {
     await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
   },
   async turrets() {
-    if ((await zdev())?.building !== true) await tap('KeyB');
-    await tap('Digit2');
+    if ((await zdev())?.building !== true) await tap('KeyB', 'b');
+    await tap('Digit2', '2');
     expect('2 picks the sentry in build mode', await until(async () => (await zdev())?.buildKind === 'sentry'));
     for (const kind of ['sentry', 'cannon'] as const) {
       if (kind === 'cannon') {
@@ -359,9 +329,9 @@ const STEPS: Record<string, () => Promise<void>> = {
         expect(`by the low ${name} the hint offers to reload it`, offered, String((await zdev())?.use));
         await shot('zom-reload-hint');
         const scrap = run()!.scrap, earned = frames.scrapEarned;
-        await key('KeyE', 'keyDown');
+        await key(page, 'keyDown', 'KeyE', 'e');
         const full = await until(() => { const t = turretAt(low); return t?.kind === low.kind && t.ammo === 10; }, ZOM.refillMs + 3000);
-        await key('KeyE', 'keyUp');
+        await key(page, 'keyUp', 'KeyE', 'e');
         // Kills meanwhile pay into the bank, so the spend is what the bank lacks beyond them; a few rounds cost under the whole scrap the snapshot shows.
         const spent = scrap + frames.scrapEarned - earned - run()!.scrap;
         expect(`holding E reloads the ${name}`, full, `ammo ${from} -> 10/10, about ${spent} scrap spent`);
@@ -390,10 +360,8 @@ const STEPS: Record<string, () => Promise<void>> = {
       const self = me();
       const z = self && (frames.snap?.zombies ?? []).sort((a, b) => Math.hypot(a[2] - self.x, a[3] - self.y) - Math.hypot(b[2] - self.x, b[3] - self.y))[0];
       if (self?.alive && z) {
-        const keys = [z[2] > self.x + 20 ? 'KeyD' : z[2] < self.x - 20 ? 'KeyA' : null, z[3] > self.y + 20 ? 'KeyS' : z[3] < self.y - 20 ? 'KeyW' : null].filter((k) => k !== null);
-        for (const k of keys) await key(k, 'keyDown');
-        await sleep(150);
-        for (const k of keys) await key(k, 'keyUp');
+        const dirs = ([z[2] > self.x + 20 ? 'right' : z[2] < self.x - 20 ? 'left' : null, z[3] > self.y + 20 ? 'down' : z[3] < self.y - 20 ? 'up' : null] as const).filter((d): d is Dir => d !== null);
+        await hold(page, dirs, 150);
       } else await sleep(150);
     }
     if (!expect('the driven player goes down to a bite', !!me()?.downed)) return;
@@ -426,5 +394,5 @@ for (const s of steps) {
 }
 for (const p of problems.filter((p) => p.startsWith('page') || p.startsWith('console'))) log(p);
 log(problems.length ? `RESULT FAIL (${problems.length})` : 'RESULT PASS');
-page.close(); chrome.kill();
+page.close();
 process.exit(problems.length ? 1 : 0);
