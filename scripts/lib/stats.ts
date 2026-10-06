@@ -6,7 +6,6 @@ export function median(xs: readonly number[]): number {
   return s.length === 0 ? NaN : s.length % 2 ? s[Math.floor(mid)]! : (s[mid - 1]! + s[mid]!) / 2;
 }
 
-/** The sample at rank floor(q * n), so q = 1 is the max. */
 export function quantile(xs: readonly number[], q: number): number {
   const s = sorted(xs);
   return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))]! : NaN;

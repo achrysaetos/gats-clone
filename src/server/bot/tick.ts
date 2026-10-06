@@ -12,7 +12,6 @@ export type BotTickOptions = {
   onDecision?: (id: number, snap: Snapshot, before: BotMemory, d: BotDecision, respawned: boolean) => void;
 };
 
-/** Every bot thinks and acts on the same tick in map order, drawing from `rand` in a fixed sequence, so a seeded world replays exactly. */
 export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => number, { picks = true, respawn: revive = true, onDecision }: BotTickOptions = {}): { respawned: number[]; picked: number } {
   const arena = arenaFor(w);
   const respawned: number[] = [];
