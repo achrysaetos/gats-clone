@@ -242,43 +242,87 @@ export const WORLD = {
   minPlayers: 18,
 } as const;
 
-export const ZOMBIE_KINDS = ['walker', 'brute'] as const;
+export type Burst = Blast & { building: number };
+export const ZOMBIE_KINDS = ['walker', 'brute', 'runner', 'plated', 'bloater', 'colossus'] as const;
 export type ZombieKind = (typeof ZOMBIE_KINDS)[number];
 /**
  * `damage` is per bite and `buildingDamageMul` scales it against walls; `hp` and `damage` grow each night (see `ZOM.nightMul`).
- * A zombie turns on a squad player within `aggroPx`, in sight, instead of marching on the core; a brute never does.
+ * A zombie turns on a squad player within `aggroPx`, in sight, instead of marching on the core; one with none never does.
+ * `plate` comes off every bullet that hits it, down to 1, unless the round pierces armor; blasts get through whole.
+ * A zombie with a `burst` blows up where it dies, hurting the squad and the walls round it. `pack` of them walk in together.
  */
 export const ZOMBIES: Record<ZombieKind, {
-  name: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; aggroPx: number; score: number; scrap: number; firstNight: number;
+  name: string; many: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; aggroPx: number; score: number; scrap: number;
+  plate: number; burst: Burst | null; pack: number;
 }> = {
-  walker: { name: 'Walker', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 0.5, aggroPx: 120, score: 10, scrap: 2, firstNight: 1 },
-  brute: { name: 'Brute', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 1, aggroPx: 0, score: 60, scrap: 10, firstNight: 3 },
+  walker: { name: 'Walker', many: 'walkers', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 0.5, aggroPx: 120, score: 10, scrap: 2, plate: 0, burst: null, pack: 1 },
+  brute: { name: 'Brute', many: 'brutes', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 1, aggroPx: 0, score: 60, scrap: 10, plate: 0, burst: null, pack: 1 },
+  runner: { name: 'Runner', many: 'runners', hp: 30, speed: 210, radius: 12, damage: 6, attackMs: 600, buildingDamageMul: 0.25, aggroPx: 360, score: 8, scrap: 1, plate: 0, burst: null, pack: 5 },
+  plated: { name: 'Plated', many: 'plated', hp: 200, speed: 95, radius: 19, damage: 12, attackMs: 1000, buildingDamageMul: 0.6, aggroPx: 120, score: 30, scrap: 5, plate: 20, burst: null, pack: 1 },
+  bloater: {
+    name: 'Bloater', many: 'bloaters', hp: 120, speed: 80, radius: 22, damage: 10, attackMs: 1200, buildingDamageMul: 1, aggroPx: 0, score: 25, scrap: 4, plate: 0,
+    burst: { radius: 110, damage: 70, building: 600 }, pack: 1,
+  },
+  colossus: { name: 'Colossus', many: 'a colossus', hp: 6000, speed: 55, radius: 40, damage: 80, attackMs: 1600, buildingDamageMul: 2.5, aggroPx: 0, score: 500, scrap: 80, plate: 15, burst: null, pack: 1 },
 };
 
-export const TURRET_KINDS = ['sentry', 'cannon'] as const;
+export const SIDES = ['north', 'east', 'south', 'west'] as const;
+export type Side = (typeof SIDES)[number];
+/**
+ * One row per night, the last the Tide: how many of each kind come for a squad of four bots, and the sides they walk in from.
+ * A human counts as one and a half bots, and every kind on the row sends at least one.
+ */
+export type NightDef = { name?: string; horde: Partial<Record<ZombieKind, number>>; from: readonly Side[] };
+export const NIGHTS: readonly NightDef[] = [
+  { horde: { walker: 20 }, from: ['north'] },
+  { horde: { walker: 26, runner: 5 }, from: ['east'] },
+  { horde: { walker: 28, runner: 10, brute: 2 }, from: ['south', 'west'] },
+  { horde: { walker: 30, plated: 6, brute: 3 }, from: ['north', 'east'] },
+  { name: 'The Colossus', horde: { walker: 34, runner: 10, brute: 3, colossus: 1 }, from: ['west'] },
+  { horde: { walker: 38, bloater: 6, plated: 6 }, from: ['east', 'south'] },
+  { horde: { walker: 42, runner: 20, bloater: 6, brute: 4 }, from: ['north', 'south', 'west'] },
+  { horde: { walker: 46, plated: 12, bloater: 8, brute: 5 }, from: ['north', 'east', 'west'] },
+  { horde: { walker: 52, runner: 20, plated: 10, bloater: 8, brute: 6 }, from: SIDES },
+  { name: 'The Tide', horde: { walker: 64, runner: 25, plated: 14, bloater: 10, brute: 8, colossus: 1 }, from: SIDES },
+];
+export const nightOf = (night: number): NightDef => NIGHTS[Math.min(night, NIGHTS.length) - 1]!;
+
+export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar'] as const;
 export type TurretKind = (typeof TURRET_KINDS)[number];
 export const BUILDING_KINDS = ['wall', ...TURRET_KINDS] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
 export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TURRET_KINDS.map((k) => [k, f(k)])) as Record<TurretKind, T>;
 
 /**
- * A turret holds `ammo` rounds and fires one every `fireMs` at the nearest zombie of the kind it `prefers` in `range`, else the nearest of any kind.
- * A round's `damage` depends on the kind of zombie it hits, and it leaves the barrel `muzzle` px from the cell's center; a refill costs `scrapPerRound`.
+ * A turret holds `ammo` rounds and fires `pellets` of `damage` each every `fireMs` at the nearest zombie of the kind it `prefers` in `range`, else the nearest of any kind.
+ * Its rounds leave the barrel `muzzle` px from the cell's center; a refill costs `scrapPerRound`.
+ * A `lobbed` round flies over everything to where its target stood and bursts there, so a lobbing turret needs no line of sight.
  */
 export type TurretDef = {
-  prefers: ZombieKind; range: number; fireMs: number; damage: Record<ZombieKind, number>; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
-  muzzle: number; bullet: { r: number; color: string };
+  prefers: ZombieKind; range: number; fireMs: number; damage: number; pellets: number; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
+  muzzle: number; bullet: { r: number; color: string }; lobbed: Blast | null;
 };
 type BuildingDef = { name: string; cost: number; hp: number };
 export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> = {
   wall: { name: 'Wall', cost: 20, hp: 2000, turret: null },
   sentry: {
     name: 'Sentry', cost: 70, hp: 1000,
-    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: { walker: 14, brute: 4 }, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, muzzle: 28, bullet: { r: 1.8, color: '#a88600' } },
+    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },
   },
   cannon: {
     name: 'Cannon', cost: 180, hp: 1500,
-    turret: { prefers: 'brute', range: 560, fireMs: 2200, damage: { walker: 260, brute: 260 }, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 4, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' } },
+    turret: { prefers: 'brute', range: 560, fireMs: 2200, damage: 260, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 4, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null },
+  },
+  scatter: {
+    name: 'Scatter', cost: 90, hp: 1200,
+    turret: { prefers: 'runner', range: 260, fireMs: 650, damage: 11, pellets: 7, bulletSpeed: 1600, spread: 0.22, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null },
+  },
+  mortar: {
+    name: 'Mortar', cost: 220, hp: 1000,
+    turret: {
+      prefers: 'plated', range: 750, fireMs: 2600, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 8, scrapPerRound: 5, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
+      lobbed: { radius: 120, damage: 160 },
+    },
   },
 };
 
@@ -286,6 +330,9 @@ export const ZOM = {
   /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,
+  /** Who shelters in the core: one is lost for each `coreHp / survivors` it falls below whole, and each one left pays `scrapPerSurvivor` at dawn. */
+  survivors: 50,
+  scrapPerSurvivor: 1,
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
   coreArmor: 0.6,
   /** Half the side of the square core at the map's center. */
@@ -316,11 +363,9 @@ export const ZOM = {
   biteReach: 10,
   /** What walking through a wall cell costs the flow field, in orthogonal steps; high enough that the horde takes any open way round. */
   wallCostCells: 40,
+  /** A squad of four bots meets each night's horde as listed; a human, with triple health and better aim than a bot, counts for one and a half. */
+  hordeShare: (squad: { humans: number; bots: number }) => (squad.bots + 1.5 * squad.humans) / 4,
   spawnGapMs: (night: number) => Math.max(150, 900 - 50 * night),
-  /** A squad of four bots meets the base wave; a human, with triple health and better aim than a bot, counts for one and a half. */
-  waveSize: (night: number, squad: { humans: number; bots: number }) => Math.max(1, Math.round(((12 + 6 * night + 0.5 * night * night) * (squad.bots + 1.5 * squad.humans)) / 4)),
-  /** Brutes join from their first night and make up a growing share after. */
-  share: (kind: ZombieKind, night: number) => (night < ZOMBIES[kind].firstNight ? 0 : kind === 'walker' ? 1 : 0.05 * (night - ZOMBIES[kind].firstNight + 1)),
   nightMul: (night: number) => ({ hp: 1 + 0.1 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
   restartMs: 20_000,
 } as const;

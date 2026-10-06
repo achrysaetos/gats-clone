@@ -8,7 +8,7 @@ import WebSocket from 'ws';
 import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../src/shared/protocol.ts';
 import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { BUILDINGS, ZOM, ZOMBIES } from '../../../../src/shared/defs.ts';
+import { BUILDINGS, byTurret, ZOM, ZOMBIES } from '../../../../src/shared/defs.ts';
 import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const RUN = process.argv[2];
@@ -26,7 +26,7 @@ const expect = (label: string, ok: boolean, detail = '') => { log(`${ok ? 'ok  '
 
 const frames = {
   welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null,
-  turretShots: { sentry: 0, cannon: 0 }, turretKills: 0, lowestAmmo: { sentry: 10, cannon: 10 }, scrapEarned: 0,
+  turretShots: byTurret(() => 0), turretKills: 0, lowestAmmo: byTurret(() => 10), scrapEarned: 0,
 };
 const page = await openPage({
   profile: 'skirmish-zombies-',

@@ -7,19 +7,22 @@ import { coverRects, newId, rand, type Turret, type World, type Zombie } from '.
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
   const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : 1);
   const inRange = zombies.map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
-  return inRange.find(({ z }) => !cover.some((r) => segmentEntersRectAt(x, y, z.x - x, z.y - y, r) !== null))?.z ?? null;
+  return inRange.find(({ z }) => def.lobbed || !cover.some((r) => segmentEntersRectAt(x, y, z.x - x, z.y - y, r) !== null))?.z ?? null;
 }
 
 function fire(w: World, t: Turret, target: Zombie, x: number, y: number) {
   const def = BUILDINGS[t.kind].turret;
   const aim = Math.atan2(target.y - y, target.x - x);
-  const a = aim + (rand(w) - 0.5) * def.spread * 2;
-  w.bullets.push({
-    id: newId(w), owner: t.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
-    vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: def.range, damage: def.damage.walker, piercing: false,
-    label: BUILDINGS[t.kind].name, gun: null, turret: t.kind, penetrate: 0, passed: [], blast: null,
-  });
-  w.events.push({ e: 'turret', kind: t.kind, x, y, angle: Math.round(aim * 100) / 100 });
+  const reach = def.lobbed ? Math.max(0, Math.hypot(target.x - x, target.y - y) - def.muzzle) : def.range;
+  for (let i = 0; i < def.pellets; i++) {
+    const a = aim + (rand(w) - 0.5) * def.spread * 2;
+    w.bullets.push({
+      id: newId(w), owner: t.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
+      vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: reach, damage: def.damage, piercing: false,
+      label: BUILDINGS[t.kind].name, gun: null, turret: t.kind, penetrate: 0, passed: [], blast: def.lobbed,
+    });
+  }
+  w.events.push({ e: 'turret', kind: t.kind, x, y, angle: Math.round(aim * 100) / 100, ...(def.lobbed && { reach: Math.round(reach) }) });
 }
 
 /** Each loaded turret whose gun has cooled fires one round at its target. */

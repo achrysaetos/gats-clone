@@ -146,10 +146,13 @@ function runView(w: World, run: Run): RunView {
     scrap: Math.floor(run.scrap),
     core: { x: core.x, y: core.y, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp },
     aliveZombies: w.zombies.length,
-    waveLeft: w.zombies.length + (phase.k === 'night' ? phase.toSpawn.length : 0),
+    waveLeft: w.zombies.length + (phase.k === 'night' ? phase.toSpawn.reduce((n, u) => n + u.n, 0) : 0),
+    survivors: run.survivors,
+    lost: run.lost,
+    ready: [...run.ready],
     report: phase.k === 'over'
       ? {
-        night: phase.night, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
+        night: phase.night, won: phase.won, survivors: run.survivors, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
         turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)),
       }
       : null,

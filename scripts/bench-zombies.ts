@@ -1,7 +1,8 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-zombies.ts [seeds] [squad]
 //   seeds: comma-separated, default 1,2,3. squad: 4 runs four bots; 1 runs one bot-brained player with a human's triple health, alone.
-// Plays zombies runs to the core's fall and prints the nights reached and how each night went (seconds it lasted, core health at dawn).
+// Plays zombies runs to the core's fall or the Tide's dawn and prints the nights reached and how each night went (seconds it lasted, core health lost,
+// survivors at dawn, turrets standing), then the win rate and the mean core health lost on each night across the seeds.
 // Then holds a full horde of ZOM.maxAlive on the squad with an unbreakable core and prints server step cost and snapshot size under it,
 // first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them.
 import { BUILDINGS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
@@ -51,37 +52,51 @@ function tick({ w, bots, r, encoders }: Squad) {
   return { stepMs, tickMs: performance.now() - started, bytes: wire.length, wire };
 }
 
+const coreLost: number[][] = [];
+let wins = 0;
 for (const seed of seeds) {
   const sq = newSquad(seed);
   const { w } = sq;
   const nights: string[] = [];
-  let nightStart = 0, downs = 0, revives = 0, peak = 0;
+  const lost: number[] = [];
+  let nightStart = 0, downs = 0, revives = 0, peak = 0, coreAtDusk: number = ZOM.coreHp, wasNight = false;
   const started = performance.now();
   for (let night = w.run!.night; w.run!.phase.k !== 'over' && w.run!.night <= MAX_NIGHTS;) {
     tick(sq);
+    const run = w.run!;
     peak = Math.max(peak, w.zombies.length);
     for (const e of w.events) if (e.e === 'life') { if (e.k === 'downed') downs++; if (e.k === 'revived') revives++; }
-    if (w.run!.night !== night) {
-      nights.push(`n${night} ${((w.now - nightStart) / 1000).toFixed(0)}s core ${Math.ceil(w.run!.core.hp)}`);
-      night = w.run!.night;
+    if (run.phase.k === 'night' && !wasNight) coreAtDusk = run.core.hp;
+    wasNight = run.phase.k === 'night';
+    if (run.night !== night || run.phase.k === 'over') {
+      lost[night - 1] = Math.round(coreAtDusk - Math.max(0, run.core.hp));
+      nights.push(`n${night} ${((w.now - nightStart) / 1000).toFixed(0)}s -${lost[night - 1]} core, ${run.survivors} left, ${w.buildings.length} up`);
+      night = run.night;
       nightStart = w.now;
     }
   }
+  coreLost.push(lost);
   const run = w.run!;
+  const won = run.phase.k === 'over' && run.phase.won;
+  if (won) wins++;
   const reached = run.phase.k === 'over' ? run.phase.night : run.night;
-  console.log(`seed ${seed}: night ${reached}${run.phase.k === 'over' ? '' : ' (capped)'}, ${(w.now / 60_000).toFixed(1)} game min, ${((performance.now() - started) / 1000).toFixed(1)}s wall, `
-    + `peak ${peak} alive, ${downs} downs, ${revives} revives`);
+  console.log(`seed ${seed}: ${won ? 'WON' : 'fell'} on night ${reached}${run.phase.k === 'over' ? '' : ' (capped)'}, ${run.survivors} survivors, ${(w.now / 60_000).toFixed(1)} game min, `
+    + `${((performance.now() - started) / 1000).toFixed(1)}s wall, peak ${peak} alive, ${downs} downs, ${revives} revives, scrap left ${Math.floor(run.scrap)}`);
   console.log(`  ${nights.join(' | ')}`);
 }
+const longest = Math.max(...coreLost.map((l) => l.length));
+const mean = Array.from({ length: longest }, (_, i) => Math.round(coreLost.reduce((n, l) => n + (l[i] ?? 0), 0) / coreLost.length));
+const hurt = Array.from({ length: longest }, (_, i) => coreLost.filter((l) => (l[i] ?? 0) > 0).length);
+console.log(`won ${wins}/${seeds.length}; mean core lost by night: ${mean.map((m, i) => `n${i + 1} ${m}`).join(' ')}; runs hurt by night: ${hurt.join(' ')}`);
 
 const sq = newSquad(seeds[0]!);
 const run = sq.w.run!;
 run.core.hp = Infinity;
-run.night = 12;
+run.night = 10;
 run.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
 // The squad cannot fall either, so it keeps firing into the horde for the whole sample, and the horde is topped up at its edges to the cap every tick.
 let shots = 0, kills = 0, turretShots = 0;
-const horde = MAPS.outpost.siege!.horde;
+const horde = Object.values(MAPS.outpost.siege!.horde);
 const holdOut = () => {
   for (const p of sq.w.players.values()) if (p.life.k === 'alive') p.life.hp = 1e9;
   for (const b of sq.w.buildings) if (b.kind !== 'wall') b.ammo = BUILDINGS[b.kind].turret.ammo;

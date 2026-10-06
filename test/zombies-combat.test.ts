@@ -26,6 +26,7 @@ test('shooting a zombie dead pays the shooter its score and kill, and the squad 
   const w = nightWorld();
   const p = spawnAt(w, X, Y);
   const z = addZombie(w, 'walker', X, Y + 300);
+  addZombie(w, 'walker', 100, 100);
   const shots = Math.ceil(z.hp / GUNS.pistol.damage);
   const scrap = w.run!.scrap;
   for (let i = 0; i < shots; i++) shootOnce(w, p, DOWN, 300);

@@ -458,6 +458,11 @@ function onKeyDown(e: KeyboardEvent) {
     toggleBuild(s);
     return;
   }
+  if (e.code === 'KeyN' && !e.repeat && newestSnap(s.snaps)?.run?.phase === 'day' && state.phase === 'playing') {
+    send(s.ws, { t: 'ready' });
+    playClick(s);
+    return;
+  }
   if (e.code === 'KeyM') {
     const muted = audio.toggleMute();
     s.chat.push({ from: '', text: muted ? 'Sound off (M to turn on)' : 'Sound on', team: null, at: performance.now() });

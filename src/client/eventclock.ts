@@ -6,7 +6,7 @@ import type { Effect } from './state.ts';
 export type EffectSpec = Effect extends infer E ? (E extends Effect ? Omit<E, 'born'> : never) : never;
 export type PendingEffect = { at: number; fx: EffectSpec };
 
-function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
+function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | null {
   switch (ev.e) {
     case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null };
     case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null };
@@ -15,11 +15,18 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
     case 'turret': {
       const def = BUILDINGS[ev.kind].turret;
-      const x = ev.x + Math.cos(ev.angle) * def.muzzle, y = ev.y + Math.sin(ev.angle) * def.muzzle;
-      const dx = Math.cos(ev.angle) * def.range, dy = Math.sin(ev.angle) * def.range;
-      // The round stops in the first zombie on its line, as the server's does.
-      const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]].radius) ?? 1));
-      return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: hit * def.range };
+      if (ev.reach !== undefined) {
+        const x = ev.x + Math.cos(ev.angle) * def.muzzle, y = ev.y + Math.sin(ev.angle) * def.muzzle;
+        return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: ev.reach };
+      }
+      // Pellets fan out evenly across the spread, each stopping in the first zombie on its line, as the server's do.
+      return Array.from({ length: def.pellets }, (_, i) => {
+        const angle = ev.angle + (def.pellets === 1 ? 0 : (i / (def.pellets - 1) - 0.5) * def.spread * 2);
+        const x = ev.x + Math.cos(angle) * def.muzzle, y = ev.y + Math.sin(angle) * def.muzzle;
+        const dx = Math.cos(angle) * def.range, dy = Math.sin(angle) * def.range;
+        const hit = Math.min(1, ...(snap.zombies ?? []).map(([, k, zx, zy]) => segmentEntersCircleAt(x, y, dx, dy, zx, zy, ZOMBIES[ZOMBIE_KINDS[k]].radius) ?? 1));
+        return { kind: 'tracer', turret: ev.kind, x, y, angle, reach: hit * def.range };
+      });
     }
     case 'shot':
     case 'hunted':
@@ -35,7 +42,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | null {
 export function scheduleEffects(snap: Snapshot, serverMs: number): PendingEffect[] {
   return snap.events.flatMap((ev) => {
     const fx = effectOf(ev, snap);
-    return fx ? [{ at: serverMs, fx }] : [];
+    return (Array.isArray(fx) ? fx : fx ? [fx] : []).map((f) => ({ at: serverMs, fx: f }));
   });
 }
 

@@ -1,4 +1,4 @@
-import { byTurret, PERK_TIERS, WORLD, ZOM, type Blast, type GunId, type ModeId, type PlayerKind, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { byTurret, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -93,19 +93,26 @@ type Cell = { id: number; cx: number; cy: number; hp: number };
 export type Turret = Cell & { kind: TurretKind; owner: number; ammo: number; nextFireAt: number };
 export type Building = (Cell & { kind: 'wall' }) | Turret;
 
+/** `n` zombies of one kind that walk in together from one side. */
+export type HordeUnit = { kind: ZombieKind; side: Side; n: number };
+
 type RunPhase =
   | { k: 'day'; endsAt: number }
   /** Ends once `toSpawn` is empty and every zombie is dead. */
-  | { k: 'night'; toSpawn: ZombieKind[]; nextSpawnAt: number }
-  | { k: 'over'; night: number; restartAt: number };
+  | { k: 'night'; toSpawn: HordeUnit[]; nextSpawnAt: number }
+  | { k: 'over'; night: number; won: boolean; restartAt: number };
 
 export type RunStats = { name: string; kills: number; revives: number; built: number };
 
 /** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
 type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
 
+/** `survivors` never come back: mending the core shelters the rest but raises no one. `lost` counts tonight's, or last night's by day; `ready` holds the humans ready for night. */
 export type Run = {
   core: { hp: number };
+  survivors: number;
+  lost: number;
+  ready: Set<number>;
   scrap: number;
   night: number;
   phase: RunPhase;
@@ -183,9 +190,9 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
 
 export function newRun(now: number): Run {
   return {
-    core: { hp: ZOM.coreHp }, scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
+    core: { hp: ZOM.coreHp }, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
-    turretKills: byTurret(() => ({ walker: 0, brute: 0 })),
+    turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>),
   };
 }
 

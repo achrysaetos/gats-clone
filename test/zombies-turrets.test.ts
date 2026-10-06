@@ -60,14 +60,54 @@ test('a cannon picks a brute in range over a nearer walker, and a sentry a walke
   }
 });
 
-test('a round hurts each zombie kind by its own amount: a sentry barely scratches a brute', () => {
-  for (const kind of ['walker', 'brute'] as const) {
-    const w = nightWorld();
-    addTurret(w, 'sentry', spawnAt(w, TX, TY + 300).id, { ammo: 1 });
-    const z = addZombie(w, kind, TX, TY - 150);
-    run(w, 500);
-    assert.equal(1e9 - z.hp, SENTRY.damage[kind]);
+/** What one round from a turret with a single load takes off a zombie of `kind` 150px north of it. */
+function oneRound(turret: TurretKind, kind: ZombieKind): number {
+  const w = nightWorld();
+  addTurret(w, turret, spawnAt(w, TX, TY + 300).id, { ammo: 1 });
+  const z = addZombie(w, kind, TX, TY - 150);
+  run(w, 1500);
+  return 1e9 - z.hp;
+}
+
+test('plating blocks most of a sentry round but little of a cannon shell, and none of a mortar\'s blast', () => {
+  assert.equal(oneRound('sentry', 'walker'), SENTRY.damage);
+  assert.ok(oneRound('sentry', 'plated') <= SENTRY.damage / 4, `a sentry round deals ${oneRound('sentry', 'plated')} to a plated`);
+  assert.ok(oneRound('cannon', 'plated') >= BUILDINGS.cannon.turret.damage * 0.9, 'a cannon shell gets through');
+  for (const kind of ['walker', 'plated'] as const) {
+    assert.ok(oneRound('mortar', kind) >= BUILDINGS.mortar.turret.lobbed!.damage * 0.9, `a mortar's burst takes nearly its full damage off a ${kind}`);
   }
+});
+
+test('a mortar lobs its shell over map cover a sentry cannot see past, and the burst catches the crowd round its target', () => {
+  for (const kind of ['sentry', 'mortar'] as const) {
+    const w = nightWorld();
+    w.walls.push({ x: TX - 100, y: TY - 120, w: 200, h: 40, built: false, material: 'concrete', expiresAt: Infinity });
+    w.wallsVersion++;
+    addTurret(w, kind, spawnAt(w, TX, TY + 300).id);
+    const target = addZombie(w, 'walker', TX, TY - 300);
+    const beside = addZombie(w, 'walker', TX + 60, TY - 300);
+    run(w, 2000);
+    const hurt = [1e9 - target.hp, 1e9 - beside.hp];
+    if (kind === 'sentry') assert.deepEqual(hurt, [0, 0], 'the sentry holds fire with the wall in the way');
+    else assert.ok(hurt.every((d) => d > 0), `the shell burst over the wall onto both, ${hurt.join(', ')}`);
+  }
+});
+
+test('a scatter fires a fan of pellets in one shot, and only at close range', () => {
+  const w = nightWorld();
+  const t = addTurret(w, 'scatter', spawnAt(w, TX, TY + 300).id);
+  const z = addZombie(w, 'walker', TX, TY - 120);
+  step(w, TICK_MS);
+  assert.equal(shotsIn(w).length, 1, 'one shot');
+  assert.equal(w.bullets.filter((b) => b.turret === 'scatter').length, BUILDINGS.scatter.turret.pellets);
+  assert.equal(t.ammo, BUILDINGS.scatter.turret.ammo - 1, 'for one round of ammo');
+  run(w, 300);
+  assert.ok(1e9 - z.hp >= 3 * BUILDINGS.scatter.turret.damage, `most pellets hit up close, ${1e9 - z.hp}`);
+  const far = nightWorld();
+  addTurret(far, 'scatter', spawnAt(far, TX, TY + 300).id);
+  addZombie(far, 'walker', TX, TY - BUILDINGS.scatter.turret.range - 40);
+  run(far, 1000);
+  assert.equal(far.bullets.length, 0, 'a zombie past its range draws no fire');
 });
 
 test('a zombie out of range or behind cover draws no fire, but the squad\'s own walls hide nothing', () => {
@@ -110,7 +150,7 @@ test('a turret\'s rounds pass a squad player by and leave them whole', () => {
   const z = addZombie(w, 'walker', TX, TY - 220);
   const hp = mate.life.k === 'alive' ? mate.life.hp : 0;
   run(w, 300);
-  assert.equal(z.hp, 1e9 - BUILDINGS.cannon.turret.damage.walker, 'the round reached the zombie');
+  assert.equal(z.hp, 1e9 - BUILDINGS.cannon.turret.damage, 'the round reached the zombie');
   assert.equal(mate.life.k === 'alive' && mate.life.hp, hp);
 });
 
@@ -126,7 +166,8 @@ test('a turret\'s kill pays the squad its scrap and the builder its score, and c
   assert.deepEqual(zkill && { ...zkill, x: 0, y: 0, id: 0 }, { e: 'zkill', id: 0, kind: 'brute', x: 0, y: 0, by: null });
   assert.equal(w.run!.scrap - scrap, ZOMBIES.brute.scrap);
   assert.deepEqual([builder.score, builder.kills, w.run!.stats.get(builder.id)?.kills ?? 0], [ZOMBIES.brute.score, 0, 0]);
-  assert.deepEqual(w.run!.turretKills, { sentry: { walker: 0, brute: 0 }, cannon: { walker: 0, brute: 1 } });
+  assert.deepEqual(w.run!.turretKills.cannon.brute, 1);
+  assert.equal(Object.values(w.run!.turretKills).flatMap((k) => Object.values(k)).reduce((a, b) => a + b), 1, 'and no other');
 
   removePlayer(w, builder.id);
   addZombie(w, 'walker', TX, TY - 200, 1);

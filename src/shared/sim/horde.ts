@@ -108,7 +108,7 @@ function nextCell(flow: Uint16Array, c: number, walled: (c: number) => boolean, 
   return best;
 }
 
-const distToRect = (x: number, y: number, r: Rect) => Math.sqrt(dist2(x, y, clamp(x, r.x, r.x + r.w), clamp(y, r.y, r.y + r.h)));
+export const distToRect = (x: number, y: number, r: Rect) => Math.sqrt(dist2(x, y, clamp(x, r.x, r.x + r.w), clamp(y, r.y, r.y + r.h)));
 
 /** The nearest squad player standing within the zombie's aggro range with nothing solid between. Downed players are left to their squad. */
 function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
@@ -123,7 +123,7 @@ function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
   return best;
 }
 
-function biteBuilding(w: World, b: Building, amount: number) {
+export function biteBuilding(w: World, b: Building, amount: number) {
   if (b.hp <= 0) return;
   b.hp -= amount;
   w.events.push({ e: 'dmg', attacker: null, victim: b.id, amount: Math.round(amount * 10) / 10, x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell, kind: 'building' });
