@@ -24,7 +24,7 @@ const CULL_MARGIN = 80;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null; hover: Point | null; ghost?: Ghost | null };
+type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
@@ -118,7 +118,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects, now);
   drawParticles(ctx, s.particles, now);
-  drawTags(ctx, alive, s, f.hover, now, dark);
+  drawTags(ctx, alive, s, now, dark);
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now, dark);
@@ -484,31 +484,43 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
 
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
-const HOVER_REACH = R * 1.8;
-const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 21, font: 11 } as const;
+const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 21, font: 11, nameAlpha: 0.6 } as const;
 
-function drawTags(ctx: CanvasRenderingContext2D, bodies: readonly PlayerView[], s: Session, hover: Point | null, now: number, dark: number) {
-  const named = hover && bodies.filter((p) => p.id !== s.myId && !p.hidden).sort((a, b) => Math.hypot(a.x - hover.x, a.y - hover.y) - Math.hypot(b.x - hover.x, b.y - hover.y))[0];
-  const hovered = named && Math.hypot(named.x - hover.x, named.y - hover.y) <= HOVER_REACH ? named : null;
+let tagsDrawn: { id: number; bar: boolean; name: boolean }[] = [];
+export const drawnTags = () => tagsDrawn;
+
+/** Your own bar stays up while you are hurt; another body's shows briefly after each hit. */
+function barAlpha(p: PlayerView, s: Session, now: number): number {
+  if (p.id === s.myId) return p.hp < p.maxHp ? 1 : 0;
+  const hurt = s.hurtAt.get(p.id);
+  return hurt === undefined ? 0 : Math.min(1, (HURT_SHOW_MS - (now - hurt)) / HURT_FADE_MS);
+}
+
+function drawTags(ctx: CanvasRenderingContext2D, bodies: readonly PlayerView[], s: Session, now: number, dark: number) {
   const ink = dark > 0.5 ? NIGHT.label : PALETTE.label;
+  ctx.font = `600 ${TAG.font}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  tagsDrawn = [];
   for (const p of bodies) {
-    if (p.id === s.myId || p.hidden) continue;
-    const hurt = s.hurtAt.get(p.id);
-    const shown = p === hovered ? 1 : hurt === undefined ? 0 : Math.min(1, (HURT_SHOW_MS - (now - hurt)) / HURT_FADE_MS);
-    if (shown <= 0) continue;
-    ctx.globalAlpha = shown;
-    const x = p.x - TAG.barW / 2, y = p.y + TAG.bar;
-    ctx.fillStyle = dark > 0.5 ? 'rgba(230, 235, 245, 0.25)' : 'rgba(40, 44, 52, 0.2)';
-    ctx.fillRect(x, y, TAG.barW, TAG.barH);
-    const frac = Math.max(0, Math.min(1, p.hp / p.maxHp));
-    ctx.fillStyle = frac > 0.35 ? ink : PALETTE.hpBad;
-    ctx.fillRect(x, y, TAG.barW * frac, TAG.barH);
-    if (p !== hovered) continue;
-    ctx.font = `650 ${TAG.font}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = ink;
-    ctx.fillText(p.name, p.x, p.y + TAG.name);
+    const self = p.id === s.myId;
+    if (p.hidden && !self) continue;
+    const bar = barAlpha(p, s, now);
+    if (bar > 0) {
+      ctx.globalAlpha = bar;
+      const x = p.x - TAG.barW / 2, y = p.y + TAG.bar;
+      ctx.fillStyle = dark > 0.5 ? 'rgba(230, 235, 245, 0.25)' : 'rgba(40, 44, 52, 0.2)';
+      ctx.fillRect(x, y, TAG.barW, TAG.barH);
+      const frac = Math.max(0, Math.min(1, p.hp / p.maxHp));
+      ctx.fillStyle = frac > 0.35 ? ink : PALETTE.hpBad;
+      ctx.fillRect(x, y, TAG.barW * frac, TAG.barH);
+    }
+    if (!self) {
+      ctx.globalAlpha = TAG.nameAlpha;
+      ctx.fillStyle = ink;
+      ctx.fillText(p.name, p.x, p.y + TAG.name);
+    }
+    tagsDrawn.push({ id: p.id, bar: bar > 0, name: !self });
   }
   ctx.globalAlpha = 1;
 }

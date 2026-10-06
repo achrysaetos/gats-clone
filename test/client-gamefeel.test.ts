@@ -13,7 +13,7 @@ import type { Session } from '../src/client/state.ts';
 import { createPool } from '../src/client/particles.ts';
 import { createCracks } from '../src/client/decals.ts';
 import { glow, PALETTE } from '../src/client/palette.ts';
-import { drawWorld } from '../src/client/render.ts';
+import { drawnTags, drawWorld } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -149,7 +149,7 @@ function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
   const s = { myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
-  drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId, hover: null });
+  drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
   return strokes;
 }
 
@@ -162,6 +162,12 @@ test('in free for all an enemy wearing your color gets a rival ring; other color
   const rings = (frame: Snapshot) => worldStrokes(frame).filter((c) => c === PALETTE.rival).length;
   assert.equal(rings(snap({ me: { color: 'blue' }, players: [player(2, { color: 'blue' }), player(3, { color: 'red' })] })), 1, 'only the same-colored enemy');
   assert.equal(rings(snap({ me: { color: 'blue', team: 'blue' }, players: [player(2, { color: 'blue', team: 'blue' })] })), 0, 'team modes color by team already');
+});
+
+test('every other body wears its name; your own bar shows only while you are hurt, and your name never', () => {
+  const tags = (frame: Snapshot) => { worldStrokes(frame); return drawnTags(); };
+  assert.deepEqual(tags(snap({ players: [player(2), player(3, { hidden: true })] })), [{ id: 1, bar: false, name: false }, { id: 2, bar: false, name: true }]);
+  assert.deepEqual(tags(snap({ me: { hp: 99 }, players: [player(2, { hp: 10 })] })), [{ id: 1, bar: true, name: false }, { id: 2, bar: false, name: true }]);
 });
 
 test('while you wait to respawn, your killer wears a red ring', () => {
