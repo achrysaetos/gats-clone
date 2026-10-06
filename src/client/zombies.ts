@@ -93,11 +93,12 @@ export function turretLine(report: RunReport): string | null {
 }
 
 /** The card for a squad player out of the fight: bled out, back from the Bastion after `respawnIn` ms at the cost of survivors, or joined mid-night and back at dawn. */
-export function outTillDawnText(run: Pick<RunView, 'phase' | 'waveLeft' | 'survivors'>, bledOut: boolean, respawnIn: number): { title: string; sub: string } {
-  const sent = bledOut && run.phase === 'night' && run.survivors > ZOM.reinforce.survivors;
+export function outTillDawnText(run: Pick<RunView, 'phase' | 'night' | 'waveLeft' | 'survivors'>, bledOut: boolean, respawnIn: number): { title: string; sub: string } {
+  const cost = ZOM.reinforce.survivors(run.night);
+  const sent = bledOut && run.phase === 'night' && run.survivors > cost;
   return {
     title: bledOut ? 'You bled out' : 'The night is under way',
-    sub: sent ? `The Bastion sends you back in ${Math.ceil(respawnIn / 1000)}s · ${ZOM.reinforce.survivors} survivors lost`
+    sub: sent ? `The Bastion sends you back in ${Math.ceil(respawnIn / 1000)}s · ${cost} survivors lost`
       : run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn',
   };
 }

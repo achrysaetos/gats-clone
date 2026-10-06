@@ -116,9 +116,13 @@ export type RunStats = { name: string; kills: number; revives: number; built: nu
 /** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
 type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
 
-/** `survivors` never come back: mending the core shelters the rest but raises no one. `lost` counts tonight's, or last night's by day; `ready` holds the humans ready for night. */
+/**
+ * `survivors` never come back: mending the core shelters the rest but raises no one. `harm` is what the core has taken toward the next survivor lost.
+ * `lost` counts tonight's, or last night's by day; `ready` holds the humans ready for night.
+ */
 export type Run = {
   core: { hp: number };
+  harm: number;
   survivors: number;
   lost: number;
   ready: Set<number>;
@@ -204,7 +208,7 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
 
 export function newRun(now: number): Run {
   return {
-    core: { hp: ZOM.coreHp }, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
+    core: { hp: ZOM.coreHp }, harm: 0, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
     turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>), bastionKills: 0, bastionFireAt: 0, share: 1,
   };

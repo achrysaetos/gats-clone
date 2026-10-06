@@ -222,13 +222,15 @@ test('a player who bleeds out at night is sent back from the Bastion after a wai
   assert.equal(lifeOf(p).k, 'alive', 'back after the wait');
   const core = MAPS.outpost.siege!.core;
   assert.ok(Math.hypot(p.x - core.x, p.y - core.y) < 200, 'at the Bastion');
-  assert.equal(w.run!.survivors, before - ZOM.reinforce.survivors);
-  assert.equal(w.run!.lost, ZOM.reinforce.survivors);
+  const cost = ZOM.reinforce.survivors(w.run!.night);
+  assert.equal(w.run!.survivors, before - cost);
+  assert.equal(w.run!.lost, cost);
+  assert.ok(ZOM.reinforce.survivors(10) > ZOM.reinforce.survivors(1), 'and sending one back costs more the later the night');
 
-  w.run!.survivors = ZOM.reinforce.survivors;
+  w.run!.survivors = cost;
   downByBite(w, p);
   w.zombies = w.zombies.filter((z) => z.attackAt === Infinity);
   run(w, ZOM.bleedOutMs + ZOM.reinforce.ms + 1000);
   assert.equal(lifeOf(p).k, 'dead', 'nobody left to send');
-  assert.equal(w.run!.survivors, ZOM.reinforce.survivors);
+  assert.equal(w.run!.survivors, cost);
 });

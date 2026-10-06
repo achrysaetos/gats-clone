@@ -321,7 +321,7 @@ test('a mortar leads a zombie walking in, so its shell comes down on it', () => 
   for (const kind of ['walker', 'runner'] as const) {
     const w = nightWorld();
     w.run!.core.hp = 1e9;
-    w.run!.survivors = 0;
+    w.run!.bastionFireAt = Infinity;
     w.buildings.push({ id: newId(w), kind: 'mortar', cx: 32, cy: 30, hp: 1e9, owner: -1, ammo: 1, nextFireAt: 0 });
     w.buildingsVersion++;
     const z = addZombie(w, kind, 1500, 1500 - 700);

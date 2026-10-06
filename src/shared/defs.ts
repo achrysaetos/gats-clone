@@ -406,11 +406,15 @@ export const ZOM = {
   /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,
-  /** Who shelters in the core: one is lost for each `coreHp / survivors` it falls below whole, and each one left pays `scrapPerSurvivor` at dawn. */
+  /**
+   * Who shelters in the core: one is lost for every `survivorHp` of harm the core takes, mended or not, and the run is lost with the last of them.
+   * Each one left pays `scrapPerSurvivor` at dawn, and they man the Bastion's gun.
+   */
   survivors: 50,
-  scrapPerSurvivor: 2,
-  /** A squad player who bleeds out at night is back at the Bastion after `ms`, and `survivors` of those sheltering there are lost to send them; with too few left they wait for dawn. */
-  reinforce: { ms: 15_000, survivors: 3 },
+  survivorHp: 100,
+  scrapPerSurvivor: 3,
+  /** A squad player who bleeds out at night is back at the Bastion after `ms`, and `survivors(night)` of those sheltering there are lost to send them; with too few left they wait for dawn. */
+  reinforce: { ms: 15_000, survivors: (night: number) => 1 + Math.ceil(night / 2) },
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
   coreArmor: 0.6,
   /** Half the side of the square core at the map's center. */

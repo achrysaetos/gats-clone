@@ -652,7 +652,11 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   const coreColor = alert && Math.floor(now / 200) % 2 ? PALETTE.hunted : frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
   const people = `${run.survivors}`;
   const peopleW = ctx.measureText(people).width;
-  const total = 16 + scrapW + 44 + 16 + 90 + 14 + peopleW + 58;
+  // The night's dead stay on the bar while the core is mended, since mending raises no one.
+  const mourned = run.phase === 'night' && run.lost > 0 ? `−${run.lost} tonight` : null;
+  setFont(ctx, 700, TYPE.label);
+  const mournedW = mourned ? ctx.measureText(mourned).width + 8 : 0;
+  const total = 16 + scrapW + 44 + 16 + 90 + 14 + peopleW + 58 + mournedW;
   let x = cx - total / 2;
   panel(ctx, x - 10, y - 11, total + 20, 22, 5);
   strokeIcon(ctx, UI_ICONS.scrap, x + 6, y, 12, PALETTE.gold, 2.2);
@@ -665,6 +669,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   x += 16 + 90 + 14;
   text(ctx, people, x, y, TYPE.body, alert ? coreColor : PANEL_INK, 'left', 750);
   text(ctx, 'survivors', x + peopleW + 6, y, TYPE.label, PANEL_MUTED, 'left', 500);
+  if (mourned) text(ctx, mourned, x + peopleW + 66, y, TYPE.label, PALETTE.hpBad, 'left', 700);
   if (alert) drawCoreAlert(hud, run.core, y + 26);
   if (run.phase === 'over') return;
   if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night)}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);

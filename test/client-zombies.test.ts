@@ -165,8 +165,8 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
 test('a downed player is told how long they have, or that help is on the way', () => {
   assert.equal(downedLine({ revive: 0, bleedOutAt: 40_000 }, 22_000), 'Crawl to a squadmate · 0:18');
   assert.equal(downedLine({ revive: 0.45, bleedOutAt: 40_000 }, 22_000), 'Being revived · 45%');
-  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9 }), true, 11_200).sub, 'The Bastion sends you back in 12s · 3 survivors lost');
-  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9, survivors: 3 }), true, 0).sub, 'Back at dawn · 9 zombies left tonight', 'too few left to send anyone');
+  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9 }), true, 11_200).sub, `The Bastion sends you back in 12s · ${ZOM.reinforce.survivors(2)} survivors lost`);
+  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9, survivors: ZOM.reinforce.survivors(2) }), true, 0).sub, 'Back at dawn · 9 zombies left tonight', 'too few left to send anyone');
   assert.equal(outTillDawnText(runView({ phase: 'night' }), true, 0).title, 'You bled out');
   assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 4 }), false, 0).sub, 'Back at dawn · 4 zombies left tonight', 'a night joiner waits for dawn');
 });

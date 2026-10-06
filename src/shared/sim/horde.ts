@@ -123,6 +123,16 @@ function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
   return best;
 }
 
+/** The core takes `amount`, and every `ZOM.survivorHp` of it costs a survivor inside, however well the core is mended between. */
+export function hurtCore(run: Run, amount: number) {
+  run.core.hp = Math.max(0, run.core.hp - amount);
+  run.harm += amount;
+  const lost = Math.min(run.survivors, Math.floor(run.harm / ZOM.survivorHp));
+  run.harm -= lost * ZOM.survivorHp;
+  run.survivors -= lost;
+  run.lost += lost;
+}
+
 export function biteBuilding(w: World, b: Building, amount: number) {
   if (b.hp <= 0) return;
   b.hp -= amount;
@@ -186,7 +196,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
         bite = () => damagePlayer(w, prey, damage, { attacker: null, team: null, label: def.name, piercing: false, via: 'bite', fromX: z.x, fromY: z.y });
       } else goal = prey;
     } else if (distToRect(z.x, z.y, core) <= reach) {
-      bite = () => { run.core.hp = Math.max(0, run.core.hp - damage * (1 - ZOM.coreArmor)); };
+      bite = () => hurtCore(run, damage * (1 - ZOM.coreArmor));
     } else {
       const next = nextCell(flow, cellAt(z.x, z.y, grid), (c) => wallAt.has(c), grid);
       const wall = next === null ? undefined : wallAt.get(next);

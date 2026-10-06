@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { BUILDINGS, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { readyUp } from '../src/shared/sim/run.ts';
+import { hurtCore } from '../src/shared/sim/horde.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { run, spawnAt, TICK_MS } from './helpers.ts';
@@ -131,15 +132,21 @@ test('a lone human\'s night brings at least one of every kind on its row', () =>
   assert.deepEqual(new Set([...night.toSpawn, ...w.zombies].map((u) => u.kind)), new Set(Object.keys(NIGHTS[4]!.horde)));
 });
 
-test('the core\'s survivors fall with its health and never come back when it is mended', () => {
+test('every bit of harm the core takes costs survivors, however well it is mended between, and losing the last loses the run', () => {
   const w = zomWorld();
+  const r = w.run!;
+  hurtCore(r, ZOM.survivorHp * 2.5);
+  assert.deepEqual([r.survivors, r.lost], [ZOM.survivors - 2, 2]);
+  r.core.hp = ZOM.coreHp;
   run(w, TICK_MS);
-  w.run!.core.hp = ZOM.coreHp * 0.8;
+  assert.equal(r.survivors, ZOM.survivors - 2, 'mending the core raises no one');
+  hurtCore(r, ZOM.survivorHp * 0.5);
+  assert.equal(r.survivors, ZOM.survivors - 3, 'and the next bite after mending still counts the harm before it');
+  r.core.hp = 1e9;
+  hurtCore(r, ZOM.survivorHp * ZOM.survivors);
   run(w, TICK_MS);
-  assert.deepEqual([w.run!.survivors, w.run!.lost], [ZOM.survivors * 0.8, ZOM.survivors * 0.2]);
-  w.run!.core.hp = ZOM.coreHp;
-  run(w, TICK_MS);
-  assert.equal(w.run!.survivors, ZOM.survivors * 0.8, 'mending the core raises no one');
+  assert.ok(r.core.hp > 0, 'the core still stands');
+  assert.deepEqual({ survivors: r.survivors, phase: phaseOf(w) }, { survivors: 0, phase: 'over' });
 });
 
 test('dawn pays the bank for every survivor left', () => {
@@ -161,10 +168,10 @@ test('holding through the Tide ends the run won with the survivors counted, and 
   run(w, TICK_MS);
   assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: NIGHTS.length }, 'the night before the Tide dawns as any other');
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
-  w.run!.core.hp = ZOM.coreHp / 2;
+  hurtCore(w.run!, ZOM.survivorHp * 20);
   run(w, TICK_MS);
   const over = snapshotFor(w, p.id).run!;
-  assert.deepEqual([over.phase, over.report?.night, over.report?.won, over.report?.survivors], ['over', NIGHTS.length, true, ZOM.survivors / 2]);
+  assert.deepEqual([over.phase, over.report?.night, over.report?.won, over.report?.survivors], ['over', NIGHTS.length, true, ZOM.survivors - 20]);
   assert.ok(w.run!.stats.has(p.id), 'the squad gets its report rows');
   run(w, ZOM.restartMs + TICK_MS);
   assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: 1 }, 'a fresh run follows the victory');

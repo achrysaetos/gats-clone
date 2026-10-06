@@ -1,6 +1,6 @@
 import { BUILDINGS, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
-import { biteBuilding, distToRect, tickHorde } from './horde.ts';
+import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
 import { buildingView, buildRefusal, cellRect, refundFor, repairScrapPerHp, serviceTarget, type BuildRefusal, type BuildSite } from './build.ts';
@@ -72,9 +72,10 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
 
 function reinforce(w: World, run: Run) {
   for (const p of w.players.values()) {
-    if (p.life.k !== 'dead' || w.now < p.life.respawnAt || run.survivors <= ZOM.reinforce.survivors) continue;
-    run.survivors -= ZOM.reinforce.survivors;
-    run.lost += ZOM.reinforce.survivors;
+    const cost = ZOM.reinforce.survivors(run.night);
+    if (p.life.k !== 'dead' || w.now < p.life.respawnAt || run.survivors <= cost) continue;
+    run.survivors -= cost;
+    run.lost += cost;
     placeAtCore(w, p);
     p.life = freshLife(p, w.now);
     w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: null });
@@ -162,7 +163,7 @@ function burst(w: World, run: Run, z: Zombie, { radius, damage, building }: Burs
   explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
   for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
   const core = coreRect(w);
-  if (core && distToRect(z.x, z.y, core) <= radius) run.core.hp = Math.max(0, run.core.hp - building * (1 - ZOM.coreArmor));
+  if (core && distToRect(z.x, z.y, core) <= radius) hurtCore(run, building * (1 - ZOM.coreArmor));
 }
 
 /** First light burns whatever of the horde is still out, so a zombie that cannot reach anything never holds the night. They pay nothing. */
@@ -222,8 +223,10 @@ function dawn(w: World, run: Run) {
   }
 }
 
+/** A fallen Bastion takes everyone still inside with it. */
 function endRun(w: World, run: Run, won: boolean) {
   for (const p of w.players.values()) statsFor(run, p);
+  if (!won) { run.lost += run.survivors; run.survivors = 0; }
   run.phase = { k: 'over', night: run.night, won, restartAt: w.now + ZOM.restartMs };
   w.zombies = [];
 }
@@ -288,8 +291,5 @@ export function tickRun(w: World, dtMs: number) {
   tickHorde(w, run, dtMs);
   tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);
-  const sheltered = Math.min(run.survivors, Math.ceil((run.core.hp / ZOM.coreHp) * ZOM.survivors));
-  run.lost += run.survivors - sheltered;
-  run.survivors = sheltered;
-  if (run.core.hp <= 0) endRun(w, run, false);
+  if (run.core.hp <= 0 || run.survivors <= 0) endRun(w, run, false);
 }
