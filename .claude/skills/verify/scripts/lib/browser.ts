@@ -22,6 +22,7 @@ const freePort = () => new Promise<number>((r) => { const s = createServer().lis
 export async function openPage(opts: {
   profile: string;
   debugPort?: number;
+  args?: readonly string[];
   viewport?: { width: number; height: number };
   onEvent?: (method: string, params: any) => void;
   onProblem?: (kind: PageProblem, detail: string) => void;
@@ -30,7 +31,7 @@ export async function openPage(opts: {
   const port = opts.debugPort ?? await freePort();
   const chrome = killOnExit(spawn(process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
     '--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), opts.profile))}`,
-    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank',
+    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', ...(opts.args ?? []), 'about:blank',
   ], { stdio: 'ignore' }));
   let target = '';
   for (let i = 0; i < 50 && !target; i++) {
