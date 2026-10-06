@@ -10,7 +10,7 @@ Skirmish has four 6000 px versus maps, Causeway, Plaza, Old Town and Quarry. Eac
 - `map-notice` shows a gold `Next map: X in Ns` pill under the top panel for the last 15s before a change. A round win puts the change 8s away, so after a win the pill appears at once and counts down from 8.
 - `map-name` names the current map in the objective line, which shows only while Tab is held.
 - `map-respawn` teleports every living player to a fresh spawn on the new map. Everyone is parked off the map first, so each spawn keeps clear of players already placed on the new map, not of old positions.
-- `map-reset` reloads the new map's walls, crates (drawn as planters) and, in DOM, its three zones (one marked in the west half, the centre, and its half-turn twin), and clears bullets, thrown items and dashes. Each change sends one `walls` frame with the new `worldSize` and walls, and the minimap rescales to it.
+- `map-reset` reloads the new map's walls, crates (drawn as planters) and, in DOM, its three zones (one marked in the west half, the centre, and its half-turn twin), and clears bullets, thrown items and dashes. Each change sends one `walls` frame with the new `worldSize` and walls, and the minimap rescales to it. A `walls` frame also goes out whenever an engineer wall goes up or expires (`wallsVersion` in `src/shared/sim/abilities.ts`), so detect a map change from `match.map`, not from `walls` frames.
 - `map-materials` draws walls as concrete, sandstone or planter, as the grid marks them.
 - `map-objective` shows the `#objective` banner for 4s again on each new map.
 
