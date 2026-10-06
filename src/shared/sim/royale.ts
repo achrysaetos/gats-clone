@@ -62,15 +62,26 @@ function stockCrates(w: World, spin: number) {
     const at = clearPointNear(coverRects(w), centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, CRATE_TIERS.cache.size, size);
     w.crates.push(crateAt(w, at.x, at.y, 'cache'));
   }
+  scatter(w, { x: centre, y: centre, r: size }, ROYALE.scatter);
+}
+
+function scatter(w: World, within: Circle, count: number) {
+  const size = MAPS[w.map].size, centre = size / 2;
   const solids = coverRects(w);
-  for (let i = 0, placed = 0; i < ROYALE.scatter * 20 && placed < ROYALE.scatter; i++) {
-    const x = SCATTER_CLEAR + rand(w) * (size - 2 * SCATTER_CLEAR), y = SCATTER_CLEAR + rand(w) * (size - 2 * SCATTER_CLEAR);
-    if (solids.some((b) => circleHitsRect(x, y, SCATTER_CLEAR, b))) continue;
+  const crates = [...w.crates];
+  const bodies = [...w.players.values()].filter((p) => p.life.k !== 'dead');
+  const lo = (c: number) => Math.max(SCATTER_CLEAR, c - within.r), hi = (c: number) => Math.min(size - SCATTER_CLEAR, c + within.r);
+  for (let i = 0, placed = 0; i < count * 20 && placed < count; i++) {
+    const x = lo(within.x) + rand(w) * (hi(within.x) - lo(within.x)), y = lo(within.y) + rand(w) * (hi(within.y) - lo(within.y));
+    if (dist2(x, y, within.x, within.y) > within.r * within.r || solids.some((b) => circleHitsRect(x, y, SCATTER_CLEAR, b))) continue;
+    if (bodies.some((p) => dist2(p.x, p.y, x, y) < SCATTER_CLEAR * SCATTER_CLEAR)) continue;
     const crate = crateAt(w, x, y, Math.hypot(x - centre, y - centre) < ROYALE.richR ? 'rich' : 'loot');
-    w.crates.push(crate);
+    crates.push(crate);
     solids.push(crateRect(crate));
     placed++;
   }
+  w.crates = crates;
+  w.wallsVersion++;
 }
 
 /** The six squads' starting bearings round the map's centre; a wiped squad regroups on whichever bearing is farthest from the squads still up. */
@@ -115,7 +126,7 @@ export function emptiestSquad(w: World, weigh: (p: Player) => number = () => 1):
 function perish(w: World, r: Royale, p: Player, by: Player | null) {
   die(w, p, Infinity);
   if (by && by.id !== p.id) r.killers.set(p.id, by.id);
-  if (redeploysOpen(r)) r.redeployAt.set(p.id, w.now + ROYALE.redeployMs(p.deaths));
+  if (redeploysOpen(r)) r.redeployAt.set(p.id, w.now + ROYALE.redeployMs);
 }
 
 export function fall(w: World, r: Royale, victim: Player, by: Player | null): boolean {
@@ -166,8 +177,9 @@ function advanceRing(w: World, r: Royale) {
       const next = nextCircle(w, ring.to, row.radius);
       r.ring = { k: 'waiting', phase, circle: ring.to, next, shrinkAt: w.now + row.waitMs };
       scheduleDrop(w, r, next);
+      scatter(w, next, ROYALE.wave);
     }
-    if (!redeploysOpen(r)) { r.redeployAt.clear(); r.regroupAt.clear(); }
+
   }
 }
 
@@ -239,7 +251,7 @@ function eliminate(w: World, r: Royale) {
     .sort((a, b) => teamKills(w, a) - teamKills(w, b) || COLOR_IDS.indexOf(b) - COLOR_IDS.indexOf(a));
   for (const team of fallen) {
     const place = regroups ? null : r.squads.length - r.out.length;
-    if (regroups) r.regroupAt.set(team, w.now + ROYALE.regroupMs);
+    if (regroups) r.regroupAt.set(team, w.now + ROYALE.redeployMs);
     else r.out.push(team);
     for (const p of w.players.values()) {
       if (p.team !== team) continue;
