@@ -131,6 +131,19 @@ test('by day a squad bot walks round the core to put up the next turret of its p
   assert.equal(w.run!.scrap, ZOM.startScrap - BUILDINGS.sentry.cost);
 });
 
+test('squad bots leave the bank to a human in the squad', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  spawnAt(w, CORE.x, CORE.y + ZOM.coreHalf + 40);
+  const human = spawnAt(w, CORE.x - 200, CORE.y, { kind: 'human' });
+  const rand = seeded(5);
+  const mems = new Map([...w.players.keys()].filter((id) => id !== human.id).map((id) => [id, newBotMemory(rand)]));
+  for (let t = 0; t < 15_000; t += TICK_MS) {
+    thinkBots(w, mems, rand, { respawn: false });
+    step(w, TICK_MS);
+  }
+  assert.deepEqual([w.buildings.length, w.run!.scrap], [0, ZOM.startScrap]);
+});
+
 test('a squad bot with the core between it and a worn turret walks round the core to mend it', () => {
   const w = nightWorld();
   farZombie(w);

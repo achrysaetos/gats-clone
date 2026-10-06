@@ -109,7 +109,8 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     .filter((b) => b.hp < 10 || (b.kind !== 'wall' && b.ammo < 10 && run.scrap > 0))
     .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
     .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const plan = nextBuild(run, snap.buildings ?? []);
+  // The bank is the humans' to spend when there are any; bots build only for a squad of bots, or for the one player they stand in for.
+  const plan = snap.players.some((p) => p.kind === 'human' && p.id !== me.id) ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const watch: Watch = {
     me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), next: buildable,
