@@ -124,7 +124,7 @@ function routeAhead(me: Point, route: Motor['route']): Point | null {
 }
 
 /** A gun whose spread on the move is at least this much wider is worth planting for; a lighter cost is worth paying to stay a moving target. */
-const PLANT_SPREAD_GAIN = 1.5;
+const PLANT_SPREAD_GAIN = 3;
 
 const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
   spreadFor(v.me.gun, v.self.perks, true) * PLANT_SPREAD_GAIN <= spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);

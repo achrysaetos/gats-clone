@@ -111,15 +111,15 @@ const stillShare = (runs: InputState[][]) => {
   return shots.filter((i) => !moving(i)).length / shots.length;
 };
 
-test('in the open an assault bot strafes while it shoots, since walking costs it little accuracy, and an LMG or sniper bot plants its feet', () => {
+test('in the open assault and LMG bots strafe while they shoot, since a planted body is the easier target, and a sniper bot plants its feet', () => {
   for (const persona of ['aggressive', 'cautious', 'marksman'] as const) {
-    const assault = stillShare(Array.from({ length: 10 }, (_, s) => duel(persona, s + 1, 150)));
-    assert.ok(assault < 0.1, `${persona}: ${(100 * assault).toFixed(0)}% of assault shots fired standing still`);
+    for (const weapon of ['assault', 'lmg'] as const) {
+      const still = stillShare(Array.from({ length: 10 }, (_, s) => duel(persona, s + 1, 150, [], weapon)));
+      assert.ok(still < 0.1, `${persona}: ${(100 * still).toFixed(0)}% of ${weapon} shots fired standing still`);
+    }
   }
-  for (const weapon of ['lmg', 'sniper'] as const) {
-    const planted = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, [], weapon)));
-    assert.ok(planted > 0.6, `${(100 * planted).toFixed(0)}% of ${weapon} shots fired standing still`);
-  }
+  const planted = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, [], 'sniper')));
+  assert.ok(planted > 0.6, `${(100 * planted).toFixed(0)}% of sniper shots fired standing still`);
 });
 
 test('a strafing bot holds each leg\'s keys for at least a third of a second', () => {
