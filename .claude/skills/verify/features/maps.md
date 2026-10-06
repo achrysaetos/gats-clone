@@ -1,15 +1,18 @@
 # Map rotation
 
-Skirmish has four 6000 px versus maps, Causeway, Plaza, Old Town and Quarry, each drawn as a text grid in `src/shared/maps/` and registered with its rotation in `src/shared/maps.ts`. Each mode rotates through its own order. The HUD names the current map, and a pill warns before the next one.
+Skirmish has four 6000 px versus maps, Causeway, Plaza, Old Town and Quarry. Each is drawn in `src/shared/maps/` as the west half of a 50px-cell text grid, and `src/shared/mapgrid.ts` builds the east half by a half turn, so the map's size comes from its row count. The 3000 px Outpost (`src/shared/maps.ts`) is the zombies map. Each versus mode rotates through its own order. The Tab view names the current map, and a pill warns before the next one.
 
 ## Sub-features
 
-- `map-rotate-rounds` changes the map at each round restart in every mode.
-- `map-layout` keeps every map walkable, its team spawns out of each other's sight, its halves the same after a half turn and its DOM zones clear. `node scripts/map-lint.ts` prints any problem and `test/map-lint.test.ts` fails on one.
-- `map-rotate-timer` ends an FFA round after 10 minutes if no human reached 30 kills first. The player with the most kills wins, and the next round starts on the next map. With no kills at all, the map changes without a round end.
-- `map-notice` shows a `Next map: X in Ns` pill for the last 15s before a change.
-- `map-name` names the current map in the HUD line.
+- `map-rotate-rounds` changes the map at each round restart in FFA, TDM and DOM. Zombies stays on Outpost.
+- `map-layout` keeps every spot walkable from a spawn, the team spawns out of each other's sight, walls, spawns, crates and zones the same after a half turn, and each DOM zone reachable, inside the map and off the walls. `node scripts/map-lint.ts` prints any problem and each map's longest sightline, and always exits 0. `test/map-lint.test.ts` fails on a problem.
+- `map-rotate-timer` ends an FFA round after 10 minutes if no human reached 30 kills first. The player with the most kills wins, and the next round starts on the next map. With no kills at all, the map changes without a round end. TDM (12 minutes) and DOM (15 minutes) have clocks too. When one runs out the team ahead on score, then on kills, wins with the note `Time ran out`. A dead heat crowns nobody and the next round starts on the next map at once.
+- `map-notice` shows a gold `Next map: X in Ns` pill under the top panel for the last 15s before a change. A round win puts the change 8s away, so after a win the pill appears at once and counts down from 8.
+- `map-name` names the current map in the objective line, which shows only while Tab is held.
 - `map-respawn` teleports every living player to a fresh spawn on the new map. Everyone is parked off the map first, so each spawn keeps clear of players already placed on the new map, not of old positions.
+- `map-reset` reloads the new map's walls, crates (drawn as planters) and, in DOM, its three zones (one marked in the west half, the centre, and its half-turn twin), and clears bullets, thrown items and dashes. Each change sends one `walls` frame with the new `worldSize` and walls, and the minimap rescales to it.
+- `map-materials` draws walls as concrete, sandstone or planter, as the grid marks them.
+- `map-objective` shows the `#objective` banner for 4s again on each new map.
 
 ## How to get to it (user POV)
 
@@ -26,8 +29,8 @@ Preconditions:
 - **Watcher.** Open a `ws` client to `ws://localhost:<port>/ws?room=tdm` and another to `?room=ffa`, and send `{t:'join', name, loadout:{weapon:'pistol', armor:'none', color:'green'}}` on each. On every `snap`, keep the last `match` and log `match.map`, `match.winner`, `match.nextMap` and `match.mapChangeIn` when they change.
 - **Proof in TDM.** A winner appears with a next-map notice, then `match.map` advances. The TDM rotation is Causeway, Plaza, Quarry, then Old Town.
 - **Proof in FFA.** A next-map notice appears. Once a bot has a kill, the timer ends the round instead: `match.winner.name` names the top killer, then `match.map` advances at the restart. With no kills at all the timer starts the next round on the next map at once, with no winner. TDM has a 12-minute clock too (`MAP_MS.TDM`) and DOM a 15-minute one; set either to `30_000` in the scratch `maps.ts` to watch a time-limit win. Lower `ffaWinKills` in the scratch `defs.ts` and reach it as a human to see the kill-target win; bots at the target do not end the round.
-- **Layout and play.** `node scripts/map-overview.ts <out> all` draws each map whole; `node scripts/bench-maps.ts TDM` with a heat directory, then `map-overview.ts <out> none <heat files>`, shows where bots fight and die. Neither needs a server.
-- **HUD and pill.** Not scripted. Screenshot the page in the same scratch run during the last 15s to see the pill and the HUD map name.
+- **Layout and play.** `node scripts/map-lint.ts` and `npm test` check the layouts. `node scripts/map-overview.ts <out> all` draws each map whole in headless Chrome (override with `CHROME=`). `node scripts/bench-maps.ts TDM rotation 10 18 <heat-dir>` (mode, maps, minutes, players, heat directory as the 6th argument) then `map-overview.ts <out> none <heat files>` shows where bots fight and die. None needs a server.
+- **HUD and pill.** Not scripted. Screenshot the page in the same scratch run during the last 15s to see the pill. Hold `Tab` (a `keyDown` with code `Tab`) to see the map name. `node screens.ts "$RUN" <out> board` shoots the Tab view.
 
 ## Gotchas
 
