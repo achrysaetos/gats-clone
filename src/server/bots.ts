@@ -4,6 +4,7 @@ import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
+import { crawlThink, royaleThink } from './bot/royale.ts';
 import { DEAD_ZONE, siegeThink } from './bot/siege.ts';
 
 export type BotMemory = {
@@ -43,6 +44,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
     const input = { ...IDLE_BOT_INPUT, shots: mem.motor.shots, up: core.y < me.y - DEAD_ZONE, down: core.y > me.y + DEAD_ZONE, left: core.x < me.x - DEAD_ZONE, right: core.x > me.x + DEAD_ZONE };
     return { input, pick: null, mem };
   }
+  if (me?.downed && snap.royale) return { ...crawlThink(snap, snap.royale, me, mem), pick: null };
   if (!me || !me.alive) {
     const forgotten = mem.intent ? { ...mem, intent: null, awareness: freshAwareness(), motor: { ...freshMotor(), shots: mem.motor.shots } } : mem;
     return { input: { ...IDLE_BOT_INPUT, shots: mem.motor.shots }, pick: null, mem: forgotten };
@@ -50,6 +52,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   const pending = snap.self.pending;
   const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, rand) } : null;
   if (snap.run) return { ...siegeThink(snap, snap.run, me, arena, mem, rand), pick: choice };
+  if (snap.royale) return { ...royaleThink(snap, snap.royale, me, arena, mem, rand), pick: choice };
 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];

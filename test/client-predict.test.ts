@@ -7,7 +7,7 @@ import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
-import { goDown } from '../src/shared/sim/run.ts';
+import { goDown } from '../src/shared/sim/downed.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, IDLE_INPUT, newId } from '../src/shared/sim/world.ts';
 import { emptyWorld, grantPerks, spawnAt, TICK_MS } from './helpers.ts';

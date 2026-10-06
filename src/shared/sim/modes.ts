@@ -1,6 +1,7 @@
 import { WORLD, type ModeId } from '../defs.ts';
 import { byRank, type RoundWinner, type Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
+import { emptiestSquad, royaleKill, royaleWinner, startRoyale, tickRoyale } from './royale.ts';
 import { tickRun } from './run.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
@@ -14,6 +15,8 @@ export type ModeRules = {
   onKill(w: World, killer: Player, victim: Player): void;
   tick(w: World, dtMs: number): void;
   winner(w: World): RoundWinner | null;
+  /** Runs once a new round has reset everyone's progress, before the next map loads. */
+  start?(w: World): void;
 };
 
 const TEAM_NAME = { red: 'Red team', blue: 'Blue team' } as const;
@@ -68,7 +71,7 @@ function tickZones(w: World, dtMs: number) {
     }
     const present: Team = red > 0 && blue === 0 ? 'red' : blue > 0 && red === 0 ? 'blue' : null;
     if (present || red + blue === 0) tickZone(z, present, dtMs / ZONE_CAPTURE_MS);
-    if (z.owner) w.teamScore[z.owner] += (ZONE_POINTS_PER_SEC * dtMs) / 1000;
+    if (z.owner === 'red' || z.owner === 'blue') w.teamScore[z.owner] += (ZONE_POINTS_PER_SEC * dtMs) / 1000;
   }
 }
 
@@ -89,7 +92,7 @@ export const MODES: Record<ModeId, ModeRules> = {
   },
   TDM: {
     assignTeam: smallerTeam,
-    onKill: (w, killer) => { if (killer.team) w.teamScore[killer.team] += 1; },
+    onKill: (w, killer) => { if (killer.team === 'red' || killer.team === 'blue') w.teamScore[killer.team] += 1; },
     tick: () => {},
     winner: (w) => teamWinner(w, WORLD.tdmWinScore),
   },
@@ -105,6 +108,13 @@ export const MODES: Record<ModeId, ModeRules> = {
     onKill: () => {},
     tick: tickRun,
     winner: () => null,
+  },
+  BR: {
+    assignTeam: (w) => emptiestSquad(w),
+    onKill: royaleKill,
+    tick: tickRoyale,
+    winner: royaleWinner,
+    start: startRoyale,
   },
 };
 
@@ -151,4 +161,5 @@ function startRound(w: World) {
     p.deaths = 0;
     if (p.life.k === 'alive') p.life = freshLife(p, w.now);
   }
+  MODES[w.mode].start?.(w);
 }

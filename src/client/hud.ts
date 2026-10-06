@@ -1,5 +1,5 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
@@ -411,7 +411,7 @@ function feedRow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
   ctx.stroke();
 }
 
-const FEED_TEAM = { red: '#ffb0b2', blue: '#b5c6ff' } as const;
+const FEED_TEAM: Record<ColorId, string> = { ...byColor((c) => tint(COLORS[c], 0.55)), red: '#ffb0b2', blue: '#b5c6ff' };
 
 function nameColor({ s, snap, me }: Hud, id: number | null): string {
   if (id === s.myId) return me ? ownColor(snap, me) : PALETTE.gold;

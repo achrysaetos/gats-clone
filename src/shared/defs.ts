@@ -199,6 +199,7 @@ export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; speedMul
 
 export const COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
 export type ColorId = (typeof COLOR_IDS)[number];
+export const byColor = <T>(f: (c: ColorId) => T) => Object.fromEntries(COLOR_IDS.map((c) => [c, f(c)])) as Record<ColorId, T>;
 export const COLORS: Record<ColorId, string> = {
   red: '#e5484d', orange: '#f76b15', yellow: '#f5c400', green: '#30a46c', blue: '#3e63dd', purple: '#8e4ec6',
 };
@@ -285,7 +286,7 @@ export const PRESS_GRACE_MS = 100;
 /** How far ahead of the gun being ready a click is kept; an earlier click is dropped rather than firing later on its own. */
 export const PRESS_BUFFER_MS = 200;
 
-export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM'] as const;
+export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 
 export const WORLD = {
@@ -461,4 +462,36 @@ export const ZOM = {
   stragglersMs: 90_000,
   nightMul: (night: number) => ({ hp: 1 + 0.2 * Math.min(night - 1, 5) + 0.06 * Math.max(0, night - 6), damage: 1 + 0.12 * (night - 1) }),
   restartMs: 20_000,
+} as const;
+
+/**
+ * Last Squad's ring, one row per phase: the safe circle holds for `waitMs`, then closes over `shrinkMs` to `radius`, inside the circle it closes from.
+ * Outside the circle a body loses `dps` of its max health a second, through armor and the spawn shield, and does not regenerate.
+ */
+export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number };
+export const RING: readonly RingPhase[] = [
+  { waitMs: 60_000, shrinkMs: 30_000, radius: 2600, dps: 0.02 },
+  { waitMs: 45_000, shrinkMs: 25_000, radius: 1600, dps: 0.03 },
+  { waitMs: 40_000, shrinkMs: 20_000, radius: 900, dps: 0.05 },
+  { waitMs: 30_000, shrinkMs: 20_000, radius: 450, dps: 0.08 },
+  { waitMs: 25_000, shrinkMs: 15_000, radius: 150, dps: 0.12 },
+  { waitMs: 20_000, shrinkMs: 15_000, radius: 0, dps: 0.2 },
+];
+
+export const ROYALE = {
+  squadSize: 3,
+  /** The first circle reaches past the corners of the 6000 px maps, so the whole map starts safe. */
+  startRadius: 4300,
+  /** Redeploys stay open until this many ring phases have closed; after that every life is the last. */
+  redeployPhases: 3,
+  /** How long a dead player waits to come back beside a standing squadmate, longer for each death this match. */
+  redeployMs: (deaths: number) => 15_000 + 10_000 * Math.max(0, deaths - 1),
+  /** A knocked player's own health, as a share of their max, which enemies shoot through to finish them. */
+  knockHpFrac: 0.5,
+  crateScore: 25,
+  /** Each phase's supply drop lands this long into the phase's wait; minimaps show it `dropNoticeMs` before it lands. */
+  dropLandMs: 20_000,
+  dropNoticeMs: 10_000,
+  dropHp: 300,
+  dropSize: 64,
 } as const;

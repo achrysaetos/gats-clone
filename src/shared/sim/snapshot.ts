@@ -1,6 +1,6 @@
-import { byTurret, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { byTurret, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
@@ -9,7 +9,8 @@ import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
 import { buildingView, tenths } from './build.ts';
-import { isEnemy, sameTeam, type Player, type Run, type World } from './world.ts';
+import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
+import { isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
@@ -31,7 +32,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
   const alive = life.k === 'alive';
   return {
     id: p.id, name: p.name, x: p.x, y: p.y, angle: p.angle,
-    hp: alive ? Math.ceil(life.hp) : 0, maxHp: stats.maxHp,
+    hp: life.k === 'dead' ? 0 : Math.ceil(life.hp), maxHp: stats.maxHp,
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
@@ -92,7 +93,8 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const stats = effectiveStats(me);
   const visible = viewExtents(stats.viewRadius, aspect);
   const halfW = visible.halfW + VIEW_PRELOAD_MARGIN, halfH = visible.halfH + VIEW_PRELOAD_MARGIN;
-  const inView = (x: number, y: number, pad = 0) => Math.abs(x - me.x) <= halfW + pad && Math.abs(y - me.y) <= halfH + pad;
+  const eye = w.players.get(w.royale?.watching.get(me.id) ?? -1) ?? me;
+  const inView = (x: number, y: number, pad = 0) => Math.abs(x - eye.x) <= halfW + pad && Math.abs(y - eye.y) <= halfH + pad;
 
   const players: PlayerView[] = [];
   for (const p of w.players.values()) {
@@ -108,7 +110,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
-    .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size }));
+    .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size, ...(c.drop && { drop: true as const }) }));
   const thrown: ThrownView[] = w.thrown
     .filter((t) => inView(t.x, t.y, THROWN_RADIUS[t.kind]))
     .filter((t) => {
@@ -126,13 +128,33 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
-  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life'
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped'
     || (inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
     ...(w.run && siegeViews(w, w.run, inView)),
+    ...(w.royale && { royale: royaleView(w, w.royale, me) }),
+  };
+}
+
+const pipOf = (p: Player): Pip => (p.life.k === 'alive' ? 'up' : p.life.k === 'downed' ? 'down' : 'dead');
+
+function royaleView(w: World, r: Royale, me: Player): RoyaleView {
+  const players = [...w.players.values()];
+  const half = ROYALE.dropSize / 2;
+  return {
+    ring: ringView(r.ring),
+    redeploys: redeploysOpen(r),
+    squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team) })),
+    redeployAt: r.redeployAt.get(me.id) ?? null,
+    drops: [
+      ...r.drops.filter((d) => d.landsAt - w.now <= ROYALE.dropNoticeMs),
+      ...w.crates.filter((c) => c.drop && c.respawnAt === null).map((c) => ({ x: c.x + half, y: c.y + half, landsAt: 0 })),
+    ],
+    watch: r.watching.get(me.id) ?? null,
+    result: resultFor(w, r, me),
   };
 }
 

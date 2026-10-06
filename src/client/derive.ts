@@ -79,6 +79,8 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
       };
     case 'ZOM':
       return { banner: 'Zombies: build walls and turrets by day, hold the Bastion by night', line: 'ZOM · defend the Bastion' };
+    case 'BR':
+      return { banner: `Last Squad: you are ${side.toUpperCase()}, be the last squad standing`, line: `BR · ${Side} squad · last squad standing` };
   }
 }
 

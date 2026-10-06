@@ -6,7 +6,8 @@ import { tickTurrets } from './turrets.ts';
 import { buildingView, buildRefusal, cellRect, refundFor, repairScrapPerHp, serviceTarget, type BuildRefusal, type BuildSite } from './build.ts';
 import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
+import { tickDowned } from './downed.ts';
+import { coreRect, coverRects, loadMap, newId, newRun, rand, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
@@ -22,31 +23,12 @@ function statsFor(run: Run, p: Player): RunStats {
   return s;
 }
 
-export function goDown(w: World, p: Player) {
-  p.life = { k: 'downed', bleedOutAt: w.now + ZOM.bleedOutMs, reviveProgress: 0 };
-  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'downed', by: null });
-}
-
-function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<Player>) {
-  const life = p.life;
-  if (life.k !== 'downed') return;
-  if (w.now >= life.bleedOutAt) {
+function tickSquadmate(w: World, run: Run, p: Player, dtMs: number, revivers: Set<Player>) {
+  const outcome = tickDowned(w, p, dtMs, revivers);
+  if (outcome === 'bledOut') {
     p.life = { k: 'dead', respawnAt: w.now + ZOM.reinforce.ms };
     p.deaths++;
-    w.events.push({ e: 'life', id: p.id, name: p.name, k: 'bledOut', by: null });
-    return;
-  }
-  const reviver = [...w.players.values()].find((o) => o.life.k === 'alive' && o.input.use && sameTeam(o, p) && dist2(o.x, o.y, p.x, p.y) <= ZOM.reviveRange ** 2);
-  if (!reviver) { life.reviveProgress = 0; return; }
-  revivers.add(reviver);
-  life.reviveProgress += dtMs;
-  if (life.reviveProgress < ZOM.reviveMs) return;
-  const revived = freshLife(p, w.now);
-  revived.hp *= ZOM.reviveHpFrac;
-  revived.lastDamageAt = w.now;
-  p.life = revived;
-  statsFor(run, reviver).revives++;
-  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
+  } else if (outcome) statsFor(run, outcome).revives++;
 }
 
 function service(w: World, run: Run, p: Player, dtMs: number) {
@@ -82,7 +64,7 @@ function reinforce(w: World, run: Run) {
 function tickSquad(w: World, run: Run, dtMs: number) {
   if (run.phase.k === 'night') reinforce(w, run);
   const revivers = new Set<Player>();
-  for (const p of w.players.values()) tickDowned(w, run, p, dtMs, revivers);
+  for (const p of w.players.values()) tickSquadmate(w, run, p, dtMs, revivers);
   for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) service(w, run, p, dtMs);
 }
 

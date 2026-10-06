@@ -63,7 +63,8 @@ export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
 type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
 
-export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number };
+/** `home` keeps an idle bot near a point, such as a Last Squad squad's place inside the ring, instead of roaming the map. */
+export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number } };
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
   patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500,
@@ -81,6 +82,8 @@ const OPEN_ESCAPE_PX = 500;
 const OUTNUMBERED_BY = 2;
 const OUTNUMBERED_HP = 0.3;
 const LOW_AMMO = 0.25;
+/** How far from home a bot with one still goes after a lead. */
+export const HOME_LEASH_PX = 800;
 
 const ticks = (ms: number) => Math.round(ms / TICK_MS);
 const pos = (t: Threat): Point => ({ x: t.p.x, y: t.p.y });
@@ -121,6 +124,7 @@ function zoneToHold(v: Perception, c: IntentCtx): ZoneView | null {
 }
 
 function idlePlan(v: Perception, c: IntentCtx): Plan {
+  if (c.home) return v.lead && dist(v.lead, c.home.at) < HOME_LEASH_PX ? searchPlan(v, c, v.lead) : { k: 'patrol', goal: openSpot(c.arena, c.rand, c.home) };
   const centre = { x: c.arena.size / 2, y: c.arena.size / 2 };
   const zone = zoneToHold(v, c);
   if (zone) return { k: 'takePosition', spot: openSpot(c.arena, c.rand, { at: zone, r: zone.r * 0.6 }), facing: centre };
