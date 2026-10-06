@@ -5,8 +5,8 @@
 // Plays zombies runs to the core's fall or the Tide's dawn and prints the nights reached and how each night went (seconds it lasted, core health lost,
 // survivors at dawn, turrets standing), then the win rate and the mean core health bitten off on each night across the seeds.
 // Then holds a full horde of ZOM.maxAlive on the squad with an unbreakable core and prints server step cost and snapshot size under it,
-// first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them.
-import { BUILDINGS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
+// first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them, then with those rings a quarter each of every turret kind.
+import { BUILDINGS, TURRET_KINDS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import type { Snapshot } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
@@ -146,3 +146,10 @@ function ringOfTurrets(k: number, every: number) {
 sample(ringOfTurrets(3, 2));
 ringOfTurrets(2, 1);
 sample(ringOfTurrets(4, 1));
+const owner = [...sq.w.players.keys()][0]!;
+sq.w.buildings = sq.w.buildings.map((b, i) => {
+  const kind = TURRET_KINDS[i % TURRET_KINDS.length]!;
+  return { id: b.id, cx: b.cx, cy: b.cy, kind, hp: BUILDINGS[kind].hp, owner, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0 };
+});
+sq.w.buildingsVersion++;
+sample(`the same ${sq.w.buildings.length} turrets, a quarter each of ${TURRET_KINDS.join(', ')}`);
