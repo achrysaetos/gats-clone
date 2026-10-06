@@ -1,4 +1,4 @@
-import { ABILITY_COOLDOWN_MS, GUNS, PRESS_GRACE_MS, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
@@ -6,6 +6,7 @@ import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, resetProgress } from './sim/stats.ts';
+import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
@@ -63,14 +64,8 @@ export function respawn(w: World, id: number, loadout: Loadout): boolean {
   return true;
 }
 
-function consumePresses(p: Player): boolean {
-  const pressed = p.input.shots > p.shotsSeen;
-  p.shotsSeen = Math.max(p.shotsSeen, p.input.shots);
-  return pressed;
-}
-
 function tickPlayer(w: World, p: Player, dtMs: number) {
-  const pressed = consumePresses(p);
+  const pressed = consumePresses(p, p.input.shots);
   const life = p.life;
   if (life.k === 'downed') {
     p.angle = p.input.angle;
@@ -94,30 +89,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.dash = m.dash;
   }
 
-  if (life.reloadUntil !== null && w.now >= life.reloadUntil) { life.ammo = stats.mag; life.reloadUntil = null; }
-  if (life.reloadUntil === null && (life.ammo <= 0 || (inp.reload && life.ammo < stats.mag))) {
-    life.reloadUntil = w.now + GUNS[p.gun].reloadMs;
-    life.burstLeft = 0;
-  }
-  // After the reload check, so a press that lands as the reload starts waits for it rather than expiring under it.
-  if (pressed) {
-    const cooledAt = life.burstLeft > 0 && gun.burst ? life.nextFireAt + (life.burstLeft - 1) * gun.burst.gapMs + gun.fireMs : life.nextFireAt;
-    life.pressUntil = Math.max(w.now, cooledAt, life.reloadUntil ?? 0) + PRESS_GRACE_MS;
-  }
-
   const armed = w.match.k === 'playing';
-  const bursting = life.burstLeft > 0;
-  const wantsShot = bursting || w.now <= life.pressUntil || (gun.auto && inp.fire);
-  if (armed && wantsShot && life.reloadUntil === null && life.ammo > 0 && w.now >= life.nextFireAt) {
-    if (!bursting) {
-      life.pressUntil = -Infinity;
-      life.burstLeft = gun.burst?.count ?? 1;
-    }
-    life.ammo--;
-    life.burstLeft = life.ammo > 0 ? life.burstLeft - 1 : 0;
-    // Carry the part of the interval that fell between ticks, so a held trigger keeps the gun's rate rather than the tick's.
-    const from = w.now - life.nextFireAt < dtMs ? life.nextFireAt : w.now;
-    life.nextFireAt = from + (life.burstLeft > 0 && gun.burst ? gun.burst.gapMs : gun.fireMs);
+  if (pullTrigger(life, { def: gun, mag: stats.mag, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     const muzzle = WORLD.playerRadius + 4;
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
