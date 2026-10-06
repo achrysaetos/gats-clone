@@ -6,7 +6,7 @@ import { NUMBER_MS, numberHeight } from './feedback.ts';
 import { drawnBuildChips, drawnPanels } from './hud.ts';
 import { newestSnap } from './interp.ts';
 import { CALLOUT_MS } from './moments.ts';
-import { shadowBakes } from './render.ts';
+import { drawnTags, shadowBakes } from './render.ts';
 import type { SoundCue } from './sfx.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { muzzleTip } from './sprites.ts';
@@ -109,5 +109,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, shadowBakes, toScreen } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen } });
 }
