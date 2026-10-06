@@ -170,7 +170,7 @@ export type Royale = {
 
 export type Pose = { x: number; y: number };
 /** A place to put a body, and the way it should face when it lands there. */
-export type Spot = Pose & { angle?: number };
+type Spot = Pose & { angle?: number };
 
 export function moveTo(p: Player, at: Spot) {
   p.x = at.x;

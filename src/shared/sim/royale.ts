@@ -95,7 +95,7 @@ export function squadEdge(w: World, team: Team): Pose & { centre: Pose } {
     return { x: to.x + Math.cos(a) * reach, y: to.y + Math.sin(a) * reach, centre: to };
   });
   const room = (s: Pose) => Math.min(Infinity, ...rivals.map((p) => dist2(p.x, p.y, s.x, s.y)));
-  return slots.reduce((best, s) => (room(s) > room(best) ? s : best), slots[Math.max(0, COLOR_IDS.indexOf(team as ColorId))]!);
+  return slots.reduce((best, s) => (room(s) > room(best) ? s : best), slots[COLOR_IDS.findIndex((c) => c === team)] ?? slots[0]!);
 }
 
 export function newRoyale(w: World): Royale {
@@ -179,7 +179,6 @@ function advanceRing(w: World, r: Royale) {
       scheduleDrop(w, r, next);
       scatter(w, next, ROYALE.wave);
     }
-
   }
 }
 

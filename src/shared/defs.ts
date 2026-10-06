@@ -467,7 +467,7 @@ export const ZOM = {
 /**
  * Last Squad's ring, one row per phase: the safe circle holds for `waitMs`, then closes over `shrinkMs` to `radius`, inside the circle it closes from.
  * Outside the circle a body loses `dps` of its max health a second, through armor and the spawn shield, and does not regenerate.
- * Until a phase with `lives: 'many'` closes the dead redeploy and a wiped squad regroups; once the ring is past them every life is the last and a wiped squad is out.
+ * While the ring waits or closes in a `lives: 'many'` phase the dead redeploy and a wiped squad regroups; from the first `last` phase on, whoever falls stays down and a wiped squad is out.
  */
 export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number; lives: 'many' | 'last' };
 export const RING: readonly RingPhase[] = [

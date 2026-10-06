@@ -17,7 +17,7 @@ const ANCHOR_REACH = 0.6;
 const REVIVE_REACH_PX = 900;
 const REVIVE_STOP_PX = ZOM.reviveRange - 20;
 const MATE_DEAD_ZONE = 30;
-/** Past this a bot walks back to its squad, and the squad gathers once it has strayed this far apart. */
+/** A bot with no squadmate in sight walks back to its squad's marks past this, and a follower this far behind its leader drops a search or flank. */
 const PACK_PX = 450;
 const FOLLOW_PX = 70;
 /** From the ring closing on last lives onward a squad holds cover this close to the middle of its standing members, pulled inside the circle. */
