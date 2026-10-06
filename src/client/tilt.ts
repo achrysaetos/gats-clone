@@ -49,7 +49,7 @@ export const curbSolids = (size: number): Solid[] => [
   { kind: 'curb', x: -CURB, y: size, w: size + CURB * 2, h: CURB },
 ];
 
-const CRATE_SOLID: Record<CrateTier, SolidKind> = { loot: 'planter', rich: 'sandstone', cache: 'brick', drop: 'slate' };
+const CRATE_SOLID: Record<CrateTier, SolidKind> = { loot: 'planter', rich: 'planter', cache: 'brick', drop: 'slate' };
 export const crateSolid = (c: CrateView): Solid => ({ kind: c.tier ? CRATE_SOLID[c.tier] : 'planter', x: c.x, y: c.y, w: c.size, h: c.size, wear: 1 - c.hp / (c.tier ? CRATE_TIERS[c.tier].hp : WORLD.crateHp) });
 
 const BUILDING_SOLID: Record<BuildingKind, SolidKind> = { wall: 'brick', sentry: 'pad', cannon: 'pad', scatter: 'pad', mortar: 'pad' };

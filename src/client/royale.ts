@@ -1,5 +1,5 @@
 import { RING, ZOM, type ColorId } from '../shared/defs.ts';
-import { ringAt, type PlayerView, type RoyaleResult, type RoyaleView, type Snapshot } from '../shared/protocol.ts';
+import { ringAt, type CrateView, type PlayerView, type RoyaleResult, type RoyaleView, type Snapshot, type SquadView } from '../shared/protocol.ts';
 import { clock } from './derive.ts';
 import { TEAM_COLORS } from './palette.ts';
 
@@ -31,6 +31,9 @@ const nameOf = (snap: Snapshot, id: number | null) =>
 export function spectateLines(snap: Snapshot, royale: RoyaleView, serverNow: number): { title: string; sub: string } {
   const watched = nameOf(snap, royale.watch);
   const title = watched ? `Watching ${watched}` : 'Spectating';
+  const team = snap.players.find((p) => p.id === snap.self.id)?.team ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.team;
+  const regroupAt = royale.squads.find((sq) => sq.team === team)?.regroupAt ?? null;
+  if (regroupAt !== null) return { title, sub: `Squad wiped · regrouping in ${clock(regroupAt - serverNow)}` };
   if (royale.redeployAt !== null) return { title, sub: `Redeploy beside your squad in ${clock(royale.redeployAt - serverNow)}` };
   if (royale.result) return { title, sub: `Your squad finished ${resultTitle(royale.result)}` };
   const me = snap.players.find((p) => p.id === snap.self.id);
@@ -96,6 +99,20 @@ export function drawDropsWorld(ctx: CanvasRenderingContext2D, royale: RoyaleView
   }
 }
 
+/** Rich crates and caches wear a gold frame, a caches' as bold as a landed drop's, so the loot worth a detour reads at a glance. */
+export function drawLootWorld(ctx: CanvasRenderingContext2D, crates: readonly CrateView[]) {
+  ctx.save();
+  ctx.strokeStyle = RING_LOOK.drop;
+  for (const c of crates) {
+    if (c.tier !== 'rich' && c.tier !== 'cache') continue;
+    const pad = c.tier === 'cache' ? 4 : 3;
+    ctx.globalAlpha = c.tier === 'cache' ? 1 : 0.6;
+    ctx.lineWidth = c.tier === 'cache' ? 3 : 1.5;
+    ctx.strokeRect(c.x - pad, c.y - pad, c.size + pad * 2, c.size + pad * 2);
+  }
+  ctx.restore();
+}
+
 export function drawRingMap(ctx: CanvasRenderingContext2D, royale: RoyaleView, serverNow: number, now: number, x: number, y: number, k: number, size: number) {
   const c = ringAt(royale.ring, serverNow);
   ctx.save();
@@ -133,9 +150,13 @@ export function drawRingMap(ctx: CanvasRenderingContext2D, royale: RoyaleView, s
 }
 
 const TRACKER = { col: 22, pip: 4.5, gap: 13 } as const;
+
+/** What a squad's tracker column reads in place of its pips: its place once out, the seconds left while it regroups. */
+export const trackerLabel = (s: SquadView, serverNow: number | null): string | null =>
+  s.place !== null && s.place > 1 ? `#${s.place}` : s.regroupAt !== null && serverNow !== null ? `${Math.max(0, Math.ceil((s.regroupAt - serverNow) / 1000))}s` : null;
 export const trackerSize = (squads: number) => ({ w: squads * TRACKER.col, h: 3 * TRACKER.gap });
 
-export function drawTracker(ctx: CanvasRenderingContext2D, royale: RoyaleView, mine: ColorId | null, left: number, top: number) {
+export function drawTracker(ctx: CanvasRenderingContext2D, royale: RoyaleView, mine: ColorId | null, left: number, top: number, serverNow: number | null) {
   const { col, pip, gap } = TRACKER;
   const { h } = trackerSize(royale.squads.length);
   royale.squads.forEach((s, i) => {
@@ -147,13 +168,14 @@ export function drawTracker(ctx: CanvasRenderingContext2D, royale: RoyaleView, m
       ctx.roundRect(x - col / 2 + 1, top, col - 2, h, 4);
       ctx.fill();
     }
-    if (s.place !== null && s.place > 1) {
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = '#c4c8d0';
+    const label = trackerLabel(s, serverNow);
+    if (label) {
+      ctx.globalAlpha = s.place === null ? 0.9 : 0.7;
+      ctx.fillStyle = s.place === null ? color : '#c4c8d0';
       ctx.font = '700 10px system-ui, -apple-system, "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`#${s.place}`, x, top + h / 2);
+      ctx.fillText(label, x, top + h / 2);
       ctx.globalAlpha = 1;
       return;
     }
@@ -173,7 +195,7 @@ export const ringMoved = (prev: RoyaleView | undefined, next: RoyaleView | undef
 
 export function royaleCallouts(prev: RoyaleView | undefined, next: RoyaleView | undefined, prevAt: number, nextAt: number): { title: string; line: string }[] {
   const out: { title: string; line: string }[] = [];
-  if (prev?.redeploys && next && !next.redeploys) out.push({ title: 'Last lives', line: 'No more redeploys. Knocked squadmates still get back up.' });
+  if (prev?.redeploys && next && !next.redeploys) out.push({ title: 'Last lives', line: 'Fall now and you stay down. Knocked squadmates still get back up.' });
   if (ringMoved(prev, next, prevAt, nextAt)) out.push({ title: 'The ring is moving', line: 'Get inside the dashed circle' });
   return out;
 }

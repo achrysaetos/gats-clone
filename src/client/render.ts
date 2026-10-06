@@ -16,7 +16,7 @@ import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
 import { drawCracks, hostKey } from './decals.ts';
-import { drawDropsWorld, drawRingWorld } from './royale.ts';
+import { drawDropsWorld, drawLootWorld, drawRingWorld } from './royale.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
@@ -98,6 +98,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
+    drawLootWorld(ctx, snap.crates);
     drawDropsWorld(ctx, snap.royale, clockNow, now, CRATE_TIERS.drop.size);
   }
 
