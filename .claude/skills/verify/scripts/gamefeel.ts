@@ -177,6 +177,7 @@ async function onPick() {
 async function onSelf(self: NonNullable<ReturnType<typeof me>>, snap: Snapshot) {
   if (self.hunted && huntedAt && Date.now() - huntedAt > 2800) await capture('hunted-badge', 0);
   if (snap.self.reloading) await capture('reticle-reload', 0);
+  await checkTags(self);
   const view = { w: snap.self.viewRadius, h: snap.self.viewRadius / Math.min(16 / 9, W / H) };
   if (snap.minimap.some((m) => m.pingAge !== null && (Math.abs(m.x - self.x) > view.w || Math.abs(m.y - self.y) > view.h))) await capture('hunted-chevron', 0);
   if (snap.minimap.some((m) => m.pingAge !== null && m.pingAge < 250)) await capture('ping-ring', 0);
@@ -187,6 +188,20 @@ async function onSelf(self: NonNullable<ReturnType<typeof me>>, snap: Snapshot) 
   }
   const rival = snap.players.find((p) => p.id !== st.id && p.alive && p.color === self.color && Math.abs(p.x - self.x) < view.w * 0.8 && Math.abs(p.y - self.y) < view.h * 0.8);
   if (rival) await capture('rival-ring', 0, `${rival.name} wears ${rival.color}`);
+}
+
+let tagsChecked = false;
+async function checkTags(self: NonNullable<ReturnType<typeof me>>) {
+  const tags: { id: number; bar: boolean; name: boolean }[] = await js(`window.skirmishDev.tags()`) ?? [];
+  const mine = tags.find((t) => t.id === st.id);
+  const others = tags.filter((t) => t.id !== st.id);
+  if (!tagsChecked && mine && others.length) {
+    tagsChecked = true;
+    expect('every other body in view is named and yours is not', !mine.name && others.every((t) => t.name), `${others.length} others`);
+  }
+  if (others.length >= 4) await capture('names-crowd', 0, `${others.length} names`);
+  if (mine?.bar && self.hp < self.maxHp) await capture('self-bar', 0, `${Math.ceil(self.hp)} / ${self.maxHp}`);
+  if (mine && !mine.bar && self.hp >= self.maxHp && captured.has('self-bar')) await capture('self-bar-hidden', 0, 'back to full health');
 }
 
 async function underPanel(): Promise<string> {
@@ -201,8 +216,8 @@ async function underPanel(): Promise<string> {
 
 let strafe = 1, roundOver = false, checkedNextRound = false;
 const end = Date.now() + SECONDS * 1000;
-const wanted = ['hurt-arc', 'numbers-stack', 'kill-popup', 'bounty-callout', 'assist', 'feed-evolved', 'death-screen', 'perk-dock-hover', 'evolve-stage1', 'evolve-stage2', 'hunted-badge', 'reticle-reload', 'reticle-spread', 'hunted-chevron', 'ping-ring', 'hud-fade', 'rival-ring', 'round-banner'];
-const done = () => wanted.every((t) => captured.has(t)) && earlyChecked && respawnChecked;
+const wanted = ['hurt-arc', 'numbers-stack', 'kill-popup', 'bounty-callout', 'assist', 'feed-evolved', 'death-screen', 'perk-dock-hover', 'evolve-stage1', 'evolve-stage2', 'hunted-badge', 'reticle-reload', 'reticle-spread', 'names-crowd', 'self-bar', 'self-bar-hidden', 'hunted-chevron', 'ping-ring', 'hud-fade', 'rival-ring', 'round-banner'];
+const done = () => wanted.every((t) => captured.has(t)) && earlyChecked && respawnChecked && tagsChecked;
 while (Date.now() < end && !done()) {
   await onEvents();
   const snap = st.last, self = me();
@@ -242,7 +257,7 @@ while (Date.now() < end && !done()) {
   await sleep(30);
 }
 await setKeys([]);
-const missing = [...wanted.filter((t) => !captured.has(t)), ...(earlyChecked ? [] : ['early death-screen click']), ...(respawnChecked ? [] : ['respawn'])];
+const missing = [...wanted.filter((t) => !captured.has(t)), ...(earlyChecked ? [] : ['early death-screen click']), ...(respawnChecked ? [] : ['respawn']), ...(tagsChecked ? [] : ['tags'])];
 log(`missing: ${missing.join(', ') || 'none'}`);
 if (missing.length) failures++;
 log(failures ? `RESULT FAIL (${failures})` : 'RESULT PASS');
