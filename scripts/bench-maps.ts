@@ -3,12 +3,11 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { GUN_IDS, GUNS, MODE_IDS, WORLD, type ModeId } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
-import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePick } from '../src/shared/sim/stats.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { createWorld, rand, type World } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
+import { median, pct, quantile, sec } from './lib/stats.ts';
 
 const mode = MODE_IDS.find((m) => m === process.argv[2]) satisfies ModeId | undefined;
 if (!mode || mode === 'ZOM') throw new Error('usage: bench-maps.ts <FFA|TDM|DOM> [maps] [minutes] [players] [heatDir]');
@@ -21,14 +20,7 @@ const SEEDS = [1, 2];
 const FIGHT_GAP_MS = 3000;
 const TARGETS: Record<Exclude<ModeId, 'ZOM'>, number[]> = { FFA: [10, 20, 30, 40, 50], TDM: [50, 100, 150, 200, 250], DOM: [1000, 2000, 3000, 4000] };
 
-const quantile = (xs: readonly number[], q: number) => {
-  if (!xs.length) return NaN;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.floor(q * s.length))]!;
-};
-const pct = (n: number, total: number) => `${((100 * n) / Math.max(1, total)).toFixed(0)}%`;
 const RANGE_BUCKETS = [200, 400, 600, 900, 1200, 1800, Infinity];
-const sec = (ms: number) => (Number.isFinite(ms) ? (ms / 1000).toFixed(1) : '-');
 const sizeOf = (map: MapId) => MAPS[map].size;
 
 type Sim = { w: World; bots: Map<number, BotMemory>; r: () => number };
@@ -46,15 +38,7 @@ function fill(map: MapId, seed: number): Sim {
 
 function tick({ w, bots, r }: Sim): { respawned: number[]; ms: number } {
   const t0 = performance.now();
-  const arena = arenaFor(w);
-  const respawned: number[] = [];
-  for (const [id, mem] of bots) {
-    const d = botThink(snapshotFor(w, id), arena, mem, r);
-    bots.set(id, d.mem);
-    setInput(w, id, w.tick, d.input);
-    if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-    if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) respawned.push(id);
-  }
+  const { respawned } = thinkBots(w, bots, r);
   step(w, TICK_MS);
   return { respawned, ms: performance.now() - t0 };
 }
@@ -128,9 +112,9 @@ for (const map of maps) {
   console.log(`  rounds under the rules: ${rounds.map((r) => `${sec(r.ms)}s ${r.winner}`).join(', ')}`);
   console.log(`  leader reaches ${TARGETS[mode].map((s) => `${s}: ${(reach.get(s) ?? []).map(sec).join('/')}s`).join('  ')}`);
   console.log(`  kills/min ${(kills / (simMs / 60_000)).toFixed(1)}`);
-  console.log(`  first contact after spawn: median ${sec(quantile(t.firstContact, 0.5))}s  p75 ${sec(quantile(t.firstContact, 0.75))}s  (${t.firstContact.length} lives)`);
-  console.log(`  time between fights: median ${sec(quantile(t.betweenFights, 0.5))}s  p75 ${sec(quantile(t.betweenFights, 0.75))}s  (${t.betweenFights.length} gaps over ${FIGHT_GAP_MS / 1000}s)`);
-  const buckets = RANGE_BUCKETS.map((b, i) => `<${b} ${pct(t.range.filter((d) => d >= (RANGE_BUCKETS[i - 1] ?? 0) && d < b).length, t.range.length)}`);
+  console.log(`  first contact after spawn: median ${sec(median(t.firstContact))}s  p75 ${sec(quantile(t.firstContact, 0.75))}s  (${t.firstContact.length} lives)`);
+  console.log(`  time between fights: median ${sec(median(t.betweenFights))}s  p75 ${sec(quantile(t.betweenFights, 0.75))}s  (${t.betweenFights.length} gaps over ${FIGHT_GAP_MS / 1000}s)`);
+  const buckets = RANGE_BUCKETS.map((b, i) => `<${b} ${pct(t.range.filter((d) => d >= (RANGE_BUCKETS[i - 1] ?? 0) && d < b).length, t.range.length, 0)}`);
   console.log(`  shooter to victim on damaging hits: p50 ${quantile(t.range, 0.5).toFixed(0)}  p90 ${quantile(t.range, 0.9).toFixed(0)}  max ${Math.max(...t.range).toFixed(0)}px  ${buckets.join('  ')}`);
   console.log(`  tick (bots think + step): p50 ${quantile(t.tickMs, 0.5).toFixed(2)}ms  p95 ${quantile(t.tickMs, 0.95).toFixed(2)}ms  max ${Math.max(...t.tickMs).toFixed(2)}ms`);
   if (heatDir) {
