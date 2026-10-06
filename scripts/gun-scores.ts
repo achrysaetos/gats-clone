@@ -1,6 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/gun-scores.ts
-// The balance lint's numbers: each gun on every axis, the same-stage pairs where one gun beats the other everywhere, and those it beats everywhere but one axis.
 import { GUNS } from '../src/shared/defs.ts';
 import { AXES, dominatedPairs, dominates, gunsOfStage, rangeBeyondView, scoreGun, TREE_ORDER, type Axis, type GunScore } from './lib/gunscore.ts';
 

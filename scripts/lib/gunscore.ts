@@ -5,7 +5,6 @@ import { createWorld } from '../../src/shared/sim/world.ts';
 
 export const DPS_RANGES = [150, 400, 700, 1000] as const;
 
-/** Every axis reads higher-is-better except those in LOWER_BETTER. */
 export const AXES = [
   ...DPS_RANGES.map((d) => `still@${d}` as const), ...DPS_RANGES.map((d) => `moving@${d}` as const),
   'perPull', 'moveMul', 'uptime', 'reloadMs', 'penetrate', 'blast', 'silenced',
@@ -14,10 +13,8 @@ export type Axis = (typeof AXES)[number];
 export type GunScore = Record<Axis, number>;
 const LOWER_BETTER: ReadonlySet<Axis> = new Set(['reloadMs']);
 
-/** Ms per round fired while the trigger is held, a burst's gaps and its trailing cooldown shared across its rounds. */
 const msPerRound = (id: GunId) => { const g = GUNS[id]; return g.burst ? ((g.burst.count - 1) * g.burst.gapMs + g.fireMs) / g.burst.count : g.fireMs; };
 
-/** A pellet leaves uniformly within ±spread, so it lands when its angle falls inside the body's half-angle at `d`; a blast round only bursts on the body when it hits it. */
 export function dpsAt(id: GunId, d: number, still: boolean): number {
   const g = GUNS[id];
   if (d > g.range) return 0;
@@ -44,7 +41,6 @@ const EPS = 1e-9;
 const atLeast = (axis: Axis, a: number, b: number) => (LOWER_BETTER.has(axis) ? a <= b + EPS : a >= b - EPS);
 export const dominates = (a: GunScore, b: GunScore) => AXES.every((k) => atLeast(k, a[k], b[k])) && AXES.some((k) => !atLeast(k, b[k], a[k]));
 
-/** Each class gun followed by its branches, depth first. */
 export const TREE_ORDER: readonly GunId[] = WEAPON_IDS.flatMap((base) => [base, ...EVOLUTIONS[base].flatMap((g) => [g, ...EVOLUTIONS[g]])]);
 
 export type Pair = readonly [winner: GunId, loser: GunId];
@@ -56,7 +52,6 @@ export function dominatedPairs(stage: 0 | 1 | 2): Pair[] {
   return ids.flatMap((a) => ids.filter((b) => a !== b && dominates(scores.get(a)!, scores.get(b)!)).map((b) => [a, b] as const));
 }
 
-/** Guns whose bullets fly past the edge of their owner's screen, with no perks on. */
 export function rangeBeyondView(): { id: GunId; range: number; view: number }[] {
   const w = createWorld('FFA', 1, 'plaza');
   return GUN_IDS.flatMap((id) => {

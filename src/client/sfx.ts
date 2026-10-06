@@ -27,10 +27,6 @@ const CLASS_SHOTS: Record<WeaponId, Recipe> = {
   lmg: [crack(1900, 70, 0.45), thump(170, 70, 0.4)],
 };
 
-/**
- * Each evolution down the first branch drops the pitch and down the second raises it, so every gun on the tree sounds its own.
- * The second evolution steps by less, so going low then high never lands on the same pitch as high then low.
- */
 const BRANCH_PITCH = [[0.84, 1.18], [0.92, 1.09]] as const;
 
 function pitchOf(gun: GunId): number {

@@ -1,6 +1,5 @@
 /// <reference types="node" />
 // Usage: node scripts/bench-duels.ts [--stage 0|1|2|all] [--seeds 18] [--seed-base 1] [--ranges 200,450,750] [--armor none] [--pairs] [--workers 8] [--trace]
-// Two bots run by thinkBots fight in an open plaza, one gun each, until the first death or DUEL_CAP_MS (a draw).
 import { availableParallelism } from 'node:os';
 import { parseArgs } from 'node:util';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
@@ -18,15 +17,9 @@ import { gunsOfStage, TREE_ORDER } from './lib/gunscore.ts';
 const TICK_MS = 1000 / WORLD.tickHz;
 const DUEL_CAP_MS = 20_000;
 
-/**
- * `swap` puts `a` on the right, so each seed is fought from both sides with the same bot personalities.
- * The seed picks the left and right personalities, cycling through all nine pairs; the world's dice come from a hash of the whole spec.
- */
 type DuelSpec = { a: GunId; b: GunId; range: number; seed: number; swap: boolean; armor: ArmorId };
-/** `score` is `a`'s share: 1 win, 0 loss, 0.5 for a trade or the cap. `engagedMs` is when the first round left either gun. */
 type DuelResult = { spec: DuelSpec; score: number; ms: number; capped: boolean; engagedMs: number };
 
-/** FNV-1a, so duels sharing a seed do not share their dice, which would tie every pair's luck to the same few rolls. */
 const hash = (s: string) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193); return h >>> 0; };
 const personasOf = (seed: number) => [PERSONALITY_IDS[seed % 3]!, PERSONALITY_IDS[Math.floor(seed / 3) % 3]!] as const;
 
@@ -80,7 +73,6 @@ if (!isMainThread) {
       ranges.flatMap((range) => seeds.flatMap((seed) => [false, true].map((swap) => ({ a, b, range, seed, swap, armor }))))));
   };
 
-  /** Round-robin chunks so each worker gets a mix of long and short fights. */
   const runAll = async (specs: DuelSpec[]): Promise<DuelResult[]> => {
     const n = Math.max(1, Math.min(Number(args.workers), specs.length));
     if (n === 1) return specs.map(duel);

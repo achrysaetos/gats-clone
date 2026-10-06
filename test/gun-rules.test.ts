@@ -17,7 +17,6 @@ function shooter(gun: GunId): { w: World; p: Player } {
   return { w, p };
 }
 
-/** Steps one tick on `input` and returns the angle off the aim of each round it fired. */
 function tick(w: World, p: Player, input: Partial<InputState>): number[] {
   const before = new Set(w.bullets.map((b) => b.id));
   press(w, p, { angle: 0, ...input });
@@ -25,7 +24,6 @@ function tick(w: World, p: Player, input: Partial<InputState>): number[] {
   return w.bullets.filter((b) => !before.has(b.id)).map((b) => Math.atan2(b.vy, b.vx));
 }
 
-/** Presses on every tick until `count` rounds are out, walking right unless `still`. */
 function spray(gun: GunId, still: boolean, count: number): number[] {
   const { w, p } = shooter(gun);
   const angles: number[] = [];
@@ -84,7 +82,6 @@ test('assault bloom is gone a quarter second after letting go, and a reload clea
   assert.equal(heatOf(), 0, 'reloading clears it even with the trigger held');
 });
 
-/** Ticks between consecutive shots while the trigger is held for `ticks`. */
 function gaps(w: World, p: Player, ticks: number): number[] {
   const fired: number[] = [];
   for (let i = 0; i < ticks; i++) if (tick(w, p, { fire: true, shots: 1 }).length) fired.push(i);

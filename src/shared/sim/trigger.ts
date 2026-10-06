@@ -4,7 +4,6 @@ import { clamp } from './movement.ts';
 import type { Life } from './world.ts';
 
 export type TriggerState = Pick<Extract<Life, { k: 'alive' }>, 'ammo' | 'reloadUntil' | 'nextFireAt' | 'burstLeft' | 'pressUntil' | 'heat' | 'spin'>;
-/** `mag` and `reloadMs` are after perks. */
 export type HeldGun = { def: GunDef; mag: number; reloadMs: number; armed: boolean };
 export type Pull = Pick<InputState, 'fire' | 'reload'> & { pressed: boolean };
 

@@ -1,7 +1,5 @@
 /// <reference types="node" />
 // Usage: LAG=<one-way ms> JITTER=<ms> node guns.ts <run-dir>
-// One muted browser holds an assault rifle down and watches the reticle bloom open and close again; a second holds an
-// LMG-class player's trigger, which the server must hand a Minigun (a scratch copy, see SKILL.md), and times its spin-up.
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GUNS, type WeaponId } from '../../../../src/shared/defs.ts';

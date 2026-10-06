@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import type { GunId } from '../src/shared/defs.ts';
 import { dominatedPairs, rangeBeyondView, type Pair } from '../scripts/lib/gunscore.ts';
 
-/** Today's offenders. Fix a gun and its pair drops out of the lint, which then fails until the entry is deleted here. */
 const KNOWN_DOMINATED: readonly Pair[] = [];
 const KNOWN_BEYOND_VIEW: readonly GunId[] = [];
 

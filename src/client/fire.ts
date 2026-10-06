@@ -24,7 +24,6 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   return { t: g, fired };
 }
 
-/** Which shot of a spray the next one is, for its bloom; a released trigger cools before it fires, so this can run a touch high. */
 export const nextSprayShot = (f: Firing): number => f.trigger.heat + 1;
 
 /** A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. */

@@ -38,9 +38,7 @@ const WEAPON_BAND: Record<WeaponId, Omit<Band, 'rushes'>> = {
   lmg: { headOn: 200, ideal: 340, max: 450 },
 };
 
-/** `rushes`: a pellet gun only kills up close, so it closes to its ideal distance and never peeks from cover. */
 type Band = { headOn: number; ideal: number; max: number; rushes: boolean };
-/** An evolution keeps its class's band, stretched by how far it reaches past the class gun, so a Slug Gun holds mid range instead of charging like a shotgun. */
 export const bandFor = (gun: GunId, p: Personality): Band => {
   const g = GUNS[gun];
   const b = WEAPON_BAND[g.base];

@@ -42,7 +42,6 @@ export type GunDef = {
   silenced?: true;
   /** Hits that kill a full-health target through heavy armor; a pellet gun counts a whole point-blank blast as one hit. */
   breakpoint?: 1 | 2;
-  /** Overrides the class's `GUN_RULES` for this gun. */
   rules?: Partial<GunRules>;
   look: GunLook;
 };
@@ -247,7 +246,6 @@ export const LEVELS = [
 
 type Attachment = (typeof PERK_TIERS)[1][number];
 
-/** The tier-1 perks each class is offered. */
 export const ATTACHMENTS: Record<WeaponId, readonly Attachment[]> = {
   pistol: ['extended', 'longRange', 'silencer', 'lightweight', 'optics'],
   smg: ['grip', 'extended', 'silencer', 'longRange', 'lightweight'],
@@ -257,7 +255,6 @@ export const ATTACHMENTS: Record<WeaponId, readonly Attachment[]> = {
   lmg: ['quickReload', 'grip', 'lightweight', 'piercing', 'thermal'],
 };
 
-/** An attachment that would change nothing on this gun is never offered. */
 const DOES_NOTHING: Partial<Record<Attachment, (def: GunDef) => boolean>> = {
   silencer: (def) => def.silenced ?? false,
   choke: (def) => def.pellets < 2,

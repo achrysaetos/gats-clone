@@ -15,9 +15,7 @@ export type Life =
     nextFireAt: number;
     /** Rounds still to come from the burst in progress. */
     burstLeft: number;
-    /** Shots in the spray under way, falling back to 0 once the trigger is let go; it widens a blooming gun's spread. */
     heat: number;
-    /** 0 to 1, how far a spin-up gun's barrels have come up to speed. */
     spin: number;
     lastDamageAt: number;
     lastMoveAt: number;

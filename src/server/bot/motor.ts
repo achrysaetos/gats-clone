@@ -123,7 +123,6 @@ function routeAhead(me: Point, route: Motor['route']): Point | null {
   return from === me ? null : from;
 }
 
-/** A gun whose spread on the move is at least this much wider is worth planting for; a lighter cost is worth paying to stay a moving target. */
 const PLANT_SPREAD_GAIN = 3;
 
 const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>

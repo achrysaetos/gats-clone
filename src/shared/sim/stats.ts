@@ -32,10 +32,7 @@ type Stats = {
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
-/**
- * Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks.
- * The server's shots, the client's predicted ones and the reticle all read this.
- */
+/** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks. */
 export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0): number {
   const rules = rulesOf(GUNS[gun]);
   let spread = GUNS[gun].spread * (still ? 1 : rules.movingSpreadMul) * bloomMul(rules, sprayShot);
@@ -147,7 +144,6 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   if (!gun) return false;
   const oldMag = effectiveStats(p).mag;
   p.gun = gun;
-  // An attachment the new gun has no use for, like a silencer on a silenced gun, hands its pick back with the new gun's menu.
   const attachment = p.perks[1];
   if (attachment && !pickOptions({ k: 'perk', tier: 1 }, gun).includes(attachment)) delete p.perks[1];
   p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
