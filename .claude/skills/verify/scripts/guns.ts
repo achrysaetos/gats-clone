@@ -121,10 +121,11 @@ log(`minigun gaps between own shots (ms): ${spin.map((g) => g.toFixed(0)).join('
 check(spin[0]! >= 2.2 * fireMs, `the first gap is long (${spin[0]!.toFixed(0)}ms, fireMs ${fireMs})`);
 check(Math.abs(lateMean - fireMs) <= 0.2 * fireMs, `held 2s it fires at its fireMs (${lateMean.toFixed(1)}ms mean over the last 15)`);
 checkCounts('minigun hold', spun, mini.serverShots() - before);
-await sleep(1200);
+const { downMs } = rulesOf(GUNS.minigun).spinUp!;
+await sleep(downMs + 400);
 before = mini.serverShots();
 const again = await hold(400);
-check(again.gaps[0]! >= 2.2 * fireMs, `after a second off the trigger it starts slow again (${again.gaps[0]?.toFixed(0)}ms)`);
+check(again.gaps[0]! >= 2.2 * fireMs, `after ${downMs}ms off the trigger it starts slow again (${again.gaps[0]?.toFixed(0)}ms)`);
 checkCounts('minigun hold again', again.fs, mini.serverShots() - before);
 mini.close();
 

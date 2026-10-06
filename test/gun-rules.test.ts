@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
+import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, rulesOf, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
 import { VIEW_PRELOAD_MARGIN, type InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -107,7 +107,7 @@ function gaps(w: World, p: Player, ticks: number): number[] {
   return fired.slice(1).map((t, i) => t - fired[i]!);
 }
 
-test('a minigun spins up: its first shots come slowly and the held rate climbs to its fireMs, then spins back down after release', () => {
+test('a minigun spins up: its first shots come slowly and the held rate climbs to its fireMs, then spins back down over its downMs after release', () => {
   const { w, p } = shooter('minigun');
   const first = gaps(w, p, 90);
   assert.ok(first[0]! * TICK_MS >= 2.5 * GUNS.minigun.fireMs, `first gap ${first[0]! * TICK_MS}ms`);
@@ -115,8 +115,10 @@ test('a minigun spins up: its first shots come slowly and the held rate climbs t
   const meanMs = (late.reduce((a, b) => a + b, 0) * TICK_MS) / late.length;
   assert.ok(Math.abs(meanMs - GUNS.minigun.fireMs) < 2, `spun-up gap ${meanMs}ms`);
   for (let i = 0; i < 30; i++) tick(w, p, {});
+  assert.ok(gaps(w, p, 6)[0]! < first[0]!, 'a second off the trigger it is still partly spun, so a bot\'s pause to re-aim does not cost the whole spin-up');
+  for (let i = 0; i < rulesOf(GUNS.minigun).spinUp!.downMs / TICK_MS; i++) tick(w, p, {});
   const again = gaps(w, p, 10);
-  assert.ok(again[0]! * TICK_MS >= 2.5 * GUNS.minigun.fireMs, 'a second after release it starts slow again');
+  assert.ok(again[0]! * TICK_MS >= 2.5 * GUNS.minigun.fireMs, 'spun down it starts slow again');
   const light = shooter('lightMg');
   assert.ok(gaps(light.w, light.p, 10)[0]! * TICK_MS < GUNS.lightMg.fireMs + TICK_MS, 'a light MG does not spin up');
 });
