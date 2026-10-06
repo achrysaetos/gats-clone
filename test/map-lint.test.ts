@@ -23,6 +23,9 @@ const BASE: Record<number, string> = {
   21: '.FF.........',
 };
 const clean = gridMap('Clean', rows());
+const turn = <T extends { x: number; y: number; w: number; h: number }>(r: T): T => ({ ...r, x: clean.size - r.x - r.w, y: clean.size - r.y - r.h });
+const withWalls = (...walls: MapDef['walls']) => lintMap({ ...clean, walls: [...clean.walls, ...walls, ...walls.map(turn)] });
+const withCrates = (...crates: MapDef['crates']) => lintMap({ ...clean, crates: [...clean.crates, ...crates, ...crates.map((c) => ({ x: clean.size - c.x, y: clean.size - c.y }))] });
 
 test('the small map the broken ones start from passes', () => {
   assert.deepEqual(lintMap(clean), []);
@@ -39,6 +42,8 @@ test('a walled-off pocket is reported with its size, on each side of the turn', 
 test('a spawn against the map edge lets a player stand past it', () => {
   const m = gridMap('Edge', rows({ 1: 'RR..........', 2: 'RR..........' }));
   assert.deepEqual(lintMap(m), ['red spawn 0 lets a player stand past the edge', 'blue spawn 0 lets a player stand past the edge']);
+  const red = { ...clean.spawns.red[0]!, x: WORLD.playerRadius - 1 };
+  assert.deepEqual(lintMap({ ...clean, spawns: { ...clean.spawns, red: [red], blue: [turn(red)] } }), ['red spawn 0 lets a player stand past the edge', 'blue spawn 0 lets a player stand past the edge']);
 });
 
 test('spawns with nothing between them see each other', () => {
@@ -59,10 +64,6 @@ test('a zone past the edge, over a wall or out of reach is reported', () => {
   const boxed = lintMap({ ...clean, zones: [{ x: 600, y: 600 }, { x: 600, y: 600 }, { x: 600, y: 600 }], walls: [...clean.walls, { x: 575, y: 575, w: 50, h: 50, material: 'concrete' }] });
   assert.ok(boxed.includes('zone 0\'s center (600, 600) cannot be walked to from any spawn'), boxed.join('\n'));
 });
-
-const turn = <T extends { x: number; y: number; w: number; h: number }>(r: T): T => ({ ...r, x: clean.size - r.x - r.w, y: clean.size - r.y - r.h });
-const withWalls = (...walls: MapDef['walls']) => lintMap({ ...clean, walls: [...clean.walls, ...walls, ...walls.map(turn)] });
-const withCrates = (...crates: MapDef['crates']) => lintMap({ ...clean, crates: [...clean.crates, ...crates, ...crates.map((c) => ({ x: clean.size - c.x, y: clean.size - c.y }))] });
 
 test('a wall or crate a pixel past the edge leaves the world', () => {
   assert.deepEqual(withWalls({ x: -1, y: 600, w: 50, h: 50, material: 'concrete' }), ['wall 2 leaves the world', 'wall 3 leaves the world']);
