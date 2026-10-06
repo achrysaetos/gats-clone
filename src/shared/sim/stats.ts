@@ -131,13 +131,13 @@ export function resetProgress(p: Player) {
   p.abilityReadyAt = 0;
 }
 
-/** Applies `option` only when `level` is the pending pick and `option` is one of its options, so a repeated or stale pick changes nothing. */
 /** An attachment the gun in hand cannot use, like a silencer on a silenced gun, is taken off so the tier-1 pick opens again on the gun's own menu. */
 function reopenUselessAttachment(p: Player) {
   const attachment = p.perks[1];
   if (attachment && !pickOptions({ k: 'perk', tier: 1 }, p.gun).includes(attachment)) delete p.perks[1];
 }
 
+/** Applies `option` only when `level` is the pending pick and `option` is one of its options, so a repeated or stale pick changes nothing. */
 export function choosePick(w: World, id: number, level: number, option: PickOption): boolean {
   const p = w.players.get(id);
   const pending = p && pendingPick(p);
