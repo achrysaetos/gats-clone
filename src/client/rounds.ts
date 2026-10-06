@@ -2,10 +2,10 @@ import { GUN_IDS, GUNS, WORLD, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shar
 import type { BulletView, GameEvent, Snapshot, WallView } from '../shared/protocol.ts';
 import { segmentEntersCircleAt, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
 import { MAX_RANGE_MUL } from '../shared/sim/stats.ts';
-import { TRACER } from './render.ts';
 
 type Point = { x: number; y: number };
 type Body = { x: number; y: number; r: number };
+export const TRACER = { tail: 0.022 } as const;
 /** What stops a round as drawn: cover, and the bodies of the shooter's enemies and zombies where the page draws them. */
 export type RoundScene = { solids: readonly Rect[]; bodies: readonly Body[] };
 export type ShotEvent = Extract<GameEvent, { e: 'shot' }>;

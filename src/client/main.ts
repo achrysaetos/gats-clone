@@ -1,4 +1,4 @@
-import { GUNS, pickOptions, WORLD, type BuildingKind, type GunId } from '../shared/defs.ts';
+import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -6,10 +6,10 @@ import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
-import { rangeFor, silencedFor, spreadFor } from '../shared/sim/stats.ts';
-import { addFeedback, NO_FEEDBACK, NUMBER_MS, numberHeight } from './feedback.ts';
-import { addMoments, CALLOUT_MS, NO_MOMENTS } from './moments.ts';
-import { buildChipAt, drawHud, drawnBuildChips, drawnPanels, drawSticks } from './hud.ts';
+import { spreadFor } from '../shared/sim/stats.ts';
+import { addFeedback, NO_FEEDBACK } from './feedback.ts';
+import { addMoments, NO_MOMENTS } from './moments.ts';
+import { buildChipAt, drawHud, drawSticks } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
@@ -18,21 +18,22 @@ import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, rende
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
-import { kicks, startEffect } from './effects.ts';
+import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
-import { muzzleTip } from './sprites.ts';
-import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundLive, roundScene, type Shot, type ShotEvent } from './rounds.ts';
-import { bodyColor, drawBackdrop, drawWorld, shadowBakes } from './render.ts';
+import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
+import { bodyColor, drawBackdrop, drawWorld } from './render.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
-import { shotCue, soundsFor, type SoundCue } from './sfx.ts';
-import { committed, dueAt, NO_FIRING, sendInput, serverGun, settle, type PredictedShot, type TriggerInput } from './fire.ts';
+import { createShooting, type Hands } from './shooting.ts';
+import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
+import { soundsFor, type SoundCue } from './sfx.ts';
+import { committed, NO_FIRING, sendInput } from './fire.ts';
 import { addTrauma, decay, offset, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
-import { aimTurrets, CORE_ALERT_MS, nextCoreHitAt } from './siege.ts';
-import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, useHint, withSquad, type Ghost } from './zombies.ts';
+import { aimTurrets, nextCoreHitAt } from './siege.ts';
+import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -71,7 +72,6 @@ let retryTimer: ReturnType<typeof setTimeout> | undefined;
 const held = new Set<Action>();
 let fullBoard = false;
 let firing = false;
-let touchAiming = false;
 const mouse = { x: 0, y: 0 };
 /** Set by the first real mouse move; touch play never draws the mouse reticle. */
 let mouseAiming = false;
@@ -84,46 +84,7 @@ let lastFrameAt = 0;
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
-const DEV = params.has('dev');
-let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
-let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
-type DrawnRound = { id: number; owner: number; own: boolean; gun: GunId | null; x: number; y: number; muzzle: { x: number; y: number } | null };
-const seenRounds = new Set<number>();
-const firstRounds: DrawnRound[] = [];
 let ghost: Ghost | null = null;
-let nextRoundId = -1;
-type FeelCue = 'round' | 'flash' | 'kick' | 'sound' | 'reject' | 'late';
-const fireFeel: { cue: FeelCue; at: number }[] = [];
-const feltFlashes = new Set<number>();
-const feltKicks = new Set<number>();
-const FRAME_COST_CAP = 4000;
-const frameCosts: number[] = [];
-const liveNumbers = () => {
-  const s = drawnSessionOf(state);
-  const now = performance.now();
-  return s ? s.feedback.numbers.filter((n) => now - n.born < NUMBER_MS).map((n) => ({ victim: n.victim, amount: n.amount, height: numberHeight(n, now) })) : [];
-};
-const zombiesView = () => {
-  const s = drawnSessionOf(state);
-  const now = performance.now();
-  const snap = s && newestSnap(s.snaps);
-  return s && {
-    building: s.building, buildKind: s.buildKind, chips: drawnBuildChips(), use: snap && useHint(snap, s.lastSelf), ghost, coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
-    callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
-  };
-};
-if (DEV) Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies: zombiesView, panels: drawnPanels, shadowBakes, toScreen: (x: number, y: number) => aimCamera && worldToScreen(aimCamera, { x, y }) } });
-
-/** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
-function benchFrames(n: number): number[] {
-  const now = performance.now();
-  return Array.from({ length: n }, () => {
-    const start = performance.now();
-    drawFrame(now);
-    ctx.getImageData(0, 0, 1, 1);
-    return performance.now() - start;
-  });
-}
 
 /** The session whose socket is live. While reconnecting the old session is only drawn, never sent to. */
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'playing' || st.phase === 'dead' ? st.s : null);
@@ -285,7 +246,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
 }
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
-  if (DEV && cues.some((c) => c.self && c.id.startsWith('shot:'))) fireFeel.push({ cue: 'sound', at: performance.now() });
+  noteOwnShotSound(cues);
   audio.play(cues, s.lastSelf, viewRadius);
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
@@ -303,20 +264,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
-  const own: ShotEvent[] = [];
-  for (const ev of snap.events) {
-    if (ev.e !== 'shot') continue;
-    s.lastShotAt.set(ev.owner, snap.tick * TICK_MS);
-    if (ev.owner === s.myId) own.push(ev);
-    else s.pendingShots.push({ at: snap.tick * TICK_MS, shot: ev });
-  }
-  const settled = settle(s.firing, serverGun(snap), snap.ackSeq, own.length, s.predict.pending);
-  s.firing = settled.firing;
-  settled.rejected.forEach((shot) => takeBack(s, shot));
-  for (const ev of own.slice(own.length - settled.unmatched)) {
-    fireOwnShot(s, snap, ev.gun, ev.silenced, now);
-    if (DEV) fireFeel.push({ cue: 'late', at: performance.now() });
-  }
+  shooting.settleShots(s, snap, now);
   for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
@@ -329,60 +277,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
 
-function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
-  const aim = aimOffset(s);
-  const still = !MOVES.some((a) => held.has(a));
-  const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, still) };
-  playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
-  return fire(s, shot, s.lastSelf, Math.atan2(aim.dy, aim.dx), sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
-}
-
-function triggerInput(s: Session): TriggerInput {
-  const active = state.phase === 'playing' && !overlays.typing;
-  return { fire: active && (firing || touchAim(sticks) !== null), shots: s.shots, reload: active && held.has('reload') };
-}
-
-function pullTouchTrigger(s: Session) {
-  const aiming = state.phase === 'playing' && !overlays.typing && touchAim(sticks) !== null;
-  if (aiming && !touchAiming) {
-    s.shots++;
-    fireIfDue(s, performance.now());
-  }
-  touchAiming = aiming;
-}
-
-const fireIfDue = (s: Session, now: number) => fireAheadBy(s, now, now);
-const fireBeforeSending = (s: Session, now: number) => fireAheadBy(s, now, Infinity);
-
-function fireAheadBy(s: Session, now: number, dueBy: number) {
-  const due = dueAt(s.firing, triggerInput(s));
-  const snap = newestSnap(s.snaps);
-  if (due === null || due > dueBy || !snap) return;
-  const { gun } = s.firing.trigger;
-  const rounds = fireOwnShot(s, snap, gun, silencedFor(gun, snap.self.perks), now);
-  s.firing = { ...s.firing, ahead: { seq: s.firing.sent.seq + 1, rounds } };
-}
-
-function takeBack(s: Session, shot: PredictedShot) {
-  s.rounds = s.rounds.filter((r) => !shot.rounds.includes(r.id));
-  if (DEV) fireFeel.push({ cue: 'reject', at: performance.now() });
-}
-
-/** Another player's shot leaves their gun where the page draws them when the render clock reaches it. Their perks are unknown, so it takes the gun's own range and spread. */
-function fireOthersShot(s: Session, ev: ShotEvent, seen: Snapshot, now: number) {
-  const p = seen.players.find((q) => q.id === ev.owner && q.alive);
-  const shot = { owner: ev.owner, gun: ev.gun, range: GUNS[ev.gun].range, spread: GUNS[ev.gun].spread };
-  fire(s, shot, p ?? ev, p?.angle ?? ev.angle, seen, now);
-}
-
-/** The hits are the server's; these rounds and the flash only show the shot leaving the drawn gun. */
-function fire(s: Session, shot: Shot, at: { x: number; y: number }, angle: number, seen: Snapshot, now: number): number[] {
-  const muzzle = muzzleTip(at.x, at.y, angle, shot.gun, WORLD.playerRadius);
-  const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextRoundId);
-  nextRoundId -= rounds.length;
-  s.rounds.push(...rounds);
-  startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner }, now);
-  return rounds.map((r) => r.id);
+function hands(s: Session): Hands {
+  return { active: state.phase === 'playing' && !overlays.typing, firing, touchAim: touchAim(sticks), reload: held.has('reload'), still: !MOVES.some((a) => held.has(a)), aim: aimOffset(s) };
 }
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
@@ -405,13 +301,13 @@ setInterval(() => {
   const active = state.phase === 'playing' && !overlays.typing;
   s.seq++;
   const actions = active ? new Set([...held, ...touchMoves(sticks)]) : new Set<Action>();
-  pullTouchTrigger(s);
+  const touchAiming = shooting.pullTouchTrigger(s);
   const now = performance.now();
-  fireBeforeSending(s, now);
+  shooting.fireBeforeSending(s, now);
   const input = committed(s.firing, assembleInput(actions, active && (firing || touchAiming), s.shots, aimOffset(s)));
   const sent = sendInput(s.firing, s.seq, input, now);
   s.firing = sent.firing;
-  if (sent.rejected) takeBack(s, sent.rejected);
+  if (sent.rejected) shooting.takeBack(s, sent.rejected);
   const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
@@ -489,7 +385,7 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const start = performance.now();
   drawFrame(now);
-  if (frameCosts.length < FRAME_COST_CAP) frameCosts.push(performance.now() - start);
+  noteFrameCost(performance.now() - start);
 }
 
 function drawFrame(now: number) {
@@ -500,7 +396,7 @@ function drawFrame(now: number) {
     drawBackdrop(ctx, view.w, view.h, view.dpr, now);
     return;
   }
-  if (s === sessionOf(state)) fireIfDue(s, performance.now());
+  if (s === sessionOf(state)) shooting.fireIfDue(s, performance.now());
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
   for (const { fx } of released.due) startEffect(s, fx, now, deathTint(s, fx));
@@ -509,17 +405,12 @@ function drawFrame(now: number) {
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
   const shots = releaseDue(s.pendingShots, renderTime(s.snaps, now));
   s.pendingShots = shots.rest;
-  for (const { shot } of shots.due) fireOthersShot(s, shot, { ...interpolated, players }, now);
+  for (const { shot } of shots.due) shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
   s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   if (me?.alive || me?.downed) s.lastSelf = { x: me.x, y: me.y };
-  drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
-  if (DEV) {
-    const cam = aimCamera;
-    drawnOthers = snap.players.filter((p) => p.id !== s.myId).map((p) => ({ id: p.id, x: p.x, y: p.y, screen: worldToScreen(cam, p) }));
-  }
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
@@ -527,8 +418,7 @@ function drawFrame(now: number) {
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
-  if (DEV) noteFirstRounds(snap, s.myId, selfAngle);
-  if (DEV) noteOwnFlashesAndKicks(s, now);
+  noteFrame(s, snap, aimCamera, selfAngle, now);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
@@ -538,33 +428,6 @@ function drawFrame(now: number) {
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
-}
-
-/** Each round the first frame it is drawn, with its shooter's drawn muzzle in that frame. Local rounds have negative ids. */
-function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null) {
-  if (seenRounds.size > 5000) seenRounds.clear();
-  for (const b of snap.bullets) {
-    if (seenRounds.has(b.id)) continue;
-    seenRounds.add(b.id);
-    const p = snap.players.find((q) => q.id === b.owner && q.alive);
-    const angle = p && (p.id === myId && selfAngle !== null ? selfAngle : p.angle);
-    if (b.owner === myId && b.gun !== null) fireFeel.push({ cue: 'round', at: performance.now() });
-    firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, gun: b.gun, x: b.x, y: b.y, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
-  }
-}
-
-function noteOwnFlashesAndKicks(s: Session, now: number) {
-  const kick = kicks(s.effects, now).get(s.myId);
-  if (kick !== undefined && !feltKicks.has(kick)) {
-    feltKicks.add(kick);
-    fireFeel.push({ cue: 'kick', at: performance.now() });
-  }
-  for (const fx of s.effects) {
-    if (fx.kind !== 'flash' || fx.owner !== s.myId || feltFlashes.has(fx.born)) continue;
-    if (now - fx.born >= EFFECT_LIFE_MS.flash) continue;
-    feltFlashes.add(fx.born);
-    fireFeel.push({ cue: 'flash', at: performance.now() });
-  }
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -638,7 +501,7 @@ window.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'touch') return;
   sticks = dragStick(sticks, e.pointerId, e.clientX, e.clientY);
   const s = sessionOf(state);
-  if (s) pullTouchTrigger(s);
+  if (s) shooting.pullTouchTrigger(s);
 });
 for (const type of ['pointerup', 'pointercancel'] as const) {
   window.addEventListener(type, (e) => { if (e.pointerType === 'touch') sticks = releaseStick(sticks, e.pointerId); });
@@ -655,7 +518,7 @@ canvas.addEventListener('mousedown', (e) => {
   firing = true;
   if (state.phase !== 'playing' || overlays.typing) return;
   state.s.shots++;
-  fireIfDue(state.s, performance.now());
+  shooting.fireIfDue(state.s, performance.now());
 });
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -722,6 +585,8 @@ function toggleMuted(name: string) {
 }
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
+const shooting = createShooting({ hands, playCues });
+installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),

@@ -14,13 +14,13 @@ import type { Session } from './state.ts';
 import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
+import { TRACER } from './rounds.ts';
 import { drawCracks, hostKey } from './decals.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
 const GRID = 80;
 const CULL_MARGIN = 80;
-export const TRACER = { tail: 0.022 } as const;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
