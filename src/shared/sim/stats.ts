@@ -1,16 +1,15 @@
 import {
-  ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type GunId, type PendingPick, type PerkId, type PickOption, type Tier,
+  ARMORS, GUN_IDS, GUNS, rulesOf, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import type { Life, PerkOfTier, Player, World } from './world.ts';
 
 type PerkMods = {
-  spreadMul?: number; stillSpreadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
+  spreadMul?: number; reloadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
   maxHpAdd?: number; regenMul?: number; regenDelayMul?: number; viewMul?: number;
   piercing?: true; silenced?: true; shield?: true; thermal?: true; ghillie?: true;
 };
 
 const PERK_MODS: Record<PerkId, PerkMods> = {
-  bipod: { stillSpreadMul: 0.5 },
   optics: { viewMul: 1.3 },
   thermal: { thermal: true },
   ghillie: { ghillie: true },
@@ -20,6 +19,8 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   silencer: { silenced: true },
   lightweight: { speedMul: 1.1 },
   longRange: { rangeMul: 1.4 },
+  quickReload: { reloadMul: 0.65 },
+  choke: { spreadMul: 0.6 },
   shield: { shield: true },
   thickSkin: { maxHpAdd: 40 },
   firstAid: { regenMul: 3, regenDelayMul: 0.4 },
@@ -27,16 +28,27 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
 };
 
 type Stats = {
-  speed: number; maxHp: number; mag: number; range: number; spread: number; regenPerSec: number; regenDelayMs: number;
+  speed: number; maxHp: number; mag: number; range: number; reloadMs: number; regenPerSec: number; regenDelayMs: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
-/** Spread after Grip and Bipod; the client's reticle reads the same numbers. */
-export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean): number {
-  let spread = GUNS[gun].spread;
-  for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (still ? PERK_MODS[perk].stillSpreadMul ?? 1 : 1);
+/**
+ * Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks.
+ * The server's shots, the client's predicted ones and the reticle all read this.
+ */
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0): number {
+  const rules = rulesOf(GUNS[gun]);
+  let spread = GUNS[gun].spread * (still ? 1 : rules.movingSpreadMul) * bloomMul(rules, sprayShot);
+  for (const perk of Object.values(perks)) spread *= PERK_MODS[perk].spreadMul ?? 1;
   return spread;
 }
+
+function bloomMul({ bloom }: GunRules, sprayShot: number): number {
+  return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * Math.max(0, sprayShot - bloom.free)) : 1;
+}
+
+export const reloadMsFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
+  Object.values(perks).reduce((ms, perk) => ms * (PERK_MODS[perk].reloadMul ?? 1), GUNS[gun].reloadMs);
 
 /** The most any one perk stretches a gun's range. */
 export const MAX_RANGE_MUL = Math.max(...Object.values(PERK_MODS).map((m) => m.rangeMul ?? 1));
@@ -47,7 +59,7 @@ export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): numb
 export const silencedFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): boolean =>
   (GUNS[gun].silenced ?? false) || Object.values(perks).some((perk) => PERK_MODS[perk].silenced ?? false);
 
-export function effectiveStats(p: Player, still = false): Stats {
+export function effectiveStats(p: Player): Stats {
   const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
   const s: Stats = {
@@ -55,10 +67,10 @@ export function effectiveStats(p: Player, still = false): Stats {
     maxHp: WORLD.baseHp,
     mag: weapon.mag,
     range: rangeFor(p.gun, p.perks),
-    spread: spreadFor(p.gun, p.perks, still),
+    reloadMs: reloadMsFor(p.gun, p.perks),
     regenPerSec: WORLD.regenPerSec,
     regenDelayMs: WORLD.regenDelayMs,
-    viewRadius: WORLD.viewRadius,
+    viewRadius: WORLD.viewRadius * rulesOf(weapon).viewMul,
     piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
   for (const perk of Object.values(p.perks)) {
@@ -82,7 +94,7 @@ export function effectiveStats(p: Player, still = false): Stats {
 export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }> {
   const s = effectiveStats(p);
   return {
-    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
+    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, heat: 0, spin: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity, hits: [],
   };
 }
@@ -137,6 +149,8 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   p.gun = gun;
   p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
+  p.life.heat = 0;
+  p.life.spin = 0;
   if (isHunted(w, p)) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
   return true;
 }

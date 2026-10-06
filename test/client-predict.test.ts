@@ -35,7 +35,7 @@ function lockstepWorld(squad: Lockstep['squad']) {
 
 function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability, enemyAt, squad }: Lockstep = {}) {
   const { w, p } = lockstepWorld(squad);
-  if (ability) grantPerks(w, p, ['grip', 'thickSkin', ability]);
+  if (ability) grantPerks(w, p, ['extended', 'thickSkin', ability]);
   if (enemyAt) spawnAt(w, enemyAt.x, enemyAt.y);
   const walls = wallViews(w);
   const solidsFor = clientSolids ?? ((snap: Snapshot) => solidsOf(walls, snap));

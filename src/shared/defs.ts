@@ -39,8 +39,35 @@ export type GunDef = {
   /** The bullet explodes wherever it stops. */
   blast?: Blast;
   silenced?: true;
+  /** Overrides the class's `GUN_RULES` for this gun. */
+  rules?: Partial<GunRules>;
   look: GunLook;
 };
+
+/**
+ * How a class handles beyond its numbers. `movingSpreadMul` scales spread while walking. Under `bloom` each shot of a spray
+ * after the first `free` widens spread by `perShot` of itself, up to `maxMul`, and letting go of the trigger takes it back to
+ * nothing within `recoverMs`. Under `spinUp` holding the trigger takes the shot interval from `startMul` times `fireMs` down to
+ * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see.
+ */
+export type GunRules = {
+  movingSpreadMul: number;
+  bloom: { free: number; perShot: number; maxMul: number; recoverMs: number } | null;
+  spinUp: { startMul: number; upMs: number; downMs: number } | null;
+  viewMul: number;
+};
+
+const STEADY: GunRules = { movingSpreadMul: 1, bloom: null, spinUp: null, viewMul: 1 };
+export const GUN_RULES: Record<WeaponId, GunRules> = {
+  pistol: STEADY,
+  smg: STEADY,
+  shotgun: STEADY,
+  assault: { ...STEADY, movingSpreadMul: 1.3, bloom: { free: 3, perShot: 0.12, maxMul: 2, recoverMs: 250 } },
+  sniper: { ...STEADY, movingSpreadMul: 4, viewMul: 1.35 },
+  lmg: { ...STEADY, movingSpreadMul: 2 },
+};
+
+export const rulesOf = (def: GunDef): GunRules => (def.rules ? { ...GUN_RULES[def.base], ...def.rules } : GUN_RULES[def.base]);
 
 const BASE_BULLET = { r: 1.6, color: '#25211c' };
 const BASE_LOOK: GunLook = { length: 1, width: 1, barrels: 1, accent: '#7b8494', bullet: BASE_BULLET };
@@ -126,6 +153,7 @@ export const GUNS: Record<GunId, GunDef> = {
   siegeGun: { name: 'Siege Gun', desc: 'Every round bursts', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 18, fireMs: 100, pellets: 1, spread: 0.12, range: 800, bulletSpeed: 1500, mag: 60, reloadMs: 3600, moveMul: 0.77, auto: true, blast: { radius: 50, damage: 10 },
     look: { length: 1.25, width: 1.5, barrels: 1, accent: '#f76b15', bullet: { r: 2.6, color: '#e0661a' } } },
   minigun: { name: 'Minigun', desc: 'Torrent of lead, long reload', base: 'lmg', stage: 2, from: 'lightMg', damage: 8, fireMs: 33, pellets: 1, spread: 0.15, range: 700, bulletSpeed: 1600, mag: 200, reloadMs: 4500, moveMul: 0.84, auto: true,
+    rules: { spinUp: { startMul: 3, upMs: 1200, downMs: 800 } },
     look: { length: 1.2, width: 1.25, barrels: 3, accent: '#f5c400', bullet: { r: 1.6, color: '#a88600' } } },
   twinMg: { name: 'Twin MG', desc: 'Paired barrels, double rounds', base: 'lmg', stage: 2, from: 'lightMg', damage: 12, fireMs: 75, pellets: 2, spread: 0.15, range: 720, bulletSpeed: 1600, mag: 80, reloadMs: 3000, moveMul: 0.88, auto: true,
     look: { length: 1.05, width: 1.3, barrels: 2, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
@@ -155,7 +183,7 @@ export const COLORS: Record<ColorId, string> = {
 };
 
 export const PERK_TIERS = {
-  1: ['bipod', 'optics', 'thermal', 'ghillie', 'piercing', 'extended', 'grip', 'silencer', 'lightweight', 'longRange'],
+  1: ['optics', 'thermal', 'ghillie', 'piercing', 'extended', 'grip', 'silencer', 'lightweight', 'longRange', 'quickReload', 'choke'],
   2: ['shield', 'thickSkin', 'firstAid'],
   3: ['grenade', 'fragGrenade', 'gasGrenade', 'landMine', 'knife', 'engineer', 'dash'],
 } as const;
@@ -164,7 +192,6 @@ export type PerkId = (typeof PERK_TIERS)[Tier][number];
 export type AbilityId = (typeof PERK_TIERS)[3][number];
 
 export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
-  bipod: { name: 'Bipod', desc: 'Half spread while standing still' },
   optics: { name: 'Optics', desc: 'See further' },
   thermal: { name: 'Thermal', desc: 'Reveal hidden enemies' },
   ghillie: { name: 'Ghillie suit', desc: 'Nearly invisible while still' },
@@ -174,6 +201,8 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   silencer: { name: 'Silencer', desc: 'Firing does not reveal you on the minimap' },
   lightweight: { name: 'Lightweight', desc: '+10% move speed' },
   longRange: { name: 'Long range', desc: '+40% bullet range' },
+  quickReload: { name: 'Quick reload', desc: 'Reload 35% faster' },
+  choke: { name: 'Choke', desc: '-40% pellet spread' },
   shield: { name: 'Shield', desc: 'Blocks 33% of bullet damage from the front' },
   thickSkin: { name: 'Thick skin', desc: '+40 max health' },
   firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster, starting 1.6s after a hit' },
@@ -204,7 +233,28 @@ export const LEVELS = [
   { score: 300, pick: { k: 'perk', tier: 2 } }, { score: 400, pick: { k: 'perk', tier: 3 } }, { score: 550, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
-export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] => (pick.k === 'perk' ? PERK_TIERS[pick.tier] : EVOLUTIONS[gun]);
+type Attachment = (typeof PERK_TIERS)[1][number];
+
+/** The tier-1 perks each class is offered. */
+export const ATTACHMENTS: Record<WeaponId, readonly Attachment[]> = {
+  pistol: ['extended', 'longRange', 'silencer', 'lightweight', 'optics'],
+  smg: ['grip', 'extended', 'silencer', 'longRange', 'lightweight'],
+  shotgun: ['choke', 'quickReload', 'extended', 'lightweight', 'piercing'],
+  assault: ['grip', 'extended', 'silencer', 'optics', 'piercing'],
+  sniper: ['optics', 'thermal', 'ghillie', 'silencer', 'quickReload'],
+  lmg: ['quickReload', 'grip', 'lightweight', 'piercing', 'thermal'],
+};
+
+/** An attachment that would change nothing on this gun is never offered. */
+const DOES_NOTHING: Partial<Record<Attachment, (def: GunDef) => boolean>> = {
+  silencer: (def) => def.silenced ?? false,
+  choke: (def) => def.pellets < 2,
+};
+
+export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] =>
+  pick.k === 'evolve' ? EVOLUTIONS[gun]
+    : pick.tier === 1 ? ATTACHMENTS[GUNS[gun].base].filter((perk) => !DOES_NOTHING[perk]?.(GUNS[gun]))
+      : PERK_TIERS[pick.tier];
 
 export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(PERK_INFO, option);
 

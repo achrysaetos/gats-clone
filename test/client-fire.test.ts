@@ -10,7 +10,7 @@ import { emptyWorld, equip, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
 const held = (shots: number, fire = true, reload = false): TriggerInput => ({ fire, shots, reload });
 const ready = (gun: GunId, o: Partial<ServerGun> = {}): ServerGun =>
-  ({ gun, mag: GUNS[gun].mag, ammo: GUNS[gun].mag, reloading: false, reloadFrac: 0, alive: true, armed: true, ...o });
+  ({ gun, mag: GUNS[gun].mag, reloadMs: GUNS[gun].reloadMs, ammo: GUNS[gun].mag, reloading: false, reloadFrac: 0, alive: true, armed: true, ...o });
 const armedWith = (gun: GunId, o: Partial<ServerGun> = {}): Firing => settle(NO_FIRING, ready(gun, o), 0, 0, []).firing;
 
 function play(f: Firing, inputs: readonly TriggerInput[]): { firing: Firing; drawn: number[]; rejected: number[] } {
@@ -30,12 +30,12 @@ function play(f: Firing, inputs: readonly TriggerInput[]): { firing: Firing; dra
 
 function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[], setup?: (w: World, p: Player) => void): { sim: number[]; page: number[] } {
   const w = emptyWorld();
-  const p = spawnAt(w, 500, 500);
+  const p = spawnAt(w, 500, 500, { loadout: { weapon: GUNS[gun].base } });
   setup?.(w, p);
   equip(p, gun);
   const sim: number[] = [], page: number[] = [];
-  const { mag } = effectiveStats(p);
-  let t = armedWith(gun, { mag, ammo: mag, armed: w.match.k === 'playing' }).trigger;
+  const { mag, reloadMs } = effectiveStats(p);
+  let t = armedWith(gun, { mag, reloadMs, ammo: mag, armed: w.match.k === 'playing' }).trigger;
   inputs.forEach((input, i) => {
     setInput(w, p.id, i + 1, { ...IDLE_INPUT, ...input });
     step(w, TICK_MS);
@@ -43,6 +43,7 @@ function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[], setup?: (w
     const pulled = stepTrigger(t, input, w.now);
     t = pulled.t;
     if (pulled.fired) page.push(i + 1);
+    if (p.life.k === 'alive') assert.deepEqual([t.heat, t.spin], [p.life.heat, p.life.spin], `bloom and spin-up after input ${i + 1}`);
   });
   return { sim, page };
 }
@@ -64,6 +65,9 @@ const SCRIPTS: [string, GunId, string][] = [
   ['SMG held, released and held again', 'smg', 'Phhhhhhhhhhhhhhhhhhhhhhhh.....Phhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh....'],
   ['hornet held fires every tick', 'hornet', 'Phhhhhhhhhhhhhhhhhhh.'],
   ['twin fang bursts', 'twinFang', 'P.........P.......................P'],
+  ['assault held, released and held again', 'assault', 'P' + 'h'.repeat(40) + '...' + 'P' + 'h'.repeat(60) + '..P.P..'],
+  ['battle rifle held through bursts', 'battleRifle', 'P' + 'h'.repeat(60) + '.'],
+  ['minigun held, released and held again', 'minigun', 'P' + 'h'.repeat(80) + '.'.repeat(12) + 'P' + 'h'.repeat(40) + '.'],
   ['shotgun with an early reload', 'shotgun', 'P.....................P..R.........................................................P'],
 ];
 
@@ -84,6 +88,12 @@ for (const [name, gun, pattern] of SCRIPTS) {
 test('the page reloads to the sim\'s perk-extended magazine, not the gun\'s', () => {
   const { sim, page } = simAndPageFires('pistol', taps('P.'.repeat(150)), (w, p) => grantPerks(w, p, ['extended']));
   assert.ok(sim.length > GUNS.pistol.mag * 1.5, 'spans a reload of the extended magazine');
+  assert.deepEqual(page, sim);
+});
+
+test('the page reloads at the sim\'s Quick reload pace, not the gun\'s', () => {
+  const { sim, page } = simAndPageFires('shotgun', taps(('P' + '.'.repeat(23)).repeat(30)), (w, p) => grantPerks(w, p, ['quickReload']));
+  assert.ok(sim.length > GUNS.shotgun.mag * 2, 'spans reloads');
   assert.deepEqual(page, sim);
 });
 

@@ -1,27 +1,31 @@
 import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
+import { reloadMsFor } from '../shared/sim/stats.ts';
 import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CONFIRM_SLACK_TICKS = 4;
 
 type Trigger = {
-  gun: GunId; mag: number; alive: boolean; armed: boolean;
-  ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; shotsSeen: number;
+  gun: GunId; mag: number; reloadMs: number; alive: boolean; armed: boolean;
+  ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; heat: number; spin: number; shotsSeen: number;
 };
 export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'>;
 
-const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity } as const;
-const UNARMED: Trigger = { gun: 'pistol', mag: 0, alive: false, armed: false, ammo: 0, shotsSeen: 0, ...FRESH_LIFE };
+const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, heat: 0, spin: 0 } as const;
+const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, ...FRESH_LIFE };
 
 /** One tick of `tickPlayer`'s trigger at time `now`: whether the server fires a shot on the input that carries `input`. */
 export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: Trigger; fired: boolean } {
   const g = { ...t };
   const pressed = consumePresses(g, input.shots);
   if (!g.alive) return { t: g, fired: false };
-  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, armed: g.armed }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
+  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, reloadMs: g.reloadMs, armed: g.armed }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
   return { t: g, fired };
 }
+
+/** Which shot of a spray the next one is, for its bloom; a released trigger cools before it fires, so this can run a touch high. */
+export const nextSprayShot = (f: Firing): number => f.trigger.heat + 1;
 
 /** A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. */
 export type PredictedShot = { seq: number; rounds: readonly number[] };
@@ -72,19 +76,20 @@ export function sendInput(f: Firing, seq: number, input: TriggerInput, at: numbe
 }
 
 /** What the server says of your gun in a snapshot, as of the input it acknowledged. */
-export type ServerGun = { gun: GunId; mag: number; ammo: number; reloading: boolean; reloadFrac: number; alive: boolean; armed: boolean };
+export type ServerGun = { gun: GunId; mag: number; reloadMs: number; ammo: number; reloading: boolean; reloadFrac: number; alive: boolean; armed: boolean };
 
 export function serverGun(snap: Snapshot): ServerGun {
   const me = snap.players.find((p) => p.id === snap.self.id);
-  const { ammo, mag, reloading, reloadFrac, alive } = snap.self;
-  return { gun: me?.gun ?? 'pistol', mag, ammo, reloading, reloadFrac, alive: alive && !!me, armed: snap.match.winner === null };
+  const { ammo, mag, reloading, reloadFrac, alive, perks } = snap.self;
+  const gun = me?.gun ?? 'pistol';
+  return { gun, mag, reloadMs: reloadMsFor(gun, perks), ammo, reloading, reloadFrac, alive: alive && !!me, armed: snap.match.winner === null };
 }
 
 function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigger {
   if (!sv.alive) return { ...base, alive: false, armed: sv.armed };
-  const t: Trigger = { ...base, ...(base.alive ? {} : FRESH_LIFE), alive: true, armed: sv.armed, gun: sv.gun, mag: sv.mag, ammo: Math.max(0, sv.ammo - late) };
-  if (base.gun !== sv.gun) t.burstLeft = 0;
-  if (sv.reloading !== (t.reloadUntil !== null)) t.reloadUntil = sv.reloading ? now + (1 - sv.reloadFrac) * GUNS[sv.gun].reloadMs : null;
+  const t: Trigger = { ...base, ...(base.alive ? {} : FRESH_LIFE), alive: true, armed: sv.armed, gun: sv.gun, mag: sv.mag, reloadMs: sv.reloadMs, ammo: Math.max(0, sv.ammo - late) };
+  if (base.gun !== sv.gun) { t.burstLeft = 0; t.heat = 0; t.spin = 0; }
+  if (sv.reloading !== (t.reloadUntil !== null)) t.reloadUntil = sv.reloading ? now + (1 - sv.reloadFrac) * sv.reloadMs : null;
   return t;
 }
 

@@ -1,7 +1,6 @@
 import type { PerkId } from '../shared/defs.ts';
 
 export const PERK_ICONS: Record<PerkId, string> = {
-  bipod: 'M3 8h18M8 8l-4 12M16 8l4 12M12 8V4',
   optics: 'M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 2v7M12 15v7M2 12h7M15 12h7',
   thermal: 'M7 21c-3-4 3-6 0-10s3-6 0-9M12 21c-3-4 3-6 0-10s3-6 0-9M17 21c-3-4 3-6 0-10s3-6 0-9',
   ghillie: 'M12 22V11M12 11C6 11 4 7 4 3c5 0 8 3 8 8zM12 15c5 0 8-3 8-8-5 0-8 3-8 8z',
@@ -11,6 +10,8 @@ export const PERK_ICONS: Record<PerkId, string> = {
   silencer: 'M1 12h4M5 8h17v8H5zM10 8v8M14 8v8M18 8v8',
   lightweight: 'M21 3C11 3 5 9 4 21M21 3c0 9-6 13-13 13M9 11h7',
   longRange: 'M2 12h3M8 12h3M14 12h6M17 8l4 4-4 4',
+  quickReload: 'M19 12a7 7 0 1 1-2.1-5M19 3v4h-4M12 8v4l2.5 2.5',
+  choke: 'M2 7h9l6 3v4l-6 3H2zM20 10.5l2 1.5-2 1.5',
   shield: 'M12 2l8 3v7c0 5-4 9-8 10-4-1-8-5-8-10V5z',
   thickSkin: 'M3 7l9-4 9 4M3 12l9-4 9 4M3 17l9-4 9 4',
   firstAid: 'M4 4h16v16H4zM12 8v8M8 12h8',
