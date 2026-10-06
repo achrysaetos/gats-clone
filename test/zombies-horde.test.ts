@@ -15,7 +15,7 @@ const CORE_CELL = { lo: (CORE.x - ZOM.coreHalf) / ZOM.cell, hi: (CORE.x + ZOM.co
 /** A night with nothing left to spawn, so only the zombies a test places walk. */
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   return w;
 }
 
@@ -188,4 +188,13 @@ test('the squad\'s own blasts still never hurt it', () => {
   const before = hpOf(mate);
   explode(w, 600, 1500, 120, 200, { attacker: mate, team: mate.team, label: 'Mortar' });
   assert.equal(hpOf(mate), before);
+});
+
+test('a bloater that bursts at the core hurts the core through its armor', () => {
+  const w = nightWorld();
+  const bloater = addZombie(w, 'bloater', CORE.x, CORE.y + ZOM.coreHalf + ZOMBIES.bloater.radius + 2);
+  const shooter = spawnAt(w, CORE.x - 600, CORE.y);
+  const before = w.run!.core.hp;
+  damageZombie(w, bloater, 1e10, shooter);
+  assert.equal(before - w.run!.core.hp, ZOMBIES.bloater.burst!.building * (1 - ZOM.coreArmor));
 });

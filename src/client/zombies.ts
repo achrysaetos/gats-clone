@@ -9,7 +9,7 @@ export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' |
   const left = run.phaseEndsAt === null || serverNow === null ? null : run.phaseEndsAt - serverNow;
   switch (run.phase) {
     case 'day': return `Day ${run.night}${left === null ? '' : ` · night in ${clock(left)}`}`;
-    case 'night': return `Night ${run.night} · ${run.waveLeft} left`;
+    case 'night': return `Night ${run.night} · ${run.waveLeft} left${left === null ? '' : ` · first light in ${clock(left)}`}`;
     case 'over': return `The Bastion ${run.report?.won ? 'held' : 'fell'}${left === null ? '' : ` · next run in ${clock(left)}`}`;
   }
 }

@@ -113,7 +113,7 @@ test('the report sums the squad\'s turret kills by kind and the Bastion\'s, and 
 
 test('the build preview refuses at night, while down, and when the bank is short, as the server does', () => {
   const cases: [string, (w: World, id: number) => void][] = [
-    ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity }; }],
+    ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity }; }],
     ['notDay', (w, id) => { w.players.get(id)!.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0 }; }],
     ['scrap', (w) => { w.run!.scrap = BUILDINGS.wall.cost - 1; }],
   ];
@@ -156,6 +156,7 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
   assert.equal(phaseLine(runView(), 19_000), 'Day 2 · night in 0:31');
   assert.equal(phaseLine(runView(), null), 'Day 2', 'no countdown before the server clock is known');
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: null, waveLeft: 12 }), 19_000), 'Night 3 · 12 left');
+  assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: 109_000, waveLeft: 4 }), 19_000), 'Night 3 · 4 left · first light in 1:30', 'once the last pack is in, first light counts down');
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000 }), 16_000), 'The Bastion fell · next run in 0:14');
   const held = { night: 10, won: true, survivors: 31, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000, report: held }), 16_000), 'The Bastion held · next run in 0:14');
@@ -210,7 +211,7 @@ test('the run forecasts tonight ten seconds ahead and at dawn, announces nightfa
 test('the fall clears every callout, so none shows through behind the report', () => {
   const { w, p } = squadWorld();
   const day = snapshotFor(w, p.id);
-  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
   const night = snapshotFor(w, p.id);
   const announced = addMoments(NO_MOMENTS, day, night, 1000);
   assert.deepEqual(announced.callouts.map((c) => c.title), ['Night 1']);

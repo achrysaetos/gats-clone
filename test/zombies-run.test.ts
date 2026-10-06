@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, type Side, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDINGS, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { readyUp } from '../src/shared/sim/run.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -145,7 +145,7 @@ test('the core\'s survivors fall with its health and never come back when it is 
 test('dawn pays the bank for every survivor left', () => {
   const w = zomWorld();
   run(w, ZOM.dayMs + TICK_MS);
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.zombies = [];
   w.run!.survivors = 37;
   const scrap = w.run!.scrap;
@@ -157,10 +157,10 @@ test('holding through the Tide ends the run won with the survivors counted, and 
   const w = zomWorld();
   const p = spawnAt(w, 1300, 1500, { kind: 'human' });
   w.run!.night = NIGHTS.length - 1;
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   run(w, TICK_MS);
   assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: NIGHTS.length }, 'the night before the Tide dawns as any other');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = ZOM.coreHp / 2;
   run(w, TICK_MS);
   const over = snapshotFor(w, p.id).run!;
@@ -195,4 +195,52 @@ test('a squad of bots alone waits out the day', () => {
   for (let i = 0; i < 4; i++) spawnAt(w, 1380, 1450 + i * 30);
   run(w, ZOM.dayMs - 1000);
   assert.equal(phaseOf(w), 'day');
+});
+
+test('a boss comes alone for any squad, its health scaled by the squad\'s share of the horde, and shows whole', () => {
+  for (const humans of [1, 4]) {
+    const w = zomWorld();
+    for (let i = 0; i < humans; i++) spawnAt(w, 1380, 1450 + i * 30, { kind: 'human' });
+    w.run!.core.hp = 1e9;
+    w.run!.night = 5;
+    run(w, ZOM.dayMs + TICK_MS);
+    const night = w.run!.phase;
+    assert.ok(night.k === 'night');
+    const share = ZOM.hordeShare({ humans, bots: 0 });
+    assert.equal(night.toSpawn.filter((u) => u.kind === 'colossus').length + w.zombies.filter((z) => z.kind === 'colossus').length, 1, `${humans} humans meet one colossus`);
+    runUntil(w, () => w.zombies.some((z) => z.kind === 'colossus'), 300_000);
+    const colossus = w.zombies.find((z) => z.kind === 'colossus')!;
+    assert.ok(Math.abs(colossus.hp - ZOMBIES.colossus.hp * ZOM.nightMul(5).hp * share) < ZOMBIES.colossus.hp * 0.05, `${humans} humans: ${colossus.hp} hp`);
+    const view = snapshotFor(w, [...w.players.keys()][0]!).zombies!.find(([id]) => id === colossus.id);
+    if (view) assert.ok(view[4] >= 9, 'its health bar reads near whole');
+  }
+});
+
+test('a later night sends its packs in waves, several at once', () => {
+  const w = eveOf(9);
+  runUntil(w, () => phaseOf(w) === 'night', ZOM.dayMs + 1000);
+  const night = w.run!.phase;
+  assert.ok(night.k === 'night');
+  const packs = night.toSpawn.length;
+  step(w, TICK_MS);
+  assert.ok(ZOM.packsPerWave(9) > 1);
+  assert.equal(packs - night.toSpawn.length, ZOM.packsPerWave(9), 'the first wave brings its packs together');
+  run(w, ZOM.waveGapMs(9) - 2 * TICK_MS);
+  assert.equal(packs - night.toSpawn.length, ZOM.packsPerWave(9), 'and the next waits its turn');
+});
+
+test('first light burns what is left of the horde a while after its last pack walks in, for no scrap', () => {
+  const w = eveOf(1);
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'brute', side: 'north', n: 1 }], nextSpawnAt: 0, dawnAt: Infinity };
+  step(w, TICK_MS);
+  const night = w.run!.phase;
+  assert.ok(night.k === 'night' && night.toSpawn.length === 0 && Number.isFinite(night.dawnAt));
+  assert.equal(snapshotFor(w, [...w.players.keys()][0]!).run!.phaseEndsAt, night.dawnAt, 'the client can count down to first light');
+  for (const z of w.zombies) z.hp = 1e9;
+  const scrap = w.run!.scrap;
+  run(w, ZOM.stragglersMs - 1000);
+  assert.equal(phaseOf(w), 'night', 'the night holds while the straggler lives');
+  run(w, 1000 + 2 * TICK_MS);
+  assert.deepEqual({ phase: phaseOf(w), zombies: w.zombies.length, night: w.run!.night }, { phase: 'day', zombies: 0, night: 2 });
+  assert.equal(w.run!.scrap - scrap, w.run!.survivors * ZOM.scrapPerSurvivor, 'only the dawn pay, nothing for the burned');
 });

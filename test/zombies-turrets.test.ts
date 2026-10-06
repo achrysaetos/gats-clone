@@ -13,7 +13,7 @@ const SENTRY = BUILDINGS.sentry.turret;
 /** A night with nothing left to spawn and no map cover, so only what a test places counts. */
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.walls = [];
   w.crates = [];
   w.wallsVersion++;

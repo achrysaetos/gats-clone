@@ -106,8 +106,8 @@ export type HordeUnit = { kind: ZombieKind; side: Side; n: number };
 
 type RunPhase =
   | { k: 'day'; endsAt: number }
-  /** Ends once `toSpawn` is empty and every zombie is dead. */
-  | { k: 'night'; toSpawn: HordeUnit[]; nextSpawnAt: number }
+  /** Ends once `toSpawn` is empty and every zombie is dead, or at `dawnAt`, a while after the last pack walks in, when the light burns what is left. */
+  | { k: 'night'; toSpawn: HordeUnit[]; nextSpawnAt: number; dawnAt: number }
   | { k: 'over'; night: number; won: boolean; restartAt: number };
 
 export type RunStats = { name: string; kills: number; revives: number; built: number };
@@ -129,6 +129,8 @@ export type Run = {
   stats: Map<number, RunStats>;
   turretKills: Record<TurretKind, Record<ZombieKind, number>>;
   bastionKills: number;
+  /** Tonight's horde share for the squad, which scales a boss's health. */
+  share: number;
   /** When the Bastion's survivors next fire. */
   bastionFireAt: number;
 };
@@ -203,7 +205,7 @@ export function newRun(now: number): Run {
   return {
     core: { hp: ZOM.coreHp }, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
-    turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>), bastionKills: 0, bastionFireAt: 0,
+    turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>), bastionKills: 0, bastionFireAt: 0, share: 1,
   };
 }
 

@@ -16,7 +16,7 @@ const lifeOf = (p: Player) => p.life;
 
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;
 }
@@ -189,7 +189,7 @@ test('a human who joins or rejoins by night sits out until dawn, so leaving cann
   const first = join();
   assert.equal(first.p.life.k, 'alive', 'joins on their feet by day');
 
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   holdNight(w);
   downByBite(w, first.p);

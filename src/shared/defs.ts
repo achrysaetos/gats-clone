@@ -445,7 +445,11 @@ export const ZOM = {
   wallCostCells: 40,
   /** A squad of four bots meets each night's horde as listed; a human, with triple health and better aim than a bot, counts for one and a half. */
   hordeShare: (squad: { humans: number; bots: number }) => (squad.bots + 1.5 * squad.humans) / 4,
-  spawnGapMs: (night: number) => Math.max(1000, 2600 - 120 * night),
+  /** Each wave of a night brings this many packs at once, from their own sides, then waits `waveGapMs` for the next. */
+  packsPerWave: (night: number) => 1 + Math.floor(night / 3),
+  waveGapMs: (night: number) => Math.max(1000, 2600 - 120 * night),
+  /** First light comes this long after the night's last pack walks in, and burns whatever of the horde is still out. */
+  stragglersMs: 90_000,
   nightMul: (night: number) => ({ hp: 1 + 0.175 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
   restartMs: 20_000,
 } as const;

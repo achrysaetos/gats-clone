@@ -15,7 +15,7 @@ test('a zombies snapshot shows the horde in view as compact tuples, the squad wa
   const w = zomWorld();
   const p = spawnAt(w, 1380, 1500);
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 28, hp: BUILDINGS.wall.hp * 0.35 });
-  const near = { id: newId(w), kind: 'brute' as const, x: 1700.4, y: 1500.6, hp: zombieMaxHp('brute', 1) / 2, attackAt: 0 };
+  const near = { id: newId(w), kind: 'brute' as const, x: 1700.4, y: 1500.6, hp: zombieMaxHp('brute', 1, 1) / 2, attackAt: 0 };
   w.zombies.push(near, { id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1, attackAt: 0 });
   const snap = snapshotFor(w, p.id);
   assert.deepEqual(snap.zombies, [[near.id, ZOMBIE_KINDS.indexOf('brute'), 1700, 1501, 5]]);
@@ -73,7 +73,7 @@ test('the wire omits unchanged walls and run, rebuilds them, and keeps a snapsho
   const w = zomWorld();
   const p = spawnAt(w, 1380, 1500);
   for (let cx = 24; cx <= 35; cx++) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy: 24, hp: BUILDINGS.wall.hp });
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   for (let i = 0; i < ZOM.maxAlive; i++) {
     const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 250 + (i % 7) * 40;
     w.zombies.push({ id: newId(w), kind: i % 9 === 0 ? 'brute' : 'walker', x: 1500 + Math.cos(a) * r * 1.6, y: 1500 + Math.sin(a) * r, hp: 1e6, attackAt: Infinity });

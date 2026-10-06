@@ -14,7 +14,9 @@ function squadOf(w: World) {
   return squad;
 }
 
-export const zombieMaxHp = (kind: ZombieKind, night: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp;
+/** A boss, a kind that walks alone, has its health scaled by the squad's share of the horde; every other kind comes in greater or fewer numbers instead. */
+const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
+export const zombieMaxHp = (kind: ZombieKind, night: number, share: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp * (isBoss(kind) ? share : 1);
 
 function statsFor(run: Run, p: Player): RunStats {
   let s = run.stats.get(p.id);
@@ -152,23 +154,30 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   else if (shooter) run.turretKills[shooter][z.kind]++;
   else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
   if (attacker) addScore(w, attacker, def.score);
-  if (def.burst) burst(w, z, def.burst);
+  if (def.burst) burst(w, run, z, def.burst);
 }
 
-/** A bloater bursts where it dies: a blast that hurts the squad and the horde alike, and a blow to every building it reaches. */
-function burst(w: World, z: Zombie, { radius, damage, building }: Burst) {
+/** A bloater bursts where it dies: a blast that hurts the squad and the horde alike, and a blow to every building it reaches and to the core through its armor. */
+function burst(w: World, run: Run, z: Zombie, { radius, damage, building }: Burst) {
   explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
   for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
+  const core = coreRect(w);
+  if (core && distToRect(z.x, z.y, core) <= radius) run.core.hp = Math.max(0, run.core.hp - building * (1 - ZOM.coreArmor));
 }
 
-/** Tonight's horde from the night table, scaled to the squad, as packs in a shuffled order, each from one of the night's sides. */
-function hordeOf(w: World, night: number): HordeUnit[] {
+/** First light burns whatever of the horde is still out, so a zombie that cannot reach anything never holds the night. They pay nothing. */
+function burnStragglers(w: World) {
+  for (const z of w.zombies) w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: null });
+  w.zombies = [];
+}
+
+/** Tonight's horde from the night table, scaled to the squad's `share`, as packs in a shuffled order, each from one of the night's sides. */
+function hordeOf(w: World, night: number, share: number): HordeUnit[] {
   const def = nightOf(night);
-  const share = ZOM.hordeShare(squadOf(w));
   const units: HordeUnit[] = [];
   for (const kind of ZOMBIE_KINDS) {
     const listed = def.horde[kind] ?? 0;
-    for (let left = listed && Math.max(1, Math.round(listed * share)); left > 0; left -= ZOMBIES[kind].pack) {
+    for (let left = isBoss(kind) ? listed : listed && Math.max(1, Math.round(listed * share)); left > 0; left -= ZOMBIES[kind].pack) {
       units.push({ kind, side: def.from[Math.floor(rand(w) * def.from.length)]!, n: Math.min(left, ZOMBIES[kind].pack) });
     }
   }
@@ -189,7 +198,7 @@ function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
   for (let placed = 0, tries = 0; placed < n && tries < 20 * n; tries++) {
     const x = clamp(ax + (rand(w) - 0.5) * PACK_SPREAD, strip.x, strip.x + strip.w), y = clamp(ay + (rand(w) - 0.5) * PACK_SPREAD, strip.y, strip.y + strip.h);
     if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
-    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night), attackAt: 0 });
+    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0 });
     placed++;
   }
 }
@@ -257,16 +266,19 @@ export function tickRun(w: World, dtMs: number) {
   switch (phase.k) {
     case 'day':
       if (w.now >= phase.endsAt || squadReady(w, run)) {
-        run.phase = { k: 'night', toSpawn: hordeOf(w, run.night), nextSpawnAt: w.now };
+        run.share = ZOM.hordeShare(squadOf(w));
+        run.phase = { k: 'night', toSpawn: hordeOf(w, run.night, run.share), nextSpawnAt: w.now, dawnAt: Infinity };
         run.ready.clear();
         run.lost = 0;
       }
       break;
     case 'night':
       if (phase.toSpawn.length > 0 && w.now >= phase.nextSpawnAt && w.zombies.length < ZOM.maxAlive) {
-        spawnUnit(w, run, phase.toSpawn.shift()!);
-        phase.nextSpawnAt = w.now + ZOM.spawnGapMs(run.night);
+        for (const unit of phase.toSpawn.splice(0, ZOM.packsPerWave(run.night))) spawnUnit(w, run, unit);
+        phase.nextSpawnAt = w.now + ZOM.waveGapMs(run.night);
+        if (phase.toSpawn.length === 0) phase.dawnAt = w.now + ZOM.stragglersMs;
       }
+      if (w.now >= phase.dawnAt) burnStragglers(w);
       if (phase.toSpawn.length === 0 && w.zombies.length === 0) dawn(w, run);
       break;
     case 'over':

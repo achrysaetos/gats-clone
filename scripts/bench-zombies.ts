@@ -102,7 +102,7 @@ const sq = newSquad(seeds[0]!);
 const run = sq.w.run!;
 run.core.hp = Infinity;
 run.night = 10;
-run.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+run.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
 // The squad cannot fall either, so it keeps firing into the horde for the whole sample, and the horde is topped up at its edges to the cap every tick.
 let shots = 0, kills = 0, turretShots = 0;
 const horde = Object.values(MAPS.outpost.siege!.horde);
@@ -111,7 +111,7 @@ const holdOut = () => {
   for (const b of sq.w.buildings) if (b.kind !== 'wall') b.ammo = BUILDINGS[b.kind].turret.ammo;
   while (sq.w.zombies.length < ZOM.maxAlive) {
     const edge = horde[Math.floor(sq.r() * horde.length)]!;
-    sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night), attackAt: 0 });
+    sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night, 1), attackAt: 0 });
   }
   const t = tick(sq);
   for (const e of sq.w.events) { if (e.e === 'shot') shots++; if (e.e === 'zkill') kills++; if (e.e === 'turret') turretShots++; }

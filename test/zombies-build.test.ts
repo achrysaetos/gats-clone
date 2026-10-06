@@ -32,7 +32,7 @@ test('a wall goes up on a clear cell by day for its cost, counts toward the buil
 });
 
 const refusals: [string, (w: World) => { cx: number; cy: number; by?: { x: number; y: number } }][] = [
-  ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity }; return CELL; }],
+  ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity }; return CELL; }],
   ['farFromCore', () => ({ cx: 17, cy: 30, by: { x: 17.5 * ZOM.cell + 60, y: 1525 } })],
   ['outOfReach', () => ({ cx: CELL.cx - 5, cy: CELL.cy })],
   ['cover', (w) => { w.walls.push({ x: CELL.cx * ZOM.cell + 10, y: CELL.cy * ZOM.cell, w: 24, h: 140, built: true, expiresAt: Infinity }); return CELL; }],
@@ -63,7 +63,7 @@ test('a wall comes down by day for half its cost back, but not at night', () => 
   const { w, p } = dayWorld();
   build(w, p.id, 'wall', CELL.cx, CELL.cy);
   const scrap = w.run!.scrap;
-  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), false);
   w.run!.phase = { k: 'day', endsAt: Infinity };
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);

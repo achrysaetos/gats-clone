@@ -142,7 +142,7 @@ function runView(w: World, run: Run): RunView {
   return {
     phase: phase.k,
     night: run.night,
-    phaseEndsAt: phase.k === 'day' ? phase.endsAt : phase.k === 'over' ? phase.restartAt : null,
+    phaseEndsAt: phase.k === 'day' ? phase.endsAt : phase.k === 'over' ? phase.restartAt : Number.isFinite(phase.dawnAt) ? phase.dawnAt : null,
     scrap: Math.floor(run.scrap),
     core: { x: core.x, y: core.y, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp },
     aliveZombies: w.zombies.length,
@@ -163,7 +163,7 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
   const zombies: ZombieView[] = [];
   for (const z of w.zombies) {
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
-    zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night))]);
+    zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night, run.share))]);
   }
   const buildings = w.buildings.map(buildingView);
   return { zombies, buildings, run: runView(w, run) };

@@ -15,7 +15,7 @@ const CORE = { x: 1500, y: 1500 };
 
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;
 }
