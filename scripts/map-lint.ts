@@ -101,9 +101,10 @@ export function lintMap(def: MapDef): string[] {
   const spawnSides = Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][];
 
   for (const [side, regions] of spawnSides) {
+    if (regions.length === 0) problems.push(`no ${side} spawn region`);
     regions.forEach((r, i) => {
-      const blocked = cellsIn(r, n).filter((c) => !free[c]);
-      if (blocked.length) problems.push(`${side} spawn ${i}: a player cannot stand at ${blocked.length} of its spots, first ${where(centerOf(blocked[0]!, n))}`);
+      if (!inside(r, R)) problems.push(`${side} spawn ${i} lets a player stand past the edge`);
+      if ([...def.walls, ...crates].some((s) => rectsOverlap(s, r, R))) problems.push(`${side} spawn ${i} lets a player stand in a wall or crate`);
     });
   }
 

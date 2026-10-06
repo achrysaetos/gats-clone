@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type MapDef, type MapId } from '../src/shared/maps.ts';
+import { WORLD } from '../src/shared/defs.ts';
 import { gridMap } from '../src/shared/mapgrid.ts';
 import { lintMap } from '../scripts/map-lint.ts';
 
@@ -35,12 +36,9 @@ test('a walled-off pocket is reported with its size, on each side of the turn', 
   ]);
 });
 
-test('a spawn against the map edge has spots a player cannot stand at', () => {
+test('a spawn against the map edge lets a player stand past it', () => {
   const m = gridMap('Edge', rows({ 1: 'RR..........', 2: 'RR..........' }));
-  assert.deepEqual(lintMap(m), [
-    'red spawn 0: a player cannot stand at 4 of its spots, first (13, 63)',
-    'blue spawn 0: a player cannot stand at 4 of its spots, first (1188, 1063)',
-  ]);
+  assert.deepEqual(lintMap(m), ['red spawn 0 lets a player stand past the edge', 'blue spawn 0 lets a player stand past the edge']);
 });
 
 test('spawns with nothing between them see each other', () => {
@@ -81,4 +79,13 @@ test('a zone a pixel into a crate overlaps it', () => {
 
 test('a versus map without three zones cannot host DOM', () => {
   assert.deepEqual(lintMap({ ...clean, zones: clean.zones.slice(1, 2) }), ['1 zones, DOM needs 3']);
+});
+
+test('a wall a pixel inside a player\'s reach of a spawn lets a player stand in it, even between grid spots', () => {
+  const red = clean.spawns.red[0]!;
+  assert.deepEqual(withWalls({ x: red.x + red.w + WORLD.playerRadius - 1, y: red.y, w: 50, h: red.h, material: 'concrete' }), ['red spawn 0 lets a player stand in a wall or crate', 'blue spawn 0 lets a player stand in a wall or crate']);
+});
+
+test('a side with no spawn region is reported', () => {
+  assert.deepEqual(lintMap({ ...clean, spawns: { ...clean.spawns, ffa: [] } }), ['no ffa spawn region']);
 });
