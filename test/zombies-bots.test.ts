@@ -157,3 +157,60 @@ test('a squad bot with the core between it and a worn turret walks round the cor
   w.buildingsVersion++;
   assert.ok(play(w, [bot], 15_000, () => t.hp > 200), `the turret is mended, the bot at ${bot.x.toFixed(0)},${bot.y.toFixed(0)}`);
 });
+
+/** Three squad bots round the core and an idle human, thinking for `ms`. */
+function besideIdleHuman(w: World, ms: number, each: () => void = () => {}) {
+  for (let i = 0; i < 3; i++) spawnAt(w, CORE.x - 100 + i * 100, CORE.y + ZOM.coreHalf + 40);
+  spawnAt(w, CORE.x - 200, CORE.y, { kind: 'human' });
+  const rand = seeded(5);
+  const mems = new Map([...w.players.values()].filter((p) => p.kind === 'bot').map((p) => [p.id, newBotMemory(rand)]));
+  for (let t = 0; t < ms; t += TICK_MS) {
+    each();
+    thinkBots(w, mems, rand, { respawn: false });
+    step(w, TICK_MS);
+  }
+}
+
+test('beside a human, squad bots leave a worn core and worn walls to them by day', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  w.run!.core.hp = 3000;
+  w.run!.scrap = 200;
+  w.buildings.push({ id: newId(w), kind: 'wall', cx: 27, cy: 33, hp: 500 });
+  w.buildingsVersion++;
+  besideIdleHuman(w, 10_000);
+  assert.deepEqual([w.run!.scrap, w.run!.core.hp, w.buildings[0]!.hp], [200, 3000, 500]);
+});
+
+test('beside a human, squad bots mend the core once it is in danger at night, and keep a dry turret firing', () => {
+  const w = nightWorld();
+  farZombie(w);
+  w.run!.core.hp = ZOM.coreHp * 0.6;
+  w.run!.scrap = 500;
+  const dry = { id: newId(w), kind: 'sentry' as const, cx: 33, cy: 30, hp: BUILDINGS.sentry.hp, owner: -1, ammo: 0, nextFireAt: 0 };
+  w.buildings.push(dry);
+  w.buildingsVersion++;
+  besideIdleHuman(w, 8000, () => { w.run!.core.hp = Math.min(w.run!.core.hp, ZOM.coreHp * 0.6); });
+  assert.ok(dry.ammo >= 1, `the dry sentry got rounds, ${dry.ammo.toFixed(1)}`);
+  const spent = 500 - w.run!.scrap;
+  assert.ok(spent < 20, `and the bank barely moved for the core above half, ${spent.toFixed(1)} spent`);
+
+  w.run!.core.hp = ZOM.coreHp * 0.4;
+  besideIdleHuman(w, 5000);
+  assert.ok(w.run!.core.hp > ZOM.coreHp * 0.4 + 100, `under half, a bot mends it: ${w.run!.core.hp.toFixed(0)}`);
+});
+
+test('the squad bots\' plan stands as far from the core on every side', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  for (let i = 0; i < 4; i++) spawnAt(w, CORE.x - 150 + i * 100, CORE.y + ZOM.coreHalf + 40);
+  w.run!.scrap = 1e6;
+  w.run!.phase = { k: 'day', endsAt: Infinity };
+  const rand = seeded(5);
+  const mems = new Map([...w.players.keys()].map((id) => [id, newBotMemory(rand)]));
+  for (let t = 0; t < 120_000 && w.buildings.length < 12; t += TICK_MS) {
+    thinkBots(w, mems, rand, { respawn: false });
+    step(w, TICK_MS);
+  }
+  assert.equal(w.buildings.length, 12, 'the whole plan went up');
+  const offsets = new Set(w.buildings.flatMap((b) => [Math.abs((b.cx + 0.5) * ZOM.cell - CORE.x), Math.abs((b.cy + 0.5) * ZOM.cell - CORE.y)]));
+  assert.deepEqual([...offsets].sort((a, b) => a - b), [25, 175, 225]);
+});
