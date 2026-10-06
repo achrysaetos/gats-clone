@@ -5,10 +5,10 @@ import { GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
-const CELL = 25;
+export const CELL = 25;
 const R = WORLD.playerRadius;
 
-function standable(def: MapDef, n: number): Uint8Array {
+export function standable(def: MapDef, n: number): Uint8Array {
   const free = new Uint8Array(n * n);
   const at = (i: number) => (i + 0.5) * CELL;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) free[j * n + i] = at(i) >= R && at(j) >= R && at(i) <= def.size - R && at(j) <= def.size - R ? 1 : 0;
@@ -26,14 +26,14 @@ const centerOf = (c: number, n: number): Center => ({ x: ((c % n) + 0.5) * CELL,
 const cellsEitherSide = (v: number, n: number) => [Math.floor((v - 1) / CELL), Math.floor((v + 1) / CELL)].filter((k) => k >= 0 && k < n);
 const where = (p: Center) => `(${Math.round(p.x)}, ${Math.round(p.y)})`;
 
-function cellsIn(r: Rect, n: number): number[] {
+export function cellsIn(r: Rect, n: number): number[] {
   const cells: number[] = [];
   const i0 = Math.max(0, Math.ceil(r.x / CELL - 0.5)), j0 = Math.max(0, Math.ceil(r.y / CELL - 0.5));
   for (let j = j0; j < n && (j + 0.5) * CELL < r.y + r.h; j++) for (let i = i0; i < n && (i + 0.5) * CELL < r.x + r.w; i++) cells.push(j * n + i);
   return cells;
 }
 
-function flood(free: Uint8Array, n: number, sources: readonly number[], seen: Uint8Array): number[] {
+export function flood(free: Uint8Array, n: number, sources: readonly number[], seen: Uint8Array): number[] {
   const queue = sources.filter((c) => free[c] && !seen[c]);
   for (const c of queue) seen[c] = 1;
   for (let head = 0; head < queue.length; head++) {
