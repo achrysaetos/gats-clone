@@ -176,6 +176,46 @@ test('a squadmate holding use beside a knocked player revives them; left alone t
   assert.equal(lifeOf(victim).k, 'dead');
 });
 
+test('a supply drop shows before it lands, and breaking it jumps the breaker to their next level pick, or heals one with every pick made', () => {
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  spawnAt(w, 4000, 4000, { team: 'red' });
+  w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now + 5000 }];
+  assert.deepEqual(snapshotFor(w, shooter.id).royale!.drops, [{ x: 1300, y: 1000, landsAt: w.now + 5000 }]);
+  assert.ok(!w.crates.some((c) => c.drop));
+  run(w, 5100);
+  const drop = w.crates.find((c) => c.drop)!;
+  assert.ok(drop && Math.abs(drop.x + drop.size / 2 - 1300) < 1, 'lands where it was shown');
+  for (let i = 0; i < 40 && drop.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
+  assert.notEqual(drop.respawnAt, null);
+  assert.equal(shooter.level, 1);
+  assert.deepEqual(snapshotFor(w, shooter.id).self.pending, { level: 1, k: 'perk', tier: 1 });
+
+  shooter.level = 5;
+  shooter.score = 600;
+  shooter.perks = { 1: 'extended', 2: 'thickSkin', 3: 'grenade' };
+  shooter.gun = 'executioner';
+  if (shooter.life.k === 'alive') shooter.life.hp = 10;
+  w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now }];
+  run(w, 100);
+  const second = w.crates.find((c) => c.drop && c.respawnAt === null)!;
+  for (let i = 0; i < 40 && second.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
+  assert.equal(shooter.level, 5);
+  assert.ok(hpOf(shooter) >= 140, `healed to ${hpOf(shooter)}`);
+});
+
+test('crates pay 25 and stay broken for the match', () => {
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  spawnAt(w, 4000, 4000, { team: 'red' });
+  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null }];
+  w.wallsVersion++;
+  for (let i = 0; i < 6; i++) shootOnce(w, shooter, 0, 250);
+  assert.equal(shooter.score, 25);
+  run(w, 60_000);
+  assert.ok(!snapshotFor(w, shooter.id).crates.some((c) => c.id === 999_999));
+});
+
 test('a joiner takes a bot\'s seat while redeploys are open, solo humans spread one per squad, and after that they watch until the next match seats them', (t) => {
   const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as Accounts;
   const room = createRoom('br-test', 'BR', 1, accounts);
