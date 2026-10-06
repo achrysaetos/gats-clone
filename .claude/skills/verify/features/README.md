@@ -28,10 +28,10 @@ Each feature file starts with an H1 and one paragraph on the user-visible behavi
 
 ## Features
 
-- [Menu and loadout](./menu-loadout.md) covers the room list, weapon, color and armor pickers, phone layout, the privacy link and the muted panel.
-- [Accounts and stats](./accounts.md) covers register, login, the token, server-side stats, the leaderboard and error codes.
-- [Joining and playing](./join-play.md) covers joining a room, moving, firing, hit feedback, the reticle, HUD fading, leaving, the duel, reconnect, the view rectangle and lag compensation.
-- [Chat](./chat.md) covers sending and receiving, the rate limit, word masking, renaming blocked names, and mute.
-- [Progression, death and modes](./progression-death-modes.md) covers perks, gun evolution and its callouts, the hunted marker, edge chevrons and bounty, kill popups, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
-- [Map rotation](./maps.md) covers the four maps, per-mode rotation and the next-map notice.
-- [Zombies](./zombies.md) covers squad rooms by code and invite links, the day and night run, the horde, the core and walls in the browser, build mode, scrap, downs and revives, the run HUD, callouts, sounds and report, and the bench.
+- [Menu and loadout](./menu-loadout.md) covers the room list, weapon, color and armor pickers and their saved pick, the saved name, the controls panel, menu errors, phone layout, the privacy link and the muted panel.
+- [Accounts and stats](./accounts.md) covers register, login, the token, per-life stat credit, the stats panel, the leaderboard, the privacy page and error codes.
+- [Joining and playing](./join-play.md) covers joining a room, room limits and standstill, moving, the input queue, firing, hit feedback, the reticle, HUD fading, leaving, the duel, muzzle-drawn rounds, reconnect, the view rectangle and lag compensation.
+- [Chat](./chat.md) covers sending and receiving, the chat log and system lines, the rate limit, word masking, renaming blocked names, and mute.
+- [Progression, death and modes](./progression-death-modes.md) covers perks, gun evolution and its callouts, the score pill, Tab board and level bar, the hunted marker, edge chevrons and bounty, kill popups, abilities, the death screen, respawn, TDM and DOM scoring, and round end.
+- [Map rotation](./maps.md) covers the four maps, per-mode rotation, round clocks, per-map resets and the next-map notice.
+- [Zombies](./zombies.md) covers squad rooms by code and invite links, empty-room standstill, bot errands, the horde's pathing, the day and night run, the horde, the core and walls in the browser, build mode, scrap, downs and revives, the run HUD, callouts, sounds and report, and the bench.
