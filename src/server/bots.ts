@@ -13,7 +13,6 @@ export type BotMemory = {
   motor: Motor;
 };
 
-/** `build` is a building a siege bot puts up this tick. */
 export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory; build?: { kind: BuildingKind; cx: number; cy: number } };
 
 const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };

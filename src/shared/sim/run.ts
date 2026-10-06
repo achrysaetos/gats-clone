@@ -49,7 +49,6 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
 }
 
-/** Holding use tends what `serviceTarget` names, as far as the scrap goes. */
 function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
   const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, w.buildings.map((b) => ({ ...buildingView(b), b })));
@@ -134,7 +133,6 @@ function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
 }
 
 /**
- * A zombie's death pays the squad scrap and its attacker score toward the gun ladder. A turret's kill pays its builder the score but counts as the turret's, and the Bastion's counts as the Bastion's.
  * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
  */
 export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit') {
@@ -156,20 +154,17 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   if (def.burst) burst(w, run, z, def.burst);
 }
 
-/** A bloater bursts where it dies: a blast that hurts the squad and the horde alike, and a blow to every building it reaches and to the core through its armor. */
 function burst(w: World, run: Run, z: Zombie, { radius, damage, building, core: coreBlow }: Burst) {
   explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
   for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
   if (distToRect(z.x, z.y, coreRect(w)!) <= radius) hurtCore(run, coreBlow * (1 - ZOM.coreArmor));
 }
 
-/** First light burns whatever of the horde is still out, so a zombie that cannot reach anything never holds the night. They pay nothing. */
 function burnStragglers(w: World) {
   for (const z of w.zombies) w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: null });
   w.zombies = [];
 }
 
-/** Tonight's horde from the night table, scaled to the squad's `share`, as packs in a shuffled order, each from one of the night's sides. */
 function hordeOf(w: World, night: number, share: number): HordeUnit[] {
   const def = nightOf(night);
   const units: HordeUnit[] = [];
@@ -206,7 +201,6 @@ function placeAtCore(w: World, p: Player) {
   p.y = at.y;
 }
 
-/** Everyone down or dead gets up at the core, what they earned this run stays with them, and each survivor pays the bank. The Tide's dawn ends the run won. */
 function dawn(w: World, run: Run) {
   if (run.night === NIGHTS.length) { endRun(w, run, true); return; }
   run.scrap += run.survivors * ZOM.scrapPerSurvivor;
@@ -219,7 +213,6 @@ function dawn(w: World, run: Run) {
   }
 }
 
-/** A fallen Bastion takes everyone still inside with it. */
 function endRun(w: World, run: Run, won: boolean) {
   for (const p of w.players.values()) statsFor(run, p);
   if (!won) { run.lost += run.survivors; run.survivors = 0; }
@@ -227,14 +220,12 @@ function endRun(w: World, run: Run, won: boolean) {
   w.zombies = [];
 }
 
-/** A human by day says the squad is ready for night, or takes it back. */
-export function readyUp(w: World, id: number) {
+export function toggleReady(w: World, id: number) {
   const run = w.run, p = w.players.get(id);
   if (!run || run.phase.k !== 'day' || p?.kind !== 'human') return;
   if (!run.ready.delete(id)) run.ready.add(id);
 }
 
-/** Night comes early once every human up is ready; bots count as ready, but a squad of bots alone waits out the day. */
 function squadReady(w: World, run: Run) {
   const humans = [...w.players.values()].filter((p) => p.kind === 'human' && p.life.k === 'alive');
   return humans.length > 0 && humans.every((p) => run.ready.has(p.id));
@@ -254,10 +245,6 @@ function restartRun(w: World) {
   }
 }
 
-/**
- * The run's state machine: the day counts down to night unless the squad is ready sooner, the night spawns its horde and turns to day once the horde is dead,
- * and the core's fall or the Tide's dawn ends the run until a fresh one starts.
- */
 export function tickRun(w: World, dtMs: number) {
   const run = w.run;
   if (!run) return;

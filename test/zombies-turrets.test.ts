@@ -60,7 +60,6 @@ test('a cannon picks a brute in range over a nearer walker, and a sentry a walke
   }
 });
 
-/** What one round from a turret with a single load takes off a zombie of `kind` 150px north of it. */
 function oneRound(turret: TurretKind, kind: ZombieKind): number {
   const w = nightWorld();
   addTurret(w, turret, spawnAt(w, TX, TY + 300).id, { ammo: 1 });

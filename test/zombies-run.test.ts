@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BUILDINGS, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
-import { readyUp } from '../src/shared/sim/run.ts';
+import { toggleReady } from '../src/shared/sim/run.ts';
 import { hurtCore } from '../src/shared/sim/horde.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
@@ -12,11 +12,10 @@ import { step } from '../src/shared/sim.ts';
 const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
 const phaseOf = (w: World) => w.run!.phase.k;
 
-/** The edge a zombie is on, give or take the step and the shove from its wave, two packs of which may land together, in the tick it spawns. */
-const STEP = 40;
+const SPAWN_EDGE_SLACK_PX = 40;
 const onSide = (side: Side, x: number, y: number) => {
   const r = MAPS.outpost.siege!.horde[side];
-  return x >= r.x - STEP && x <= r.x + r.w + STEP && y >= r.y - STEP && y <= r.y + r.h + STEP;
+  return x >= r.x - SPAWN_EDGE_SLACK_PX && x <= r.x + r.w + SPAWN_EDGE_SLACK_PX && y >= r.y - SPAWN_EDGE_SLACK_PX && y <= r.y + r.h + SPAWN_EDGE_SLACK_PX;
 };
 
 function runUntil(w: World, done: () => boolean, maxMs: number) {
@@ -92,7 +91,6 @@ test('the core falling ends the run with the night reached, and the restart wipe
 });
 
 
-/** A squad of four bots, held by an unbreakable core, on the eve of `night`. */
 function eveOf(night: number): World {
   const w = zomWorld();
   for (let i = 0; i < 4; i++) spawnAt(w, 1380, 1450 + i * 30);
@@ -181,19 +179,19 @@ test('the night falls early once every living human is ready, and not before', (
   const w = zomWorld();
   const ann = spawnAt(w, 1300, 1500, { kind: 'human' }), bo = spawnAt(w, 1300, 1560, { kind: 'human' });
   const bot = spawnAt(w, 1300, 1620);
-  readyUp(w, ann.id);
-  readyUp(w, bot.id);
+  toggleReady(w, ann.id);
+  toggleReady(w, bot.id);
   run(w, 1000);
   assert.equal(phaseOf(w), 'day', 'one human of two ready, and a bot asking means nothing');
-  readyUp(w, ann.id);
-  readyUp(w, bo.id);
+  toggleReady(w, ann.id);
+  toggleReady(w, bo.id);
   run(w, 1000);
   assert.equal(phaseOf(w), 'day', 'ready taken back');
-  readyUp(w, ann.id);
+  toggleReady(w, ann.id);
   run(w, TICK_MS);
   assert.equal(phaseOf(w), 'night');
   assert.equal(w.run!.ready.size, 0, 'nightfall clears the ready');
-  readyUp(w, ann.id);
+  toggleReady(w, ann.id);
   assert.equal(w.run!.ready.size, 0, 'no readying by night');
 });
 

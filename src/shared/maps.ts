@@ -28,7 +28,6 @@ export type MapDef = {
 const BLOCKY = 1.6;
 const outpostMaterialByShape = (r: Rect): MapWall => ({ ...r, material: Math.max(r.w, r.h) <= BLOCKY * Math.min(r.w, r.h) ? 'sandstone' : 'concrete' });
 
-/** A quarter turn about the map's center, so every edge the horde walks in from faces the same cover; the turns go north, east, south, west. */
 const quarterTurn = <T extends Rect>(r: T, size: number): T => ({ ...r, x: size - r.y - r.h, y: r.x, w: r.h, h: r.w });
 const fourWays = <T extends Rect>(quarter: readonly T[], size: number): T[] => {
   const out: T[] = [];

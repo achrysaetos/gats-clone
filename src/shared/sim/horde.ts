@@ -123,7 +123,6 @@ function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
   return best;
 }
 
-/** The core takes `amount`, and every `ZOM.survivorHp` of it costs a survivor inside, however well the core is mended between. */
 export function hurtCore(run: Run, amount: number) {
   run.core.hp = Math.max(0, run.core.hp - amount);
   run.harm += amount;

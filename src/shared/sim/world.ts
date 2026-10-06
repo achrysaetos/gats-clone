@@ -136,7 +136,6 @@ export type Run = {
   bastionKills: number;
   /** Tonight's horde share for the squad, which scales a boss's health. */
   share: number;
-  /** When the Bastion's survivors next fire. */
   bastionFireAt: number;
 };
 

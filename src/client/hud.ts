@@ -652,7 +652,6 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   const coreColor = alert && Math.floor(now / 200) % 2 ? PALETTE.hunted : frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
   const people = `${run.survivors}`;
   const peopleW = ctx.measureText(people).width;
-  // The night's dead stay on the bar while the core is mended, since mending raises no one.
   const mourned = run.phase === 'night' && run.lost > 0 ? `−${run.lost} tonight` : null;
   setFont(ctx, 700, TYPE.label);
   const mournedW = mourned ? ctx.measureText(mourned).width + 8 : 0;

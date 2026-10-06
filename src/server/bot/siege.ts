@@ -29,12 +29,9 @@ type Watch = {
 type Errand = { x: number; y: number; use: boolean };
 
 const GUARD_RADIUS = 550;
-/** Building views give health and load in tenths: whole is 10, and a turret at 2 or less is about to run dry. */
 const WHOLE_TENTHS = 10;
 const DRY_TENTHS = 2;
-/** With a human in the squad a bot mends the core below its reserve only when it is this far gone at night. */
 const CORE_EMERGENCY_FRAC = 0.5;
-/** With a human in the squad bots leave them enough for the dearest building, and tend only with what is above it. */
 const HUMANS_RESERVE = Math.max(...BUILDING_KINDS.map((k) => BUILDINGS[k].cost));
 const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
@@ -47,7 +44,6 @@ type Rule = (s: Watch) => Errand | null;
 
 const revive: Rule = (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 };
 const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.needsTending) : null;
-/** A turret run dry mid-fight is worth more than a bot's own rounds, so it is reloaded unless a zombie is already on the bot. */
 const refillDry: Rule = (s) => s.dry && (!s.zombie || s.zombie.d > KITE_PX) ? mendAt(s, s.dry) : null;
 const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
 const buildNext: Rule = (s) => s.next && { x: s.next.x, y: s.next.y, use: false };
@@ -61,23 +57,17 @@ const holdPost: Rule = (s) => {
 
 const SIEGE_RULES: readonly Rule[] = [revive, refillDry, mendBuilding, buildNext, mendCore, holdPost];
 
-/**
- * What the squad's bots put up, in order, in cells out from the core's center: a sentry each side first, then a turret for each new kind of night.
- * The core's center sits on a cell boundary, so each offset is taken from the core's edge cells half a cell out, the same distance either way.
- */
 const BASTION_PLAN: readonly { kind: BuildingKind; dx: number; dy: number }[] = [
   { kind: 'sentry', dx: 0, dy: -3 }, { kind: 'sentry', dx: 3, dy: 0 }, { kind: 'scatter', dx: 0, dy: 3 }, { kind: 'sentry', dx: -3, dy: 0 },
   { kind: 'cannon', dx: 3, dy: -3 }, { kind: 'mortar', dx: -3, dy: 3 }, { kind: 'scatter', dx: 0, dy: -4 }, { kind: 'sentry', dx: 0, dy: 4 },
   { kind: 'cannon', dx: -3, dy: -3 }, { kind: 'mortar', dx: 3, dy: 3 }, { kind: 'scatter', dx: 4, dy: 0 }, { kind: 'scatter', dx: -4, dy: 0 },
 ];
 
-/** A builder stands this far to the side of the cell, round the core from it, so its own body never blocks the building and it walks round the core to get there. */
 const BUILD_STANDOFF = 2 * ZOM.cell;
 
-/** The first building of the plan not yet up, with where to stand to build it. By day its cost is what the bots keep in hand before they mend the core. */
 function nextBuild(run: RunView, buildings: readonly BuildingView[]) {
-  const off = (d: number) => (d + Math.sign(d) / 2) * ZOM.cell;
-  const todo = BASTION_PLAN.map((p) => ({ kind: p.kind, ...cellOf(run.core.x + off(p.dx), run.core.y + off(p.dy)) }))
+  const fromCoreEdge = (d: number) => (d + Math.sign(d) / 2) * ZOM.cell;
+  const todo = BASTION_PLAN.map((p) => ({ kind: p.kind, ...cellOf(run.core.x + fromCoreEdge(p.dx), run.core.y + fromCoreEdge(p.dy)) }))
     .find((p) => !buildings.some((b) => b.cx === p.cx && b.cy === p.cy));
   if (!todo) return null;
   const x = (todo.cx + 0.5) * ZOM.cell, y = (todo.cy + 0.5) * ZOM.cell, d = Math.hypot(x - run.core.x, y - run.core.y);
@@ -86,10 +76,8 @@ function nextBuild(run: RunView, buildings: readonly BuildingView[]) {
 
 const SQUAD_NAV = new WeakMap<BotArena, { key: string; nav: NavGrid }>();
 const MAX_EXPANSIONS = 4000;
-/** The squad's blocks close less of the grid than a body's full radius, so a bot brushing one still stands on an open cell and its path holds steady. */
 const NAV_SLACK = 8;
 
-/** Where to head for `to`: along a path round map cover, the core and the squad's buildings, since a bot pressed square against one would stay stuck. */
 function wayTo(arena: BotArena, core: { x: number; y: number }, buildings: readonly BuildingView[], me: { x: number; y: number }, to: { x: number; y: number }) {
   const key = buildings.map((b) => `${b.cx},${b.cy}`).join(' ');
   let cached = SQUAD_NAV.get(arena);
@@ -98,7 +86,6 @@ function wayTo(arena: BotArena, core: { x: number; y: number }, buildings: reado
     SQUAD_NAV.set(arena, cached);
   }
   const path = findPath(cached.nav, me, to, MAX_EXPANSIONS);
-  // A waypoint inside the dead zone moves nobody, so steer for the first one past it.
   return path?.find((p) => Math.abs(p.x - me.x) > DEAD_ZONE || Math.abs(p.y - me.y) > DEAD_ZONE) ?? to;
 }
 
@@ -128,8 +115,6 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
-  // The bank is the humans' when there are any: bots then build nothing, keep a dry turret firing, mend a core in danger at night,
-  // and tend the rest only with what is above the humans' reserve. Otherwise they build their plan for a squad of bots, or for the one player they stand in for.
   const humansBank = snap.players.some((p) => p.kind === 'human' && p.id !== me.id);
   const spare = !humansBank || run.scrap > HUMANS_RESERVE;
   const guarded = (b: BuildingView) => Math.hypot((b.cx + 0.5) * ZOM.cell - run.core.x, (b.cy + 0.5) * ZOM.cell - run.core.y) <= GUARD_RADIUS;
@@ -140,7 +125,6 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const plan = humansBank ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
-  // Each bot tends what lies nearest its own post rather than itself, so its choice holds still as it walks round the core and the squad spreads out.
   const post = postFor(run.core, me.id, snap.buildings ?? []);
   const watch: Watch = {
     me, core: run.core, post, zombie, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), next: buildable,

@@ -15,7 +15,6 @@ export const PALETTE = {
   label: '#2a2e36',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
-  /** Readable on the dark HUD panels, where hpBad's red sinks. */
   lossOnDark: '#ff8f87',
   shield: 'rgba(110, 180, 255, 0.9)',
   gas: 'rgba(132, 186, 64, 0.16)',

@@ -21,7 +21,6 @@ const sidesOf = (night: number) => {
   return from.length === SIDES.length ? 'every side' : `the ${listOf(from)}`;
 };
 
-/** The squad's share of each night's horde, as the server will scale it. */
 export const squadShare = (players: readonly Pick<PlayerView, 'kind'>[]) =>
   ZOM.hordeShare({ humans: players.filter((p) => p.kind === 'human').length, bots: players.filter((p) => p.kind !== 'human').length });
 
@@ -129,7 +128,6 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   };
 }
 
-/** `taken` is what stands on the cell, since it decides the refund. */
 function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingView | undefined): string {
   switch (refusal) {
     case 'notDay': return 'Build by day';

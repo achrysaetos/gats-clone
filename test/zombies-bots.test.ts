@@ -158,7 +158,6 @@ test('a squad bot with the core between it and a worn turret walks round the cor
   assert.ok(play(w, [bot], 15_000, () => t.hp > 200), `the turret is mended, the bot at ${bot.x.toFixed(0)},${bot.y.toFixed(0)}`);
 });
 
-/** Three squad bots round the core and an idle human, thinking for `ms`. */
 function besideIdleHuman(w: World, ms: number, each: () => void = () => {}) {
   for (let i = 0; i < 3; i++) spawnAt(w, CORE.x - 100 + i * 100, CORE.y + ZOM.coreHalf + 40);
   spawnAt(w, CORE.x - 200, CORE.y, { kind: 'human' });

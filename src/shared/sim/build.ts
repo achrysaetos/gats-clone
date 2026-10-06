@@ -43,7 +43,6 @@ export function buildRefusal(site: BuildSite, kind: BuildingKind, cx: number, cy
 
 /** Tenths of whole, 1 to 10, where 10 means whole: anything short of whole reads 9 or less, so a rule judging tenths judges what the server holds. */
 export const tenths = (v: number, max: number) => (v >= max ? 10 : Math.min(9, Math.max(1, Math.ceil((v / max) * 10))));
-/** A turret's load in tenths, 10 when full and 0 once it cannot fire. */
 const loadTenths = (ammo: number, max: number) => (Math.floor(ammo) < 1 ? 0 : tenths(Math.floor(ammo), max));
 
 export function buildingView(b: Building): BuildingView {
@@ -51,9 +50,7 @@ export function buildingView(b: Building): BuildingView {
   return b.kind === 'wall' ? { ...at, kind: b.kind } : { ...at, kind: b.kind, ammo: loadTenths(b.ammo, BUILDINGS[b.kind].turret.ammo) };
 }
 
-/** Repair costs a share of what the building cost new for the share of it that is worn, so mending always beats tearing down and building again. */
 export const repairScrapPerHp = (kind: BuildingKind) => (BUILDINGS[kind].cost / BUILDINGS[kind].hp) * ZOM.repairShare;
-/** Taking a building down pays back part of its cost for what is left of it, by the tenths everyone sees. */
 export const refundFor = (b: Pick<BuildingView, 'kind' | 'hp'>) => Math.floor(BUILDINGS[b.kind].cost * ZOM.demolishRefund * (b.hp / 10));
 
 export type CoreView = Pose & { hp: number; maxHp: number };

@@ -3,20 +3,14 @@ import { MODES } from './modes.ts';
 import { dist2, segmentEntersRectAt, type Rect } from './movement.ts';
 import { coverRects, newId, rand, type Run, type Shooter, type World, type Zombie } from './world.ts';
 
-/** Plating that would eat more than half of each round; a gun leaves such a zombie to heavier guns rather than waste its rounds. Blasts get through plating whole. */
-const shrugs = (def: TurretDef, z: Zombie) => !def.lobbed && ZOMBIES[z.kind].plate > def.damage / 2;
+const plateTooThick = (def: TurretDef, z: Zombie) => !def.lobbed && ZOMBIES[z.kind].plate > def.damage / 2;
 
-/**
- * The nearest zombie in range of the kind the turret prefers, else of any kind, that nothing solid hides and its rounds can hurt;
- * the squad's own buildings never block a turret's view.
- */
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
   const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : 1);
-  const inRange = zombies.filter((z) => !shrugs(def, z)).map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
+  const inRange = zombies.filter((z) => !plateTooThick(def, z)).map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
   return inRange.find(({ z }) => def.lobbed || !cover.some((r) => segmentEntersRectAt(x, y, z.x - x, z.y - y, r) !== null))?.z ?? null;
 }
 
-/** Where a slow lobbed shell must come down to land on the zombie as it walks on, within the turret's range. */
 function leadFor(def: TurretDef, target: Zombie, x: number, y: number) {
   let at = { x: target.x, y: target.y };
   for (let i = 0; i < 3; i++) {
@@ -27,7 +21,6 @@ function leadFor(def: TurretDef, target: Zombie, x: number, y: number) {
   return d <= def.range ? at : { x: x + ((at.x - x) / d) * def.range, y: y + ((at.y - y) / d) * def.range };
 }
 
-/** A turret's rounds fly for its builder; the Bastion's for no one, so they go out on the snapshot as plain rounds. A lobbed shell leads its target. */
 function fire(w: World, def: TurretDef, by: { owner: number; label: string; turret: Shooter }, target: Zombie, x: number, y: number) {
   const at = def.lobbed ? leadFor(def, target, x, y) : target;
   const aim = Math.atan2(at.y - y, at.x - x);
@@ -43,10 +36,8 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
   if (by.turret !== 'bastion') w.events.push({ e: 'turret', kind: by.turret, x, y, angle: Math.round(aim * 100) / 100, ...(def.lobbed && { reach: Math.round(reach) }) });
 }
 
-// Carry the part of the interval that fell between ticks, so a gun keeps its rate rather than the tick's.
 const nextShot = (at: number, now: number, dtMs: number, gapMs: number) => (now - at < dtMs ? at : now) + gapMs;
 
-/** Each loaded turret whose gun has cooled fires one round at its target, and the Bastion's survivors fire on their beat, slower the fewer are left. */
 export function tickTurrets(w: World, run: Run, core: { x: number; y: number }, dtMs: number) {
   if (w.zombies.length === 0) return;
   const cover = coverRects(w);

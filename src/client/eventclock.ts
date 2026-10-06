@@ -19,7 +19,6 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
         const x = ev.x + Math.cos(ev.angle) * def.muzzle, y = ev.y + Math.sin(ev.angle) * def.muzzle;
         return { kind: 'tracer', turret: ev.kind, x, y, angle: ev.angle, reach: ev.reach };
       }
-      // Pellets fan out evenly across the spread, each stopping in the first zombie on its line, as the server's do.
       return Array.from({ length: def.pellets }, (_, i) => {
         const angle = ev.angle + (def.pellets === 1 ? 0 : (i / (def.pellets - 1) - 0.5) * def.spread * 2);
         const x = ev.x + Math.cos(angle) * def.muzzle, y = ev.y + Math.sin(angle) * def.muzzle;
