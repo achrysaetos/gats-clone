@@ -10,11 +10,16 @@ import type { Accounts } from '../src/server/accounts.ts';
 import { createRoom } from '../src/server/room.ts';
 import { fakeSocket, PISTOL, run, TICK_MS } from './helpers.ts';
 
+/** A team player stands in its side's spawns; a free-for-all player anywhere clear on the new map. */
 function assertStandingInSpawns(w: World, map: MapId) {
   for (const p of w.players.values()) {
     if (p.life.k !== 'alive') continue;
-    const regions = MAPS[map].spawns[p.team ?? 'ffa'];
-    assert.ok(regions.some((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h), `${p.name} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) is outside the ${MAPS[map].name} spawns`);
+    const size = MAPS[map].size;
+    assert.ok(p.x > 0 && p.y > 0 && p.x < size && p.y < size, `${p.name} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) is off the ${MAPS[map].name} map`);
+    if (p.team !== null) {
+      const regions = MAPS[map].spawns[p.team];
+      assert.ok(regions.some((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h), `${p.name} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) is outside the ${MAPS[map].name} spawns`);
+    }
     assert.ok(!w.walls.some((wall) => circleHitsRect(p.x, p.y, WORLD.playerRadius, wall)), `${p.name} stands in a wall`);
   }
 }
