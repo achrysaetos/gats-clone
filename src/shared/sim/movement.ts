@@ -7,6 +7,8 @@ const DASH_MS = 200;
 const DASH_DISTANCE = 240;
 export const MAX_SUBSTEP = WORLD.playerRadius / 2;
 
+export const walks = (i: { up: boolean; down: boolean; left: boolean; right: boolean }): boolean => i.right !== i.left || i.down !== i.up;
+
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 export const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
 

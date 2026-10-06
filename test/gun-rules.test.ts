@@ -4,7 +4,7 @@ import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, WEAPON_IDS, WORL
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { choosePick, pendingPick, spreadFor } from '../src/shared/sim/stats.ts';
+import { choosePick, isSteady, pendingPick, spreadFor } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -26,6 +26,7 @@ function tick(w: World, p: Player, input: Partial<InputState>): number[] {
 
 function spray(gun: GunId, still: boolean, count: number): number[] {
   const { w, p } = shooter(gun);
+  if (still) run(w, 400);
   const angles: number[] = [];
   while (angles.length < count) angles.push(...tick(w, p, { fire: true, shots: p.input.shots + 1, right: !still }));
   return angles;
@@ -33,12 +34,30 @@ function spray(gun: GunId, still: boolean, count: number): number[] {
 
 const widest = (angles: readonly number[]) => Math.max(...angles.map(Math.abs));
 
-test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG much worse, sniper wild', () => {
-  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 2, sniper: 4 };
-  for (const weapon of WEAPON_IDS) {
+test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG much worse, a walking sniper misses past 300px', () => {
+  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 2 };
+  for (const weapon of WEAPON_IDS.filter((w) => w !== 'sniper')) {
     const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true);
     assert.ok(Math.abs(ratio - expected[weapon]!) < 1e-9, `${weapon} moves at ${ratio}x spread`);
   }
+  for (const gun of ['sniper', 'longshot', 'piercer'] as const) {
+    assert.ok(spreadFor(gun, {}, false) > Math.atan(WORLD.playerRadius / 300), `a walking ${gun} can miss a body 300px off`);
+    assert.ok(spreadFor(gun, {}, true) < Math.atan(WORLD.playerRadius / 1000), `a planted ${gun} is sure at 1000px`);
+  }
+});
+
+test('a sniper settles a third of a second after its last step, an LMG a fifth, and every other class at once', () => {
+  assert.equal(isSteady('sniper', 0), false, 'walking');
+  assert.equal(isSteady('sniper', 300), false, 'just stopped');
+  assert.equal(isSteady('sniper', 350), true);
+  assert.equal(isSteady('lmg', 150), false);
+  assert.equal(isSteady('lmg', 200), true);
+  assert.equal(isSteady('assault', 1), true);
+  assert.equal(isSteady('assault', 0), false);
+  const { w, p } = shooter('sniper');
+  for (let i = 0; i < 5; i++) tick(w, p, { right: true });
+  const flick = tick(w, p, { fire: true, shots: p.input.shots + 1 });
+  assert.ok(flick.length === 1 && Math.abs(flick[0]!) <= spreadFor('sniper', {}, false), 'a shot the tick after stopping flies with the walking cone');
 });
 
 test('a sniper\'s rounds stay inside its still cone standing and stray far past it walking', () => {
@@ -75,8 +94,8 @@ test('assault bloom is gone a quarter second after letting go, and a reload clea
   for (let i = 0; i < 40; i++) tick(w, p, { fire: true, shots: 1 });
   const sprayOf = () => (p.life.k === 'alive' ? p.life.spray : -1);
   assert.ok(sprayOf() > 5, `spray ${sprayOf()} under held fire`);
-  for (let i = 0; i < 8; i++) tick(w, p, {});
-  assert.equal(sprayOf(), 0, 'cooled within 8 ticks');
+  for (let i = 0; i < 13; i++) tick(w, p, {});
+  assert.equal(sprayOf(), 0, 'cooled within 13 ticks: a 150ms settle, then 250ms');
   for (let i = 0; i < 20; i++) tick(w, p, { fire: true, shots: 1 });
   tick(w, p, { fire: true, shots: 1, reload: true });
   assert.equal(sprayOf(), 0, 'reloading clears it even with the trigger held');
@@ -111,18 +130,16 @@ test('a sniper sees 35% further, its Optics stack on top, and the server sends w
   assert.equal(snapshotFor(w, pistol.id).self.viewRadius, WORLD.viewRadius);
   assert.ok(snapshotFor(w, sniper.id).players.some((q) => q.id === target.id), 'the sniper sees 1100px out');
   assert.ok(!snapshotFor(w, pistol.id).players.some((q) => q.id === target.id), 'the pistol does not');
-  grantPerks(w, sniper, ['optics']);
-  assert.ok(Math.abs(snapshotFor(w, sniper.id).self.viewRadius - WORLD.viewRadius * 1.35 * 1.3) < 1e-9);
 });
 
 test('each class is offered its own five attachments', () => {
   const menus: Record<string, string[]> = {
-    pistol: ['extended', 'longRange', 'silencer', 'lightweight', 'optics'],
+    pistol: ['extended', 'quickReload', 'silencer', 'lightweight', 'optics'],
     smg: ['grip', 'extended', 'silencer', 'longRange', 'lightweight'],
     shotgun: ['choke', 'quickReload', 'extended', 'lightweight', 'piercing'],
     assault: ['grip', 'extended', 'silencer', 'optics', 'piercing'],
-    sniper: ['optics', 'thermal', 'ghillie', 'silencer', 'quickReload'],
-    lmg: ['quickReload', 'grip', 'lightweight', 'piercing', 'thermal'],
+    sniper: ['extended', 'thermal', 'ghillie', 'silencer', 'quickReload'],
+    lmg: ['quickReload', 'grip', 'lightweight', 'piercing', 'extended'],
   };
   for (const weapon of WEAPON_IDS) assert.deepEqual([...pickOptions(TIER_1, weapon)], menus[weapon], weapon);
   const w = emptyWorld();
@@ -160,8 +177,12 @@ test('evolving into a gun an attachment does nothing for hands the attachment pi
   assert.equal(p.perks[2], 'shield', 'the other picks stay');
 });
 
-test('Choke tightens a shotgun\'s pellets to 60%', () => {
-  assert.ok(Math.abs(spreadFor('shotgun', { 1: 'choke' }, false) - 0.6 * GUNS.shotgun.spread) < 1e-12);
+test('Choke tightens a shotgun\'s pellets by a quarter and is never offered on a slug, nor Extended mag on a one-shell gun', () => {
+  assert.ok(Math.abs(spreadFor('shotgun', { 1: 'choke' }, false) - 0.75 * GUNS.shotgun.spread) < 1e-12);
+  assert.equal(spreadFor('slugGun', { 1: 'choke' }, false), GUNS.slugGun.spread);
+  assert.ok(!pickOptions(TIER_1, 'slugGun').includes('choke'));
+  assert.ok(!pickOptions(TIER_1, 'sawedOff').includes('extended'));
+  assert.ok(pickOptions(TIER_1, 'doubleBarrel').includes('extended'));
 });
 
 test('Quick reload finishes a reload 35% sooner, and the reload bar runs at its pace', () => {

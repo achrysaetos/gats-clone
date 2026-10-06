@@ -6,7 +6,8 @@ import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
-import { spreadFor } from '../shared/sim/stats.ts';
+import { walks } from '../shared/sim/movement.ts';
+import { isSteady, spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
 import { buildChipAt, drawHud, drawSticks } from './hud.ts';
@@ -75,7 +76,6 @@ let firing = false;
 const mouse = { x: 0, y: 0 };
 /** Set by the first real mouse move; touch play never draws the mouse reticle. */
 let mouseAiming = false;
-const MOVES: readonly Action[] = ['up', 'down', 'left', 'right'];
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
 let trauma = 0;
@@ -240,7 +240,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, particles: createPool(),
+    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
     coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
@@ -277,8 +277,10 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
 
+const sinceMove = (s: Session) => (s.walk.now ? 0 : performance.now() - s.walk.at);
+
 function hands(s: Session): Hands {
-  return { active: state.phase === 'playing' && !overlays.typing, firing, touchAim: touchAim(sticks), reload: held.has('reload'), still: !MOVES.some((a) => held.has(a)), aim: aimOffset(s) };
+  return { active: state.phase === 'playing' && !overlays.typing, firing, touchAim: touchAim(sticks), reload: held.has('reload'), sinceMove: sinceMove(s), aim: aimOffset(s) };
 }
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
@@ -305,6 +307,7 @@ setInterval(() => {
   const now = performance.now();
   shooting.fireBeforeSending(s, now);
   const input = committed(s.firing, assembleInput(actions, active && (firing || touchAiming), s.shots, aimOffset(s)));
+  s.walk = { now: walks(input), at: walks(input) ? now : s.walk.at };
   const sent = sendInput(s.firing, s.seq, input, now);
   s.firing = sent.firing;
   if (sent.rejected) shooting.takeBack(s, sent.rejected);
@@ -423,8 +426,7 @@ function drawFrame(now: number) {
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
-  const moving = MOVES.some((a) => held.has(a));
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, !moving, nextSprayShot(s.firing)) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing)) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);

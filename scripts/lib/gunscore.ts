@@ -1,6 +1,7 @@
 import { EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type GunId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
+import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 
 export const DPS_RANGES = [150, 400, 700, 1000] as const;
@@ -15,11 +16,25 @@ const LOWER_BETTER: ReadonlySet<Axis> = new Set(['reloadMs']);
 
 const msPerRound = (id: GunId) => { const g = GUNS[id]; return g.burst ? ((g.burst.count - 1) * g.burst.gapMs + g.fireMs) / g.burst.count : g.fireMs; };
 
+const HOLD_MS = 2000;
+const TICK_MS = 1000 / WORLD.tickHz;
+
+/** The spray index of every shot over the first two seconds of a held trigger, reloads, spin-up and bloom included, through the sim's own trigger. */
+const heldShots = new Map(GUN_IDS.map((id) => {
+  const g = GUNS[id];
+  const s = { ammo: g.mag, reloadUntil: null as number | null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0 };
+  const sprays: number[] = [];
+  for (let now = 0; now < HOLD_MS; now += TICK_MS) {
+    if (pullTrigger(s, { def: g, mag: g.mag, reloadMs: g.reloadMs, armed: true }, { fire: true, reload: false, pressed: true }, now, TICK_MS)) sprays.push(s.spray);
+  }
+  return [id, sprays] as const;
+}));
+
 export function dpsAt(id: GunId, d: number, still: boolean): number {
   const g = GUNS[id];
   if (d > g.range) return 0;
-  const hit = Math.min(1, Math.atan(WORLD.playerRadius / d) / spreadFor(id, {}, still));
-  return (g.pellets * hit * (g.damage + (g.blast?.damage ?? 0)) * 1000) / msPerRound(id);
+  const hits = heldShots.get(id)!.reduce((sum, spray) => sum + Math.min(1, Math.atan(WORLD.playerRadius / d) / spreadFor(id, {}, still, spray)), 0);
+  return (g.pellets * hits * (g.damage + (g.blast?.damage ?? 0)) * 1000) / HOLD_MS;
 }
 
 export function scoreGun(id: GunId): GunScore {

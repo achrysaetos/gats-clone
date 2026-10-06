@@ -1,7 +1,6 @@
-import { GUNS, WORLD, type AbilityId } from '../../shared/defs.ts';
+import { GUNS, rulesOf, WORLD, type AbilityId } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
-import { spreadFor } from '../../shared/sim/stats.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, landingErr, leadSeconds, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
@@ -123,10 +122,13 @@ function routeAhead(me: Point, route: Motor['route']): Point | null {
   return from === me ? null : from;
 }
 
-const PLANT_SPREAD_GAIN = 3;
-
-const plants = (v: Perception, c: IntentCtx, d: number, fromCover: boolean) =>
-  spreadFor(v.me.gun, v.self.perks, true) * PLANT_SPREAD_GAIN <= spreadFor(v.me.gun, v.self.perks, false) || (c.persona.plantsFromCover && fromCover && d >= c.band.ideal);
+/** A planted LMG is an easy target up close, where strafing wins, so it settles in only once the fight is past half its reach. */
+function plants(v: Perception, c: IntentCtx, d: number, fromCover: boolean): boolean {
+  if (c.persona.plantsFromCover && fromCover && d >= c.band.ideal) return true;
+  const gun = GUNS[v.me.gun];
+  const { plant } = rulesOf(gun);
+  return plant === 'always' || (plant === 'atRange' && d >= gun.range / 2);
+}
 
 function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
   const age = v.tick - m.stance.since;

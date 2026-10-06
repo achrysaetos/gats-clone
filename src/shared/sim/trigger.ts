@@ -3,7 +3,7 @@ import type { InputState } from '../protocol.ts';
 import { clamp } from './movement.ts';
 import type { Life } from './world.ts';
 
-export type TriggerState = Pick<Extract<Life, { k: 'alive' }>, 'ammo' | 'reloadUntil' | 'nextFireAt' | 'burstLeft' | 'pressUntil' | 'spray' | 'spin'>;
+export type TriggerState = Pick<Extract<Life, { k: 'alive' }>, 'ammo' | 'reloadUntil' | 'nextFireAt' | 'burstLeft' | 'pressUntil' | 'spray' | 'firedAt' | 'spin'>;
 export type HeldGun = { def: GunDef; mag: number; reloadMs: number; armed: boolean };
 export type Pull = Pick<InputState, 'fire' | 'reload'> & { pressed: boolean };
 
@@ -19,7 +19,7 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   s.spin = spinUp ? clamp(s.spin + (pull.fire ? tickMs / spinUp.upMs : -tickMs / spinUp.downMs), 0, 1) : 0;
   const fireMs = spinUp ? def.fireMs * (1 + (spinUp.startMul - 1) * (1 - s.spin)) : def.fireMs;
   const maxSpray = bloom ? bloom.free + (bloom.maxMul - 1) / bloom.perShot : 0;
-  if (bloom && !pull.fire && s.burstLeft === 0) s.spray = Math.max(0, s.spray - (maxSpray * tickMs) / bloom.recoverMs);
+  if (bloom && now - s.firedAt > bloom.settleMs) s.spray = Math.max(0, s.spray - (maxSpray * tickMs) / bloom.recoverMs);
   if (s.reloadUntil !== null && now >= s.reloadUntil) { s.ammo = gun.mag; s.reloadUntil = null; }
   if (s.reloadUntil === null && (s.ammo <= 0 || (pull.reload && s.ammo < gun.mag))) {
     s.reloadUntil = now + gun.reloadMs;
@@ -41,6 +41,7 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   s.ammo--;
   s.burstLeft = s.ammo > 0 ? s.burstLeft - 1 : 0;
   if (bloom) s.spray = Math.min(maxSpray, s.spray + 1);
+  s.firedAt = now;
   const keepsGunRate = now - s.nextFireAt < tickMs;
   s.nextFireAt = (keepsGunRate ? s.nextFireAt : now) + (s.burstLeft > 0 && def.burst ? def.burst.gapMs : fireMs);
   return true;

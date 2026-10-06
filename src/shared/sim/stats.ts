@@ -4,7 +4,7 @@ import {
 import type { Life, PerkOfTier, Player, World } from './world.ts';
 
 type PerkMods = {
-  spreadMul?: number; reloadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
+  spreadMul?: number; pelletSpreadMul?: number; reloadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
   maxHpAdd?: number; regenMul?: number; regenDelayMul?: number; viewMul?: number;
   piercing?: true; silenced?: true; shield?: true; thermal?: true; ghillie?: true;
 };
@@ -20,7 +20,7 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   lightweight: { speedMul: 1.1 },
   longRange: { rangeMul: 1.4 },
   quickReload: { reloadMul: 0.65 },
-  choke: { spreadMul: 0.6 },
+  choke: { pelletSpreadMul: 0.75 },
   shield: { shield: true },
   thickSkin: { maxHpAdd: 40 },
   firstAid: { regenMul: 3, regenDelayMul: 0.4 },
@@ -35,14 +35,17 @@ type Stats = {
 /** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks. */
 export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0): number {
   const rules = rulesOf(GUNS[gun]);
-  let spread = GUNS[gun].spread * (still ? 1 : rules.movingSpreadMul) * bloomMul(rules, sprayShot);
-  for (const perk of Object.values(perks)) spread *= PERK_MODS[perk].spreadMul ?? 1;
+  let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot);
+  for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
   return spread;
 }
 
 function bloomMul({ bloom }: GunRules, sprayShot: number): number {
   return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * Math.max(0, sprayShot - bloom.free)) : 1;
 }
+
+/** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */
+export const isSteady = (gun: GunId, sinceMoveMs: number): boolean => sinceMoveMs > 0 && sinceMoveMs >= rulesOf(GUNS[gun]).steadyMs;
 
 export const reloadMsFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((ms, perk) => ms * (PERK_MODS[perk].reloadMul ?? 1), GUNS[gun].reloadMs);
@@ -72,7 +75,7 @@ export function effectiveStats(p: Player): Stats {
   };
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
-    s.mag = Math.round(s.mag * (m.magMul ?? 1));
+    s.mag = Math.floor(s.mag * (m.magMul ?? 1));
     s.speed *= m.speedMul ?? 1;
     s.maxHp += m.maxHpAdd ?? 0;
     s.regenPerSec *= m.regenMul ?? 1;
@@ -91,7 +94,7 @@ export function effectiveStats(p: Player): Stats {
 export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }> {
   const s = effectiveStats(p);
   return {
-    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, spin: 0,
+    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity, hits: [],
   };
 }
