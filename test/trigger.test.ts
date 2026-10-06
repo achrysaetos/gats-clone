@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GUNS } from '../src/shared/defs.ts';
+import { GUNS, PRESS_BUFFER_MS } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { respawn, step } from '../src/shared/sim.ts';
 import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -57,39 +57,51 @@ test('a press during the cooldown is held and fires once the weapon is ready; a 
   assert.equal(start - ammoOf(p), 2, 'the held press fired once');
 });
 
-test('a press during a reload is held and fires once the reload ends', () => {
+test('a press just before a reload ends fires on the fresh magazine; one made long before does nothing', () => {
+  const early = emptyWorld();
+  const a = spawnAt(early, 500, 500);
+  if (a.life.k === 'alive') a.life.ammo = 0;
+  run(early, GUNS.pistol.reloadMs / 2);
+  assert.ok(a.life.k === 'alive' && a.life.reloadUntil !== null, 'reloading');
+  press(early, a, { shots: 1 });
+  run(early, GUNS.pistol.reloadMs / 2 + 1000);
+  assert.equal(ammoOf(a), GUNS.pistol.mag, 'a click half a reload early is not saved for later');
+
+  const late = emptyWorld();
+  const b = spawnAt(late, 500, 500);
+  if (b.life.k === 'alive') b.life.ammo = 0;
+  run(late, GUNS.pistol.reloadMs - PRESS_BUFFER_MS / 2);
+  assert.ok(b.life.k === 'alive' && b.life.reloadUntil !== null, 'still reloading');
+  press(late, b, { shots: 1 });
+  run(late, PRESS_BUFFER_MS + GUNS.pistol.fireMs);
+  assert.equal(ammoOf(b), GUNS.pistol.mag - 1, 'a click just before the reload ends fires the first fresh round');
+});
+
+test('a sniper click long before the bolt is ready is dropped, not fired later on its own', () => {
   const w = emptyWorld();
-  const p = spawnAt(w, 500, 500);
-  if (p.life.k === 'alive') p.life.ammo = 0;
-  run(w, GUNS.pistol.reloadMs / 2);
-  assert.ok(p.life.k === 'alive' && p.life.reloadUntil !== null, 'reloading');
+  const p = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' } });
+  const start = ammoOf(p);
   press(w, p, { shots: 1 });
-  run(w, GUNS.pistol.reloadMs / 2 + GUNS.pistol.fireMs);
-  assert.equal(ammoOf(p), GUNS.pistol.mag - 1, 'the press fired the first round of the fresh magazine');
+  step(w, TICK_MS);
+  run(w, 300);
+  press(w, p, { shots: 2 });
+  run(w, GUNS.sniper.fireMs + 500);
+  assert.equal(start - ammoOf(p), 1, 'only the first shot fired; the early click did not fire after the cooldown');
 });
 
-test('a press on the tick the reload starts is held until the reload ends', () => {
-  const lastRound = emptyWorld();
-  const a = spawnAt(lastRound, 500, 500);
-  if (a.life.k === 'alive') a.life.ammo = 1;
-  press(lastRound, a, { shots: a.input.shots + 1 });
-  step(lastRound, TICK_MS);
-  press(lastRound, a, { shots: a.input.shots + 1 });
-  run(lastRound, GUNS.pistol.reloadMs + GUNS.pistol.fireMs);
-  assert.equal(ammoOf(a), GUNS.pistol.mag - 1, 'a press the tick after the last round fires once the magazine is back');
-
-  const manual = emptyWorld();
-  const b = spawnAt(manual, 500, 500);
-  if (b.life.k === 'alive') b.life.ammo = 5;
-  run(manual, 300);
-  press(manual, b, { reload: true, shots: b.input.shots + 1 });
-  step(manual, TICK_MS);
-  press(manual, b, {});
-  run(manual, GUNS.pistol.reloadMs + GUNS.pistol.fireMs);
-  assert.equal(ammoOf(b), GUNS.pistol.mag - 1, 'a click sent with the reload key fires once the reload ends');
+test('a sniper click just before the bolt is ready fires as soon as it is', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' } });
+  const start = ammoOf(p);
+  press(w, p, { shots: 1 });
+  step(w, TICK_MS);
+  run(w, GUNS.sniper.fireMs - PRESS_BUFFER_MS / 2);
+  press(w, p, { shots: 2 });
+  run(w, PRESS_BUFFER_MS);
+  assert.equal(start - ammoOf(p), 2);
 });
 
-test('a press during a burst fires the next burst once the burst and its cooldown end', () => {
+test('a press early in a burst does not queue the next burst', () => {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);
   equip(p, 'machinePistol');
@@ -98,7 +110,7 @@ test('a press during a burst fires the next burst once the burst and its cooldow
   step(w, TICK_MS);
   press(w, p, { shots: 2 });
   run(w, 2 * GUNS.machinePistol.fireMs);
-  assert.equal(start - ammoOf(p), 2 * GUNS.machinePistol.burst!.count);
+  assert.equal(start - ammoOf(p), GUNS.machinePistol.burst!.count, 'one burst; the click during it was too early to keep');
 });
 
 test('a tap on an automatic weapon fires one shot; holding keeps firing', () => {

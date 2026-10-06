@@ -1,4 +1,4 @@
-import { PRESS_GRACE_MS, type GunDef } from '../defs.ts';
+import { PRESS_BUFFER_MS, PRESS_GRACE_MS, type GunDef } from '../defs.ts';
 import type { InputState } from '../protocol.ts';
 import type { Life } from './world.ts';
 
@@ -21,7 +21,8 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   }
   if (pull.pressed) {
     const cooledAt = s.burstLeft > 0 && def.burst ? s.nextFireAt + (s.burstLeft - 1) * def.burst.gapMs + def.fireMs : s.nextFireAt;
-    s.pressUntil = Math.max(now, cooledAt, s.reloadUntil ?? 0) + PRESS_GRACE_MS;
+    const readyAt = Math.max(now, cooledAt, s.reloadUntil ?? 0);
+    if (readyAt - now <= PRESS_BUFFER_MS) s.pressUntil = readyAt + PRESS_GRACE_MS;
   }
   const bursting = s.burstLeft > 0;
   const wantsShot = bursting || now <= s.pressUntil || (def.auto && pull.fire);
