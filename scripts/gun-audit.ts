@@ -3,7 +3,7 @@
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { GUNS, rulesOf, WORLD, type GunDef, type GunId } from '../src/shared/defs.ts';
+import { GUNS, rulesOf, WEAPON_IDS, WORLD, type GunDef, type GunId } from '../src/shared/defs.ts';
 
 const { values: args } = parseArgs({ options: { old: { type: 'string' }, moving: { type: 'boolean', default: false }, set: { type: 'string' } } });
 for (const pair of args.set?.split(',') ?? []) {
@@ -11,7 +11,7 @@ for (const pair of args.set?.split(',') ?? []) {
   const [id, field] = path!.split('.') as [GunId, keyof GunDef];
   Object.assign(GUNS[id], { [field]: Number(value) });
 }
-const { AIM_BANDS, aimDps, aimKillMs, doctrineBreaches, HUMAN_HP, perfectKill, TREE_ORDER } = await import('./lib/gunscore.ts');
+const { AIM_BANDS, aimDps, aimKillMs, classKillMatrix, doctrineBreaches, HUMAN_HP, perfectKill, TREE_ORDER } = await import('./lib/gunscore.ts');
 const old: Record<string, GunDef> = args.old ? (await import(pathToFileURL(resolve(args.old)).href)).GUNS : {};
 
 const msPerRound = (g: GunDef) => (g.burst ? ((g.burst.count - 1) * g.burst.gapMs + g.fireMs) / g.burst.count : g.fireMs);
@@ -38,6 +38,11 @@ for (const id of TREE_ORDER) {
     `  ${o ? `${pull(o)} / ${msPerRound(o).toFixed(0)}ms / ${o.range}` : 'new'}`,
   ]));
 }
+
+const matrix = classKillMatrix();
+console.log(`\nmedian seconds per class for a person to kill a strafing person, walking at 100 and 300 px, standing at 600 and 900 px`);
+console.log(`  ${'class'.padEnd(9)}${([0, 1, 2] as const).map((st) => AIM_BANDS.map((d) => `s${st}@${d}`.padStart(9)).join('')).join('  ')}`);
+for (const c of WEAPON_IDS) console.log(`  ${c.padEnd(9)}${([0, 1, 2] as const).map((st) => AIM_BANDS.map((d) => s(matrix[st][c][d] * 1000).padStart(9)).join('')).join('  ')}`);
 
 const breaches = doctrineBreaches();
 console.log(`\n${breaches.length} doctrine breaches (DOCTRINE in scripts/lib/gunscore.ts)`);

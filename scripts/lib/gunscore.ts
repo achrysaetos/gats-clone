@@ -155,6 +155,21 @@ const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: 
   lmg: { cadenceMs: [33, 120], scope: 1, fastestKillS: { 100: 2.3, 300: 3.3, 600: 5.5, 900: 8 } },
 };
 const STAGE_GAIN = [1, 1.15, 1.3] as const;
+/**
+ * Up to 300 px both people are on each other's screen and a shooter who stands still is the easy target, so a class's hold on
+ * those bands is judged walking; from 600 px planting is the class's commitment, so it is judged standing.
+ */
+const PLANTED: Record<Band, boolean> = { 100: false, 300: false, 600: true, 900: true };
+const BAND_OWNERS: Record<Band, readonly WeaponId[]> = { 100: ['smg', 'shotgun'], 300: ['assault'], 600: ['lmg', 'sniper'], 900: ['sniper'] };
+const OWNER_LEAD = 1.15;
+const SNIPER_CLOSE_LAG = 1.4;
+
+/** Each stage's median expected seconds per class for a person to kill a strafing person, in each band's posture. */
+export function classKillMatrix(): Record<0 | 1 | 2, Record<WeaponId, Record<Band, number>>> {
+  const byStage = (stage: 0 | 1 | 2) => Object.fromEntries(WEAPON_IDS.map((c) => [c, Object.fromEntries(AIM_BANDS.map((d) =>
+    [d, median(gunsOfStage(stage).filter((id) => GUNS[id].base === c).map((id) => aimKillMs(id, d, PLANTED[d]) / 1000))]))])) as Record<WeaponId, Record<Band, number>>;
+  return { 0: byStage(0), 1: byStage(1), 2: byStage(2) };
+}
 const BOLT = { minFireMs: 1100, bareHumanHits: 3 } as const;
 const MIN_HUMAN_KILL_MS = 850;
 const AUTO_MAG_HUMANS = 1.25;
@@ -166,6 +181,7 @@ export function doctrineBreaches(): Breach[] {
   const breach = (id: GunId, rule: string, detail: string) => out.push({ id, rule, detail });
   const killS = new Map(GUN_IDS.map((id) => [id, new Map(AIM_BANDS.map((d) => [d, aimKillMs(id, d, true) / 1000]))]));
   const killAt = (id: GunId, d: Band) => killS.get(id)!.get(d)!;
+  const classes = classKillMatrix();
   for (const id of GUN_IDS) {
     const g = GUNS[id], doc = DOCTRINE[g.base], ms = msPerRound(id), perfect = perfectKill(id, HUMAN_HP, 'none');
     if (ms < doc.cadenceMs[0] || ms > doc.cadenceMs[1]) breach(id, 'cadence', `${ms.toFixed(0)}ms per round outside ${doc.cadenceMs.join('-')}`);
@@ -184,6 +200,18 @@ export function doctrineBreaches(): Breach[] {
     const slowestSmg = Math.max(...killsOf((id) => GUNS[id].base === 'smg', 100));
     for (const id of ids.filter((x) => GUNS[x].base === 'sniper' || GUNS[x].base === 'lmg')) {
       if (killAt(id, 100) < slowestSmg) breach(id, 'close', `kills in ${killAt(id, 100).toFixed(2)}s at 100px, under an SMG's ${slowestSmg.toFixed(2)}s`);
+    }
+    const walkingSmg = Math.max(...ids.filter((id) => GUNS[id].base === 'smg').map((id) => aimKillMs(id, 100, false) / 1000));
+    for (const id of ids.filter((x) => GUNS[x].base === 'sniper')) {
+      const kill = aimKillMs(id, 100, false) / 1000;
+      if (kill < SNIPER_CLOSE_LAG * walkingSmg) breach(id, 'hipfire', `kills in ${kill.toFixed(2)}s at 100px walking, under ${SNIPER_CLOSE_LAG}x an SMG's ${walkingSmg.toFixed(2)}s`);
+    }
+    const matrix = classes[stage];
+    for (const d of AIM_BANDS) {
+      const owned = Math.min(...BAND_OWNERS[d].map((c) => matrix[c][d]));
+      for (const c of WEAPON_IDS.filter((x) => !BAND_OWNERS[d].includes(x) && matrix[x][d] < OWNER_LEAD * owned)) {
+        breach(c, `band@${d}/s${stage}`, `kills in ${matrix[c][d].toFixed(2)}s, within ${OWNER_LEAD}x of ${BAND_OWNERS[d].join('/')}'s ${owned.toFixed(2)}s`);
+      }
     }
     const sniperMid = median(killsOf((id) => GUNS[id].base === 'sniper', 600));
     for (const id of ids.filter((x) => GUNS[x].base === 'smg' || (GUNS[x].base === 'shotgun' && GUNS[x].pellets > 1))) {
