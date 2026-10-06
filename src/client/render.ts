@@ -1,4 +1,4 @@
-import { COLORS, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
@@ -16,6 +16,7 @@ import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
 import { drawCracks, hostKey } from './decals.ts';
+import { drawDropsWorld, drawRingWorld } from './royale.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
@@ -94,6 +95,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt);
   drawCracks(ctx, s.cracks, now, new Set([...s.walls, ...crates, ...standing].map(hostKey)));
   if (dark > 0) drawNight(ctx, tl, br, dark);
+  const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
+  if (snap.royale && clockNow !== null) {
+    drawRingWorld(ctx, snap.royale, clockNow, tl, br);
+    drawDropsWorld(ctx, snap.royale, clockNow, now, ROYALE.dropSize);
+  }
 
   drawTracers(ctx, snap.bullets);
 

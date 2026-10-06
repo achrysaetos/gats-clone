@@ -100,7 +100,7 @@ const restartServer = async (whileDown = async () => {}) => {
 
 const STEPS: Record<string, () => Promise<void>> = {
   async menu() {
-    expect('menu lists three rooms', (await js(`[...document.querySelectorAll('#servers .server')].map(b => b.textContent).join('|')`)).match(/FFA|TDM|DOM/g)?.length === 3);
+    expect('menu lists four rooms', (await js(`[...document.querySelectorAll('#servers .server')].map(b => b.textContent).join('|')`)).match(/FFA|TDM|DOM|BR/g)?.length === 4);
     await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
     await sleep(300);
     expect('menu has no horizontal scroll at 375px', await js(`document.documentElement.scrollWidth <= innerWidth`));

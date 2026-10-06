@@ -12,6 +12,7 @@ import { glow, PALETTE, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, useHint } from './zombies.ts';
+import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
 import { drawGunGlyph } from './sprites.ts';
 import type { Session } from './state.ts';
 
@@ -79,6 +80,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   const siegeTop = drawObjectiveLine(hud, below, fullBoard);
   if (me?.alive) drawVitals(hud, compact);
   if (snap.run) drawSiege(hud, snap.run, siegeTop, compact);
+  if (snap.royale) drawRoyale(hud, snap.royale, siegeTop);
   drawHuntedArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
@@ -353,7 +355,18 @@ function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: numb
   return { width: ctx.measureText(label).width + SPACE.sm, draw: (x, y) => text(ctx, label, x, y, TYPE.label, color, 'left', weight) };
 }
 
-const LIFE_LINE = { downed: PALETTE.hunted, revived: PALETTE.hpGood, bledOut: PANEL_MUTED } as const;
+const LIFE_LINE = { downed: PALETTE.hunted, revived: PALETTE.hpGood, bledOut: PANEL_MUTED, finished: PALETTE.hunted, redeployed: PALETTE.hpGood } as const;
+const KNOCK_TAG = 'KNOCKED';
+
+function lifeLine(f: Extract<Snapshot['events'][number], { e: 'life' }>, by: string | null | undefined): string {
+  switch (f.k) {
+    case 'downed': return `${f.name} is down`;
+    case 'revived': return by ? `${by} revived ${f.name}` : `${f.name} is back up`;
+    case 'bledOut': return `${f.name} bled out`;
+    case 'finished': return by ? `${by} finished ${f.name}` : `${f.name} fell to the ring`;
+    case 'redeployed': return `${f.name} redeployed`;
+  }
+}
 
 function drawKillFeed(hud: Hud, top: number, rows: number) {
   const { ctx, w, s, now } = hud;
@@ -365,12 +378,22 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
     setFont(ctx, 650, TYPE.label + 1);
     if (f.e === 'life') {
       const by = f.by === null ? null : hud.snap.players.find((p) => p.id === f.by)?.name ?? hud.snap.leaderboard.find((r) => r.id === f.by)?.name;
-      const [line, color] = f.k === 'downed' ? [`${f.name} is down`, LIFE_LINE.downed] : f.k === 'revived' ? [by ? `${by} revived ${f.name}` : `${f.name} is back up`, LIFE_LINE.revived] : [`${f.name} bled out`, LIFE_LINE.bledOut];
+      const [line, color] = [lifeLine(f, by), LIFE_LINE[f.k]];
       const pw = ctx.measureText(line).width + SPACE.md * 2;
       feedRow(ctx, right - pw, y, pw, f.id === s.myId);
       ctx.fillStyle = color;
       ctx.fillRect(right - pw + 4, y - 5, 2, 10);
       text(ctx, line, right - pw + SPACE.md, y, TYPE.label + 1, PANEL_INK, 'left', 650);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    if (f.e === 'wiped') {
+      const line = `${squadLabel(f.team)} is out · #${f.place}`;
+      const pw = ctx.measureText(line).width + SPACE.md * 2 + 8;
+      feedRow(ctx, right - pw, y, pw, hud.me?.team === f.team);
+      ctx.fillStyle = TEAM_COLORS[f.team];
+      ctx.fillRect(right - pw + 6, y - 5, 6, 10);
+      text(ctx, line, right - pw + SPACE.md + 8, y, TYPE.label + 1, PANEL_INK, 'left', 650);
       ctx.globalAlpha = 1;
       return;
     }
@@ -387,7 +410,8 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
     const vw = ctx.measureText(f.victim).width;
     const weapon = feedWeapon(ctx, f.weapon);
     setFont(ctx, 800, TYPE.micro);
-    const bw = f.bounty ? ctx.measureText(BOUNTY_TAG).width + SPACE.sm : 0;
+    const tag = f.bounty ? BOUNTY_TAG : f.knock ? KNOCK_TAG : null;
+    const bw = tag ? ctx.measureText(tag).width + SPACE.sm : 0;
     const pw = kw + vw + weapon.width + bw + SPACE.md * 2 + (f.killer ? SPACE.sm : 0);
     let x = right - pw;
     feedRow(ctx, x, y, pw, feedMentions(f, s.myId));
@@ -396,7 +420,7 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
     weapon.draw(x, y);
     x += weapon.width;
     text(ctx, f.victim, x, y, TYPE.label + 1, nameColor(hud, f.victimId), 'left', 650);
-    if (f.bounty) text(ctx, BOUNTY_TAG, x + vw + SPACE.sm, y, TYPE.micro, FEED_TEAM.red, 'left', 800);
+    if (tag) text(ctx, tag, x + vw + SPACE.sm, y, TYPE.micro, f.bounty ? FEED_TEAM.red : PALETTE.gold, 'left', 800);
     ctx.globalAlpha = 1;
   });
 }
@@ -428,7 +452,7 @@ const BOARD = { w: 168, compactW: 140, row: 21, pad: 10 } as const;
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const { ctx, w, h, snap, s, me } = hud;
   const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null);
-  const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM';
+  const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
   const pw = compact ? BOARD.compactW : BOARD.w;
   const x = w - pw - EDGE, top = EDGE;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
@@ -438,7 +462,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   panel(ctx, x, top, pw, ph);
   let y = top + BOARD.pad + BOARD.row / 2;
   if (full) {
-    const line = snap.run ? 'Squad kills' : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
+    const line = snap.run || snap.royale ? 'Squad kills' : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
     text(ctx, line[0]!.toUpperCase() + line.slice(1), x + BOARD.pad + 2, y - 2, TYPE.micro, PANEL_MUTED, 'left', 600);
     y += head;
   }
@@ -573,6 +597,13 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.fillStyle = hud.now - s.coreHitAt < CORE_ALERT_MS && Math.floor(hud.now / 200) % 2 ? PALETTE.hunted : '#4fd1e8';
     ctx.fillRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
   }
+  const clockNow = snap.royale ? serverNow(s.snaps, hud.now) : null;
+  if (snap.royale && clockNow !== null) {
+    drawRingMap(ctx, snap.royale, clockNow, hud.now, x, y, k, size);
+    ctx.globalAlpha = base;
+    const lines = [ringLine(snap.royale, clockNow), ...(snap.royale.redeploys ? [] : ['Last lives'])];
+    lines.forEach((line, i) => outlined(ctx, line, x0 + (size + pad * 2) / 2, y0 - 12 - (lines.length - 1 - i) * 18, TYPE.label + 1, i === 0 ? '#ffffff' : PALETTE.lossOnDark, 700));
+  }
   const self = me ?? s.lastSelf;
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
@@ -601,6 +632,16 @@ function drawPill(hud: Hud, compact: boolean): number {
     }
     const center = snap.match.mode === 'DOM' ? `to ${WORLD.domWinScore}` : left === null ? `to ${WORLD.tdmWinScore}` : clock(left);
     text(ctx, center, x + side + mid / 2, cy + 1, TYPE.body, PANEL_INK, 'center', 600);
+    return y + ph;
+  }
+  if (snap.royale) {
+    const pill = ringPill(snap.royale, serverNow(s.snaps, now) ?? snap.royale.ring.shrinkAt);
+    const lw = compact ? 70 : 86;
+    const x = w / 2 - (lw + mid) / 2;
+    fadePanel(hud, 'score', x, y, lw + mid, ph);
+    panel(ctx, x, y, lw + mid, ph);
+    text(ctx, pill.label, x + lw / 2 + 4, cy + 1, TYPE.label + 1, '#c9b3ff', 'center', 800);
+    text(ctx, pill.time, x + lw + mid / 2 - 4, cy + 1, TYPE.body, PANEL_INK, 'center', 600);
     return y + ph;
   }
   if (snap.run) {
@@ -673,12 +714,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   if (run.phase === 'over') return;
   if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night, squadShare(hud.snap.players))}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);
   if (me?.downed) {
-    const k = 0.5 + 0.5 * Math.sin(now / 260);
-    outlined(ctx, "You're down", w / 2, h * 0.64, 22, PALETTE.hunted, 850);
-    outlined(ctx, downedLine(me.downed, serverNow(s.snaps, now)), w / 2, h * 0.64 + 24, TYPE.body + 1, '#ffffff', 650);
-    ctx.globalAlpha = 0.6 + 0.4 * k;
-    bar(ctx, w / 2 - 90, h * 0.64 + 40, 180, 5, me.downed.revive, PALETTE.hpGood, on.track);
-    ctx.globalAlpha = 1;
+    drawDownedSelf(hud, me.downed);
     return;
   }
   if (!me?.alive) return;
@@ -691,6 +727,35 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   } else if (run.phase === 'day') {
     hintBar(ctx, s, [{ key: 'B', what: 'build walls and turrets' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }], w / 2, row, null);
   }
+}
+
+function drawDownedSelf({ ctx, w, h, s, now, on }: Hud, downed: NonNullable<PlayerView['downed']>) {
+  const k = 0.5 + 0.5 * Math.sin(now / 260);
+  outlined(ctx, "You're down", w / 2, h * 0.64, 22, PALETTE.hunted, 850);
+  outlined(ctx, downedLine(downed, serverNow(s.snaps, now)), w / 2, h * 0.64 + 24, TYPE.body + 1, '#ffffff', 650);
+  ctx.globalAlpha = 0.6 + 0.4 * k;
+  bar(ctx, w / 2 - 90, h * 0.64 + 40, 180, 5, downed.revive, PALETTE.hpGood, on.track);
+  ctx.globalAlpha = 1;
+}
+
+/** The squad tracker under the pill, and what a knocked, reviving or spectating player needs to read. */
+function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: number) {
+  const { ctx, w, h, snap, s, me, now } = hud;
+  const mine = me?.team ?? null;
+  const box = trackerSize(royale.squads.length);
+  const x = w / 2 - box.w / 2 - 6, y = top + 6;
+  panel(ctx, x, y, box.w + 12, box.h + 8);
+  panels.push({ x, y, w: box.w + 12, h: box.h + 8 });
+  drawTracker(ctx, royale, mine, x + 6, y + 4);
+  if (me?.downed) { drawDownedSelf(hud, me.downed); return; }
+  const revive = reviveHint(snap, me);
+  if (revive) outlined(ctx, revive, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750);
+  if (me?.alive) return;
+  const clockNow = serverNow(s.snaps, now);
+  if (clockNow === null) return;
+  const lines = spectateLines(snap, royale, clockNow);
+  outlined(ctx, lines.title, w / 2, h - 96, 18, '#ffffff', 800);
+  outlined(ctx, lines.sub, w / 2, h - 72, TYPE.body + 1, PANEL_MUTED, 650);
 }
 
 function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {

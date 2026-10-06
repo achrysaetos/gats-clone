@@ -3,6 +3,7 @@ import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf, type KillEvent } from './derive.ts';
 import { TICK_MS } from './interp.ts';
 import { PALETTE } from './palette.ts';
+import { royaleCallouts } from './royale.ts';
 import { runCallouts, squadShare, type RunCallout } from './zombies.ts';
 
 const TONE: Record<RunCallout['tone'], string> = { night: '#a08cff', dawn: PALETTE.gold, warn: '#ff9f43' };
@@ -31,6 +32,7 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
   for (const c of runCallouts(prev?.run, next.run, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS, squadShare(next.players))) {
     announce({ title: c.title, line: c.line, color: TONE[c.tone], ring: c.tone !== 'warn' });
   }
+  for (const c of royaleCallouts(prev?.royale, next.royale, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS)) announce({ ...c, color: '#c9b3ff', ring: false });
   for (const ev of next.events) {
     if (ev.e === 'life' && ev.id === next.self.id && ev.k === 'revived') {
       const by = next.players.find((p) => p.id === ev.by)?.name;
