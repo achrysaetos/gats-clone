@@ -1,4 +1,4 @@
-import { CRATE_TIERS, ZOM } from '../../shared/defs.ts';
+import { CRATE_TIERS, RING, ZOM } from '../../shared/defs.ts';
 import { ringAt, type Circle, type InputState, type PlayerView, type RingView, type RoyaleView, type Snapshot } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { TICK_MS } from './aim.ts';
@@ -20,7 +20,7 @@ const MATE_DEAD_ZONE = 30;
 /** Past this a bot walks back to its squad, and the squad gathers once it has strayed this far apart. */
 const PACK_PX = 450;
 const FOLLOW_PX = 70;
-/** Once lives are last a squad that is not ahead holds cover this close to the middle of its standing members, pulled inside the circle. */
+/** From the ring closing on last lives onward a squad holds cover this close to the middle of its standing members, pulled inside the circle. */
 const HOLD_PX = 220;
 const HUNT_PX = 2000;
 /** A crate's worth is its score over its distance plus this, so a near crate beats a richer one only when the richer one is much farther. */
@@ -63,7 +63,7 @@ type Pack =
   | { k: 'hunt'; at: Point }
   | { k: 'hold'; at: Point };
 
-type PackCtx = { snap: Snapshot; royale: RoyaleView; me: PlayerView; view: Perception; arena: BotArena; circle: Circle };
+type PackCtx = { snap: Snapshot; royale: RoyaleView; me: PlayerView; view: Perception; arena: BotArena; circle: Circle; now: number };
 
 function bestLoot({ snap, royale, me, circle }: PackCtx): Point | null {
   const crates = snap.crates.map((c) => ({ at: { x: c.x + c.size / 2, y: c.y + c.size / 2 }, score: c.tier === 'drop' ? DROP_WORTH : CRATE_TIERS[c.tier ?? 'loot'].score }));
@@ -85,7 +85,9 @@ function packFor(c: PackCtx, outside: boolean, downed: PlayerView | null): Pack 
   const centroid = { x: mean(marks.map((m) => m.x)), y: mean(marks.map((m) => m.y)) };
   const mates = snap.players.filter((p) => p.id !== me.id && p.team === team && p.alive);
   if (!mates.length && dist(me, centroid) > PACK_PX) return { k: 'gather', at: centroid };
-  if (!c.royale.redeploys) return { k: 'hold', at: inward(centroid, circle, c.arena) };
+  const { ring, redeploys } = c.royale;
+  const closingOnLastLives = RING[ring.phase + 1]?.lives === 'last' && c.now >= ring.shrinkAt;
+  if (!redeploys || closingOnLastLives) return { k: 'hold', at: inward(centroid, circle, c.arena) };
   const leader = [me, ...mates].reduce((a, b) => (b.id < a.id ? b : a));
   if (leader.id !== me.id) return { k: 'follow', at: short(me, leader, FOLLOW_PX) };
   const mine = mean(snap.leaderboard.filter((r) => r.team === team).map((r) => r.score));
@@ -143,7 +145,7 @@ export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, 
   const current = ringAt(royale.ring, now);
   const outside = !inside(me, circle, EDGE_PX) && (urgent || dist(me, current) > current.r);
   const downed = nearestOf(me, snap.players.filter((p) => p.id !== me.id && p.team === me.team && p.downed && dist(p, me) < REVIVE_REACH_PX));
-  const pack = packFor({ snap, royale, me, view, arena, circle }, outside, downed);
+  const pack = packFor({ snap, royale, me, view, arena, circle, now }, outside, downed);
   const prev = mem.intent ?? startIntent({ k: 'patrol', goal: pack.at }, ctx);
   const walkTo = (goal: Point, slack: number) => (prev.k === 'patrol' && dist(prev.goal, goal) < slack ? prev : startIntent({ k: 'patrol', goal }, ctx));
   let intent: Intent;

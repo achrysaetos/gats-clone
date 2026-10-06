@@ -472,8 +472,8 @@ export const ZOM = {
 export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number; lives: 'many' | 'last' };
 export const RING: readonly RingPhase[] = [
   { waitMs: 30_000, shrinkMs: 30_000, radius: 3200, dps: 0.02, lives: 'many' },
-  { waitMs: 45_000, shrinkMs: 25_000, radius: 2500, dps: 0.03, lives: 'many' },
-  { waitMs: 40_000, shrinkMs: 20_000, radius: 1900, dps: 0.05, lives: 'many' },
+  { waitMs: 55_000, shrinkMs: 25_000, radius: 2500, dps: 0.03, lives: 'many' },
+  { waitMs: 50_000, shrinkMs: 20_000, radius: 1900, dps: 0.05, lives: 'many' },
   { waitMs: 45_000, shrinkMs: 20_000, radius: 1300, dps: 0.08, lives: 'last' },
   { waitMs: 35_000, shrinkMs: 15_000, radius: 700, dps: 0.12, lives: 'last' },
   { waitMs: 25_000, shrinkMs: 15_000, radius: 0, dps: 0.2, lives: 'last' },
@@ -496,7 +496,7 @@ export const ROYALE = {
   scatter: 100,
   richR: 1500,
   /** Crates scattered inside each new circle as it is drawn. */
-  wave: 80,
+  wave: 100,
 } as const;
 
 /** What each kind of Last Squad crate pays, how much it takes to break and how big it stands. A drop also jumps its breaker to their next level pick. */
