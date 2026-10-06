@@ -36,7 +36,7 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
     const meter = el('span', { className: 'meter' }, el('i'));
     meter.style.setProperty('--fill', `${(a.blockFrac / ARMORS.heavy.blockFrac) * 100}%`);
     const cost = a.blockFrac
-      ? [el('small', {}, `+${Math.round(a.blockFrac * 100)}% damage blocked`), el('small', {}, `−${speed}% speed`)]
+      ? [el('small', {}, `+${Math.round(a.blockFrac * 100)}% dmg blocked`), el('small', {}, `−${speed}% speed`)]
       : [el('small', {}, 'Full speed')];
     const b = el('button', { type: 'button', className: 'tile armor' }, el('b', {}, a.name), meter, ...cost);
     b.onclick = () => set({ ...get(), armor: id });
