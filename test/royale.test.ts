@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RING, ZOM } from '../src/shared/defs.ts';
+import { COLOR_IDS, CRATE_TIERS, RING, ROYALE, ZOM } from '../src/shared/defs.ts';
+import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import type { Player, World } from '../src/shared/sim/world.ts';
+import { createWorld, type Player, type World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
 import { createRoom } from '../src/server/room.ts';
 import { emptyWorld, fakeSocket, hpOf, PISTOL, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
@@ -182,9 +183,9 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
   spawnAt(w, 4000, 4000, { team: 'red' });
   w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now + 5000 }];
   assert.deepEqual(snapshotFor(w, shooter.id).royale!.drops, [{ x: 1300, y: 1000, landsAt: w.now + 5000 }]);
-  assert.ok(!w.crates.some((c) => c.drop));
+  assert.ok(!w.crates.some((c) => c.tier === 'drop'));
   run(w, 5100);
-  const drop = w.crates.find((c) => c.drop)!;
+  const drop = w.crates.find((c) => c.tier === 'drop')!;
   assert.ok(drop && Math.abs(drop.x + drop.size / 2 - 1300) < 1, 'lands where it was shown');
   for (let i = 0; i < 40 && drop.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.notEqual(drop.respawnAt, null);
@@ -198,17 +199,63 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
   if (shooter.life.k === 'alive') shooter.life.hp = 10;
   w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now }];
   run(w, 100);
-  const second = w.crates.find((c) => c.drop && c.respawnAt === null)!;
+  const second = w.crates.find((c) => c.tier === 'drop' && c.respawnAt === null)!;
   for (let i = 0; i < 40 && second.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.level, 5);
   assert.ok(hpOf(shooter) >= 140, `healed to ${hpOf(shooter)}`);
+});
+
+function fullMatch(map = ROTATION.BR[0]!, seed = 7): World {
+  const w = createWorld('BR', seed, map);
+  for (const team of COLOR_IDS) for (let i = 0; i < ROYALE.squadSize; i++) addPlayer(w, `${team}${i}`, PISTOL, { team });
+  return w;
+}
+
+const bearing = (w: World, p: { x: number; y: number }) => Math.atan2(p.y - MAPS[w.map].size / 2, p.x - MAPS[w.map].size / 2);
+
+test('squads start together, evenly spaced on a circle round the map\'s centre, facing in', () => {
+  for (const map of ROTATION.BR) {
+    const w = fullMatch(map);
+    const centre = MAPS[map].size / 2;
+    const bearings = COLOR_IDS.map((team) => {
+      const squad = [...w.players.values()].filter((p) => p.team === team);
+      const at = { x: squad.reduce((s, p) => s + p.x, 0) / squad.length, y: squad.reduce((s, p) => s + p.y, 0) / squad.length };
+      for (const p of squad) {
+        assert.ok(Math.hypot(p.x - at.x, p.y - at.y) < 250, `${map} ${p.name} is with their squad`);
+        assert.ok(Math.cos(p.angle - Math.atan2(centre - p.y, centre - p.x)) > 0.95, `${map} ${p.name} faces the centre`);
+      }
+      assert.ok(Math.abs(Math.hypot(at.x - centre, at.y - centre) - ROYALE.edgeR) < 200, `${map} ${team} starts ${Math.hypot(at.x - centre, at.y - centre).toFixed(0)} px out`);
+      return bearing(w, at);
+    }).sort((a, b) => a - b);
+    const gaps = bearings.map((b, i) => (i ? b - bearings[i - 1]! : b + 2 * Math.PI - bearings.at(-1)!));
+    for (const gap of gaps) assert.ok(Math.abs(gap - Math.PI / 3) < 0.2, `${map} squads ${(gap * 180 / Math.PI).toFixed(0)} degrees apart`);
+  }
+});
+
+test('rich caches sit round each map\'s centre and pay a level step', () => {
+  for (const map of ROTATION.BR) {
+    const w = fullMatch(map);
+    const centre = MAPS[map].size / 2;
+    const caches = w.crates.filter((c) => c.tier === 'cache');
+    assert.equal(caches.length, ROYALE.caches, map);
+    for (const c of caches) assert.ok(Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.cacheR + 150, `${map} cache near the centre`);
+    assert.ok(w.crates.filter((c) => c.tier !== 'cache').every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
+  }
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  spawnAt(w, 4000, 4000, { team: 'red' });
+  w.crates = [{ id: 999_999, x: 1150, y: 970, size: CRATE_TIERS.cache.size, hp: CRATE_TIERS.cache.hp, respawnAt: null, tier: 'cache' }];
+  w.wallsVersion++;
+  for (let i = 0; i < 30 && w.crates[0]!.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
+  assert.equal(shooter.score, 100);
+  assert.equal(shooter.level, 1);
 });
 
 test('crates pay 25 and stay broken for the match', () => {
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   spawnAt(w, 4000, 4000, { team: 'red' });
-  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null }];
+  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null, tier: 'loot' }];
   w.wallsVersion++;
   for (let i = 0; i < 6; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.score, 25);

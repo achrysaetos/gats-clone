@@ -1,11 +1,11 @@
-import { COLOR_IDS, LEVELS, RING, ROYALE, WORLD, type ColorId } from '../defs.ts';
+import { COLOR_IDS, CRATE_TIERS, LEVELS, RING, ROYALE, WORLD, type ColorId, type CrateTier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult, type Team } from '../protocol.ts';
 import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
-import { coverRects, crateRect, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
+import { clearPointNear, coverRects, moveTo, newId, rand, spawnPoint, type Crate, type Player, type Ring, type Royale, type Pose, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
@@ -46,13 +46,44 @@ function scheduleDrop(w: World, r: Royale, into: Circle) {
   r.drops.push({ ...at, landsAt: w.now + ROYALE.dropLandMs });
 }
 
+function crateAt(w: World, x: number, y: number, tier: CrateTier): Crate {
+  const { size, hp } = CRATE_TIERS[tier];
+  return { id: newId(w), x: x - size / 2, y: y - size / 2, size, hp, respawnAt: null, tier };
+}
+
+function stockCrates(w: World, spin: number) {
+  const size = MAPS[w.map].size;
+  w.crates = w.crates.map((c) => ({ ...c, tier: 'loot' }));
+  for (let i = 0; i < ROYALE.caches; i++) {
+    const a = spin + ((i + 0.5) / ROYALE.caches) * 2 * Math.PI;
+    const at = clearPointNear(coverRects(w), size / 2 + Math.cos(a) * ROYALE.cacheR, size / 2 + Math.sin(a) * ROYALE.cacheR, CRATE_TIERS.cache.size, size);
+    w.crates.push(crateAt(w, at.x, at.y, 'cache'));
+  }
+}
+
+/** The six squads' starting bearings round the map's centre; a wiped squad regroups on whichever bearing is farthest from the squads still up. */
+export function squadEdge(w: World, team: Team): Pose & { centre: Pose } {
+  const r = w.royale!;
+  const to = ringView(r.ring).to;
+  const reach = Math.max(0, Math.min(ROYALE.edgeR, to.r - ROYALE.cacheR));
+  const rivals = [...w.players.values()].filter((p) => p.team !== team && p.life.k !== 'dead' && Number.isFinite(p.x));
+  const slots = COLOR_IDS.map((_, i) => {
+    const a = r.spin + (i / COLOR_IDS.length) * 2 * Math.PI;
+    return { x: to.x + Math.cos(a) * reach, y: to.y + Math.sin(a) * reach, centre: to };
+  });
+  const room = (s: Pose) => Math.min(Infinity, ...rivals.map((p) => dist2(p.x, p.y, s.x, s.y)));
+  return slots.reduce((best, s) => (room(s) > room(best) ? s : best), slots[Math.max(0, COLOR_IDS.indexOf(team as ColorId))]!);
+}
+
 export function newRoyale(w: World): Royale {
   const size = MAPS[w.map].size;
   const circle = { x: size / 2, y: size / 2, r: Math.hypot(size, size) / 2 + WORLD.playerRadius * 4 };
-  const next = nextCircle(w, circle, RING[0]!.radius);
+  const next = { x: size / 2, y: size / 2, r: RING[0]!.radius };
+  const spin = rand(w) * 2 * Math.PI;
+  stockCrates(w, spin);
   const r: Royale = {
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
-    squads: [], out: [], redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
+    squads: [], out: [], redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(), spin,
   };
   scheduleDrop(w, r, next);
   return r;
@@ -129,11 +160,11 @@ function advanceRing(w: World, r: Royale) {
 }
 
 function landDrops(w: World, r: Royale) {
-  const half = ROYALE.dropSize / 2;
   r.drops = r.drops.filter((d) => {
-    const crate = { id: 0, x: d.x - half, y: d.y - half, size: ROYALE.dropSize, hp: ROYALE.dropHp, respawnAt: null, drop: true as const };
-    if (w.now < d.landsAt || [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(crateRect(crate), { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius))) return true;
-    w.crates = [...w.crates, { ...crate, id: newId(w) }];
+    const half = CRATE_TIERS.drop.size / 2;
+    const footprint = { x: d.x - half, y: d.y - half, w: half * 2, h: half * 2 };
+    if (w.now < d.landsAt || [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(footprint, { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius))) return true;
+    w.crates = [...w.crates, crateAt(w, d.x, d.y, 'drop')];
     w.wallsVersion++;
     return false;
   });
@@ -172,9 +203,7 @@ function redeploy(w: World, r: Royale) {
     r.redeployAt.delete(id);
     resetProgress(p);
     p.lifeKills = 0;
-    const spot = spawnPoint(w, p.team);
-    p.x = spot.x;
-    p.y = spot.y;
+    moveTo(p, spawnPoint(w, p.team));
     p.life = freshLife(p, w.now);
     w.events.push({ e: 'life', id: p.id, name: p.name, k: 'redeployed', by: null });
   }

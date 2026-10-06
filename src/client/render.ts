@@ -1,4 +1,4 @@
-import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { COLORS, CRATE_TIERS, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
@@ -98,7 +98,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
-    drawDropsWorld(ctx, snap.royale, clockNow, now, ROYALE.dropSize);
+    drawDropsWorld(ctx, snap.royale, clockNow, now, CRATE_TIERS.drop.size);
   }
 
   drawTracers(ctx, snap.bullets);

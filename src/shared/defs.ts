@@ -485,10 +485,19 @@ export const ROYALE = {
   redeployMs: (deaths: number) => 15_000 + 10_000 * Math.max(0, deaths - 1),
   /** A knocked player's own health, as a share of their max, which enemies shoot through to finish them. */
   knockHpFrac: 0.5,
-  crateScore: 25,
   /** Each phase's supply drop lands this long into the phase's wait; minimaps show it `dropNoticeMs` before it lands. */
   dropLandMs: 20_000,
   dropNoticeMs: 10_000,
-  dropHp: 300,
-  dropSize: 64,
+  /** Squads start evenly spaced on a circle this far from the map's centre, where the caches sit `cacheR` out. */
+  edgeR: 2200,
+  caches: 4,
+  cacheR: 220,
 } as const;
+
+/** What each kind of Last Squad crate pays, how much it takes to break and how big it stands. A drop also jumps its breaker to their next level pick. */
+export const CRATE_TIERS = {
+  loot: { score: 25, hp: 40, size: 44 },
+  cache: { score: 100, hp: 160, size: 60 },
+  drop: { score: 25, hp: 300, size: 64 },
+} as const satisfies Record<string, { score: number; hp: number; size: number }>;
+export type CrateTier = keyof typeof CRATE_TIERS;

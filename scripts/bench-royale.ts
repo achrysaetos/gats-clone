@@ -106,7 +106,7 @@ function play(spec: Spec): Result {
     if (w.tick % Math.round(60_000 / TICK_MS) === 0) res.squadsLeftByMinute.push(royale.squads.length - royale.out.length);
     if (w.tick % SAMPLE_TICKS === 0) {
       for (const c of w.crates) {
-        if (!c.drop) continue;
+        if (c.tier !== 'drop') continue;
         if (!dropSeen.has(c.id)) dropSeen.set(c.id, false);
         if (c.respawnAt !== null || dropSeen.get(c.id)) continue;
         const near = new Set([...w.players.values()].filter((p) => p.life.k === 'alive' && Math.hypot(p.x - c.x, p.y - c.y) < CONTEST_PX).map((p) => p.team));
