@@ -1,0 +1,242 @@
+baseline for master 98b4251 gun data, 8 cores
+
+$ node scripts/gun-scores.ts
+gun scores: dps is expected damage per second against a 24px body while the trigger is held (spread cone, pellets, bursts, blast on a hit, 0 past range)
+  gun                still@150 still@400 still@700 still@1000 moving@150 moving@400 moving@700 moving@1000 perPull moveMul uptime reloadMs penetrate  blast silenced
+  Pistol                   123       123       105          0        123        123        105           0      27    1.00    71%     1100         0      0        0
+    Hand Cannon             90        90        90          0         90         90         90           0      38    0.98    72%     1300         0      0        0
+      Executioner          107       107       107          0        107        107        107           0      60    0.97    71%     1400         1      0        0
+      Thunderclap          133       133       133          0        133        133        133           0      56    0.97    64%     1400         0      1        0
+    Machine Pistol         104       104         0          0        104        104          0           0      57    1.00    73%     1200         0      0        0
+      Twin Fang            131       131         0          0        131        131          0           0      84    1.00    79%     1200         0      0        0
+      Hailstorm            153        76         0          0        153         76          0           0      15    0.98    72%     1500         0      0        0
+  SMG                      173        87         0          0        173         87          0           0      13    0.97    63%     1300         0      0        0
+    Skirmisher             182        91         0          0        182         91          0           0      12    1.04    64%     1200         0      0        0
+      Phantom              227       124         0          0        227        124          0           0      15    1.10    67%     1100         0      0        1
+      Hornet               273       117         0          0        273        117          0           0       9    1.02    52%     1500         0      0        0
+    Heavy SMG              218       131         0          0        218        131          0           0      17    0.94    63%     1400         0      0        0
+      Ripper               275       183       105          0        275        183        105           0      22    0.93    62%     1500         1      0        0
+      Spitfire             293       117         0          0        293        117          0           0      24    0.93    62%     1500         0      0        0
+  Shotgun                  101        38         0          0        101         38          0           0     105    0.93    71%     1800         0      0        0
+    Slug Gun               111       111       111          0        111        111        111           0     100    0.93    75%     1800         0      0        0
+      Rail Slug            169       169       169        169        169        169        169         169     110    0.92    63%     1900         2      0        0
+      Boom Slug            185       185         0          0        185        185          0           0     120    0.92    63%     1900         0      1        0
+    Double Barrel          366       138         0          0        366        138          0           0     144    0.93    27%     1400         0      0        0
+      Quad Barrel          195        74         0          0        195         74          0           0     112    0.91    44%     1900         0      0        0
+      Street Sweeper       201        76         0          0        201         76          0           0      91    0.90    60%     2400         0      0        0
+  Assault                  145       125        71          0        145        125         71           0      16    0.92    69%     1500         0      0        0
+    Battle Rifle           171       171       118          0        171        171        118           0      72    0.91    68%     1600         0      0        0
+      Marksman             188       188       188        188        188        188        188         188      60    0.90    69%     1700         1      0        0
+      Grenadier            196       196       134          0        196        196        134           0     102    0.89    63%     1800         0      1        0
+    Carbine                182       136        78          0        182        136         78           0      16    0.97    67%     1300         0      0        0
+      Vanguard             239       204       117          0        239        204        117           0      21    0.95    73%     1500         0      0        0
+      Specter              244       209       119          0        244        209        119           0      20    1.00    67%     1200         0      0        1
+  Bolt-action               77        77        77         77         77         77         77          77     100    0.90    76%     2000         0      0        0
+    Longshot                81        81        81         81         81         81         81          81     150    0.89    81%     2100         0      0        0
+      Piercer              103       103       103        103        103        103        103         103     150    0.89    78%     2100         3      0        0
+      Artillery            154       154       154        154        154        154        154         154     200    0.86    69%     2300         0      1        0
+    Semi-auto Rifle        132       132       132        132        132        132        132         132      62    0.91    71%     1900         0      0        0
+      Repeater             176       176       176        176        176        176        176         176      60    0.92    69%     1800         0      0        0
+      Ghost                156       156       156        156        156        156        156         156      75    0.94    72%     1900         0      0        1
+  LMG                      156        67        38          0        156         67         38           0      14    0.82    68%     3200         0      0        0
+    Heavy LMG              207       103        59          0        207        103         59           0      19    0.78    68%     3300         0      0        0
+      Juggernaut           298       162        93          0        298        162         93           0      25    0.75    76%     4000         1      0        0
+      Siege Gun            280       140        80          0        280        140         80           0      28    0.77    63%     3600         0      1        0
+    Light MG               197        84        48          0        197         84         48           0      13    0.90    62%     2800         0      0        0
+      Minigun              242        97        55          0        242         97         55           0       8    0.84    59%     4500         0      0        0
+      Twin MG              320       128        73          0        320        128         73           0      24    0.88    67%     3000         0      0        0
+
+stage 0
+
+stage 1
+
+stage 2
+  DOMINATED  Ripper beats Minigun on every axis
+  DOMINATED  Specter beats Minigun on every axis
+  DOMINATED  Twin MG beats Minigun on every axis
+  near       Phantom beats Hailstorm on all but uptime (67% vs 72%)
+  near       Phantom beats Quad Barrel on all but perPull (15 vs 112)
+  near       Phantom beats Street Sweeper on all but perPull (15 vs 91)
+  near       Hornet beats Quad Barrel on all but perPull (9 vs 112)
+  near       Ripper beats Hornet on all but moveMul (0.93 vs 1.02)
+  near       Ripper beats Quad Barrel on all but perPull (22 vs 112)
+  near       Ripper beats Street Sweeper on all but perPull (22 vs 91)
+  near       Spitfire beats Hornet on all but moveMul (0.93 vs 1.02)
+  near       Spitfire beats Quad Barrel on all but perPull (24 vs 112)
+  near       Spitfire beats Street Sweeper on all but perPull (24 vs 91)
+  near       Vanguard beats Hailstorm on all but moveMul (0.95 vs 0.98)
+  near       Vanguard beats Quad Barrel on all but perPull (21 vs 112)
+  near       Vanguard beats Street Sweeper on all but perPull (21 vs 91)
+  near       Specter beats Hailstorm on all but uptime (67% vs 72%)
+  near       Specter beats Quad Barrel on all but perPull (20 vs 112)
+  near       Specter beats Street Sweeper on all but perPull (20 vs 91)
+  near       Juggernaut beats Minigun on all but moveMul (0.75 vs 0.84)
+  near       Siege Gun beats Minigun on all but moveMul (0.77 vs 0.84)
+
+range past the owner's horizontal view, no perks
+  Bolt-action      range 1400 > view 900
+  Rail Slug        range 1000 > view 900
+  Marksman         range 1100 > view 900
+  Longshot         range 1600 > view 900
+  Semi-auto Rifle  range 1300 > view 900
+  Piercer          range 1800 > view 900
+  Artillery        range 1500 > view 900
+  Repeater         range 1300 > view 900
+  Ghost            range 1300 > view 900
+
+$ node scripts/bench-duels.ts --pairs
+bot duels: thinkBots on both sides, open plaza, none armor, ranges 200/450/750, seeds 1..18 x both sides, cap 20s counts half
+
+stage 0: 1620 duels in 3.7s; median fight 2.6s, first shot median 0.33s, never fired 0, capped 5
+  gun              overall   @200   @450   @750  flag
+  Bolt-action          75%    81%    74%    69%  HIGH
+  Assault              52%    43%    50%    63%  
+  LMG                  49%    46%    49%    51%  
+  Pistol               46%    41%    49%    49%  
+  SMG                  45%    43%    48%    45%  
+  Shotgun              33%    47%    30%    23%  LOW
+
+  pair matrix: row gun's win share against column gun, pooled over ranges and seeds
+                   Pistol    SMG Shotgu Assaul Bolt-a    LMG
+  Pistol                -    49%    56%    48%    27%    51%
+  SMG                 51%      -    64%    45%    23%    44%
+  Shotgun             44%    36%      -    35%    16%    37%
+  Assault             52%    55%    65%      -    34%    52%
+  Bolt-action         73%    77%    84%    66%      -    72%
+  LMG                 49%    56%    63%    48%    28%      -
+
+stage 1: 7128 duels in 8.4s; median fight 2.3s, first shot median 0.33s, never fired 0, capped 24
+  gun              overall   @200   @450   @750  flag
+  Longshot             70%    78%    69%    64%  HIGH
+  Slug Gun             64%    74%    59%    60%  
+  Semi-auto Rifle      64%    55%    68%    70%  
+  Light MG             55%    50%    54%    61%  
+  Heavy LMG            53%    49%    52%    60%  
+  Battle Rifle         53%    51%    55%    52%  
+  Heavy SMG            53%    48%    55%    55%  
+  Carbine              51%    46%    56%    51%  
+  Double Barrel        41%    57%    35%    32%  
+  Skirmisher           40%    37%    43%    38%  
+  Hand Cannon          28%    30%    26%    30%  LOW
+  Machine Pistol       27%    26%    28%    26%  LOW
+
+  pair matrix: row gun's win share against column gun, pooled over ranges and seeds
+                   Hand C Machin Skirmi Heavy  Slug G Double Battle Carbin Longsh Semi-a Heavy  Light 
+  Hand Cannon           -    49%    36%    25%    19%    38%    23%    37%    23%    18%    21%    23%
+  Machine Pistol      51%      -    33%    20%    19%    31%    31%    22%    22%    16%    31%    16%
+  Skirmisher          64%    67%      -    39%    30%    48%    35%    32%    31%    28%    31%    31%
+  Heavy SMG           75%    80%    61%      -    38%    59%    43%    59%    33%    37%    49%    48%
+  Slug Gun            81%    81%    70%    62%      -    63%    65%    69%    41%    56%    59%    62%
+  Double Barrel       62%    69%    52%    41%    37%      -    38%    31%    21%    26%    38%    38%
+  Battle Rifle        77%    69%    65%    57%    35%    62%      -    54%    28%    43%    45%    47%
+  Carbine             63%    78%    68%    41%    31%    69%    46%      -    28%    37%    54%    44%
+  Longshot            77%    78%    69%    67%    59%    79%    72%    72%      -    63%    71%    68%
+  Semi-auto Rifle     82%    84%    72%    63%    44%    74%    57%    63%    37%      -    62%    69%
+  Heavy LMG           79%    69%    69%    51%    41%    62%    55%    46%    29%    38%      -    50%
+  Light MG            77%    84%    69%    52%    38%    62%    53%    56%    32%    31%    50%      -
+
+stage 2: 29808 duels in 20.0s; median fight 1.9s, first shot median 0.33s, never fired 0, capped 19
+  gun              overall   @200   @450   @750  flag
+  Rail Slug            72%    78%    73%    66%  HIGH
+  Piercer              70%    73%    68%    70%  HIGH
+  Boom Slug            63%    75%    58%    55%  
+  Artillery            62%    71%    60%    56%  
+  Juggernaut           62%    55%    62%    70%  
+  Repeater             62%    52%    63%    71%  
+  Specter              58%    55%    61%    60%  
+  Vanguard             58%    52%    57%    65%  
+  Twin MG              56%    51%    59%    59%  
+  Ghost                55%    48%    57%    60%  
+  Grenadier            55%    53%    56%    56%  
+  Marksman             55%    50%    56%    59%  
+  Siege Gun            53%    47%    52%    61%  
+  Ripper               50%    47%    49%    53%  
+  Spitfire             47%    48%    48%    45%  
+  Phantom              44%    45%    47%    41%  
+  Street Sweeper       39%    49%    38%    31%  
+  Thunderclap          39%    42%    37%    37%  
+  Executioner          36%    36%    36%    36%  
+  Minigun              36%    32%    38%    37%  
+  Twin Fang            34%    37%    34%    32%  LOW
+  Hornet               32%    35%    32%    29%  LOW
+  Quad Barrel          32%    43%    28%    25%  LOW
+  Hailstorm            29%    27%    34%    26%  LOW
+
+  pair matrix: row gun's win share against column gun, pooled over ranges and seeds
+                   Execut Thunde Twin F Hailst Phanto Hornet Ripper Spitfi Rail S Boom S Quad B Street Marksm Grenad Vangua Specte Pierce Artill Repeat  Ghost Jugger Siege  Minigu Twin M
+  Executioner           -    43%    54%    44%    35%    50%    40%    37%    24%    30%    58%    45%    31%    40%    30%    29%    19%    27%    28%    36%    21%    36%    45%    33%
+  Thunderclap         57%      -    44%    56%    49%    57%    42%    40%    28%    26%    56%    52%    46%    31%    35%    29%    17%    31%    20%    26%    31%    38%    46%    30%
+  Twin Fang           46%    56%      -    58%    42%    49%    33%    33%    22%    35%    63%    39%    31%    23%    21%    18%    29%    29%    28%    27%    17%    28%    42%    17%
+  Hailstorm           56%    44%    42%      -    32%    46%    20%    29%    24%    18%    46%    38%    26%    21%    15%    20%    20%    25%    19%    25%    18%    24%    39%    23%
+  Phantom             65%    51%    58%    68%      -    66%    52%    54%    24%    31%    64%    49%    41%    40%    38%    29%    28%    30%    26%    38%    33%    36%    63%    36%
+  Hornet              50%    43%    51%    54%    34%      -    38%    30%    14%    26%    44%    44%    34%    26%    18%    21%    22%    35%    21%    24%    15%    28%    39%    22%
+  Ripper              60%    58%    67%    80%    48%    62%      -    55%    19%    40%    61%    58%    44%    41%    51%    40%    34%    33%    44%    51%    35%    52%    71%    48%
+  Spitfire            63%    60%    67%    71%    46%    70%    45%      -    28%    26%    74%    64%    41%    44%    47%    33%    27%    37%    28%    42%    31%    35%    67%    33%
+  Rail Slug           76%    72%    78%    76%    76%    86%    81%    72%      -    54%    81%    77%    75%    71%    66%    71%    46%    56%    69%    79%    73%    73%    78%    75%
+  Boom Slug           70%    74%    65%    82%    69%    74%    60%    74%    46%      -    76%    69%    61%    50%    62%    57%    39%    46%    53%    61%    52%    67%    76%    55%
+  Quad Barrel         42%    44%    38%    54%    36%    56%    39%    26%    19%    24%      -    40%    17%    22%    24%    28%    23%    20%    25%    29%    20%    31%    40%    30%
+  Street Sweeper      55%    48%    61%    63%    51%    56%    42%    36%    23%    31%    60%      -    36%    31%    31%    34%    23%    29%    27%    30%    27%    32%    51%    30%
+  Marksman            69%    54%    69%    74%    59%    66%    56%    59%    25%    39%    83%    64%      -    55%    51%    53%    32%    42%    36%    49%    45%    49%    76%    53%
+  Grenadier           60%    69%    77%    79%    60%    74%    59%    56%    29%    50%    78%    69%    45%      -    44%    44%    31%    35%    45%    53%    42%    44%    75%    48%
+  Vanguard            70%    65%    79%    85%    63%    82%    49%    53%    34%    38%    76%    69%    49%    56%      -    49%    29%    40%    41%    51%    44%    64%    85%    52%
+  Specter             71%    71%    82%    80%    71%    79%    60%    67%    29%    43%    72%    66%    47%    56%    51%      -    31%    43%    43%    46%    46%    51%    85%    52%
+  Piercer             81%    83%    71%    80%    72%    78%    66%    73%    54%    61%    77%    77%    68%    69%    71%    69%      -    63%    69%    72%    67%    65%    69%    69%
+  Artillery           73%    69%    71%    75%    70%    65%    67%    63%    44%    54%    80%    71%    58%    65%    60%    57%    38%      -    55%    60%    55%    58%    68%    61%
+  Repeater            72%    80%    72%    81%    74%    79%    56%    72%    31%    47%    75%    73%    64%    55%    59%    57%    31%    45%      -    55%    53%    63%    78%    58%
+  Ghost               64%    74%    73%    75%    63%    76%    49%    58%    21%    39%    71%    70%    51%    47%    49%    54%    28%    40%    45%      -    38%    56%    69%    54%
+  Juggernaut          79%    69%    83%    82%    67%    85%    65%    69%    27%    48%    80%    73%    55%    58%    56%    54%    33%    45%    47%    63%      -    56%    73%    68%
+  Siege Gun           64%    62%    72%    76%    64%    72%    48%    65%    27%    33%    69%    68%    51%    56%    36%    49%    35%    42%    38%    44%    44%      -    70%    42%
+  Minigun             55%    54%    58%    61%    38%    61%    29%    33%    22%    24%    60%    49%    24%    25%    15%    15%    31%    32%    22%    31%    27%    30%      -    22%
+  Twin MG             67%    70%    83%    77%    64%    78%    52%    67%    25%    45%    70%    70%    47%    52%    48%    48%    31%    39%    42%    46%    32%    58%    78%      -
+
+breakpoints: hits to kill a still 100 HP bot (a blast round counts its blast on a direct hit; pellet guns count pellets, pellets per pull in brackets)
+  gun                 none   light  medium   heavy
+  Pistol                 4       5       5       5
+    Hand Cannon          3       3       4       4
+      Executioner        2       2       2       3
+      Thunderclap        2       2       3       3
+    Machine Pistol       6       6       7       7
+      Twin Fang          8       8       9      10  [2]
+      Hailstorm          7       8       8       9
+  SMG                    8       9      10      11
+    Skirmisher           9      10      10      11
+      Phantom            7       8       8       9
+      Hornet            12      13      14      15
+    Heavy SMG            6       7       8       8
+      Ripper             5       5       6       6
+      Spitfire           9      10      10      11  [2]
+  Shotgun                7       8       8       9  [7]
+    Slug Gun             1       2       2       2
+      Rail Slug          1       1       2       2
+      Boom Slug          1       1       1       2
+    Double Barrel        7       7       8       9  [9]
+      Quad Barrel        8       8       9      10  [8]
+      Street Sweeper       8       9      10      11  [7]
+  Assault                7       7       8       9
+    Battle Rifle         5       5       5       6
+      Marksman           2       2       2       3
+      Grenadier          3       4       4       4
+    Carbine              7       7       8       9
+      Vanguard           5       6       6       7
+      Specter            5       6       6       7
+  Bolt-action            1       2       2       2
+    Longshot             1       1       1       1
+      Piercer            1       1       1       1
+      Artillery          1       1       1       1
+    Semi-auto Rifle       2       2       2       3
+      Repeater           2       2       2       3
+      Ghost              2       2       2       2
+  LMG                    8       8       9      10
+    Heavy LMG            6       6       7       7
+      Juggernaut         4       5       5       6
+      Siege Gun          4       4       5       5
+    Light MG             8       9      10      11
+      Minigun           13      14      15      17
+      Twin MG            9      10      10      11  [2]
+
+bench-duels wall time: 33s
+
+seed stability, stage 2 overall win share, seeds 1.. against seeds 1001.. (same code and data):
+  18 seeds: spearman 0.984, max |diff| 3pt, mean |diff| 1.3pt, max rank shift 3; same six flagged guns in both sets
+   9 seeds: spearman 0.977, max |diff| 4pt, mean |diff| 1.6pt, max rank shift 3; Twin Fang flips across the 35% line
+  A single pair cell pools 108 duels at the defaults, so read it to about +-5pt.
