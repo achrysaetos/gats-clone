@@ -183,7 +183,7 @@ test('a round restart records each survivor\'s life so far, and their next life 
   Object.assign(w, { walls: [], crates: [] });
   Object.assign(a, { x: 500, y: 500 });
   Object.assign(victim, { x: 700, y: 500 });
-  if (victim.life.k === 'alive') victim.life.hp = 1;
+  if (victim.life.k === 'alive') Object.assign(victim.life, { hp: 1, shieldUntil: -Infinity });
   shootOnce(w, a, 0);
   assert.equal(victim.life.k, 'dead');
   damagePlayer(w, a, 1000, { attacker: null, team: null, label: 'test', piercing: true, via: 'gas', fromX: 0, fromY: 0 });

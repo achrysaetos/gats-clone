@@ -304,6 +304,8 @@ export const WORLD = {
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,
   respawnMs: 3000,
+  /** Outside a zombies run, a fresh life takes no damage this long, or until its owner fires or uses an ability, so a spawn is never a free kill. */
+  spawnShieldMs: 2000,
   domWinScore: 3000,
   tdmWinScore: 150,
   /** A human who reaches this ends the FFA round early; otherwise the round runs until MAP_MS.FFA and the top killer, bot or human, wins. */
