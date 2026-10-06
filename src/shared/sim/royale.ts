@@ -7,11 +7,10 @@ import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
 import { coverRects, crateRect, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
 
-export const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
+const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
 const standing = (w: World, team: Team) => [...w.players.values()].some((p) => p.team === team && p.life.k === 'alive');
 
-/** Phases closed so far: a waiting or shrinking phase has closed every phase before it. */
 export const closedPhases = (ring: Ring) => (ring.k === 'closed' ? RING.length : ring.phase);
 export const redeploysOpen = (r: Royale) => closedPhases(r.ring) < ROYALE.redeployPhases;
 
@@ -23,11 +22,10 @@ export function ringView(ring: Ring): RingView {
   }
 }
 
-export const safeCircle = (r: Royale, now: number): Circle => ringAt(ringView(r.ring), now);
+const safeCircle = (r: Royale, now: number): Circle => ringAt(ringView(r.ring), now);
 
 const ringDps = (ring: Ring) => RING[ring.k === 'closed' ? RING.length - 1 : ring.phase]!.dps;
 
-/** A random spot within `within` px of `c` where a player stands clear of the map's walls, kept far enough in from the edges that a circle of `edge` px round it stays mostly on the map. */
 function clearSpotIn(w: World, c: Circle, within: number, edge: number): { x: number; y: number } {
   const size = MAPS[w.map].size;
   const margin = Math.max(WORLD.playerRadius * 2, Math.min(edge, size / 2) * 0.6);
@@ -50,7 +48,7 @@ function scheduleDrop(w: World, r: Royale, into: Circle) {
 
 export function newRoyale(w: World): Royale {
   const size = MAPS[w.map].size;
-  const circle = { x: size / 2, y: size / 2, r: ROYALE.startRadius };
+  const circle = { x: size / 2, y: size / 2, r: Math.hypot(size, size) / 2 + WORLD.playerRadius * 4 };
   const next = nextCircle(w, circle, RING[0]!.radius);
   const r: Royale = {
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
@@ -60,26 +58,23 @@ export function newRoyale(w: World): Royale {
   return r;
 }
 
-export function statsFor(r: Royale, p: Player): RoyaleStats {
+function statsFor(r: Royale, p: Player): RoyaleStats {
   let s = r.stats.get(p.id);
   if (!s) r.stats.set(p.id, (s = { name: p.name, kills: 0, knocks: 0, revives: 0 }));
   return s;
 }
 
-/** Fewest players first, so solo joiners and bots spread one squad at a time. */
 export function emptiestSquad(w: World, weigh: (p: Player) => number = () => 1): ColorId {
   const load = (team: ColorId) => [...w.players.values()].reduce((n, p) => n + (p.team === team ? weigh(p) : 0), 0);
   return COLOR_IDS.reduce((best, team) => (load(team) < load(best) ? team : best));
 }
 
-/** Dead for the match unless a redeploy is still open, in which case they come back beside a squadmate once it is due. */
 function perish(w: World, r: Royale, p: Player, by: Player | null) {
   die(w, p, Infinity);
   if (by && by.id !== p.id) r.killers.set(p.id, by.id);
   if (redeploysOpen(r)) r.redeployAt.set(p.id, w.now + ROYALE.redeployMs(p.deaths));
 }
 
-/** The kill path's call: knocked while a squadmate still stands, dead otherwise. Returns whether it was a knock. */
 export function fall(w: World, r: Royale, victim: Player, by: Player | null): boolean {
   if (![...w.players.values()].some((p) => p.id !== victim.id && p.team === victim.team && p.life.k === 'alive')) {
     perish(w, r, victim, by);
@@ -102,7 +97,6 @@ export function hurtDowned(w: World, victim: Player, amount: number, by: Player 
   perish(w, r, victim, by);
 }
 
-/** A supply drop jumps its breaker to their next level pick; a player with every pick made gets full health, a full magazine and their ability back instead. */
 export function openDrop(w: World, p: Player) {
   const next = LEVELS[p.level + 1];
   if (next) {
@@ -138,7 +132,6 @@ function landDrops(w: World, r: Royale) {
   const half = ROYALE.dropSize / 2;
   r.drops = r.drops.filter((d) => {
     const crate = { id: 0, x: d.x - half, y: d.y - half, size: ROYALE.dropSize, hp: ROYALE.dropHp, respawnAt: null, drop: true as const };
-    // A drop waits for the ground under it to clear rather than landing on someone.
     if (w.now < d.landsAt || [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(crateRect(crate), { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius))) return true;
     w.crates = [...w.crates, { ...crate, id: newId(w) }];
     w.wallsVersion++;
@@ -146,16 +139,15 @@ function landDrops(w: World, r: Royale) {
   });
 }
 
-/** Outside the circle: a share of max health a second, through armor and the spawn shield, and no regeneration. Hit markers come once a second, not every tick. */
 function burnOutside(w: World, r: Royale, dtMs: number) {
   const c = safeCircle(r, w.now);
   const dps = ringDps(r.ring);
-  const marker = w.tick % WORLD.tickHz === 0;
+  const onceASecond = w.tick % WORLD.tickHz === 0;
   for (const p of [...w.players.values()]) {
     const life = p.life;
     if (life.k === 'dead' || dist2(p.x, p.y, c.x, c.y) <= c.r * c.r) continue;
     const perSec = dps * effectiveStats(p).maxHp;
-    if (marker) w.events.push({ e: 'dmg', attacker: null, victim: p.id, amount: Math.round(perSec), x: p.x, y: p.y, kind: 'player' });
+    if (onceASecond) w.events.push({ e: 'dmg', attacker: null, victim: p.id, amount: Math.round(perSec), x: p.x, y: p.y, kind: 'player' });
     if (life.k === 'downed') { hurtDowned(w, p, (perSec * dtMs) / 1000, null); continue; }
     life.hp -= (perSec * dtMs) / 1000;
     life.lastDamageAt = w.now;
@@ -190,7 +182,6 @@ function redeploy(w: World, r: Royale) {
 
 const teamKills = (w: World, team: ColorId) => [...w.players.values()].reduce((n, p) => n + (p.team === team ? p.kills : 0), 0);
 
-/** Squads that lose their last standing player in the same tick place by kills, the bloodier squad higher. */
 function eliminate(w: World, r: Royale) {
   for (const p of w.players.values()) if (p.team && !r.squads.includes(p.team)) r.squads.push(p.team);
   const fallen = r.squads.filter((s) => !r.out.includes(s) && !standing(w, s))
@@ -209,7 +200,6 @@ function eliminate(w: World, r: Royale) {
 
 const alive = (p: Player | undefined): p is Player => !!p && p.life.k !== 'dead';
 
-/** A dead player watches a squadmate still up, else whoever took their life, else anyone left, keeping one target until it falls. */
 function watch(w: World, r: Royale) {
   for (const p of w.players.values()) {
     if (p.life.k !== 'dead') { r.watching.delete(p.id); continue; }
@@ -256,7 +246,6 @@ export function royaleKill(w: World, killer: Player, victim: Player) {
   else s.kills++;
 }
 
-/** A new match brings everyone back and seats anyone who sat the last one out, humans spread one per squad. */
 export function startRoyale(w: World) {
   for (const p of w.players.values()) {
     if (p.team === null) p.team = emptiestSquad(w, (o) => (o.kind === 'human' ? 1 : 0));
@@ -266,7 +255,6 @@ export function startRoyale(w: World) {
 
 const SEAT_ORDER = { alive: 0, dead: 1, downed: 2 } as const;
 
-/** The bot whose seat a joining human takes while redeploys are open: in the squad with fewest humans, a standing bot first. Null means the joiner watches until the next match. */
 export function seatFor(w: World): Player | null {
   const r = w.royale;
   if (!r || w.match.k !== 'playing' || !redeploysOpen(r)) return null;
@@ -275,7 +263,6 @@ export function seatFor(w: World): Player | null {
   return bots.sort((a, b) => humans(a.team) - humans(b.team) || SEAT_ORDER[a.life.k] - SEAT_ORDER[b.life.k])[0] ?? null;
 }
 
-/** `to` steps into `from`'s place in the match: where they stand, whether they are up, knocked or waiting to redeploy. A standing seat comes with a fresh life and its spawn shield. */
 export function takeSeat(w: World, to: Player, from: Player) {
   const r = w.royale!;
   to.team = from.team;
@@ -290,7 +277,6 @@ export function takeSeat(w: World, to: Player, from: Player) {
   if (redeploy !== undefined) r.redeployAt.set(to.id, redeploy);
 }
 
-/** A joiner who sits the match out until the next one starts. */
 export function benchUntilNextMatch(p: Player) {
   p.team = null;
   p.life = { k: 'dead', respawnAt: Infinity };

@@ -73,7 +73,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     return p;
   }
 
-  /** A Last Squad seat is filled mid-match only while redeploys are open and its squad is still in. */
   const seatOpen = (team: Team) => !world.royale || (redeploysOpen(world.royale) && world.match.k === 'playing' && (team === null || !world.royale.out.includes(team)));
 
   function balanceBots() {
@@ -87,7 +86,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
-  /** A joiner takes a bot's seat in the squad with fewest humans while redeploys are open, and otherwise watches until the next match. */
   function seatHuman(name: string, loadout: Loadout) {
     const seat = seatFor(world);
     const p = addPlayer(world, name, loadout, { kind: 'human', team: seat?.team ?? null, ...(seat && { at: seat }) });
@@ -190,7 +188,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   }
 
   balanceBots();
-  let royale = world.royale;
+  let seatedRoyale = world.royale;
 
   return {
     id,
@@ -236,9 +234,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // A room nobody is playing in stands still: its bots would otherwise burn the server's whole CPU share around the clock.
       if (joined().length === 0) return;
       const events = advance();
-      // A new Last Squad match seats last match's onlookers, so the squads' bots are trimmed and topped up again.
-      if (world.royale !== royale) {
-        royale = world.royale;
+      if (world.royale !== seatedRoyale) {
+        seatedRoyale = world.royale;
         balanceBots();
       }
       if (world.wallsVersion !== wallsVersion) {

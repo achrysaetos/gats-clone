@@ -22,10 +22,8 @@ const SAMPLE_TICKS = 15;
 type Spec = { map: MapId; seed: number; proxy: boolean };
 type Result = {
   spec: Spec; won: boolean; ms: number; ringDeaths: number; playerDeaths: number; ringWipes: number; wipes: number;
-  /** Knocks and outright kills by players, and time spent, in each phase. */
-  fights: number[]; phaseMs: number[];
-  /** Squads still in at each whole minute. */
-  squadsAt: number[]; lastFightPhase: number; survivorStages: number[];
+  takedownsByPhase: number[]; phaseMs: number[];
+  squadsLeftByMinute: number[]; lastFightPhase: number; survivorStages: number[];
   drops: number; contested: number; thinkMs: number; ticks: number; proxyTeam: ColorId | null; winner: ColorId | null;
 };
 
@@ -44,8 +42,8 @@ function play(spec: Spec): Result {
     }
   }
   const res: Result = {
-    spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringWipes: 0, wipes: 0, fights: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
-    squadsAt: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, thinkMs: 0, ticks: 0, proxyTeam, winner: null,
+    spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringWipes: 0, wipes: 0, takedownsByPhase: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
+    squadsLeftByMinute: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, thinkMs: 0, ticks: 0, proxyTeam, winner: null,
   };
   const dropSeen = new Map<number, boolean>();
   const lastCause = new Map<number, 'ring' | 'player'>();
@@ -65,7 +63,7 @@ function play(spec: Spec): Result {
         const victim = e.e === 'kill' ? e.victimId : e.id;
         lastCause.set(victim, ringBlow(e) ? 'ring' : 'player');
       }
-      if (e.e === 'kill' && e.weapon !== 'Ring') { res.fights[phase]++; res.lastFightPhase = phase; }
+      if (e.e === 'kill' && e.weapon !== 'Ring') { res.takedownsByPhase[phase]++; res.lastFightPhase = phase; }
       if (e.e === 'wiped') {
         res.wipes++;
         const members = [...w.players.values()].filter((p) => p.team === e.team);
@@ -77,7 +75,7 @@ function play(spec: Spec): Result {
       if (lastCause.get(p.id) === 'ring') res.ringDeaths++;
       else res.playerDeaths++;
     }
-    if (w.tick % Math.round(60_000 / TICK_MS) === 0) res.squadsAt.push(royale.squads.length - royale.out.length);
+    if (w.tick % Math.round(60_000 / TICK_MS) === 0) res.squadsLeftByMinute.push(royale.squads.length - royale.out.length);
     if (w.tick % SAMPLE_TICKS === 0) {
       for (const c of w.crates) {
         if (!c.drop) continue;
@@ -132,12 +130,12 @@ if (!isMainThread) {
       `  last fight in last two phases ${lastTwo}/${won.length}  drops contested ${sum(rs.map((x) => x.contested))}/${sum(rs.map((x) => x.drops))}` +
       `  think ${(sum(rs.map((x) => x.thinkMs)) / sum(rs.map((x) => x.ticks))).toFixed(2)} ms/tick` +
       (proxied.length ? `  proxy wins ${proxied.filter((x) => x.winner === x.proxyTeam).length}/${proxied.length} (${pc(proxied.filter((x) => x.winner === x.proxyTeam).length / proxied.length)})` : ''));
-    const perMin = Array.from({ length: PHASES }, (_, i) => sum(rs.map((x) => x.fights[i]!)) / Math.max(1e-9, sum(rs.map((x) => x.phaseMs[i]!)) / 60_000));
+    const perMin = Array.from({ length: PHASES }, (_, i) => sum(rs.map((x) => x.takedownsByPhase[i]!)) / Math.max(1e-9, sum(rs.map((x) => x.phaseMs[i]!)) / 60_000));
     console.log(`${''.padEnd(10)} fights/min by phase ${perMin.map((f, i) => `${i < RING.length ? i + 1 : 'shut'}:${f.toFixed(1)}`).join(' ')}` +
       `  last fight phase ${won.map((x) => x.lastFightPhase + 1).join('')}` +
       `  survivor gun stage ${[0, 1, 2].map((s) => `${s}:${stages.filter((x) => x === s).length}`).join(' ')}`);
-    const minutes = Math.max(...rs.map((x) => x.squadsAt.length));
-    console.log(`${''.padEnd(10)} squads in by minute ${Array.from({ length: minutes }, (_, m) => (sum(rs.map((x) => x.squadsAt[m] ?? 0)) / rs.length).toFixed(1)).join(' ')}`);
+    const minutes = Math.max(...rs.map((x) => x.squadsLeftByMinute.length));
+    console.log(`${''.padEnd(10)} squads in by minute ${Array.from({ length: minutes }, (_, m) => (sum(rs.map((x) => x.squadsLeftByMinute[m] ?? 0)) / rs.length).toFixed(1)).join(' ')}`);
   };
   console.log(`bench-royale: ${specs.length} bot matches (${seeds.length} seeds x ${maps.join('/')}), ${args['no-proxy'] ? 'no proxy' : 'one 4x-health bot in one squad'}, cap ${CAP_MS / 60_000} min, ${((performance.now() - started) / 1000).toFixed(0)}s`);
   for (const map of maps) summarize(map, results.filter((x) => x.spec.map === map));

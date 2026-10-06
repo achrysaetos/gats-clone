@@ -153,7 +153,6 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const renderBanner = (snap: Snapshot) => {
     const { winner, restartIn } = snap.match;
     const { rows: podium, score: teamLine } = roundPodium(snap.match, snap.leaderboard, PODIUM_SIZE);
-    // Last Squad's result card says who won.
     const key = winner === null || snap.royale ? '' : `${winner.name}|${winner.note}|${teamLine}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
     if (key === keys.banner) return;
     keys.banner = key;
@@ -265,7 +264,6 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}|${run?.phase}|${run?.waveLeft}` : '';
     if (key === keys.death) return;
     keys.death = key;
-    // A dead Last Squad player watches the match instead; the HUD says whom and for how long.
     death.hidden = !dead || !!snap.royale;
     if (!dead || snap.royale) return;
     respawn.hidden = deathLoadout.hidden = !!run;

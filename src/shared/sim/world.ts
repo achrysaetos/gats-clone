@@ -27,10 +27,7 @@ export type Life =
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];
   }
-  /**
-   * Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`.
-   * In Last Squad enemies can shoot `hp` away to finish them; zombies leave the downed alone, so a zombies run never touches it.
-   */
+  /** Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
   | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number }
   /** `respawnAt` is Infinity when the mode, not a timer, brings the player back: a zombies dawn or a Last Squad redeploy. */
   | { k: 'dead'; respawnAt: number };
@@ -86,7 +83,6 @@ export type Bullet = {
 /** What fires at the horde for the squad besides its players. */
 export type Shooter = TurretKind | 'bastion';
 
-/** `drop` marks a Last Squad supply drop, whose breaker jumps to their next level pick. */
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null; drop?: true };
 
 export type Thrown =
@@ -145,13 +141,11 @@ export type Run = {
   bastionFireAt: number;
 };
 
-/** The safe circle holds while waiting, closes on `to` while shrinking, and stays shut once the last phase has closed. `phase` indexes RING. */
 export type Ring =
   | { k: 'waiting'; phase: number; circle: Circle; next: Circle; shrinkAt: number }
   | { k: 'shrinking'; phase: number; from: Circle; to: Circle; startAt: number; closeAt: number }
   | { k: 'closed'; circle: Circle; closedAt: number };
 
-/** A supply drop announced for (`x`, `y`) that becomes a crate at `landsAt`. */
 export type Drop = { x: number; y: number; landsAt: number };
 
 export type RoyaleStats = { name: string; kills: number; knocks: number; revives: number };
@@ -287,11 +281,9 @@ const SPAWN_CLEARANCE = 10;
 const SPAWN_CANDIDATES = 12;
 const SPAWN_EDGE = 100;
 
-/** How far from a squadmate a Last Squad player spawns or redeploys, and how many clear spots a squad's first spawn weighs. */
-const SQUAD_GAP = [70, 160] as const;
+const SQUAD_GAP = { min: 70, max: 160 } as const;
 const SQUAD_CANDIDATES = 24;
 
-/** Beside a standing squadmate, or for a squad's first player the clear spot farthest from every other squad, so squads start together and far apart. */
 function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number): Pose {
   const r = WORLD.playerRadius + SPAWN_CLEARANCE;
   const clear = (x: number, y: number) => x >= r && y >= r && x <= size - r && y <= size - r && !solids.some((b) => circleHitsRect(x, y, r, b));
@@ -300,7 +292,7 @@ function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number)
   if (mates.length) {
     const m = mates[Math.floor(rand(w) * mates.length)]!;
     for (let i = 0; i < 20; i++) {
-      const a = rand(w) * 2 * Math.PI, d = SQUAD_GAP[0] + rand(w) * (SQUAD_GAP[1] - SQUAD_GAP[0]);
+      const a = rand(w) * 2 * Math.PI, d = SQUAD_GAP.min + rand(w) * (SQUAD_GAP.max - SQUAD_GAP.min);
       const x = m.x + Math.cos(a) * d, y = m.y + Math.sin(a) * d;
       if (clear(x, y)) return { x, y };
     }

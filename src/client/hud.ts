@@ -683,7 +683,7 @@ function drawObjectiveLine(hud: Hud, top: number, full: boolean): number {
 }
 
 function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, compact: boolean) {
-  const { ctx, w, h, s, me, now, on } = hud;
+  const { ctx, w, h, s, me, now } = hud;
   const y = top + 17;
   const cx = w / 2;
   setFont(ctx, 750, TYPE.body);
@@ -738,7 +738,6 @@ function drawDownedSelf({ ctx, w, h, s, now, on }: Hud, downed: NonNullable<Play
   ctx.globalAlpha = 1;
 }
 
-/** The squad tracker under the pill, and what a knocked, reviving or spectating player needs to read. */
 function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: number) {
   const { ctx, w, h, snap, s, me, now } = hud;
   const mine = me?.team ?? null;

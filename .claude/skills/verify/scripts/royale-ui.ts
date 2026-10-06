@@ -52,7 +52,6 @@ const steer = async (dirs: Dir[]) => {
   for (const d of dirs) if (!held.includes(d)) await dirKey(page, 'keyDown', d);
   held = dirs;
 };
-/** Walks straight away from the next circle's centre, so the ring catches the player as soon as it closes. */
 const fleeRing = async () => {
   const p = me(), royale = frames.snap?.royale;
   if (!p?.alive || !royale) { await steer([]); return; }

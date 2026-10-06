@@ -63,7 +63,6 @@ export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
 type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
 
-/** `home` holds an idle bot in cover within `r` of a point, facing `face`, such as a Last Squad squad's place inside the ring, instead of roaming the map. */
 export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point } };
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {

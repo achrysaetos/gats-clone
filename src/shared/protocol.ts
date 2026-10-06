@@ -5,7 +5,6 @@ import {
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
-/** TDM and DOM play red against blue; a Last Squad squad is any of the six colors. */
 export type Team = ColorId | null;
 
 export type InputState = {

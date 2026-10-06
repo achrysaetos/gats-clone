@@ -266,9 +266,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
   shooting.settleShots(s, snap, now);
   for (const ev of snap.events) {
-    // A Last Squad knock already reads as a kill line.
-    const knock = ev.e === 'life' && ev.k === 'downed' && !!snap.royale;
-    if ((ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life' || ev.e === 'wiped') && !knock) s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+    const repeatsKnock = ev.e === 'life' && ev.k === 'downed' && !!snap.royale;
+    if ((ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life' || ev.e === 'wiped') && !repeatsKnock) s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   }
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
@@ -416,7 +415,6 @@ function drawFrame(now: number) {
   s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
-  // A dead Last Squad player's camera follows whoever the server says they watch.
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);

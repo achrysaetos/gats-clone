@@ -469,10 +469,6 @@ export const ZOM = {
  * Outside the circle a body loses `dps` of its max health a second, through armor and the spawn shield, and does not regenerate.
  */
 export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number };
-/**
- * Measured with scripts/bench-royale.ts: the first draft's circles (2600, 1600, 900, 450, 150) packed five squads into 900 px by the third phase,
- * where they wiped each other out before the last two phases in every match.
- */
 export const RING: readonly RingPhase[] = [
   { waitMs: 60_000, shrinkMs: 30_000, radius: 3200, dps: 0.02 },
   { waitMs: 45_000, shrinkMs: 25_000, radius: 2500, dps: 0.03 },
@@ -484,11 +480,8 @@ export const RING: readonly RingPhase[] = [
 
 export const ROYALE = {
   squadSize: 3,
-  /** The first circle reaches past the corners of the 6000 px maps, so the whole map starts safe. */
-  startRadius: 4300,
   /** Redeploys stay open until this many ring phases have closed; after that every life is the last. */
   redeployPhases: 3,
-  /** How long a dead player waits to come back beside a standing squadmate, longer for each death this match. */
   redeployMs: (deaths: number) => 15_000 + 10_000 * Math.max(0, deaths - 1),
   /** A knocked player's own health, as a share of their max, which enemies shoot through to finish them. */
   knockHpFrac: 0.5,

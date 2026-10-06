@@ -8,10 +8,6 @@ export function goDown(w: World, p: Player, hp = 0) {
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'downed', by: null });
 }
 
-/**
- * A squadmate standing within `ZOM.reviveRange` and holding use raises a downed player after `ZOM.reviveMs`; letting go starts it over.
- * Returns the reviver once they finish, or 'bledOut' once time runs out, which the mode turns into a death of its own kind.
- */
 export function tickDowned(w: World, p: Player, dtMs: number, revivers: Set<Player>): Player | 'bledOut' | null {
   const life = p.life;
   if (life.k !== 'downed') return null;
