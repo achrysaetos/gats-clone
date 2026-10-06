@@ -141,11 +141,11 @@ export const EVOLUTIONS: Record<GunId, readonly GunId[]> = byGun((id) => GUN_IDS
 
 export const ARMOR_IDS = ['none', 'light', 'medium', 'heavy'] as const;
 export type ArmorId = (typeof ARMOR_IDS)[number];
-export const ARMORS: Record<ArmorId, { name: string; points: number; absorbFrac: number; speedMul: number }> = {
-  none: { name: 'No armor', points: 0, absorbFrac: 0, speedMul: 1.0 },
-  light: { name: 'Light', points: 30, absorbFrac: 0.5, speedMul: 0.93 },
-  medium: { name: 'Medium', points: 60, absorbFrac: 0.6, speedMul: 0.86 },
-  heavy: { name: 'Heavy', points: 120, absorbFrac: 0.7, speedMul: 0.79 },
+export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; speedMul: number }> = {
+  none: { name: 'No armor', blockFrac: 0, speedMul: 1.0 },
+  light: { name: 'Light', blockFrac: 0.08, speedMul: 0.93 },
+  medium: { name: 'Medium', blockFrac: 0.16, speedMul: 0.86 },
+  heavy: { name: 'Heavy', blockFrac: 0.24, speedMul: 0.79 },
 };
 
 export const COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
@@ -192,7 +192,7 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
 export type PlayerKind = (typeof PLAYER_KINDS)[number];
-/** Humans carry triple health and armor so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
+/** Humans carry multiplied health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
 export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 4, bot: 1 };
 
 export type Pick = { k: 'perk'; tier: Tier } | { k: 'evolve' };

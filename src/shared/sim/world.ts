@@ -10,7 +10,6 @@ export type Life =
   | {
     k: 'alive';
     hp: number;
-    armor: number;
     ammo: number;
     reloadUntil: number | null;
     nextFireAt: number;
@@ -20,7 +19,7 @@ export type Life =
     lastMoveAt: number;
     dash: Dash | null;
     pressUntil: number;
-    /** Health and armor each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
+    /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];
   }
   /** Zombies only: out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */

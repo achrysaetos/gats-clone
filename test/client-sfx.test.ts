@@ -7,7 +7,7 @@ import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot }
 
 const ME = 'Me';
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
-  id, name: id === 1 ? ME : `p${id}`, x: 100 * id, y: 0, angle: 0, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', gun: 'pistol',
+  id, name: id === 1 ? ME : `p${id}`, x: 100 * id, y: 0, angle: 0, hp: 100, maxHp: 100, color: 'red', gun: 'pistol',
   team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none', kind: 'bot', hunted: false, ...over,
 });
 
@@ -29,11 +29,10 @@ test('kill-confirm plays only when you are the killer, matched by id not name', 
   assert.deepEqual(ids(snap(), snap({ events: [kill(1, 1)] })), [], 'killing yourself is not a kill-confirm');
 });
 
-test('hurt plays on damage, including armor-absorbed hits, and never on regen or respawn', () => {
+test('hurt plays on damage, and never on regen or respawn', () => {
   const hurt = soundsFor(snap({ me: { hp: 100 } }), snap({ me: { hp: 70 } }));
   assert.deepEqual(hurt.map((c) => [c.id, c.self, c.id === 'hurt' && c.damageFrac]), [['hurt', true, 0.3]], 'damageFrac is damage over max hp');
   assert.equal(hurt[0]!.gain, 0.65, 'a bigger hit is louder');
-  assert.deepEqual(ids(snap({ me: { hp: 90, armor: 50 } }), snap({ me: { hp: 85, armor: 30 } })), ['hurt']);
   assert.deepEqual(ids(snap({ me: { hp: 70 } }), snap({ me: { hp: 75 } })), [], 'regen is silent');
   assert.deepEqual(ids(snap({ me: { hp: 0, alive: false } }), snap({ me: { hp: 100 } })), [], 'respawning at full hp is silent');
 });

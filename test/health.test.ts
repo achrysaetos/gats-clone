@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import WebSocket from 'ws';
-import { ARMOR_IDS, ARMORS, HP_MULTIPLIER, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { ARMOR_IDS, HP_MULTIPLIER, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 
 const H = HP_MULTIPLIER.human;
 import { addPlayer, step } from '../src/shared/sim.ts';
@@ -14,15 +14,12 @@ import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { startServer } from '../src/server/main.ts';
 import { PISTOL, TICK_MS, emptyWorld, grantPerks, hpOf, press, run, spawnAt } from './helpers.ts';
 
-test('humans carry multiplied health, armor and regen, bots keep the base', () => {
+test('humans carry multiplied health and regen, bots keep the base', () => {
   const w = emptyWorld();
   const human = addPlayer(w, 'Hu', PISTOL, { kind: 'human', at: { x: 500, y: 500 } });
   const bot = addPlayer(w, 'Bo', PISTOL, { at: { x: 900, y: 500 } });
   assert.equal(effectiveStats(human).maxHp, WORLD.baseHp * H);
   assert.equal(effectiveStats(bot).maxHp, WORLD.baseHp);
-  const armored = addPlayer(w, 'Ar', { ...PISTOL, armor: 'medium' }, { kind: 'human', at: { x: 500, y: 900 } });
-  assert.equal(effectiveStats(armored).maxArmor, ARMORS.medium.points * H);
-  assert.equal(armored.life.k === 'alive' && armored.life.armor, ARMORS.medium.points * H, 'spawns with full multiplied armor');
   assert.equal(effectiveStats(human).regenPerSec / effectiveStats(human).maxHp, effectiveStats(bot).regenPerSec / effectiveStats(bot).maxHp, 'healing to full takes the same time');
   grantPerks(w, human, ['optics', 'thickSkin']);
   assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 40) * H, 'thick skin is multiplied too');
@@ -77,7 +74,7 @@ function rawDamageToKill(shooterKind: PlayerKind, victimKind: PlayerKind, armor:
   return raw;
 }
 
-test('armor scales with health for humans: a bot spends the human multiple of the raw damage on an armored human, and humans duel at bot pace in every armor', () => {
+test('armor blocks the same share for humans and bots: a bot spends the human multiple of the raw damage on an armored human, and humans duel at bot pace in every armor', () => {
   for (const armor of ARMOR_IDS) {
     const botOnBot = rawDamageToKill('bot', 'bot', armor);
     assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - H * botOnBot) <= H * RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs ${H} x ${botOnBot}`);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMORS, GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
@@ -165,7 +165,7 @@ test('a round restart resets level, perks, ability and gun along with score', ()
   const view = snap.players.find((p) => p.id === a.id)!;
   assert.deepEqual([view.score, view.level, snap.self.perks, snap.self.pending, snap.self.ability, view.gun], [0, 0, {}, null, null, 'pistol']);
   assert.equal(view.maxHp, WORLD.baseHp);
-  assert.deepEqual([view.hp, view.armor, snap.self.ammo, snap.self.reloading], [WORLD.baseHp, view.maxArmor, GUNS.pistol.mag, false], 'a fresh life');
+  assert.deepEqual([view.hp, snap.self.ammo, snap.self.reloading], [WORLD.baseHp, GUNS.pistol.mag, false], 'a fresh life');
 });
 
 test('a round restart records each survivor\'s life so far, and their next life counts only its own kills', () => {
@@ -205,10 +205,10 @@ for (const mode of ['TDM', 'DOM'] as const) {
   });
 }
 
-test('a hurt, half-empty survivor starts the next round at full health, armor and ammo', () => {
+test('a hurt, half-empty survivor starts the next round at full health and ammo', () => {
   const w = emptyWorld('TDM');
   const a = spawnAt(w, 500, 500, { team: 'red', loadout: { armor: 'medium' } });
-  if (a.life.k === 'alive') Object.assign(a.life, { hp: 10, armor: 5, ammo: 2 });
+  if (a.life.k === 'alive') Object.assign(a.life, { hp: 10, ammo: 2 });
   w.teamScore.red = WORLD.tdmWinScore;
   run(w, TICK_MS);
   assert.equal(w.match.k, 'over');
@@ -217,7 +217,7 @@ test('a hurt, half-empty survivor starts the next round at full health, armor an
   assert.equal(w.match.k, 'playing');
   const self = snapshotFor(w, a.id);
   const view = self.players.find((p) => p.id === a.id)!;
-  assert.deepEqual([view.hp, view.armor, self.self.ammo], [WORLD.baseHp, ARMORS.medium.points, GUNS.pistol.mag]);
+  assert.deepEqual([view.hp, self.self.ammo], [WORLD.baseHp, GUNS.pistol.mag]);
 });
 
 test('nothing in flight hurts a player once the round is over', () => {

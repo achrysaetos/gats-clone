@@ -67,7 +67,7 @@ function makeWorld(mode: ModeId) {
   const teams = mode !== 'FFA';
   const bots: Bot[] = Array.from({ length: 6 }, (_, i): Bot => ({
     id: 100 + i, name: ['Ash', 'Birch', 'Cedar', 'Dune', 'Ember', 'Frost'][i]!, x: 0, y: 0, angle: 0,
-    hp: 100, maxHp: 100, armor: 30 * (i % 4), maxArmor: 30 * (i % 4),
+    hp: 100, maxHp: 100,
     color: (['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const)[i]!, gun: (['pistol', 'heavySmg', 'shotgun', 'battleRifle', 'sniper', 'juggernaut'] as const)[i]!,
     team: teams ? (i % 2 ? 'blue' : 'red') : null, alive: true, hidden: i === 4, shield: i === 2, dashing: false,
     score: 50 * i, level: 1, armorTier: ARMOR_IDS[i % 4]!, kind: 'bot', hunted: i === 5, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
@@ -223,7 +223,7 @@ function serve(ws: WebSocket, mode: ModeId) {
 
     const selfView: PlayerView = {
       id: myId, name, x: me.x, y: me.y, angle: input?.angle ?? 0, hp: me.hp, maxHp: 100,
-      armor: ARMORS[loadout.armor].points, maxArmor: ARMORS[loadout.armor].points, color: loadout.color, gun,
+      color: loadout.color, gun,
       team: mode === 'FFA' ? null : 'red', alive: me.alive, hidden: false, shield: perks[2] === 'shield', dashing: me.dashUntil > now,
       score: me.score, level: 1, armorTier: loadout.armor, kind: 'human', hunted: GUNS[gun].stage === 2,
     };

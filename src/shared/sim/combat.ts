@@ -34,22 +34,18 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   // The squad fights the horde at arm's length, so in a run only bites hurt it, never its own blasts.
   if (w.run && src.via !== 'bite') return;
   const life = victim.life;
-  const before = life.hp + life.armor;
+  const before = life.hp;
   const stats = effectiveStats(victim);
   if (stats.shield && src.via === 'bullet') {
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
-  // A human hits as hard as the victim's health and armor are multiplied, so human duels run at bot pace.
+  // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace.
   if (a?.kind === 'human') amount *= HP_MULTIPLIER[victim.kind];
-  if (!src.piercing && life.armor > 0) {
-    const absorbed = Math.min(life.armor, amount * ARMORS[victim.loadout.armor].absorbFrac);
-    life.armor -= absorbed;
-    amount -= absorbed;
-  }
+  if (!src.piercing) amount *= 1 - ARMORS[victim.loadout.armor].blockFrac;
   life.hp -= amount;
   life.lastDamageAt = w.now;
-  const dealt = before - Math.max(0, life.hp) - life.armor;
+  const dealt = before - Math.max(0, life.hp);
   if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
   if (life.hp <= 0) kill(w, victim, a, src.label);

@@ -27,7 +27,7 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
 };
 
 type Stats = {
-  speed: number; maxHp: number; maxArmor: number; mag: number; range: number; spread: number; regenPerSec: number; regenDelayMs: number;
+  speed: number; maxHp: number; mag: number; range: number; spread: number; regenPerSec: number; regenDelayMs: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
@@ -53,7 +53,6 @@ export function effectiveStats(p: Player, still = false): Stats {
   const s: Stats = {
     speed: WORLD.baseSpeed * weapon.moveMul * armor.speedMul,
     maxHp: WORLD.baseHp,
-    maxArmor: armor.points,
     mag: weapon.mag,
     range: rangeFor(p.gun, p.perks),
     spread: spreadFor(p.gun, p.perks, still),
@@ -76,7 +75,6 @@ export function effectiveStats(p: Player, still = false): Stats {
     s.ghillie ||= m.ghillie ?? false;
   }
   s.maxHp *= HP_MULTIPLIER[p.kind];
-  s.maxArmor *= HP_MULTIPLIER[p.kind];
   s.regenPerSec *= HP_MULTIPLIER[p.kind];
   return s;
 }
@@ -84,7 +82,7 @@ export function effectiveStats(p: Player, still = false): Stats {
 export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }> {
   const s = effectiveStats(p);
   return {
-    k: 'alive', hp: s.maxHp, armor: s.maxArmor, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
+    k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, dash: null, pressUntil: -Infinity, hits: [],
   };
 }

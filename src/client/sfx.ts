@@ -166,7 +166,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   }
   const was = selfOf(prev);
   if (was?.alive && me?.alive) {
-    const damage = was.hp + was.armor - (me.hp + me.armor);
+    const damage = was.hp - me.hp;
     if (damage > 0) {
       const damageFrac = Math.min(1, damage / me.maxHp);
       cues.push({ id: 'hurt', ...at, self: true, gain: 0.5 + 0.5 * damageFrac, damageFrac });

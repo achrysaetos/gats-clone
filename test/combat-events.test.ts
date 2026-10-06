@@ -30,14 +30,15 @@ test('one bullet hitting a player emits exactly one dmg event naming attacker, v
   assert.deepEqual(got[0], { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: b.x, y: b.y, kind: 'player' });
 });
 
-test('dmg amount counts armor absorbed as damage dealt', () => {
+test('dmg amount is what armor let through', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 700, 500, { loadout: { armor: 'medium' } });
   const [ev] = hits(fireAndCollect(w, a));
   assert.ok(ev?.e === 'dmg' && b.life.k === 'alive');
-  assert.equal(b.life.hp, WORLD.baseHp - PISTOL_DMG * (1 - ARMORS.medium.absorbFrac), 'armor took part of the hit');
-  assert.equal(ev.amount, PISTOL_DMG);
+  const through = PISTOL_DMG * (1 - ARMORS.medium.blockFrac);
+  assert.equal(b.life.hp, WORLD.baseHp - through);
+  assert.equal(ev.amount, Math.round(through * 10) / 10);
 });
 
 test('dmg amount stops at what the target had left', () => {
