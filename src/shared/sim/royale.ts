@@ -5,7 +5,7 @@ import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
-import { clearPointNear, coverRects, moveTo, newId, rand, spawnPoint, type Crate, type Player, type Ring, type Royale, type Pose, type RoyaleStats, type World } from './world.ts';
+import { clearPointNear, coverRects, crateRect, moveTo, newId, rand, spawnPoint, type Crate, type Player, type Ring, type Royale, type Pose, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
@@ -46,18 +46,30 @@ function scheduleDrop(w: World, r: Royale, into: Circle) {
   r.drops.push({ ...at, landsAt: w.now + ROYALE.dropLandMs });
 }
 
+/** Room a scattered crate leaves round itself, so it never plugs a gap a player could walk through. */
+const SCATTER_CLEAR = 90;
+
 function crateAt(w: World, x: number, y: number, tier: CrateTier): Crate {
   const { size, hp } = CRATE_TIERS[tier];
   return { id: newId(w), x: x - size / 2, y: y - size / 2, size, hp, respawnAt: null, tier };
 }
 
 function stockCrates(w: World, spin: number) {
-  const size = MAPS[w.map].size;
+  const size = MAPS[w.map].size, centre = size / 2;
   w.crates = w.crates.map((c) => ({ ...c, tier: 'loot' }));
   for (let i = 0; i < ROYALE.caches; i++) {
     const a = spin + ((i + 0.5) / ROYALE.caches) * 2 * Math.PI;
-    const at = clearPointNear(coverRects(w), size / 2 + Math.cos(a) * ROYALE.cacheR, size / 2 + Math.sin(a) * ROYALE.cacheR, CRATE_TIERS.cache.size, size);
+    const at = clearPointNear(coverRects(w), centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, CRATE_TIERS.cache.size, size);
     w.crates.push(crateAt(w, at.x, at.y, 'cache'));
+  }
+  const solids = coverRects(w);
+  for (let i = 0, placed = 0; i < ROYALE.scatter * 20 && placed < ROYALE.scatter; i++) {
+    const x = SCATTER_CLEAR + rand(w) * (size - 2 * SCATTER_CLEAR), y = SCATTER_CLEAR + rand(w) * (size - 2 * SCATTER_CLEAR);
+    if (solids.some((b) => circleHitsRect(x, y, SCATTER_CLEAR, b))) continue;
+    const crate = crateAt(w, x, y, Math.hypot(x - centre, y - centre) < ROYALE.richR ? 'rich' : 'loot');
+    w.crates.push(crate);
+    solids.push(crateRect(crate));
+    placed++;
   }
 }
 

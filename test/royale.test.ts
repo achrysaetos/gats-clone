@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { COLOR_IDS, CRATE_TIERS, RING, ROYALE, ZOM } from '../src/shared/defs.ts';
+import { COLOR_IDS, CRATE_TIERS, RING, ROYALE, WORLD, ZOM } from '../src/shared/defs.ts';
+import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
 import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
@@ -239,7 +240,8 @@ test('rich caches sit round each map\'s centre and pay a level step', () => {
     const caches = w.crates.filter((c) => c.tier === 'cache');
     assert.equal(caches.length, ROYALE.caches, map);
     for (const c of caches) assert.ok(Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.cacheR + 150, `${map} cache near the centre`);
-    assert.ok(w.crates.filter((c) => c.tier !== 'cache').every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
+    const own = new Set(MAPS[map].crates.map((c) => `${c.x},${c.y}`));
+    assert.ok(w.crates.filter((c) => own.has(`${c.x + c.size / 2},${c.y + c.size / 2}`)).every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
   }
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
@@ -249,6 +251,25 @@ test('rich caches sit round each map\'s centre and pay a level step', () => {
   for (let i = 0; i < 30 && w.crates[0]!.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.score, 100);
   assert.equal(shooter.level, 1);
+});
+
+test('each match scatters crates on open ground, and those near the centre pay more', () => {
+  for (const map of ROTATION.BR) {
+    const w = fullMatch(map);
+    const centre = MAPS[map].size / 2;
+    const own = new Set(MAPS[map].crates.map((c) => `${c.x},${c.y}`));
+    const scattered = w.crates.filter((c) => c.tier !== 'cache' && !own.has(`${c.x + c.size / 2},${c.y + c.size / 2}`));
+    assert.equal(scattered.length, ROYALE.scatter, map);
+    for (const c of scattered) {
+      const room = (b: Rect) => circleHitsRect(c.x + c.size / 2, c.y + c.size / 2, c.size / 2 + 2 * WORLD.playerRadius, b);
+      assert.ok(!w.walls.some(room), `${map} crate at ${c.x},${c.y} leaves room to walk past`);
+      assert.ok(!w.crates.some((o) => o !== c && room({ x: o.x, y: o.y, w: o.size, h: o.size })), `${map} crates stand apart`);
+      const near = Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.richR;
+      assert.equal(c.tier, near ? 'rich' : 'loot', `${map} crate ${near ? 'inside' : 'outside'} the rich ring`);
+    }
+    assert.ok(scattered.some((c) => c.tier === 'rich'), map);
+  }
+  assert.ok(CRATE_TIERS.rich.score > CRATE_TIERS.loot.score);
 });
 
 test('crates pay 25 and stay broken for the match', () => {

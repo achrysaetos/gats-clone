@@ -492,11 +492,15 @@ export const ROYALE = {
   edgeR: 2200,
   caches: 4,
   cacheR: 220,
+  /** Crates scattered on open ground at the start of each match, on top of the map's own; those within `richR` of the centre pay more. */
+  scatter: 100,
+  richR: 1500,
 } as const;
 
 /** What each kind of Last Squad crate pays, how much it takes to break and how big it stands. A drop also jumps its breaker to their next level pick. */
 export const CRATE_TIERS = {
   loot: { score: 25, hp: 40, size: 44 },
+  rich: { score: 50, hp: 60, size: 44 },
   cache: { score: 100, hp: 160, size: 60 },
   drop: { score: 25, hp: 300, size: 64 },
 } as const satisfies Record<string, { score: number; hp: number; size: number }>;
