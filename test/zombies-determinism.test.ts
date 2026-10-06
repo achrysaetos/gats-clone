@@ -2,14 +2,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { ZOM } from '../src/shared/defs.ts';
-import { MAPS } from '../src/shared/maps.ts';
-import { addPlayer, setInput, step } from '../src/shared/sim.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { build } from '../src/shared/sim/run.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePick } from '../src/shared/sim/stats.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
 import { TICK_MS } from './helpers.ts';
 
 /** Plays a bot squad through the first day, walls and turrets and the first nights, hashing every snapshot. */
@@ -21,13 +19,7 @@ function replay(seed: number): { hash: string; nights: number; walls: number } {
   const builder = [...bots.keys()][0]!;
   const hash = createHash('sha256');
   for (let tick = 0; tick < 6000 && w.run!.phase.k !== 'over'; tick++) {
-    const arena = arenaFor(w);
-    for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(w, id), arena, mem, r);
-      bots.set(id, d.mem);
-      setInput(w, id, w.tick, d.input);
-      if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-    }
+    thinkBots(w, bots, r, { respawn: false });
     const me = w.players.get(builder)!;
     if (tick % 15 === 0) build(w, builder, (['wall', 'wall', 'sentry', 'cannon'] as const)[(tick / 15) % 4]!, Math.floor(me.x / ZOM.cell) + 2, Math.floor(me.y / ZOM.cell) + (tick % 4) - 2);
     step(w, TICK_MS);

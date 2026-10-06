@@ -5,12 +5,12 @@ import {
   ARMOR_IDS, EVOLUTIONS, GUN_IDS, GUNS, LEVELS, MODE_IDS, PERK_TIERS, WEAPON_IDS, WORLD, type ArmorId, type GunId, type ModeId, type PlayerKind, type WeaponId,
 } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
-import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePick, effectiveStats, levelForScore } from '../src/shared/sim/stats.ts';
+import { addPlayer, setInput, step } from '../src/shared/sim.ts';
+import { effectiveStats, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
+import { median, pct, sec } from './lib/stats.ts';
 
 const worlds = Number(process.argv[2] ?? 8);
 const minutes = Number(process.argv[3] ?? 5);
@@ -18,12 +18,6 @@ const mode = MODE_IDS.find((m) => m === (process.argv[4] ?? 'FFA')) satisfies Mo
 if (!mode) throw new Error(`unknown mode ${process.argv[4]}; use one of ${MODE_IDS.join(', ')}`);
 const TICK_MS = 1000 / WORLD.tickHz;
 
-const median = (xs: number[]) => {
-  if (!xs.length) return NaN;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-};
-const pct = (n: number, total: number) => `${((100 * n) / Math.max(1, total)).toFixed(1)}%`;
 const tally = <K extends string>(m: Map<K, number>, k: K) => m.set(k, (m.get(k) ?? 0) + 1);
 const gunNamed = (name: string) => GUN_IDS.find((id) => GUNS[id].name === name);
 /** Kills roll up to the class gun, so the share stays comparable across evolutions; abilities keep their own label. */
@@ -53,16 +47,9 @@ if (worlds > 0) {
       tally(livesByArmor, p.loadout.armor);
     }
     for (let t = 0; t < minutes * 60_000; t += TICK_MS) {
-      const arena = arenaFor(w);
-      for (const [id, mem] of bots) {
-        const d = botThink(snapshotFor(w, id), arena, mem, r);
-        bots.set(id, d.mem);
-        setInput(w, id, w.tick, d.input);
-        if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-        if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) {
-          bornAt.set(id, w.now);
-          tally(livesByArmor, w.players.get(id)!.loadout.armor);
-        }
+      for (const id of thinkBots(w, bots, r).respawned) {
+        bornAt.set(id, w.now);
+        tally(livesByArmor, w.players.get(id)!.loadout.armor);
       }
       step(w, TICK_MS);
       for (const e of w.events) {
@@ -90,7 +77,7 @@ if (worlds > 0) {
   }
   console.log('\ndeaths per life started, by armor');
   for (const a of ARMOR_IDS) console.log(`  ${a.padEnd(8)} ${pct(deathsByArmor.get(a) ?? 0, livesByArmor.get(a) ?? 0)} of ${livesByArmor.get(a) ?? 0} lives`);
-  console.log(`\nlife length: median ${(median(lifeMs) / 1000).toFixed(1)}s over ${lifeMs.length} deaths`);
+  console.log(`\nlife length: median ${sec(median(lifeMs))}s over ${lifeMs.length} deaths`);
   console.log(`level reached per life (thresholds ${LEVELS.map((l) => l.score).join('/')}):`);
   LEVELS.forEach((l, level) => {
     if (l.pick) console.log(`  level ${level} (${l.pick.k === 'perk' ? `tier ${l.pick.tier} perk` : 'evolve'}): ${pct(lifeLevels.filter((t) => t >= level).length, lifeLevels.length)}`);
