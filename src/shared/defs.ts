@@ -371,7 +371,8 @@ export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TU
 /**
  * A turret holds `ammo` rounds and fires `pellets` of `damage` each every `fireMs` at the nearest zombie of the kind it `prefers` in `range`, else the nearest of any kind.
  * Its rounds leave the barrel `muzzle` px from the cell's center; a refill costs `scrapPerRound`.
- * A `lobbed` round flies over everything to where its target stood and bursts there, so a lobbing turret needs no line of sight.
+ * A `lobbed` round flies over everything to where its target will be when it lands and bursts there, so a lobbing turret needs no line of sight.
+ * A gun whose round loses more than half to a kind's `plate` leaves that kind alone.
  */
 export type TurretDef = {
   prefers: ZombieKind; range: number; fireMs: number; damage: number; pellets: number; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
@@ -452,7 +453,7 @@ export const ZOM = {
   biteReach: 10,
   /** What walking through a wall cell costs the flow field, in orthogonal steps; high enough that the horde takes any open way round. */
   wallCostCells: 40,
-  /** A squad of four bots meets each night's horde as listed; a human, with triple health and better aim than a bot, counts for one and a half. */
+  /** A squad of four bots meets each night's horde as listed; a human, with fourfold health and better aim than a bot, counts for one and a half. */
   hordeShare: (squad: { humans: number; bots: number }) => (squad.bots + 1.5 * squad.humans) / 4,
   /** Each wave of a night brings this many packs at once, from their own sides, then waits `packGapMs` for each before the next, so later nights come in fewer, bigger waves. */
   packsPerWave: (night: number) => Math.max(1, night - 1),

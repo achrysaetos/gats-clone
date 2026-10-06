@@ -108,7 +108,7 @@ test('knife, gas and land mines work on zombies too', () => {
   assert.equal(mineWorld.thrown.length, 0);
 });
 
-test('a human shoots zombies for plain damage: the triple-health handicap is only against bots', () => {
+test('a human shoots zombies for plain damage: the fourfold-health handicap is only against bots', () => {
   const w = nightWorld();
   const p = spawnAt(w, X, Y, { kind: 'human' });
   const z = addZombie(w, 'brute', X, Y + 300, 1000);
