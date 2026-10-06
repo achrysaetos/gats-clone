@@ -206,8 +206,9 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
     }
     const p = push.get(z);
     if (p) { dx += p.x; dy += p.y; }
-    if (dx === 0 && dy === 0) continue;
-    const at = slide(solids, z.x, z.y, dx, dy, def.radius, size);
+    const at = dx === 0 && dy === 0 ? z : slide(solids, z.x, z.y, dx, dy, def.radius, size);
+    z.vx = ((at.x - z.x) * 1000) / dtMs;
+    z.vy = ((at.y - z.y) * 1000) / dtMs;
     z.x = at.x;
     z.y = at.y;
   }

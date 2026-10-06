@@ -198,7 +198,7 @@ function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
   for (let placed = 0, tries = 0; placed < n && tries < 20 * n; tries++) {
     const x = clamp(ax + (rand(w) - 0.5) * PACK_SPREAD, strip.x, strip.x + strip.w), y = clamp(ay + (rand(w) - 0.5) * PACK_SPREAD, strip.y, strip.y + strip.h);
     if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
-    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0 });
+    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0, vx: 0, vy: 0 });
     placed++;
   }
 }

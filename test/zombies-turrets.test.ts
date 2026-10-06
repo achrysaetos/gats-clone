@@ -28,7 +28,7 @@ function addTurret(w: World, kind: TurretKind, owner: number, over: Partial<Turr
 }
 
 function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = 1e9) {
-  const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity };
+  const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
 }
@@ -69,9 +69,8 @@ function oneRound(turret: TurretKind, kind: ZombieKind): number {
   return 1e9 - z.hp;
 }
 
-test('plating blocks most of a sentry round but little of a cannon shell, and none of a mortar\'s blast', () => {
+test('plating blocks little of a cannon shell and none of a mortar\'s blast', () => {
   assert.equal(oneRound('sentry', 'walker'), SENTRY.damage);
-  assert.ok(oneRound('sentry', 'plated') <= SENTRY.damage / 3, `a sentry round deals ${oneRound('sentry', 'plated')} to a plated`);
   assert.ok(oneRound('cannon', 'plated') >= BUILDINGS.cannon.turret.damage * 0.9, 'a cannon shell gets through');
   for (const kind of ['walker', 'plated'] as const) {
     assert.ok(oneRound('mortar', kind) >= BUILDINGS.mortar.turret.lobbed!.damage * 0.9, `a mortar's burst takes nearly its full damage off a ${kind}`);
@@ -296,5 +295,39 @@ test('the Bastion\'s survivors never fire sooner than their count allows, even a
   for (let i = 1; i < fired.length; i++) {
     const since = fired[i]!.at - fired[i - 1]!.at;
     assert.ok(since >= fired[i - 1]!.gap - TICK_MS - 1e-6, `shot ${i} came ${since}ms after the last, its gap ${fired[i - 1]!.gap}ms`);
+  }
+});
+
+test('a sentry or scatter leaves zombies whose plating eats most of its round to heavier guns, and fires on what it can hurt', () => {
+  for (const turret of ['sentry', 'scatter'] as const) {
+    for (const armored of ['plated', 'colossus'] as const) {
+      const w = nightWorld();
+      const t = addTurret(w, turret, spawnAt(w, TX, TY + 300).id);
+      const tough = addZombie(w, armored, TX, TY - 100);
+      run(w, 1000);
+      assert.deepEqual([t.ammo, tough.hp], [BUILDINGS[turret].turret.ammo, 1e9], `a ${turret} spends nothing on a ${armored}`);
+      const walker = addZombie(w, 'walker', TX + 180, TY);
+      run(w, 1000);
+      assert.ok(walker.hp < 1e9 && tough.hp === 1e9, `the ${turret} shoots the walker beside the ${armored}`);
+    }
+  }
+  const w = nightWorld();
+  const z = addZombie(w, 'plated', 1500, 1500 - ZOM.coreHalf - 100);
+  for (let t = 0; t < 1000; t += TICK_MS) { z.x = 1500; z.y = 1500 - ZOM.coreHalf - 100; step(w, TICK_MS); }
+  assert.ok(z.hp < 1e9, 'the Bastion\'s heavier rounds still get through');
+});
+
+test('a mortar leads a zombie walking in, so its shell comes down on it', () => {
+  for (const kind of ['walker', 'runner'] as const) {
+    const w = nightWorld();
+    w.run!.core.hp = 1e9;
+    w.run!.survivors = 0;
+    w.buildings.push({ id: newId(w), kind: 'mortar', cx: 32, cy: 30, hp: 1e9, owner: -1, ammo: 1, nextFireAt: 0 });
+    w.buildingsVersion++;
+    const z = addZombie(w, kind, 1500, 1500 - 700);
+    z.attackAt = 0;
+    run(w, 3000);
+    const dealt = 1e9 - z.hp;
+    assert.ok(dealt >= BUILDINGS.mortar.turret.lobbed!.damage * 0.75, `a ${kind} took ${dealt.toFixed(0)} of the shell`);
   }
 });

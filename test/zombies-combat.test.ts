@@ -17,7 +17,7 @@ function nightWorld(): World {
 const X = 1475, Y = 1700, DOWN = Math.PI / 2;
 
 function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = zombieMaxHp(kind, 1, 1)) {
-  const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity };
+  const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
 }

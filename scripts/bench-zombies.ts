@@ -111,7 +111,7 @@ const holdOut = () => {
   for (const b of sq.w.buildings) if (b.kind !== 'wall') b.ammo = BUILDINGS[b.kind].turret.ammo;
   while (sq.w.zombies.length < ZOM.maxAlive) {
     const edge = horde[Math.floor(sq.r() * horde.length)]!;
-    sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night, 1), attackAt: 0 });
+    sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night, 1), attackAt: 0, vx: 0, vy: 0 });
   }
   const t = tick(sq);
   for (const e of sq.w.events) { if (e.e === 'shot') shots++; if (e.e === 'zkill') kills++; if (e.e === 'turret') turretShots++; }

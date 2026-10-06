@@ -37,7 +37,7 @@ function play(w: World, bots: Player[], ms: number, done: () => boolean, seed = 
 }
 
 /** Keeps the night going without bothering anyone. */
-const farZombie = (w: World) => w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity });
+const farZombie = (w: World) => w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity, vx: 0, vy: 0 });
 
 test('a squad bot walks over to a downed human and holds use until they are up', () => {
   const w = nightWorld();
@@ -52,7 +52,7 @@ test('a squad bot walks over to a downed human and holds use until they are up',
 test('a squad bot shoots the zombies coming at the core', () => {
   const w = nightWorld();
   const bot = spawnAt(w, CORE.x, CORE.y + 320);
-  w.zombies.push({ id: newId(w), kind: 'walker', x: CORE.x, y: CORE.y + 900, hp: 200, attackAt: 0 });
+  w.zombies.push({ id: newId(w), kind: 'walker', x: CORE.x, y: CORE.y + 900, hp: 200, attackAt: 0, vx: 0, vy: 0 });
   let dealt = 0;
   assert.ok(play(w, [bot], 10_000, () => {
     dealt += w.events.filter((e) => e.e === 'dmg' && e.kind === 'zombie' && e.attacker === bot.id).reduce((sum, e) => sum + (e.e === 'dmg' ? e.amount : 0), 0);
@@ -114,7 +114,7 @@ test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing'
   const bot = spawnAt(w, CORE.x, CORE.y + 320, { loadout: { weapon: 'smg' } });
   for (let i = 0; i < 40; i++) {
     const a = (i / 40) * Math.PI * 2;
-    w.zombies.push({ id: newId(w), kind: 'brute', x: bot.x + Math.cos(a) * (90 + (i % 3) * 15), y: bot.y + Math.sin(a) * (90 + (i % 3) * 15), hp: 1e9, attackAt: Infinity });
+    w.zombies.push({ id: newId(w), kind: 'brute', x: bot.x + Math.cos(a) * (90 + (i % 3) * 15), y: bot.y + Math.sin(a) * (90 + (i % 3) * 15), hp: 1e9, attackAt: Infinity, vx: 0, vy: 0 });
   }
   const shots = () => w.events.filter((e) => e.e === 'shot').length;
   let fired = 0;

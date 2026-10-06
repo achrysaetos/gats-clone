@@ -23,12 +23,12 @@ function nightWorld(): World {
 
 /** Keeps the night from ending while a test runs, with a zombie far off that never reaches anyone. */
 function holdNight(w: World) {
-  w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity });
+  w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity, vx: 0, vy: 0 });
 }
 
 function downByBite(w: World, p: Player) {
   if (p.life.k === 'alive') p.life.hp = 1;
-  w.zombies.push({ id: newId(w), kind: 'walker', x: p.x, y: p.y + 30, hp: 1e9, attackAt: 0 });
+  w.zombies.push({ id: newId(w), kind: 'walker', x: p.x, y: p.y + 30, hp: 1e9, attackAt: 0, vx: 0, vy: 0 });
   step(w, TICK_MS);
   w.zombies.pop();
 }
@@ -47,7 +47,7 @@ test('a fatal bite downs a squad player: they crawl, cannot shoot, and the horde
   assert.ok(Math.abs(p.y - Y - crawl) < 5, `crawled ${(p.y - Y).toFixed(0)}px in a second, expected about ${crawl.toFixed(0)}`);
   assert.equal(w.bullets.length, 0, 'no shots from the ground');
 
-  const z = { id: newId(w), kind: 'walker' as const, x: p.x, y: p.y + 40, hp: 1e9, attackAt: 0 };
+  const z = { id: newId(w), kind: 'walker' as const, x: p.x, y: p.y + 40, hp: 1e9, attackAt: 0, vx: 0, vy: 0 };
   w.zombies.push(z);
   press(w, p, {});
   run(w, 1000);

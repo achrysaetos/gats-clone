@@ -20,7 +20,7 @@ function nightWorld(): World {
 }
 
 function addZombie(w: World, kind: ZombieKind, x: number, y: number) {
-  const z = { id: newId(w), kind, x, y, hp: 1e9, attackAt: 0 };
+  const z = { id: newId(w), kind, x, y, hp: 1e9, attackAt: 0, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
 }

@@ -94,7 +94,8 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restart
 
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
-export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number };
+/** `vx`, `vy` is how fast it moved last tick, in px a second. */
+export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number };
 
 type Cell = { id: number; cx: number; cy: number; hp: number };
 /** A turret fires for `owner`, its builder, who gets the score for its kills. */

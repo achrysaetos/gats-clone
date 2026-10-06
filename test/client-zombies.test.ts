@@ -31,7 +31,7 @@ const previewOf = (w: World, id: number, cx: number, cy: number) => {
 
 test('the build preview judges every cell around the builder as the server does', () => {
   const { w, p } = squadWorld();
-  w.zombies.push({ id: newId(w), kind: 'brute', x: AT.x + 120, y: AT.y - 60, hp: 1, attackAt: Infinity });
+  w.zombies.push({ id: newId(w), kind: 'brute', x: AT.x + 120, y: AT.y - 60, hp: 1, attackAt: Infinity, vx: 0, vy: 0 });
   spawnAt(w, AT.x - 100, AT.y + 100);
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 28, cy: 27, hp: 1 });
   w.walls.push({ x: 1200, y: 1400, w: 24, h: 140, built: false, material: 'concrete', expiresAt: Infinity });
