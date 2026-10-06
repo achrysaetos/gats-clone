@@ -5,7 +5,7 @@ Skirmish has four 6000 px versus maps, Causeway, Plaza, Old Town and Quarry. Eac
 ## Sub-features
 
 - `map-rotate-rounds` changes the map at each round restart in FFA, TDM and DOM. Zombies stays on Outpost.
-- `map-layout` keeps every spot walkable from a spawn, the team spawns out of each other's sight, walls, spawns, crates and zones the same after a half turn, and each DOM zone reachable, inside the map and off the walls. `node scripts/map-lint.ts` prints any problem and each map's longest sightline, and always exits 0. `test/map-lint.test.ts` fails on a problem.
+- `map-layout` keeps every spot walkable from a spawn, the team spawns out of each other's sight, walls, spawns, crates and zones the same after a half turn, walls and crates inside the map and crates off the walls, and three DOM zones, each reachable, inside the map and off walls and crates. `node scripts/map-lint.ts` prints any problem and each map's longest sightline, and always exits 0. `test/map-lint.test.ts` fails on a problem.
 - `map-rotate-timer` ends an FFA round after 10 minutes if no human reached 30 kills first. The player with the most kills wins, and the next round starts on the next map. With no kills at all, the map changes without a round end. TDM (12 minutes) and DOM (15 minutes) have clocks too. When one runs out the team ahead on score, then on kills, wins with the note `Time ran out`. A dead heat crowns nobody and the next round starts on the next map at once.
 - `map-notice` shows a gold `Next map: X in Ns` pill under the top panel for the last 15s before a change. A round win puts the change 8s away, so after a win the pill appears at once and counts down from 8.
 - `map-name` names the current map in the objective line, which shows only while Tab is held.
