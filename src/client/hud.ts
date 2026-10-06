@@ -209,13 +209,17 @@ function drawRingBurst(ctx: CanvasRenderingContext2D, at: Point, color: string, 
 
 const RETICLE = { minGap: 5, maxGap: 90, tick: 7, ring: 6, ringClearance: 6 } as const;
 
-/** Ticks sit where the spread cone crosses the cursor's distance, so the reticle opens up with spread and closes with Grip or Choke and widens on the move with a heavy gun or under a sustained spray. */
+/** Ticks sit where the spread cone crosses the cursor's distance, so the reticle opens on the move with a heavy gun and over an assault rifle's spray, and closes with Grip or Choke. */
 export const reticleGap = (spread: number, distPx: number): number =>
   Math.min(RETICLE.maxGap, Math.max(RETICLE.minGap, Math.tan(spread) * distPx));
+
+let reticleDrawnGap = 0;
+export const drawnReticleGap = (): number => reticleDrawnGap;
 
 function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
   const gap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
+  reticleDrawnGap = gap;
   ctx.lineCap = 'round';
   for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.5)'], [1.5, '#ffffff']] as const) {
     ctx.lineWidth = width;

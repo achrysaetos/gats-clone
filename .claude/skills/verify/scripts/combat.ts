@@ -2,7 +2,7 @@
 // Usage: node combat.ts <run-dir> [room ...]   Rooms: tdm dom ffa (default: tdm dom).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PERK_INFO } from '../../../../src/shared/defs.ts';
+import { isPerkId, PERK_INFO, pickOptions, type GunId } from '../../../../src/shared/defs.ts';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
@@ -21,7 +21,7 @@ const W = 1280, H = 800;
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const problems: string[] = [];
 
-type Player = { id: number; name: string; x: number; y: number; team: 'red' | 'blue' | null; alive: boolean };
+type Player = { id: number; name: string; x: number; y: number; team: 'red' | 'blue' | null; alive: boolean; gun: GunId };
 type Dmg = { e: 'dmg'; attacker: number | null; victim: number; amount: number; kind: 'player' | 'crate' };
 type Snap = {
   t: 'snap'; self: { id: number; viewRadius: number; perks: Record<string, string> }; players: Player[];
@@ -164,19 +164,22 @@ async function perkDock(w: Watch) {
   if (!(await open())) return;
   const rect = await js(`(() => { const r = document.getElementById('perk-panel').getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; })()`);
   const tiles = await js(`document.querySelectorAll('#perk-panel .perk').length`);
+  const offered = pickOptions({ k: 'perk', tier: 1 }, me()?.gun ?? 'pistol');
+  const second = offered[1];
+  if (!second || !isPerkId(second)) throw new Error(`no second tier 1 perk among ${offered.join(', ')}`);
   const center = { l: W * 0.25, t: H * 0.2, r: W * 0.75, b: H * 0.75 };
   const clear = rect.t >= center.b || rect.b <= center.t || rect.l >= center.r || rect.r <= center.l;
-  expect(`${w.room}: perk dock keeps clear of the screen center`, clear && tiles === 10,
+  expect(`${w.room}: perk dock keeps clear of the screen center`, clear && tiles === offered.length,
     `${tiles} tiles, dock ${Math.round(rect.r - rect.l)}x${Math.round(rect.b - rect.t)} at (${Math.round(rect.l)},${Math.round(rect.t)})`);
   const tile = await js(`(() => { const r = document.querySelectorAll('#perk-panel .perk')[1].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
   await mouse('mouseMoved', tile.x, tile.y);
   await sleep(150);
   const described = String(await js(`document.querySelector('#perk-panel .perk-desc').textContent`));
-  expect(`${w.room}: hovering a tile shows its description in the dock`, described.startsWith(PERK_INFO.optics.name) && described.includes(PERK_INFO.optics.desc), described);
+  expect(`${w.room}: hovering a tile shows its description in the dock`, described.startsWith(PERK_INFO[second].name) && described.includes(PERK_INFO[second].desc), described);
   log(`     screenshot ${await shot(`perk-dock-${w.room}`)}`);
   await key(page, 'keyDown', 'Digit2', '2');
   await key(page, 'keyUp', 'Digit2', '2');
-  expect(`${w.room}: pressing 2 picks the second tier 1 perk on the server`, await until(() => frames.last?.self.perks[1] === 'optics'), `perks ${JSON.stringify(frames.last?.self.perks)}`);
+  expect(`${w.room}: pressing 2 picks the second tier 1 perk on the server`, await until(() => frames.last?.self.perks[1] === second), `perks ${JSON.stringify(frames.last?.self.perks)}`);
   expect(`${w.room}: the dock closes after the pick`, await until(async () => !(await open())));
 }
 

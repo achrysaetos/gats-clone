@@ -70,7 +70,7 @@ for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
     for (let i = 0; i < 8; i++) addBot(`bot${i}`);
     const humans = [
       addPlayer(w, 'lagged', { weapon: 'assault', armor: 'light', color: 'red' }, { kind: 'human', at: { x: MAPS[w.map].size / 2, y: MAPS[w.map].size / 2 } }),
-      addPlayer(w, 'local', { weapon: 'shotgun', armor: 'medium', color: 'blue' }, { kind: 'human' }),
+      addPlayer(w, 'local', { weapon: 'sniper', armor: 'medium', color: 'blue' }, { kind: 'human' }),
     ];
     for (const h of humans) h.level = LEVELS.length - 1;
     let seq = 1;
