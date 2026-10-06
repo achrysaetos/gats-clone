@@ -4,7 +4,7 @@ import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
 import type { Perception, Threat } from './awareness.ts';
 import { coverNear, pickCover } from './cover.ts';
-import type { Point } from './nav.ts';
+import { between, dist, type Point } from './nav.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
 export type PersonalityId = (typeof PERSONALITY_IDS)[number];
@@ -81,8 +81,6 @@ const OUTNUMBERED_HP = 0.3;
 const LOW_AMMO = 0.25;
 
 const ticks = (ms: number) => Math.round(ms / TICK_MS);
-const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
-const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const pos = (t: Threat): Point => ({ x: t.p.x, y: t.p.y });
 
 const LOST_GRACE_MS = 500;

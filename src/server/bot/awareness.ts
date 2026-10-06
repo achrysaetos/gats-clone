@@ -3,7 +3,7 @@ import { VIEW_ASPECT, viewExtents, type PlayerView, type SelfView, type Snapshot
 import type { Rect } from '../../shared/sim/movement.ts';
 import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
-import { clearShot, type Point } from './nav.ts';
+import { clearShot, dist, type Point } from './nav.ts';
 
 type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
 
@@ -43,7 +43,6 @@ const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
 
 const crateRect = (c: { x: number; y: number; size: number }): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
-const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
 

@@ -7,7 +7,7 @@ import { aimSigma, bearingSpin, drift, engage, freshAim, handFor, HANDS, landing
 import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
-import { clearShot, findPath, isOpen, walkable, type Point } from './nav.ts';
+import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
 
 export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
@@ -70,8 +70,6 @@ const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
 export const MIN_TURN_BACK_MS = 400;
 const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
 
-const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
-const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
 const crateRect = (c: CrateView): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 
 function retreatHeading(me: Point, away: number, arena: BotArena): number {

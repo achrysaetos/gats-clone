@@ -2,6 +2,9 @@ import { circleHitsRect, segmentEntersRectAt, type Rect } from '../../shared/sim
 
 export type Point = { x: number; y: number };
 
+export const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+export const between = (r: readonly [number, number], rand: () => number) => r[0] + rand() * (r[1] - r[0]);
+
 export type NavGrid = {
   size: number; cell: number; n: number; open: Uint8Array;
   scratch: { g: Float64Array; from: Int32Array; seen: Uint32Array; stamp: number; heapC: number[]; heapF: number[] };
