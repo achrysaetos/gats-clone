@@ -15,7 +15,7 @@ export type BotMemory = {
   motor: Motor;
 };
 
-type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
+export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
 
 const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };
 const DEAD_ZONE = 30;
