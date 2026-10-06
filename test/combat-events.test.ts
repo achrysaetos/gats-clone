@@ -101,12 +101,12 @@ test('a player finished by their own blast gives the kill, bounty and team point
   const most = spawnAt(w, 300, 300, { team: 'red', name: 'Most' });
   const less = spawnAt(w, 300, 900, { team: 'red', name: 'Less' });
   const victim = spawnAt(w, 900, 900, { team: 'blue', name: 'Victim' });
-  equip(victim, 'thunderclap');
+  equip(victim, 'boomSlug');
   const hurt = (by: Player, amount: number) => damagePlayer(w, victim, amount, { attacker: by, team: by.team, label: 'test', piercing: false, via: 'bullet', fromX: by.x, fromY: by.y });
   hurt(less, 10);
   hurt(most, 50);
   w.events = [];
-  explode(w, victim.x, victim.y, 70, 200, { attacker: victim, team: victim.team, label: 'Thunderclap' });
+  explode(w, victim.x, victim.y, 70, 200, { attacker: victim, team: victim.team, label: 'Boom Slug' });
   const kill = w.events.find((e) => e.e === 'kill');
   assert.equal(victim.life.k, 'dead');
   assert.ok(kill?.e === 'kill');
@@ -126,7 +126,7 @@ test('a self-inflicted death credits only damage from the last few seconds, not 
     run(w, 30_000);
     if (hurtRecently) hurt(recent, 5);
     w.events = [];
-    explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Thunderclap' });
+    explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Boom Slug' });
     const kill = w.events.find((e) => e.e === 'kill');
     assert.ok(kill?.e === 'kill');
     return { killer: kill.killerId, old, recent, victim };
@@ -141,7 +141,7 @@ test('a player who blows themselves up untouched credits nobody', () => {
   const w = emptyWorld();
   const victim = spawnAt(w, 900, 900);
   const other = spawnAt(w, 300, 300);
-  explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Thunderclap' });
+  explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Boom Slug' });
   const kill = w.events.find((e) => e.e === 'kill');
   assert.ok(kill?.e === 'kill');
   assert.equal(kill.killerId, victim.id);

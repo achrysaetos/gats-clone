@@ -45,16 +45,16 @@ test('a penetrating round hits one more player than it can pass through, then st
 test('a blast round damages bodies within its radius where it stops: at a wall, or at the end of its range', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  equip(a, 'thunderclap');
+  equip(a, 'boomSlug');
   w.walls.push({ x: 800, y: 300, w: 20, h: 400, built: false, material: 'concrete', expiresAt: Infinity });
   const nearWall = spawnAt(w, 770, 545);
   const clear = spawnAt(w, 770, 680);
-  pressAndCollect(w, a, 400);
+  pressAndCollect(w, a, GUNS.boomSlug.fireMs + 50);
   assert.ok(hpOf(nearWall) < WORLD.baseHp, 'a body beside the impact takes splash');
   assert.equal(hpOf(clear), WORLD.baseHp, 'a body outside the radius does not');
 
   w.walls = [];
-  const rangeEnd = a.x + WORLD.playerRadius + 4 + GUNS.thunderclap.range;
+  const rangeEnd = a.x + WORLD.playerRadius + 4 + GUNS.boomSlug.range;
   const atRangeEnd = spawnAt(w, rangeEnd, 560);
   pressAndCollect(w, a, 1000);
   assert.ok(hpOf(atRangeEnd) < WORLD.baseHp, 'a spent round still bursts');
@@ -88,7 +88,7 @@ test('a blast hurts crates less the farther they sit from its center', () => {
 test('a lag-compensated blast round bursts on the victim where the shooter saw them, not where they stand now', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  equip(a, 'thunderclap');
+  equip(a, 'boomSlug');
   const victim = spawnAt(w, 700, 500);
   run(w, 500);
   const sawAt = w.now - 200;
@@ -97,7 +97,7 @@ test('a lag-compensated blast round bursts on the victim where the shooter saw t
   setInput(w, a.id, 1_000_000, { ...IDLE_INPUT, angle: 0, shots: a.input.shots + 1 }, sawAt);
   run(w, 300);
   const lost = WORLD.baseHp - hpOf(victim);
-  assert.ok(lost > GUNS.thunderclap.damage + GUNS.thunderclap.blast!.damage * 0.9, `took the round and the burst around the rewound pose (lost ${lost})`);
+  assert.ok(lost > GUNS.boomSlug.damage + GUNS.boomSlug.blast!.damage * 0.9, `took the round and the burst around the rewound pose (lost ${lost})`);
 });
 
 test('a blast hurts its owner for half, never a teammate, and a self-kill earns nothing', () => {

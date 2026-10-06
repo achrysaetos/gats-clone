@@ -88,7 +88,7 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
   for (const [level, option] of [[1, 'grip'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   const shipped = () => { step(w, TICK_MS); return snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'); };
   assert.deepEqual(shipped(), [], 'stage 1 is not hunted');
-  assert.ok(choosePick(w, a.id, 5, 'thunderclap'));
+  assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
   assert.deepEqual(shipped(), [{ e: 'hunted', id: a.id, name: 'Kestrel' }], 'the tick after the pick ships the announcement');
   assert.deepEqual(shipped(), [], 'announced once');
 });
@@ -111,7 +111,7 @@ test('a squadmate on a stage-2 gun in a zombies run is never hunted: no announce
   const mate = spawnAt(w, 1600, 1400);
   a.level = 5;
   for (const [level, option] of [[1, 'grip'], [2, 'handCannon'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
-  assert.ok(choosePick(w, a.id, 5, 'thunderclap'));
+  assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
   step(w, TICK_MS);
   const snap = snapshotFor(w, mate.id);
   assert.deepEqual(snap.events.filter((e) => e.e === 'hunted'), []);

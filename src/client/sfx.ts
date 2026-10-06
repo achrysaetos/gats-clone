@@ -27,13 +27,16 @@ const CLASS_SHOTS: Record<WeaponId, Recipe> = {
   lmg: [crack(1900, 70, 0.45), thump(170, 70, 0.4)],
 };
 
-/** Each evolution down the first branch drops the pitch and down the second raises it, so every gun on the tree sounds its own. */
-const BRANCH_PITCH = [0.84, 1.18] as const;
+/**
+ * Each evolution down the first branch drops the pitch and down the second raises it, so every gun on the tree sounds its own.
+ * The second evolution steps by less, so going low then high never lands on the same pitch as high then low.
+ */
+const BRANCH_PITCH = [[0.84, 1.18], [0.92, 1.09]] as const;
 
 function pitchOf(gun: GunId): number {
-  const from = GUNS[gun].from;
+  const { from, stage } = GUNS[gun];
   if (!from) return 1;
-  return pitchOf(from) * (BRANCH_PITCH[EVOLUTIONS[from].indexOf(gun)] ?? 1);
+  return pitchOf(from) * (BRANCH_PITCH[stage - 1]?.[EVOLUTIONS[from].indexOf(gun)] ?? 1);
 }
 
 const retune = (layer: Layer, k: number, stage: number): Layer => {

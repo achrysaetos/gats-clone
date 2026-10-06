@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_IDS, GUNS, LEVELS, WORLD, type ArmorId } from '../src/shared/defs.ts';
+import { GUN_IDS, GUNS, LEVELS, WORLD } from '../src/shared/defs.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
@@ -26,16 +26,16 @@ test('a point-blank shotgun blast kills an unarmored full-health player', () => 
   assert.equal(target.life.k, 'dead');
 });
 
-test('a bolt-action hit kills only the unarmored, and any armor falls to the second', () => {
-  const shotsToKill = (armor: ArmorId) => {
+test('every gun that promises a kill in one or two hits keeps that promise through heavy armor, a pellet gun counting a point-blank blast as one hit', () => {
+  for (const id of GUN_IDS.filter((g) => GUNS[g].breakpoint)) {
+    const g = GUNS[id];
     const w = emptyWorld();
-    const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
-    const target = spawnAt(w, 1600, 1000, { loadout: { armor } });
-    let shots = 0;
-    while (target.life.k === 'alive' && shots < 10) { shootOnce(w, sniper, 0, GUNS.sniper.fireMs + 100); shots++; }
-    return shots;
-  };
-  assert.deepEqual(ARMOR_IDS.map(shotsToKill), [1, 2, 2, 2]);
+    const shooter = spawnAt(w, 1000, 1000, { loadout: { weapon: g.base } });
+    shooter.gun = id;
+    const target = spawnAt(w, 1000 + (g.pellets > 1 ? 60 : 300), 1000, { loadout: { armor: 'heavy' } });
+    for (let hit = 1; hit <= g.breakpoint!; hit++) shootOnce(w, shooter, 0, (g.burst ? g.burst.count * g.burst.gapMs : 0) + g.fireMs + (g.mag === 1 ? g.reloadMs : 0) + 100);
+    assert.equal(target.life.k, 'dead', `${g.name} kills heavy armor in ${g.breakpoint}`);
+  }
 });
 
 /** The level each bot life ended at in a fixed-seed FFA room of bots, so a ladder or bot change that stalls progression shows up. */

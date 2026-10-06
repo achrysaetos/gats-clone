@@ -4,8 +4,8 @@ import type { GunId } from '../src/shared/defs.ts';
 import { dominatedPairs, rangeBeyondView, type Pair } from '../scripts/lib/gunscore.ts';
 
 /** Today's offenders. Fix a gun and its pair drops out of the lint, which then fails until the entry is deleted here. */
-const KNOWN_DOMINATED: readonly Pair[] = [['ripper', 'minigun'], ['specter', 'minigun'], ['twinMg', 'minigun']];
-const KNOWN_BEYOND_VIEW: readonly GunId[] = ['sniper', 'railSlug', 'marksman', 'longshot', 'semiAuto', 'piercer', 'artillery', 'repeater', 'ghost'];
+const KNOWN_DOMINATED: readonly Pair[] = [];
+const KNOWN_BEYOND_VIEW: readonly GunId[] = ['sniper', 'longshot', 'semiAuto', 'piercer', 'artillery', 'repeater', 'ghost'];
 
 const key = ([a, b]: Pair) => `${a} > ${b}`;
 

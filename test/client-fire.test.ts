@@ -63,7 +63,7 @@ const SCRIPTS: [string, GunId, string][] = [
   ['machine pistol bursts', 'machinePistol', 'P..........................P..P.................'],
   ['SMG held, released and held again', 'smg', 'Phhhhhhhhhhhhhhhhhhhhhhhh.....Phhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh....'],
   ['hornet held fires every tick', 'hornet', 'Phhhhhhhhhhhhhhhhhhh.'],
-  ['twin fang bursts', 'twinFang', 'P.........P.......................P'],
+  ['akimbo bursts', 'akimbo', 'P.........P.......................P'],
   ['shotgun with an early reload', 'shotgun', 'P.....................P..R.........................................................P'],
 ];
 
