@@ -1,17 +1,44 @@
-import { BUILDING_KINDS, BUILDINGS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
-import type { PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
-import { buildRefusal, cellOf, coreRectAt, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, nightOf, SIDES, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
+import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
+import { buildRefusal, cellOf, coreRectAt, refundFor, serviceTarget, type BuildRefusal, type BuildSite } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
 
-export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft'>, serverNow: number | null): string {
+export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft' | 'report'>, serverNow: number | null): string {
   const left = run.phaseEndsAt === null || serverNow === null ? null : run.phaseEndsAt - serverNow;
   switch (run.phase) {
     case 'day': return `Day ${run.night}${left === null ? '' : ` · night in ${clock(left)}`}`;
-    case 'night': return `Night ${run.night} · ${run.waveLeft} left`;
-    case 'over': return `Core fell${left === null ? '' : ` · next run in ${clock(left)}`}`;
+    case 'night': return `Night ${run.night} · ${run.waveLeft} left${left === null ? '' : ` · first light in ${clock(left)}`}`;
+    case 'over': return `The Bastion ${run.report?.won ? 'held' : 'fell'}${left === null ? '' : ` · next run in ${clock(left)}`}`;
   }
+}
+
+const listOf = (xs: readonly string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+
+const sidesOf = (night: number) => {
+  const from = nightOf(night).from;
+  return from.length === SIDES.length ? 'every side' : `the ${listOf(from)}`;
+};
+
+export const squadShare = (players: readonly Pick<PlayerView, 'kind'>[]) =>
+  ZOM.hordeShare({ humans: players.filter((p) => p.kind === 'human').length, bots: players.filter((p) => p.kind !== 'human').length });
+
+/** What a night brings for a squad with this `share` of the horde and from where, by the night table: the deadliest kinds first, by what each pays, then how many in all. */
+export function forecast(night: number, share: number): string {
+  const def = nightOf(night);
+  const present = ZOMBIE_KINDS.filter((k) => def.horde[k]).sort((a, b) => ZOMBIES[b].score - ZOMBIES[a].score);
+  const kinds = listOf(present.map((k) => ZOMBIES[k].many));
+  const size = present.reduce((n, k) => n + hordeCount(k, def.horde[k]!, share), 0);
+  return `${kinds[0]!.toUpperCase()}${kinds.slice(1)} from ${sidesOf(night)} · ${size} strong`;
+}
+
+/** The day's hint for N: how many of the squad's humans are ready for night, and whether you are. */
+export function readyHint(run: Pick<RunView, 'ready'>, players: readonly Pick<PlayerView, 'id' | 'kind' | 'alive'>[], selfId: number): string {
+  const humans = players.filter((p) => p.kind === 'human' && p.alive);
+  const ready = humans.filter((p) => run.ready.includes(p.id)).length;
+  if (!run.ready.includes(selfId)) return humans.length > 1 ? `ready for night · ${ready}/${humans.length}` : 'bring the night now';
+  return `ready · ${ready}/${humans.length} · N to wait`;
 }
 
 export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: number | null): string {
@@ -21,39 +48,35 @@ export function downedLine(down: NonNullable<PlayerView['downed']>, serverNow: n
 
 const nameOf = (kind: BuildingKind) => BUILDINGS[kind].name.toLowerCase();
 
-/** What holding E would do right now, by the same rules the server follows: revive first, else mend the nearest worn building or core in reach, or reload the nearest turret short of ammo; a worn turret is mended first. */
+/** What holding E would do right now: revive first, else what `serviceTarget` names, the rule the server tends by. */
 export function useHint(snap: Snapshot, at: Pose): string | null {
   const run = snap.run;
   if (!run || !snap.self.alive) return null;
   const down = snap.players.find((p) => p.id !== snap.self.id && p.downed && Math.hypot(p.x - at.x, p.y - at.y) <= ZOM.reviveRange);
   if (down) return `Hold E to revive ${down.name}`;
   if (run.scrap <= 0) return null;
-  const jobs = [
-    ...(snap.buildings ?? []).flatMap((b) => {
-      const job = b.hp < 10 ? `repair the ${nameOf(b.kind)}` : b.kind !== 'wall' && b.ammo < 10 ? `reload the ${nameOf(b.kind)}` : null;
-      return job ? [{ job, d: Math.hypot((b.cx + 0.5) * ZOM.cell - at.x, (b.cy + 0.5) * ZOM.cell - at.y) }] : [];
-    }),
-    ...(run.core.hp < run.core.maxHp ? [{ job: 'repair the core', d: Math.hypot(run.core.x - at.x, run.core.y - at.y) }] : []),
-  ].filter((m) => m.d <= ZOM.reachPx);
-  const nearest = jobs.reduce<(typeof jobs)[number] | null>((a, b) => (a && a.d <= b.d ? a : b), null);
-  return nearest && `Hold E to ${nearest.job}`;
+  const target = serviceTarget(at, run.core, snap.buildings ?? []);
+  return target && `Hold E to ${target.job} the ${target.on === 'core' ? 'Bastion' : nameOf(target.on.kind)}`;
 }
 
 export type RunCallout = { title: string; line: string; tone: 'night' | 'dawn' | 'warn' };
 const NIGHT_WARNING_MS = 10_000;
 
 /** The run's turning points between two snapshots; the fall has the report instead, timed on the server's clock (`prevAt`, `nextAt`). */
-export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number): RunCallout[] {
+export function runCallouts(prev: RunView | undefined, next: RunView | undefined, prevAt: number, nextAt: number, share: number): RunCallout[] {
   if (!prev || !next) return [];
   const out: RunCallout[] = [];
   if (prev.phase === 'day' && next.phase === 'day' && prev.phaseEndsAt !== null && next.phaseEndsAt !== null
     && prev.phaseEndsAt - prevAt > NIGHT_WARNING_MS && next.phaseEndsAt - nextAt <= NIGHT_WARNING_MS) {
-    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: 'Finish your walls and get by the core', tone: 'warn' });
+    out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: forecast(next.night, share), tone: 'warn' });
   }
-  if (prev.phase === 'day' && next.phase === 'night') out.push({ title: `Night ${next.night}`, line: `${next.waveLeft} zombies are coming · hold the core`, tone: 'night' });
+  if (prev.phase === 'day' && next.phase === 'night') {
+    out.push({ title: nightOf(next.night).name ?? `Night ${next.night}`, line: `${next.waveLeft} zombies from ${sidesOf(next.night)} · hold the Bastion`, tone: 'night' });
+  }
   if (prev.phase === 'night' && next.phase === 'day') {
-    const core = Math.round((100 * next.core.hp) / next.core.maxHp);
-    out.push({ title: 'Dawn', line: `Night ${prev.night} held · core ${core}% · ${next.scrap} scrap to build with`, tone: 'dawn' });
+    const lost = next.lost ? `${next.lost} lost · ` : '';
+    out.push({ title: 'Dawn', line: `Night ${prev.night} held · ${lost}${next.survivors} survivors · +${next.scrap - prev.scrap} scrap`, tone: 'dawn' });
+    out.push({ title: 'Tonight', line: forecast(next.night, share), tone: 'warn' });
   }
   return out;
 }
@@ -64,19 +87,24 @@ type ReportRow = { name: string; kills: number; revives: number; built: number; 
 export const reportRows = (report: RunReport, selfName: string | undefined): ReportRow[] =>
   [...report.players].sort((a, b) => b.kills - a.kills || b.revives - a.revives || b.built - a.built).map((p) => ({ ...p, you: p.name === selfName }));
 
-export const reportTitle = (report: RunReport) => `The core fell on night ${report.night}`;
+export const reportTitle = (report: RunReport) =>
+  report.won ? `The Bastion held. ${report.survivors} survivors saw the morning.` : `The Bastion fell on night ${report.night}`;
 
-/** The squad's turrets' kills, or null when they killed none. */
+/** The kills of the squad's turrets and the Bastion's survivors, or null when they killed none. */
 export function turretLine(report: RunReport): string | null {
-  const kills = TURRET_KINDS.filter((t) => report.turretKills[t] > 0).map((t) => `${BUILDINGS[t].name} ${report.turretKills[t]}`);
-  return kills.length ? `Turret kills · ${kills.join(' · ')}` : null;
+  const kills = [...TURRET_KINDS.map((t) => [BUILDINGS[t].name, report.turretKills[t]] as const), ['Bastion', report.bastionKills] as const]
+    .filter(([, n]) => n > 0).map(([name, n]) => `${name} ${n}`);
+  return kills.length ? `Defense kills · ${kills.join(' · ')}` : null;
 }
 
-/** The card for a squad player out of the fight until dawn: bled out, or joined while the night was under way. */
-export function outTillDawnText(run: Pick<RunView, 'phase' | 'waveLeft'>, bledOut: boolean): { title: string; sub: string } {
+/** The card for a squad player out of the fight: bled out, back from the Bastion after `respawnIn` ms at the cost of survivors, or joined mid-night and back at dawn. */
+export function outTillDawnText(run: Pick<RunView, 'phase' | 'night' | 'waveLeft' | 'survivors'>, bledOut: boolean, respawnIn: number): { title: string; sub: string } {
+  const cost = ZOM.reinforce.survivors(run.night);
+  const sent = bledOut && run.phase === 'night' && run.survivors > cost;
   return {
     title: bledOut ? 'You bled out' : 'The night is under way',
-    sub: run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn',
+    sub: sent ? `The Bastion sends you back in ${Math.ceil(respawnIn / 1000)}s · ${cost} survivors lost`
+      : run.phase === 'night' ? `Back at dawn · ${run.waveLeft} zombies left tonight` : 'Back at dawn',
   };
 }
 
@@ -100,18 +128,15 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
   };
 }
 
-const refundOf = (kind: BuildingKind) => Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund);
-
-/** `taken` names what stands on the cell, since that decides the refund. */
-function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingKind | undefined): string {
+function refusalText(refusal: BuildRefusal, kind: BuildingKind, taken: BuildingView | undefined): string {
   switch (refusal) {
     case 'notDay': return 'Build by day';
-    case 'farFromCore': return 'Too far from the core';
+    case 'farFromCore': return 'Too far from the Bastion';
     case 'outOfReach': return 'Out of reach';
     case 'cover': return 'Blocked';
-    case 'core': return 'That is the core';
+    case 'core': return 'That is the Bastion';
     case 'body': return 'Someone is in the way';
-    case 'taken': return `Right click to take down the ${nameOf(taken ?? 'wall')} · +${refundOf(taken ?? 'wall')}`;
+    case 'taken': return taken ? `Right click to take down the ${nameOf(taken.kind)} · +${refundFor(taken)}` : 'Blocked';
     case 'scrap': return `${BUILDINGS[kind].name} needs ${BUILDINGS[kind].cost} scrap`;
   }
 }
@@ -123,7 +148,7 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize
   const cell = cellOf(at.x, at.y), grid = worldSize / ZOM.cell;
   const cx = Math.min(grid - 1, Math.max(0, cell.cx)), cy = Math.min(grid - 1, Math.max(0, cell.cy));
   const refusal = buildRefusal(site, kind, cx, cy);
-  const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy)?.kind;
+  const taken = site.buildings.find((b) => b.cx === cx && b.cy === cy);
   return { kind, cx, cy, refusal, label: refusal ? refusalText(refusal, kind, taken) : `${BUILDINGS[kind].name} · ${BUILDINGS[kind].cost} scrap` };
 }
 

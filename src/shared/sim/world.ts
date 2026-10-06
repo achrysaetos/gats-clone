@@ -1,4 +1,4 @@
-import { byTurret, PERK_TIERS, WORLD, ZOM, type Blast, type GunId, type ModeId, type PlayerKind, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { byTurret, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -15,6 +15,9 @@ export type Life =
     nextFireAt: number;
     /** Rounds still to come from the burst in progress. */
     burstLeft: number;
+    spray: number;
+    firedAt: number;
+    spin: number;
     lastDamageAt: number;
     lastMoveAt: number;
     dash: Dash | null;
@@ -66,12 +69,17 @@ export type Bullet = {
   id: number; owner: number; team: Team; x: number; y: number; vx: number; vy: number;
   left: number; damage: number; piercing: boolean; label: string;
   gun: GunId | null;
-  /** The turret that fired it, null for a player's own round. */
-  turret: TurretKind | null;
+  /** The turret or the Bastion's survivors that fired it, null for a player's own round. */
+  turret: Shooter | null;
+  /** A lobbed round flies over everything and bursts where it comes down. */
+  lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
   blast: Blast | null;
 };
+
+/** What fires at the horde for the squad besides its players. */
+export type Shooter = TurretKind | 'bastion';
 
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null };
 
@@ -86,26 +94,38 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restart
 
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
-export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number };
+/** `vx`, `vy` is how fast it moved last tick, in px a second. */
+export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number };
 
 type Cell = { id: number; cx: number; cy: number; hp: number };
 /** A turret fires for `owner`, its builder, who gets the score for its kills. */
 export type Turret = Cell & { kind: TurretKind; owner: number; ammo: number; nextFireAt: number };
 export type Building = (Cell & { kind: 'wall' }) | Turret;
 
+/** `n` zombies of one kind that walk in together from one side. */
+export type HordeUnit = { kind: ZombieKind; side: Side; n: number };
+
 type RunPhase =
   | { k: 'day'; endsAt: number }
-  /** Ends once `toSpawn` is empty and every zombie is dead. */
-  | { k: 'night'; toSpawn: ZombieKind[]; nextSpawnAt: number }
-  | { k: 'over'; night: number; restartAt: number };
+  /** Ends once `toSpawn` is empty and every zombie is dead, or at `dawnAt`, a while after the last pack walks in, when the light burns what is left. */
+  | { k: 'night'; toSpawn: HordeUnit[]; nextSpawnAt: number; dawnAt: number }
+  | { k: 'over'; night: number; won: boolean; restartAt: number };
 
 export type RunStats = { name: string; kills: number; revives: number; built: number };
 
 /** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
 type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };
 
+/**
+ * `survivors` never come back: mending the core shelters the rest but raises no one. `harm` is what the core has taken toward the next survivor lost.
+ * `lost` counts tonight's, or last night's by day; `ready` holds the humans ready for night.
+ */
 export type Run = {
   core: { hp: number };
+  harm: number;
+  survivors: number;
+  lost: number;
+  ready: Set<number>;
   scrap: number;
   night: number;
   phase: RunPhase;
@@ -113,6 +133,10 @@ export type Run = {
   flow: Flow | null;
   stats: Map<number, RunStats>;
   turretKills: Record<TurretKind, Record<ZombieKind, number>>;
+  bastionKills: number;
+  /** Tonight's horde share for the squad, which scales a boss's health. */
+  share: number;
+  bastionFireAt: number;
 };
 
 export type Pose = { x: number; y: number };
@@ -183,9 +207,9 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
 
 export function newRun(now: number): Run {
   return {
-    core: { hp: ZOM.coreHp }, scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
+    core: { hp: ZOM.coreHp }, harm: 0, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
-    turretKills: byTurret(() => ({ walker: 0, brute: 0 })),
+    turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>), bastionKills: 0, bastionFireAt: 0, share: 1,
   };
 }
 

@@ -8,7 +8,8 @@ import WebSocket from 'ws';
 import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../src/shared/protocol.ts';
 import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { BUILDINGS, ZOM, ZOMBIES } from '../../../../src/shared/defs.ts';
+import { BUILDINGS, byTurret, nightOf, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../../../../src/shared/defs.ts';
+import { forecast, squadShare } from '../../../../src/client/zombies.ts';
 import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const RUN = process.argv[2];
@@ -26,7 +27,7 @@ const expect = (label: string, ok: boolean, detail = '') => { log(`${ok ? 'ok  '
 
 const frames = {
   welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null,
-  turretShots: { sentry: 0, cannon: 0 }, turretKills: 0, lowestAmmo: { sentry: 10, cannon: 10 }, scrapEarned: 0,
+  turretShots: byTurret(() => 0), turretKills: 0, lowestAmmo: byTurret(() => 10), scrapEarned: 0,
 };
 const page = await openPage({
   profile: 'skirmish-zombies-',
@@ -299,8 +300,13 @@ const STEPS: Record<string, () => Promise<void>> = {
     const callout = (title: string) => async () => (await zdev())?.callouts.some((c) => c.startsWith(title)) ?? false;
     if (run()?.phase === 'day') {
       expect('a warning callout comes ten seconds before night', await until(callout('Night falls in'), 45_000));
+      const said = (await zdev())?.callouts.find((c) => c.startsWith('Night falls in')) ?? '';
+      expect('the warning forecasts tonight from the night table', said.endsWith(forecast(run()!.night, squadShare(frames.snap!.players))), said);
       await shot('zom-dusk-warning');
     }
+    const tonight = nightOf(run()!.night);
+    const seen = new Map<number, { x: number; y: number }>();
+    const watchSides = setInterval(() => { for (const [id, , x, y] of frames.snap?.zombies ?? []) if (!seen.has(id)) seen.set(id, { x, y }); }, 100);
     expect('night falls', await until(() => run()?.phase === 'night', 15_000));
     expect('night turns build mode off', await until(async () => (await zdev())?.building === false));
     expect('a Night callout announces the wave', await until(callout('Night 1'), 3000));
@@ -346,13 +352,57 @@ const STEPS: Record<string, () => Promise<void>> = {
     if (turrets.length && reload === 'waiting') log(`note no turret stayed low long enough to reload by hand (bots got there first ${beaten} times)`);
     // The squad often shoots the small first wave down before it comes in turret range, so stock night 1 may leave a turret without a kill.
     if (turrets.length) log(`note turrets killed ${frames.turretKills} zombies for the squad`);
+    clearInterval(watchSides);
+    // A zombie first comes into view on the side of the core it walks in from; the view spans 900px or so, so only clear sides count.
+    const sideOf = ({ x, y }: { x: number; y: number }) => {
+      const dx = x - 1500, dy = y - 1500;
+      return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : dy > 0 ? 'south' : 'north';
+    };
+    const sides = new Set([...seen.values()].filter((p) => Math.hypot(p.x - 1500, p.y - 1500) > 350).map(sideOf));
+    expect('the night\'s zombies walk in only from the sides it forecast', [...sides].every((s) => tonight.from.includes(s)), `seen from ${[...sides].join(', ')}, forecast ${tonight.from.join(', ')}`);
     expect('the squad saw zombies in view', crowd);
     expect('the driven player shot zombies through real input', (frames.snap?.self.kills ?? 0) > 0, `${frames.snap?.self.kills} kills`);
     log(`note core alert ${alerted ? 'seen' : 'not seen'} on night 1`);
     expect('dawn of night 2 arrives', run()?.phase === 'day' && run()?.night === 2, `${Math.round((Date.now() - nightAt) / 1000)}s`);
     expect('a Dawn callout sums up the night', await until(callout('Dawn'), 3000));
+    const dawnSaid = (await zdev())?.callouts.find((c) => c.startsWith('Dawn')) ?? '';
+    expect('the Dawn callout counts the survivors and their scrap', / survivors · \+\d+ scrap$/.test(dawnSaid), dawnSaid);
+    expect('dawn forecasts the coming night', await until(async () => (await zdev())?.callouts.some((c) => c === `Tonight · ${forecast(2, squadShare(frames.snap!.players))}`) ?? false, 6000));
     await sleep(300);
     await shot('zom-dawn');
+  },
+  async ready() {
+    expect('by day before readying up', await until(() => run()?.phase === 'day' && me()?.alive, 60_000));
+    const left = run()!.phaseEndsAt! - (frames.snap?.tick ?? 0) * (1000 / 30);
+    await tap('KeyN', 'n');
+    expect('N brings the night early when the only human is ready', await until(() => run()?.phase === 'night', 3000), `${Math.round(left / 1000)}s of day were left`);
+  },
+  async horde() {
+    const kinds = new Set<string>();
+    let pictured = 0;
+    await fight(() => run()?.phase === 'day' && run()!.night > 1, 150_000, async () => {
+      const inView = frames.snap?.zombies ?? [];
+      for (const [, k] of inView) kinds.add(ZOMBIE_KINDS[k]!);
+      // Keep the frame with the most kinds in view, then the most zombies.
+      const variety = new Set(inView.map(([, k]) => k)).size * 100 + inView.length;
+      if (variety > pictured && inView.length >= 6) {
+        pictured = variety;
+        await shot('zom-new-horde');
+        const kindsNear = ([, , x, y]: (typeof inView)[number]) => new Set(inView.filter((o) => Math.abs(o[2] - x) < 120 && Math.abs(o[3] - y) < 80).map((o) => o[1])).size;
+        const busiest = inView.reduce((a, b) => (kindsNear(b) > kindsNear(a) ? b : a));
+        await closeUp('zom-new-horde-closeup', busiest[2], busiest[3]);
+      }
+    });
+    log(`note zombie kinds seen: ${[...kinds].join(', ')}`);
+    for (const t of ['scatter', 'mortar'] as const) if (frames.turretShots[t] > 0) log(`note the ${t} fired ${frames.turretShots[t]} times`);
+  },
+  async victory() {
+    await fight(() => run()?.phase === 'over', 300_000, async () => {});
+    expect('the run ends won after the Tide', run()?.report?.won === true, `night ${run()?.report?.night}, ${run()?.report?.survivors} survivors`);
+    const title = await js(`document.getElementById('report').hidden ? '' : document.querySelector('#report h2, #report h1')?.textContent ?? ''`);
+    expect('the report says the Bastion held and how many saw the morning', /^The Bastion held\. \d+ survivors saw the morning\.$/.test(String(title)), String(title));
+    await sleep(400);
+    await shot('zom-victory');
   },
   async downed() {
     const end = Date.now() + 200_000;

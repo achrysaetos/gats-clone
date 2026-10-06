@@ -87,7 +87,7 @@ export function tickThrown(w: World, dt: number) {
             const a = (i / 16) * Math.PI * 2;
             w.bullets.push({
               id: newId(w), owner: t.owner, team: t.team, x: t.x, y: t.y, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100,
-              left: 320, damage: 18, piercing: false, label: 'Frag', gun: null, turret: null, penetrate: 0, passed: [], blast: null,
+              left: 320, damage: 18, piercing: false, label: 'Frag', gun: null, turret: null, lobbed: false, penetrate: 0, passed: [], blast: null,
             });
           }
         } else {

@@ -1,16 +1,17 @@
-import { GUNS, WORLD, ZOM } from '../../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, GUNS, WORLD, ZOM, type BuildingKind } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
-import { cellRect } from '../../shared/sim/build.ts';
+import { cellOf, cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
 import type { BotArena } from './arena.ts';
+import { findPath, withSolids, type NavGrid } from './nav.ts';
 import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
 
 export const DEAD_ZONE = 30;
 const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
 
-const nearest = <T extends { x: number; y: number }>(me: PlayerView, xs: readonly T[]): T | null =>
+const nearest = <T extends { x: number; y: number }>(me: { x: number; y: number }, xs: readonly T[]): T | null =>
   xs.reduce<T | null>((best, x) => (best && Math.hypot(best.x - me.x, best.y - me.y) <= Math.hypot(x.x - me.x, x.y - me.y) ? best : x), null);
 
 type Watch = {
@@ -20,12 +21,18 @@ type Watch = {
   zombie: { id: number; x: number; y: number; d: number } | null;
   downed: PlayerView | null;
   needsTending: { x: number; y: number } | null;
+  dry: { x: number; y: number } | null;
   coreMendable: boolean;
+  next: { kind: BuildingKind; cx: number; cy: number; x: number; y: number } | null;
 };
 
 type Errand = { x: number; y: number; use: boolean };
 
 const GUARD_RADIUS = 550;
+const WHOLE_TENTHS = 10;
+const DRY_TENTHS = 2;
+const CORE_EMERGENCY_FRAC = 0.5;
+const HUMANS_RESERVE = Math.max(...BUILDING_KINDS.map((k) => BUILDINGS[k].cost));
 const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
 const KITE_PX = 140;
@@ -37,7 +44,9 @@ type Rule = (s: Watch) => Errand | null;
 
 const revive: Rule = (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 };
 const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.needsTending) : null;
+const refillDry: Rule = (s) => s.dry && (!s.zombie || s.zombie.d > KITE_PX) ? mendAt(s, s.dry) : null;
 const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
+const buildNext: Rule = (s) => s.next && { x: s.next.x, y: s.next.y, use: false };
 const holdPost: Rule = (s) => {
   const post = { ...s.post, use: false };
   if (!s.zombie || s.zombie.d > KITE_PX) return post;
@@ -46,7 +55,39 @@ const holdPost: Rule = (s) => {
   return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
 };
 
-const SIEGE_RULES: readonly Rule[] = [revive, mendBuilding, mendCore, holdPost];
+const SIEGE_RULES: readonly Rule[] = [revive, refillDry, mendBuilding, buildNext, mendCore, holdPost];
+
+const BASTION_PLAN: readonly { kind: BuildingKind; dx: number; dy: number }[] = [
+  { kind: 'sentry', dx: 0, dy: -3 }, { kind: 'sentry', dx: 3, dy: 0 }, { kind: 'scatter', dx: 0, dy: 3 }, { kind: 'sentry', dx: -3, dy: 0 },
+  { kind: 'cannon', dx: 3, dy: -3 }, { kind: 'mortar', dx: -3, dy: 3 }, { kind: 'scatter', dx: 0, dy: -4 }, { kind: 'sentry', dx: 0, dy: 4 },
+  { kind: 'cannon', dx: -3, dy: -3 }, { kind: 'mortar', dx: 3, dy: 3 }, { kind: 'scatter', dx: 4, dy: 0 }, { kind: 'scatter', dx: -4, dy: 0 },
+];
+
+const BUILD_STANDOFF = 2 * ZOM.cell;
+
+function nextBuild(run: RunView, buildings: readonly BuildingView[]) {
+  const fromCoreEdge = (d: number) => (d + Math.sign(d) / 2) * ZOM.cell;
+  const todo = BASTION_PLAN.map((p) => ({ kind: p.kind, ...cellOf(run.core.x + fromCoreEdge(p.dx), run.core.y + fromCoreEdge(p.dy)) }))
+    .find((p) => !buildings.some((b) => b.cx === p.cx && b.cy === p.cy));
+  if (!todo) return null;
+  const x = (todo.cx + 0.5) * ZOM.cell, y = (todo.cy + 0.5) * ZOM.cell, d = Math.hypot(x - run.core.x, y - run.core.y);
+  return { ...todo, x: x - ((y - run.core.y) / d) * BUILD_STANDOFF, y: y + ((x - run.core.x) / d) * BUILD_STANDOFF, cost: BUILDINGS[todo.kind].cost };
+}
+
+const SQUAD_NAV = new WeakMap<BotArena, { key: string; nav: NavGrid }>();
+const MAX_EXPANSIONS = 4000;
+const NAV_SLACK = 8;
+
+function wayTo(arena: BotArena, core: { x: number; y: number }, buildings: readonly BuildingView[], me: { x: number; y: number }, to: { x: number; y: number }) {
+  const key = buildings.map((b) => `${b.cx},${b.cy}`).join(' ');
+  let cached = SQUAD_NAV.get(arena);
+  if (cached?.key !== key) {
+    cached = { key, nav: withSolids(arena.nav, [coreRectAt(core), ...buildings.map((b) => cellRect(b.cx, b.cy))], WORLD.playerRadius - NAV_SLACK) };
+    SQUAD_NAV.set(arena, cached);
+  }
+  const path = findPath(cached.nav, me, to, MAX_EXPANSIONS);
+  return path?.find((p) => Math.abs(p.x - me.x) > DEAD_ZONE || Math.abs(p.y - me.y) > DEAD_ZONE) ?? to;
+}
 
 function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[]): { x: number; y: number } {
   const at = (d: number) => ({ x: core.x + Math.cos(bearing) * d, y: core.y + Math.sin(bearing) * d });
@@ -74,12 +115,23 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
-  const worn = (snap.buildings ?? [])
-    .filter((b) => b.hp < 10 || (b.kind !== 'wall' && b.ammo < 10 && run.scrap > 0))
-    .map((b) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell }))
-    .filter((b) => Math.hypot(b.x - run.core.x, b.y - run.core.y) <= GUARD_RADIUS);
-  const watch: Watch = { me, core: run.core, post: postFor(run.core, me.id, snap.buildings ?? []), zombie, downed, needsTending: nearest(me, worn), coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 };
+  const humansBank = snap.players.some((p) => p.kind === 'human' && p.id !== me.id);
+  const spare = !humansBank || run.scrap > HUMANS_RESERVE;
+  const guarded = (b: BuildingView) => Math.hypot((b.cx + 0.5) * ZOM.cell - run.core.x, (b.cy + 0.5) * ZOM.cell - run.core.y) <= GUARD_RADIUS;
+  const at = (b: BuildingView) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell });
+  const worn = !spare ? [] : (snap.buildings ?? [])
+    .filter((b) => guarded(b) && (b.hp < WHOLE_TENTHS || (b.kind !== 'wall' && b.ammo < WHOLE_TENTHS && run.scrap > 0))).map(at);
+  const dry = run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && b.kind !== 'wall' && b.ammo <= DRY_TENTHS).map(at) : [];
+  const plan = humansBank ? null : nextBuild(run, snap.buildings ?? []);
+  const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
+  const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
+  const post = postFor(run.core, me.id, snap.buildings ?? []);
+  const watch: Watch = {
+    me, core: run.core, post, zombie, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), next: buildable,
+    coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
+  };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
+  const builds = buildable && errand.x === buildable.x && errand.y === buildable.y && Math.hypot(buildable.x - me.x, buildable.y - me.y) <= 2 * DEAD_ZONE;
 
   const outFromCore = { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
   const face = errand.use ? errand : outFromCore;
@@ -104,12 +156,13 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const wanted = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation) ? readyAbility : null;
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire, wanted, mem.motor.shots);
-  const mx = errand.x - me.x, my = errand.y - me.y;
+  const step = wayTo(arena, run.core, snap.buildings ?? [], me, errand);
+  const mx = step.x - me.x, my = step.y - me.y;
   const still = errand.use;
   const input: InputState = {
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
     angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,
   };
   const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots } };
-  return { input, mem: next };
+  return { input, mem: next, ...(builds && { build: { kind: buildable.kind, cx: buildable.cx, cy: buildable.cy } }) };
 }

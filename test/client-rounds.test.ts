@@ -42,10 +42,10 @@ test('a server round is judged the first frame it is seen, so it never pops in o
 test('a round stops at the first wall on its line, or at the first body past the ones its gun pierces', () => {
   const wall = { x: 300, y: 50, w: 20, h: 100 };
   const body = (x: number) => ({ x, y: 100, r: WORLD.playerRadius });
-  const reach = (gun: 'pistol' | 'marksman', scene: RoundScene) => fireRounds({ owner: ME, gun, range: 1000, spread: 0 }, MUZZLE, 0, scene, 0, -1, straight)[0]!.reach;
+  const reach = (gun: 'pistol' | 'executioner', scene: RoundScene) => fireRounds({ owner: ME, gun, range: 1000, spread: 0 }, MUZZLE, 0, scene, 0, -1, straight)[0]!.reach;
   assert.ok(near(reach('pistol', { solids: [wall], bodies: [] }), 200));
   assert.ok(near(reach('pistol', { solids: [wall], bodies: [body(250)] }), 150 - WORLD.playerRadius));
-  assert.ok(near(reach('marksman', { solids: [], bodies: [body(250), body(400)] }), 300 - WORLD.playerRadius), 'pierces one body');
+  assert.ok(near(reach('executioner', { solids: [], bodies: [body(250), body(400)] }), 300 - WORLD.playerRadius), 'pierces one body');
   assert.equal(reach('pistol', OPEN), 1000);
 });
 

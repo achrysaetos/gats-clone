@@ -108,7 +108,7 @@ function nextCell(flow: Uint16Array, c: number, walled: (c: number) => boolean, 
   return best;
 }
 
-const distToRect = (x: number, y: number, r: Rect) => Math.sqrt(dist2(x, y, clamp(x, r.x, r.x + r.w), clamp(y, r.y, r.y + r.h)));
+export const distToRect = (x: number, y: number, r: Rect) => Math.sqrt(dist2(x, y, clamp(x, r.x, r.x + r.w), clamp(y, r.y, r.y + r.h)));
 
 /** The nearest squad player standing within the zombie's aggro range with nothing solid between. Downed players are left to their squad. */
 function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
@@ -123,7 +123,16 @@ function preyFor(w: World, z: Zombie, solids: readonly Rect[]): Player | null {
   return best;
 }
 
-function biteBuilding(w: World, b: Building, amount: number) {
+export function hurtCore(run: Run, amount: number) {
+  run.core.hp = Math.max(0, run.core.hp - amount);
+  run.harm += amount;
+  const lost = Math.min(run.survivors, Math.floor(run.harm / ZOM.survivorHp));
+  run.harm -= lost * ZOM.survivorHp;
+  run.survivors -= lost;
+  run.lost += lost;
+}
+
+export function biteBuilding(w: World, b: Building, amount: number) {
   if (b.hp <= 0) return;
   b.hp -= amount;
   w.events.push({ e: 'dmg', attacker: null, victim: b.id, amount: Math.round(amount * 10) / 10, x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell, kind: 'building' });
@@ -186,7 +195,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
         bite = () => damagePlayer(w, prey, damage, { attacker: null, team: null, label: def.name, piercing: false, via: 'bite', fromX: z.x, fromY: z.y });
       } else goal = prey;
     } else if (distToRect(z.x, z.y, core) <= reach) {
-      bite = () => { run.core.hp = Math.max(0, run.core.hp - damage * (1 - ZOM.coreArmor)); };
+      bite = () => hurtCore(run, damage * (1 - ZOM.coreArmor));
     } else {
       const next = nextCell(flow, cellAt(z.x, z.y, grid), (c) => wallAt.has(c), grid);
       const wall = next === null ? undefined : wallAt.get(next);
@@ -206,8 +215,9 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
     }
     const p = push.get(z);
     if (p) { dx += p.x; dy += p.y; }
-    if (dx === 0 && dy === 0) continue;
-    const at = slide(solids, z.x, z.y, dx, dy, def.radius, size);
+    const at = dx === 0 && dy === 0 ? z : slide(solids, z.x, z.y, dx, dy, def.radius, size);
+    z.vx = ((at.x - z.x) * 1000) / dtMs;
+    z.vy = ((at.y - z.y) * 1000) / dtMs;
     z.x = at.x;
     z.y = at.y;
   }

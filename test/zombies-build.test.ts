@@ -7,6 +7,7 @@ import { build, demolish } from '../src/shared/sim/run.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
 import { createWorld, newId, solidRects, spawnPoint, type World } from '../src/shared/sim/world.ts';
 import { press, run, spawnAt } from './helpers.ts';
+import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 
 /** The builder stands just west of the core; cell (26, 30) is beside them. */
 const AT = { x: 1380, y: 1525 }, CELL = { cx: 26, cy: 30 };
@@ -31,17 +32,17 @@ test('a wall goes up on a clear cell by day for its cost, counts toward the buil
 });
 
 const refusals: [string, (w: World) => { cx: number; cy: number; by?: { x: number; y: number } }][] = [
-  ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: ['walker'], nextSpawnAt: Infinity }; return CELL; }],
+  ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity }; return CELL; }],
   ['farFromCore', () => ({ cx: 17, cy: 30, by: { x: 17.5 * ZOM.cell + 60, y: 1525 } })],
   ['outOfReach', () => ({ cx: CELL.cx - 5, cy: CELL.cy })],
   ['cover', (w) => { w.walls.push({ x: CELL.cx * ZOM.cell + 10, y: CELL.cy * ZOM.cell, w: 24, h: 140, built: true, expiresAt: Infinity }); return CELL; }],
   ['core', () => ({ cx: 29, cy: 30 })],
-  ['body', (w) => { w.zombies.push({ id: newId(w), kind: 'walker', x: (CELL.cx + 0.5) * ZOM.cell, y: CELL.cy * ZOM.cell - 5, hp: 1, attackAt: Infinity }); return CELL; }],
+  ['body', (w) => { w.zombies.push({ id: newId(w), kind: 'walker', x: (CELL.cx + 0.5) * ZOM.cell, y: CELL.cy * ZOM.cell - 5, hp: 1, attackAt: Infinity, vx: 0, vy: 0 }); return CELL; }],
   ['body', (w) => { spawnAt(w, (CELL.cx + 0.5) * ZOM.cell, (CELL.cy + 0.5) * ZOM.cell); return CELL; }],
   ['taken', (w) => { w.buildings.push({ id: newId(w), kind: 'wall', cx: CELL.cx, cy: CELL.cy, hp: 1 }); return CELL; }],
   ['taken', (w) => {
     w.buildings.push({ id: newId(w), kind: 'wall', cx: CELL.cx, cy: CELL.cy, hp: 1 });
-    w.zombies.push({ id: newId(w), kind: 'walker', x: CELL.cx * ZOM.cell - 15, y: (CELL.cy + 0.5) * ZOM.cell, hp: 1, attackAt: Infinity });
+    w.zombies.push({ id: newId(w), kind: 'walker', x: CELL.cx * ZOM.cell - 15, y: (CELL.cy + 0.5) * ZOM.cell, hp: 1, attackAt: Infinity, vx: 0, vy: 0 });
     return CELL;
   }],
   ['scrap', (w) => { w.run!.scrap = BUILDINGS.wall.cost - 1; return CELL; }],
@@ -62,7 +63,7 @@ test('a wall comes down by day for half its cost back, but not at night', () => 
   const { w, p } = dayWorld();
   build(w, p.id, 'wall', CELL.cx, CELL.cy);
   const scrap = w.run!.scrap;
-  w.run!.phase = { k: 'night', toSpawn: ['walker'], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), false);
   w.run!.phase = { k: 'day', endsAt: Infinity };
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
@@ -121,5 +122,20 @@ test('a squad respawns inside a closed wall ring, not on the far side of it', ()
     const at = spawnPoint(w, 'red');
     assert.ok(at.x > (lo + 1) * 50 && at.x < hi * 50 && at.y > (lo + 1) * 50 && at.y < hi * 50, `spawned outside the ring at ${at.x},${at.y}`);
     assert.ok(!solidRects(w).some((r) => circleHitsRect(at.x, at.y, WORLD.playerRadius, r)), `spawned inside a solid at ${at.x},${at.y}`);
+  }
+});
+
+test('a worn building pays back less when taken down, and mending it costs less than taking it down and building it again', () => {
+  for (const kind of ['wall', ...TURRET_KINDS] as const) {
+    const { w, p } = dayWorld();
+    w.run!.scrap = 1e6;
+    build(w, p.id, kind, CELL.cx, CELL.cy);
+    w.buildings[0]!.hp = BUILDINGS[kind].hp * 0.3;
+    const scrap = w.run!.scrap;
+    assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), true);
+    const refund = w.run!.scrap - scrap;
+    assert.equal(refund, Math.floor(BUILDINGS[kind].cost * ZOM.demolishRefund * 0.3), `${kind} at 30% pays back 30% of the whole refund`);
+    const mend = BUILDINGS[kind].hp * 0.7 * repairScrapPerHp(kind);
+    assert.ok(mend < BUILDINGS[kind].cost - refund, `${kind}: mending costs ${mend}, tearing down and building again ${BUILDINGS[kind].cost - refund}`);
   }
 });

@@ -42,12 +42,12 @@ test('the human rule still applies through armor: a human shot on a heavy human 
 
 test('piercing bullets bypass armor entirely', () => {
   const w = emptyWorld();
-  const a = spawnAt(w, 500, 500);
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
   const b = spawnAt(w, 700, 500, { loadout: { armor: 'heavy' } });
   grantPerks(w, a, ['piercing']);
   shootOnce(w, a, 0);
   assert.ok(b.life.k === 'alive');
-  assert.equal(b.life.hp, WORLD.baseHp - PISTOL_DMG);
+  assert.equal(b.life.hp, WORLD.baseHp - GUNS.assault.damage);
 });
 
 test('walls stop bullets', () => {
@@ -169,7 +169,7 @@ test('TDM grenades spare teammates', () => {
   const a = spawnAt(w, 500, 500, { team: 'red' });
   const mate = spawnAt(w, 700, 480, { team: 'red' });
   const foe = spawnAt(w, 700, 520, { team: 'blue' });
-  grantPerks(w, a, ['grip', 'thickSkin', 'grenade']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'grenade']);
   press(w, a, { ability: true, angle: 0, aimDist: 200 });
   run(w, 2000);
   assert.equal(hpOf(mate), WORLD.baseHp);
@@ -252,7 +252,7 @@ test('destroying a crate awards crateScore and it respawns later', () => {
 test('ability respects its cooldown', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  grantPerks(w, a, ['grip', 'thickSkin', 'engineer']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'engineer']);
   const built = () => w.walls.filter((x) => x.built).length;
   press(w, a, { ability: true, angle: 0 });
   step(w, TICK_MS);
@@ -270,7 +270,7 @@ test('engineer wall stops bullets in the aim direction', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 800, 500);
-  grantPerks(w, a, ['grip', 'thickSkin', 'engineer']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'engineer']);
   press(w, a, { ability: true, angle: 0 });
   step(w, TICK_MS);
   shootOnce(w, a, 0, 800);
@@ -281,7 +281,7 @@ test('frag grenade damages a nearby enemy', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 700, 500);
-  grantPerks(w, a, ['grip', 'thickSkin', 'fragGrenade']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'fragGrenade']);
   press(w, a, { ability: true, angle: 0, aimDist: 200 });
   run(w, 2000);
   assert.ok(hpOf(b) < WORLD.baseHp);
@@ -291,7 +291,7 @@ test('enemy land mine is hidden but its owner sees it', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 800, 500);
-  grantPerks(w, a, ['grip', 'thickSkin', 'landMine']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'landMine']);
   press(w, a, { ability: true });
   step(w, TICK_MS);
   assert.equal(snapshotFor(w, a.id).thrown.filter((t) => t.kind === 'landMine').length, 1);

@@ -20,7 +20,7 @@ for (const id of SIEGE_MAPS) {
   const core: Rect = { x: siege.core.x - ZOM.coreHalf, y: siege.core.y - ZOM.coreHalf, w: ZOM.coreHalf * 2, h: ZOM.coreHalf * 2 };
 
   test(`${m.name}: the core and the horde's edges are clear, and the core sits on the wall grid`, () => {
-    for (const r of [core, ...siege.horde]) {
+    for (const r of [core, ...Object.values(siege.horde)]) {
       assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= m.size && r.y + r.h <= m.size, `${JSON.stringify(r)} leaves the world`);
       assert.ok(!m.walls.some((wall) => rectsOverlap(wall, r)), `${JSON.stringify(r)} overlaps a wall`);
     }
@@ -33,7 +33,7 @@ for (const id of SIEGE_MAPS) {
     const free = standable(m, n);
     const reached = new Uint8Array(n * n);
     flood(free, n, cellsIn({ x: core.x - R - CELL, y: core.y - R - CELL, w: core.w + 2 * (R + CELL), h: CELL }, n), reached);
-    const stuck = siege.horde.flatMap((r) => cellsIn(r, n)).filter((c) => free[c] && !reached[c]);
+    const stuck = Object.values(siege.horde).flatMap((r) => cellsIn(r, n)).filter((c) => free[c] && !reached[c]);
     assert.equal(stuck.length, 0, `${stuck.length} horde cells cannot reach the core`);
   });
 }

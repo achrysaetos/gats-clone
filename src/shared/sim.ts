@@ -4,8 +4,8 @@ import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
-import { clamp, moveStep } from './sim/movement.ts';
-import { abilityOf, effectiveStats, freshLife, isHunted, resetProgress } from './sim/stats.ts';
+import { clamp, moveStep, walks } from './sim/movement.ts';
+import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -79,9 +79,9 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const dt = dtMs / 1000;
   const inp = p.input;
   p.angle = inp.angle;
-  const moving = inp.right !== inp.left || inp.down !== inp.up || life.dash !== null;
+  const moving = walks(inp) || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
-  const stats = effectiveStats(p, !moving);
+  const stats = effectiveStats(p);
   if (moving) {
     const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs, MAPS[w.map].size);
     p.x = m.x;
@@ -90,16 +90,17 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const armed = w.match.k === 'playing';
-  if (pullTrigger(life, { def: gun, mag: stats.mag, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
+  if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     const muzzle = WORLD.playerRadius + 4;
+    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
-      const a = p.angle + (rand(w) - 0.5) * stats.spread * 2;
+      const a = p.angle + (rand(w) - 0.5) * spread * 2;
       const b: Bullet = {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
         left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
-        gun: p.gun, turret: null, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
+        gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }

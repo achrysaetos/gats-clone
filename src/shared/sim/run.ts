@@ -1,11 +1,12 @@
-import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type TurretKind, type ZombieKind } from '../defs.ts';
+import { BUILDINGS, hordeCount, isBoss, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
-import { tickHorde } from './horde.ts';
+import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
+import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildRefusal, type BuildRefusal, type BuildSite } from './build.ts';
-import { circleHitsRect, dist2, type Rect } from './movement.ts';
+import { buildingView, buildRefusal, cellRect, refundFor, repairScrapPerHp, serviceTarget, type BuildRefusal, type BuildSite } from './build.ts';
+import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
+import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
@@ -13,7 +14,7 @@ function squadOf(w: World) {
   return squad;
 }
 
-export const zombieMaxHp = (kind: ZombieKind, night: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp;
+export const zombieMaxHp = (kind: ZombieKind, night: number, share: number) => ZOMBIES[kind].hp * ZOM.nightMul(night).hp * (isBoss(kind) ? share : 1);
 
 function statsFor(run: Run, p: Player): RunStats {
   let s = run.stats.get(p.id);
@@ -30,7 +31,7 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   const life = p.life;
   if (life.k !== 'downed') return;
   if (w.now >= life.bleedOutAt) {
-    p.life = { k: 'dead', respawnAt: Infinity };
+    p.life = { k: 'dead', respawnAt: w.now + ZOM.reinforce.ms };
     p.deaths++;
     w.events.push({ e: 'life', id: p.id, name: p.name, k: 'bledOut', by: null });
     return;
@@ -48,33 +49,38 @@ function tickDowned(w: World, run: Run, p: Player, dtMs: number, revivers: Set<P
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: reviver.id });
 }
 
-const needsService = (b: Building) => b.hp < BUILDINGS[b.kind].hp || (b.kind !== 'wall' && b.ammo < BUILDINGS[b.kind].turret.ammo);
-
-/** Holding use mends the nearest worn building or core in reach, or reloads the nearest turret short of a full load, as far as the scrap goes. A worn turret is mended before it is reloaded. */
 function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
-  const coreD = dist2(p.x, p.y, core.x, core.y);
-  let best: Building | Run['core'] | null = null, bestD = ZOM.reachPx ** 2;
-  if (run.core.hp < ZOM.coreHp && coreD <= bestD) { best = run.core; bestD = coreD; }
-  for (const b of w.buildings) {
-    const d = dist2(p.x, p.y, (b.cx + 0.5) * ZOM.cell, (b.cy + 0.5) * ZOM.cell);
-    if (needsService(b) && d <= bestD) { best = b; bestD = d; }
+  const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, w.buildings.map((b) => ({ ...buildingView(b), b })));
+  if (!target) return;
+  const mend = (it: { hp: number }, max: number, perHp: number) => {
+    const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - it.hp, run.scrap / perHp);
+    it.hp += hp;
+    run.scrap -= hp * perHp;
+  };
+  if (target.on === 'core') { mend(run.core, ZOM.coreHp, ZOM.coreRepairScrapPerHp); return; }
+  const b = target.on.b;
+  if (target.job === 'repair' || b.kind === 'wall') { mend(b, BUILDINGS[b.kind].hp, repairScrapPerHp(b.kind)); return; }
+  const def = BUILDINGS[b.kind].turret;
+  const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - b.ammo, run.scrap / def.scrapPerRound);
+  b.ammo += rounds;
+  run.scrap -= rounds * def.scrapPerRound;
+}
+
+function reinforce(w: World, run: Run) {
+  for (const p of w.players.values()) {
+    const cost = ZOM.reinforce.survivors(run.night);
+    if (p.life.k !== 'dead' || w.now < p.life.respawnAt || run.survivors <= cost) continue;
+    run.survivors -= cost;
+    run.lost += cost;
+    placeAtCore(w, p);
+    p.life = freshLife(p, w.now);
+    w.events.push({ e: 'life', id: p.id, name: p.name, k: 'revived', by: null });
   }
-  if (!best) return;
-  if ('kind' in best && best.kind !== 'wall' && best.hp >= BUILDINGS[best.kind].hp) {
-    const def = BUILDINGS[best.kind].turret;
-    const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - best.ammo, run.scrap / def.scrapPerRound);
-    best.ammo += rounds;
-    run.scrap -= rounds * def.scrapPerRound;
-    return;
-  }
-  const [max, perHp] = 'kind' in best ? [BUILDINGS[best.kind].hp, ZOM.repairScrapPerHp] : [ZOM.coreHp, ZOM.coreRepairScrapPerHp];
-  const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - best.hp, run.scrap / perHp);
-  best.hp += hp;
-  run.scrap -= hp * perHp;
 }
 
 function tickSquad(w: World, run: Run, dtMs: number) {
+  if (run.phase.k === 'night') reinforce(w, run);
   const revivers = new Set<Player>();
   for (const p of w.players.values()) tickDowned(w, run, p, dtMs, revivers);
   for (const p of w.players.values()) if (p.life.k === 'alive' && p.input.use && !revivers.has(p)) service(w, run, p, dtMs);
@@ -87,7 +93,7 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
     ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
     ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
   ];
-  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: w.buildings, scrap: run.scrap };
+  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: w.buildings.map(buildingView), scrap: run.scrap };
 }
 
 export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number): BuildRefusal | null {
@@ -108,13 +114,13 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
 export function demolish(w: World, id: number, cx: number, cy: number): boolean {
   const p = w.players.get(id);
   const run = w.run;
-  const wall = w.buildings.find((b) => b.cx === cx && b.cy === cy);
-  if (!p || !run || !wall || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
+  const building = w.buildings.find((b) => b.cx === cx && b.cy === cy);
+  if (!p || !run || !building || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
   const at = cellCenter(cx, cy);
   if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return false;
-  w.buildings = w.buildings.filter((b) => b !== wall);
+  w.buildings = w.buildings.filter((b) => b !== building);
   w.buildingsVersion++;
-  run.scrap += Math.floor(BUILDINGS[wall.kind].cost * ZOM.demolishRefund);
+  run.scrap += refundFor(buildingView(building));
   return true;
 }
 
@@ -127,10 +133,9 @@ function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
 }
 
 /**
- * A zombie's death pays the squad scrap and its attacker score toward the gun ladder. A turret's kill pays its builder the score but counts as the turret's.
  * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
  */
-export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | TurretKind = 'hit') {
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit') {
   const run = w.run;
   if (!run || z.hp <= 0) return;
   const dealt = Math.min(z.hp, amount);
@@ -138,34 +143,55 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
-  const turret = via === 'hit' || via === 'blast' ? null : via;
+  const shooter = via === 'hit' || via === 'blast' ? null : via;
   w.zombies = w.zombies.filter((o) => o !== z);
   run.scrap += def.scrap;
-  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: turret ? null : attacker?.id ?? null });
-  if (turret) run.turretKills[turret][z.kind]++;
+  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: shooter ? null : attacker?.id ?? null });
+  if (shooter === 'bastion') run.bastionKills++;
+  else if (shooter) run.turretKills[shooter][z.kind]++;
   else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
   if (attacker) addScore(w, attacker, def.score);
+  if (def.burst) burst(w, run, z, def.burst);
 }
 
-function buildWave(w: World, night: number): ZombieKind[] {
-  const shares = ZOMBIE_KINDS.map((kind) => ZOM.share(kind, night));
-  const total = shares.reduce((a, b) => a + b, 0);
-  return Array.from({ length: ZOM.waveSize(night, squadOf(w)) }, () => {
-    let roll = rand(w) * total;
-    return ZOMBIE_KINDS.find((_, i) => (roll -= shares[i]!) < 0) ?? 'walker';
-  });
+function burst(w: World, run: Run, z: Zombie, { radius, damage, building, core: coreBlow }: Burst) {
+  explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
+  for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
+  if (distToRect(z.x, z.y, coreRect(w)!) <= radius) hurtCore(run, coreBlow * (1 - ZOM.coreArmor));
 }
 
-function spawnZombie(w: World, run: Run, kind: ZombieKind) {
-  const horde = MAPS[w.map].siege?.horde ?? [];
+function burnStragglers(w: World) {
+  for (const z of w.zombies) w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: null });
+  w.zombies = [];
+}
+
+function hordeOf(w: World, night: number, share: number): HordeUnit[] {
+  const def = nightOf(night);
+  const units: HordeUnit[] = [];
+  for (const kind of ZOMBIE_KINDS) {
+    for (let left = hordeCount(kind, def.horde[kind] ?? 0, share); left > 0; left -= ZOMBIES[kind].pack) {
+      units.push({ kind, side: def.from[Math.floor(rand(w) * def.from.length)]!, n: Math.min(left, ZOMBIES[kind].pack) });
+    }
+  }
+  for (let i = units.length - 1; i > 0; i--) {
+    const j = Math.floor(rand(w) * (i + 1));
+    [units[i], units[j]] = [units[j]!, units[i]!];
+  }
+  return units;
+}
+
+const PACK_SPREAD = 90;
+
+function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
+  const strip = MAPS[w.map].siege!.horde[side];
   const solids = solidRects(w);
   const r = ZOMBIES[kind].radius;
-  for (let i = 0; i < 20; i++) {
-    const region = horde[Math.floor(rand(w) * horde.length)]!;
-    const x = region.x + rand(w) * region.w, y = region.y + rand(w) * region.h;
+  const ax = strip.x + rand(w) * strip.w, ay = strip.y + rand(w) * strip.h;
+  for (let placed = 0, tries = 0; placed < n && tries < 20 * n; tries++) {
+    const x = clamp(ax + (rand(w) - 0.5) * PACK_SPREAD, strip.x, strip.x + strip.w), y = clamp(ay + (rand(w) - 0.5) * PACK_SPREAD, strip.y, strip.y + strip.h);
     if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
-    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night), attackAt: 0 });
-    return;
+    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0, vx: 0, vy: 0 });
+    placed++;
   }
 }
 
@@ -175,8 +201,9 @@ function placeAtCore(w: World, p: Player) {
   p.y = at.y;
 }
 
-/** Everyone down or dead gets up at the core; what they earned this run stays with them. */
 function dawn(w: World, run: Run) {
+  if (run.night === NIGHTS.length) { endRun(w, run, true); return; }
+  run.scrap += run.survivors * ZOM.scrapPerSurvivor;
   run.night++;
   run.phase = { k: 'day', endsAt: w.now + ZOM.dayMs };
   for (const p of w.players.values()) {
@@ -184,6 +211,24 @@ function dawn(w: World, run: Run) {
     placeAtCore(w, p);
     p.life = freshLife(p, w.now);
   }
+}
+
+function endRun(w: World, run: Run, won: boolean) {
+  for (const p of w.players.values()) statsFor(run, p);
+  if (!won) { run.lost += run.survivors; run.survivors = 0; }
+  run.phase = { k: 'over', night: run.night, won, restartAt: w.now + ZOM.restartMs };
+  w.zombies = [];
+}
+
+export function toggleReady(w: World, id: number) {
+  const run = w.run, p = w.players.get(id);
+  if (!run || run.phase.k !== 'day' || p?.kind !== 'human') return;
+  if (!run.ready.delete(id)) run.ready.add(id);
+}
+
+function squadReady(w: World, run: Run) {
+  const humans = [...w.players.values()].filter((p) => p.kind === 'human' && p.life.k === 'alive');
+  return humans.length > 0 && humans.every((p) => run.ready.has(p.id));
 }
 
 function restartRun(w: World) {
@@ -200,20 +245,27 @@ function restartRun(w: World) {
   }
 }
 
-/** The run's state machine: the day counts down to night, the night spawns its wave and turns to day once the wave is dead, and the core's fall ends the run until a fresh one starts. */
 export function tickRun(w: World, dtMs: number) {
   const run = w.run;
   if (!run) return;
   const phase = run.phase;
   switch (phase.k) {
     case 'day':
-      if (w.now >= phase.endsAt) run.phase = { k: 'night', toSpawn: buildWave(w, run.night), nextSpawnAt: w.now };
+      if (w.now >= phase.endsAt || squadReady(w, run)) {
+        run.share = ZOM.hordeShare(squadOf(w));
+        run.phase = { k: 'night', toSpawn: hordeOf(w, run.night, run.share), nextSpawnAt: w.now, dawnAt: Infinity };
+        run.ready.clear();
+        run.lost = 0;
+      }
       break;
     case 'night':
       if (phase.toSpawn.length > 0 && w.now >= phase.nextSpawnAt && w.zombies.length < ZOM.maxAlive) {
-        spawnZombie(w, run, phase.toSpawn.shift()!);
-        phase.nextSpawnAt = w.now + ZOM.spawnGapMs(run.night);
+        const wave = phase.toSpawn.splice(0, ZOM.packsPerWave(run.night));
+        for (const unit of wave) spawnUnit(w, run, unit);
+        phase.nextSpawnAt = w.now + wave.length * ZOM.packGapMs(run.night);
+        if (phase.toSpawn.length === 0) phase.dawnAt = w.now + ZOM.stragglersMs;
       }
+      if (w.now >= phase.dawnAt) burnStragglers(w);
       if (phase.toSpawn.length === 0 && w.zombies.length === 0) dawn(w, run);
       break;
     case 'over':
@@ -221,11 +273,7 @@ export function tickRun(w: World, dtMs: number) {
       return;
   }
   tickHorde(w, run, dtMs);
-  tickTurrets(w, dtMs);
+  tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);
-  if (run.core.hp <= 0) {
-    for (const p of w.players.values()) statsFor(run, p);
-    run.phase = { k: 'over', night: run.night, restartAt: w.now + ZOM.restartMs };
-    w.zombies = [];
-  }
+  if (run.core.hp <= 0 || run.survivors <= 0) endRun(w, run, false);
 }

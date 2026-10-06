@@ -51,7 +51,7 @@ export const curbSolids = (size: number): Solid[] => [
 
 export const crateSolid = (c: CrateView): Solid => ({ kind: 'planter', x: c.x, y: c.y, w: c.size, h: c.size, wear: 1 - c.hp / WORLD.crateHp });
 
-const BUILDING_SOLID: Record<BuildingKind, SolidKind> = { wall: 'brick', sentry: 'pad', cannon: 'pad' };
+const BUILDING_SOLID: Record<BuildingKind, SolidKind> = { wall: 'brick', sentry: 'pad', cannon: 'pad', scatter: 'pad', mortar: 'pad' };
 
 export const buildingSolid = (b: BuildingView): Solid => ({ kind: BUILDING_SOLID[b.kind], ...cellRect(b.cx, b.cy), wear: 1 - b.hp / 10 });
 

@@ -15,6 +15,7 @@ export const PALETTE = {
   label: '#2a2e36',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
+  lossOnDark: '#ff8f87',
   shield: 'rgba(110, 180, 255, 0.9)',
   gas: 'rgba(132, 186, 64, 0.16)',
   gasEdge: 'rgba(92, 140, 36, 0.6)',
@@ -57,7 +58,12 @@ export function glow(hex: string, l: number): string {
 
 export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
-export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string }> = {
-  walker: { body: '#8fb35a', arm: '#6f9440', eye: '#1b1d22' },
-  brute: { body: '#8a74a3', arm: '#5e4d72', eye: '#ff5a3c' },
+/** `armor` thickens the ink rim, `shoulders` adds pads behind the arms, and `bar` shows a health bar over the body. */
+export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; armor: number; shoulders: boolean; bar: boolean }> = {
+  walker: { body: '#8fb35a', arm: '#6f9440', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  brute: { body: '#8a74a3', arm: '#5e4d72', eye: '#ff5a3c', armor: 0, shoulders: true, bar: true },
+  runner: { body: '#d9c27a', arm: '#a8914c', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  plated: { body: '#8d9aa8', arm: '#5f6b78', eye: '#ffd34d', armor: 4, shoulders: false, bar: false },
+  bloater: { body: '#e08a5c', arm: '#b8623c', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  colossus: { body: '#8c3f45', arm: '#5e2a2f', eye: '#ffd34d', armor: 3, shoulders: true, bar: true },
 };

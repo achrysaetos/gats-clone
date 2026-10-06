@@ -33,6 +33,8 @@ export type ChatLine = { from: string; text: string; team: Team; at: number };
 export type Rejoin = { room: string; name: string; loadout: Loadout; token: string | undefined };
 
 export type Session = {
+  /** When the last sent input walked, and whether the newest one does, read the way the server reads it. */
+  walk: { now: boolean; at: number };
   ws: WebSocket;
   rejoin: Rejoin;
   myId: number;

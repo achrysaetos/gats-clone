@@ -1,10 +1,13 @@
 /// <reference types="node" />
-// Usage: node scripts/bench-zombies.ts [seeds] [squad]
-//   seeds: comma-separated, default 1,2,3. squad: 4 runs four bots; 1 runs one bot-brained player with a human's triple health, alone.
-// Plays zombies runs to the core's fall and prints the nights reached and how each night went (seconds it lasted, core health at dawn).
+// Usage: node scripts/bench-zombies.ts [seeds] [squad] [runs]
+//   runs: skip the full-horde cost samples.
+//   seeds: comma-separated, default 1,2,3. squad: 4 runs four bots; 1 runs one bot-brained player with a human's health, alone;
+//   mixed runs the common real squad, one bot-brained player flagged human (who follows the build plan) and three bots.
+// Plays zombies runs to the core's fall or the Tide's dawn and prints the nights reached and how each night went (seconds it lasted, core health lost,
+// survivors at dawn, turrets standing), then the win rate and the mean core health bitten off on each night across the seeds.
 // Then holds a full horde of ZOM.maxAlive on the squad with an unbreakable core and prints server step cost and snapshot size under it,
-// first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them.
-import { BUILDINGS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
+// first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them, then with those rings a quarter each of every turret kind.
+import { BUILDINGS, TURRET_KINDS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import type { Snapshot } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
@@ -17,7 +20,8 @@ import { thinkBots } from '../src/server/bot/tick.ts';
 import { quantile } from './lib/stats.ts';
 
 const seeds = (process.argv[2] ?? '1,2,3').split(',').map(Number);
-const squad = Number(process.argv[3] ?? ZOM.squadSize);
+const mixed = process.argv[3] === 'mixed';
+const squad = mixed ? ZOM.squadSize : Number(process.argv[3] ?? ZOM.squadSize);
 const TICK_MS = 1000 / WORLD.tickHz;
 const MAX_NIGHTS = 40;
 
@@ -30,7 +34,7 @@ function newSquad(seed: number): Squad {
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < squad; i++) {
-    const p = addPlayer(w, `bot${i}`, randomLoadout(r), { kind: squad === 1 ? 'human' : 'bot' });
+    const p = addPlayer(w, `bot${i}`, randomLoadout(r), { kind: squad === 1 || (mixed && i === 0) ? 'human' : 'bot' });
     bots.set(p.id, newBotMemory(r));
   }
   return { w, bots, r, encoders: new Map([...bots.keys()].map((id) => [id, makeSnapshotEncoder()])) };
@@ -51,43 +55,63 @@ function tick({ w, bots, r, encoders }: Squad) {
   return { stepMs, tickMs: performance.now() - started, bytes: wire.length, wire };
 }
 
+const coreLost: number[][] = [];
+const downsBy: number[][] = [];
+let wins = 0;
 for (const seed of seeds) {
   const sq = newSquad(seed);
   const { w } = sq;
   const nights: string[] = [];
-  let nightStart = 0, downs = 0, revives = 0, peak = 0;
+  const lost: number[] = [];
+  const nightDowns: number[] = [];
+  let nightStart = 0, downs = 0, revives = 0, peak = 0, coreWas: number = ZOM.coreHp, bitten = 0;
   const started = performance.now();
   for (let night = w.run!.night; w.run!.phase.k !== 'over' && w.run!.night <= MAX_NIGHTS;) {
     tick(sq);
+    const run = w.run!;
     peak = Math.max(peak, w.zombies.length);
-    for (const e of w.events) if (e.e === 'life') { if (e.k === 'downed') downs++; if (e.k === 'revived') revives++; }
-    if (w.run!.night !== night) {
-      nights.push(`n${night} ${((w.now - nightStart) / 1000).toFixed(0)}s core ${Math.ceil(w.run!.core.hp)}`);
-      night = w.run!.night;
+    for (const e of w.events) if (e.e === 'life') { if (e.k === 'downed') { downs++; nightDowns[night - 1] = (nightDowns[night - 1] ?? 0) + 1; } if (e.k === 'revived') revives++; }
+    bitten += Math.max(0, coreWas - Math.max(0, run.core.hp));
+    coreWas = run.core.hp;
+    if (run.night !== night || run.phase.k === 'over') {
+      lost[night - 1] = Math.round(bitten);
+      bitten = 0;
+      nights.push(`n${night} ${((w.now - nightStart) / 1000).toFixed(0)}s -${lost[night - 1]} core, ${run.survivors} left, ${w.buildings.length} up`);
+      night = run.night;
       nightStart = w.now;
     }
   }
+  coreLost.push(lost);
+  downsBy.push(nightDowns);
   const run = w.run!;
+  const won = run.phase.k === 'over' && run.phase.won;
+  if (won) wins++;
   const reached = run.phase.k === 'over' ? run.phase.night : run.night;
-  console.log(`seed ${seed}: night ${reached}${run.phase.k === 'over' ? '' : ' (capped)'}, ${(w.now / 60_000).toFixed(1)} game min, ${((performance.now() - started) / 1000).toFixed(1)}s wall, `
-    + `peak ${peak} alive, ${downs} downs, ${revives} revives`);
+  console.log(`seed ${seed}: ${won ? 'WON' : 'fell'} on night ${reached}${run.phase.k === 'over' ? '' : ' (capped)'}, ${run.survivors} survivors, ${(w.now / 60_000).toFixed(1)} game min, `
+    + `${((performance.now() - started) / 1000).toFixed(1)}s wall, peak ${peak} alive, ${downs} downs, ${revives} revives, scrap left ${Math.floor(run.scrap)}`);
   console.log(`  ${nights.join(' | ')}`);
 }
+const longest = Math.max(...coreLost.map((l) => l.length));
+const mean = Array.from({ length: longest }, (_, i) => Math.round(coreLost.reduce((n, l) => n + (l[i] ?? 0), 0) / coreLost.length));
+const hurt = Array.from({ length: longest }, (_, i) => coreLost.filter((l) => (l[i] ?? 0) > 0).length);
+const downsMean = Array.from({ length: longest }, (_, i) => (downsBy.reduce((n, l) => n + (l[i] ?? 0), 0) / downsBy.length).toFixed(1));
+console.log(`won ${wins}/${seeds.length}; mean core lost by night: ${mean.map((m, i) => `n${i + 1} ${m}`).join(' ')}; runs hurt by night: ${hurt.join(' ')}; mean downs by night: ${downsMean.join(' ')}`);
 
+if (process.argv[4] === 'runs') process.exit(0);
 const sq = newSquad(seeds[0]!);
 const run = sq.w.run!;
 run.core.hp = Infinity;
-run.night = 12;
-run.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+run.night = 10;
+run.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
 // The squad cannot fall either, so it keeps firing into the horde for the whole sample, and the horde is topped up at its edges to the cap every tick.
 let shots = 0, kills = 0, turretShots = 0;
-const horde = MAPS.outpost.siege!.horde;
+const horde = Object.values(MAPS.outpost.siege!.horde);
 const holdOut = () => {
   for (const p of sq.w.players.values()) if (p.life.k === 'alive') p.life.hp = 1e9;
   for (const b of sq.w.buildings) if (b.kind !== 'wall') b.ammo = BUILDINGS[b.kind].turret.ammo;
   while (sq.w.zombies.length < ZOM.maxAlive) {
     const edge = horde[Math.floor(sq.r() * horde.length)]!;
-    sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night), attackAt: 0 });
+    sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night, 1), attackAt: 0, vx: 0, vy: 0 });
   }
   const t = tick(sq);
   for (const e of sq.w.events) { if (e.e === 'shot') shots++; if (e.e === 'zkill') kills++; if (e.e === 'turret') turretShots++; }
@@ -128,3 +152,10 @@ function ringOfTurrets(k: number, every: number) {
 sample(ringOfTurrets(3, 2));
 ringOfTurrets(2, 1);
 sample(ringOfTurrets(4, 1));
+const owner = [...sq.w.players.keys()][0]!;
+sq.w.buildings = sq.w.buildings.map((b, i) => {
+  const kind = TURRET_KINDS[i % TURRET_KINDS.length]!;
+  return { id: b.id, cx: b.cx, cy: b.cy, kind, hp: BUILDINGS[kind].hp, owner, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0 };
+});
+sq.w.buildingsVersion++;
+sample(`the same ${sq.w.buildings.length} turrets, a quarter each of ${TURRET_KINDS.join(', ')}`);

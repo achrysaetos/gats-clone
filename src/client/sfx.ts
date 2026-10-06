@@ -27,13 +27,12 @@ const CLASS_SHOTS: Record<WeaponId, Recipe> = {
   lmg: [crack(1900, 70, 0.45), thump(170, 70, 0.4)],
 };
 
-/** Each evolution down the first branch drops the pitch and down the second raises it, so every gun on the tree sounds its own. */
-const BRANCH_PITCH = [0.84, 1.18] as const;
+const BRANCH_PITCH = [[0.84, 1.18], [0.92, 1.09]] as const;
 
 function pitchOf(gun: GunId): number {
-  const from = GUNS[gun].from;
+  const { from, stage } = GUNS[gun];
   if (!from) return 1;
-  return pitchOf(from) * (BRANCH_PITCH[EVOLUTIONS[from].indexOf(gun)] ?? 1);
+  return pitchOf(from) * (BRANCH_PITCH[stage - 1]?.[EVOLUTIONS[from].indexOf(gun)] ?? 1);
 }
 
 const retune = (layer: Layer, k: number, stage: number): Layer => {
@@ -85,6 +84,8 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   splat: [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [700, 180], ms: 110, gain: 0.35 }, { src: 'tone', wave: 'triangle', pitchHz: [210, 70], ms: 90, gain: 0.25 }],
   'turret:sentry': [crack(4200, 35, 0.3), { src: 'tone', wave: 'square', pitchHz: [1400, 900], ms: 25, gain: 0.08 }],
   'turret:cannon': [crack(900, 300, 0.7), thump(70, 380, 0.75), { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [700, 80], ms: 420, gain: 0.35 }],
+  'turret:scatter': [crack(2600, 120, 0.45), { src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [2400, 600], ms: 140, gain: 0.3 }],
+  'turret:mortar': [thump(120, 220, 0.6), { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [500, 120], ms: 260, gain: 0.3 }],
   wallHit: [thump(150, 90, 0.4), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1400, 300], ms: 80, gain: 0.3 }],
   wallUp: [thump(320, 50, 0.45), thump(240, 70, 0.45), { ...thump(240, 70, 0.4), delayMs: 80 }],
   wallDown: [{ src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [1500, 90], ms: 480, gain: 0.6 }, thump(85, 300, 0.55)],

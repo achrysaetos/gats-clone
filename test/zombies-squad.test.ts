@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { BUILDINGS, LEVELS, ZOM } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { canRespawn, step } from '../src/shared/sim.ts';
+import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { createWorld, newId, type Player, type World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
@@ -15,19 +16,19 @@ const lifeOf = (p: Player) => p.life;
 
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;
 }
 
 /** Keeps the night from ending while a test runs, with a zombie far off that never reaches anyone. */
 function holdNight(w: World) {
-  w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity });
+  w.zombies.push({ id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1e9, attackAt: Infinity, vx: 0, vy: 0 });
 }
 
 function downByBite(w: World, p: Player) {
   if (p.life.k === 'alive') p.life.hp = 1;
-  w.zombies.push({ id: newId(w), kind: 'walker', x: p.x, y: p.y + 30, hp: 1e9, attackAt: 0 });
+  w.zombies.push({ id: newId(w), kind: 'walker', x: p.x, y: p.y + 30, hp: 1e9, attackAt: 0, vx: 0, vy: 0 });
   step(w, TICK_MS);
   w.zombies.pop();
 }
@@ -46,7 +47,7 @@ test('a fatal bite downs a squad player: they crawl, cannot shoot, and the horde
   assert.ok(Math.abs(p.y - Y - crawl) < 5, `crawled ${(p.y - Y).toFixed(0)}px in a second, expected about ${crawl.toFixed(0)}`);
   assert.equal(w.bullets.length, 0, 'no shots from the ground');
 
-  const z = { id: newId(w), kind: 'walker' as const, x: p.x, y: p.y + 40, hp: 1e9, attackAt: 0 };
+  const z = { id: newId(w), kind: 'walker' as const, x: p.x, y: p.y + 40, hp: 1e9, attackAt: 0, vx: 0, vy: 0 };
   w.zombies.push(z);
   press(w, p, {});
   run(w, 1000);
@@ -107,8 +108,8 @@ test('a downed player nobody revives bleeds out, then gets up at the core when d
   run(w, TICK_MS);
   assert.equal(w.run!.phase.k, 'day');
   assert.equal(lifeOf(p).k, 'alive');
-  const squad = MAPS.outpost.spawns.red;
-  assert.ok(squad.some((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h), 'back at the core');
+  const core = MAPS.outpost.siege!.core;
+  assert.ok(Math.hypot(p.x - core.x, p.y - core.y) <= 2 * ZOM.coreHalf + 2 * ZOM.cell, `back at the core, at ${p.x},${p.y}`);
   assert.deepEqual({ score: p.score, level: p.level }, { score: LEVELS[1].score, level: 1 });
 });
 
@@ -124,7 +125,7 @@ test('holding use beside a damaged wall mends it for scrap, and stops when the s
   run(w, 1000);
   const mended = wall.hp - 100;
   assert.ok(Math.abs(mended - ZOM.repairHpPerSec) <= ZOM.repairHpPerSec * TICK_MS / 1000 + 0.01, `mended ${mended}`);
-  assert.ok(Math.abs(10 - w.run!.scrap - mended * ZOM.repairScrapPerHp) < 1e-6);
+  assert.ok(Math.abs(10 - w.run!.scrap - mended * repairScrapPerHp('wall')) < 1e-6);
 
   w.run!.scrap = 0;
   const before = wall.hp;
@@ -188,7 +189,7 @@ test('a human who joins or rejoins by night sits out until dawn, so leaving cann
   const first = join();
   assert.equal(first.p.life.k, 'alive', 'joins on their feet by day');
 
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   holdNight(w);
   downByBite(w, first.p);
@@ -204,4 +205,32 @@ test('a human who joins or rejoins by night sits out until dawn, so leaving cann
   room.tick();
   assert.equal(w.run!.phase.k, 'day');
   assert.equal(lifeOf(back.p).k, 'alive', 'up at dawn');
+});
+
+test('a player who bleeds out at night is sent back from the Bastion after a wait, for survivors, and waits for dawn once too few are left', () => {
+  const w = nightWorld();
+  holdNight(w);
+  const p = spawnAt(w, X, Y + 600);
+  downByBite(w, p);
+  w.zombies = w.zombies.filter((z) => z.attackAt === Infinity);
+  run(w, ZOM.bleedOutMs + 500);
+  assert.equal(lifeOf(p).k, 'dead');
+  const before = w.run!.survivors;
+  run(w, ZOM.reinforce.ms - 1000);
+  assert.equal(lifeOf(p).k, 'dead', 'not before the wait');
+  run(w, 1500);
+  assert.equal(lifeOf(p).k, 'alive', 'back after the wait');
+  const core = MAPS.outpost.siege!.core;
+  assert.ok(Math.hypot(p.x - core.x, p.y - core.y) < 200, 'at the Bastion');
+  const cost = ZOM.reinforce.survivors(w.run!.night);
+  assert.equal(w.run!.survivors, before - cost);
+  assert.equal(w.run!.lost, cost);
+  assert.ok(ZOM.reinforce.survivors(10) > ZOM.reinforce.survivors(1), 'and sending one back costs more the later the night');
+
+  w.run!.survivors = cost;
+  downByBite(w, p);
+  w.zombies = w.zombies.filter((z) => z.attackAt === Infinity);
+  run(w, ZOM.bleedOutMs + ZOM.reinforce.ms + 1000);
+  assert.equal(lifeOf(p).k, 'dead', 'nobody left to send');
+  assert.equal(w.run!.survivors, cost);
 });

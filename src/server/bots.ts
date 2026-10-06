@@ -1,4 +1,4 @@
-import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
+import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type BuildingKind, type GunId, type PerkId, type PickOption, type WeaponId } from '../shared/defs.ts';
 import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
@@ -13,14 +13,14 @@ export type BotMemory = {
   motor: Motor;
 };
 
-export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory };
+export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory; build?: { kind: BuildingKind; cx: number; cy: number } };
 
 const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
-const PERK_WEIGHT: Partial<Record<PerkId, number>> = { bipod: 0, ghillie: 0, longRange: 0 };
-const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { sniper: { grip: 0 } };
+const PERK_WEIGHT: Partial<Record<PerkId, number>> = { ghillie: 0, longRange: 0, quickReload: 1.5, choke: 2 };
+const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { lmg: { quickReload: 2 } };
 
 function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {
   const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : 1);
@@ -53,7 +53,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.weapon, persona), arena, rand };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor } };

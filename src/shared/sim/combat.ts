@@ -1,10 +1,10 @@
-import { ARMORS, BUILDINGS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
+import { ARMORS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { damageZombie, goDown } from './run.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
-import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Wall, type World } from './world.ts';
+import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.33;
@@ -23,7 +23,7 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 const SELF_KILL_CREDIT_MS = 10_000;
 
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
-type Culprit = { attacker: Player | null; team: Team; label: string };
+type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
 type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number };
 
@@ -31,8 +31,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (victim.life.k !== 'alive' || w.match.k === 'over') return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
-  // The squad fights the horde at arm's length, so in a run only bites hurt it, never its own blasts.
-  if (w.run && src.via !== 'bite') return;
+  if (w.run && src.team !== null) return;
   const life = victim.life;
   const before = life.hp;
   const stats = effectiveStats(victim);
@@ -144,7 +143,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const r = ZOMBIES[z.kind].radius;
     const d = Math.sqrt(dist2(z.x, z.y, x, y));
     if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
-    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker, 'blast');
+    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker, by.turret ?? 'blast');
   }
 }
 
@@ -157,7 +156,7 @@ function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | n
   if (!b.blast) return false;
   const speed = Math.hypot(b.vx, b.vy);
   const bx = x - (b.vx / speed) * BLAST_STANDOFF, by = y - (b.vy / speed) * BLAST_STANDOFF;
-  explode(w, bx, by, b.blast.radius, b.blast.damage, { attacker: owner, team: b.team, label: b.label }, view);
+  explode(w, bx, by, b.blast.radius, b.blast.damage, { attacker: owner, team: b.team, label: b.label, turret: b.turret }, view);
   return false;
 }
 
@@ -185,10 +184,11 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
-        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, apply: () => damageZombie(w, z, b.turret ? BUILDINGS[b.turret].turret.damage[z.kind] : b.damage, owner, b.turret ?? 'hit'),
+        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
+        apply: () => damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit'),
       })),
   ];
-  const hits = candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
+  const hits = b.lobbed ? [] : candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
   for (const hit of hits) {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
     hit.apply(x, y);

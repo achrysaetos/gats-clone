@@ -40,7 +40,8 @@ export type ClientMsg =
   | { t: 'respawn'; loadout: Loadout }
   /** Zombies: put a wall on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. */
   | { t: 'build'; kind: BuildingKind; cx: number; cy: number }
-  | { t: 'demolish'; cx: number; cy: number };
+  | { t: 'demolish'; cx: number; cy: number }
+  | { t: 'ready' };
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
@@ -73,17 +74,18 @@ export type ZombieView = [id: number, kind: number, x: number, y: number, hp: nu
  * A turret's aim is not here: it turns only to fire, and each `turret` event carries its angle, so this sticky field stays unchanged while it fires.
  */
 export type BuildingView = { cx: number; cy: number; hp: number } & ({ kind: 'wall' } | { kind: TurretKind; ammo: number });
-/** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. */
+/** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. `won` once the Bastion held through the Tide. */
 export type RunReport = {
-  night: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>;
+  night: number; won: boolean; survivors: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>; bastionKills: number;
 };
 /**
  * `phaseEndsAt` is the server time the day ends or the next run starts, and null at night, which ends when the wave is dead.
- * `waveLeft` counts the night's zombies alive or still to come; `report` is set once the core has fallen.
+ * `waveLeft` counts the night's zombies alive or still to come; `report` is set once the run is over.
+ * `survivors` are those left in the core, `lost` those lost tonight (last night's by day), and `ready` the ids of humans ready for night.
  */
 export type RunView = {
   phase: 'day' | 'night' | 'over'; night: number; phaseEndsAt: number | null; scrap: number;
-  core: { x: number; y: number; hp: number; maxHp: number }; aliveZombies: number; waveLeft: number; report: RunReport | null;
+  core: { x: number; y: number; hp: number; maxHp: number }; aliveZombies: number; waveLeft: number; survivors: number; lost: number; ready: number[]; report: RunReport | null;
 };
 
 export type SelfView = {
@@ -117,7 +119,8 @@ export type GameEvent =
   /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
   | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null }
   /** A turret at cell center (`x`, `y`) fired toward `angle`, to 0.01 rad. Its rounds stay off `bullets`: the client draws each from this. */
-  | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number }
+  /** `reach` is how far a lobbed round flies before it bursts. */
+  | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }
   /** A squad player went down, was revived (`by` the reviver), or bled out. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut'; by: number | null };
 
@@ -244,6 +247,7 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       const cx = gridCell(v.cx), cy = gridCell(v.cy);
       return cx === null || cy === null ? null : { t: 'demolish', cx, cy };
     }
+    case 'ready': return { t: 'ready' };
     default:
       return null;
   }

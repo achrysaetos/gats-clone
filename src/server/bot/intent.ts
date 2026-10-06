@@ -1,4 +1,4 @@
-import type { WeaponId } from '../../shared/defs.ts';
+import { GUNS, type GunId, type WeaponId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
@@ -29,7 +29,7 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
   marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
 };
 
-const WEAPON_BAND: Record<WeaponId, Band> = {
+const WEAPON_BAND: Record<WeaponId, Omit<Band, 'rushes'>> = {
   pistol: { headOn: 180, ideal: 320, max: 420 },
   smg: { headOn: 90, ideal: 250, max: 330 },
   shotgun: { headOn: 0, ideal: 150, max: 260 },
@@ -38,10 +38,12 @@ const WEAPON_BAND: Record<WeaponId, Band> = {
   lmg: { headOn: 200, ideal: 340, max: 450 },
 };
 
-type Band = { headOn: number; ideal: number; max: number };
-export const bandFor = (weapon: WeaponId, p: Personality): Band => {
-  const b = WEAPON_BAND[weapon];
-  return { headOn: b.headOn * p.rangeMul, ideal: b.ideal * p.rangeMul, max: b.max * p.rangeMul };
+type Band = { headOn: number; ideal: number; max: number; rushes: boolean };
+export const bandFor = (gun: GunId, p: Personality): Band => {
+  const g = GUNS[gun];
+  const b = WEAPON_BAND[g.base];
+  const k = p.rangeMul * (g.range / GUNS[g.base].range);
+  return { headOn: b.headOn * k, ideal: b.ideal * k, max: b.max * k, rushes: g.pellets >= 5 };
 };
 
 type Role = 'anchor' | 'rotate';
@@ -203,7 +205,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   engage: (cur, v, c) => {
     const t = v.threats[0];
     if (!t) return justLost(v) ? null : lostSight(v, c, cur.target);
-    if (v.weapon === 'shotgun' || t.d < c.band.headOn * 0.7 || c.rand() >= c.persona.peekOdds) return null;
+    if (c.band.rushes || t.d < c.band.headOn * 0.7 || c.rand() >= c.persona.peekOdds) return null;
     return peekPlan(v, c, t);
   },
   peekAndHide: (cur, v, c) => {

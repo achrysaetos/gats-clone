@@ -9,15 +9,15 @@ import { equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from
 /** A quiet night, so only what a test places takes part. Tests line up on the open ground due south of the core, where a zombie walks straight at the shooter. */
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;
 }
 
 const X = 1475, Y = 1700, DOWN = Math.PI / 2;
 
-function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = zombieMaxHp(kind, 1)) {
-  const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity };
+function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = zombieMaxHp(kind, 1, 1)) {
+  const z = { id: newId(w), kind, x, y, hp, attackAt: Infinity, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
 }
@@ -26,6 +26,7 @@ test('shooting a zombie dead pays the shooter its score and kill, and the squad 
   const w = nightWorld();
   const p = spawnAt(w, X, Y);
   const z = addZombie(w, 'walker', X, Y + 300);
+  addZombie(w, 'walker', 100, 100);
   const shots = Math.ceil(z.hp / GUNS.pistol.damage);
   const scrap = w.run!.scrap;
   for (let i = 0; i < shots; i++) shootOnce(w, p, DOWN, 300);
@@ -85,7 +86,7 @@ test('a blast hurts every zombie in its radius, less with distance, and credits 
 test('knife, gas and land mines work on zombies too', () => {
   const knifeWorld = nightWorld();
   const knifer = spawnAt(knifeWorld, X, Y);
-  grantPerks(knifeWorld, knifer, ['bipod', 'shield', 'knife']);
+  grantPerks(knifeWorld, knifer, ['optics', 'shield', 'knife']);
   const cut = addZombie(knifeWorld, 'brute', X, Y + 100, 1000);
   press(knifeWorld, knifer, { ability: true, angle: DOWN });
   run(knifeWorld, TICK_MS);
@@ -107,7 +108,7 @@ test('knife, gas and land mines work on zombies too', () => {
   assert.equal(mineWorld.thrown.length, 0);
 });
 
-test('a human shoots zombies for plain damage: the triple-health handicap is only against bots', () => {
+test('a human shoots zombies for plain damage: the fourfold-health handicap is only against bots', () => {
   const w = nightWorld();
   const p = spawnAt(w, X, Y, { kind: 'human' });
   const z = addZombie(w, 'brute', X, Y + 300, 1000);

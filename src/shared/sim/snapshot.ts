@@ -1,6 +1,6 @@
-import { BUILDINGS, byTurret, GUNS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { byTurret, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  BuildingView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
@@ -8,6 +8,7 @@ import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
+import { buildingView, tenths } from './build.ts';
 import { isEnemy, sameTeam, type Player, type Run, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
@@ -49,7 +50,7 @@ function selfView(w: World, p: Player): SelfView {
     speed: stats.speed,
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
-      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / GUNS[p.gun].reloadMs))
+      ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs))
       : 0,
     perks: { ...p.perks },
     // The restart wipes every pick, so none is offered during the round-end ceasefire or a fallen run's report.
@@ -102,7 +103,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     players.push(playerView(w, p, me));
   }
   const bullets: BulletView[] = w.bullets
-    .filter((b) => !b.turret && inView(b.x, b.y, 100))
+    .filter((b) => (b.turret === null || b.turret === 'bastion') && inView(b.x, b.y, 100))
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
@@ -134,23 +135,24 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   };
 }
 
-const tenths = (hp: number, max: number) => Math.max(1, Math.ceil((hp / max) * 10));
-
 function runView(w: World, run: Run): RunView {
   const core = MAPS[w.map].siege!.core;
   const phase = run.phase;
   return {
     phase: phase.k,
     night: run.night,
-    phaseEndsAt: phase.k === 'day' ? phase.endsAt : phase.k === 'over' ? phase.restartAt : null,
+    phaseEndsAt: phase.k === 'day' ? phase.endsAt : phase.k === 'over' ? phase.restartAt : Number.isFinite(phase.dawnAt) ? phase.dawnAt : null,
     scrap: Math.floor(run.scrap),
     core: { x: core.x, y: core.y, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp },
     aliveZombies: w.zombies.length,
-    waveLeft: w.zombies.length + (phase.k === 'night' ? phase.toSpawn.length : 0),
+    waveLeft: w.zombies.length + (phase.k === 'night' ? phase.toSpawn.reduce((n, u) => n + u.n, 0) : 0),
+    survivors: run.survivors,
+    lost: run.lost,
+    ready: [...run.ready],
     report: phase.k === 'over'
       ? {
-        night: phase.night, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
-        turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)),
+        night: phase.night, won: phase.won, survivors: run.survivors, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
+        turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)), bastionKills: run.bastionKills,
       }
       : null,
   };
@@ -160,11 +162,8 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
   const zombies: ZombieView[] = [];
   for (const z of w.zombies) {
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
-    zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night))]);
+    zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night, run.share))]);
   }
-  const buildings = w.buildings.map((b): BuildingView => {
-    const at = { cx: b.cx, cy: b.cy, hp: tenths(b.hp, BUILDINGS[b.kind].hp) };
-    return b.kind === 'wall' ? { ...at, kind: b.kind } : { ...at, kind: b.kind, ammo: Math.ceil((Math.floor(b.ammo) / BUILDINGS[b.kind].turret.ammo) * 10) };
-  });
+  const buildings = w.buildings.map(buildingView);
   return { zombies, buildings, run: runView(w, run) };
 }

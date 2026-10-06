@@ -4,6 +4,8 @@ import { BUILDINGS, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts'
 import { MAPS } from '../src/shared/maps.ts';
 import { step } from '../src/shared/sim.ts';
 import { clamp } from '../src/shared/sim/movement.ts';
+import { explode } from '../src/shared/sim/combat.ts';
+import { damageZombie } from '../src/shared/sim/run.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { hpOf, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -13,12 +15,12 @@ const CORE_CELL = { lo: (CORE.x - ZOM.coreHalf) / ZOM.cell, hi: (CORE.x + ZOM.co
 /** A night with nothing left to spawn, so only the zombies a test places walk. */
 function nightWorld(): World {
   const w = createWorld('ZOM', 1, 'outpost');
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   return w;
 }
 
 function addZombie(w: World, kind: ZombieKind, x: number, y: number) {
-  const z = { id: newId(w), kind, x, y, hp: 1e9, attackAt: 0 };
+  const z = { id: newId(w), kind, x, y, hp: 1e9, attackAt: 0, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
 }
@@ -160,4 +162,39 @@ test('the core\'s armor shrugs off its share of each bite', () => {
   step(w, TICK_MS);
   assert.ok(Math.abs(ZOM.coreHp - w.run!.core.hp - ZOMBIES.walker.damage * (1 - ZOM.coreArmor)) < 1e-9);
   assert.ok(z.attackAt > w.now, 'that was its bite');
+});
+
+test('a bloater bursts where it dies, hurting the squad, the horde and the walls round it, so it is best killed far off', () => {
+  const w = nightWorld();
+  const wall = addWall(w, 10, 30);
+  const at = { x: 10 * ZOM.cell - ZOMBIES.bloater.radius - 2, y: 30.5 * ZOM.cell };
+  const bloater = addZombie(w, 'bloater', at.x, at.y);
+  const walker = addZombie(w, 'walker', at.x - 60, at.y);
+  const mate = spawnAt(w, at.x, at.y + 60);
+  const shooter = spawnAt(w, at.x - 600, at.y);
+  const before = hpOf(mate);
+  damageZombie(w, bloater, 1e10, shooter);
+  assert.ok(!w.zombies.includes(bloater));
+  assert.equal(BUILDINGS.wall.hp - wall.hp, ZOMBIES.bloater.burst!.building, 'the wall it stood by takes the blow');
+  assert.ok(hpOf(mate) < before, 'a squadmate beside it is hurt');
+  assert.equal(hpOf(shooter), hpOf(spawnAt(w, 100, 100)), 'the shooter far off is not');
+  assert.ok(walker.hp < 1e9, 'the horde round it is hurt too');
+  assert.ok(w.events.some((e) => e.e === 'boom'), 'it goes up with a boom');
+});
+
+test('the squad\'s own blasts still never hurt it', () => {
+  const w = nightWorld();
+  const mate = spawnAt(w, 600, 1500);
+  const before = hpOf(mate);
+  explode(w, 600, 1500, 120, 200, { attacker: mate, team: mate.team, label: 'Mortar' });
+  assert.equal(hpOf(mate), before);
+});
+
+test('a bloater that bursts at the core hurts the core through its armor', () => {
+  const w = nightWorld();
+  const bloater = addZombie(w, 'bloater', CORE.x, CORE.y + ZOM.coreHalf + ZOMBIES.bloater.radius + 2);
+  const shooter = spawnAt(w, CORE.x - 600, CORE.y);
+  const before = w.run!.core.hp;
+  damageZombie(w, bloater, 1e10, shooter);
+  assert.equal(before - w.run!.core.hp, ZOMBIES.bloater.burst!.core * (1 - ZOM.coreArmor));
 });

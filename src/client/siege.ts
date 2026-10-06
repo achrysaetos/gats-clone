@@ -62,6 +62,8 @@ function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: numb
 const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: string; ammo: string }> = {
   sentry: { head: '#7a8291', barrel: '#2c313b', accent: '#f5c400', ammo: '#f5c400' },
   cannon: { head: '#6e6052', barrel: '#22262d', accent: '#e5484d', ammo: '#ff9f43' },
+  scatter: { head: '#5f7f7a', barrel: '#262c30', accent: '#3fd1b8', ammo: '#3fd1b8' },
+  mortar: { head: '#5a5f4a', barrel: '#1f2326', accent: '#b98cff', ammo: '#b98cff' },
 };
 
 function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, pxPerUnit: number) {
@@ -72,16 +74,16 @@ function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: num
   ctx.translate(-recoil * 5, 0);
   ctx.fillStyle = look.barrel;
   ctx.beginPath();
-  if (kind === 'sentry') {
-    for (const side of [-1, 1]) ctx.roundRect(4, side * 5 - 2.5, BUILDINGS.sentry.turret.muzzle - 4, 5, 1.5);
-  } else {
-    const reach = BUILDINGS.cannon.turret.muzzle;
-    ctx.roundRect(2, -6.5, reach - 8, 13, 2);
-    ctx.roundRect(reach - 9, -9, 9, 18, 2);
+  const reach = BUILDINGS[kind].turret.muzzle;
+  switch (kind) {
+    case 'sentry': for (const side of [-1, 1]) ctx.roundRect(4, side * 5 - 2.5, reach - 4, 5, 1.5); break;
+    case 'cannon': ctx.roundRect(2, -6.5, reach - 8, 13, 2); ctx.roundRect(reach - 9, -9, 9, 18, 2); break;
+    case 'scatter': ctx.moveTo(4, -4); ctx.lineTo(reach, -9); ctx.lineTo(reach, 9); ctx.lineTo(4, 4); ctx.closePath(); break;
+    case 'mortar': ctx.roundRect(0, -9, reach, 18, 4); break;
   }
   ctx.fill();
   ctx.restore();
-  const r = kind === 'sentry' ? 11 : 14;
+  const r = kind === 'sentry' || kind === 'scatter' ? 11 : 14;
   drawBody(ctx, bodySprite(look.head, r, 0, pxPerUnit), cx, cy, r);
   ctx.fillStyle = look.accent;
   ctx.beginPath();
@@ -218,7 +220,7 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
       for (const side of [-1, 1]) {
         const arm = a + side * 0.55 + sway;
         limbs.push(x + Math.cos(arm) * r * 1.05, y + Math.sin(arm) * r * 1.05, r * 0.36);
-        if (kind === 'brute') limbs.push(x + Math.cos(a + side * Math.PI / 2) * r * 0.8, y + Math.sin(a + side * Math.PI / 2) * r * 0.8, r * 0.46);
+        if (look.shoulders) limbs.push(x + Math.cos(a + side * Math.PI / 2) * r * 0.8, y + Math.sin(a + side * Math.PI / 2) * r * 0.8, r * 0.46);
       }
     }
     ctx.fillStyle = shade(look.arm, 0.7);
@@ -229,7 +231,7 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
     ctx.beginPath();
     addCircles(ctx, limbs, 0);
     ctx.fill();
-    const body = bodySprite(look.body, r, 0, pxPerUnit);
+    const body = bodySprite(look.body, r, look.armor, pxPerUnit);
     for (const [, , x, y] of mine) drawBody(ctx, body, x, y, r);
     ctx.fillStyle = look.eye;
     ctx.beginPath();
@@ -254,15 +256,15 @@ export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly Zom
   }
   ctx.globalAlpha = 1;
   for (const [, kind, x, y, hp] of zombies) {
-    if (kind !== 1) continue;
-    const r = ZOMBIES.brute.radius;
+    if (!ZOMBIE_LOOK[ZOMBIE_KINDS[kind]].bar) continue;
+    const r = ZOMBIES[ZOMBIE_KINDS[kind]].radius, half = r - 2;
     ctx.fillStyle = 'rgba(28, 31, 38, 0.45)';
     ctx.beginPath();
-    ctx.roundRect(x - 22, y - r - 13, 44, 6, 3);
+    ctx.roundRect(x - half - 1, y - r - 13, half * 2 + 2, 6, 3);
     ctx.fill();
     ctx.fillStyle = hp > 3 ? PALETTE.hpBad : '#ff9f43';
     ctx.beginPath();
-    ctx.roundRect(x - 21, y - r - 12, Math.max(4, 42 * (hp / 10)), 4, 2);
+    ctx.roundRect(x - half, y - r - 12, Math.max(4, half * 2 * (hp / 10)), 4, 2);
     ctx.fill();
   }
 }

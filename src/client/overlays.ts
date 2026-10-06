@@ -16,8 +16,8 @@ const CHAT_VISIBLE_MS = 15000;
 
 /** Tile labels short enough for a 58px tile. */
 const PERK_SHORT: Record<PerkId, string> = {
-  bipod: 'Bipod', optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
-  grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', shield: 'Shield', thickSkin: 'Thick skin',
+  optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
+  grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', quickReload: 'Reload', choke: 'Choke', shield: 'Shield', thickSkin: 'Thick skin',
   firstAid: 'First aid', grenade: 'Grenade', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Mine', knife: 'Knife',
   engineer: 'Engineer', dash: 'Dash',
 };
@@ -202,11 +202,12 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const run = snap.run;
     const done = run?.phase === 'over' && run.report ? run.report : null;
     const left = done && run?.phaseEndsAt != null && clockNow !== null ? seconds(run.phaseEndsAt - clockNow) : null;
-    const key = done ? `${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}|${turretLine(done)}` : '';
+    const key = done ? `${done.won}|${done.night}|${left}|${done.players.map((p) => `${p.name}:${p.kills}:${p.revives}:${p.built}`).join(',')}|${turretLine(done)}` : '';
     if (key === keys.report) return;
     keys.report = key;
     report.hidden = !done;
     if (!done) return;
+    report.classList.toggle('won', done.won);
     const h = document.createElement('h2');
     h.textContent = reportTitle(done);
     const length = document.createElement('p');
@@ -241,7 +242,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     respawn.hidden = deathLoadout.hidden = !!run;
     if (run) {
       // Dawn gets everyone up, so a death this run can only be tonight's bleed-out; a night joiner has none.
-      const text = outTillDawnText(run, snap.self.deaths > 0);
+      const text = outTillDawnText(run, snap.self.deaths > 0, snap.self.respawnIn);
       deathTitle.textContent = text.title;
       deathSub.textContent = text.sub;
       deathCause.hidden = deathLost.hidden = true;

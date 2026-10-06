@@ -78,7 +78,7 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
         line: `DOM · ${Side} team · hold A B C · ${DOM_GOAL}`,
       };
     case 'ZOM':
-      return { banner: 'Zombies: build walls and turrets by day, hold the core by night', line: 'ZOM · defend the core' };
+      return { banner: 'Zombies: build walls and turrets by day, hold the Bastion by night', line: 'ZOM · defend the Bastion' };
   }
 }
 

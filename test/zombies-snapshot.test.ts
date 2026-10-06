@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, LEVELS, ZOM, ZOMBIE_KINDS } from '../src/shared/defs.ts';
+import { BUILDINGS, LEVELS, NIGHTS, ZOM, ZOMBIE_KINDS } from '../src/shared/defs.ts';
 import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
@@ -15,14 +15,14 @@ test('a zombies snapshot shows the horde in view as compact tuples, the squad wa
   const w = zomWorld();
   const p = spawnAt(w, 1380, 1500);
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 28, hp: BUILDINGS.wall.hp * 0.35 });
-  const near = { id: newId(w), kind: 'brute' as const, x: 1700.4, y: 1500.6, hp: zombieMaxHp('brute', 1) / 2, attackAt: 0 };
-  w.zombies.push(near, { id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1, attackAt: 0 });
+  const near = { id: newId(w), kind: 'brute' as const, x: 1700.4, y: 1500.6, hp: zombieMaxHp('brute', 1, 1) / 2, attackAt: 0, vx: 0, vy: 0 };
+  w.zombies.push(near, { id: newId(w), kind: 'walker', x: 60, y: 60, hp: 1, attackAt: 0, vx: 0, vy: 0 });
   const snap = snapshotFor(w, p.id);
   assert.deepEqual(snap.zombies, [[near.id, ZOMBIE_KINDS.indexOf('brute'), 1700, 1501, 5]]);
   assert.deepEqual(snap.buildings, [{ kind: 'wall', cx: 26, cy: 28, hp: 4 }]);
   assert.deepEqual(snap.run, {
     phase: 'day', night: 1, phaseEndsAt: ZOM.dayMs, scrap: ZOM.startScrap, core: { x: 1500, y: 1500, hp: ZOM.coreHp, maxHp: ZOM.coreHp },
-    aliveZombies: 2, waveLeft: 2, report: null,
+    aliveZombies: 2, waveLeft: 2, survivors: ZOM.survivors, lost: 0, ready: [], report: null,
   });
 });
 
@@ -34,15 +34,20 @@ test('the run view times the night by its wave and reports the run once the core
   const night = snapshotFor(w, p.id).run!;
   assert.equal(night.phase, 'night');
   assert.equal(night.phaseEndsAt, null);
-  assert.equal(night.waveLeft, ZOM.waveSize(1, { humans: 0, bots: 2 }));
+  assert.equal(night.waveLeft, Math.round(NIGHTS[0]!.horde.walker! * ZOM.hordeShare({ humans: 0, bots: 2 })));
   w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
-  w.run!.turretKills = { sentry: { walker: 7, brute: 1 }, cannon: { walker: 0, brute: 2 } };
+  const none = { walker: 0, brute: 0, runner: 0, plated: 0, bloater: 0, colossus: 0 };
+  w.run!.turretKills = { sentry: { ...none, walker: 7, brute: 1 }, cannon: { ...none, brute: 2 }, scatter: { ...none, runner: 3 }, mortar: none };
+  w.run!.bastionKills = 5;
   w.run!.core.hp = 0;
   step(w, TICK_MS);
   const over = snapshotFor(w, p.id).run!;
   assert.equal(over.phase, 'over');
   assert.equal(over.phaseEndsAt, w.now + ZOM.restartMs);
-  assert.deepEqual(over.report, { night: 1, durationMs: w.now, players: [{ name: p.name, kills: 4, revives: 1, built: 2 }, { name: idle.name, kills: 0, revives: 0, built: 0 }], turretKills: { sentry: 8, cannon: 2 } });
+  assert.deepEqual(over.report, {
+    night: 1, won: false, survivors: 0, durationMs: w.now, players: [{ name: p.name, kills: 4, revives: 1, built: 2 }, { name: idle.name, kills: 0, revives: 0, built: 0 }],
+    turretKills: { sentry: 8, cannon: 2, scatter: 3, mortar: 0 }, bastionKills: 5,
+  });
 });
 
 test('squadmates see a downed player with the revive and bleed-out clocks; nobody sees one who bled out', () => {
@@ -68,10 +73,10 @@ test('the wire omits unchanged walls and run, rebuilds them, and keeps a snapsho
   const w = zomWorld();
   const p = spawnAt(w, 1380, 1500);
   for (let cx = 24; cx <= 35; cx++) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy: 24, hp: BUILDINGS.wall.hp });
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity };
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   for (let i = 0; i < ZOM.maxAlive; i++) {
     const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 250 + (i % 7) * 40;
-    w.zombies.push({ id: newId(w), kind: i % 9 === 0 ? 'brute' : 'walker', x: 1500 + Math.cos(a) * r * 1.6, y: 1500 + Math.sin(a) * r, hp: 1e6, attackAt: Infinity });
+    w.zombies.push({ id: newId(w), kind: i % 9 === 0 ? 'brute' : 'walker', x: 1500 + Math.cos(a) * r * 1.6, y: 1500 + Math.sin(a) * r, hp: 1e6, attackAt: Infinity, vx: 0, vy: 0 });
   }
   const encode = makeSnapshotEncoder();
   let last: Snapshot | null = null;
@@ -110,6 +115,6 @@ test('a fallen run offers no level-up pick, since the fresh run wipes it', () =>
   p.score = LEVELS[1].score;
   p.level = 1;
   assert.notEqual(snapshotFor(w, p.id).self.pending, null, 'offered while the run goes on');
-  w.run!.phase = { k: 'over', night: 3, restartAt: Infinity };
+  w.run!.phase = { k: 'over', night: 3, won: false, restartAt: Infinity };
   assert.equal(snapshotFor(w, p.id).self.pending, null);
 });
