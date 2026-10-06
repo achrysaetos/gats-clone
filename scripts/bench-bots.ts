@@ -6,11 +6,13 @@ import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Loadout, PlayerView, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { segmentEntersRectAt } from '../src/shared/sim/movement.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick, effectiveStats, levelForScore, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
+import { median } from './lib/stats.ts';
 
 const minutes = Number(process.argv[2] ?? 10);
 const seeds = Number(process.argv[3] ?? 10);
@@ -98,16 +100,9 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
   const tally: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0, damageTaken: 0 };
   const ticks = Math.round((minutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
-    const arena = arenaFor(w);
-    for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(w, id), arena, mem, r);
-      bots.set(id, d.mem);
-      setInput(w, id, w.tick, d.input);
-      if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-      if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
-    }
+    thinkBots(w, bots, r);
     const snap = snapshotFor(w, human.id, w.events, HUMAN_VIEW_ASPECT);
-    const h = humanThink(snap, arena.walls, mind, style, r);
+    const h = humanThink(snap, arenaFor(w).walls, mind, style, r);
     mind = h.mind;
     setInput(w, human.id, w.tick, h.input);
     const pending = pendingPick(human);
@@ -127,11 +122,6 @@ function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tal
   tally.deaths = human.deaths;
   return tally;
 }
-
-const median = (xs: number[]) => {
-  const s = [...xs].sort((a, b) => a - b);
-  return s.length === 0 ? NaN : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
-};
 
 const reachLabel = (levels: number[]) => LEVELS.flatMap((l, level) => (l.pick
   ? [`${l.pick.k === 'perk' ? `t${l.pick.tier}` : 'evo'} ${((100 * levels.filter((x) => x >= level).length) / Math.max(1, levels.length)).toFixed(0)}%`]
@@ -178,17 +168,13 @@ function abilityArena(ability: AbilityId, seed: number): { uses: number; kills: 
   let uses = 0, kills = 0, deaths = 0;
   const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
-    const arena = arenaFor(w);
     const readyAt = new Map<number, number>();
-    for (const [id, mem] of bots) {
+    for (const id of bots.keys()) {
       const p = w.players.get(id)!;
       p.perks[3] = ability;
       readyAt.set(id, p.abilityReadyAt);
-      const d = botThink(snapshotFor(w, id), arena, mem, r);
-      bots.set(id, d.mem);
-      setInput(w, id, w.tick, d.input);
-      if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
     }
+    thinkBots(w, bots, r, { picks: false });
     step(w, TICK_MS);
     for (const [id, at] of readyAt) if (w.players.get(id)!.abilityReadyAt > at) uses++;
     for (const e of w.events) {
@@ -231,14 +217,8 @@ function mixedArena(seed: number, kills: Map<AbilityId, number>, deaths: Map<Abi
   }
   const ticks = Math.round((abilityMinutes * 60_000) / TICK_MS);
   for (let t = 0; t < ticks; t++) {
-    const arena = arenaFor(w);
-    for (const [id, mem] of bots) {
-      w.players.get(id)!.perks[3] = holds.get(id)!;
-      const d = botThink(snapshotFor(w, id), arena, mem, r);
-      bots.set(id, d.mem);
-      setInput(w, id, w.tick, d.input);
-      if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) draw(id);
-    }
+    for (const id of bots.keys()) w.players.get(id)!.perks[3] = holds.get(id)!;
+    thinkBots(w, bots, r, { picks: false, onDecision: (id, _snap, _before, _d, respawned) => { if (respawned) draw(id); } });
     step(w, TICK_MS);
     for (const e of w.events) {
       if (e.e !== 'kill') continue;

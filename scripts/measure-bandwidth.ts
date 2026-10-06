@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { WORLD } from '../src/shared/defs.ts';
 import { startServer } from '../src/server/main.ts';
+import { median, quantile } from './lib/stats.ts';
 
 const humans = Number(process.argv[2] ?? 6);
 const seconds = Number(process.argv[3] ?? 8);
@@ -63,8 +64,8 @@ for (const t of tallies) for (const [k, v] of t.fields) fields.set(k, (fields.ge
 console.log(`room=${room} humans=${humans} players>=${Math.max(humans, WORLD.minPlayers)} seconds=${seconds}`);
 console.log(`bytes/sec per client: avg ${(avg / 1024).toFixed(1)} KB/s, min ${(Math.min(...perClient) / 1024).toFixed(1)}, max ${(Math.max(...perClient) / 1024).toFixed(1)}`);
 console.log(`snapshots/sec per client: ${(snaps / tallies.length / seconds).toFixed(1)}, avg snapshot ${(avg * seconds / (snaps / tallies.length)).toFixed(0)} B`);
-const gaps = tallies.flatMap((t) => t.snapAt.slice(1).map((at, i) => at - t.snapAt[i]!)).sort((a, b) => a - b);
-console.log(`snapshot arrival gaps: median ${gaps[gaps.length >> 1]!.toFixed(1)}ms p95 ${gaps[Math.floor(gaps.length * 0.95)]!.toFixed(1)}ms max ${gaps[gaps.length - 1]!.toFixed(1)}ms`);
+const gaps = tallies.flatMap((t) => t.snapAt.slice(1).map((at, i) => at - t.snapAt[i]!));
+console.log(`snapshot arrival gaps: median ${median(gaps).toFixed(1)}ms p95 ${quantile(gaps, 0.95).toFixed(1)}ms max ${quantile(gaps, 1).toFixed(1)}ms`);
 console.log('avg bytes per snapshot by field:');
 for (const [k, v] of [...fields].sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(12)} ${(v / snaps).toFixed(0)}`);
 

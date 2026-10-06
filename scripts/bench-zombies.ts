@@ -7,21 +7,20 @@
 import { BUILDINGS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import type { Snapshot } from '../src/shared/protocol.ts';
-import { addPlayer, setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
-import { choosePick } from '../src/shared/sim/stats.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
 import { createWorld, newId, rand, type World } from '../src/shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../src/shared/wire.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
+import { quantile } from './lib/stats.ts';
 
 const seeds = (process.argv[2] ?? '1,2,3').split(',').map(Number);
 const squad = Number(process.argv[3] ?? ZOM.squadSize);
 const TICK_MS = 1000 / WORLD.tickHz;
 const MAX_NIGHTS = 40;
 
-const pct = (xs: number[], p: number) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor((p / 100) * xs.length))]!;
 const ms = (v: number) => v.toFixed(2);
 
 type Squad = { w: World; bots: Map<number, BotMemory>; encoders: Map<number, (snap: Snapshot) => string>; r: () => number };
@@ -40,13 +39,7 @@ function newSquad(seed: number): Squad {
 /** One server tick as a room runs it: bot brains, the step, and every squad player's encoded snapshot. */
 function tick({ w, bots, r, encoders }: Squad) {
   const started = performance.now();
-  const arena = arenaFor(w);
-  for (const [id, mem] of bots) {
-    const d = botThink(snapshotFor(w, id), arena, mem, r);
-    bots.set(id, d.mem);
-    setInput(w, id, w.tick, d.input);
-    if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-  }
+  thinkBots(w, bots, r, { respawn: false });
   const t0 = performance.now();
   step(w, TICK_MS);
   const stepMs = performance.now() - t0;
@@ -107,8 +100,8 @@ function sample(label: string) {
   const samples = Array.from({ length: 600 }, holdOut);
   const col = (k: 'stepMs' | 'tickMs' | 'bytes') => samples.map((x) => x[k]);
   console.log(`${label}: ${ZOM.maxAlive} alive, ${squad} squad firing (${shots} shots, ${turretShots} turret shots, ${kills} kills), ${samples.length} ticks: `
-    + `step ms p50 ${ms(pct(col('stepMs'), 50))} p95 ${ms(pct(col('stepMs'), 95))} max ${ms(Math.max(...col('stepMs')))}; `
-    + `whole tick p95 ${ms(pct(col('tickMs'), 95))}; snapshot bytes p50 ${pct(col("bytes"), 50)} p95 ${pct(col("bytes"), 95)} max ${Math.max(...col('bytes'))}`);
+    + `step ms p50 ${ms(quantile(col('stepMs'), 0.5))} p95 ${ms(quantile(col('stepMs'), 0.95))} max ${ms(Math.max(...col('stepMs')))}; `
+    + `whole tick p95 ${ms(quantile(col('tickMs'), 0.95))}; snapshot bytes p50 ${quantile(col("bytes"), 0.5)} p95 ${quantile(col("bytes"), 0.95)} max ${Math.max(...col('bytes'))}`);
   const biggest = JSON.parse(samples.reduce((a, b) => (b.bytes > a.bytes ? b : a)).wire) as Record<string, unknown>;
   console.log(`  biggest snapshot by field: ${Object.entries(biggest).map(([k, v]) => `${k} ${JSON.stringify(v).length}`).join(', ')}`);
   const kinds = new Map<string, number>();

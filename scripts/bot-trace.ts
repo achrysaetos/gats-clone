@@ -4,12 +4,11 @@
 import { writeFileSync } from 'node:fs';
 import { MODE_IDS, WORLD } from '../src/shared/defs.ts';
 import { MAP_IDS, ROTATION, type MapId } from '../src/shared/maps.ts';
-import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { choosePick } from '../src/shared/sim/stats.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { createWorld, crateRect, rand } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
 import type { Intent } from '../src/server/bot/intent.ts';
 
 const mode = MODE_IDS.find((m) => m === (process.argv[2] ?? 'TDM'));
@@ -43,15 +42,8 @@ function marks(i: Intent): { to: [number, number] | null; lookAt: [number, numbe
 type Frame = { t: number; bots: (string | number | null | [number, number])[][]; shots: [number, number, number][] };
 const frames: Frame[] = [];
 for (let tick = 0; tick < (seconds * 1000) / TICK_MS; tick++) {
-  const arena = arenaFor(w);
   const fired: [number, number, number][] = [];
-  for (const [id, mem] of mems) {
-    const d = botThink(snapshotFor(w, id), arena, mem, r);
-    mems.set(id, d.mem);
-    setInput(w, id, w.tick, d.input);
-    if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-    if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
-  }
+  thinkBots(w, mems, r);
   step(w, TICK_MS);
   for (const e of w.events) if (e.e === 'shot') fired.push([Math.round(e.x), Math.round(e.y), Math.round(e.angle * 100) / 100]);
   if (tick % EVERY) continue;

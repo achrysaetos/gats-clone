@@ -15,6 +15,7 @@ import { canRespawn, respawn } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { startServer } from '../src/server/main.ts';
 import { killOnExit } from './kill-on-exit.ts';
+import { median, quantile } from './lib/stats.ts';
 
 const SECONDS = Number(process.argv[2] ?? 60);
 const CONDITIONS = (process.argv.length > 3 ? process.argv.slice(3) : ['0:0', '100:40']).map((c) => c.split(':').map(Number) as [number, number]);
@@ -157,8 +158,7 @@ async function measure(lag: number, jitter: number) {
   target.ws.close();
   shooter.chrome.kill();
   await sleep(300);
-  viewLagMs.sort((a, b) => a - b);
-  const viewLag = viewLagMs.length ? `${Math.round(viewLagMs[viewLagMs.length >> 1]!)}ms (p90 ${Math.round(viewLagMs[Math.floor(viewLagMs.length * 0.9)]!)}ms)` : 'unreported';
+  const viewLag = viewLagMs.length ? `${Math.round(median(viewLagMs))}ms (p90 ${Math.round(quantile(viewLagMs, 0.9))}ms)` : 'unreported';
   return { lag, jitter, shots, hits: hits.length, damage, aliveMs, viewLag };
 }
 

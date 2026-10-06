@@ -3,14 +3,14 @@
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { SnapshotWire } from '../src/shared/protocol.ts';
-import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { choosePick } from '../src/shared/sim/stats.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { wrapAngle } from '../src/server/bot/aim.ts';
 import { MIN_TURN_BACK_MS } from '../src/server/bot/motor.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
+import { pct, quantile } from './lib/stats.ts';
 
 const modes = (process.argv[2] ?? 'FFA,TDM').split(',').filter(Boolean) as Exclude<ModeId, 'ZOM'>[];
 const minutes = Number(process.argv[3] ?? 3);
@@ -42,7 +42,6 @@ const emptyTally = (): Tally => ({
 });
 const freshTrack = (): Track => ({ angle: null, lastDelta: 0, target: null, targetSince: -Infinity, awaitingShot: false, pos: null, heading: null, headingAt: -Infinity, lastReversal: null, causes: [] });
 
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const targetOf = (mem: BotMemory) => mem.motor.engaged?.id ?? null;
 const near = (a: { x: number; y: number }, b: { x: number; y: number }, px: number) => Math.hypot(a.x - b.x, a.y - b.y) < px;
 
@@ -75,9 +74,7 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
   const flickPeak = new Map<number, number>();
   for (let tick = 0; tick < (minutes * 60_000) / TICK_MS; tick++) {
     if (w.match.k === 'over') break;
-    const arena = arenaFor(w);
-    for (const [id, mem] of mems) {
-      const snap = snapshotFor(w, id);
+    thinkBots(w, mems, r, { onDecision(id, snap, mem, decision) {
       const wire = wires.get(id)!;
       const sent = fillSnapshot(JSON.parse(wire.encode(snap)) as SnapshotWire, wire.last);
       wire.last = sent;
@@ -87,7 +84,7 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
       else {
         t.aliveTicks++;
         if (tr.angle !== null) {
-          const d = wrap(me.angle - tr.angle) * DEG;
+          const d = wrapAngle(me.angle - tr.angle) * DEG;
           const ad = Math.abs(d);
           t.deltas.push(ad);
           if (w.now - tr.targetSince < FLICK_MS) flickPeak.set(id, Math.max(flickPeak.get(id) ?? 0, ad));
@@ -106,7 +103,7 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
         tr.angle = me.angle;
         if (tr.pos && Math.hypot(me.x - tr.pos.x, me.y - tr.pos.y) >= MOVING_PX) {
           const heading = Math.atan2(me.y - tr.pos.y, me.x - tr.pos.x);
-          if (tr.heading !== null && w.now - tr.headingAt <= PAUSE_MS && Math.abs(wrap(heading - tr.heading)) * DEG > MOVE_REVERSAL_DEG) {
+          if (tr.heading !== null && w.now - tr.headingAt <= PAUSE_MS && Math.abs(wrapAngle(heading - tr.heading)) * DEG > MOVE_REVERSAL_DEG) {
             t.moveReversals++;
             const cause = tr.causes.flat()[0] ?? 'other (body contact or a key change with no brain change)';
             t.causes.set(cause, (t.causes.get(cause) ?? 0) + 1);
@@ -121,16 +118,11 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
         }
         tr.pos = { x: me.x, y: me.y };
       }
-      const d = botThink(snap, arena, mem, r);
-      mems.set(id, d.mem);
       const now = tracks.get(id)!;
-      if (me?.alive) now.causes = [causesOf(mem, d.mem, snap.tick, me), ...now.causes].slice(0, CAUSE_TICKS);
-      const target = targetOf(d.mem);
+      if (me?.alive) now.causes = [causesOf(mem, decision.mem, snap.tick, me), ...now.causes].slice(0, CAUSE_TICKS);
+      const target = targetOf(decision.mem);
       if (target !== now.target) { now.target = target; now.targetSince = w.now; now.awaitingShot = target !== null; }
-      setInput(w, id, w.tick, d.input);
-      if (d.pick) choosePick(w, id, d.pick.level, d.pick.option);
-      if (canRespawn(w, id)) respawn(w, id, randomLoadout(r));
-    }
+    } });
     step(w, TICK_MS);
     for (const e of w.events) {
       const tr = e.e === 'shot' ? tracks.get(e.owner) : undefined;
@@ -141,10 +133,6 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
   }
 }
 
-const quantile = (xs: number[], q: number) => {
-  const s = [...xs].sort((a, b) => a - b);
-  return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))]! : NaN;
-};
 const f1 = (x: number) => x.toFixed(1);
 
 function report(label: string, t: Tally) {
@@ -164,7 +152,7 @@ function report(label: string, t: Tally) {
     `  ${''.padEnd(12)} move`,
     `reversals ${(t.moveReversals / Math.max(1e-9, aliveSec)).toFixed(2)}/s per bot`,
     `gap between reversals p1 ${Math.round(quantile(t.reversalGaps, 0.01))}ms p5 ${Math.round(quantile(t.reversalGaps, 0.05))}ms p50 ${Math.round(quantile(t.reversalGaps, 0.5))}ms`,
-    `under ${QUICK_MS}ms ${(100 * t.reversalGaps.filter((g) => g < QUICK_MS).length / Math.max(1, t.reversalGaps.length)).toFixed(1)}%`,
+    `under ${QUICK_MS}ms ${pct(t.reversalGaps.filter((g) => g < QUICK_MS).length, t.reversalGaps.length)}`,
   ].join('  '));
 }
 

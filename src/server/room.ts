@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws';
 import { WORLD, ZOM, type ModeId, type PlayerKind } from '../shared/defs.ts';
 import { MAPS, ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
-import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
+import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
 import { build, demolish } from '../shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
@@ -11,8 +11,8 @@ import { MODES } from '../shared/sim/modes.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
-import { botName, botSeats, botThink, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
-import { arenaFor } from './bot/arena.ts';
+import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
+import { thinkBots } from './bot/tick.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
@@ -148,17 +148,6 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     balanceBots();
   }
 
-  function thinkBots() {
-    const arena = arenaFor(world);
-    for (const [id, mem] of bots) {
-      const d = botThink(snapshotFor(world, id), arena, mem, botRand);
-      bots.set(id, d.mem);
-      setInput(world, id, world.tick, d.input);
-      if (d.pick) choosePick(world, id, d.pick.level, d.pick.option);
-      if (canRespawn(world, id)) respawn(world, id, randomLoadout(botRand));
-    }
-  }
-
   function applyInputs() {
     for (const c of joined()) {
       const next = takeInput(c.inputs, world.tick);
@@ -170,7 +159,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const events: GameEvent[] = [];
     for (let i = 0; i < stepsPerTick; i++) {
       applyInputs();
-      thinkBots();
+      thinkBots(world, bots, botRand);
       step(world, TICK_MS);
       events.push(...world.events);
       creditLives();

@@ -9,8 +9,8 @@ import { addPlayer, canRespawn, removePlayer, respawn, setInput, step } from '..
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { abilityOf, choosePick, pendingPick } from '../src/shared/sim/stats.ts';
 import { createWorld, rand, type Player, type World } from '../src/shared/sim/world.ts';
-import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
 
 const TICKS = 4000;
 const SEEDS = [7, 8];
@@ -75,14 +75,9 @@ for (const mode of ['FFA', 'TDM', 'DOM'] as const) {
     for (const h of humans) h.level = LEVELS.length - 1;
     let seq = 1;
     for (let tick = 0; tick < TICKS; tick++) {
-      const arena = arenaFor(w);
-      for (const [id, mem] of bots) {
-        const d = botThink(snapshotFor(w, id), arena, mem, r);
-        bots.set(id, d.mem);
-        setInput(w, id, w.tick, d.input);
-        if (d.pick && choosePick(w, id, d.pick.level, d.pick.option)) seen.picks++;
-        if (canRespawn(w, id) && respawn(w, id, randomLoadout(r))) seen.respawns++;
-      }
+      const { respawned, picked } = thinkBots(w, bots, r);
+      seen.picks += picked;
+      seen.respawns += respawned.length;
       humans.forEach((h, i) => {
         const lagTicks = i === 0 ? 2 + (tick % 9) : null;
         const input = humanInput(w, h, i * 17);
