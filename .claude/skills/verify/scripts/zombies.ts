@@ -55,7 +55,8 @@ check(first?.players.filter((p) => p.kind === 'bot').length === ZOM.squadSize - 
 
 const me = () => now().players.find((p) => p.id === welcome!.id)!;
 const scrapBefore = now().run!.scrap;
-const out = Math.abs(me().x - 1500) > Math.abs(me().y - 1500) ? [Math.sign(me().x - 1500) * 2, 0] : [0, Math.sign(me().y - 1500) * 2];
+const core = now().run!.core;
+const out = Math.abs(me().x - core.x) > Math.abs(me().y - core.y) ? [Math.sign(me().x - core.x) * 2, 0] : [0, Math.sign(me().y - core.y) * 2];
 const cell = { cx: Math.floor(me().x / ZOM.cell) + out[0]!, cy: Math.floor(me().y / ZOM.cell) + out[1]! };
 ws.send(JSON.stringify({ t: 'build', kind: 'wall', ...cell }));
 await sleep(300);
