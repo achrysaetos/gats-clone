@@ -1,4 +1,4 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type GunId } from '../../src/shared/defs.ts';
+import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, HP_MULTIPLIER, WEAPON_IDS, WORLD, type ArmorId, type GunId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
@@ -82,4 +82,66 @@ export function rangeBeyondView(): { id: GunId; range: number; view: number }[] 
 export function edgesOver(a: GunId, b: GunId, margin = 1.2): Axis[] {
   const sa = scoreGun(a), sb = scoreGun(b);
   return AXES.filter((k) => (LOWER_BETTER.has(k) ? sb[k] >= sa[k] * margin && sa[k] > 0 : sa[k] >= Math.max(sb[k], EPS) * margin));
+}
+
+/**
+ * How a person's aim lands on a person: the gun's cone, a hand that wanders `jitter` radians, and a target strafing at base
+ * speed whose path over the bullet's flight plus `lagMs` of tracking lag the shooter misreads by up to `dodge` of it. Each is uniform about the aim.
+ */
+export const HUMAN_AIM = { jitter: 0.012, lagMs: 80, strafe: WORLD.baseSpeed, dodge: 0.5 } as const;
+export const HUMAN_HP = WORLD.baseHp * HP_MULTIPLIER.human;
+
+export function hitChance(d: number, spread: number, bulletSpeed: number): number {
+  const R = WORLD.playerRadius, a = d * Math.tan(spread), b = d * HUMAN_AIM.jitter;
+  const c = HUMAN_AIM.dodge * HUMAN_AIM.strafe * (d / bulletSpeed + HUMAN_AIM.lagMs / 1000);
+  const N = 64;
+  let sum = 0;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const x = a * ((2 * i + 1) / N - 1) + b * ((2 * j + 1) / N - 1);
+    sum += Math.max(0, Math.min(R - x, c) - Math.max(-R - x, -c)) / (2 * c);
+  }
+  return sum / (N * N);
+}
+
+const LONG_HOLD_MS = 12_000;
+/** When each shot of a held trigger leaves and its spray index, reloads included. */
+const timeline = new Map(GUN_IDS.map((id) => {
+  const g = GUNS[id];
+  const s = { ammo: g.mag, reloadUntil: null as number | null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0 };
+  const shots: { t: number; spray: number }[] = [];
+  for (let now = 0; now < LONG_HOLD_MS; now += TICK_MS) {
+    if (pullTrigger(s, { def: g, mag: g.mag, reloadMs: g.reloadMs, armed: true }, { fire: true, reload: false, pressed: true }, now, TICK_MS)) shots.push({ t: now, spray: s.spray });
+  }
+  return [id, shots] as const;
+}));
+
+/** A pellet gun's whole point-blank pull is one hit, as `breakpoint` counts it. */
+const perHit = (id: GunId, armor: ArmorId) => { const g = GUNS[id]; return g.pellets * (g.damage + (g.blast?.damage ?? 0)) * (1 - ARMORS[armor].blockFrac); };
+
+/** Hits, and ms from the first to the last, for perfect aim to kill `hp` through `armor`. */
+export function perfectKill(id: GunId, hp: number, armor: ArmorId): { hits: number; ms: number } {
+  const hits = Math.ceil(hp / perHit(id, armor) - 1e-9);
+  const shots = timeline.get(id)!;
+  return { hits, ms: shots[hits - 1]!.t - shots[0]!.t };
+}
+
+/** Expected ms for a person's aim to kill `hp` at `d`, standing (`still`) or walking. */
+export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, armor: ArmorId = 'none'): number {
+  const g = GUNS[id];
+  if (d > g.range) return Infinity;
+  let dealt = 0;
+  for (const shot of timeline.get(id)!) {
+    dealt += hitChance(d, spreadFor(id, {}, still, shot.spray), g.bulletSpeed) * perHit(id, armor);
+    if (dealt >= hp - 1e-9) return shot.t;
+  }
+  return Infinity;
+}
+
+const SUSTAIN_MS = 5000;
+/** Expected damage per second a person's aim puts on a strafing person at `d` over a five-second hold. */
+export function aimDps(id: GunId, d: number, still: boolean): number {
+  const g = GUNS[id];
+  if (d > g.range) return 0;
+  const shots = timeline.get(id)!.filter((s) => s.t < SUSTAIN_MS);
+  return (shots.reduce((sum, s) => sum + hitChance(d, spreadFor(id, {}, still, s.spray), g.bulletSpeed), 0) * perHit(id, 'none') * 1000) / SUSTAIN_MS;
 }
