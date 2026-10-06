@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import type { BulletView, PlayerView } from '../src/shared/protocol.ts';
-import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundScene, type RoundScene, type Shot } from '../src/client/rounds.ts';
-import { TRACER } from '../src/client/render.ts';
+import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundScene, TRACER, type RoundScene, type Shot } from '../src/client/rounds.ts';
 import { MAX_RANGE_MUL } from '../src/shared/sim/stats.ts';
 
 const ME = 1;
