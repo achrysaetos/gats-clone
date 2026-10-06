@@ -59,7 +59,7 @@ test('an assault rifle held down blooms after its first shots, up to double, and
   }
   const heat = p.life.k === 'alive' ? p.life.heat : 0;
   assert.equal(spreadFor('assault', {}, true, heat), 2 * GUNS.assault.spread, 'a long spray reaches the cap');
-  assert.ok(spreadFor('assault', {}, true, 3) === GUNS.assault.spread, 'the first three shots of a spray do not bloom');
+  assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
   assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
 
