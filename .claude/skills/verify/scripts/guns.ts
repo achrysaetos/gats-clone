@@ -91,7 +91,7 @@ const cooled = await trigger(rifle);
 await crop(rifle, 'guns-assault-released.png');
 await sleep(roundTrip + 300);
 log(`assault reticle gap: idle ${idle.reticleGap.toFixed(1)}px  held ${samples.map((s) => s.reticleGap.toFixed(0)).join(' ')} -> ${held.reticleGap.toFixed(1)}px  400ms after release ${cooled.reticleGap.toFixed(1)}px`);
-check(idle.gun === 'assault' && held.reticleGap >= 1.8 * idle.reticleGap, `a held assault rifle's reticle opens to about double (${(held.reticleGap / idle.reticleGap).toFixed(2)}x, spray ${held.spray.toFixed(1)})`);
+check(idle.gun === 'assault' && held.reticleGap >= 1.4 * idle.reticleGap, `a held assault rifle's reticle opens to about half again (${(held.reticleGap / idle.reticleGap).toFixed(2)}x, spray ${held.spray.toFixed(1)})`);
 check(Math.abs(cooled.reticleGap - idle.reticleGap) < 0.5 && cooled.spray === 0, 'it closes again within 400ms of letting go');
 checkCounts('assault hold', await felt(rifle), rifle.serverShots() - before);
 rifle.close();

@@ -34,14 +34,14 @@ function spray(gun: GunId, still: boolean, count: number): number[] {
 
 const widest = (angles: readonly number[]) => Math.max(...angles.map(Math.abs));
 
-test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG much worse, a walking sniper misses past 300px', () => {
-  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 2 };
+test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG far worse, a walking sniper misses past 150px', () => {
+  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 3 };
   for (const weapon of WEAPON_IDS.filter((w) => w !== 'sniper')) {
     const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true);
     assert.ok(Math.abs(ratio - expected[weapon]!) < 1e-9, `${weapon} moves at ${ratio}x spread`);
   }
   for (const gun of ['sniper', 'longshot', 'piercer'] as const) {
-    assert.ok(spreadFor(gun, {}, false) > Math.atan(WORLD.playerRadius / 300), `a walking ${gun} can miss a body 300px off`);
+    assert.ok(spreadFor(gun, {}, false) > Math.atan(WORLD.playerRadius / 150), `a walking ${gun} can miss a body 150px off`);
     assert.ok(spreadFor(gun, {}, true) < Math.atan(WORLD.playerRadius / 1000), `a planted ${gun} is sure at 1000px`);
   }
 });
@@ -67,7 +67,7 @@ test('a sniper\'s rounds stay inside its still cone standing and stray far past 
   assert.ok(widest(spray('pistol', false, 20)) <= GUNS.pistol.spread, 'a pistol walking stays in its cone');
 });
 
-test('an assault rifle held down blooms after its first shots, up to double, and taps stay tight', () => {
+test('an assault rifle held down blooms after its first shots, up to half again, and taps stay tight', () => {
   const { w, p } = shooter('assault');
   const held: number[][] = [];
   while (held.length < 25) {
@@ -75,7 +75,7 @@ test('an assault rifle held down blooms after its first shots, up to double, and
     if (out.length) held.push(out);
   }
   const spray = p.life.k === 'alive' ? p.life.spray : 0;
-  assert.equal(spreadFor('assault', {}, true, spray), 2 * GUNS.assault.spread, 'a long spray reaches the cap');
+  assert.equal(spreadFor('assault', {}, true, spray), 1.5 * GUNS.assault.spread, 'a long spray reaches the cap');
   assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
   assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
