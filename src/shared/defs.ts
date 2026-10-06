@@ -14,7 +14,8 @@ export type GunId = (typeof GUN_IDS)[number];
 
 export type Blast = { radius: number; damage: number };
 
-export type GunLook = { length: number; width: number; barrels: 1 | 2 | 3; accent: string; bullet: { r: number; color: string } };
+/** `hands: 2` draws a whole gun in each hand rather than one gun with more barrels. */
+export type GunLook = { length: number; width: number; barrels: 1 | 2 | 3; hands?: 2; accent: string; bullet: { r: number; color: string } };
 
 export type GunDef = {
   name: string;
@@ -75,7 +76,7 @@ const BASE_BULLET = { r: 1.6, color: '#25211c' };
 const BASE_LOOK: GunLook = { length: 1, width: 1, barrels: 1, accent: '#7b8494', bullet: BASE_BULLET };
 
 export const GUNS: Record<GunId, GunDef> = {
-  pistol: { name: 'Pistol', desc: 'Reliable sidearm, steady on the run', base: 'pistol', stage: 0, from: null, damage: 25, fireMs: 220, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1000, moveMul: 1.0, auto: false, look: BASE_LOOK },
+  pistol: { name: 'Pistol', desc: 'Reliable sidearm, steady on the run', base: 'pistol', stage: 0, from: null, damage: 25, fireMs: 200, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 1500, mag: 12, reloadMs: 1000, moveMul: 1.0, auto: false, look: BASE_LOOK },
   handCannon: { name: 'Hand Cannon', desc: 'Two hits drop anyone', base: 'pistol', stage: 1, from: 'pistol', damage: 66, fireMs: 480, pellets: 1, spread: 0.025, range: 780, bulletSpeed: 1650, mag: 6, reloadMs: 1300, moveMul: 1.0, auto: false, breakpoint: 2,
     look: { length: 1.2, width: 1.3, barrels: 1, accent: '#c8553d', bullet: { r: 2.6, color: '#7a2e1f' } } },
   machinePistol: { name: 'Machine Pistol', desc: 'Three-round bursts on the run', base: 'pistol', stage: 1, from: 'pistol', damage: 24, fireMs: 380, pellets: 1, spread: 0.05, range: 620, bulletSpeed: 1500, mag: 18, reloadMs: 1000, moveMul: 1.05, auto: false, burst: { count: 3, gapMs: 60 },
@@ -85,7 +86,7 @@ export const GUNS: Record<GunId, GunDef> = {
   gunslinger: { name: 'Gunslinger', desc: 'Quick revolver, two hits up close', base: 'pistol', stage: 2, from: 'handCannon', damage: 66, fireMs: 300, pellets: 1, spread: 0.045, range: 650, bulletSpeed: 1600, mag: 6, reloadMs: 1100, moveMul: 1.05, auto: false, breakpoint: 2,
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#3fa7b5', bullet: { r: 2.4, color: '#1f5560' } } },
   akimbo: { name: 'Akimbo', desc: 'Two pistols, twice the bursts', base: 'pistol', stage: 2, from: 'machinePistol', damage: 18, fireMs: 190, pellets: 1, spread: 0.09, range: 560, bulletSpeed: 1500, mag: 36, reloadMs: 1700, moveMul: 1.05, auto: false, burst: { count: 3, gapMs: 50 },
-    look: { length: 1.05, width: 1.15, barrels: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
+    look: { length: 1.05, width: 1, barrels: 1, hands: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
   hailstorm: { name: 'Hailstorm', desc: 'Full auto with a deep magazine', base: 'pistol', stage: 2, from: 'machinePistol', damage: 16, fireMs: 80, pellets: 1, spread: 0.1, range: 560, bulletSpeed: 1500, mag: 40, reloadMs: 1300, moveMul: 1.0, auto: true,
     look: { length: 1.25, width: 1.1, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
 
@@ -134,7 +135,7 @@ export const GUNS: Record<GunId, GunDef> = {
     rules: { movingSpreadMul: 1, viewMul: 1.25 },
     look: { length: 1.2, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
 
-  sniper: { name: 'Bolt-action', desc: 'One shot, one kill; plant your feet', base: 'sniper', stage: 0, from: null, damage: 135, fireMs: 1300, pellets: 1, spread: 0.01, range: 1200, bulletSpeed: 2600, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false, breakpoint: 1, look: BASE_LOOK },
+  sniper: { name: 'Bolt-action', desc: 'One shot, one kill; plant your feet', base: 'sniper', stage: 0, from: null, damage: 135, fireMs: 1350, pellets: 1, spread: 0.01, range: 1200, bulletSpeed: 2200, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false, breakpoint: 1, look: BASE_LOOK },
   longshot: { name: 'Longshot', desc: 'Heavier rounds, farther, faster', base: 'sniper', stage: 1, from: 'sniper', damage: 160, fireMs: 1700, pellets: 1, spread: 0.008, range: 1300, bulletSpeed: 3200, mag: 5, reloadMs: 2100, moveMul: 0.88, auto: false, breakpoint: 1,
     rules: { viewMul: 1.5 },
     look: { length: 1.2, width: 1.05, barrels: 1, accent: '#c8553d', bullet: { r: 2.2, color: '#7a2e1f' } } },

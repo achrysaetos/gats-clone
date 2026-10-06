@@ -57,7 +57,9 @@ function partsOf(gun: GunId): Part[] {
     const body = stretched(src[0]!);
     parts.push({ x: body.x + body.w * 0.15, y: body.y + body.h * 0.3, w: body.w * 0.7, h: body.h * 0.4, accent: true });
   }
-  return parts;
+  if (look.hands !== 2) return parts;
+  const half = Math.max(...parts.map((p) => p.y + p.h)) * 1.1;
+  return [-1, 1].flatMap((side) => parts.map((p) => ({ ...p, y: p.y + side * half })));
 }
 
 const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
