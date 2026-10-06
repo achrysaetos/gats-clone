@@ -1,7 +1,7 @@
-import { BASTION_GUN, BUILDINGS, WORLD, ZOM, type TurretDef, type TurretKind } from '../defs.ts';
+import { BASTION_GUN, BUILDINGS, ZOM, type TurretDef } from '../defs.ts';
 import { MODES } from './modes.ts';
 import { dist2, segmentEntersRectAt, type Rect } from './movement.ts';
-import { coverRects, newId, rand, type Run, type World, type Zombie } from './world.ts';
+import { coverRects, newId, rand, type Run, type Shooter, type World, type Zombie } from './world.ts';
 
 /** The nearest zombie in range of the kind the turret prefers, else of any kind, that nothing solid hides; the squad's own buildings never block a turret's view. */
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
@@ -11,7 +11,7 @@ function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number,
 }
 
 /** A turret's rounds fly for its builder; the Bastion's for no one, so they go out on the snapshot as plain rounds. */
-function fire(w: World, def: TurretDef, by: { owner: number; label: string; turret: TurretKind | null }, target: Zombie, x: number, y: number) {
+function fire(w: World, def: TurretDef, by: { owner: number; label: string; turret: Shooter }, target: Zombie, x: number, y: number) {
   const aim = Math.atan2(target.y - y, target.x - x);
   const reach = def.lobbed ? Math.max(0, Math.hypot(target.x - x, target.y - y) - def.muzzle) : def.range;
   for (let i = 0; i < def.pellets; i++) {
@@ -19,19 +19,24 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
     w.bullets.push({
       id: newId(w), owner: by.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
       vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: reach, damage: def.damage, piercing: false,
-      label: by.label, gun: null, turret: by.turret, penetrate: 0, passed: [], blast: def.lobbed,
+      label: by.label, gun: null, turret: by.turret, lobbed: def.lobbed !== null, penetrate: 0, passed: [], blast: def.lobbed,
     });
   }
-  if (by.turret) w.events.push({ e: 'turret', kind: by.turret, x, y, angle: Math.round(aim * 100) / 100, ...(def.lobbed && { reach: Math.round(reach) }) });
+  if (by.turret !== 'bastion') w.events.push({ e: 'turret', kind: by.turret, x, y, angle: Math.round(aim * 100) / 100, ...(def.lobbed && { reach: Math.round(reach) }) });
 }
 
-/** Each loaded turret whose gun has cooled fires one round at its target, and the Bastion's survivors fire on their beat. */
+// Carry the part of the interval that fell between ticks, so a gun keeps its rate rather than the tick's.
+const nextShot = (at: number, now: number, dtMs: number, gapMs: number) => (now - at < dtMs ? at : now) + gapMs;
+
+/** Each loaded turret whose gun has cooled fires one round at its target, and the Bastion's survivors fire on their beat, slower the fewer are left. */
 export function tickTurrets(w: World, run: Run, core: { x: number; y: number }, dtMs: number) {
   if (w.zombies.length === 0) return;
   const cover = coverRects(w);
-  const beat = Math.round((BASTION_GUN.fireMs * ZOM.survivors) / Math.max(1, run.survivors) / (1000 / WORLD.tickHz));
-  const near = run.survivors > 0 && w.tick % beat === 0 && targetOf(w.zombies, cover, core.x, core.y, BASTION_GUN);
-  if (near) fire(w, BASTION_GUN, { owner: -1, label: 'Bastion', turret: null }, near, core.x, core.y);
+  const near = run.survivors > 0 && w.now >= run.bastionFireAt && targetOf(w.zombies, cover, core.x, core.y, BASTION_GUN);
+  if (near) {
+    fire(w, BASTION_GUN, { owner: -1, label: 'Bastion', turret: 'bastion' }, near, core.x, core.y);
+    run.bastionFireAt = nextShot(run.bastionFireAt, w.now, dtMs, (BASTION_GUN.fireMs * ZOM.survivors) / run.survivors);
+  }
   for (const t of w.buildings) {
     if (t.kind === 'wall' || t.ammo < 1 || w.now < t.nextFireAt) continue;
     const def = BUILDINGS[t.kind].turret;
@@ -40,7 +45,6 @@ export function tickTurrets(w: World, run: Run, core: { x: number; y: number }, 
     if (!target) continue;
     fire(w, def, { owner: t.owner, label: BUILDINGS[t.kind].name, turret: t.kind }, target, x, y);
     t.ammo--;
-    // Carry the part of the interval that fell between ticks, so a sentry keeps its rate rather than the tick's.
-    t.nextFireAt = (w.now - t.nextFireAt < dtMs ? t.nextFireAt : w.now) + def.fireMs;
+    t.nextFireAt = nextShot(t.nextFireAt, w.now, dtMs, def.fireMs);
   }
 }

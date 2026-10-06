@@ -101,10 +101,11 @@ test('a turret\'s barrel takes the angle of its last shot, and its aim is forgot
   assert.equal(aims.size, 0);
 });
 
-test('the report sums the squad\'s turret kills by kind, and leaves the line off when they killed none', () => {
-  const report = { night: 4, won: false, survivors: 0, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 } };
+test('the report sums the squad\'s turret kills by kind and the Bastion\'s, and leaves the line off when they killed none', () => {
+  const report = { night: 4, won: false, survivors: 0, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
   assert.equal(turretLine(report), null);
-  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7, scatter: 0, mortar: 3 } }), 'Turret kills · Sentry 41 · Cannon 7 · Mortar 3');
+  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7, scatter: 0, mortar: 3 }, bastionKills: 12 }), 'Defense kills · Sentry 41 · Cannon 7 · Mortar 3 · Bastion 12');
+  assert.equal(turretLine({ ...report, bastionKills: 2 }), 'Defense kills · Bastion 2');
 });
 
 test('the build preview refuses at night, while down, and when the bank is short, as the server does', () => {
@@ -153,7 +154,7 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
   assert.equal(phaseLine(runView(), null), 'Day 2', 'no countdown before the server clock is known');
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: null, waveLeft: 12 }), 19_000), 'Night 3 · 12 left');
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000 }), 16_000), 'The Bastion fell · next run in 0:14');
-  const held = { night: 10, won: true, survivors: 31, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 } };
+  const held = { night: 10, won: true, survivors: 31, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000, report: held }), 16_000), 'The Bastion held · next run in 0:14');
 });
 
@@ -217,7 +218,7 @@ test('the fall clears every callout, so none shows through behind the report', (
 test('the run report ranks the squad by kills, then revives, and marks you', () => {
   const report = { night: 4, won: false, survivors: 0, durationMs: 372_000, players: [
     { name: 'Bo', kills: 12, revives: 0, built: 9 }, { name: 'Ann', kills: 30, revives: 1, built: 0 }, { name: 'Cy', kills: 12, revives: 4, built: 7 },
-  ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 } };
+  ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The Bastion fell on night 4');
   assert.equal(reportTitle({ ...report, night: 10, won: true, survivors: 31 }), 'The Bastion held. 31 survivors saw the morning.');

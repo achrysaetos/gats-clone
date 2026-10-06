@@ -76,7 +76,7 @@ export type ZombieView = [id: number, kind: number, x: number, y: number, hp: nu
 export type BuildingView = { cx: number; cy: number; hp: number } & ({ kind: 'wall' } | { kind: TurretKind; ammo: number });
 /** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. `won` once the Bastion held through the Tide. */
 export type RunReport = {
-  night: number; won: boolean; survivors: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>;
+  night: number; won: boolean; survivors: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>; bastionKills: number;
 };
 /**
  * `phaseEndsAt` is the server time the day ends or the next run starts, and null at night, which ends when the wave is dead.

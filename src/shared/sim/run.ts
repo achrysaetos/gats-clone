@@ -6,7 +6,7 @@ import { tickTurrets } from './turrets.ts';
 import { buildRefusal, cellRect, type BuildRefusal, type BuildSite } from './build.ts';
 import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
-import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type World, type Zombie } from './world.ts';
+import { coreRect, coverRects, loadMap, newId, newRun, rand, sameTeam, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
@@ -140,10 +140,10 @@ function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
 }
 
 /**
- * A zombie's death pays the squad scrap and its attacker score toward the gun ladder. A turret's kill pays its builder the score but counts as the turret's.
+ * A zombie's death pays the squad scrap and its attacker score toward the gun ladder. A turret's kill pays its builder the score but counts as the turret's, and the Bastion's counts as the Bastion's.
  * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
  */
-export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | TurretKind = 'hit') {
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit') {
   const run = w.run;
   if (!run || z.hp <= 0) return;
   const dealt = Math.min(z.hp, amount);
@@ -151,11 +151,12 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
-  const turret = via === 'hit' || via === 'blast' ? null : via;
+  const shooter = via === 'hit' || via === 'blast' ? null : via;
   w.zombies = w.zombies.filter((o) => o !== z);
   run.scrap += def.scrap;
-  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: turret ? null : attacker?.id ?? null });
-  if (turret) run.turretKills[turret][z.kind]++;
+  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: shooter ? null : attacker?.id ?? null });
+  if (shooter === 'bastion') run.bastionKills++;
+  else if (shooter) run.turretKills[shooter][z.kind]++;
   else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
   if (attacker) addScore(w, attacker, def.score);
   if (def.burst) burst(w, z, def.burst);

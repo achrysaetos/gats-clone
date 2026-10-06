@@ -102,7 +102,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     players.push(playerView(w, p, me));
   }
   const bullets: BulletView[] = w.bullets
-    .filter((b) => !b.turret && inView(b.x, b.y, 100))
+    .filter((b) => (b.turret === null || b.turret === 'bastion') && inView(b.x, b.y, 100))
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
@@ -153,7 +153,7 @@ function runView(w: World, run: Run): RunView {
     report: phase.k === 'over'
       ? {
         night: phase.night, won: phase.won, survivors: run.survivors, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
-        turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)),
+        turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)), bastionKills: run.bastionKills,
       }
       : null,
   };

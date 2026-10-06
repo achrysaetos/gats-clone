@@ -251,3 +251,50 @@ test('the Bastion\'s survivors shoot what reaches its door, slower the fewer are
   assert.ok(dealt(ZOM.survivors / 5, 100) < all / 3, 'a fifth of them fire far slower');
   assert.equal(dealt(ZOM.survivors, BASTION_GUN.range + 100), 0, 'out of its reach');
 });
+
+test('a mortar\'s kill counts as the mortar\'s, not its builder\'s', () => {
+  const w = nightWorld();
+  const builder = spawnAt(w, TX, TY + 300);
+  addTurret(w, 'mortar', builder.id);
+  addZombie(w, 'plated', TX, TY - 400, 1);
+  addZombie(w, 'walker', 60, 60);
+  run(w, 2500);
+  assert.equal(w.run!.turretKills.mortar.plated, 1);
+  assert.deepEqual([builder.kills, builder.score], [0, ZOMBIES.plated.score]);
+});
+
+test('the Bastion\'s kills count as the Bastion\'s, and its hits send no hit marker', () => {
+  const w = nightWorld();
+  const z = addZombie(w, 'walker', 1500, 1500 - ZOM.coreHalf - 100, BASTION_GUN.damage);
+  addZombie(w, 'walker', 60, 60);
+  let markers = 0;
+  for (let t = 0; t < 2000 && w.run!.bastionKills === 0; t += TICK_MS) {
+    z.x = 1500; z.y = 1500 - ZOM.coreHalf - 100;
+    step(w, TICK_MS);
+    markers += w.events.filter((e) => e.e === 'dmg' && e.kind === 'zombie').length;
+  }
+  assert.equal(w.run!.bastionKills, 1);
+  assert.equal(markers, 0);
+  assert.equal(w.zombies.includes(z), false);
+});
+
+test('the Bastion\'s survivors never fire sooner than their count allows, even as they fall between shots', () => {
+  const w = nightWorld();
+  const z = addZombie(w, 'walker', 1500, 1500 - ZOM.coreHalf - 100);
+  const fired: { at: number; gap: number }[] = [];
+  const seen = new Set<number>();
+  for (let t = 0; t < 8000; t += TICK_MS) {
+    z.x = 1500; z.y = 1500 - ZOM.coreHalf - 100;
+    w.run!.survivors = Math.max(5, ZOM.survivors - Math.floor(t / 150));
+    step(w, TICK_MS);
+    for (const b of w.bullets) if (b.turret === 'bastion' && !seen.has(b.id)) {
+      seen.add(b.id);
+      fired.push({ at: w.now, gap: (BASTION_GUN.fireMs * ZOM.survivors) / w.run!.survivors });
+    }
+  }
+  assert.ok(fired.length > 5, `${fired.length} shots`);
+  for (let i = 1; i < fired.length; i++) {
+    const since = fired[i]!.at - fired[i - 1]!.at;
+    assert.ok(since >= fired[i - 1]!.gap - TICK_MS - 1e-6, `shot ${i} came ${since}ms after the last, its gap ${fired[i - 1]!.gap}ms`);
+  }
+});

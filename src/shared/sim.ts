@@ -100,7 +100,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
         left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
-        gun: p.gun, turret: null, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
+        gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }

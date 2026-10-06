@@ -69,12 +69,17 @@ export type Bullet = {
   id: number; owner: number; team: Team; x: number; y: number; vx: number; vy: number;
   left: number; damage: number; piercing: boolean; label: string;
   gun: GunId | null;
-  /** The turret that fired it, null for a player's own round. */
-  turret: TurretKind | null;
+  /** The turret or the Bastion's survivors that fired it, null for a player's own round. */
+  turret: Shooter | null;
+  /** A lobbed round flies over everything and bursts where it comes down. */
+  lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
   blast: Blast | null;
 };
+
+/** What fires at the horde for the squad besides its players. */
+export type Shooter = TurretKind | 'bastion';
 
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null };
 
@@ -123,6 +128,9 @@ export type Run = {
   flow: Flow | null;
   stats: Map<number, RunStats>;
   turretKills: Record<TurretKind, Record<ZombieKind, number>>;
+  bastionKills: number;
+  /** When the Bastion's survivors next fire. */
+  bastionFireAt: number;
 };
 
 export type Pose = { x: number; y: number };
@@ -195,7 +203,7 @@ export function newRun(now: number): Run {
   return {
     core: { hp: ZOM.coreHp }, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
-    turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>),
+    turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>), bastionKills: 0, bastionFireAt: 0,
   };
 }
 

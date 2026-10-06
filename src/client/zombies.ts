@@ -92,10 +92,11 @@ export const reportRows = (report: RunReport, selfName: string | undefined): Rep
 export const reportTitle = (report: RunReport) =>
   report.won ? `The Bastion held. ${report.survivors} survivors saw the morning.` : `The Bastion fell on night ${report.night}`;
 
-/** The squad's turrets' kills, or null when they killed none. */
+/** The kills of the squad's turrets and the Bastion's survivors, or null when they killed none. */
 export function turretLine(report: RunReport): string | null {
-  const kills = TURRET_KINDS.filter((t) => report.turretKills[t] > 0).map((t) => `${BUILDINGS[t].name} ${report.turretKills[t]}`);
-  return kills.length ? `Turret kills · ${kills.join(' · ')}` : null;
+  const kills = [...TURRET_KINDS.map((t) => [BUILDINGS[t].name, report.turretKills[t]] as const), ['Bastion', report.bastionKills] as const]
+    .filter(([, n]) => n > 0).map(([name, n]) => `${name} ${n}`);
+  return kills.length ? `Defense kills · ${kills.join(' · ')}` : null;
 }
 
 /** The card for a squad player out of the fight: bled out, back from the Bastion after `respawnIn` ms at the cost of survivors, or joined mid-night and back at dawn. */
