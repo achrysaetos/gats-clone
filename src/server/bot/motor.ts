@@ -16,6 +16,10 @@ export type Motor = {
   stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
   stuckTicks: number;
+  /** A squad bot's next step toward its errand, kept a while so two equal ways round a turret never flip it side to side. */
+  siegeStep: { to: Point; at: Point; tick: number; kite: boolean } | null;
+  /** Where a squad bot is tending, kept so it finishes a job it has started instead of leaving at the threshold that sent it. */
+  tending: Point | null;
   engaged: Engagement | null;
   engagedSeen: number;
   aim: AimState | null;
@@ -23,7 +27,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
+  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, siegeStep: null, tending: null, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -203,7 +207,7 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
 }
 
 function plan(arena: BotArena, me: Point, to: Point): NonNullable<Motor['route']> {
-  const found = isOpen(arena.nav, me) || walkable(arena.nav, me, to) ? findPath(arena.nav, me, to, MAX_EXPANSIONS) : null;
+  const found = findPath(arena.nav, me, to, MAX_EXPANSIONS);
   const last = found?.[found.length - 1];
   return { goal: to, points: found ?? [to], version: arena.version, partial: last !== undefined && dist(last, to) > WAYPOINT_PX };
 }
@@ -252,7 +256,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
   const way = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick) : { at: null, route: m.route, replanned: false };
   const drive = keysToward(m, me, way.at, v.tick);
-  const moved = dist(me, m.last);
+  const gained = way.at ? dist(m.last, way.at) - dist(me, way.at) : 0;
   const pressing = drive.dir !== null;
   const gun = GUNS[me.gun];
 
@@ -310,7 +314,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false },
     motor: {
       route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
-      stuckTicks: pressing && moved < 1 && !way.replanned ? m.stuckTicks + 1 : 0, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
+      stuckTicks: pressing && gained < 1 && !way.replanned ? m.stuckTicks + 1 : 0, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
     },
   };
 }

@@ -9,6 +9,9 @@ import { findPath, withSolids, type NavGrid } from './nav.ts';
 import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
 
 export const DEAD_ZONE = 30;
+const STEP_HOLD_TICKS = 15;
+const KITE_HOLD_TICKS = 5;
+const STEP_GOAL_SLACK = 40;
 const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
 
 const nearest = <T extends { x: number; y: number }>(me: { x: number; y: number }, xs: readonly T[]): T | null =>
@@ -22,6 +25,8 @@ type Watch = {
   downed: PlayerView | null;
   needsTending: { x: number; y: number } | null;
   dry: { x: number; y: number } | null;
+  tending: { x: number; y: number } | null;
+  kiting: boolean;
   coreMendable: boolean;
   next: { kind: BuildingKind; cx: number; cy: number; x: number; y: number } | null;
 };
@@ -31,6 +36,8 @@ type Errand = { x: number; y: number; use: boolean };
 const GUARD_RADIUS = 550;
 const WHOLE_TENTHS = 10;
 const DRY_TENTHS = 2;
+/** A turret is topped up once it is down to this, not after every shot, so a squadmate's top-up never flips a bot between the turret and its post. */
+const LOW_TENTHS = 7;
 const CORE_EMERGENCY_FRAC = 0.5;
 const HUMANS_RESERVE = Math.max(...BUILDING_KINDS.map((k) => BUILDINGS[k].cost));
 const POST_RADIUS = 320;
@@ -38,7 +45,9 @@ const BUSY_ZOMBIE_PX = 300;
 const KITE_PX = 140;
 
 const mendAt = (s: Watch, at: { x: number; y: number }): Errand => ({ ...at, use: Math.hypot(at.x - s.me.x, at.y - s.me.y) <= ZOM.reachPx - 60 });
-const hordeFar = (s: Watch) => !s.zombie || s.zombie.d > BUSY_ZOMBIE_PX;
+/** A job already under way carries on until a zombie is this much nearer than the distance that lets one start. */
+const BUSY_SLACK_PX = 80;
+const hordeFar = (s: Watch) => !s.zombie || s.zombie.d > BUSY_ZOMBIE_PX - (s.tending ? BUSY_SLACK_PX : 0);
 
 type Rule = (s: Watch) => Errand | null;
 
@@ -47,10 +56,14 @@ const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.ne
 const refillDry: Rule = (s) => s.dry && (!s.zombie || s.zombie.d > KITE_PX) ? mendAt(s, s.dry) : null;
 const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
 const buildNext: Rule = (s) => s.next && { x: s.next.x, y: s.next.y, use: false };
+/** Once backing off a zombie, a bot keeps backing off until it is this much farther than the distance that started it. */
+const KITE_SLACK_PX = 60;
+const kiting = (s: Watch) => !!s.zombie && s.zombie.d <= KITE_PX + (s.kiting ? KITE_SLACK_PX : 0);
 const holdPost: Rule = (s) => {
   const post = { ...s.post, use: false };
-  if (!s.zombie || s.zombie.d > KITE_PX) return post;
-  const away = Math.atan2(s.me.y - s.zombie.y, s.me.x - s.zombie.x);
+  const z = s.zombie;
+  if (!z || !kiting(s)) return post;
+  const away = Math.atan2(s.me.y - z.y, s.me.x - z.x);
   const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
   return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
 };
@@ -119,18 +132,21 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const spare = !humansBank || run.scrap > HUMANS_RESERVE;
   const guarded = (b: BuildingView) => Math.hypot((b.cx + 0.5) * ZOM.cell - run.core.x, (b.cy + 0.5) * ZOM.cell - run.core.y) <= GUARD_RADIUS;
   const at = (b: BuildingView) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell });
+  const tending = mem.motor.tending;
+  const started = (b: BuildingView) => tending?.x === at(b).x && tending.y === at(b).y;
   const worn = !spare ? [] : (snap.buildings ?? [])
-    .filter((b) => guarded(b) && (b.hp < WHOLE_TENTHS || (b.kind !== 'wall' && b.ammo < WHOLE_TENTHS && run.scrap > 0))).map(at);
+    .filter((b) => guarded(b) && (b.hp < WHOLE_TENTHS || (b.kind !== 'wall' && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS) && run.scrap > 0))).map(at);
   const dry = run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && b.kind !== 'wall' && b.ammo <= DRY_TENTHS).map(at) : [];
   const plan = humansBank ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
   const post = postFor(run.core, me.id, snap.buildings ?? []);
   const watch: Watch = {
-    me, core: run.core, post, zombie, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), next: buildable,
+    me, core: run.core, post, zombie, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, kiting: !!mem.motor.siegeStep?.kite, next: buildable,
     coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
   };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
+  const tended = [watch.needsTending, watch.dry, watch.coreMendable ? run.core : null].find((t) => t?.x === errand.x && t?.y === errand.y);
   const builds = buildable && errand.x === buildable.x && errand.y === buildable.y && Math.hypot(buildable.x - me.x, buildable.y - me.y) <= 2 * DEAD_ZONE;
 
   const outFromCore = { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
@@ -156,13 +172,19 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const wanted = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation) ? readyAbility : null;
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire, wanted, mem.motor.shots);
-  const step = wayTo(arena, run.core, snap.buildings ?? [], me, errand);
+  const kite = !downed && !errand.use && kiting(watch) && (errand.x !== watch.post.x || errand.y !== watch.post.y);
+  const kept = mem.motor.siegeStep;
+  const sameGoal = kept && (kite ? kept.kite : !kept.kite && Math.hypot(kept.to.x - errand.x, kept.to.y - errand.y) < STEP_GOAL_SLACK);
+  const keep = kept && sameGoal && snap.tick - kept.tick < (kite ? KITE_HOLD_TICKS : STEP_HOLD_TICKS)
+    && (Math.abs(kept.at.x - me.x) > DEAD_ZONE || Math.abs(kept.at.y - me.y) > DEAD_ZONE);
+  const step = keep ? kept.at : wayTo(arena, run.core, snap.buildings ?? [], me, errand);
+  const siegeStep = keep ? kept : { to: { x: errand.x, y: errand.y }, at: step, tick: snap.tick, kite };
   const mx = step.x - me.x, my = step.y - me.y;
   const still = errand.use;
   const input: InputState = {
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
     angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,
   };
-  const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots } };
+  const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots, siegeStep, tending: tended ? { x: tended.x, y: tended.y } : null } };
   return { input, mem: next, ...(builds && { build: { kind: buildable.kind, cx: buildable.cx, cy: buildable.cy } }) };
 }
