@@ -50,7 +50,7 @@ export type GunDef = {
  * How a class handles beyond its numbers. `movingSpreadMul` scales spread while walking. Under `bloom` each shot of a spray
  * after the first `free` widens spread by `perShot` of itself, up to `maxMul`, and letting go of the trigger takes it back to
  * nothing within `recoverMs`. Under `spinUp` holding the trigger takes the shot interval from `startMul` times `fireMs` down to
- * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see.
+ * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see once steady.
  */
 /**
  * Moving spread is `spread * movingSpreadMul + movingSpreadAdd`; the added part keeps a tight sniper cone from staying a sure hit on the run.
@@ -74,7 +74,7 @@ export const GUN_RULES: Record<WeaponId, GunRules> = {
   smg: STEADY,
   shotgun: STEADY,
   assault: { ...STEADY, movingSpreadMul: 1.3, bloom: { free: 3, perShot: 0.12, maxMul: 2, settleMs: 150, recoverMs: 250 } },
-  sniper: { ...STEADY, movingSpreadAdd: 0.08, steadyMs: 350, plant: 'always', viewMul: 1.35 },
+  sniper: { ...STEADY, movingSpreadAdd: 0.08, steadyMs: 350, plant: 'always', viewMul: 1.15 },
   lmg: { ...STEADY, movingSpreadMul: 2, steadyMs: 200, plant: 'atRange' },
 };
 
@@ -138,23 +138,22 @@ export const GUNS: Record<GunId, GunDef> = {
   specter: { name: 'Specter', desc: 'Suppressed and light', base: 'assault', stage: 2, from: 'carbine', damage: 19, fireMs: 88, pellets: 1, spread: 0.055, range: 700, bulletSpeed: 1700, mag: 30, reloadMs: 1200, moveMul: 1.02, auto: true, silenced: true,
     look: { length: 1.2, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.5, color: '#5a2d85' } } },
   scout: { name: 'Scout', desc: 'Scoped carbine, sees and hits farther', base: 'assault', stage: 2, from: 'carbine', damage: 22, fireMs: 120, pellets: 1, spread: 0.035, range: 900, bulletSpeed: 1900, mag: 25, reloadMs: 1300, moveMul: 1.0, auto: true,
-    rules: { viewMul: 1.25 },
+    rules: { viewMul: 1.1 },
     look: { length: 1.2, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
 
-  sniper: { name: 'Bolt-action', desc: 'One shot drops any armor; plant your feet', base: 'sniper', stage: 0, from: null, damage: 135, fireMs: 1350, pellets: 1, spread: 0.01, range: 1200, bulletSpeed: 2200, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false, breakpoint: 1, look: BASE_LOOK },
-  longshot: { name: 'Longshot', desc: 'Heavier rounds, farther, faster', base: 'sniper', stage: 1, from: 'sniper', damage: 160, fireMs: 1700, pellets: 1, spread: 0.008, range: 1300, bulletSpeed: 3200, mag: 5, reloadMs: 2100, moveMul: 0.88, auto: false, breakpoint: 1,
-    rules: { viewMul: 1.5 },
+  sniper: { name: 'Bolt-action', desc: 'One shot drops any armor; plant your feet', base: 'sniper', stage: 0, from: null, damage: 135, fireMs: 1350, pellets: 1, spread: 0.01, range: 1030, bulletSpeed: 2200, mag: 5, reloadMs: 2000, moveMul: 0.9, auto: false, breakpoint: 1, look: BASE_LOOK },
+  longshot: { name: 'Longshot', desc: 'Heavier rounds, farther, faster', base: 'sniper', stage: 1, from: 'sniper', damage: 160, fireMs: 1700, pellets: 1, spread: 0.008, range: 1080, bulletSpeed: 3200, mag: 5, reloadMs: 2100, moveMul: 0.88, auto: false, breakpoint: 1,
+    rules: { viewMul: 1.2 },
     look: { length: 1.2, width: 1.05, barrels: 1, accent: '#c8553d', bullet: { r: 2.2, color: '#7a2e1f' } } },
-  semiAuto: { name: 'Semi-auto Rifle', desc: 'Two hits drop any armor, quick follow-ups', base: 'sniper', stage: 1, from: 'sniper', damage: 68, fireMs: 360, pellets: 1, spread: 0.015, range: 1150, bulletSpeed: 2500, mag: 10, reloadMs: 1900, moveMul: 0.92, auto: false, breakpoint: 2,
+  semiAuto: { name: 'Semi-auto Rifle', desc: 'Two hits drop any armor, quick follow-ups', base: 'sniper', stage: 1, from: 'sniper', damage: 68, fireMs: 360, pellets: 1, spread: 0.015, range: 1000, bulletSpeed: 2500, mag: 10, reloadMs: 1900, moveMul: 0.92, auto: false, breakpoint: 2,
     look: { length: 1, width: 1.1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.8, color: '#1f5560' } } },
-  piercer: { name: 'Piercer', desc: 'Rounds pass through three bodies', base: 'sniper', stage: 2, from: 'longshot', damage: 160, fireMs: 1700, pellets: 1, spread: 0.006, range: 1400, bulletSpeed: 3600, mag: 5, reloadMs: 2200, moveMul: 0.86, auto: false, penetrate: 3, breakpoint: 1,
-    rules: { viewMul: 1.6 },
+  piercer: { name: 'Piercer', desc: 'Rounds pass through three bodies', base: 'sniper', stage: 2, from: 'longshot', damage: 160, fireMs: 1700, pellets: 1, spread: 0.006, range: 1080, bulletSpeed: 3600, mag: 5, reloadMs: 2200, moveMul: 0.86, auto: false, penetrate: 3, breakpoint: 1,
     look: { length: 1.45, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#ff3b30' } } },
-  artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast', base: 'sniper', stage: 2, from: 'longshot', damage: 100, fireMs: 1500, pellets: 1, spread: 0.01, range: 1300, bulletSpeed: 1800, mag: 4, reloadMs: 2300, moveMul: 0.86, auto: false, blast: { radius: 130, damage: 80 }, breakpoint: 1,
+  artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast', base: 'sniper', stage: 2, from: 'longshot', damage: 100, fireMs: 1500, pellets: 1, spread: 0.01, range: 1080, bulletSpeed: 1800, mag: 4, reloadMs: 2300, moveMul: 0.86, auto: false, blast: { radius: 130, damage: 80 }, breakpoint: 1,
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#f76b15', bullet: { r: 4, color: '#e0661a' } } },
-  repeater: { name: 'Repeater', desc: 'Fastest follow-ups, lighter rounds', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 230, pellets: 1, spread: 0.018, range: 1100, bulletSpeed: 2600, mag: 14, reloadMs: 1800, moveMul: 0.95, auto: false,
+  repeater: { name: 'Repeater', desc: 'Fastest follow-ups, lighter rounds', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 230, pellets: 1, spread: 0.018, range: 960, bulletSpeed: 2600, mag: 14, reloadMs: 1800, moveMul: 0.95, auto: false,
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
-  ghost: { name: 'Ghost', desc: 'Suppressed marksman rifle', base: 'sniper', stage: 2, from: 'semiAuto', damage: 68, fireMs: 360, pellets: 1, spread: 0.012, range: 1150, bulletSpeed: 2600, mag: 10, reloadMs: 1900, moveMul: 0.95, auto: false, silenced: true, breakpoint: 2,
+  ghost: { name: 'Ghost', desc: 'Suppressed marksman rifle', base: 'sniper', stage: 2, from: 'semiAuto', damage: 68, fireMs: 360, pellets: 1, spread: 0.012, range: 1000, bulletSpeed: 2600, mag: 10, reloadMs: 1900, moveMul: 0.95, auto: false, silenced: true, breakpoint: 2,
     look: { length: 1.25, width: 0.95, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.6, color: '#5a2d85' } } },
 
   lmg: { name: 'LMG', desc: 'A long belt; steady when planted', base: 'lmg', stage: 0, from: null, damage: 16, fireMs: 90, pellets: 1, spread: 0.055, range: 850, bulletSpeed: 1600, mag: 100, reloadMs: 3500, moveMul: 0.82, auto: true, look: BASE_LOOK },

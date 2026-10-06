@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
-import type { InputState } from '../src/shared/protocol.ts';
+import { VIEW_PRELOAD_MARGIN, type InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick, isSteady, pendingPick, spreadFor } from '../src/shared/sim/stats.ts';
@@ -121,15 +121,26 @@ test('a minigun spins up: its first shots come slowly and the held rate climbs t
   assert.ok(gaps(light.w, light.p, 10)[0]! * TICK_MS < GUNS.lightMg.fireMs + TICK_MS, 'a light MG does not spin up');
 });
 
-test('a sniper sees 35% further, its Optics stack on top, and the server sends what that view holds', () => {
+test('a sniper\'s scope stretches its view 15% only once it is steady, and the server sends what that view holds', () => {
   const w = emptyWorld();
   const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
   const pistol = spawnAt(w, 1000, 1400);
-  const target = spawnAt(w, 2100, 1200);
-  assert.equal(snapshotFor(w, sniper.id).self.viewRadius, WORLD.viewRadius * 1.35);
-  assert.equal(snapshotFor(w, pistol.id).self.viewRadius, WORLD.viewRadius);
-  assert.ok(snapshotFor(w, sniper.id).players.some((q) => q.id === target.id), 'the sniper sees 1100px out');
-  assert.ok(!snapshotFor(w, pistol.id).players.some((q) => q.id === target.id), 'the pistol does not');
+  const target = spawnAt(w, 1000 + WORLD.viewRadius + VIEW_PRELOAD_MARGIN + WORLD.playerRadius + 60, 1000);
+  const view = (p: Player) => snapshotFor(w, p.id).self.viewRadius;
+  const sees = (p: Player) => snapshotFor(w, p.id).players.some((q) => q.id === target.id);
+  run(w, 400);
+  assert.equal(view(sniper), WORLD.viewRadius * 1.15);
+  assert.equal(view(pistol), WORLD.viewRadius);
+  assert.ok(sees(sniper), 'the planted sniper sees past the pistol\'s view');
+  press(w, sniper, { up: true });
+  step(w, TICK_MS);
+  assert.equal(view(sniper), WORLD.viewRadius, 'walking drops the scope');
+  assert.ok(!sees(sniper), 'and what only it showed');
+  press(w, sniper, {});
+  run(w, 300);
+  assert.equal(view(sniper), WORLD.viewRadius, 'still settling');
+  run(w, 100);
+  assert.equal(view(sniper), WORLD.viewRadius * 1.15, 'steady again');
 });
 
 test('each class is offered its own five attachments', () => {

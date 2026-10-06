@@ -6,19 +6,14 @@ import { doctrineBreaches, dominatedPairs, edgesOver, rangeBeyondView, type Pair
 const KNOWN_DOMINATED: readonly Pair[] = [];
 const KNOWN_BEYOND_VIEW: readonly GunId[] = [];
 const KNOWN_BREACHES: Partial<Record<GunId, readonly string[]>> = {
-  sniper: ['scope'],
   lmg: ['aim@100', 'aim@300', 'aim@600', 'close'],
   executioner: ['aim@300', 'aim@600'],
   heavySmg: ['aim@600'],
   ripper: ['aim@600', 'falloff'],
   bulldog: ['aim@100', 'aim@300', 'aim@600', 'falloff'],
-  scout: ['scope'],
-  longshot: ['scope'],
-  semiAuto: ['cadence', 'scope', 'aim@100', 'aim@300', 'aim@900'],
-  piercer: ['scope'],
-  artillery: ['scope'],
-  repeater: ['cadence', 'scope', 'aim@100', 'aim@300', 'aim@600', 'aim@900'],
-  ghost: ['cadence', 'scope', 'aim@300'],
+  semiAuto: ['cadence', 'aim@100', 'aim@300', 'aim@900'],
+  repeater: ['cadence', 'aim@100', 'aim@300', 'aim@600', 'aim@900'],
+  ghost: ['cadence', 'aim@300'],
   heavyLmg: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
   lightMg: ['aim@100', 'aim@300', 'aim@600', 'close'],
   minigun: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],

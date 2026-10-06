@@ -3,7 +3,7 @@ import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot,
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
-import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
+import { easeView, makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
@@ -80,6 +80,7 @@ let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
 let trauma = 0;
 let lastFrameAt = 0;
+let shownView: number = WORLD.viewRadius;
 
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
@@ -417,7 +418,8 @@ function drawFrame(now: number) {
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
-  aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
+  shownView = easeView(shownView, snap.self.viewRadius || WORLD.viewRadius, now - lastFrameAt);
+  aimCamera = makeCamera(s.lastSelf, view.w, view.h, shownView);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);

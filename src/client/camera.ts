@@ -10,6 +10,10 @@ export function makeCamera(center: Point, w: number, h: number, viewRadius: numb
   return { x: center.x, y: center.y, w, h, viewHalfW, viewHalfH, scale: Math.min(w / (2 * viewHalfW), h / (2 * viewHalfH)) };
 }
 
+const VIEW_EASE_MS = 150;
+/** Glides the drawn view toward the server's, so a scope settling in or dropping out zooms rather than jumps. */
+export const easeView = (shown: number, target: number, dtMs: number): number => target + (shown - target) * Math.exp(-Math.max(0, dtMs) / VIEW_EASE_MS);
+
 export const worldToScreen = (c: Camera, p: Point): Point => ({
   x: (p.x - c.x) * c.scale + c.w / 2,
   y: (p.y - c.y) * c.scale + c.h / 2,
