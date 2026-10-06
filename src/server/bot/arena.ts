@@ -60,5 +60,6 @@ export function openSpot(a: BotArena, rand: () => number, near?: { at: Point; r:
       : { x: rand() * a.size, y: rand() * a.size };
     if (p.x > 0 && p.y > 0 && p.x < a.size && p.y < a.size && isOpen(a.nav, p)) return p;
   }
+  if (near && near.r < a.size) return openSpot(a, rand, { at: near.at, r: near.r * 2 });
   return near?.at ?? { x: a.size / 2, y: a.size / 2 };
 }
