@@ -114,7 +114,7 @@ test('the report sums the squad\'s turret kills by kind and the Bastion\'s, and 
 test('the build preview refuses at night, while down, and when the bank is short, as the server does', () => {
   const cases: [string, (w: World, id: number) => void][] = [
     ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity }; }],
-    ['notDay', (w, id) => { w.players.get(id)!.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0 }; }],
+    ['notDay', (w, id) => { w.players.get(id)!.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0, hp: 0 }; }],
     ['scrap', (w) => { w.run!.scrap = BUILDINGS.wall.cost - 1; }],
   ];
   for (const [reason, arrange] of cases) {
@@ -176,7 +176,7 @@ test('holding E is offered for a downed squadmate in reach before a worn wall, a
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 30, hp: 100 });
   assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the wall');
   const mate = spawnAt(w, AT.x + 50, AT.y, { name: 'Ann' });
-  mate.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0 };
+  mate.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0, hp: 0 };
   assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to revive Ann');
   mate.x += ZOM.reviveRange;
   w.run!.scrap = 0;

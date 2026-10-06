@@ -265,7 +265,10 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
   shooting.settleShots(s, snap, now);
-  for (const ev of snap.events) if (ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life') s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+  for (const ev of snap.events) {
+    const repeatsKnock = ev.e === 'life' && ev.k === 'downed' && !!snap.royale;
+    if ((ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life' || ev.e === 'wiped') && !repeatsKnock) s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+  }
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
   if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
@@ -412,7 +415,8 @@ function drawFrame(now: number) {
   s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
-  if (me?.alive || me?.downed) s.lastSelf = { x: me.x, y: me.y };
+  const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
+  if (eye) s.lastSelf = { x: eye.x, y: eye.y };
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
   lastFrameAt = now;

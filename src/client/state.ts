@@ -26,7 +26,7 @@ export type Effect =
 
 export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 420, tracer: 240 };
 
-type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' }> & { at: number };
+type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 
 /** Everything needed to join the same room again as the same player. */

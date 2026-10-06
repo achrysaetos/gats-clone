@@ -1,9 +1,10 @@
 import type { WebSocket } from 'ws';
-import { WORLD, ZOM, type ModeId, type PlayerKind } from '../shared/defs.ts';
+import { COLOR_IDS, ROYALE, WORLD, ZOM, type ModeId, type PlayerKind } from '../shared/defs.ts';
 import { MAPS, ROTATION } from '../shared/maps.ts';
-import { parseClientMsg, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
+import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
+import { benchUntilNextMatch, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
 import { build, demolish, toggleReady } from '../shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { choosePick } from '../shared/sim/stats.ts';
@@ -60,9 +61,19 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const humans = (team: Team) => [...world.players.values()].filter((p) => p.kind === 'human' && p.team === team).length;
     if (mode === 'FFA') return [[null, Math.max(0, limits.minPlayers - humans(null))]];
     if (mode === 'ZOM') return [['red', Math.max(0, ZOM.squadSize - humans('red'))]];
+    if (mode === 'BR') return COLOR_IDS.map((team) => [team, Math.max(0, ROYALE.squadSize - humans(team))]);
     const seats = botSeats({ red: humans('red'), blue: humans('blue') }, limits.minPlayers, BOTS_PER_HUMAN, limits.minPlayers);
     return [['red', seats.red], ['blue', seats.blue]];
   }
+
+  function addBot(team: Team) {
+    const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
+    const p = addPlayer(world, name, randomLoadout(botRand), { team });
+    bots.set(p.id, newBotMemory(botRand));
+    return p;
+  }
+
+  const seatOpen = (team: Team) => !world.royale || (redeploysOpen(world.royale) && world.match.k === 'playing' && (team === null || !world.royale.out.includes(team)));
 
   function balanceBots() {
     for (const [team, want] of botTargets()) {
@@ -71,12 +82,18 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         bots.delete(id);
         removePlayer(world, id);
       }
-      for (let i = mine.length; i < want; i++) {
-        const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
-        const p = addPlayer(world, name, randomLoadout(botRand), { team });
-        bots.set(p.id, newBotMemory(botRand));
-      }
+      if (seatOpen(team)) for (let i = mine.length; i < want; i++) addBot(team);
     }
+  }
+
+  function seatHuman(name: string, loadout: Loadout) {
+    const seat = seatFor(world);
+    const p = addPlayer(world, name, loadout, { kind: 'human', team: seat?.team ?? null, ...(seat && { at: seat }) });
+    if (!seat) { benchUntilNextMatch(p); return p; }
+    takeSeat(world, p, seat);
+    bots.delete(seat.id);
+    removePlayer(world, seat.id);
+    return p;
   }
 
   /** Humans split evenly first, so a lone pair lands on opposite sides; balanceBots then evens the sides out with bots. */
@@ -108,7 +125,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
       const takenByAnotherAccount = (n: string) => registered(n) && n.toLowerCase() !== account?.toLowerCase();
       const name = uniqueName(account ?? (moderator.isClean(msg.name) ? msg.name : 'Player'), names(), takenByAnotherAccount);
-      const p = addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
+      const p = mode === 'BR' ? seatHuman(name, msg.loadout) : addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
@@ -144,6 +161,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const c = clients.get(ws);
     clients.delete(ws);
     if (c?.k !== 'joined') return;
+    const left = world.players.get(c.playerId);
+    if (mode === 'BR' && left?.team && seatOpen(left.team)) takeSeat(world, addBot(left.team), left);
     removePlayer(world, c.playerId);
     creditLives(c);
     balanceBots();
@@ -169,6 +188,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   }
 
   balanceBots();
+  let seatedRoyale = world.royale;
 
   return {
     id,
@@ -214,6 +234,10 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // A room nobody is playing in stands still: its bots would otherwise burn the server's whole CPU share around the clock.
       if (joined().length === 0) return;
       const events = advance();
+      if (world.royale !== seatedRoyale) {
+        seatedRoyale = world.royale;
+        balanceBots();
+      }
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;
         const walls = wallViews(world);

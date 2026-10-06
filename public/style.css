@@ -217,6 +217,7 @@ kbd {
 .mode-tdm { background: #4f4045; color: #ffadb0; }
 .mode-dom { background: #3f475c; color: #b5c6ff; }
 .mode-zom { background: #43503d; color: #c3e392; }
+.mode-br { background: #523f5c; color: #dcbcf2; }
 
 .squad { display: grid; gap: var(--s2); }
 .squad-pitch { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); align-items: center; font-size: var(--t-label); color: var(--muted); }

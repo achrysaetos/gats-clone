@@ -54,7 +54,7 @@ test('squadmates see a downed player with the revive and bleed-out clocks; nobod
   const w = zomWorld();
   const p = spawnAt(w, 1380, 1500);
   const mate = spawnAt(w, 1380, 1560);
-  mate.life = { k: 'downed', bleedOutAt: 9000, reviveProgress: ZOM.reviveMs / 4 };
+  mate.life = { k: 'downed', bleedOutAt: 9000, reviveProgress: ZOM.reviveMs / 4, hp: 0 };
   assert.deepEqual(snapshotFor(w, p.id).players.find((v) => v.id === mate.id)?.downed, { revive: 0.25, bleedOutAt: 9000 });
   assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.downed, undefined);
   mate.life = { k: 'dead', respawnAt: Infinity };

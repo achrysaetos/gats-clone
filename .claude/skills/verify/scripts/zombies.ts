@@ -42,7 +42,7 @@ ws.on('message', (raw) => {
   seen.maxZombies = Math.max(seen.maxZombies, snap.run.aliveZombies);
   for (const e of snap.events) {
     if (e.e === 'zkill') seen.zkills++;
-    if (e.e === 'life') seen[e.k]++;
+    if (e.e === 'life' && e.k !== 'finished' && e.k !== 'redeployed') seen[e.k]++;
   }
 });
 ws.send(JSON.stringify({ t: 'join', name: 'Driver', loadout: { weapon: 'lmg', armor: 'medium', color: 'blue' }, aspect: 16 / 9 }));

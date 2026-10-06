@@ -64,7 +64,7 @@ test('squads: a code opens a private zombies room, humans take bots\' seats up t
   assert.match(room, /^z-[a-z2-7]{6}$/);
   assert.deepEqual(kinds(room), ['bot', 'bot', 'bot', 'bot'], 'bots fill an empty squad');
   const listed = (await (await fetch(base + '/api/servers')).json()) as { id: string }[];
-  assert.deepEqual(listed.map((s) => s.id), ['ffa', 'tdm', 'dom'], 'squads stay off the server list');
+  assert.deepEqual(listed.map((s) => s.id), ['ffa', 'tdm', 'dom', 'br'], 'squads stay off the server list');
 
   const first = await join(room, 'Ann');
   opened.push(room);

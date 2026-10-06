@@ -63,7 +63,7 @@ export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
 type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
 
-export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number };
+export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point } };
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
   patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500,
@@ -121,6 +121,10 @@ function zoneToHold(v: Perception, c: IntentCtx): ZoneView | null {
 }
 
 function idlePlan(v: Perception, c: IntentCtx): Plan {
+  if (c.home) {
+    const spots = coverNear(c.arena.cover, c.home.at, c.home.r);
+    return spots.length ? { k: 'takePosition', spot: spots[Math.floor(c.rand() * spots.length)]!, facing: c.home.face } : { k: 'patrol', goal: openSpot(c.arena, c.rand, c.home) };
+  }
   const centre = { x: c.arena.size / 2, y: c.arena.size / 2 };
   const zone = zoneToHold(v, c);
   if (zone) return { k: 'takePosition', spot: openSpot(c.arena, c.rand, { at: zone, r: zone.r * 0.6 }), facing: centre };

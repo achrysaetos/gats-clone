@@ -10,6 +10,7 @@ import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
 import { drawSilhouette } from './sprites.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
+import { resultTitle } from './royale.ts';
 import { outTillDawnText, reportRows, reportTitle, turretLine } from './zombies.ts';
 
 const CHAT_VISIBLE_MS = 15000;
@@ -152,11 +153,11 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const renderBanner = (snap: Snapshot) => {
     const { winner, restartIn } = snap.match;
     const { rows: podium, score: teamLine } = roundPodium(snap.match, snap.leaderboard, PODIUM_SIZE);
-    const key = winner === null ? '' : `${winner.name}|${winner.note}|${teamLine}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
+    const key = winner === null || snap.royale ? '' : `${winner.name}|${winner.note}|${teamLine}|${seconds(restartIn)}|${podium.map((r) => `${r.id}:${r.kills}`).join(',')}`;
     if (key === keys.banner) return;
     keys.banner = key;
-    banner.hidden = winner === null;
-    if (winner === null) return;
+    banner.hidden = key === '';
+    if (winner === null || key === '') return;
     const h = document.createElement('h2');
     h.textContent = `${winner.name} wins the round`;
     const note = document.createElement('p');
@@ -198,7 +199,33 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     objective.classList.toggle('siege', !!snap.run);
   };
 
+  const renderResult = (snap: Snapshot) => {
+    const result = snap.royale?.result ?? null;
+    const { winner, restartIn } = snap.match;
+    const key = result ? `${result.place}|${result.of}|${result.kills}|${result.knocks}|${result.revives}|${winner?.name}|${seconds(restartIn)}` : '';
+    if (key === keys.report) return;
+    keys.report = key;
+    report.hidden = !result;
+    if (!result) return;
+    report.classList.toggle('won', result.place === 1);
+    const h = document.createElement('h2');
+    h.textContent = resultTitle(result);
+    const table = document.createElement('table');
+    const head = document.createElement('tr');
+    const row = document.createElement('tr');
+    row.className = 'you';
+    for (const [label, v] of [['Kills', result.kills], ['Knocks', result.knocks], ['Revives', result.revives]] as const) {
+      head.append(Object.assign(document.createElement('th'), { textContent: label }));
+      row.append(Object.assign(document.createElement('td'), { textContent: String(v) }));
+    }
+    table.append(head, row);
+    const next = document.createElement('p');
+    next.textContent = winner ? `${winner.name} wins · next match in ${seconds(restartIn)}s` : 'Your squad is out · watching the rest of the match';
+    report.replaceChildren(h, table, next);
+  };
+
   const renderReport = (snap: Snapshot, clockNow: number | null) => {
+    if (snap.royale) { renderResult(snap); return; }
     const run = snap.run;
     const done = run?.phase === 'over' && run.report ? run.report : null;
     const left = done && run?.phaseEndsAt != null && clockNow !== null ? seconds(run.phaseEndsAt - clockNow) : null;
@@ -237,8 +264,8 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}|${run?.phase}|${run?.waveLeft}` : '';
     if (key === keys.death) return;
     keys.death = key;
-    death.hidden = !dead;
-    if (!dead) return;
+    death.hidden = !dead || !!snap.royale;
+    if (!dead || snap.royale) return;
     respawn.hidden = deathLoadout.hidden = !!run;
     if (run) {
       // Dawn gets everyone up, so a death this run can only be tonight's bleed-out; a night joiner has none.

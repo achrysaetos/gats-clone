@@ -1,4 +1,4 @@
-import { WORLD, type BuildingKind } from '../shared/defs.ts';
+import { ROYALE, WORLD, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, CrateView, RunView, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { paintFloor, paintFoliage, paintGrain, type Grain } from './grain.ts';
@@ -49,7 +49,7 @@ export const curbSolids = (size: number): Solid[] => [
   { kind: 'curb', x: -CURB, y: size, w: size + CURB * 2, h: CURB },
 ];
 
-export const crateSolid = (c: CrateView): Solid => ({ kind: 'planter', x: c.x, y: c.y, w: c.size, h: c.size, wear: 1 - c.hp / WORLD.crateHp });
+export const crateSolid = (c: CrateView): Solid => ({ kind: c.drop ? 'slate' : 'planter', x: c.x, y: c.y, w: c.size, h: c.size, wear: 1 - c.hp / (c.drop ? ROYALE.dropHp : WORLD.crateHp) });
 
 const BUILDING_SOLID: Record<BuildingKind, SolidKind> = { wall: 'brick', sentry: 'pad', cannon: 'pad', scatter: 'pad', mortar: 'pad' };
 

@@ -27,7 +27,7 @@ export const PALETTE = {
 
 export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as const;
 
-export const TEAM_COLORS: Record<Exclude<Team, null>, string> = { red: COLORS.red, blue: COLORS.blue };
+export const TEAM_COLORS: Record<Exclude<Team, null>, string> = COLORS;
 
 export const ARMOR_RIM: Record<ArmorId, number> = { none: 0, light: 0.8, medium: 1.6, heavy: 2.4 };
 

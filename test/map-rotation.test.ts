@@ -16,7 +16,7 @@ function assertStandingInSpawns(w: World, map: MapId) {
     if (p.life.k !== 'alive') continue;
     const size = MAPS[map].size;
     assert.ok(p.x > 0 && p.y > 0 && p.x < size && p.y < size, `${p.name} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) is off the ${MAPS[map].name} map`);
-    if (p.team !== null) {
+    if (p.team === 'red' || p.team === 'blue') {
       const regions = MAPS[map].spawns[p.team];
       assert.ok(regions.some((r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h), `${p.name} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) is outside the ${MAPS[map].name} spawns`);
     }

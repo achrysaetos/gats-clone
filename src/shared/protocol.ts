@@ -5,7 +5,7 @@ import {
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
-export type Team = 'red' | 'blue' | null;
+export type Team = ColorId | null;
 
 export type InputState = {
   up: boolean; down: boolean; left: boolean; right: boolean;
@@ -55,13 +55,13 @@ export type PlayerView = {
   hunted: boolean;
   /** Fresh from a spawn and not yet firing: takes no damage. */
   spawnShield?: true;
-  /** Zombies only, while down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. */
+  /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
 
 /** `gun` is null for shrapnel. */
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
-export type CrateView = { id: number; x: number; y: number; hp: number; size: number };
+export type CrateView = { id: number; x: number; y: number; hp: number; size: number; drop?: true };
 export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
@@ -111,7 +111,8 @@ export type DamageKind = 'player' | 'crate' | 'zombie' | 'building';
 
 export type GameEvent =
   /** `assisters` are the other players paid an assist for this kill. */
-  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[] }
+  /** `knock` when the victim went down with a squadmate still standing: the knock pays the kill. */
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[]; knock?: true }
   | { e: 'hunted'; id: number; name: string }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
@@ -123,8 +124,37 @@ export type GameEvent =
   /** A turret at cell center (`x`, `y`) fired toward `angle`, to 0.01 rad. Its rounds stay off `bullets`: the client draws each from this. */
   /** `reach` is how far a lobbed round flies before it bursts. */
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }
-  /** A squad player went down, was revived (`by` the reviver), or bled out. */
-  | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut'; by: number | null };
+  /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
+  | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
+  /** A Last Squad squad has nobody left standing; `place` is where it finished. */
+  | { e: 'wiped'; team: ColorId; place: number };
+
+export type Circle = { x: number; y: number; r: number };
+/**
+ * The safe circle is `from` until `shrinkAt`, closes to `to` by `closeAt`, then holds there; `phase` counts the phases closed before this one.
+ * Once the last phase closes `from` and `to` are the final circle.
+ */
+export type RingView = { phase: number; from: Circle; to: Circle; shrinkAt: number; closeAt: number };
+export const ringAt = (ring: RingView, now: number): Circle => {
+  if (now <= ring.shrinkAt) return ring.from;
+  if (now >= ring.closeAt) return ring.to;
+  const k = (now - ring.shrinkAt) / (ring.closeAt - ring.shrinkAt);
+  const lerp = (a: number, b: number) => a + (b - a) * k;
+  return { x: lerp(ring.from.x, ring.to.x), y: lerp(ring.from.y, ring.to.y), r: lerp(ring.from.r, ring.to.r) };
+};
+export type Pip = 'up' | 'down' | 'dead';
+/** `place` once the squad is out, 1 for the winner. */
+export type SquadView = { team: ColorId; pips: Pip[]; place: number | null };
+/** Where a Last Squad match ended for you: `place` of `of` squads. */
+export type RoyaleResult = { place: number; of: number; kills: number; knocks: number; revives: number };
+/**
+ * `redeploys` stays true until the third phase closes. `redeployAt` is the server time you come back, null when no redeploy is coming.
+ * `drops` are supply drops about to land or landed and still standing; `watch` is the player your camera follows while you are dead.
+ */
+export type RoyaleView = {
+  ring: RingView; redeploys: boolean; squads: SquadView[]; redeployAt: number | null;
+  drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
+};
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
@@ -163,10 +193,12 @@ export type Snapshot = {
   zombies?: ZombieView[];
   buildings?: BuildingView[];
   run?: RunView;
+  /** Last Squad only. */
+  royale?: RoyaleView;
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
 

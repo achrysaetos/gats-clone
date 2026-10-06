@@ -70,7 +70,7 @@ export async function openPage(opts: {
 export async function serversListed(page: Page, ms = 6000): Promise<boolean> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    if ((await page.js(`document.querySelectorAll('#servers .server').length`)) === 3) return true;
+    if ((await page.js(`document.querySelectorAll('#servers .server').length`)) === 4) return true;
     await sleep(100);
   }
   return false;

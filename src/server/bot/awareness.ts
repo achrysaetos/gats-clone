@@ -57,8 +57,9 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const solids: Rect[] = [...arena.walls, ...snap.crates.map(crateRect)];
   const sight = viewExtents(snap.self.viewRadius, VIEW_ASPECT.max);
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
-  const threats = snap.players
-    .filter((p) => enemy(p) && p.alive && !p.downed && !p.spawnShield && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH && clearShot(solids, me, p))
+  const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH && clearShot(solids, me, p);
+  const standing = snap.players.filter((p) => p.alive && inSight(p));
+  const threats = (standing.length || !snap.royale ? standing : snap.players.filter((p) => p.downed && inSight(p)))
     .map((p) => ({ p, d: dist(p, me) }))
     .sort((a, b) => danger(b.p) - danger(a.p) || a.d - b.d);
 

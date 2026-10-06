@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { isPerkId, PERK_INFO, pickOptions, type GunId } from '../../../../src/shared/defs.ts';
 import { segmentEntersRectAt, type Rect } from '../../../../src/shared/sim/movement.ts';
-import type { Snapshot } from '../../../../src/shared/protocol.ts';
+import type { Snapshot, Team } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
 import { dirKey, hold, joinFromMenu, key, openPage, respawnIfDead, sleep, type Dir } from './lib/browser.ts';
 
@@ -21,7 +21,7 @@ const W = 1280, H = 800;
 const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
 const problems: string[] = [];
 
-type Player = { id: number; name: string; x: number; y: number; team: 'red' | 'blue' | null; alive: boolean; gun: GunId };
+type Player = { id: number; name: string; x: number; y: number; team: Team; alive: boolean; gun: GunId };
 type Dmg = { e: 'dmg'; attacker: number | null; victim: number; amount: number; kind: 'player' | 'crate' };
 type Snap = {
   t: 'snap'; self: { id: number; viewRadius: number; perks: Record<string, string> }; players: Player[];

@@ -44,7 +44,7 @@ test('a squad bot walks over to a downed human and holds use until they are up',
   farZombie(w);
   const bot = spawnAt(w, CORE.x - 300, CORE.y + 250);
   const human = spawnAt(w, CORE.x + 150, CORE.y + 200, { kind: 'human' });
-  human.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0 };
+  human.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0, hp: 0 };
   assert.ok(play(w, [bot], 15_000, () => human.life.k === 'alive'), 'the human got up');
   assert.equal(w.run!.stats.get(bot.id)?.revives, 1);
 });

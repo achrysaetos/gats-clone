@@ -5,7 +5,7 @@ description: Drive the Skirmish browser game (top-down multiplayer shooter, Node
 
 # Verify Skirmish
 
-Skirmish is a browser game. The user touches the web page served by `src/server/main.ts`: the menu (loadout, rooms, account) and the canvas game (HUD, chat, death screen). The server also exposes `/api/*` JSON routes and a WebSocket at `/ws?room=<ffa|tdm|dom>`, or `?room=<code>` for a zombies squad opened with `POST /api/squads`. Bots fill every room, so a single driver always has opponents.
+Skirmish is a browser game. The user touches the web page served by `src/server/main.ts`: the menu (loadout, rooms, account) and the canvas game (HUD, chat, death screen). The server also exposes `/api/*` JSON routes and a WebSocket at `/ws?room=<ffa|tdm|dom|br>`, or `?room=<code>` for a zombies squad opened with `POST /api/squads`. Bots fill every room, so a single driver always has opponents.
 
 All helpers live in `.claude/skills/verify/scripts/` and take one argument, a run directory you choose. Put it in your session scratchpad, for example `RUN=<scratchpad>/verify-$(date +%s)`. Every instance gets its own port and data dir, so parallel runs never share state. Never drive a server this run did not start, and never touch the user's `data/` directory.
 
@@ -23,7 +23,7 @@ It runs `npm install` if `node_modules` is missing, rebuilds `public/game.js` wi
 .claude/skills/verify/scripts/doctor.sh "$RUN"
 ```
 
-Read-only. It checks the pid is alive, the port is owned by that pid, all three rooms answer `/api/servers`, `game.js` is served, and the bundle is newer than every `src/**/*.ts`. A stale bundle means the browser runs old code. Relaunch instead of driving it. Run doctor first whenever a result looks wrong.
+Read-only. It checks the pid is alive, the port is owned by that pid, all four rooms answer `/api/servers`, `game.js` is served, and the bundle is newer than every `src/**/*.ts`. A stale bundle means the browser runs old code. Relaunch instead of driving it. Run doctor first whenever a result looks wrong.
 
 ## Drive
 
@@ -80,6 +80,14 @@ LAG=80 node .claude/skills/verify/scripts/guns.ts "$RUN"
 ```
 
 One muted browser at a time proves the class gun rules through real input. An assault rifle held for 1.6s must open its reticle to about double (read from `skirmishDev.trigger()`) and close it within 400ms of release. A Minigun held for 2.2s must start with a gap of at least 2.2x its `fireMs` between own shot sounds, reach its `fireMs` by the end, and start slow again after a second off the trigger. A sniper's camera must take in 1.35x the pistol's view (from `skirmishDev.toScreen`). Every hold must draw each server shot on time with none taken back. Minigun is a stage-2 gun, so point it at a scratch copy (the rsync recipe in [the progression recipe](features/progression-death-modes.md)) whose `addPlayer` in `src/shared/sim.ts` and `resetProgress` in `src/shared/sim/stats.ts` hand an `lmg` loadout the `minigun`, with `minPlayers` at `0` for a quiet room. Screenshots: `guns-assault-idle`, `guns-assault-held` (3x crops round the reticle), `guns-assault-held-full`, `guns-assault-released`, `guns-minigun-spinning-up`, `guns-minigun-spun`, `guns-sniper-view`. Its log is `$RUN/evidence/guns.log`.
+
+### Last Squad
+
+```bash
+node .claude/skills/verify/scripts/royale-ui.ts "$RUN"
+```
+
+One muted headless Chrome joins the br room through the menu, walks out of the ring and stays there until the ring knocks and kills it, then checks spectating and the result card, with a screenshot of each. Run it on a scratch copy with a fast ring. The recipe and its log lines are in [the Last Squad feature file](features/last-squad.md).
 
 ### Zombies
 

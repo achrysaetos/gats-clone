@@ -1,8 +1,10 @@
-import { ARMORS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
+import { ARMORS, HP_MULTIPLIER, ROYALE, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
-import { damageZombie, goDown } from './run.ts';
+import { goDown } from './downed.ts';
+import { fall, hurtDowned, openDrop } from './royale.ts';
+import { damageZombie } from './run.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
@@ -28,9 +30,13 @@ type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Sh
 type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
-  if (victim.life.k !== 'alive' || w.match.k === 'over') return;
+  if (victim.life.k === 'dead' || w.match.k === 'over') return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
+  if (victim.life.k === 'downed') {
+    if (w.royale) hurtDowned(w, victim, a?.kind === 'human' ? amount * HP_MULTIPLIER[victim.kind] : amount, a);
+    return;
+  }
   if (w.run && src.team !== null) return;
   const life = victim.life;
   if (!w.run && w.now < life.shieldUntil) return;
@@ -72,18 +78,16 @@ function creditFor(w: World, victim: Player, killer: Player | null): Player | nu
   return top;
 }
 
-function kill(w: World, victim: Player, killer: Player | null, label: string) {
+export function kill(w: World, victim: Player, killer: Player | null, label: string) {
   if (w.run) { goDown(w, victim); return; }
   const credited = creditFor(w, victim, killer);
   const named = credited ?? killer;
   const bounty = credited !== null && isHunted(w, victim);
   const assisters = assistersOf(w, victim, credited);
-  victim.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
-  victim.deaths++;
-  w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
+  const knock = w.royale ? fall(w, w.royale, victim, named) : (die(w, victim, w.now + WORLD.respawnMs), false);
   w.events.push({
     e: 'kill', killer: named?.name ?? '', victim: victim.name, killerId: named?.id ?? null, victimId: victim.id, weapon: label, bounty,
-    assisters: assisters.map((p) => p.id),
+    assisters: assisters.map((p) => p.id), ...(knock && { knock: true as const }),
   });
   for (const p of assisters) addScore(w, p, WORLD.assistScore);
   if (!credited) return;
@@ -91,6 +95,12 @@ function kill(w: World, victim: Player, killer: Player | null, label: string) {
   credited.lifeKills++;
   addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
   MODES[w.mode].onKill(w, credited, victim);
+}
+
+export function die(w: World, victim: Player, respawnAt: number) {
+  victim.life = { k: 'dead', respawnAt };
+  victim.deaths++;
+  w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
 }
 
 function assistersOf(w: World, victim: Player, killer: Player | null): Player[] {
@@ -111,9 +121,11 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   const h = c.size / 2;
   w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate' });
   if (c.hp > 0) return;
-  c.respawnAt = w.now + CRATE_RESPAWN_MS;
+  c.respawnAt = w.royale ? Infinity : w.now + CRATE_RESPAWN_MS;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
-  if (attacker) addScore(w, attacker, WORLD.crateScore);
+  if (!attacker) return;
+  addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
+  if (c.drop) openDrop(w, attacker);
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
@@ -172,7 +184,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),
     ...[...w.players.values()]
-      .filter((p) => p.id !== b.owner && p.life.k === 'alive' && !friendly(b.team, p) && !b.passed.includes(p.id))
+      .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !b.passed.includes(p.id))
       .flatMap((p) => {
         const at = view.poseOf(p);
         return at ? [{
@@ -238,7 +250,7 @@ export function tickBullets(w: World, dt: number) {
 
 export function recordPoses(w: World) {
   const poses = new Map<number, Pose>();
-  for (const p of w.players.values()) if (p.life.k === 'alive') poses.set(p.id, { x: p.x, y: p.y });
+  for (const p of w.players.values()) if (p.life.k !== 'dead') poses.set(p.id, { x: p.x, y: p.y });
   w.history.push({ at: w.now, poses, walls: w.walls });
   while (w.history.length > 2 && w.history[1]!.at <= w.now - MAX_REWIND_MS) w.history.shift();
 }

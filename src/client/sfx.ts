@@ -1,11 +1,14 @@
 import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
+import { TICK_MS } from './interp.ts';
+import { ringMoved } from './royale.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
   | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
-  | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`;
+  | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
+  | 'knock' | 'ring';
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
@@ -102,6 +105,12 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   ],
   downed: [{ src: 'tone', wave: 'sawtooth', pitchHz: [330, 110], ms: 650, gain: 0.3 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [700, 120], ms: 400, gain: 0.25 }],
   revived: [note(523, 0, 110, 0.2), note(784, 100, 260, 0.22)],
+  knock: [thump(240, 110, 0.45), note(740, 0, 80, 0.2), note(554, 80, 170, 0.2)],
+  ring: [
+    { src: 'tone', wave: 'sawtooth', pitchHz: [82, 62], ms: 1500, gain: 0.16 },
+    { src: 'tone', wave: 'triangle', pitchHz: [123, 93], ms: 1500, gain: 0.14 },
+    { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [420, 140], ms: 1300, gain: 0.16 },
+  ],
 };
 
 /** Each 100 hp the core loses sounds once, so a crowd chewing on it reads as a steady alarm rather than a buzz. */
@@ -132,7 +141,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1 }); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
       case 'kill':
-        if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(ev.bounty ? 'bounty' : 'kill');
+        if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(ev.bounty ? 'bounty' : ev.knock ? 'knock' : 'kill');
         break;
       case 'zkill':
         if (ev.by === next.self.id) cues.push({ id: 'splat', x: ev.x, y: ev.y, self: true, gain: 1 });
@@ -142,8 +151,9 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         if (!cues.some((c) => c.id === `turret:${ev.kind}`)) cues.push({ id: `turret:${ev.kind}`, x: ev.x, y: ev.y, self: false, gain: 1 });
         break;
       case 'life':
-        if (ev.id === next.self.id && ev.k !== 'revived') mine(ev.k === 'downed' ? 'downed' : 'death');
-        else if (ev.k === 'revived' && (ev.id === next.self.id || ev.by === next.self.id)) mine('revived');
+        if (ev.id === next.self.id && (ev.k === 'downed' || ev.k === 'bledOut' || ev.k === 'finished')) mine(ev.k === 'downed' ? 'downed' : 'death');
+        else if ((ev.k === 'revived' && (ev.id === next.self.id || ev.by === next.self.id)) || (ev.k === 'redeployed' && ev.id === next.self.id)) mine('revived');
+        else if (ev.k === 'finished' && ev.by === next.self.id) mine('kill');
         break;
     }
   }
@@ -153,6 +163,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     if (ev.kind === 'player' && ev.victim === next.self.id && ev.attacker === null && next.run && !cues.some((c) => c.id === 'bite')) mine('bite');
   }
   if (!prev) return cues;
+  if (ringMoved(prev.royale, next.royale, prev.tick * TICK_MS, next.tick * TICK_MS)) mine('ring');
   const run = next.run, ran = prev.run;
   if (run && ran) {
     if (ran.phase === 'day' && run.phase === 'night') mine('horn');
