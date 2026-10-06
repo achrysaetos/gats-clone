@@ -44,7 +44,7 @@ export type ClientMsg =
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
-  hp: number; maxHp: number; armor: number; maxArmor: number;
+  hp: number; maxHp: number;
   color: ColorId; gun: GunId; team: Team;
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;

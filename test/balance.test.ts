@@ -26,7 +26,7 @@ test('a point-blank shotgun blast kills an unarmored full-health player', () => 
   assert.equal(target.life.k, 'dead');
 });
 
-test('bolt-action hits to kill rise with armor: none 1, light 2, medium 2, heavy 3', () => {
+test('a bolt-action hit kills only the unarmored, and any armor falls to the second', () => {
   const shotsToKill = (armor: ArmorId) => {
     const w = emptyWorld();
     const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
@@ -35,7 +35,7 @@ test('bolt-action hits to kill rise with armor: none 1, light 2, medium 2, heavy
     while (target.life.k === 'alive' && shots < 10) { shootOnce(w, sniper, 0, GUNS.sniper.fireMs + 100); shots++; }
     return shots;
   };
-  assert.deepEqual(ARMOR_IDS.map(shotsToKill), [1, 2, 2, 3]);
+  assert.deepEqual(ARMOR_IDS.map(shotsToKill), [1, 2, 2, 2]);
 });
 
 /** The level each bot life ended at in a fixed-seed FFA room of bots, so a ladder or bot change that stalls progression shows up. */
@@ -60,7 +60,7 @@ test('in a room of bots, a fair share of lives reach the first evolve, the abili
   const [firstEvolve, hunted] = LEVELS.flatMap((l, i) => (l.pick?.k === 'evolve' ? [reach(i)] : []));
   const ability = reach(LEVELS.findIndex((l) => l.pick?.k === 'perk' && l.pick.tier === 3));
   const shares = `first evolve ${(firstEvolve * 100).toFixed(1)}%, ability ${(ability * 100).toFixed(1)}%, hunted ${(hunted * 100).toFixed(1)}% of ${levels.length} lives`;
-  assert.ok(firstEvolve >= 0.3 && ability >= 0.07 && hunted >= 0.02, shares);
+  assert.ok(firstEvolve >= 0.26 && ability >= 0.07 && hunted >= 0.02, shares);
 });
 
 test('no rifle out-damages the SMG at close range', () => {

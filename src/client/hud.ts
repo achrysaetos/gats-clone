@@ -748,7 +748,6 @@ function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   fill.addColorStop(0, HP_FILL[0]);
   fill.addColorStop(1, HP_FILL[1]);
   bar(ctx, x, y - VITALS.barH / 2, bw, VITALS.barH, hpFrac, fill, on.track);
-  if (me.maxArmor > 0) bar(ctx, x, y + VITALS.barH / 2 + 2, bw, 2, me.armor / me.maxArmor, PALETTE.armor, 'rgba(0, 0, 0, 0)');
   const hpText = `${Math.ceil(me.hp)} / ${me.maxHp}`;
   worldText(ctx, on, hpText, x + bw + 10, y, TYPE.body + 1, hpFrac <= 0.35 ? PALETTE.hpBad : on.muted, 500);
   if (me.hunted) {

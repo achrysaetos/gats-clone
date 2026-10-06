@@ -503,10 +503,6 @@ function drawTags(ctx: CanvasRenderingContext2D, bodies: readonly PlayerView[], 
     const frac = Math.max(0, Math.min(1, p.hp / p.maxHp));
     ctx.fillStyle = frac > 0.35 ? ink : PALETTE.hpBad;
     ctx.fillRect(x, y, TAG.barW * frac, TAG.barH);
-    if (p.maxArmor > 0) {
-      ctx.fillStyle = PALETTE.armor;
-      ctx.fillRect(x, y + TAG.barH + 1, TAG.barW * Math.max(0, p.armor / p.maxArmor), 1.5);
-    }
     if (p !== hovered) continue;
     ctx.font = `650 ${TAG.font}px system-ui, sans-serif`;
     ctx.textAlign = 'center';

@@ -7,7 +7,7 @@ import {
 import { INTERP_DELAY_MS, type PlayerView, type Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, x: number, y: number, angle = 0): PlayerView => ({
-  id, name: `p${id}`, x, y, angle, hp: 100, maxHp: 100, armor: 0, maxArmor: 0, color: 'red', gun: 'pistol',
+  id, name: `p${id}`, x, y, angle, hp: 100, maxHp: 100, color: 'red', gun: 'pistol',
   team: null, alive: true, hidden: false, shield: false, dashing: false, score: 0, level: 1, armorTier: 'none', kind: 'bot', hunted: false,
 });
 

@@ -31,7 +31,6 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
   return {
     id: p.id, name: p.name, x: p.x, y: p.y, angle: p.angle,
     hp: alive ? Math.ceil(life.hp) : 0, maxHp: stats.maxHp,
-    armor: alive ? Math.ceil(life.armor) : 0, maxArmor: stats.maxArmor,
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
