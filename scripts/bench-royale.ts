@@ -21,8 +21,8 @@ const SAMPLE_TICKS = 15;
 const BUCKET_MS = 30_000;
 const TELEPORT_PX = 200;
 
-type Activity = { aliveTicks: number; still: number; travel: number; shots: number; crates: number; scoreSum: number; scoreN: number; nearest: number[] };
-const freshActivity = (): Activity => ({ aliveTicks: 0, still: 0, travel: 0, shots: 0, crates: 0, scoreSum: 0, scoreN: 0, nearest: [] });
+type Activity = { aliveTicks: number; still: number; travel: number; shots: number; crates: number; takedowns: number; scoreSum: number; scoreN: number; nearest: number[] };
+const freshActivity = (): Activity => ({ aliveTicks: 0, still: 0, travel: 0, shots: 0, crates: 0, takedowns: 0, scoreSum: 0, scoreN: 0, nearest: [] });
 
 type Spec = { map: MapId; seed: number; proxy: boolean };
 type Result = {
@@ -80,6 +80,7 @@ function play(spec: Spec): Result {
     }
     const act = (res.activity[Math.floor((w.now - TICK_MS) / BUCKET_MS)] ??= freshActivity());
     act.shots += w.events.filter((e) => e.e === 'shot').length;
+    act.takedowns += w.events.filter((e) => e.e === 'kill' && e.weapon !== 'Ring').length;
     for (const c of w.crates) if (c.respawnAt !== null && !broken.has(c.id)) { broken.add(c.id); act.crates++; }
     const up = [...w.players.values()].filter((p) => p.life.k === 'alive');
     for (const p of up) {
@@ -167,14 +168,14 @@ if (!isMainThread) {
     console.log(`${''.padEnd(10)} squads in by minute ${Array.from({ length: minutes }, (_, m) => (sum(rs.map((x) => x.squadsLeftByMinute[m] ?? 0)) / rs.length).toFixed(1)).join(' ')}`);
   };
   const activity = (rs: readonly Result[]) => {
-    console.log(`all matches by ${BUCKET_MS / 1000}s from\n     t  matches  still  px/s  shots/bot-min  crates/match  avg score  nearest enemy px`);
+    console.log(`all matches by ${BUCKET_MS / 1000}s from\n     t  matches  still  px/s  shots/bot-min  crates/match  knocks+kills/match  avg score  nearest enemy px`);
     for (let b = 0; b < Math.max(...rs.map((x) => x.activity.length)); b++) {
       const rows = rs.flatMap((x) => (x.activity[b] ? [x.activity[b]!] : []));
-      const a = rows.reduce((t, r) => ({ ...t, aliveTicks: t.aliveTicks + r.aliveTicks, still: t.still + r.still, travel: t.travel + r.travel, shots: t.shots + r.shots, crates: t.crates + r.crates,
+      const a = rows.reduce((t, r) => ({ ...t, aliveTicks: t.aliveTicks + r.aliveTicks, still: t.still + r.still, travel: t.travel + r.travel, shots: t.shots + r.shots, crates: t.crates + r.crates, takedowns: t.takedowns + r.takedowns,
         scoreSum: t.scoreSum + r.scoreSum, scoreN: t.scoreN + r.scoreN }), freshActivity());
       const aliveMs = a.aliveTicks * TICK_MS;
       console.log(`${String((b * BUCKET_MS) / 1000).padStart(5)}s ${String(rows.length).padStart(7)} ${pc(a.still / a.aliveTicks).padStart(6)} ${(a.travel / (aliveMs / 1000)).toFixed(0).padStart(5)}` +
-        ` ${(a.shots / (aliveMs / 60_000)).toFixed(1).padStart(14)} ${(a.crates / rows.length).toFixed(1).padStart(13)} ${(a.scoreSum / a.scoreN).toFixed(0).padStart(10)} ${median(rows.flatMap((r) => r.nearest)).toFixed(0).padStart(17)}`);
+        ` ${(a.shots / (aliveMs / 60_000)).toFixed(1).padStart(14)} ${(a.crates / rows.length).toFixed(1).padStart(13)} ${(a.takedowns / rows.length).toFixed(1).padStart(19)} ${(a.scoreSum / a.scoreN).toFixed(0).padStart(10)} ${median(rows.flatMap((r) => r.nearest)).toFixed(0).padStart(17)}`);
     }
   };
   console.log(`bench-royale: ${specs.length} bot matches (${seeds.length} seeds x ${maps.join('/')}), ${args['no-proxy'] ? 'no proxy' : 'one 4x-health bot in one squad'}, cap ${CAP_MS / 60_000} min, ${((performance.now() - started) / 1000).toFixed(0)}s`);
