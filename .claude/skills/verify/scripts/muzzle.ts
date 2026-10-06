@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Usage: LAG=<one-way ms> JITTER=<ms> node muzzle.ts <run-dir> [seconds=15]
-// Two lagged browsers walk together in FFA, then strafe, turn and tap the pistol beside each other. For every round the
+// Two lagged browsers walk the map's paths to each other in FFA (failing when they never meet), then strafe, turn and tap the pistol beside each other. For every round the
 // first page draws, shrapnel aside, it measures how far its first drawn position sits from the drawn muzzle of whoever fired it.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -8,7 +8,9 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { GUNS } from '../../../../src/shared/defs.ts';
+import { GUNS, WORLD } from '../../../../src/shared/defs.ts';
+import type { WallView } from '../../../../src/shared/protocol.ts';
+import { findPath, navGrid, type NavGrid } from '../../../../src/server/bot/nav.ts';
 import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
@@ -33,7 +35,11 @@ const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\
 const freePort = () => new Promise<number>((r) => { const s = createServer().listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => r(p)); }); });
 
 type Round = { id: number; own: boolean; owner: number; gun: string | null; x: number; y: number; muzzle: { x: number; y: number } | null };
-type Browser = { chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; exceptions: string[] };
+type Arena = { worldSize: number; walls: WallView[] };
+type Browser = {
+  chrome: ChildProcess; cdp: (m: string, p?: object) => Promise<any>; js: (e: string) => Promise<any>; id: number; exceptions: string[];
+  map: () => Arena | null; navFor: { walls: WallView[]; grid: NavGrid } | null;
+};
 
 async function open(name: string): Promise<Browser> {
   const port = await freePort();
@@ -51,6 +57,7 @@ async function open(name: string): Promise<Browser> {
   await new Promise((r) => page.once('open', r));
   let nextId = 1;
   let id: number | null = null;
+  let map: Arena | null = null;
   const exceptions: string[] = [];
   const pending = new Map<number, (v: any) => void>();
   page.on('message', (raw) => {
@@ -59,6 +66,7 @@ async function open(name: string): Promise<Browser> {
     if (m.method === 'Network.webSocketFrameReceived') {
       const msg = JSON.parse(m.params.response.payloadData);
       if (msg.t === 'welcome') id = msg.id;
+      if (msg.t === 'welcome' || msg.t === 'walls') map = { worldSize: msg.worldSize, walls: msg.walls };
     } else if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
   });
   const cdp = (method: string, params: object = {}): Promise<any> => new Promise((r) => { const i = nextId++; pending.set(i, r); page.send(JSON.stringify({ id: i, method, params })); });
@@ -73,7 +81,7 @@ async function open(name: string): Promise<Browser> {
   await js(`document.querySelector('#servers .server').click(); document.getElementById('name').value = '${name}'; document.getElementById('play').click()`);
   for (let i = 0; i < 50 && id === null; i++) await sleep(100);
   if (id === null) throw new Error(`${name} did not join`);
-  return { chrome, cdp, js, id, exceptions };
+  return { chrome, cdp, js, id, exceptions, map: () => map, navFor: null };
 }
 
 const KEYS = { left: ['KeyA', 'a', 65], right: ['KeyD', 'd', 68], up: ['KeyW', 'w', 87], down: ['KeyS', 's', 83] } as const;
@@ -85,14 +93,20 @@ const respawnIfDead = async (b: Browser) => {
   if (await b.js(`!document.getElementById('death').hidden && !document.getElementById('respawn').disabled`)) await b.js(`document.getElementById('respawn').click()`);
 };
 
-/** The keys that walk `b` toward `partner`, or none when they are already close. */
+function nav(b: Browser): NavGrid {
+  const m = b.map(), walls = m?.walls ?? [];
+  if (b.navFor?.walls !== walls) b.navFor = { walls, grid: navGrid(m?.worldSize ?? 0, walls, WORLD.playerRadius) };
+  return b.navFor.grid;
+}
+
 async function towards(b: Browser, partner: Browser): Promise<Key[]> {
   const [a, p] = await Promise.all([where(b), where(partner)]);
-  const dx = p.x - a.x, dy = p.y - a.y;
-  if (Math.hypot(dx, dy) < NEAR) return [];
+  if (Math.hypot(p.x - a.x, p.y - a.y) < NEAR) return [];
+  const next = findPath(nav(b), a, p, 20_000)?.find((q) => Math.hypot(q.x - a.x, q.y - a.y) > 30) ?? p;
+  const dx = next.x - a.x, dy = next.y - a.y, len = Math.hypot(dx, dy);
   const keys: Key[] = [];
-  if (Math.abs(dx) > 60) keys.push(dx > 0 ? 'right' : 'left');
-  if (Math.abs(dy) > 60) keys.push(dy > 0 ? 'down' : 'up');
+  if (Math.abs(dx) > Math.max(20, len * 0.38)) keys.push(dx > 0 ? 'right' : 'left');
+  if (Math.abs(dy) > Math.max(20, len * 0.38)) keys.push(dy > 0 ? 'down' : 'up');
   return keys;
 }
 
@@ -145,8 +159,9 @@ async function play(b: Browser, partner: Browser, untilAt: number, onTap: (n: nu
 
 const shooter = await open('Shooter');
 const other = await open('Other');
-const met = await gather(shooter, other, performance.now() + 30_000);
-log(`note the two browsers ${met ? 'met' : 'did not meet'} within ${NEAR}px before shooting`);
+const met = await gather(shooter, other, performance.now() + 45_000);
+log(`${met ? 'ok  ' : 'FAIL'} the two browsers met within ${NEAR}px before shooting`);
+if (!met) { log('RESULT FAIL'); shooter.chrome.kill(); other.chrome.kill(); process.exit(1); }
 await shooter.js(`skirmishDev.firstRounds()`);
 const rounds: Round[] = [];
 /** The shooter's view `after` ms past a shot's round trip. */

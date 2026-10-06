@@ -63,7 +63,7 @@ One muted headless Chrome screenshots each art view through real play at 1600x90
 LAG=80 JITTER=0 node .claude/skills/verify/scripts/muzzle.ts "$RUN" [seconds]
 ```
 
-One muted browser strafes, turns and taps the pistol in FFA beside a second lagged browser. `skirmishDev.firstRounds()` lists each round the first frame the page draws it, with its shooter's drawn muzzle. Shrapnel is left out. The script logs the median, p90 and max gap for own rounds, the second browser's and the bots', and fails when the median gap for own rounds or the second browser's passes 25px, or when the page draws a server copy of either human's gun rounds while their shooter is in view. Its log is `$RUN/evidence/muzzle.log`, with screenshots `muzzle-<own|other>-lag<L>-<ms>ms.png` taken that long after a shot's round trip.
+Two muted, lagged browsers join FFA and walk the map's nav paths (`navGrid` and `findPath` from `src/server/bot/nav.ts`) toward each other. If they are not within 380px after 45s the script logs `FAIL` and `RESULT FAIL` and exits. Then both strafe, turn and tap the pistol beside each other. `skirmishDev.firstRounds()` lists each round the first frame the page draws it, with its shooter's drawn muzzle. Shrapnel is left out. The script logs the median, p90 and max gap for own rounds, the second browser's and the bots', and fails when the median gap for own rounds or the second browser's passes 25px, or when the page draws a server copy of either human's gun rounds while their shooter is in view. Its log is `$RUN/evidence/muzzle.log`, with screenshots `muzzle-<own|other>-lag<L>-<ms>ms.png` taken that long after a shot's round trip.
 
 ### Fire feel
 
@@ -87,7 +87,7 @@ One muted headless Chrome plays a zombies squad through real input. Steps: `menu
 node .claude/skills/verify/scripts/duel.ts "$RUN"
 ```
 
-Two separate headless Chromes join FFA. The hunter walks toward the target and taps fire until both sockets agree on the hit. It checks that both browsers joined, that each had the other in its own snapshots, that the hunter's socket shows a `dmg` event naming the target, and that the target's socket shows the same hit. It writes `duel.log`, `duel-hunter-view.png` and `duel-target-view.png`. Like `drive.ts`, it targets a deployed site when the run directory has a `url` file.
+Two separate headless Chromes join FFA and walk toward each other along the map's nav paths (`navGrid` and `findPath` from `src/server/bot/nav.ts`, rebuilt from each `welcome` or `walls` frame, with crates stamped in). The hunter taps fire only when the target is within 420px, in its snapshots and in clear line of sight (`clearShot`), until both sockets agree on the hit or 180s pass. It checks that both browsers joined, that each had the other in its own snapshots, that the hunter's socket shows a `dmg` event naming the target, and that the target's socket shows the same hit. It writes `duel.log`, `duel-hunter-view.png` and `duel-target-view.png`. Like `drive.ts`, it targets a deployed site when the run directory has a `url` file.
 
 ### Frame time
 

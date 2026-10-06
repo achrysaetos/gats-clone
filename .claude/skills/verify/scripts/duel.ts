@@ -1,13 +1,16 @@
 /// <reference types="node" />
-// Usage: node duel.ts <run-dir>   Two real browsers join FFA; A hunts B until each side's own socket proves the hit.
+// Usage: node duel.ts <run-dir>   Two real browsers join FFA and walk the map's paths to each other; A shoots B once it has a clear line, until each side's own socket proves the hit.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import type { GameEvent, Snapshot } from '../../../../src/shared/protocol.ts';
+import { WORLD } from '../../../../src/shared/defs.ts';
+import type { GameEvent, Snapshot, WallView } from '../../../../src/shared/protocol.ts';
+import type { Rect } from '../../../../src/shared/sim/movement.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { clearShot, findPath, navGrid, withSolids, type NavGrid, type Point } from '../../../../src/server/bot/nav.ts';
 import { killOnExit } from '../../../../scripts/kill-on-exit.ts';
 
 const RUN = process.argv[2];
@@ -32,6 +35,8 @@ type Player = {
   cdp: (method: string, params?: object) => Promise<any>;
   js: (expr: string) => Promise<any>;
   id: () => number | null; snap: () => Snapshot | null; dmg: Dmg[];
+  map: () => { worldSize: number; walls: WallView[] } | null;
+  navFor: { walls: WallView[]; grid: NavGrid } | null;
 };
 
 async function openPlayer(label: string, name: string): Promise<Player> {
@@ -51,6 +56,7 @@ async function openPlayer(label: string, name: string): Promise<Player> {
   let nextId = 1;
   let welcomeId: number | null = null;
   let full: Snapshot | null = null;
+  let map: { worldSize: number; walls: WallView[] } | null = null;
   const dmg: Dmg[] = [];
   const pending = new Map<number, (v: any) => void>();
   page.on('message', (raw) => {
@@ -59,6 +65,7 @@ async function openPlayer(label: string, name: string): Promise<Player> {
     if (m.method === 'Network.webSocketFrameReceived') {
       const msg = JSON.parse(m.params.response.payloadData);
       if (msg.t === 'welcome') welcomeId = msg.id;
+      if (msg.t === 'welcome' || msg.t === 'walls') map = { worldSize: msg.worldSize, walls: msg.walls };
       if (msg.t === 'snap') {
         full = fillSnapshot(msg, full) ?? full;
         for (const e of msg.events as GameEvent[]) if (e.e === 'dmg') dmg.push(e);
@@ -75,7 +82,7 @@ async function openPlayer(label: string, name: string): Promise<Player> {
   const [px, py] = await js(`(() => { const b = document.getElementById('play'); b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
   await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: px, y: py, button: 'left', clickCount: 1 });
   await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px, y: py, button: 'left', clickCount: 1 });
-  return { label, name, chrome, cdp, js, id: () => welcomeId, snap: () => full, dmg };
+  return { label, name, chrome, cdp, js, id: () => welcomeId, snap: () => full, dmg, map: () => map, navFor: null };
 }
 
 const selfOf = (p: Player) => p.snap()?.players.find((v) => v.id === p.id());
@@ -84,6 +91,21 @@ async function hold(p: Player, dirs: (keyof typeof KEY)[], ms: number) {
   for (const d of dirs) await p.cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: KEY[d][0], key: KEY[d][1], windowsVirtualKeyCode: KEY[d][2] });
   await sleep(ms);
   for (const d of dirs) await p.cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: KEY[d][0], key: KEY[d][1], windowsVirtualKeyCode: KEY[d][2] });
+}
+const crates = (p: Player): Rect[] => (p.snap()?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }));
+const solids = (p: Player): Rect[] => [...(p.map()?.walls ?? []), ...crates(p)];
+function nav(p: Player): NavGrid {
+  const m = p.map(), walls = m?.walls ?? [];
+  if (p.navFor?.walls !== walls) p.navFor = { walls, grid: navGrid(m?.worldSize ?? 0, walls, WORLD.playerRadius) };
+  return withSolids(p.navFor.grid, crates(p), WORLD.playerRadius);
+}
+async function walkToward(p: Player, from: Point, to: Point) {
+  const next = findPath(nav(p), from, to, 20_000)?.find((q) => Math.hypot(q.x - from.x, q.y - from.y) > 30) ?? to;
+  const dx = next.x - from.x, dy = next.y - from.y, len = Math.hypot(dx, dy);
+  const dirs: (keyof typeof KEY)[] = [];
+  if (Math.abs(dx) > Math.max(20, len * 0.38)) dirs.push(dx > 0 ? 'right' : 'left');
+  if (Math.abs(dy) > Math.max(20, len * 0.38)) dirs.push(dy > 0 ? 'down' : 'up');
+  await hold(p, dirs, 350);
 }
 async function respawnIfDead(p: Player) {
   if (selfOf(p)?.alive !== false) return;
@@ -102,7 +124,6 @@ for (let i = 0; i < 60 && (!selfOf(a) || !selfOf(b)); i++) await sleep(100);
 expect('both browsers joined the same room', !!selfOf(a) && !!selfOf(b), `${a.name} #${a.id()}, ${b.name} #${b.id()}`);
 
 const deadline = Date.now() + 180_000;
-let lastHunt = { x: NaN, y: NaN, sidestep: 0 };
 let sawEachOther = false, hitSeenByA: Dmg | undefined, hitSeenByB: Dmg | undefined, shots = 0;
 while (Date.now() < deadline && !(hitSeenByA && hitSeenByB)) {
   await respawnIfDead(a); await respawnIfDead(b);
@@ -112,13 +133,8 @@ while (Date.now() < deadline && !(hitSeenByA && hitSeenByB)) {
   const aSeesB = !!a.snap()?.players.some((v) => v.id === b.id());
   const bSeesA = !!b.snap()?.players.some((v) => v.id === a.id());
   if (aSeesB && bSeesA) sawEachOther = true;
-  if (dist > 420 || !aSeesB) {
-    const dirs: (keyof typeof KEY)[] = [];
-    if (Math.abs(dx) > 60) dirs.push(dx > 0 ? 'right' : 'left');
-    if (Math.abs(dy) > 60) dirs.push(dy > 0 ? 'down' : 'up');
-    if (Math.hypot(pa.x - lastHunt.x, pa.y - lastHunt.y) < 30) dirs.push(lastHunt.sidestep++ % 4 < 2 ? 'up' : 'down');
-    lastHunt = { ...lastHunt, x: pa.x, y: pa.y };
-    await hold(a, dirs.length ? dirs : ['right'], 350);
+  if (dist > 420 || !aSeesB || !clearShot(solids(a), pa, pb)) {
+    await Promise.all([walkToward(a, pa, pb), walkToward(b, pb, pa)]);
     continue;
   }
   const mx = VIEW.w / 2 + (dx / dist) * 220, my = VIEW.h / 2 + (dy / dist) * 220;
@@ -130,7 +146,6 @@ while (Date.now() < deadline && !(hitSeenByA && hitSeenByB)) {
   await sleep(260);
   hitSeenByA = a.dmg.find((e) => e.attacker === a.id() && e.victim === b.id());
   hitSeenByB = b.dmg.find((e) => e.attacker === a.id() && e.victim === b.id());
-  if (shots % 8 === 0 && !hitSeenByA) await hold(a, [Math.abs(dx) > Math.abs(dy) ? 'down' : 'right'], 300);
 }
 await shot(a, 'duel-hunter-view');
 await shot(b, 'duel-target-view');
