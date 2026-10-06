@@ -160,8 +160,7 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
 function burst(w: World, run: Run, z: Zombie, { radius, damage, building, core: coreBlow }: Burst) {
   explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
   for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
-  const core = coreRect(w);
-  if (core && distToRect(z.x, z.y, core) <= radius) hurtCore(run, coreBlow * (1 - ZOM.coreArmor));
+  if (distToRect(z.x, z.y, coreRect(w)!) <= radius) hurtCore(run, coreBlow * (1 - ZOM.coreArmor));
 }
 
 /** First light burns whatever of the horde is still out, so a zombie that cannot reach anything never holds the night. They pay nothing. */

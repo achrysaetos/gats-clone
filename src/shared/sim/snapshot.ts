@@ -1,6 +1,6 @@
-import { BUILDINGS, byTurret, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { byTurret, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  BuildingView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, PlayerView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
@@ -134,7 +134,6 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     ...(w.run && siegeViews(w, w.run, inView)),
   };
 }
-
 
 function runView(w: World, run: Run): RunView {
   const core = MAPS[w.map].siege!.core;

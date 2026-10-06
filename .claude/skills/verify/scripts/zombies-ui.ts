@@ -359,7 +359,7 @@ const STEPS: Record<string, () => Promise<void>> = {
       return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : dy > 0 ? 'south' : 'north';
     };
     const sides = new Set([...seen.values()].filter((p) => Math.hypot(p.x - 1500, p.y - 1500) > 350).map(sideOf));
-    expect('the night\'s zombies walk in only from the sides it forecast', [...sides].every((s) => (tonight.from as readonly string[]).includes(s)), `seen from ${[...sides].join(', ')}, forecast ${tonight.from.join(', ')}`);
+    expect('the night\'s zombies walk in only from the sides it forecast', [...sides].every((s) => tonight.from.includes(s)), `seen from ${[...sides].join(', ')}, forecast ${tonight.from.join(', ')}`);
     expect('the squad saw zombies in view', crowd);
     expect('the driven player shot zombies through real input', (frames.snap?.self.kills ?? 0) > 0, `${frames.snap?.self.kills} kills`);
     log(`note core alert ${alerted ? 'seen' : 'not seen'} on night 1`);
