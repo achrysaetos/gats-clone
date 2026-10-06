@@ -105,7 +105,7 @@ export function hitChance(d: number, spread: number, bulletSpeed: number): numbe
   return sum / (N * N);
 }
 
-const LONG_HOLD_MS = 12_000;
+const LONG_HOLD_MS = 30_000;
 /** When each shot of a held trigger leaves and its spray index, reloads included. */
 const timeline = new Map(GUN_IDS.map((id) => {
   const g = GUNS[id];
@@ -127,83 +127,86 @@ export function perfectKill(id: GunId, hp: number, armor: ArmorId): { hits: numb
   return { hits, ms: shots[hits - 1]!.t - shots[0]!.t };
 }
 
-/** Expected ms for a person's aim to kill `hp` at `d`, standing (`still`) or walking. */
+/**
+ * Expected ms from the first shot to the one that kills `hp` at `d`, standing (`still`) or walking, each pellet landing on its own
+ * odds; Infinity when a 30-second hold more likely than not leaves the person standing.
+ */
 export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, armor: ArmorId = 'none'): number {
   const g = GUNS[id];
   if (d > g.range) return Infinity;
-  let dealt = 0;
+  const need = Math.ceil(hp / (perHit(id, armor) / g.pellets) - 1e-9);
+  let odds = [1, ...Array<number>(need).fill(0)];
+  let expected = 0;
   for (const shot of timeline.get(id)!) {
-    dealt += hitChance(d, spreadFor(id, {}, still, shot.spray), g.bulletSpeed) * perHit(id, armor);
-    if (dealt >= hp - 1e-9) return shot.t;
+    const p = hitChance(d, spreadFor(id, {}, still, shot.spray), g.bulletSpeed);
+    const pellets = Array.from({ length: g.pellets + 1 }, (_, k) => binomial(g.pellets, k) * p ** k * (1 - p) ** (g.pellets - k));
+    const next = Array<number>(need + 1).fill(0);
+    odds.forEach((o, j) => pellets.forEach((q, k) => { next[Math.min(need, j + k)]! += o * q; }));
+    expected += (next[need]! - odds[need]!) * (shot.t - timeline.get(id)![0]!.t);
+    odds = next;
   }
-  return Infinity;
+  return odds[need]! < 0.5 ? Infinity : expected / odds[need]!;
 }
 
-const SUSTAIN_MS = 5000;
-/** Expected damage per second a person's aim puts on a strafing person at `d` over the first five seconds of a hold, up to when the next shot is ready. */
-export function aimDps(id: GunId, d: number, still: boolean): number {
-  const g = GUNS[id];
-  if (d > g.range) return 0;
-  const all = timeline.get(id)!;
-  const n = all.findIndex((s) => s.t >= SUSTAIN_MS);
-  const hits = all.slice(0, n).reduce((sum, s) => sum + hitChance(d, spreadFor(id, {}, still, s.spray), g.bulletSpeed), 0);
-  return (hits * perHit(id, 'none') * 1000) / all[n]!.t;
-}
+const binomial = (n: number, k: number): number => (k === 0 ? 1 : (binomial(n, k - 1) * (n - k + 1)) / k);
+
+/** How fast a person's aim takes a bare person down at `d`, as damage per second over the expected kill. */
+export const aimDps = (id: GunId, d: number, still: boolean): number => (HUMAN_HP * 1000) / aimKillMs(id, d, still);
 
 export const AIM_BANDS = [100, 300, 600, 900] as const;
 type Band = (typeof AIM_BANDS)[number];
 
 /**
- * Each class's job against a person. `cadenceMs` bounds ms per round; `ceiling` caps a stage-0 gun's `aimDps` standing at each
- * band, and an evolution may reach `STAGE_GAIN` of it, so a stage buys more of the class's strength rather than a new one.
- * Within a stage no sniper or LMG out-damages any SMG at 100 px, and no SMG or pellet shotgun out-damages the median sniper at 600 px.
+ * Each class's job against a person. `cadenceMs` bounds ms per round. `fastestKillS` is the quickest a stage-0 gun may expect to
+ * kill a bare person strafing at each band, standing to shoot (`aimKillMs`); an evolution may be `STAGE_GAIN` times quicker, so a
+ * stage buys more of the class's strength rather than a new one. Within a stage no sniper or LMG kills quicker than any SMG at 100 px,
+ * and no SMG or pellet shotgun kills quicker than the median sniper at 600 px.
  */
-export const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: number; ceiling: Record<Band, number> }> = {
-  pistol: { cadenceMs: [80, 600], scope: 1, ceiling: { 100: 125, 300: 85, 600: 52, 900: 42 } },
-  smg: { cadenceMs: [33, 100], scope: 1, ceiling: { 100: 160, 300: 90, 600: 45, 900: 0 } },
-  shotgun: { cadenceMs: [250, 900], scope: 1, ceiling: { 100: 165, 300: 80, 600: 55, 900: 42 } },
-  assault: { cadenceMs: [80, 400], scope: 1.1, ceiling: { 100: 130, 300: 105, 600: 60, 900: 42 } },
-  sniper: { cadenceMs: [500, 1800], scope: 1.2, ceiling: { 100: 115, 300: 95, 600: 70, 900: 50 } },
-  lmg: { cadenceMs: [33, 120], scope: 1, ceiling: { 100: 125, 300: 100, 600: 65, 900: 42 } },
+export const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: number; fastestKillS: Record<Band, number> }> = {
+  pistol: { cadenceMs: [80, 750], scope: 1, fastestKillS: { 100: 2.5, 300: 4, 600: 7.5, 900: 9.5 } },
+  smg: { cadenceMs: [33, 100], scope: 1, fastestKillS: { 100: 1.9, 300: 4, 600: 7.5, 900: Infinity } },
+  shotgun: { cadenceMs: [250, 900], scope: 1, fastestKillS: { 100: 1.8, 300: 4.5, 600: 7.5, 900: 9.5 } },
+  assault: { cadenceMs: [80, 400], scope: 1.1, fastestKillS: { 100: 2.2, 300: 3.3, 600: 6.5, 900: 9.5 } },
+  sniper: { cadenceMs: [500, 1800], scope: 1.2, fastestKillS: { 100: 2.5, 300: 3, 600: 4.5, 900: 6.5 } },
+  lmg: { cadenceMs: [33, 120], scope: 1, fastestKillS: { 100: 2.3, 300: 3.3, 600: 5.5, 900: 8 } },
 };
 export const STAGE_GAIN = [1, 1.15, 1.3] as const;
 /** A rifle that drops a bot in one hit works its bolt this long, and takes this many hits on a bare person. */
 export const BOLT = { minMs: 1100, humanHits: 3 } as const;
 /** No gun kills a bare person faster than this even with every round landing. */
 export const MIN_HUMAN_KILL_MS = 850;
+/** An automatic's magazine holds this many people's worth of damage, so a spray that mostly lands finishes one without a reload. */
+export const AUTO_MAG_HUMANS = 1.25;
 
 export type Breach = { id: GunId; rule: string; detail: string };
 
 export function doctrineBreaches(): Breach[] {
   const out: Breach[] = [];
   const breach = (id: GunId, rule: string, detail: string) => out.push({ id, rule, detail });
-  const aim = new Map(GUN_IDS.map((id) => [id, new Map(AIM_BANDS.map((d) => [d, aimDps(id, d, true)]))]));
+  const killS = new Map(GUN_IDS.map((id) => [id, new Map(AIM_BANDS.map((d) => [d, aimKillMs(id, d, true) / 1000]))]));
+  const killAt = (id: GunId, d: Band) => killS.get(id)!.get(d)!;
   for (const id of GUN_IDS) {
-    const g = GUNS[id], doc = DOCTRINE[g.base], ms = msPerRound(id);
+    const g = GUNS[id], doc = DOCTRINE[g.base], ms = msPerRound(id), perfect = perfectKill(id, HUMAN_HP, 'none');
     if (ms < doc.cadenceMs[0] || ms > doc.cadenceMs[1]) breach(id, 'cadence', `${ms.toFixed(0)}ms per round outside ${doc.cadenceMs.join('-')}`);
-    if (g.base === 'sniper' && g.breakpoint === 1) {
-      const hits = perfectKill(id, HUMAN_HP, 'none').hits;
-      if (g.fireMs < BOLT.minMs || hits !== BOLT.humanHits) breach(id, 'bolt', `${g.fireMs}ms, ${hits} hits on a bare person`);
-    }
-    const kill = perfectKill(id, HUMAN_HP, 'none').ms;
-    if (kill < MIN_HUMAN_KILL_MS) breach(id, 'delete', `kills a bare person in ${kill.toFixed(0)}ms`);
-    const scope = rulesOf(g).viewMul;
-    if (scope > doc.scope) breach(id, 'scope', `view x${scope} over x${doc.scope}`);
+    if (g.base === 'sniper' && g.breakpoint === 1 && (g.fireMs < BOLT.minMs || perfect.hits !== BOLT.humanHits)) breach(id, 'bolt', `${g.fireMs}ms, ${perfect.hits} hits on a bare person`);
+    if (perfect.ms < MIN_HUMAN_KILL_MS) breach(id, 'delete', `kills a bare person in ${perfect.ms.toFixed(0)}ms`);
+    if (g.auto && g.mag * perHit(id, 'none') < AUTO_MAG_HUMANS * HUMAN_HP) breach(id, 'mag', `${g.mag} rounds hold ${(g.mag * perHit(id, 'none')).toFixed(0)} damage`);
+    if (rulesOf(g).viewMul > doc.scope) breach(id, 'scope', `view x${rulesOf(g).viewMul} over x${doc.scope}`);
     for (const d of AIM_BANDS) {
-      const cap = doc.ceiling[d] * STAGE_GAIN[g.stage];
-      if (aim.get(id)!.get(d)! > cap + EPS) breach(id, `aim@${d}`, `${aim.get(id)!.get(d)!.toFixed(0)} dps over ${cap.toFixed(0)}`);
+      const fastest = doc.fastestKillS[d] / STAGE_GAIN[g.stage];
+      if (killAt(id, d) < fastest - EPS) breach(id, `aim@${d}`, `kills in ${killAt(id, d).toFixed(2)}s, under ${fastest.toFixed(2)}s`);
     }
   }
   for (const stage of [0, 1, 2] as const) {
     const ids = gunsOfStage(stage);
-    const aimOf = (keep: (id: GunId) => boolean, d: Band) => ids.filter(keep).map((id) => aim.get(id)!.get(d)!);
-    const smgFloor = Math.min(...aimOf((id) => GUNS[id].base === 'smg', 100));
+    const killsOf = (keep: (id: GunId) => boolean, d: Band) => ids.filter(keep).map((id) => killAt(id, d));
+    const slowestSmg = Math.max(...killsOf((id) => GUNS[id].base === 'smg', 100));
     for (const id of ids.filter((x) => GUNS[x].base === 'sniper' || GUNS[x].base === 'lmg')) {
-      if (aim.get(id)!.get(100)! > smgFloor) breach(id, 'close', `${aim.get(id)!.get(100)!.toFixed(0)} dps at 100px beats an SMG's ${smgFloor.toFixed(0)}`);
+      if (killAt(id, 100) < slowestSmg) breach(id, 'close', `kills in ${killAt(id, 100).toFixed(2)}s at 100px, under an SMG's ${slowestSmg.toFixed(2)}s`);
     }
-    const sniperMid = median(aimOf((id) => GUNS[id].base === 'sniper', 600));
+    const sniperMid = median(killsOf((id) => GUNS[id].base === 'sniper', 600));
     for (const id of ids.filter((x) => GUNS[x].base === 'smg' || (GUNS[x].base === 'shotgun' && GUNS[x].pellets > 1))) {
-      if (aim.get(id)!.get(600)! > sniperMid) breach(id, 'falloff', `${aim.get(id)!.get(600)!.toFixed(0)} dps at 600px beats the median sniper's ${sniperMid.toFixed(0)}`);
+      if (killAt(id, 600) < sniperMid) breach(id, 'falloff', `kills in ${killAt(id, 600).toFixed(2)}s at 600px, under the median sniper's ${sniperMid.toFixed(2)}s`);
     }
   }
   return out;

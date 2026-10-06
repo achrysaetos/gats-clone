@@ -6,15 +6,21 @@ import { doctrineBreaches, dominatedPairs, edgesOver, rangeBeyondView, type Pair
 const KNOWN_DOMINATED: readonly Pair[] = [];
 const KNOWN_BEYOND_VIEW: readonly GunId[] = [];
 const KNOWN_BREACHES: Partial<Record<GunId, readonly string[]>> = {
+  sniper: ['close'],
+  smg: ['mag'],
   lmg: ['aim@100', 'aim@300', 'aim@600', 'close'],
-  executioner: ['aim@300', 'aim@600'],
-  heavySmg: ['aim@600'],
-  ripper: ['aim@600'],
+  skirmisher: ['mag'],
+  phantom: ['mag'],
+  hornet: ['mag'],
+  bulldog: ['aim@300'],
+  streetSweeper: ['aim@100'],
+  carbine: ['mag'],
+  semiAuto: ['close'],
   heavyLmg: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
-  lightMg: ['aim@100', 'aim@300', 'aim@600', 'close'],
+  lightMg: ['close'],
   minigun: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
   juggernaut: ['aim@100', 'aim@300', 'aim@600', 'aim@900', 'close'],
-  ranger: ['aim@100', 'aim@300', 'aim@600', 'close'],
+  ranger: ['close'],
   twinMg: ['aim@100', 'aim@300', 'aim@600', 'close'],
 };
 

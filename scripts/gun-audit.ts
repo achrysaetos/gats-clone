@@ -1,12 +1,17 @@
 /// <reference types="node" />
-// Usage: node scripts/gun-audit.ts [--moving] [--old <defs.ts of an earlier roster, e.g. from git show>]
+// Usage: node scripts/gun-audit.ts [--moving] [--old <defs.ts of an earlier roster, e.g. from git show>] [--set lmg.damage=14,smg.spread=0.1]
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { GUNS, rulesOf, WORLD, type GunDef } from '../src/shared/defs.ts';
-import { AIM_BANDS, aimDps, aimKillMs, doctrineBreaches, HUMAN_HP, perfectKill, TREE_ORDER } from './lib/gunscore.ts';
+import { GUNS, rulesOf, WORLD, type GunDef, type GunId } from '../src/shared/defs.ts';
 
-const { values: args } = parseArgs({ options: { old: { type: 'string' }, moving: { type: 'boolean', default: false } } });
+const { values: args } = parseArgs({ options: { old: { type: 'string' }, moving: { type: 'boolean', default: false }, set: { type: 'string' } } });
+for (const pair of args.set?.split(',') ?? []) {
+  const [path, value] = pair.split('=');
+  const [id, field] = path!.split('.') as [GunId, keyof GunDef];
+  Object.assign(GUNS[id], { [field]: Number(value) });
+}
+const { AIM_BANDS, aimDps, aimKillMs, doctrineBreaches, HUMAN_HP, perfectKill, TREE_ORDER } = await import('./lib/gunscore.ts');
 const old: Record<string, GunDef> = args.old ? (await import(pathToFileURL(resolve(args.old)).href)).GUNS : {};
 
 const msPerRound = (g: GunDef) => (g.burst ? ((g.burst.count - 1) * g.burst.gapMs + g.fireMs) / g.burst.count : g.fireMs);
@@ -20,7 +25,7 @@ const cols: [string, number][] = [
 const row = (cells: string[]) => cells.map((c, i) => (i === 0 || i === cols.length - 1 ? c.padEnd(cols[i]![1]) : c.padStart(cols[i]![1]))).join('');
 
 console.log(`gun audit: hits/seconds for perfect aim to kill a ${WORLD.baseHp} HP bot and a ${HUMAN_HP} HP human, bare and in heavy armor;`);
-console.log(`aim@d: a person's expected dps on a person strafing at base speed, standing to shoot (walking with --moving); kill@d: their expected seconds to kill; was: an earlier roster's per-pull damage / ms per round / range`);
+console.log(`kill@d: a person's expected seconds to kill a bare person strafing at base speed d px off, standing to shoot (walking with --moving); aim@d: the same as damage per second; was: an earlier roster's per-pull damage / ms per round / range`);
 console.log(row(cols.map(([c]) => c)));
 for (const id of TREE_ORDER) {
   const g = GUNS[id], o = old[id];
