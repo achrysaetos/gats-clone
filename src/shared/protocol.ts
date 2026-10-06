@@ -126,8 +126,7 @@ export type GameEvent =
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }
   /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
-  /** A Last Squad squad has nobody left standing; `place` is where it finished. */
-  /** `place` is null when the squad regroups instead of going out. */
+  /** A Last Squad squad has nobody left standing; `place` is where it finished, null when the squad regroups instead of going out. */
   | { e: 'wiped'; team: ColorId; place: number | null };
 
 export type Circle = { x: number; y: number; r: number };

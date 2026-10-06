@@ -3,7 +3,7 @@ import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, W
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
-import { newRoyale, squadEdge } from './royale.ts';
+import { newRoyale, farthestEdgeSlot } from './royale.ts';
 
 export type Wall = WallView & { expiresAt: number };
 
@@ -169,7 +169,6 @@ export type Royale = {
 };
 
 export type Pose = { x: number; y: number };
-/** A place to put a body, and the way it should face when it lands there. */
 type Spot = Pose & { angle?: number };
 
 export function moveTo(p: Player, at: Spot) {
@@ -306,7 +305,7 @@ function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number)
     }
     return clearPointNear(solids, m.x, m.y, r, size);
   };
-  const edge = squadEdge(w, team);
+  const edge = farthestEdgeSlot(w, team);
   const at = mates.length ? beside(mates[Math.floor(rand(w) * mates.length)]!) : clearPointNear(solids, edge.x, edge.y, r, size);
   return { ...at, angle: Math.atan2(edge.centre.y - at.y, edge.centre.x - at.x) };
 }

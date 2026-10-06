@@ -17,13 +17,11 @@ const ANCHOR_REACH = 0.6;
 const REVIVE_REACH_PX = 900;
 const REVIVE_STOP_PX = ZOM.reviveRange - 20;
 const MATE_DEAD_ZONE = 30;
-/** A bot with no squadmate in sight walks back to its squad's marks past this, and a follower this far behind its leader drops a search or flank. */
-const PACK_PX = 450;
+const STRAY_PX = 450;
+const LAG_PX = 450;
 const FOLLOW_PX = 70;
-/** From the ring closing on last lives onward a squad holds cover this close to the middle of its standing members, pulled inside the circle. */
 const HOLD_PX = 220;
 const HUNT_PX = 2000;
-/** A crate's worth is its score over its distance plus this, so a near crate beats a richer one only when the richer one is much farther. */
 const LOOT_DIST_PX = 400;
 const DROP_WORTH = 150;
 
@@ -53,7 +51,6 @@ const short = (from: Point, to: Point, by: number): Point => {
   return d <= by ? from : { x: to.x + ((from.x - to.x) / d) * by, y: to.y + ((from.y - to.y) / d) * by };
 };
 
-/** Where the squad heads when nothing in sight needs it: in from the ring, to a knocked squadmate, back to the pack, then to crates or the nearest fight. */
 type Pack =
   | { k: 'ring'; at: Point }
   | { k: 'revive'; at: Point }
@@ -84,7 +81,7 @@ function packFor(c: PackCtx, outside: boolean, downed: PlayerView | null): Pack 
   const marks = [me, ...snap.minimap.filter((m) => m.team === team && m.pingAge === null)];
   const centroid = { x: mean(marks.map((m) => m.x)), y: mean(marks.map((m) => m.y)) };
   const mates = snap.players.filter((p) => p.id !== me.id && p.team === team && p.alive);
-  if (!mates.length && dist(me, centroid) > PACK_PX) return { k: 'gather', at: centroid };
+  if (!mates.length && dist(me, centroid) > STRAY_PX) return { k: 'gather', at: centroid };
   const { ring, redeploys } = c.royale;
   const closingOnLastLives = RING[ring.phase + 1]?.lives === 'last' && c.now >= ring.shrinkAt;
   if (!redeploys || closingOnLastLives) return { k: 'hold', at: inward(centroid, circle, c.arena) };
@@ -108,14 +105,13 @@ const goalOf = (i: Intent): Point | null => {
   }
 };
 
-/** The pack's goal replaces what the versus brain chose when it idles, leaves the circle, strays from the leader, or chases a sound while the squad loots. */
 function strays(intent: Intent, pack: Pack, me: Point, circle: Circle): boolean {
   const goal = goalOf(intent);
   if (goal && !inside(goal, circle, EDGE_PX)) return true;
   if (pack.k === 'hold') return intent.k === 'search' || intent.k === 'flank' || (goal !== null && dist(goal, pack.at) > HOLD_PX);
   switch (intent.k) {
     case 'patrol': case 'takePosition': return true;
-    case 'search': case 'flank': return pack.k === 'loot' || pack.k === 'gather' || (pack.k === 'follow' && dist(me, pack.at) > PACK_PX);
+    case 'search': case 'flank': return pack.k === 'loot' || pack.k === 'gather' || (pack.k === 'follow' && dist(me, pack.at) > LAG_PX);
     default: return false;
   }
 }

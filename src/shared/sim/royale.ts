@@ -46,7 +46,6 @@ function scheduleDrop(w: World, r: Royale, into: Circle) {
   r.drops.push({ ...at, landsAt: w.now + ROYALE.dropLandMs });
 }
 
-/** Room a scattered crate leaves round itself, so it never plugs a gap a player could walk through. */
 const SCATTER_CLEAR = 90;
 
 function crateAt(w: World, x: number, y: number, tier: CrateTier): Crate {
@@ -84,8 +83,7 @@ function scatter(w: World, within: Circle, count: number) {
   w.wallsVersion++;
 }
 
-/** The six squads' starting bearings round the map's centre; a wiped squad regroups on whichever bearing is farthest from the squads still up. */
-export function squadEdge(w: World, team: Team): Pose & { centre: Pose } {
+export function farthestEdgeSlot(w: World, team: Team): Pose & { centre: Pose } {
   const r = w.royale!;
   const to = ringView(r.ring).to;
   const reach = Math.max(0, Math.min(ROYALE.edgeR, to.r - ROYALE.cacheR));

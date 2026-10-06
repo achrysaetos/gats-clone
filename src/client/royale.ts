@@ -99,7 +99,6 @@ export function drawDropsWorld(ctx: CanvasRenderingContext2D, royale: RoyaleView
   }
 }
 
-/** Rich crates and caches wear a gold frame, a caches' as bold as a landed drop's, so the loot worth a detour reads at a glance. */
 export function drawLootWorld(ctx: CanvasRenderingContext2D, crates: readonly CrateView[]) {
   ctx.save();
   ctx.strokeStyle = RING_LOOK.drop;
@@ -151,7 +150,6 @@ export function drawRingMap(ctx: CanvasRenderingContext2D, royale: RoyaleView, s
 
 const TRACKER = { col: 22, pip: 4.5, gap: 13 } as const;
 
-/** What a squad's tracker column reads in place of its pips: its place once out, the seconds left while it regroups. */
 export const trackerLabel = (s: SquadView, serverNow: number | null): string | null =>
   s.place !== null && s.place > 1 ? `#${s.place}` : s.regroupAt !== null && serverNow !== null ? `${Math.max(0, Math.ceil((s.regroupAt - serverNow) / 1000))}s` : null;
 export const trackerSize = (squads: number) => ({ w: squads * TRACKER.col, h: 3 * TRACKER.gap });
