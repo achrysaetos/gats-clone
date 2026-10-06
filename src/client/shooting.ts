@@ -13,24 +13,23 @@ import type { Session } from './state.ts';
 type Point = { x: number; y: number };
 type Offset = { dx: number; dy: number };
 
-/** The local player's hands on the gun, read from the page at the moment a shot is judged. */
 export type Hands = { active: boolean; firing: boolean; touchAim: Offset | null; reload: boolean; still: boolean; aim: Offset };
+
+const unperkedShot = (ev: ShotEvent): Shot => ({ owner: ev.owner, gun: ev.gun, range: GUNS[ev.gun].range, spread: GUNS[ev.gun].spread });
 
 type Page = {
   hands: (s: Session) => Hands;
   playCues: (s: Session, cues: readonly SoundCue[], viewRadius: number) => void;
 };
 
-/** Predicts the local player's shots ahead of the server and draws everyone's rounds from the drawn guns. */
 export function createShooting(page: Page) {
-  let nextRoundId = -1;
+  let nextLocalRoundId = -1;
   let touchAiming = false;
 
-  /** The hits are the server's; these rounds and the flash only show the shot leaving the drawn gun. */
-  function fire(s: Session, shot: Shot, at: Point, angle: number, seen: Snapshot, now: number): number[] {
+  function showShot(s: Session, shot: Shot, at: Point, angle: number, seen: Snapshot, now: number): number[] {
     const muzzle = muzzleTip(at.x, at.y, angle, shot.gun, WORLD.playerRadius);
-    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextRoundId);
-    nextRoundId -= rounds.length;
+    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextLocalRoundId);
+    nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
     startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner }, now);
     return rounds.map((r) => r.id);
@@ -40,7 +39,7 @@ export function createShooting(page: Page) {
     const { aim, still } = page.hands(s);
     const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, still) };
     page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
-    return fire(s, shot, s.lastSelf, Math.atan2(aim.dy, aim.dx), sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
+    return showShot(s, shot, s.lastSelf, Math.atan2(aim.dy, aim.dx), sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
   }
 
   function triggerInput(s: Session): TriggerInput {
@@ -69,7 +68,6 @@ export function createShooting(page: Page) {
     fireBeforeSending: (s: Session, now: number) => fireAheadBy(s, now, Infinity),
     takeBack,
 
-    /** Fires once as the touch aim stick leaves its dead zone, and says whether it is out. */
     pullTouchTrigger(s: Session): boolean {
       const h = page.hands(s);
       const aiming = h.active && h.touchAim !== null;
@@ -81,7 +79,6 @@ export function createShooting(page: Page) {
       return aiming;
     },
 
-    /** Queues other players' shots for the render clock, and settles the local player's against the shots it predicted. */
     settleShots(s: Session, snap: Snapshot, now: number) {
       const own: ShotEvent[] = [];
       for (const ev of snap.events) {
@@ -99,11 +96,9 @@ export function createShooting(page: Page) {
       }
     },
 
-    /** Another player's shot leaves their gun where the page draws them when the render clock reaches it. Their perks are unknown, so it takes the gun's own range and spread. */
     fireOthersShot(s: Session, ev: ShotEvent, seen: Snapshot, now: number) {
       const p = seen.players.find((q) => q.id === ev.owner && q.alive);
-      const shot = { owner: ev.owner, gun: ev.gun, range: GUNS[ev.gun].range, spread: GUNS[ev.gun].spread };
-      fire(s, shot, p ?? ev, p?.angle ?? ev.angle, seen, now);
+      showShot(s, unperkedShot(ev), p ?? ev, p?.angle ?? ev.angle, seen, now);
     },
   };
 }

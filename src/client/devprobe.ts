@@ -37,7 +37,6 @@ export function noteFrameCost(ms: number) {
   if (frameCosts.length < FRAME_COST_CAP) frameCosts.push(ms);
 }
 
-/** Records what a drawn frame showed: where the local player and everyone else were drawn, each new round, and the local player's new flashes and gun kicks. */
 export function noteFrame(s: Session, snap: Snapshot, cam: Camera, selfAngle: number | null, now: number) {
   if (!DEV) return;
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
@@ -46,7 +45,6 @@ export function noteFrame(s: Session, snap: Snapshot, cam: Camera, selfAngle: nu
   noteOwnFlashesAndKicks(s, now);
 }
 
-/** Each round the first frame it is drawn, with its shooter's drawn muzzle in that frame. Local rounds have negative ids. */
 function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null) {
   if (seenRounds.size > 5000) seenRounds.clear();
   for (const b of snap.bullets) {
@@ -81,7 +79,6 @@ type Page = {
   ghost: () => Ghost | null;
 };
 
-/** Exposes `skirmishDev` on `?dev` pages for the verify scripts. */
 export function installDevProbe(page: Page) {
   if (!DEV) return;
   const liveNumbers = () => {
@@ -98,12 +95,12 @@ export function installDevProbe(page: Page) {
       callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => c.title),
     };
   };
-  /** Redraws the current frame n times back to back. Reading a pixel after each makes the canvas finish rasterizing, so each cost covers the pixels, not just issuing commands. */
   const benchFrames = (n: number): number[] => {
     const now = performance.now();
     return Array.from({ length: n }, () => {
       const start = performance.now();
       page.drawFrame(now);
+      // Reading a pixel makes the canvas finish rasterizing, so the cost covers the pixels, not just issuing commands.
       page.ctx.getImageData(0, 0, 1, 1);
       return performance.now() - start;
     });
