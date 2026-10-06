@@ -252,6 +252,7 @@ export function solidRects(w: World): Rect[] {
 const SPAWN_CLEARANCE = 10;
 /** Clear spots a spawn weighs, taking the one farthest from any enemy. */
 const SPAWN_CANDIDATES = 12;
+const SPAWN_EDGE = 100;
 
 export function spawnPoint(w: World, team: Team): Pose {
   const { spawns, siege, size } = MAPS[w.map];
@@ -265,8 +266,10 @@ export function spawnPoint(w: World, team: Team): Pose {
   const enemies = [...w.players.values()].filter((p) => p.life.k === 'alive' && (team === null || p.team !== team));
   const safety = (x: number, y: number) => Math.min(Infinity, ...enemies.map((p) => dist2(p.x, p.y, x, y)));
   let best: (Pose & { safety: number }) | null = null;
+  // A free-for-all has no sides to keep, so half its candidates come from anywhere open on the map and nobody starts on top of a rival.
+  const anywhere: Rect = { x: SPAWN_EDGE, y: SPAWN_EDGE, w: size - 2 * SPAWN_EDGE, h: size - 2 * SPAWN_EDGE };
   for (let i = 0, found = 0; i < 200 && found < SPAWN_CANDIDATES; i++) {
-    const r = regions[Math.floor(rand(w) * regions.length)];
+    const r = team === null && i % 2 === 1 ? anywhere : regions[Math.floor(rand(w) * regions.length)];
     const x = r.x + rand(w) * r.w, y = r.y + rand(w) * r.h;
     if (solids.some((b) => circleHitsRect(x, y, WORLD.playerRadius + SPAWN_CLEARANCE, b))) continue;
     found++;
