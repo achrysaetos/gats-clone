@@ -128,7 +128,7 @@ test('a lone human\'s night brings at least one of every kind on its row', () =>
   run(w, ZOM.dayMs + TICK_MS);
   const night = w.run!.phase;
   assert.ok(night.k === 'night');
-  assert.deepEqual(new Set(night.toSpawn.map((u) => u.kind)), new Set(Object.keys(NIGHTS[4]!.horde)));
+  assert.deepEqual(new Set([...night.toSpawn, ...w.zombies].map((u) => u.kind)), new Set(Object.keys(NIGHTS[4]!.horde)));
 });
 
 test('the core\'s survivors fall with its health and never come back when it is mended', () => {

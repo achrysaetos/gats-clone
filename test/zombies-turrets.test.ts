@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, ZOM, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
+import { BASTION_GUN, BUILDINGS, ZOM, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
 import { removePlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { createWorld, newId, type Turret, type World } from '../src/shared/sim/world.ts';
@@ -71,7 +71,7 @@ function oneRound(turret: TurretKind, kind: ZombieKind): number {
 
 test('plating blocks most of a sentry round but little of a cannon shell, and none of a mortar\'s blast', () => {
   assert.equal(oneRound('sentry', 'walker'), SENTRY.damage);
-  assert.ok(oneRound('sentry', 'plated') <= SENTRY.damage / 4, `a sentry round deals ${oneRound('sentry', 'plated')} to a plated`);
+  assert.ok(oneRound('sentry', 'plated') <= SENTRY.damage / 3, `a sentry round deals ${oneRound('sentry', 'plated')} to a plated`);
   assert.ok(oneRound('cannon', 'plated') >= BUILDINGS.cannon.turret.damage * 0.9, 'a cannon shell gets through');
   for (const kind of ['walker', 'plated'] as const) {
     assert.ok(oneRound('mortar', kind) >= BUILDINGS.mortar.turret.lobbed!.damage * 0.9, `a mortar's burst takes nearly its full damage off a ${kind}`);
@@ -236,4 +236,18 @@ test('a turret\'s ammo shows in tenths, and its aim and rounds only in its shot 
   t.ammo = 0.5;
   const view = snapshotFor(w, p.id).buildings![0]!;
   assert.equal(view.kind !== 'wall' && view.ammo, 0, 'empty once it cannot fire a whole round');
+});
+
+test('the Bastion\'s survivors shoot what reaches its door, slower the fewer are left, and leave the far horde alone', () => {
+  const dealt = (survivors: number, d: number) => {
+    const w = nightWorld();
+    w.run!.survivors = survivors;
+    const z = addZombie(w, 'walker', 1500, 1500 - ZOM.coreHalf - d);
+    for (let t = 0; t < 3000; t += TICK_MS) { z.x = 1500; z.y = 1500 - ZOM.coreHalf - d; step(w, TICK_MS); }
+    return 1e9 - z.hp;
+  };
+  const all = dealt(ZOM.survivors, 100);
+  assert.ok(all >= 5 * BASTION_GUN.damage, `all of them landed ${all}`);
+  assert.ok(dealt(ZOM.survivors / 5, 100) < all / 3, 'a fifth of them fire far slower');
+  assert.equal(dealt(ZOM.survivors, BASTION_GUN.range + 100), 0, 'out of its reach');
 });

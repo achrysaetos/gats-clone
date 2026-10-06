@@ -1,8 +1,9 @@
 /// <reference types="node" />
-// Usage: node scripts/bench-zombies.ts [seeds] [squad]
+// Usage: node scripts/bench-zombies.ts [seeds] [squad] [runs]
+//   runs: skip the full-horde cost samples.
 //   seeds: comma-separated, default 1,2,3. squad: 4 runs four bots; 1 runs one bot-brained player with a human's triple health, alone.
 // Plays zombies runs to the core's fall or the Tide's dawn and prints the nights reached and how each night went (seconds it lasted, core health lost,
-// survivors at dawn, turrets standing), then the win rate and the mean core health lost on each night across the seeds.
+// survivors at dawn, turrets standing), then the win rate and the mean core health bitten off on each night across the seeds.
 // Then holds a full horde of ZOM.maxAlive on the squad with an unbreakable core and prints server step cost and snapshot size under it,
 // first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them.
 import { BUILDINGS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
@@ -59,17 +60,18 @@ for (const seed of seeds) {
   const { w } = sq;
   const nights: string[] = [];
   const lost: number[] = [];
-  let nightStart = 0, downs = 0, revives = 0, peak = 0, coreAtDusk: number = ZOM.coreHp, wasNight = false;
+  let nightStart = 0, downs = 0, revives = 0, peak = 0, coreWas: number = ZOM.coreHp, bitten = 0;
   const started = performance.now();
   for (let night = w.run!.night; w.run!.phase.k !== 'over' && w.run!.night <= MAX_NIGHTS;) {
     tick(sq);
     const run = w.run!;
     peak = Math.max(peak, w.zombies.length);
     for (const e of w.events) if (e.e === 'life') { if (e.k === 'downed') downs++; if (e.k === 'revived') revives++; }
-    if (run.phase.k === 'night' && !wasNight) coreAtDusk = run.core.hp;
-    wasNight = run.phase.k === 'night';
+    bitten += Math.max(0, coreWas - Math.max(0, run.core.hp));
+    coreWas = run.core.hp;
     if (run.night !== night || run.phase.k === 'over') {
-      lost[night - 1] = Math.round(coreAtDusk - Math.max(0, run.core.hp));
+      lost[night - 1] = Math.round(bitten);
+      bitten = 0;
       nights.push(`n${night} ${((w.now - nightStart) / 1000).toFixed(0)}s -${lost[night - 1]} core, ${run.survivors} left, ${w.buildings.length} up`);
       night = run.night;
       nightStart = w.now;
@@ -89,6 +91,7 @@ const mean = Array.from({ length: longest }, (_, i) => Math.round(coreLost.reduc
 const hurt = Array.from({ length: longest }, (_, i) => coreLost.filter((l) => (l[i] ?? 0) > 0).length);
 console.log(`won ${wins}/${seeds.length}; mean core lost by night: ${mean.map((m, i) => `n${i + 1} ${m}`).join(' ')}; runs hurt by night: ${hurt.join(' ')}`);
 
+if (process.argv[4] === 'runs') process.exit(0);
 const sq = newSquad(seeds[0]!);
 const run = sq.w.run!;
 run.core.hp = Infinity;

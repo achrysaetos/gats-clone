@@ -268,7 +268,7 @@ export function tickRun(w: World, dtMs: number) {
       return;
   }
   tickHorde(w, run, dtMs);
-  tickTurrets(w, dtMs);
+  tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);
   const sheltered = Math.min(run.survivors, Math.ceil((run.core.hp / ZOM.coreHp) * ZOM.survivors));
   run.lost += run.survivors - sheltered;

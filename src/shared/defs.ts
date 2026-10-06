@@ -255,15 +255,15 @@ export const ZOMBIES: Record<ZombieKind, {
   name: string; many: string; hp: number; speed: number; radius: number; damage: number; attackMs: number; buildingDamageMul: number; aggroPx: number; score: number; scrap: number;
   plate: number; burst: Burst | null; pack: number;
 }> = {
-  walker: { name: 'Walker', many: 'walkers', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 0.5, aggroPx: 120, score: 10, scrap: 2, plate: 0, burst: null, pack: 1 },
-  brute: { name: 'Brute', many: 'brutes', hp: 400, speed: 75, radius: 24, damage: 25, attackMs: 1400, buildingDamageMul: 1, aggroPx: 0, score: 60, scrap: 10, plate: 0, burst: null, pack: 1 },
-  runner: { name: 'Runner', many: 'runners', hp: 30, speed: 210, radius: 12, damage: 6, attackMs: 600, buildingDamageMul: 0.25, aggroPx: 360, score: 8, scrap: 1, plate: 0, burst: null, pack: 5 },
-  plated: { name: 'Plated', many: 'plated', hp: 200, speed: 95, radius: 19, damage: 12, attackMs: 1000, buildingDamageMul: 0.6, aggroPx: 120, score: 30, scrap: 5, plate: 20, burst: null, pack: 1 },
+  walker: { name: 'Walker', many: 'walkers', hp: 50, speed: 120, radius: 16, damage: 8, attackMs: 900, buildingDamageMul: 0.5, aggroPx: 120, score: 10, scrap: 2, plate: 0, burst: null, pack: 6 },
+  brute: { name: 'Brute', many: 'brutes', hp: 900, speed: 75, radius: 24, damage: 40, attackMs: 1400, buildingDamageMul: 1, aggroPx: 0, score: 60, scrap: 10, plate: 0, burst: null, pack: 2 },
+  runner: { name: 'Runner', many: 'runners', hp: 30, speed: 210, radius: 12, damage: 6, attackMs: 600, buildingDamageMul: 0.25, aggroPx: 360, score: 8, scrap: 1, plate: 0, burst: null, pack: 6 },
+  plated: { name: 'Plated', many: 'plated', hp: 200, speed: 95, radius: 19, damage: 12, attackMs: 1000, buildingDamageMul: 0.6, aggroPx: 120, score: 30, scrap: 5, plate: 10, burst: null, pack: 3 },
   bloater: {
     name: 'Bloater', many: 'bloaters', hp: 120, speed: 80, radius: 22, damage: 10, attackMs: 1200, buildingDamageMul: 1, aggroPx: 0, score: 25, scrap: 4, plate: 0,
-    burst: { radius: 110, damage: 70, building: 600 }, pack: 1,
+    burst: { radius: 110, damage: 70, building: 600 }, pack: 2,
   },
-  colossus: { name: 'Colossus', many: 'a colossus', hp: 6000, speed: 55, radius: 40, damage: 80, attackMs: 1600, buildingDamageMul: 2.5, aggroPx: 0, score: 500, scrap: 80, plate: 15, burst: null, pack: 1 },
+  colossus: { name: 'Colossus', many: 'a colossus', hp: 3500, speed: 55, radius: 40, damage: 80, attackMs: 1600, buildingDamageMul: 2.5, aggroPx: 0, score: 500, scrap: 80, plate: 8, burst: null, pack: 1 },
 };
 
 export const SIDES = ['north', 'east', 'south', 'west'] as const;
@@ -275,15 +275,15 @@ export type Side = (typeof SIDES)[number];
 export type NightDef = { name?: string; horde: Partial<Record<ZombieKind, number>>; from: readonly Side[] };
 export const NIGHTS: readonly NightDef[] = [
   { horde: { walker: 20 }, from: ['north'] },
-  { horde: { walker: 26, runner: 5 }, from: ['east'] },
-  { horde: { walker: 28, runner: 10, brute: 2 }, from: ['south', 'west'] },
-  { horde: { walker: 30, plated: 6, brute: 3 }, from: ['north', 'east'] },
-  { name: 'The Colossus', horde: { walker: 34, runner: 10, brute: 3, colossus: 1 }, from: ['west'] },
-  { horde: { walker: 38, bloater: 6, plated: 6 }, from: ['east', 'south'] },
-  { horde: { walker: 42, runner: 20, bloater: 6, brute: 4 }, from: ['north', 'south', 'west'] },
-  { horde: { walker: 46, plated: 12, bloater: 8, brute: 5 }, from: ['north', 'east', 'west'] },
-  { horde: { walker: 52, runner: 20, plated: 10, bloater: 8, brute: 6 }, from: SIDES },
-  { name: 'The Tide', horde: { walker: 64, runner: 25, plated: 14, bloater: 10, brute: 8, colossus: 1 }, from: SIDES },
+  { horde: { walker: 26, runner: 5, brute: 2 }, from: ['east'] },
+  { horde: { walker: 34, runner: 12, plated: 3, brute: 8 }, from: ['south', 'west'] },
+  { horde: { walker: 38, plated: 10, brute: 10 }, from: ['north', 'east'] },
+  { name: 'The Colossus', horde: { walker: 42, runner: 12, brute: 6, colossus: 1 }, from: ['west'] },
+  { horde: { walker: 48, bloater: 8, plated: 12, brute: 10 }, from: ['east', 'south'] },
+  { horde: { walker: 52, runner: 22, plated: 6, bloater: 6, brute: 10 }, from: ['north', 'south', 'west'] },
+  { horde: { walker: 56, plated: 10, bloater: 8, brute: 10 }, from: ['north', 'east', 'west'] },
+  { horde: { walker: 60, runner: 22, plated: 10, bloater: 8, brute: 10 }, from: SIDES },
+  { name: 'The Tide', horde: { walker: 66, runner: 28, plated: 13, bloater: 10, brute: 13, colossus: 1 }, from: SIDES },
 ];
 export const nightOf = (night: number): NightDef => NIGHTS[Math.min(night, NIGHTS.length) - 1]!;
 
@@ -326,13 +326,19 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
   },
 };
 
+/** The survivors shoot from the Bastion's walls at what comes close; all of them fire a round every `fireMs`, fewer of them slower. */
+export const BASTION_GUN: TurretDef = {
+  prefers: 'brute', range: 220, fireMs: 300, damage: 20, pellets: 1, bulletSpeed: 1800, spread: 0.08, ammo: Infinity, scrapPerRound: 0, muzzle: 50,
+  bullet: { r: 1.6, color: '#4fd1e8' }, lobbed: null,
+};
+
 export const ZOM = {
   /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,
   /** Who shelters in the core: one is lost for each `coreHp / survivors` it falls below whole, and each one left pays `scrapPerSurvivor` at dawn. */
   survivors: 50,
-  scrapPerSurvivor: 1,
+  scrapPerSurvivor: 2,
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
   coreArmor: 0.6,
   /** Half the side of the square core at the map's center. */
@@ -365,7 +371,7 @@ export const ZOM = {
   wallCostCells: 40,
   /** A squad of four bots meets each night's horde as listed; a human, with triple health and better aim than a bot, counts for one and a half. */
   hordeShare: (squad: { humans: number; bots: number }) => (squad.bots + 1.5 * squad.humans) / 4,
-  spawnGapMs: (night: number) => Math.max(150, 900 - 50 * night),
-  nightMul: (night: number) => ({ hp: 1 + 0.1 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
+  spawnGapMs: (night: number) => Math.max(1000, 2600 - 120 * night),
+  nightMul: (night: number) => ({ hp: 1 + 0.175 * (night - 1), damage: 1 + 0.1 * (night - 1) }),
   restartMs: 20_000,
 } as const;
