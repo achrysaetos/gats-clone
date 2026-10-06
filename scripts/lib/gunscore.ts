@@ -1,4 +1,4 @@
-import { GUN_IDS, GUNS, WORLD, type GunId } from '../../src/shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type GunId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
@@ -43,6 +43,9 @@ export function scoreGun(id: GunId): GunScore {
 const EPS = 1e-9;
 const atLeast = (axis: Axis, a: number, b: number) => (LOWER_BETTER.has(axis) ? a <= b + EPS : a >= b - EPS);
 export const dominates = (a: GunScore, b: GunScore) => AXES.every((k) => atLeast(k, a[k], b[k])) && AXES.some((k) => !atLeast(k, b[k], a[k]));
+
+/** Each class gun followed by its branches, depth first. */
+export const TREE_ORDER: readonly GunId[] = WEAPON_IDS.flatMap((base) => [base, ...EVOLUTIONS[base].flatMap((g) => [g, ...EVOLUTIONS[g]])]);
 
 export type Pair = readonly [winner: GunId, loser: GunId];
 export const gunsOfStage = (stage: 0 | 1 | 2) => GUN_IDS.filter((id) => GUNS[id].stage === stage);
