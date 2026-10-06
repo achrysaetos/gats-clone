@@ -12,6 +12,7 @@ import type { GameEvent, Snapshot } from '../src/shared/protocol.ts';
 import { fillSnapshot } from '../src/shared/wire.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { killOnExit } from './kill-on-exit.ts';
+import { pct } from './lib/stats.ts';
 
 const RUN = process.argv[2];
 if (!RUN) throw new Error('usage: node scripts/offscreen-hits.ts <run dir> [seconds] [WxH ...]');
@@ -131,10 +132,9 @@ for (const [i, vp] of VIEWPORTS.entries()) {
     await sleep(250);
   }
   const count = (w: Where) => hits.filter((h) => h.where === w).length;
-  const pct = (n: number) => `${((100 * n) / Math.max(1, hits.length)).toFixed(1)}%`;
   const outside = hits.filter((h) => h.where === 'outside');
   const worst = outside.length ? `; outside offsets up to |dx| ${Math.max(...outside.map((h) => Math.abs(h.dx))).toFixed(0)}, |dy| ${Math.max(...outside.map((h) => Math.abs(h.dy))).toFixed(0)}` : '';
-  console.log(`${vp.join('x')}: ${hits.length} hits from players in ${SECONDS}s; attacker on screen ${count('inside')} (${pct(count('inside'))}), in snapshot but off screen ${count('outside')} (${pct(count('outside'))}), not in snapshot because the attacker died ${count('dead')}, for any other reason ${count('absent')} (${pct(count('absent'))})${worst}`);
+  console.log(`${vp.join('x')}: ${hits.length} hits from players in ${SECONDS}s; attacker on screen ${count('inside')} (${pct(count('inside'), hits.length)}), in snapshot but off screen ${count('outside')} (${pct(count('outside'), hits.length)}), not in snapshot because the attacker died ${count('dead')}, for any other reason ${count('absent')} (${pct(count('absent'), hits.length)})${worst}`);
   const cam = makeCamera({ x: 0, y: 0 }, vp[0], vp[1], WORLD.viewRadius);
   console.log(`${vp.join('x')} (${i === 0 ? 'aspect sent in join' : 'aspect sent on resize'}): widest player sent |dx| ${widestSent.dx.toFixed(0)}, |dy| ${widestSent.dy.toFixed(0)}; screen shows |dx| ${cam.viewHalfW.toFixed(0)}, |dy| ${cam.viewHalfH.toFixed(0)}`);
   console.log(`${vp.join('x')}: ${arrivals} players slid in at a screen edge; ${edgePopIns} of them appeared already fully inside the screen (pop-in, respawns excluded)`);

@@ -10,7 +10,7 @@ import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.
 import { wrapAngle } from '../src/server/bot/aim.ts';
 import { MIN_TURN_BACK_MS } from '../src/server/bot/motor.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
-import { quantile } from './lib/stats.ts';
+import { pct, quantile } from './lib/stats.ts';
 
 const modes = (process.argv[2] ?? 'FFA,TDM').split(',').filter(Boolean) as Exclude<ModeId, 'ZOM'>[];
 const minutes = Number(process.argv[3] ?? 3);
@@ -152,7 +152,7 @@ function report(label: string, t: Tally) {
     `  ${''.padEnd(12)} move`,
     `reversals ${(t.moveReversals / Math.max(1e-9, aliveSec)).toFixed(2)}/s per bot`,
     `gap between reversals p1 ${Math.round(quantile(t.reversalGaps, 0.01))}ms p5 ${Math.round(quantile(t.reversalGaps, 0.05))}ms p50 ${Math.round(quantile(t.reversalGaps, 0.5))}ms`,
-    `under ${QUICK_MS}ms ${(100 * t.reversalGaps.filter((g) => g < QUICK_MS).length / Math.max(1, t.reversalGaps.length)).toFixed(1)}%`,
+    `under ${QUICK_MS}ms ${pct(t.reversalGaps.filter((g) => g < QUICK_MS).length, t.reversalGaps.length)}`,
   ].join('  '));
 }
 
