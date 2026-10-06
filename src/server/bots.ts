@@ -53,7 +53,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.weapon, persona), arena, rand };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor } };

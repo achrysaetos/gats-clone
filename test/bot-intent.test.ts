@@ -18,7 +18,7 @@ function decide(w: World, id: number, cur: Plan | Intent, opts: { persona?: Pers
   snap.tick = opts.tick ?? snap.tick;
   const me = snap.players.find((p) => p.id === id)!;
   const { view } = perceive(snap, arenaFor(w), me, opts.aware ?? freshAwareness());
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.weapon, persona), arena: arenaFor(w), rand: seeded(3) };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena: arenaFor(w), rand: seeded(3) };
   const intent = 'since' in cur ? cur : startIntent(cur, { ...ctx, tick: snap.tick });
   return nextIntent(intent, view, ctx);
 }

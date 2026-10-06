@@ -183,7 +183,7 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       }
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
       if (readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) return { steer: fight(t.p), stance: m.stance };
-      const closing = t.d > c.band.max || (v.weapon === 'shotgun' && t.d > c.band.ideal);
+      const closing = t.d > c.band.max || (c.band.rushes && t.d > c.band.ideal);
       const stance = nextStance(m, v, c, !closing && plants(v, c, t.d, false));
       const step = stance.step;
       if (step === 0) return { steer: fight(null), stance };
