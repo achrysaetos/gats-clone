@@ -18,13 +18,18 @@ const CAP_MS = 15 * 60_000;
 const PHASES = RING.length + 1;
 const CONTEST_PX = 500;
 const SAMPLE_TICKS = 15;
+const BUCKET_MS = 30_000;
+const TELEPORT_PX = 200;
+
+type Activity = { aliveTicks: number; still: number; travel: number; shots: number; crates: number; scoreSum: number; scoreN: number; nearest: number[] };
+const freshActivity = (): Activity => ({ aliveTicks: 0, still: 0, travel: 0, shots: 0, crates: 0, scoreSum: 0, scoreN: 0, nearest: [] });
 
 type Spec = { map: MapId; seed: number; proxy: boolean };
 type Result = {
   spec: Spec; won: boolean; ms: number; ringDeaths: number; playerDeaths: number; ringWipes: number; wipes: number;
   takedownsByPhase: number[]; phaseMs: number[];
   squadsLeftByMinute: number[]; lastFightPhase: number; survivorStages: number[];
-  drops: number; contested: number; thinkMs: number; ticks: number; proxyTeam: ColorId | null; winner: ColorId | null;
+  drops: number; contested: number; thinkMs: number; ticks: number; proxyTeam: ColorId | null; winner: ColorId | null; activity: Activity[];
 };
 
 const hash = (s: string) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193); return h >>> 0; };
@@ -43,10 +48,12 @@ function play(spec: Spec): Result {
   }
   const res: Result = {
     spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringWipes: 0, wipes: 0, takedownsByPhase: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
-    squadsLeftByMinute: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, thinkMs: 0, ticks: 0, proxyTeam, winner: null,
+    squadsLeftByMinute: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, thinkMs: 0, ticks: 0, proxyTeam, winner: null, activity: [],
   };
   const dropSeen = new Map<number, boolean>();
   const lastCause = new Map<number, 'ring' | 'player'>();
+  const lastPos = new Map<number, { x: number; y: number }>();
+  const broken = new Set<number>();
   const ringBlow = (e: GameEvent) => (e.e === 'kill' && e.weapon === 'Ring') || (e.e === 'life' && e.k === 'finished' && e.by === null);
   while (w.match.k === 'playing' && w.now < CAP_MS) {
     const t0 = performance.now();
@@ -68,6 +75,27 @@ function play(spec: Spec): Result {
         res.wipes++;
         const members = [...w.players.values()].filter((p) => p.team === e.team);
         if (members.every((p) => lastCause.get(p.id) === 'ring')) res.ringWipes++;
+      }
+    }
+    const act = (res.activity[Math.floor((w.now - TICK_MS) / BUCKET_MS)] ??= freshActivity());
+    act.shots += w.events.filter((e) => e.e === 'shot').length;
+    for (const c of w.crates) if (c.respawnAt !== null && !broken.has(c.id)) { broken.add(c.id); act.crates++; }
+    const up = [...w.players.values()].filter((p) => p.life.k === 'alive');
+    for (const p of up) {
+      const last = lastPos.get(p.id);
+      lastPos.set(p.id, { x: p.x, y: p.y });
+      const d = last ? Math.hypot(p.x - last.x, p.y - last.y) : Infinity;
+      if (d >= TELEPORT_PX) continue;
+      act.aliveTicks++;
+      act.travel += d;
+      if (d < 0.5) act.still++;
+    }
+    if (w.tick % WORLD.tickHz === 0 && up.length) {
+      act.scoreSum += up.reduce((s, p) => s + p.score, 0) / up.length;
+      act.scoreN++;
+      for (const p of up) {
+        const d = Math.min(...up.filter((o) => o.team !== p.team).map((o) => Math.hypot(o.x - p.x, o.y - p.y)));
+        if (Number.isFinite(d)) act.nearest.push(d);
       }
     }
     for (const p of w.players.values()) {
@@ -137,7 +165,19 @@ if (!isMainThread) {
     const minutes = Math.max(...rs.map((x) => x.squadsLeftByMinute.length));
     console.log(`${''.padEnd(10)} squads in by minute ${Array.from({ length: minutes }, (_, m) => (sum(rs.map((x) => x.squadsLeftByMinute[m] ?? 0)) / rs.length).toFixed(1)).join(' ')}`);
   };
+  const activity = (rs: readonly Result[]) => {
+    console.log(`all matches by ${BUCKET_MS / 1000}s from\n     t  matches  still  px/s  shots/bot-min  crates/match  avg score  nearest enemy px`);
+    for (let b = 0; b < Math.max(...rs.map((x) => x.activity.length)); b++) {
+      const rows = rs.flatMap((x) => (x.activity[b] ? [x.activity[b]!] : []));
+      const a = rows.reduce((t, r) => ({ ...t, aliveTicks: t.aliveTicks + r.aliveTicks, still: t.still + r.still, travel: t.travel + r.travel, shots: t.shots + r.shots, crates: t.crates + r.crates,
+        scoreSum: t.scoreSum + r.scoreSum, scoreN: t.scoreN + r.scoreN }), freshActivity());
+      const aliveMs = a.aliveTicks * TICK_MS;
+      console.log(`${String((b * BUCKET_MS) / 1000).padStart(5)}s ${String(rows.length).padStart(7)} ${pc(a.still / a.aliveTicks).padStart(6)} ${(a.travel / (aliveMs / 1000)).toFixed(0).padStart(5)}` +
+        ` ${(a.shots / (aliveMs / 60_000)).toFixed(1).padStart(14)} ${(a.crates / rows.length).toFixed(1).padStart(13)} ${(a.scoreSum / a.scoreN).toFixed(0).padStart(10)} ${median(rows.flatMap((r) => r.nearest)).toFixed(0).padStart(17)}`);
+    }
+  };
   console.log(`bench-royale: ${specs.length} bot matches (${seeds.length} seeds x ${maps.join('/')}), ${args['no-proxy'] ? 'no proxy' : 'one 4x-health bot in one squad'}, cap ${CAP_MS / 60_000} min, ${((performance.now() - started) / 1000).toFixed(0)}s`);
   for (const map of maps) summarize(map, results.filter((x) => x.spec.map === map));
   summarize('all', results);
+  activity(results);
 }
