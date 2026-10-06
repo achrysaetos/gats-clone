@@ -1,4 +1,4 @@
-import { WORLD } from '../../shared/defs.ts';
+import { WORLD, type AbilityId } from '../../shared/defs.ts';
 import type { PlayerView } from '../../shared/protocol.ts';
 import type { Point } from './nav.ts';
 
@@ -45,6 +45,12 @@ export const SHARPNESS: readonly { aimMul: number; reactionMul: number }[] = [
   { aimMul: 0.15, reactionMul: 0.45 },
 ];
 type Sharpness = (typeof SHARPNESS)[number];
+
+/** Grenades land where they were aimed when the fuse runs out, so bots aim where the target will be then. */
+export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
+const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'knife', 'engineer']);
+
+export type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 export const sharpnessAgainst = (target: PlayerView) =>
   target.kind === 'bot' ? SHARPNESS[0]! : SHARPNESS[target.hunted ? SHARPNESS.length - 1 : Math.min(target.level, SHARPNESS.length - 1)]!;
 
@@ -80,7 +86,7 @@ export function handFor(sharpness: Sharpness): Hand {
 
 export const leadSeconds = (d: number, speed: number) => (BOT_AIM.strafeLeadFraction * d) / speed;
 
-export const onTarget = (aim: AimState, d: number) => Math.abs(wrapAngle(aim.angle - aim.want)) <= Math.max(BOT_AIM.fireSlackRad, Math.atan2(WORLD.playerRadius, d));
+const onTarget = (aim: AimState, d: number) => Math.abs(wrapAngle(aim.angle - aim.want)) <= Math.max(BOT_AIM.fireSlackRad, Math.atan2(WORLD.playerRadius, d));
 
 export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number): Engagement {
   if (!prev) {
@@ -102,3 +108,10 @@ export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: n
 }
 
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);
+
+export function aimAndTrigger(before: AimState, look: Look, wantsFire: boolean, wanted: AbilityId | null, shots: number): { aim: AimState; fire: boolean; ability: boolean; shots: number } {
+  const aim = turn({ ...before, err: look.err }, look.want, look.spin, look.hand, TICK_MS);
+  const aimed = onTarget(aim, look.d);
+  const fire = wantsFire && aimed;
+  return { aim, fire, ability: wanted !== null && (aimed || !AIMED_ABILITIES.has(wanted)), shots: shots + (fire ? 1 : 0) };
+}

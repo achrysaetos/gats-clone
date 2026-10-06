@@ -3,9 +3,9 @@ import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type Play
 import { cellRect } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
-import { aimSigma, bearingSpin, drift, engage, freshAim, HANDS, onTarget, SHARPNESS, TICK_MS, turn, type Engagement, type Hand } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
 import type { BotArena } from './arena.ts';
-import { ABILITY_RULES, AIMED_ABILITIES, HURTING_HP_FRAC, type Situation } from './motor.ts';
+import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
 
 export const DEAD_ZONE = 30;
 const UNDER_FIRE_TICKS = Math.round(500 / TICK_MS);
@@ -82,8 +82,9 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const outFromCore = { x: 2 * me.x - run.core.x, y: 2 * me.y - run.core.y };
   const face = errand.use ? errand : outFromCore;
   const before = mem.motor.aim ?? freshAim(me.angle);
-  let want = Math.hypot(face.x - me.x, face.y - me.y) > 1 ? Math.atan2(face.y - me.y, face.x - me.x) : before.want;
-  let spin = 0, hand: Hand = HANDS.calm, err = before.err, aimDist = 300, wantsFire = false;
+  const want = Math.hypot(face.x - me.x, face.y - me.y) > 1 ? Math.atan2(face.y - me.y, face.x - me.x) : before.want;
+  let look: Look = { want, spin: 0, hand: HANDS.calm, d: 300, err: before.err };
+  let wantsFire = false;
   let threat: Situation['threat'] = null;
   let engaged: Engagement | null = null;
   if (zombie) {
@@ -91,29 +92,23 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     const prev = mem.motor.engaged;
     engaged = prev?.id === zombie.id ? engage(prev, zombie, SHARPNESS[0]!, snap.tick, rand) : { ...engage(null, zombie, SHARPNESS[0]!, snap.tick, rand), ...(prev && { acquiredTick: prev.acquiredTick, noticeAtTick: prev.noticeAtTick }) };
     if (snap.tick >= engaged.noticeAtTick) {
-      err = drift(err, aimSigma(engaged, me, SHARPNESS[0]!, snap.tick), TICK_MS, rand);
+      const err = drift(before.err, aimSigma(engaged, me, SHARPNESS[0]!, snap.tick), TICK_MS, rand);
       const rx = zombie.x - me.x, ry = zombie.y - me.y;
-      want = Math.atan2(ry, rx) + err;
-      spin = bearingSpin(rx, ry, engaged.vx, engaged.vy);
-      hand = HANDS.flick;
-      aimDist = zombie.d;
+      look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx, engaged.vy), hand: HANDS.flick, d: zombie.d, err };
       wantsFire = zombie.d < GUNS[me.gun].range * 0.95;
       threat = { d: zombie.d };
     }
   }
-  const aim = turn({ ...before, err }, want, spin, hand, TICK_MS);
-  const aimed = onTarget(aim, aimDist);
-  const fire = wantsFire && aimed;
   const hitTick = snap.events.some((e) => e.e === 'dmg' && e.kind === 'player' && e.victim === me.id) ? snap.tick : mem.awareness.hitTick;
   const situation: Situation = { threat, hurting: me.hp < me.maxHp * HURTING_HP_FRAC, underFire: snap.tick - hitTick <= UNDER_FIRE_TICKS, onContestedZone: false };
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
-  const ability = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation) && (aimed || !AIMED_ABILITIES.has(readyAbility));
-  const shots = mem.motor.shots + (fire ? 1 : 0);
+  const wanted = readyAbility !== null && readyAbility !== 'engineer' && ABILITY_RULES[readyAbility](situation) ? readyAbility : null;
+  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire, wanted, mem.motor.shots);
   const mx = errand.x - me.x, my = errand.y - me.y;
   const still = errand.use;
   const input: InputState = {
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
-    angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist, use: errand.use,
+    angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,
   };
   const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots } };
   return { input, mem: next };
