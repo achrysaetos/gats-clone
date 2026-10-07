@@ -70,6 +70,8 @@ export type Player = {
   lowAt: number | null;
   /** Ground covered since this life last fired (or began), from where it stood last tick, for the Ghost medal. */
   quiet: { px: number; x: number; y: number; firedAt: number };
+  /** This life's weapon feats so far (`WEAPON_MEDALS`): kills since the last reload, one-hit kills, and who the last volley hit. */
+  feats: Feats;
   revealedUntil: number;
   /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
   huntedPing: (Pose & { at: number }) | null;
@@ -78,6 +80,9 @@ export type Player = {
 
 export type PerkOfTier<T extends Tier> = (typeof PERK_TIERS)[T][number];
 export type ChosenPerks = { [T in Tier]?: PerkOfTier<T> };
+
+export type Feats = { magKills: number; oneShots: number; volley: { at: number; hit: number[] } };
+export const freshFeats = (): Feats => ({ magKills: 0, oneShots: 0, volley: { at: -1, hit: [] } });
 
 export type Bullet = {
   /** `team` is the owner's at the time of firing, so the round still spares teammates after its owner leaves. */
@@ -90,6 +95,8 @@ export type Bullet = {
   lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
+  /** The tick a player's round was fired on, which groups a shotgun's pellets into one blast. */
+  volley?: number;
   /** Players this round already suppressed in passing, so each feels it once. */
   suppressed?: number[];
   /** How far a gun round has flown, which sets how much of its muzzle speed is left (see `MUZZLE`). */

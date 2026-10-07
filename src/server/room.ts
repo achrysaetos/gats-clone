@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, ROYALE, WORLD, ZOM, type MedalId, type ModeId, type PlayerKind } from '../shared/defs.ts';
+import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
@@ -43,6 +43,9 @@ export type Room = {
   info(): RoomInfo;
   close(): void;
 };
+
+/** A kill event names the gun by its label; its class credits the weapon mastery tracks. */
+const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g]));
 
 export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES): Room {
   const world = createWorld(mode, seed, ROTATION[mode][0]);
@@ -158,15 +161,19 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
    * medal lands the moment it is earned rather than when the life ends.
    */
   function creditProfiles(events: readonly GameEvent[]) {
-    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[] }>();
+    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[]; weaponKills: WeaponId[] }>();
     const delta = (id: number) => {
       let d = deltas.get(id);
-      if (!d) deltas.set(id, (d = { kills: 0, deaths: 0, medals: [] }));
+      if (!d) deltas.set(id, (d = { kills: 0, deaths: 0, medals: [], weaponKills: [] }));
       return d;
     };
     for (const e of events) {
       if (e.e === 'medal') delta(e.id).medals.push(e.medal);
-      if (e.e === 'kill' && e.killerId !== null && e.killerId !== e.victimId) delta(e.killerId).kills++;
+      if (e.e === 'kill' && e.killerId !== null && e.killerId !== e.victimId) {
+        delta(e.killerId).kills++;
+        const gun = GUN_BY_NAME.get(e.weapon);
+        if (gun) delta(e.killerId).weaponKills.push(GUNS[gun].base);
+      }
       if (e.e === 'kill' && !e.knock) delta(e.victimId).deaths++;
     }
     for (const c of joined()) {

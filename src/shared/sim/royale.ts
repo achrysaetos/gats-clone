@@ -5,7 +5,7 @@ import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
-import { coverRects, crateRect, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
+import { coverRects, crateRect, freshFeats, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
@@ -172,6 +172,7 @@ function redeploy(w: World, r: Royale) {
     r.redeployAt.delete(id);
     resetProgress(p);
     p.lifeKills = 0;
+    p.feats = freshFeats();
     const spot = spawnPoint(w, p.team);
     p.x = spot.x;
     p.y = spot.y;

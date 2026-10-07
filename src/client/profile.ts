@@ -1,4 +1,4 @@
-import { badgeKey, CAREER, CAREER_IDS, CAREER_TIERS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId } from '../shared/defs.ts';
+import { badgeKey, CAREER, CAREER_IDS, CAREER_TIERS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId, type WeaponId } from '../shared/defs.ts';
 import { careerArt, careerName, medalArt, medalSvg } from './medals.ts';
 import { trackRootScale } from './uiscale.ts';
 
@@ -8,7 +8,7 @@ import { trackRootScale } from './uiscale.ts';
  */
 type ProfileJson = {
   name: string; kills: number; deaths: number; games: number; bestStreak: number; distance: number;
-  medals: Partial<Record<MedalId, number>>; badges: Record<string, number>; firstSeen: number; featured: Badge | null;
+  medals: Partial<Record<MedalId, number>>; weaponKills?: Partial<Record<WeaponId, number>>; badges: Record<string, number>; firstSeen: number; featured: Badge | null;
 };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -23,7 +23,8 @@ function count(p: ProfileJson, track: CareerId): number {
   const needs = CAREER[track].needs;
   if (needs === 'km') return Math.floor(p.distance / KM_PX);
   if (needs === 'kills' || needs === 'games' || needs === 'bestStreak') return p[needs];
-  return p.medals[needs] ?? 0;
+  if (needs.startsWith('kills:')) return p.weaponKills?.[needs.slice(6) as WeaponId] ?? 0;
+  return p.medals[needs as MedalId] ?? 0;
 }
 
 function trackCard(p: ProfileJson, track: CareerId): HTMLElement {

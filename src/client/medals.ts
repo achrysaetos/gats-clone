@@ -15,6 +15,8 @@ const FAMILY = {
   grudge: { enamel: '#7a1f3a', ribbon: '#c23b5e' },
   hunt: { enamel: '#8a5a12', ribbon: '#e0a42a' },
   streak: { enamel: '#b8410f', ribbon: '#ff7a2f' },
+  /** The weapon feats: gunmetal enamel on the interface's signal orange. */
+  arms: { enamel: '#3d4450', ribbon: '#ff5a1f' },
 } as const;
 
 /** 24-unit glyphs, drawn in bone with an ink edge. */
@@ -34,6 +36,13 @@ export const GLYPHS = {
   flame: 'M12 22.5c-4.4 0-7.5-3-7.5-7.2 0-3.6 2.4-5.6 3.9-8.8.9 1.9 1.9 3 3.1 3.3-.2-2.8.9-5.7 3.3-8.3.6 4.1 5.2 7 5.2 13 0 4.8-3.4 8-8 8zm0-2.4c1.9 0 3.2-1.3 3.2-3.2 0-2.2-1.6-3.4-2.4-5.3-.9 1.4-2.6 2.4-3.6 4.2-.6 2.2.8 4.3 2.8 4.3z',
   crown: 'M3 7.5l4.6 3.6L12 4l4.4 7.1L21 7.5l-1.8 10.5H4.8zM4.8 19.5h14.4V22H4.8z',
   bolt: 'M13.5 1.5L4.5 13.5h6l-1.5 9 9-12h-6z',
+  pistol: 'M2.5 6h17v4.5h-7.2l-.9 2.2H9.6l-.4 2.4-1.7 6.4H3.8l2.1-8.8H2.5z',
+  shells: 'M4.5 8h5.5v13H4.5zM4.5 6.8c0-2.6 1.2-4.8 2.75-4.8S10 4.2 10 6.8zM14 8h5.5v13H14zM14 6.8c0-2.6 1.2-4.8 2.75-4.8s2.75 2.2 2.75 4.8z',
+  bullet: 'M9.5 9h5v13h-5zM9.5 7.8c0-3.2 1.1-5.8 2.5-5.8s2.5 2.6 2.5 5.8z',
+  belt: 'M3 10h4v11H3zM3 9c0-2.6.9-5 2-5s2 2.4 2 5zM10 10h4v11h-4zM10 9c0-2.6.9-5 2-5s2 2.4 2 5zM17 10h4v11h-4zM17 9c0-2.6.9-5 2-5s2 2.4 2 5zM2 15h20v2H2z',
+  eye: 'M12 5c5.2 0 9 4.4 10.5 7-1.5 2.6-5.3 7-10.5 7S3 14.6 1.5 12C3 9.4 6.8 5 12 5zm0 2.6a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8zm0 2.6a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z',
+  dash: 'M2 10.5h11.5L9.8 6.8 11.4 5.2 18.2 12l-6.8 6.8-1.6-1.6 3.7-3.7H2zM19.5 5h2.5v14h-2.5z',
+  pinned: 'M3 3h18v3H3zM12 7l6 6h-4v8h-4v-8H6z',
   ghost: 'M12 2.5c-4.7 0-7.5 3.4-7.5 8v10.5l2.5-2 2.5 2 2.5-2 2.5 2 2.5-2 2.5 2V10.5c0-4.6-2.8-8-7.5-8zM9 8.5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4z',
 } as const;
 
@@ -56,6 +65,18 @@ const ART: Record<MedalId, MedalArt> = {
   untouchable: { tier: 'platinum', ...FAMILY.streak, glyph: GLYPHS.shieldCrack },
   legendary: { tier: 'platinum', ...FAMILY.streak, glyph: GLYPHS.crown },
   ghost: { tier: 'bronze', ...FAMILY.survive, glyph: GLYPHS.ghost },
+  doubleTap: { tier: 'bronze', ...FAMILY.arms, glyph: GLYPHS.pistol },
+  deadeye: { tier: 'silver', ...FAMILY.arms, glyph: GLYPHS.eye },
+  runAndGun: { tier: 'bronze', ...FAMILY.arms, glyph: GLYPHS.dash },
+  twoBirds: { tier: 'bronze', ...FAMILY.arms, glyph: GLYPHS.shells },
+  longBarrel: { tier: 'silver', ...FAMILY.arms, glyph: GLYPHS.scope },
+  disciplined: { tier: 'bronze', ...FAMILY.arms, glyph: GLYPHS.bullet },
+  oneShot: { tier: 'silver', ...FAMILY.arms, glyph: GLYPHS.bullet },
+  noScope: { tier: 'silver', ...FAMILY.arms, glyph: GLYPHS.blast },
+  eagleEye: { tier: 'gold', ...FAMILY.arms, glyph: GLYPHS.eye },
+  reaper: { tier: 'platinum', ...FAMILY.arms, glyph: GLYPHS.skull },
+  pinnedDown: { tier: 'bronze', ...FAMILY.arms, glyph: GLYPHS.pinned },
+  beltFed: { tier: 'gold', ...FAMILY.arms, glyph: GLYPHS.belt },
 };
 
 export const medalArt = (id: MedalId): MedalArt => ART[id];
@@ -78,6 +99,14 @@ const CAREER_ART: Record<CareerId, Omit<MedalArt, 'tier'>> = {
   firstBlood: { ...FAMILY.grudge, glyph: GLYPHS.drop },
   distance: { ...FAMILY.survive, glyph: GLYPHS.bolt },
   ghost: { ...FAMILY.survive, glyph: GLYPHS.ghost },
+  pistolKills: { ...FAMILY.arms, glyph: GLYPHS.pistol },
+  smgKills: { ...FAMILY.arms, glyph: GLYPHS.dash },
+  shotgunKills: { ...FAMILY.arms, glyph: GLYPHS.shells },
+  assaultKills: { ...FAMILY.arms, glyph: GLYPHS.bullet },
+  sniperKills: { ...FAMILY.arms, glyph: GLYPHS.scope },
+  lmgKills: { ...FAMILY.arms, glyph: GLYPHS.belt },
+  oneShot: { ...FAMILY.arms, glyph: GLYPHS.skull },
+  twoBirds: { ...FAMILY.arms, glyph: GLYPHS.shells },
 };
 
 export const careerArt = (b: Badge): MedalArt => ({ ...CAREER_ART[b.track], tier: CAREER_TIERS[b.tier]!, stars: b.tier + 1 });

@@ -8,7 +8,7 @@ import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
@@ -20,7 +20,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
-    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
+    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, feats: freshFeats(), revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
   spawn(w, p, loadout, opts.at);
@@ -31,6 +31,7 @@ function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: numbe
   p.loadout = loadout;
   resetProgress(p);
   p.lifeKills = 0;
+  p.feats = freshFeats();
   const pos = at ?? spawnPoint(w, p.team);
   p.x = pos.x;
   p.y = pos.y;
@@ -92,10 +93,13 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const armed = w.match.k === 'playing';
-  if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
+  const wasReloading = life.reloadUntil !== null;
+  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
+  // A fresh magazine starts the count of kills from one mag again.
+  if (!wasReloading && life.reloadUntil !== null) p.feats.magKills = 0;
+  if (fired) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
-    // Bloom is a duel rule, so short bursts beat long sprays between players; against the horde a held trigger stays steady.
     const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray, life.suppression);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
@@ -104,7 +108,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
         left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
-        gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
+        gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null, volley: w.tick,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }

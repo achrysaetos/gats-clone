@@ -326,6 +326,9 @@ export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 250, revengeSco
 export const MEDAL_IDS = [
   'firstBlood', 'doubleKill', 'tripleKill', 'quadKill', 'massacre', 'longShot', 'pointBlank', 'clutch', 'closeCall',
   'revenge', 'shutdown', 'bounty', 'onFire', 'rampage', 'unstoppable', 'untouchable', 'legendary', 'ghost',
+  // Each weapon class has feats of its own (`WEAPON_MEDALS`).
+  'doubleTap', 'deadeye', 'runAndGun', 'twoBirds', 'longBarrel', 'disciplined', 'oneShot', 'noScope', 'eagleEye', 'reaper',
+  'pinnedDown', 'beltFed',
 ] as const;
 export type MedalId = (typeof MEDAL_IDS)[number];
 export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
@@ -348,12 +351,32 @@ export const MEDALS: Record<MedalId, { name: string; desc: string; score: number
   untouchable: { name: 'Untouchable', desc: '12 kills without dying', score: 400, tier: 'platinum' },
   legendary: { name: 'Legendary', desc: '20 kills without dying', score: 600, tier: 'platinum' },
   ghost: { name: 'Ghost', desc: 'Cover 3000 px in one life without firing a shot', score: 75, tier: 'bronze' },
+  doubleTap: { name: 'Double Tap', desc: 'Pistol: two kills from one magazine', score: 75, tier: 'bronze' },
+  deadeye: { name: 'Deadeye', desc: 'Pistol: a kill from 500 px or more', score: 100, tier: 'silver' },
+  runAndGun: { name: 'Run and Gun', desc: 'SMG: a kill on the move', score: 50, tier: 'bronze' },
+  twoBirds: { name: 'Two Birds', desc: 'Shotgun: one blast hits two enemies', score: 75, tier: 'bronze' },
+  longBarrel: { name: 'Long Barrel', desc: 'Shotgun: a kill from 340 px or more', score: 125, tier: 'silver' },
+  disciplined: { name: 'Disciplined', desc: 'Assault: a kill before your spray blooms', score: 50, tier: 'bronze' },
+  oneShot: { name: 'One Shot', desc: 'Sniper: a kill with one hit from full health', score: 100, tier: 'silver' },
+  noScope: { name: 'No Scope', desc: 'Sniper: a kill from 160 px or closer', score: 125, tier: 'silver' },
+  eagleEye: { name: 'Eagle Eye', desc: 'Sniper: a kill from 900 px or more', score: 150, tier: 'gold' },
+  reaper: { name: 'Reaper', desc: 'Sniper: three one-hit kills in one life', score: 300, tier: 'platinum' },
+  pinnedDown: { name: 'Pinned Down', desc: 'Machine gun: kill an enemy you have pinned with suppression', score: 75, tier: 'bronze' },
+  beltFed: { name: 'Belt Fed', desc: 'Machine gun: three kills from one belt', score: 150, tier: 'gold' },
 };
 /** The streak at which each streak medal is earned. */
 export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
 /** The chain of kills each multi-kill medal names, from the second kill. */
 export const MULTI_MEDALS: readonly MedalId[] = ['doubleKill', 'tripleKill', 'quadKill', 'massacre'];
 export const MEDAL_RULES = { multiMs: 4000, longShotPx: 650, pointBlankPx: 90, clutchHp: 0.2, clutchMs: 5000, closeCallHp: 0.1, closeCallMs: 6000, closeCallReset: 0.5, ghostPx: 3000 } as const;
+/**
+ * The weapon feats, judged on the gun that fired the killing round (or blast of pellets): kills from one magazine, the
+ * range, a kill in one hit from full health, a spray that had not bloomed yet, a victim pinned by suppression.
+ */
+export const WEAPON_MEDALS = {
+  doubleTapKills: 2, deadeyePx: 500, twoBirdsHits: 2, longBarrelPx: 340, oneShotsForReaper: 3, noScopePx: 160, eagleEyePx: 900,
+  pinnedSuppression: 0.6, beltFedKills: 3,
+} as const;
 
 /**
  * Lifetime medals: career tracks kept on a player's profile for good, each with a bronze, silver, gold and platinum
@@ -363,10 +386,11 @@ export const MEDAL_RULES = { multiMs: 4000, longShotPx: 650, pointBlankPx: 90, c
 export const CAREER_IDS = [
   'kills', 'games', 'streak', 'longShot', 'pointBlank', 'multiKill', 'tripleKill', 'massacre', 'clutch', 'closeCall',
   'revenge', 'shutdown', 'bounty', 'firstBlood', 'distance', 'ghost',
+  'pistolKills', 'smgKills', 'shotgunKills', 'assaultKills', 'sniperKills', 'lmgKills', 'oneShot', 'twoBirds',
 ] as const;
 export type CareerId = (typeof CAREER_IDS)[number];
 /** `km` is career distance walked, at `KM_PX` px to the km: a body is about a metre across, so a km is some 3 minutes on foot. */
-export type CareerStat = 'kills' | 'games' | 'bestStreak' | 'km';
+export type CareerStat = 'kills' | 'games' | 'bestStreak' | 'km' | `kills:${WeaponId}`;
 export const KM_PX = 48_000;
 export const CAREER_TIERS: readonly MedalTier[] = ['bronze', 'silver', 'gold', 'platinum'];
 export const CAREER: Record<CareerId, { name: string; unit: string; needs: CareerStat | MedalId; at: readonly [number, number, number, number] }> = {
@@ -386,6 +410,14 @@ export const CAREER: Record<CareerId, { name: string; unit: string; needs: Caree
   firstBlood: { name: 'Opener', unit: 'First Bloods', needs: 'firstBlood', at: [3, 15, 50, 150] },
   distance: { name: 'Marathon', unit: 'km walked', needs: 'km', at: [10, 50, 200, 800] },
   ghost: { name: 'Phantom', unit: 'Ghost medals', needs: 'ghost', at: [5, 25, 75, 200] },
+  pistolKills: { name: 'Sidearm', unit: 'pistol kills', needs: 'kills:pistol', at: [50, 250, 750, 2500] },
+  smgKills: { name: 'Spray Master', unit: 'SMG kills', needs: 'kills:smg', at: [50, 250, 750, 2500] },
+  shotgunKills: { name: 'Buckshot', unit: 'shotgun kills', needs: 'kills:shotgun', at: [50, 250, 750, 2500] },
+  assaultKills: { name: 'Rifleman', unit: 'assault rifle kills', needs: 'kills:assault', at: [50, 250, 750, 2500] },
+  sniperKills: { name: 'Sharpshooter', unit: 'sniper kills', needs: 'kills:sniper', at: [50, 250, 750, 2500] },
+  lmgKills: { name: 'Gunner', unit: 'machine gun kills', needs: 'kills:lmg', at: [50, 250, 750, 2500] },
+  oneShot: { name: 'Silencer', unit: 'One Shots', needs: 'oneShot', at: [10, 50, 150, 400] },
+  twoBirds: { name: 'Scattergun', unit: 'Two Birds', needs: 'twoBirds', at: [10, 50, 150, 400] },
 };
 /** Score a lifetime medal pays the moment it is earned, by tier. */
 export const CAREER_PAY: Record<MedalTier, number> = { bronze: 100, silver: 200, gold: 400, platinum: 800 };

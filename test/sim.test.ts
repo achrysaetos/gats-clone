@@ -82,7 +82,7 @@ test('kills award killScore and open picks at the level thresholds', () => {
   assert.equal(self.kills, 1);
 
   killOne();
-  assert.equal(a.score, 2 * WORLD.killScore + MEDALS.doubleKill.score, 'a second kill this soon is a double');
+  assert.equal(a.score, 2 * WORLD.killScore + MEDALS.doubleKill.score + MEDALS.doubleTap.score, 'a second kill this soon is a double, and from the same magazine a Double Tap');
   while (a.score < LEVELS[2].score) killOne();
   assert.equal(a.level, 2);
   assert.deepEqual(snapshotFor(w, a.id).self.pending, { level: 1, k: 'perk', tier: 1 }, 'the tier 1 perk stays pending until chosen');

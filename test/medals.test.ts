@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MEDAL_RULES, MEDALS, WORLD, type MedalId } from '../src/shared/defs.ts';
+import { GUNS, MEDAL_RULES, MEDALS, WEAPON_MEDALS, WORLD, type GunId, type MedalId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
@@ -91,4 +91,68 @@ test('a medal is news only to the player who earned it', async () => {
   slay(w, a, b);
   assert.ok(snapshotFor(w, a.id).events.some((e) => e.e === 'medal'));
   assert.ok(!snapshotFor(w, c.id).events.some((e) => e.e === 'medal'));
+});
+
+/** `by` lands one round of `gun` on `victim`; the medals that round earned. */
+function shot(w: World, by: Player, victim: Player, gun: GunId, amount: number, volley = w.tick): MedalId[] {
+  w.events = [];
+  damagePlayer(w, victim, amount, { attacker: by, team: by.team, label: GUNS[gun].name, piercing: true, via: 'bullet', fromX: by.x, fromY: by.y, gun, volley });
+  return w.events.flatMap((e) => (e.e === 'medal' && e.id === by.id ? [e.medal] : []));
+}
+
+test('a sniper\'s one-hit kill from far off earns every medal it qualifies for at once, and a third one-hit kill is a Reaper', () => {
+  const w = emptyWorld();
+  w.firstBlood = true;
+  const a = spawnAt(w, 500, 500);
+  const far = shot(w, a, spawnAt(w, 500 + WEAPON_MEDALS.eagleEyePx + 10, 500), 'sniper', 10_000);
+  assert.deepEqual(far, ['longShot', 'oneShot', 'eagleEye'], 'Long Shot, One Shot and Eagle Eye all land on the one kill');
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.deepEqual(shot(w, a, spawnAt(w, 600, 500), 'sniper', 10_000), ['oneShot', 'noScope'], 'a sniper kill up close is No Scope');
+  w.now += MEDAL_RULES.multiMs + 1;
+  const third = shot(w, a, spawnAt(w, 900, 500), 'sniper', 10_000);
+  assert.ok(third.includes('oneShot') && third.includes('reaper') && third.includes('onFire'), `${third}`);
+  w.now += MEDAL_RULES.multiMs + 1;
+  const hurt = spawnAt(w, 900, 600);
+  if (hurt.life.k === 'alive') hurt.life.hp = 1;
+  assert.ok(!shot(w, a, hurt, 'sniper', 10_000).includes('oneShot'), 'a kill on someone already hurt is not One Shot');
+});
+
+test('one shotgun blast landing on two enemies is Two Birds, once per blast', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  const b = spawnAt(w, 600, 480), c = spawnAt(w, 600, 520);
+  assert.deepEqual(shot(w, a, b, 'shotgun', 5, 7), []);
+  assert.deepEqual(shot(w, a, b, 'shotgun', 5, 7), [], 'a second pellet on the same enemy is no second bird');
+  assert.deepEqual(shot(w, a, c, 'shotgun', 5, 7), ['twoBirds']);
+  assert.deepEqual(shot(w, a, b, 'shotgun', 5, 8), [], 'the next blast starts over');
+  assert.deepEqual(shot(w, a, c, 'pistol', 5, 9), []);
+});
+
+test('two pistol kills from one magazine are a Double Tap, but not across a reload', () => {
+  const w = emptyWorld();
+  w.firstBlood = true;
+  const a = spawnAt(w, 500, 500);
+  shot(w, a, spawnAt(w, 600, 500), 'pistol', 10_000);
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.ok(shot(w, a, spawnAt(w, 600, 600), 'pistol', 10_000).includes('doubleTap'));
+  const b = spawnAt(w, 2000, 2000);
+  shot(w, b, spawnAt(w, 2100, 2000), 'pistol', 10_000);
+  if (b.life.k === 'alive') b.life.ammo = 1;
+  b.input = { ...b.input, reload: true };
+  for (let i = 0; i < 3; i++) step(w, TICK_MS);
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.ok(!shot(w, b, spawnAt(w, 2100, 2100), 'pistol', 10_000).includes('doubleTap'), 'a reload starts the count again');
+});
+
+test('a machine gun kill on a pinned enemy is Pinned Down, and three kills from one belt are Belt Fed', () => {
+  const w = emptyWorld();
+  w.firstBlood = true;
+  const a = spawnAt(w, 500, 500);
+  const pinned = spawnAt(w, 700, 500);
+  if (pinned.life.k === 'alive') pinned.life.suppression = WEAPON_MEDALS.pinnedSuppression;
+  assert.deepEqual(shot(w, a, pinned, 'lmg', 10_000), ['pinnedDown']);
+  w.now += MEDAL_RULES.multiMs + 1;
+  shot(w, a, spawnAt(w, 700, 600), 'lmg', 10_000);
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.ok(shot(w, a, spawnAt(w, 700, 700), 'lmg', 10_000).includes('beltFed'));
 });

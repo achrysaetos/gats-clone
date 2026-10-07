@@ -5,7 +5,7 @@ import { emptiestSquad, royaleKill, royaleWinner, startRoyale, tickRoyale } from
 import { tickRun } from './run.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
-import { loadMap, spawnPoint, type Player, type World, type Zone } from './world.ts';
+import { freshFeats, loadMap, spawnPoint, type Player, type World, type Zone } from './world.ts';
 
 const ZONE_CAPTURE_MS = 3000;
 const ZONE_POINTS_PER_SEC = 5;
@@ -157,6 +157,7 @@ function startRound(w: World) {
   for (const p of w.players.values()) {
     if (p.life.k === 'alive') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
     p.lifeKills = 0;
+    p.feats = freshFeats();
     resetProgress(p);
     p.kills = 0;
     p.deaths = 0;

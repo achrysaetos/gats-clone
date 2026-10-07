@@ -28,7 +28,8 @@ test('four kills and ten crates in one life open the ability pick', () => {
     w.crates.push({ id: 900 + i, x: 600, y: 478, size: 44, hp: 1, respawnAt: null });
     shootOnce(w, a, 0);
   }
-  const medals = ['firstBlood', 'doubleKill', 'tripleKill', 'onFire', 'quadKill'] as const;
+  // The second kill from the pistol's first magazine is a Double Tap as well.
+  const medals = ['firstBlood', 'doubleKill', 'doubleTap', 'tripleKill', 'onFire', 'quadKill'] as const;
   assert.equal(a.score, 4 * WORLD.killScore + medals.reduce((s, m) => s + MEDALS[m].score, 0) + 10 * WORLD.crateScore, 'four quick kills earn their medals too');
   assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));

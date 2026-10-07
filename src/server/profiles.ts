@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, type Badge, type MedalId } from '../shared/defs.ts';
+import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, WEAPON_IDS, type Badge, type MedalId, type WeaponId } from '../shared/defs.ts';
 
 /**
  * Every human name has a profile, signed in or not: career kills and deaths, matches, best streak, distance walked, every
@@ -17,13 +17,15 @@ export type Profile = {
   /** Career distance walked, in px. */
   distance: number;
   medals: Partial<Record<MedalId, number>>;
+  /** Career kills by weapon class, for the weapon mastery tracks. */
+  weaponKills: Partial<Record<WeaponId, number>>;
   /** When each lifetime medal was earned, in ms since the epoch, by `badgeKey`. */
   badges: Record<string, number>;
   firstSeen: number;
   lastSeen: number;
 };
 
-export type ProfileDelta = { kills?: number; deaths?: number; games?: number; streak?: number; distance?: number; medals?: readonly MedalId[] };
+export type ProfileDelta = { kills?: number; deaths?: number; games?: number; streak?: number; distance?: number; medals?: readonly MedalId[]; weaponKills?: readonly WeaponId[] };
 
 export type Profiles = {
   get(name: string): Profile | null;
@@ -40,14 +42,15 @@ const key = (name: string) => name.toLowerCase();
 const SAVE_DELAY_MS = 2000;
 
 export const freshProfile = (name: string, now: number): Profile =>
-  ({ name, kills: 0, deaths: 0, games: 0, bestStreak: 0, distance: 0, medals: {}, badges: {}, firstSeen: now, lastSeen: now });
+  ({ name, kills: 0, deaths: 0, games: 0, bestStreak: 0, distance: 0, medals: {}, weaponKills: {}, badges: {}, firstSeen: now, lastSeen: now });
 
 /** How far a profile has come on a track. */
 export function trackCount(p: Profile, track: (typeof CAREER_IDS)[number]): number {
   const needs = CAREER[track].needs;
   if (needs === 'km') return Math.floor(p.distance / KM_PX);
   if (needs === 'kills' || needs === 'games' || needs === 'bestStreak') return p[needs];
-  return p.medals[needs] ?? 0;
+  if (needs.startsWith('kills:')) return p.weaponKills[needs.slice(6) as WeaponId] ?? 0;
+  return p.medals[needs as MedalId] ?? 0;
 }
 
 /** Applies `delta` to a profile and stamps every rung of a track it now reaches; returns the newly earned ones. */
@@ -58,6 +61,7 @@ export function applyDelta(p: Profile, delta: ProfileDelta, now: number): Badge[
   p.distance += delta.distance ?? 0;
   p.bestStreak = Math.max(p.bestStreak, delta.streak ?? 0);
   for (const m of delta.medals ?? []) p.medals[m] = (p.medals[m] ?? 0) + 1;
+  for (const g of delta.weaponKills ?? []) p.weaponKills[g] = (p.weaponKills[g] ?? 0) + 1;
   p.lastSeen = now;
   const earned: Badge[] = [];
   for (const track of CAREER_IDS) {
@@ -97,7 +101,7 @@ function clean(raw: unknown): Profile | null {
   const keys = CAREER_IDS.flatMap((track) => [0, 1, 2, 3].map((tier) => badgeKey({ track, tier: tier as Badge['tier'] })));
   return {
     name: r.name, kills: num(r.kills), deaths: num(r.deaths), games: num(r.games), bestStreak: num(r.bestStreak), distance: num(r.distance),
-    medals: pick(MEDAL_IDS, r.medals), badges: pick(keys, r.badges) as Record<string, number>, firstSeen: num(r.firstSeen), lastSeen: num(r.lastSeen),
+    medals: pick(MEDAL_IDS, r.medals), weaponKills: pick(WEAPON_IDS, r.weaponKills), badges: pick(keys, r.badges) as Record<string, number>, firstSeen: num(r.firstSeen), lastSeen: num(r.lastSeen),
   };
 }
 

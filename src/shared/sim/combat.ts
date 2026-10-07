@@ -1,4 +1,4 @@
-import { ARMORS, GUNS, HP_MULTIPLIER, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WORLD, ZOMBIES, type MedalId } from '../defs.ts';
+import { ARMORS, GUNS, HP_MULTIPLIER, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
@@ -28,7 +28,9 @@ const SELF_KILL_CREDIT_MS = 10_000;
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
 type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
-type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number };
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number; gun?: GunId | null; volley?: number };
+/** How a kill was made, for the weapon feats: the gun whose round landed it, whether it took one hit from full health, and how pinned the victim was. */
+type KillHow = { gun: GunId | null; oneHit: boolean; pinned: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k === 'dead' || w.match.k === 'over') return;
@@ -50,12 +52,25 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace.
   if (a?.kind === 'human') amount *= HP_MULTIPLIER[victim.kind];
   if (!src.piercing) amount *= 1 - ARMORS[victim.loadout.armor].blockFrac;
+  const fromFull = before >= stats.maxHp;
+  const pinned = life.suppression;
   life.hp -= amount;
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp);
   if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
-  if (life.hp <= 0) kill(w, victim, a, src.label);
+  if (a && src.via === 'bullet' && src.volley !== undefined) noteVolley(w, a, victim, src.gun ?? null, src.volley);
+  if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned });
+}
+
+/** A shotgun blast whose pellets land on `WEAPON_MEDALS.twoBirdsHits` enemies earns Two Birds the moment the second is hit. */
+function noteVolley(w: World, a: Player, victim: Player, gun: GunId | null, volley: number) {
+  const v = a.feats.volley;
+  if (v.at !== volley) a.feats.volley = { at: volley, hit: [] };
+  const hit = a.feats.volley.hit;
+  if (hit.includes(victim.id)) return;
+  hit.push(victim.id);
+  if (hit.length === WEAPON_MEDALS.twoBirdsHits && gun && GUNS[gun].base === 'shotgun') award(w, a, 'twoBirds');
 }
 
 function damageSince(hits: readonly { by: number; at: number; dealt: number }[], since: number): Map<number, number> {
@@ -79,7 +94,7 @@ function creditFor(w: World, victim: Player, killer: Player | null): Player | nu
   return top;
 }
 
-export function kill(w: World, victim: Player, killer: Player | null, label: string) {
+export function kill(w: World, victim: Player, killer: Player | null, label: string, how: KillHow = { gun: null, oneHit: false, pinned: 0 }) {
   if (w.run) { goDown(w, victim); return; }
   const credited = creditFor(w, victim, killer);
   const named = credited ?? killer;
@@ -99,7 +114,8 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   credited.lifeKills++;
   if (revenge) credited.nemesis = null;
   addScore(w, credited, WORLD.killScore);
-  for (const medal of killMedals(w, credited, victim, { bounty, revenge, ended })) award(w, credited, medal);
+  // Every medal one kill earns is paid and announced, however many there are.
+  for (const medal of [...killMedals(w, credited, victim, { bounty, revenge, ended }), ...weaponMedals(w, credited, victim, how, credited === killer)]) award(w, credited, medal);
   refuel(credited);
   MODES[w.mode].onKill(w, credited, victim);
 }
@@ -128,6 +144,47 @@ function killMedals(w: World, killer: Player, victim: Player, kill: { bounty: bo
   if (kill.bounty) out.push('bounty');
   const streak = STREAK_MEDALS.find(([n]) => n === killer.lifeKills);
   if (streak) out.push(streak[1]);
+  return out;
+}
+
+/** The weapon feats one kill earns, judged on the gun whose round landed it; a kill handed over by a self-blast earns none. */
+function weaponMedals(w: World, killer: Player, victim: Player, how: KillHow, own: boolean): MedalId[] {
+  if (!own || !how.gun) return [];
+  const out: MedalId[] = [];
+  const f = killer.feats;
+  f.magKills++;
+  const range = Math.hypot(victim.x - killer.x, victim.y - killer.y);
+  const life = killer.life;
+  switch (GUNS[how.gun].base) {
+    case 'pistol':
+      if (f.magKills === WEAPON_MEDALS.doubleTapKills) out.push('doubleTap');
+      if (range >= WEAPON_MEDALS.deadeyePx) out.push('deadeye');
+      break;
+    case 'smg':
+      if (life.k === 'alive' && life.lastMoveAt === w.now) out.push('runAndGun');
+      break;
+    case 'shotgun':
+      if (range >= WEAPON_MEDALS.longBarrelPx) out.push('longBarrel');
+      break;
+    case 'assault': {
+      const bloom = rulesOf(GUNS[how.gun]).bloom;
+      if (bloom && life.k === 'alive' && life.spray <= bloom.free) out.push('disciplined');
+      break;
+    }
+    case 'sniper':
+      if (how.oneHit) {
+        out.push('oneShot');
+        f.oneShots++;
+        if (f.oneShots === WEAPON_MEDALS.oneShotsForReaper) out.push('reaper');
+      }
+      if (range <= WEAPON_MEDALS.noScopePx) out.push('noScope');
+      if (range >= WEAPON_MEDALS.eagleEyePx) out.push('eagleEye');
+      break;
+    case 'lmg':
+      if (how.pinned >= WEAPON_MEDALS.pinnedSuppression) out.push('pinnedDown');
+      if (f.magKills === WEAPON_MEDALS.beltFedKills) out.push('beltFed');
+      break;
+  }
   return out;
 }
 
@@ -280,7 +337,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y }),
+          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley }),
         }] : [];
       }),
     // Zombies are judged where they stand now, even for a rewound shot: they are slow, and they keep no pose history.
