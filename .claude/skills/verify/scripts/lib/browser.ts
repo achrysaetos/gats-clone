@@ -22,7 +22,7 @@ export async function openPage(opts: {
   profile: string;
   debugPort?: number;
   args?: readonly string[];
-  viewport?: { width: number; height: number };
+  viewport?: { width: number; height: number; dpr?: number };
   onEvent?: (method: string, params: any) => void;
   onProblem?: (kind: PageProblem, detail: string) => void;
   onClose?: () => void;
@@ -62,7 +62,7 @@ export async function openPage(opts: {
   const cdp: Cdp = (method, params = {}) => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
   const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
   await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-  if (opts.viewport) await cdp('Emulation.setDeviceMetricsOverride', { ...opts.viewport, deviceScaleFactor: 1, mobile: false });
+  if (opts.viewport) await cdp('Emulation.setDeviceMetricsOverride', { width: opts.viewport.width, height: opts.viewport.height, deviceScaleFactor: opts.viewport.dpr ?? 1, mobile: false });
   const close = () => { ws.removeAllListeners('close'); ws.close(); chrome.kill(); };
   return { cdp, js, exceptions, close };
 }
