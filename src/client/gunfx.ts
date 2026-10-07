@@ -92,16 +92,16 @@ export function noteMap(fx: GunFx, map: string) {
 type FlashLook = { life: number; len: number; spread: number; star: number; points: number; glow: number; fan: boolean };
 /** One look per weapon class: the pistol a small star, the shotgun a wide fan, the belt guns a long flicker, the sniper a burst. */
 export const FLASH_LOOK: Record<WeaponId, FlashLook> = {
-  pistol: { life: 80, len: 28, spread: 0.32, star: 15, points: 4, glow: 26, fan: false },
-  smg: { life: 60, len: 30, spread: 0.28, star: 12, points: 5, glow: 22, fan: false },
-  assault: { life: 66, len: 40, spread: 0.26, star: 15, points: 6, glow: 28, fan: false },
-  shotgun: { life: 110, len: 64, spread: 0.7, star: 20, points: 8, glow: 52, fan: true },
-  lmg: { life: 66, len: 52, spread: 0.22, star: 17, points: 6, glow: 34, fan: false },
-  sniper: { life: 130, len: 92, spread: 0.14, star: 34, points: 8, glow: 64, fan: false },
+  pistol: { life: 70, len: 28, spread: 0.32, star: 14, points: 4, glow: 24, fan: false },
+  smg: { life: 55, len: 28, spread: 0.28, star: 13, points: 5, glow: 23, fan: false },
+  assault: { life: 62, len: 31, spread: 0.26, star: 14, points: 6, glow: 24, fan: false },
+  shotgun: { life: 80, len: 32, spread: 0.55, star: 16, points: 7, glow: 27, fan: true },
+  lmg: { life: 62, len: 32, spread: 0.24, star: 15, points: 6, glow: 25, fan: false },
+  sniper: { life: 85, len: 36, spread: 0.16, star: 16, points: 8, glow: 27, fan: false },
 };
 
 /** How much a gun's shot throws, 1 to 1.4: a heavier hitter (a hand cannon over a pistol, a slug over a pellet spray) flashes bigger within its class. */
-export const flashPower = (gun: GunId): number => 1 + 0.4 * Math.min(1, (GUNS[gun].damage * Math.min(GUNS[gun].pellets, 3)) / 140);
+export const flashPower = (gun: GunId): number => 1 + 0.1 * Math.min(1, (GUNS[gun].damage * Math.min(GUNS[gun].pellets, 3)) / 140);
 
 /** Rounds the flash's light pool on the floor shines for: the first frame or two, so it reads as a pulse of light, not a stain. */
 export const FLASH_POOL_MS = 60;
@@ -475,20 +475,6 @@ function drawFlash(ctx: CanvasRenderingContext2D, f: Flash, k: number) {
   ctx.beginPath();
   ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * 0.42 * f.power * (0.8 + 0.2 * fade), 0, TAU);
   ctx.fill();
-  if (f.base === 'sniper' || f.base === 'shotgun') {
-    // A big bloom: a wide pale halo and a white-hot heart that outlast the flame itself.
-    const bx = f.x + Math.cos(f.angle) * look.len * 0.35 * scale, by = f.y + Math.sin(f.angle) * look.len * 0.35 * scale;
-    ctx.globalAlpha = 0.1 * fade;
-    ctx.fillStyle = '#ffe08a';
-    ctx.beginPath();
-    ctx.arc(bx, by, look.glow * 0.55 * f.power, 0, TAU);
-    ctx.fill();
-    ctx.globalAlpha = 0.35 * fade;
-    ctx.fillStyle = '#fff6c8';
-    ctx.beginPath();
-    ctx.arc(f.x + Math.cos(f.angle) * 6, f.y + Math.sin(f.angle) * 6, look.glow * 0.2 * f.power, 0, TAU);
-    ctx.fill();
-  }
   ctx.globalAlpha = Math.min(1, fade * 1.6);
   const layers = [['#ff8a24', 1], ['#ffd45a', 0.72], ['#fffbe8', 0.42]] as const;
   for (const [color, m] of layers) {

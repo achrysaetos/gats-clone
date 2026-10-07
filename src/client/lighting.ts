@@ -255,12 +255,12 @@ export const TIERS: readonly Tier[] = [
 ];
 
 const MUZZLE: Record<string, { radius: number; life: number; intensity: number }> = {
-  pistol: { radius: 70, life: 60, intensity: 0.38 },
-  smg: { radius: 72, life: 50, intensity: 0.32 },
-  assault: { radius: 85, life: 55, intensity: 0.42 },
-  shotgun: { radius: 120, life: 85, intensity: 0.55 },
-  lmg: { radius: 90, life: 55, intensity: 0.42 },
-  sniper: { radius: 140, life: 95, intensity: 0.6 },
+  pistol: { radius: 72, life: 60, intensity: 0.38 },
+  smg: { radius: 70, life: 50, intensity: 0.34 },
+  assault: { radius: 76, life: 55, intensity: 0.4 },
+  shotgun: { radius: 84, life: 70, intensity: 0.44 },
+  lmg: { radius: 78, life: 55, intensity: 0.4 },
+  sniper: { radius: 86, life: 75, intensity: 0.46 },
 };
 
 /** The light a muzzle flash throws: bigger and longer for a heavier gun, a third as bright when silenced. */
