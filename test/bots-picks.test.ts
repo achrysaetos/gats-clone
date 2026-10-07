@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ATTACHMENTS, WEAPON_IDS, type PickOption, type WeaponId } from '../src/shared/defs.ts';
+import { ATTACHMENTS, GUN_IDS, GUNS, WEAPON_IDS, type PickOption, type WeaponId } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
@@ -15,7 +15,9 @@ function tierOnePicks(weapon: WeaponId, n: number): Map<PickOption, number> {
   for (let seed = 1; seed <= n; seed++) {
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon } });
-    bot.level = 1;
+    bot.level = 2; // level 1 is the gun evolve, so the bot has made it and the attachment is the open pick
+    const evolved = GUN_IDS.filter((g) => GUNS[g].from === weapon);
+    bot.gun = evolved.find((g) => GUNS[g].pellets > 1) ?? evolved[0] ?? weapon; // a gun that can still take any of the class's attachments
     const r = seeded(seed);
     const option = botThink(snapshotFor(w, bot.id), arenaFor(w), newBotMemory(r), r).pick?.option;
     assert.ok(option, 'answers the open pick');

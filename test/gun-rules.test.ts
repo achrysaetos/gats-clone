@@ -158,9 +158,10 @@ test('each class is offered its own five attachments', () => {
   for (const weapon of WEAPON_IDS) assert.deepEqual([...pickOptions(TIER_1, weapon)], menus[weapon], weapon);
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);
-  p.level = 1;
-  assert.equal(choosePick(w, p.id, 1, 'grip'), false, 'a pistol cannot take an SMG attachment');
-  assert.ok(choosePick(w, p.id, 1, 'silencer'));
+  p.level = 2;
+  assert.ok(choosePick(w, p.id, 1, 'handCannon'), 'level 1 is the gun evolve');
+  assert.equal(choosePick(w, p.id, 2, 'grip'), false, 'a pistol cannot take an SMG attachment');
+  assert.ok(choosePick(w, p.id, 2, 'silencer'));
 });
 
 test('an attachment that would change nothing for the gun in hand is never offered', () => {
@@ -177,16 +178,16 @@ test('an attachment that would change nothing for the gun in hand is never offer
 test('evolving into a gun an attachment does nothing for hands the attachment pick back, with the new gun\'s menu', () => {
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500, { loadout: { weapon: 'smg' } });
-  p.level = 2;
-  assert.ok(choosePick(w, p.id, 1, 'silencer'));
-  assert.ok(choosePick(w, p.id, 2, 'skirmisher'));
+  p.level = 4;
+  assert.ok(choosePick(w, p.id, 1, 'skirmisher'));
+  assert.ok(choosePick(w, p.id, 2, 'silencer'));
   assert.equal(p.perks[1], 'silencer', 'the Skirmisher still uses its silencer');
-  p.level = 5;
   for (const [level, option] of [[3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, p.id, level, option));
+  p.level = 5;
   assert.ok(choosePick(w, p.id, 5, 'phantom'));
   assert.equal(p.perks[1], undefined, 'the Phantom is silenced already');
-  assert.deepEqual(pendingPick(p), { level: 1, k: 'perk', tier: 1 });
-  assert.ok(choosePick(w, p.id, 1, 'grip'));
+  assert.deepEqual(pendingPick(p), { level: 2, k: 'perk', tier: 1 });
+  assert.ok(choosePick(w, p.id, 2, 'grip'));
   assert.equal(p.perks[1], 'grip');
   assert.equal(p.perks[2], 'shield', 'the other picks stay');
 });

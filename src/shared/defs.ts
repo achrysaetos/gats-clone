@@ -261,10 +261,10 @@ export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
+  // A new gun is the best reward there is, so the first kill evolves your gun; the attachment follows at the second or third.
   // Medals pay a large share of score, more the hotter a life runs, so the ladder steepens toward the top: set from 800 bot
-  // lives (`node scripts/level-scale.ts`, and test/balance.test.ts holds it) so about as many lives reach each evolve and the
-  // ability as before medals. A first kill still opens a perk.
-  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 250, pick: { k: 'evolve' } },
+  // lives (`node scripts/level-scale.ts`, and test/balance.test.ts holds it).
+  { score: 0, pick: null }, { score: 100, pick: { k: 'evolve' } }, { score: 250, pick: { k: 'perk', tier: 1 } },
   { score: 420, pick: { k: 'perk', tier: 2 } }, { score: 620, pick: { k: 'perk', tier: 3 } }, { score: 1000, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 

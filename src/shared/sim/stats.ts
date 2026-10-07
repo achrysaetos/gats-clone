@@ -112,13 +112,15 @@ export function levelForScore(score: number): number {
 
 /** The lowest reached level whose pick is still open: a perk tier left empty, or an evolution the gun has not made. */
 export function pendingPick(p: Player): PendingPick | null {
-  let evolves = 0;
+  // A gun evolve never waits behind a perk left unchosen: the new gun is offered first, then the perks in ladder order.
+  let evolves = 0, perk: PendingPick | null = null;
   for (let level = 1; level <= p.level; level++) {
     const pick = LEVELS[level]?.pick;
     if (!pick) continue;
-    if (pick.k === 'perk' ? !p.perks[pick.tier] : GUNS[p.gun].stage < ++evolves) return { level, ...pick };
+    if (pick.k === 'evolve') { if (GUNS[p.gun].stage < ++evolves) return { level, ...pick }; }
+    else if (!p.perks[pick.tier]) perk ??= { level, ...pick };
   }
-  return null;
+  return perk;
 }
 
 /** The hunt is a PvP pressure valve; a co-op squad has no one to hunt its own. */
