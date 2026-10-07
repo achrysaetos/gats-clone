@@ -4,15 +4,15 @@ import type { Team } from '../shared/protocol.ts';
 export const INK = '#1c1f26';
 
 export const PALETTE = {
-  outside: '#c3c6cc',
+  outside: '#2b2e34',
   letterbox: '#16181d',
-  grid: 'rgba(70, 74, 90, 0.1)',
+  grid: 'rgba(60, 54, 44, 0.07)',
   contact: 'rgba(20, 24, 32, 0.3)',
   tracerGlow: '#ffc65a',
   tracer: '#ffe6a6',
   tracerHot: '#fffcf0',
   casing: '#5d616a',
-  label: '#2a2e36',
+  label: '#24272e',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
   lossOnDark: '#ff8f87',
@@ -60,10 +60,11 @@ export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
 /** `armor` thickens the ink rim, `shoulders` adds pads behind the arms, and `bar` shows a health bar over the body. */
 export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; armor: number; shoulders: boolean; bar: boolean }> = {
-  walker: { body: '#8fb35a', arm: '#6f9440', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  brute: { body: '#8a74a3', arm: '#5e4d72', eye: '#ff5a3c', armor: 0, shoulders: true, bar: true },
-  runner: { body: '#d9c27a', arm: '#a8914c', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  plated: { body: '#8d9aa8', arm: '#5f6b78', eye: '#ffd34d', armor: 4, shoulders: false, bar: false },
-  bloater: { body: '#e08a5c', arm: '#b8623c', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  colossus: { body: '#8c3f45', arm: '#5e2a2f', eye: '#ffd34d', armor: 3, shoulders: true, bar: true },
+  // Sickly versions of the kit's own olive, khaki, steel and rust, so the horde belongs to the same world.
+  walker: { body: '#8a9a58', arm: '#66753d', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  brute: { body: '#7d6c8e', arm: '#57495f', eye: '#ff5a1f', armor: 0, shoulders: true, bar: true },
+  runner: { body: '#c4b17a', arm: '#9a874f', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  plated: { body: '#87919c', arm: '#5c6570', eye: '#ffc94a', armor: 4, shoulders: false, bar: false },
+  bloater: { body: '#c47c52', arm: '#9a5838', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  colossus: { body: '#7e3c40', arm: '#57282c', eye: '#ffc94a', armor: 3, shoulders: true, bar: true },
 };

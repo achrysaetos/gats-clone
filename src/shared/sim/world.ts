@@ -26,6 +26,9 @@ export type Life =
     pressUntil: number;
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];
+    /** 0..1 from enemy rounds passing close (see `SUPPRESSION`); `suppressedAt` is when the last one did. */
+    suppression: number;
+    suppressedAt: number;
   }
   /** Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
   | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number }
@@ -57,6 +60,8 @@ export type Player = {
   kills: number;
   deaths: number;
   lifeKills: number;
+  /** Who last killed this player, until this player kills them back. */
+  nemesis: number | null;
   revealedUntil: number;
   /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
   huntedPing: (Pose & { at: number }) | null;
@@ -77,6 +82,10 @@ export type Bullet = {
   lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
+  /** Players this round already suppressed in passing, so each feels it once. */
+  suppressed?: number[];
+  /** How far a gun round has flown, which sets how much of its muzzle speed is left (see `MUZZLE`). */
+  flown?: number;
   blast: Blast | null;
 };
 

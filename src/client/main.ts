@@ -1,5 +1,5 @@
 import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
-import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
+import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
@@ -7,10 +7,13 @@ import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } fro
 import { createAudio } from './audio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
-import { isSteady, spreadFor } from '../shared/sim/stats.ts';
+import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
+import { assistAngle, type AssistTarget } from './aimassist.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
-import { buildChipAt, drawHud, drawSticks } from './hud.ts';
+import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
+import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied } from './hud.ts';
+import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
@@ -30,10 +33,11 @@ import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
-import { addTrauma, decay, offset, traumaFor } from './shake.ts';
+import { addKick, addTrauma, decay, offset, settleKick, traumaFor, type Kick } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
+import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
@@ -78,7 +82,11 @@ const mouse = { x: 0, y: 0 };
 let mouseAiming = false;
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
+const touchScreen = matchMedia('(pointer: coarse)').matches;
 let trauma = 0;
+/** A Space press is sent with the next input even if the key was already let go, so a quick tap is never lost between input ticks. */
+let abilityTapped = false;
+let kick: Kick = { x: 0, y: 0 };
 let lastFrameAt = 0;
 
 const params = new URLSearchParams(location.search);
@@ -126,7 +134,7 @@ function setState(next: ClientState) {
 function refreshPlayButton() {
   const connecting = state.phase === 'menu' && state.status.kind === 'connecting';
   playBtn.disabled = connecting || selectedRoom === null;
-  playBtn.textContent = connecting ? 'Connecting…' : 'Play';
+  playBtn.textContent = connecting ? 'Connecting…' : 'Deploy';
 }
 
 function setLoadout(next: Loadout) {
@@ -240,7 +248,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
+    effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, life: null, bests: loadBests(), feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
     coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
@@ -260,7 +268,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
-  s.moments = addMoments(s.moments, prev, snap, now);
+  s.moments = addMoments(s.moments, prev, snap, now, s.bests.kills);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
@@ -275,7 +283,13 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
   const dead = !snap.self.alive && !selfOf(snap)?.downed;
-  if (dead && state.phase === 'playing') setState({ phase: 'dead', s, kill: killOf(snap.events, s.myId), loss: prev && lossOf(prev) });
+  if (!snap.run && (snap.self.alive || s.life)) s.life = logSnapshot(s.life ?? freshLog(now), snap);
+  if (dead && state.phase === 'playing') {
+    const recap = s.life && recapOf(s.life, now, s.bests);
+    s.life = null;
+    if (recap) saveBests((s.bests = recap.bests));
+    setState({ phase: 'dead', s, kill: killOf(snap.events, s.myId), loss: prev && lossOf(prev), recap });
+  }
   else if (dead && state.phase === 'dead' && !state.kill) state.kill = killOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
 }
@@ -286,15 +300,62 @@ function hands(s: Session): Hands {
   return { active: state.phase === 'playing' && !overlays.typing, firing, touchAim: touchAim(sticks), reload: held.has('reload'), sinceMove: sinceMove(s), aim: aimOffset(s) };
 }
 
+/** The fallen player stays where the killing blow found them, facing the way they last faced, with the gun they held. */
+function layCorpse(s: Session, snap: Snapshot, fx: Extract<EffectSpec, { kind: 'death' }>, now: number) {
+  // The newest snapshot may already have dropped the dead, so look back to the last one that showed them.
+  const lastSeen = (id: number) => [...s.snaps.snaps].reverse().flatMap((sn) => sn.players.filter((p) => p.id === id))[0];
+  const victim = lastSeen(fx.victim);
+  if (!victim) return;
+  const killer = fx.by === null || fx.by === fx.victim ? undefined : lastSeen(fx.by);
+  const blow = killer && Math.hypot(fx.x - killer.x, fx.y - killer.y) > 1 ? Math.atan2(fx.y - killer.y, fx.x - killer.x) : null;
+  s.corpses = addCorpse(s.corpses, {
+    victim: victim.id, x: fx.x, y: fx.y, angle: victim.angle, color: bodyColor(victim), gun: victim.gun, map: snap.match.map, born: now,
+    blow, blast: explosiveDeath(fx.weapon),
+  });
+}
+
+/** A dead zombie stays where it fell until dawn, its ichor sprayed away from the squad player who killed it. */
+let zombieCorpseIds = 0;
+function layZombieCorpse(s: Session, fx: Extract<EffectSpec, { kind: 'splat' }>, now: number) {
+  const killer = fx.by === null ? undefined : [...s.snaps.snaps].reverse().flatMap((sn) => sn.players.filter((p) => p.id === fx.by))[0];
+  const blow = killer && Math.hypot(fx.x - killer.x, fx.y - killer.y) > 1 ? Math.atan2(fx.y - killer.y, fx.x - killer.x) : null;
+  s.zombieCorpses = { ...s.zombieCorpses, list: addZombieCorpse(s.zombieCorpses.list, { id: ++zombieCorpseIds, x: fx.x, y: fx.y, kind: fx.zombie, born: now, blow }) };
+}
+
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
   if (spec.kind !== 'death') return undefined;
   const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
   return victim && bodyColor(victim);
 }
 
+/** The enemies drawn this frame with their velocity from the two newest snapshots, for the touch aim assist. */
+let assistTargets: AssistTarget[] = [];
+
+function noteAssistTargets(s: Session, drawnPlayers: readonly PlayerView[]) {
+  const [older, newer] = s.snaps.snaps.slice(-2);
+  const me = drawnPlayers.find((p) => p.id === s.myId);
+  if (!older || !newer || !me) { assistTargets = []; return; }
+  const dt = ((newer.tick - older.tick) * TICK_MS) / 1000 || 1;
+  assistTargets = drawnPlayers.flatMap((p) => {
+    if (p.id === s.myId || !p.alive || p.hidden || (p.team !== null && p.team === me.team)) return [];
+    const a = older.players.find((q) => q.id === p.id), b = newer.players.find((q) => q.id === p.id);
+    return [{ x: p.x, y: p.y, vx: a && b ? (b.x - a.x) / dt : 0, vy: a && b ? (b.y - a.y) / dt : 0 }];
+  });
+}
+
+/** A thumb's aim, lightly pulled toward the led enemy nearest its line (see `ASSIST`); a mouse aims unassisted. */
+function assistedTouch(s: Session, touch: { dx: number; dy: number }): { dx: number; dy: number } {
+  const snap = newestSnap(s.snaps);
+  const me = snap?.players.find((p) => p.id === s.myId);
+  if (!snap || !me?.alive) return touch;
+  const angle = Math.atan2(touch.dy, touch.dx), len = Math.hypot(touch.dx, touch.dy);
+  const helped = assistAngle(angle, s.lastSelf, me.gun, rangeFor(me.gun, snap.self.perks), assistTargets);
+  return { dx: Math.cos(helped) * len, dy: Math.sin(helped) * len };
+}
+
 function aimOffset(s: Session): { dx: number; dy: number } {
   const touch = touchAim(sticks);
-  if (touch) return touch;
+  if (touch) return assistedTouch(s, touch);
   if (!aimCamera) return { dx: 1, dy: 0 };
   const self = worldToScreen(aimCamera, s.lastSelf);
   return { dx: (mouse.x - self.x) / aimCamera.scale, dy: (mouse.y - self.y) / aimCamera.scale };
@@ -305,7 +366,8 @@ setInterval(() => {
   if (!s) return;
   const active = state.phase === 'playing' && !overlays.typing;
   s.seq++;
-  const actions = active ? new Set([...held, ...touchMoves(sticks)]) : new Set<Action>();
+  const actions = active ? new Set([...held, ...touchMoves(sticks), ...(abilityTapped ? ['ability' as const] : [])]) : new Set<Action>();
+  abilityTapped = false;
   const touchAiming = shooting.pullTouchTrigger(s);
   const now = performance.now();
   shooting.fireBeforeSending(s, now);
@@ -405,10 +467,15 @@ function drawFrame(now: number) {
   if (s === sessionOf(state)) shooting.fireIfDue(s, performance.now());
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
-  for (const { fx } of released.due) startEffect(s, fx, now, deathTint(s, fx));
+  for (const { fx } of released.due) {
+    startEffect(s, fx, now, deathTint(s, fx));
+    if (fx.kind === 'death') layCorpse(s, latest, fx, now);
+    if (fx.kind === 'splat') layZombieCorpse(s, fx, now);
+  }
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
+  noteAssistTargets(s, players);
   const shots = releaseDue(s.pendingShots, renderTime(s.snaps, now));
   s.pendingShots = shots.rest;
   for (const { shot } of shots.due) shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
@@ -419,9 +486,10 @@ function drawFrame(now: number) {
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
   trauma = decay(trauma, now - lastFrameAt);
+  kick = settleKick(kick, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const shakenCamera = { ...aimCamera, x: aimCamera.x + shake.x / aimCamera.scale, y: aimCamera.y + shake.y / aimCamera.scale };
+  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
@@ -430,9 +498,10 @@ function drawFrame(now: number) {
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing)) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), snap.run ? 0 : nextSprayShot(s.firing), snap.self.suppression) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
-  if (state.phase === 'playing') drawSticks(ctx, sticks);
+  if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
+  touchButtons(buttonFaces(snap.self, abilityHint(snap.self.pending)[0] === 'Ability' ? ABILITY_SCORE : undefined));
   overlays.update(state, s, latest, now, muted);
 }
 
@@ -488,6 +557,12 @@ function onKeyDown(e: KeyboardEvent) {
   const action = actionForKey(e.code);
   if (action && state.phase === 'playing') {
     e.preventDefault();
+    const self = newestSnap(s.snaps)?.self;
+    if (action === 'ability' && !e.repeat) abilityTapped = true;
+    if (action === 'ability' && !e.repeat && self?.ability && self.abilityReadyIn > 0) {
+      noteAbilityDenied(performance.now());
+      playClick(s);
+    }
     held.add(action);
   }
 }
@@ -517,9 +592,21 @@ window.addEventListener('pointermove', (e) => {
 for (const type of ['pointerup', 'pointercancel'] as const) {
   window.addEventListener(type, (e) => { if (e.pointerType === 'touch') sticks = releaseStick(sticks, e.pointerId); });
 }
+const touchButtons = createTouchButtons($('touch-reload'), $('touch-ability'));
 for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'reload']] as const) {
   const button = $(id);
-  button.addEventListener('pointerdown', (e) => { e.preventDefault(); held.add(action); });
+  button.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    held.add(action);
+    if (action !== 'ability') return;
+    abilityTapped = true;
+    const s = sessionOf(state);
+    const self = s && newestSnap(s.snaps)?.self;
+    if (s && self?.ability && self.abilityReadyIn > 0) {
+      noteAbilityDenied(performance.now());
+      playClick(s);
+    }
+  });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
 window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
@@ -596,7 +683,7 @@ function toggleMuted(name: string) {
 }
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
-const shooting = createShooting({ hands, playCues });
+const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
@@ -606,8 +693,21 @@ const pickers = [
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; });
 nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
+/**
+ * On a phone, Play also asks for fullscreen and a landscape lock, inside the tap that allows them. Browsers that refuse (an
+ * iPhone has no page fullscreen) keep the page as it is, and the rotate hint asks the player to turn the phone instead.
+ */
+function fullLandscape() {
+  if (!matchMedia('(pointer: coarse)').matches) return;
+  const root = document.documentElement;
+  const lock = () => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {});
+  if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen({ navigationUI: 'hide' }).then(lock, () => {});
+  else void lock();
+}
+
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
+  fullLandscape();
   if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
 });
 window.addEventListener('pagehide', leave);

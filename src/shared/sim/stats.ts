@@ -1,5 +1,5 @@
 import {
-  ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SUPPRESSION, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import type { Life, PerkOfTier, Player, World } from './world.ts';
 
@@ -17,7 +17,7 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   extended: { magMul: 1.5 },
   grip: { spreadMul: 0.6 },
   silencer: { silenced: true },
-  lightweight: { speedMul: 1.1 },
+  lightweight: { speedMul: 1.25 },
   longRange: { rangeMul: 1.4 },
   quickReload: { reloadMul: 0.65 },
   choke: { pelletSpreadMul: 0.75 },
@@ -32,13 +32,17 @@ type Stats = {
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
-/** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks. */
-export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0): number {
+/** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. */
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0): number {
   const rules = rulesOf(GUNS[gun]);
+  if (still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint) return 0;
   let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot);
   for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
-  return spread;
+  return spread * suppressionMul(suppression);
 }
+
+/** How much `suppression` (0..1) widens spread. */
+export const suppressionMul = (suppression: number): number => 1 + suppression * SUPPRESSION.spread;
 
 function bloomMul({ bloom }: GunRules, sprayShot: number): number {
   return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * Math.max(0, sprayShot - bloom.free)) : 1;
@@ -63,7 +67,7 @@ export function effectiveStats(p: Player): Stats {
   const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
   const s: Stats = {
-    speed: WORLD.baseSpeed * weapon.moveMul * armor.speedMul,
+    speed: WORLD.baseSpeed * Math.max(LOAD_SPEED_FLOOR, weapon.moveMul * armor.speedMul),
     maxHp: WORLD.baseHp,
     mag: weapon.mag,
     range: rangeFor(p.gun, p.perks),
@@ -96,6 +100,7 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
   return {
     k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, pressUntil: -Infinity, hits: [],
+    suppression: 0, suppressedAt: -Infinity,
   };
 }
 

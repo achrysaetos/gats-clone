@@ -1,4 +1,4 @@
-import { byGun, GUN_IDS, GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
+import { byGun, GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
 import { INK } from './palette.ts';
 
 type Part = { x: number; y: number; w: number; h: number; accent?: true };
@@ -75,35 +75,4 @@ export function drawGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: numbe
 export function muzzleTip(x: number, y: number, angle: number, gun: GunId, radius: number) {
   const reach = Math.max(...GUN_PARTS[gun].map((p) => p.x + p.w)) * radius;
   return { x: x + Math.cos(angle) * reach, y: y + Math.sin(angle) * reach };
-}
-
-/** Siblings share a scale, so the loadout tiles and each evolve pick's two options compare at true size. */
-const peerParts = (gun: GunId) => GUN_IDS.filter((id) => GUNS[id].from === GUNS[gun].from).flatMap((id) => GUN_PARTS[id]);
-const bounds = (parts: readonly Part[]) => ({
-  minX: Math.min(...parts.map((p) => p.x)),
-  maxX: Math.max(...parts.map((p) => p.x + p.w)),
-  minY: Math.min(...parts.map((p) => p.y)),
-  maxY: Math.max(...parts.map((p) => p.y + p.h)),
-});
-
-export function drawSilhouette(canvas: HTMLCanvasElement, gun: GunId, color: string) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const all = bounds(peerParts(gun));
-  const r = Math.min((canvas.width * 0.9) / (all.maxX - all.minX), (canvas.height * 0.85) / (all.maxY - all.minY));
-  const { minX, maxX, minY, maxY } = bounds(GUN_PARTS[gun]);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.save();
-  ctx.translate((canvas.width - (maxX + minX) * r) / 2, (canvas.height - (maxY + minY) * r) / 2);
-  drawGun(ctx, gun, r, color);
-  ctx.restore();
-}
-
-export function drawGunGlyph(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, width: number, height: number, color: string) {
-  const { minX, maxX, minY, maxY } = bounds(GUN_PARTS[gun]);
-  const r = Math.min(width / (maxX - minX), height / (maxY - minY));
-  ctx.save();
-  ctx.translate(x - minX * r, y - ((minY + maxY) / 2) * r);
-  drawGun(ctx, gun, r, color);
-  ctx.restore();
 }

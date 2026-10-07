@@ -14,6 +14,7 @@ import { canRespawn, respawn } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { startServer } from '../src/server/main.ts';
 import { median, quantile } from './lib/stats.ts';
+import { flightSec } from '../src/shared/sim/ballistics.ts';
 import { joinFromMenu, openPage, sleep } from '../.claude/skills/verify/scripts/lib/browser.ts';
 
 const SECONDS = Number(process.argv[2] ?? 60);
@@ -117,7 +118,7 @@ async function measure(lag: number, jitter: number) {
       velocity = { x: velocity.x * 0.5 + 0.5 * (drawn.screen.x - last.x) / dt, y: velocity.y * 0.5 + 0.5 * (drawn.screen.y - last.y) / dt };
     }
     last = { x: drawn.screen.x, y: drawn.screen.y, at: drawn.now };
-    const flight = Math.hypot(drawn.x - drawn.self.x, drawn.y - drawn.self.y) / GUNS.pistol.bulletSpeed;
+    const flight = flightSec(GUNS.pistol.bulletSpeed, Math.hypot(drawn.x - drawn.self.x, drawn.y - drawn.self.y));
     const sx = drawn.screen.x + velocity.x * flight, sy = drawn.screen.y + velocity.y * flight;
     await shooter.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: sx, y: sy, button: 'none' });
     if (performance.now() >= nextTapAt) {

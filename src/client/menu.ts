@@ -1,9 +1,9 @@
-import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS } from '../shared/defs.ts';
+import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type WeaponId } from '../shared/defs.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
 import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
-import { drawSilhouette } from './sprites.ts';
+import { drawGunCard } from './gunart.ts';
 
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -15,14 +15,36 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 
 type LoadoutPicker = { refresh(): void };
 
+/**
+ * A class gun's kit card bars, each against the best of the six classes: power is the damage of one trigger pull, rate its
+ * shots a second, reach its range, and mobility how fast it lets you walk.
+ */
+export function gunBars(id: WeaponId): { label: string; value: number }[] {
+  const raw = (g: WeaponId) => {
+    const d = GUNS[g];
+    return [d.damage * d.pellets, 1000 / d.fireMs, d.range, d.moveMul];
+  };
+  const best = [0, 1, 2, 3].map((i) => Math.max(...WEAPON_IDS.map((g) => raw(g)[i]!)));
+  return ['PWR', 'RATE', 'REACH', 'MOVE'].map((label, i) => ({ label, value: raw(id)[i]! / best[i]! }));
+}
+
+function gunStats(id: WeaponId): HTMLElement {
+  return el('span', { className: 'gun-stats' }, ...gunBars(id).flatMap(({ label, value }) => {
+    const bar = el('i');
+    bar.style.setProperty('--v', `${Math.round(Math.max(0.08, value) * 100)}%`);
+    return [el('span', {}, label), bar];
+  }));
+}
+
 export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void): LoadoutPicker {
   const weaponButtons = WEAPON_IDS.map((id) => {
     const w = GUNS[id];
-    const art = el('canvas', { width: 120, height: 48, className: 'gun-art' });
-    const b = el('button', { type: 'button', className: 'tile weapon', title: w.name },
-      art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`));
+    const art = el('canvas', { className: 'gun-art' });
+    const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${w.desc}` },
+      art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id));
     b.onclick = () => set({ ...get(), weapon: id });
-    return [id, b, art] as const;
+    drawGunCard(art, id, 150, 56);
+    return [id, b] as const;
   });
   const colorButtons = COLOR_IDS.map((id) => {
     const b = el('button', { type: 'button', className: 'swatch', title: id, ariaLabel: id });
@@ -33,8 +55,8 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
   const armorButtons = ARMOR_IDS.map((id) => {
     const a = ARMORS[id];
     const speed = Math.round((1 - a.speedMul) * 100);
-    const meter = el('span', { className: 'meter' }, el('i'));
-    meter.style.setProperty('--fill', `${(a.blockFrac / ARMORS.heavy.blockFrac) * 100}%`);
+    const tier = ARMOR_IDS.indexOf(id);
+    const meter = el('span', { className: 'meter' }, ...[1, 2, 3].map((n) => el('i', { className: n <= tier ? 'on' : '' })));
     const cost = a.blockFrac
       ? [el('small', {}, `+${Math.round(a.blockFrac * 100)}% dmg blocked`), el('small', {}, `−${speed}% speed`)]
       : [el('small', {}, 'Full speed')];
@@ -49,10 +71,7 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
   );
   const refresh = () => {
     const l = get();
-    for (const [id, b, art] of weaponButtons) {
-      b.ariaPressed = String(id === l.weapon);
-      drawSilhouette(art, id, id === l.weapon ? COLORS[l.color] : '#c9ced8');
-    }
+    for (const [id, b] of weaponButtons) b.ariaPressed = String(id === l.weapon);
     for (const [id, b] of colorButtons) b.ariaPressed = String(id === l.color);
     for (const [id, b] of armorButtons) b.ariaPressed = String(id === l.armor);
   };

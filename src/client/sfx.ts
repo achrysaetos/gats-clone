@@ -1,4 +1,4 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, STREAK, ZOM, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
@@ -6,9 +6,13 @@ import { ringMoved } from './royale.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'knock' | 'ring';
+
+/** Each kill in a streak sounds two semitones above the last, up to the fifth. */
+export type KillStep = 2 | 3 | 4 | 5;
+const KILL_STEPS: readonly KillStep[] = [2, 3, 4, 5];
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
@@ -55,6 +59,16 @@ function shotRecipe(gun: GunId): Recipe {
   return layers;
 }
 
+function killSteps(): Record<`kill:${KillStep}`, Recipe> {
+  const out: Partial<Record<`kill:${KillStep}`, Recipe>> = {};
+  for (const n of KILL_STEPS) {
+    const k = 2 ** (((n - 1) * 2) / 12);
+    // From the third kill a high third note joins, so a streak sounds like it is climbing to something.
+    out[`kill:${n}`] = [note(880 * k, 0), note(1320 * k, 70, 160), ...(n >= 3 ? [note(1760 * k, 140, 200, 0.2)] : [])];
+  }
+  return out as Record<`kill:${KillStep}`, Recipe>;
+}
+
 function shotSounds(): Record<`shot:${GunId}`, Recipe> {
   const out: Partial<Record<`shot:${GunId}`, Recipe>> = {};
   for (const id of GUN_IDS) out[`shot:${id}`] = shotRecipe(id);
@@ -72,6 +86,7 @@ export const SOUNDS: Record<SoundId, Recipe> = {
     { src: 'tone', wave: 'triangle', pitchHz: [1100, 500], ms: 60, gain: 0.12, delayMs: 50 },
   ],
   kill: [note(880, 0), note(1320, 70, 160)],
+  ...killSteps(),
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
   reload: [{ src: 'noise', filter: 'highpass', q: 1, cutoffHz: [3000, 3000], ms: 40, gain: 0.25 }, { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [2200, 2200], ms: 50, gain: 0.25, delayMs: 110 }],
   levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22)],
@@ -113,10 +128,18 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   ],
 };
 
+/** A bounty, revenge or shutdown gets the fanfare, a Last Squad knock its own thud; any other kill climbs in pitch with the streak it extends. */
+function killSound(ev: Extract<Snapshot['events'][number], { e: 'kill' }>, streak: number): Exclude<SoundId, 'hurt'> {
+  if (ev.bounty || ev.revenge || ev.ended >= STREAK.shutdownAt) return 'bounty';
+  if (ev.knock) return 'knock';
+  return streak <= 1 ? 'kill' : `kill:${Math.min(5, streak) as KillStep}`;
+}
+
 /** Each 100 hp the core loses sounds once, so a crowd chewing on it reads as a steady alarm rather than a buzz. */
 const CORE_HIT_STEP = 100;
 
-export type SoundCue = { x: number; y: number; self: boolean; gain: number }
+/** `r` is a boom's blast radius, which sets how hard it shakes the camera. */
+export type SoundCue = { x: number; y: number; self: boolean; gain: number; r?: number }
   & ({ id: 'hurt'; damageFrac: number } | { id: Exclude<SoundId, 'hurt'> });
 
 export const shotCue = (gun: GunId, silenced: boolean, at: { x: number; y: number }, self: boolean): SoundCue =>
@@ -138,10 +161,10 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         if (iHitSomeone && !cues.some((c) => c.id === 'hit')) mine('hit');
         break;
       }
-      case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1 }); break;
+      case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1, r: ev.r }); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
       case 'kill':
-        if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(ev.bounty ? 'bounty' : ev.knock ? 'knock' : 'kill');
+        if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(killSound(ev, next.self.streak));
         break;
       case 'zkill':
         if (ev.by === next.self.id) cues.push({ id: 'splat', x: ev.x, y: ev.y, self: true, gain: 1 });

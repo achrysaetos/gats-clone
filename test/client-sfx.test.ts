@@ -13,7 +13,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
   t: 'snap', tick: 1, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, suppression: 0, streak: 0, nemesis: null, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0, roundEndsAt: null }, events: o.events ?? [],
 });
@@ -22,7 +22,7 @@ const ids = (prev: Snapshot | null, next: Snapshot) => soundsFor(prev, next).map
 
 test('kill-confirm plays only when you are the killer, matched by id not name', () => {
   const kill = (killerId: number, victimId: number, killer = `p${killerId}`): GameEvent =>
-    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol', bounty: false, assisters: [] });
+    ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol', bounty: false, assisters: [], ended: 0, revenge: false });
   assert.deepEqual(ids(snap(), snap({ events: [kill(1, 2)] })), ['kill']);
   assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3)] })), [], 'someone else scoring a kill is silent');
   assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3, ME)] })), [], 'another player sharing my name scoring a kill is silent');
@@ -78,7 +78,7 @@ test('an evolution plays its own cue, a perk pick a smaller confirm, and neither
 });
 
 test('a bounty kill plays the bounty cue in place of the plain kill confirm', () => {
-  const kill = (bounty: boolean): GameEvent => ({ e: 'kill', killer: ME, victim: 'p2', killerId: 1, victimId: 2, weapon: 'Pistol', bounty, assisters: [] });
+  const kill = (bounty: boolean): GameEvent => ({ e: 'kill', killer: ME, victim: 'p2', killerId: 1, victimId: 2, weapon: 'Pistol', bounty, assisters: [], ended: 0, revenge: false });
   assert.deepEqual(ids(snap(), snap({ events: [kill(true)] })), ['bounty']);
   assert.deepEqual(ids(snap(), snap({ events: [kill(false)] })), ['kill']);
 });

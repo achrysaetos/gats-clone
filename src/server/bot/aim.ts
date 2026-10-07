@@ -1,10 +1,14 @@
 import { WORLD, type AbilityId } from '../../shared/defs.ts';
 import type { PlayerView } from '../../shared/protocol.ts';
+import { intercept, MUZZLE_PX } from '../../shared/sim/ballistics.ts';
+
+export { intercept, MUZZLE_PX };
 import type { Point } from './nav.ts';
 
 export type AimState = { angle: number; spin: number; want: number; err: number };
 
-export type Engagement = { id: number; x: number; y: number; vx: number; vy: number; acquiredTick: number; noticeAtTick: number };
+/** `leadMul` is how this bot judges this target's lead: 1 leads exactly, below under-leads, drawn once per engagement as a person's read of one target. */
+export type Engagement = { id: number; x: number; y: number; vx: number; vy: number; acquiredTick: number; noticeAtTick: number; leadMul: number };
 
 export type Hand = { omega: number; zeta: number; maxSpin: number; maxAccel: number };
 
@@ -23,7 +27,8 @@ const BOT_AIM = {
   settleMs: 700,
   errTauMs: 400,
   motionTauMs: 30,
-  strafeLeadFraction: 0.7,
+  /** A bot leads by the round's real flight to where the target will be, times a judgment drawn per engagement in `mean ± spread`. */
+  leadJudgment: { mean: 0.95, spread: 0.15 },
   fireSlackRad: 2.5 * DEG,
 } as const;
 
@@ -78,15 +83,21 @@ export function handFor(sharpness: Sharpness): Hand {
   return { ...HANDS.flick, omega: HANDS.flick.omega * f, maxAccel: HANDS.flick.maxAccel * f * f };
 }
 
-export const leadSeconds = (d: number, speed: number) => (BOT_AIM.strafeLeadFraction * d) / speed;
 
 const onTarget = (aim: AimState, d: number) => Math.abs(wrapAngle(aim.angle - aim.want)) <= Math.max(BOT_AIM.fireSlackRad, Math.atan2(WORLD.playerRadius, d));
+
+/** This engagement's lead judgment, hashed from the target and the moment rather than drawn, so it leaves the bot's random stream untouched. */
+function leadJudgment(id: number, tick: number): number {
+  const v = Math.sin(id * 12.9898 + tick * 78.233) * 43758.5453;
+  const { mean, spread } = BOT_AIM.leadJudgment;
+  return mean + ((v - Math.floor(v)) * 2 - 1) * spread;
+}
 
 export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number): Engagement {
   if (!prev) {
     const [fastest, slowest] = BOT_AIM.noticeMs.map((ms) => ms * sharpness.reactionMul);
     const noticeAtTick = tick + Math.round((fastest + rand() * (slowest - fastest)) / TICK_MS);
-    return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick };
+    return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick, leadMul: leadJudgment(enemy.id, tick) };
   }
   const k = 1 - Math.exp(-TICK_MS / BOT_AIM.motionTauMs);
   const vx = prev.vx + k * ((enemy.x - prev.x) * WORLD.tickHz - prev.vx);

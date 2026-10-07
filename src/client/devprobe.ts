@@ -8,6 +8,7 @@ import { newestSnap } from './interp.ts';
 import { CALLOUT_MS } from './moments.ts';
 import { drawnTags, shadowBakes } from './render.ts';
 import type { SoundCue } from './sfx.ts';
+import { TRACER } from './rounds.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { muzzleTip } from './sprites.ts';
 import { EFFECT_LIFE_MS, type Session } from './state.ts';
@@ -53,7 +54,8 @@ function noteFirstRounds(snap: Snapshot, myId: number, selfAngle: number | null)
     const p = snap.players.find((q) => q.id === b.owner && q.alive);
     const angle = p && (p.id === myId && selfAngle !== null ? selfAngle : p.angle);
     if (b.owner === myId && b.gun !== null) feel('round');
-    firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, gun: b.gun, x: b.x, y: b.y, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
+    // Where the drawn streak starts: its tail end, which a fresh round's fast muzzle speed carries back to the gun.
+    firstRounds.push({ id: b.id, owner: b.owner, own: b.owner === myId, gun: b.gun, x: b.x - b.vx * TRACER.tail, y: b.y - b.vy * TRACER.tail, muzzle: p && angle !== undefined ? muzzleTip(p.x, p.y, angle, p.gun, WORLD.playerRadius) : null });
   }
 }
 

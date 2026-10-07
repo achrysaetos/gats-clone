@@ -34,8 +34,8 @@ function spray(gun: GunId, still: boolean, count: number): number[] {
 
 const widest = (angles: readonly number[]) => Math.max(...angles.map(Math.abs));
 
-test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG much worse, a walking sniper misses past 300px', () => {
-  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 2 };
+test('pistol and SMG are a little less accurate on the move, a shotgun just as accurate; assault worse, LMG much worse, a walking sniper misses past 300px', () => {
+  const expected: Record<string, number> = { pistol: 1.15, smg: 1.15, shotgun: 1, assault: 1.3, lmg: 2 };
   for (const weapon of WEAPON_IDS.filter((w) => w !== 'sniper')) {
     const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true);
     assert.ok(Math.abs(ratio - expected[weapon]!) < 1e-9, `${weapon} moves at ${ratio}x spread`);
@@ -64,7 +64,7 @@ test('a sniper\'s rounds stay inside its still cone standing and stray far past 
   const cone = GUNS.sniper.spread;
   assert.ok(widest(spray('sniper', true, 20)) <= cone, 'standing still');
   assert.ok(widest(spray('sniper', false, 20)) > 2 * cone, 'walking');
-  assert.ok(widest(spray('pistol', false, 20)) <= GUNS.pistol.spread, 'a pistol walking stays in its cone');
+  assert.ok(widest(spray('pistol', false, 20)) <= spreadFor('pistol', {}, false), 'a pistol walking stays in its slightly wider walking cone');
 });
 
 test('an assault rifle held down blooms after its first shots, up to double, and taps stay tight', () => {
@@ -178,8 +178,8 @@ test('evolving into a gun an attachment does nothing for hands the attachment pi
 });
 
 test('Choke tightens a shotgun\'s pellets by a quarter and is never offered on a slug, nor Extended mag on a one-shell gun', () => {
-  assert.ok(Math.abs(spreadFor('shotgun', { 1: 'choke' }, false) - 0.75 * GUNS.shotgun.spread) < 1e-12);
-  assert.equal(spreadFor('slugGun', { 1: 'choke' }, false), GUNS.slugGun.spread);
+  assert.ok(Math.abs(spreadFor('shotgun', { 1: 'choke' }, true) - 0.75 * GUNS.shotgun.spread) < 1e-12);
+  assert.equal(spreadFor('slugGun', { 1: 'choke' }, true), GUNS.slugGun.spread);
   assert.ok(!pickOptions(TIER_1, 'slugGun').includes('choke'));
   assert.ok(!pickOptions(TIER_1, 'sawedOff').includes('extended'));
   assert.ok(pickOptions(TIER_1, 'doubleBarrel').includes('extended'));
@@ -203,7 +203,7 @@ test('Quick reload finishes a reload 35% sooner, and the reload bar runs at its 
   assert.ok(Math.abs(quick.frac - 0.5) < 0.05, `reload bar at ${quick.frac} halfway through`);
 });
 
-test('Bipod is gone: no menu offers it and standing still buys a steady gun nothing', () => {
+test('Bipod is gone: no menu offers it, and standing still tightens a pistol and an SMG a little', () => {
   assert.ok(!PICK_OPTIONS.includes('bipod' as PickOption));
-  for (const weapon of ['pistol', 'smg', 'shotgun'] as const) assert.equal(spreadFor(weapon, {}, true), spreadFor(weapon, {}, false));
+  for (const weapon of ['pistol', 'smg'] as const) assert.ok(spreadFor(weapon, {}, true) < spreadFor(weapon, {}, false));
 });

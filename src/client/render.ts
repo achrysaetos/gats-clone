@@ -10,11 +10,14 @@ import { serverNow } from './interp.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, faceZombies, wallFlashes } from './siege.ts';
 import { bodySprite, drawBody, drawBodyShadows } from './bodies.ts';
 import { drawGun } from './sprites.ts';
+import { fillIcon, UI_ICONS } from './icons.ts';
 import type { Session } from './state.ts';
 import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
+import { heftOf } from './shake.ts';
+import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corpses.ts';
 import { drawCracks, hostKey } from './decals.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
 
@@ -94,14 +97,20 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   }
   if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt);
   drawCracks(ctx, s.cracks, now, new Set([...s.walls, ...crates, ...standing].map(hostKey)));
+  s.corpses = liveCorpses(s.corpses, snap.match.map, now);
+  drawCorpses(ctx, s.corpses.filter((c) => inView(view, c.x - R * 3, c.y - R * 3, R * 6, R * 6)), now);
   if (dark > 0) drawNight(ctx, tl, br, dark);
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
     drawDropsWorld(ctx, snap.royale, clockNow, now, ROYALE.dropSize);
   }
+  // Tonight's dead lie over the night shade, so the horde's toll stays readable in the dark.
+  const field = zombieField(s.zombieCorpses, snap.run?.phase === 'night', now);
+  s.zombieCorpses = { list: field.list, dawnAt: field.dawnAt };
+  drawZombieCorpses(ctx, field.list.filter((c) => inView(view, c.x - R * 4, c.y - R * 4, R * 8, R * 8)), field.alpha, now);
 
-  drawTracers(ctx, snap.bullets);
+  drawRounds(ctx, snap.bullets, dark > 0.5);
 
   const flashes = hitFlashes(s.effects, now);
   if (zombies.length) {
@@ -130,6 +139,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now, dark);
+  const nemesis = killer || snap.self.nemesis === null ? undefined : alive.find((p) => p.id === snap.self.nemesis && !p.hidden);
+  if (nemesis) drawKillerMark(ctx, nemesis, now, dark, 'NEMESIS');
   drawDamageNumbers(ctx, s.feedback.numbers, now);
   drawLetterbox(ctx, cam, dpr);
 }
@@ -217,7 +228,7 @@ function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
   ctx.stroke();
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#ffffff';
-  ctx.font = '800 30px system-ui, sans-serif';
+  ctx.font = '800 30px "Barlow Condensed", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String.fromCharCode(65 + index), z.x, z.y + 2);
@@ -345,53 +356,57 @@ function drawTrails(ctx: CanvasRenderingContext2D, trails: ReadonlyMap<number, r
   ctx.globalAlpha = 1;
 }
 
-type TracerLook = { r: number; glow: string; color: string; hot: string };
+type RoundLook = { r: number; body: string; shine: string };
 
-const CLASS_TRACER: TracerLook = { r: 1.6, glow: PALETTE.tracerGlow, color: PALETTE.tracer, hot: PALETTE.tracerHot };
+/**
+ * A round is a short solid slug in its gun's bullet color with a thin highlight down its middle and a faint trail behind it:
+ * dark on the pale day floor, and the same slug washed light at night so it reads on the dark floor.
+ */
+/** `trailSlugs`: the faint trail never runs past this many slug lengths, so a fast round reads as a slug, not a long line. */
+const ROUND = { minR: 1.9, rMul: 1.2, slugLen: 4.5, trailAlpha: 0.22, trailSlugs: 2.2 } as const;
 
-function tracerLook(b: BulletView): TracerLook {
-  if (!b.gun || GUNS[b.gun].stage === 0) return CLASS_TRACER;
-  const { r, color } = GUNS[b.gun].look.bullet;
-  return { r, glow: glow(color, 0.62), color: glow(color, 0.72), hot: glow(color, 0.92) };
+function roundLook(b: BulletView, night: boolean): RoundLook {
+  const { r, color } = b.gun ? GUNS[b.gun].look.bullet : { r: 1.6, color: '#25211c' };
+  const size = Math.max(ROUND.minR, r) * ROUND.rMul;
+  return night ? { r: size, body: glow(color, 0.82), shine: '#ffffff' } : { r: size, body: color, shine: glow(color, 0.78) };
 }
 
-const TRACER_PASSES = [
-  { from: 1, to: 0, width: 5, alpha: 0.16, color: 'glow' },
-  { from: 1, to: 0.5, width: 1.5, alpha: 0.45, color: 'color' },
-  { from: 0.5, to: 0, width: 2, alpha: 0.95, color: 'color' },
-  { from: 0.6, to: 0, width: 1, alpha: 1, color: 'hot' },
-] as const;
-
-function drawTracers(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[]) {
+function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], night: boolean) {
   ctx.lineCap = 'round';
-  const groups = new Map<string, { look: TracerLook; bullets: BulletView[] }>();
+  const groups = new Map<string, { look: RoundLook; bullets: BulletView[] }>();
   for (const b of bullets) {
-    const look = tracerLook(b);
-    const key = `${look.color}|${look.r}`;
+    const look = roundLook(b, night);
+    const key = `${look.body}|${look.r}`;
     const group = groups.get(key);
     if (group) group.bullets.push(b);
     else groups.set(key, { look, bullets: [b] });
   }
   for (const { look, bullets: group } of groups.values()) {
-    for (const { from, to, width, alpha, color } of TRACER_PASSES) {
+    const dirs = group.map((b) => { const v = Math.hypot(b.vx, b.vy) || 1; return { b, ux: b.vx / v, uy: b.vy / v }; });
+    const stroke = (color: string, width: number, alpha: number, from: (d: (typeof dirs)[number]) => number, to: (d: (typeof dirs)[number]) => number) => {
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = look[color];
-      ctx.lineWidth = look.r * width;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
       ctx.beginPath();
-      for (const b of group) {
-        const far = TRACER.tail * from, near = TRACER.tail * to;
-        ctx.moveTo(b.x - b.vx * far, b.y - b.vy * far);
-        ctx.lineTo(b.x - b.vx * near, b.y - b.vy * near);
+      for (const d of dirs) {
+        ctx.moveTo(d.b.x - d.ux * from(d), d.b.y - d.uy * from(d));
+        ctx.lineTo(d.b.x - d.ux * to(d), d.b.y - d.uy * to(d));
       }
       ctx.stroke();
-    }
+    };
+    const slug = look.r * ROUND.slugLen;
+    stroke(look.body, look.r * 1.3, ROUND.trailAlpha, (d) => Math.min(slug * ROUND.trailSlugs, Math.max(slug, Math.hypot(d.b.vx, d.b.vy) * TRACER.tail)), () => slug * 0.5);
+    stroke(look.body, look.r * 2, 1, () => slug, () => 0);
+    stroke(look.shine, Math.max(0.8, look.r * 0.55), 0.9, () => slug * 0.75, () => slug * 0.2);
   }
   ctx.globalAlpha = 1;
 }
 
 type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number };
 const TIER_COLORS = { 1: '#c9ced8', 2: PALETTE.gold } as const;
-const RECOIL = R * 0.22;
+/** How far a gun jumps back in the hands when fired; a heavy gun (see `heftOf`) jumps up to `RECOIL_HEAVY` times as far. */
+const RECOIL = R * 0.18;
+const RECOIL_HEAVY = 2.6;
 const MARK_Y = -R - 8;
 const RING = R + 5;
 
@@ -446,9 +461,10 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.globalAlpha = alpha;
   }
   ctx.rotate(p.angle);
-  ctx.translate(-RECOIL * Math.max(0, look.kick), 0);
+  const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
+  ctx.translate(-jump, 0);
   drawGun(ctx, p.gun, R);
-  ctx.translate(RECOIL * Math.max(0, look.kick), 0);
+  ctx.translate(jump, 0);
   ctx.rotate(-p.angle);
   drawBody(ctx, bodySprite(color, R, ARMOR_RIM[p.armorTier], look.pxPerUnit), 0, 0, R);
   if (look.flash > 0) {
@@ -483,7 +499,8 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.restore();
 }
 
-function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: number, dark: number) {
+/** Your killer while you wait to respawn, and afterwards your nemesis, until you take your revenge. */
+function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: number, dark: number, label = 'KILLER') {
   const pulse = 0.5 + 0.5 * Math.sin(now / 200);
   ctx.globalAlpha = 0.65 + 0.35 * pulse;
   ctx.beginPath();
@@ -492,16 +509,16 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
   ctx.strokeStyle = PALETTE.hunted;
   ctx.stroke();
   ctx.globalAlpha = 1;
-  ctx.font = '800 12px system-ui, sans-serif';
+  ctx.font = '800 15px "Barlow Condensed", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = dark > 0.5 ? NIGHT.label : PALETTE.hunted;
-  ctx.fillText(`KILLER · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
+  ctx.fillText(`${label} · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
 }
 
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
-const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 21, font: 11, nameAlpha: 0.6 } as const;
+const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 22, font: 14, nameAlpha: 0.7 } as const;
 
 type Tag = { p: PlayerView; bar: number; name: boolean };
 let tagsDrawn: { id: number; bar: boolean; name: boolean }[] = [];
@@ -518,14 +535,27 @@ function bodyTags(bodies: readonly PlayerView[], s: Session, now: number): Tag[]
 }
 
 function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number) {
-  ctx.font = `600 ${TAG.font}px system-ui, sans-serif`;
+  ctx.font = `600 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = dark > 0.5 ? NIGHT.label : PALETTE.label;
   ctx.globalAlpha = TAG.nameAlpha;
   for (const { p, name } of tags) if (name) ctx.fillText(p.name, p.x, p.y + TAG.name);
   ctx.globalAlpha = 1;
+  // A player on a streak wears a flame and their kill count beside their name: a target worth a shutdown.
+  const hot = tags.filter((t) => t.name && t.p.streak).map((t) => ({ p: t.p, x: t.p.x + ctx.measureText(t.p.name).width / 2 + 6 }));
+  if (!hot.length) return;
+  ctx.font = `800 ${TAG.font + 1}px "Barlow Condensed", system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  for (const { p, x } of hot) {
+    fillIcon(ctx, UI_ICONS.flame, x + 5, p.y + TAG.name - 4, 12, STREAK_INK);
+    ctx.fillStyle = STREAK_INK;
+    ctx.fillText(String(p.streak), x + 12, p.y + TAG.name);
+  }
+  ctx.textAlign = 'center';
 }
+
+const STREAK_INK = '#ff5a1f';
 
 function drawBars(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number) {
   const ink = dark > 0.5 ? NIGHT.label : PALETTE.label;
@@ -551,7 +581,7 @@ function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly Dama
     if (k < 0 || k >= 1) continue;
     const player = n.kind === 'player';
     ctx.globalAlpha = 1 - k * k;
-    ctx.font = `800 ${player ? 17 : 13}px system-ui, sans-serif`;
+    ctx.font = `800 ${player ? 20 : 15}px "Barlow Condensed", system-ui, sans-serif`;
     const label = String(Math.max(1, Math.round(n.amount)));
     const y = n.y + MARK_Y - 10 - numberHeight(n, now);
     ctx.lineWidth = 3;

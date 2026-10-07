@@ -305,7 +305,7 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
   }
   if (serverNow !== null) {
     const left = down.bleedOutAt - serverNow;
-    ctx.font = '750 12px system-ui, sans-serif';
+    ctx.font = '750 12px "Barlow Condensed", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
@@ -347,7 +347,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   ctx.strokeStyle = color;
   ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
   if (!ghost.label) return;
-  ctx.font = '800 14px system-ui, sans-serif';
+  ctx.font = '800 14px "Barlow Condensed", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lw = ctx.measureText(ghost.label).width + 16;

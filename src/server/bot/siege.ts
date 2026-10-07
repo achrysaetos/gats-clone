@@ -1,9 +1,9 @@
-import { BUILDING_KINDS, BUILDINGS, GUNS, WORLD, ZOM, type BuildingKind } from '../../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, GUNS, rulesOf, WORLD, ZOM, type BuildingKind } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
 import { cellOf, cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
-import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, intercept, MUZZLE_PX, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
 import type { BotArena } from './arena.ts';
 import { findPath, withSolids, type NavGrid } from './nav.ts';
 import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
@@ -115,7 +115,7 @@ function postFor(core: { x: number; y: number }, bearing: number, buildings: rea
 function swingTo(prev: Engagement | null, zombie: NonNullable<Watch['zombie']>, tick: number, rand: () => number): Engagement {
   if (prev?.id === zombie.id) return engage(prev, zombie, SHARPNESS[0]!, tick, rand);
   const fresh = engage(null, zombie, SHARPNESS[0]!, tick, rand);
-  return prev ? { ...fresh, acquiredTick: prev.acquiredTick, noticeAtTick: prev.noticeAtTick } : fresh;
+  return prev ? { ...fresh, acquiredTick: prev.acquiredTick, noticeAtTick: prev.noticeAtTick, leadMul: prev.leadMul } : fresh;
 }
 
 export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
@@ -161,7 +161,9 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     engaged = swingTo(mem.motor.engaged, zombie, snap.tick, rand);
     if (snap.tick >= engaged.noticeAtTick) {
       const err = drift(before.err, aimSigma(engaged, me, SHARPNESS[0]!, snap.tick), TICK_MS, rand);
-      const rx = zombie.x - me.x, ry = zombie.y - me.y;
+      // Lead the zombie by the round's flight, as bots lead players, since slower rounds otherwise trail a walker.
+      const meet = intercept(me, { x: zombie.x, y: zombie.y, vx: engaged.vx, vy: engaged.vy }, GUNS[me.gun].bulletSpeed, rulesOf(GUNS[me.gun]).muzzleBoost, MUZZLE_PX, engaged.leadMul);
+      const rx = meet.x - me.x, ry = meet.y - me.y;
       look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx, engaged.vy), hand: HANDS.flick, d: zombie.d, err };
       wantsFire = zombie.d < GUNS[me.gun].range * 0.95;
       threat = { d: zombie.d };

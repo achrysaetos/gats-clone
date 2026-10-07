@@ -12,7 +12,7 @@ import { findPath, navGrid, type NavGrid, type Point } from '../../../../../src/
 import { killOnExit } from '../../../../../scripts/kill-on-exit.ts';
 
 export type Cdp = (method: string, params?: object) => Promise<any>;
-export type Page = { cdp: Cdp; js: (expr: string) => Promise<any>; exceptions: string[]; close: () => void };
+export type Page = { cdp: Cdp; js: (expr: string) => Promise<any>; exceptions: string[]; close: () => void; fitViewport: () => Promise<void> };
 export type PageProblem = 'page exception' | 'console.error';
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -62,9 +62,10 @@ export async function openPage(opts: {
   const cdp: Cdp = (method, params = {}) => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
   const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
   await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
-  if (opts.viewport) await cdp('Emulation.setDeviceMetricsOverride', { ...opts.viewport, deviceScaleFactor: 1, mobile: false });
+  const fitViewport = async () => { if (opts.viewport) await cdp('Emulation.setDeviceMetricsOverride', { ...opts.viewport, deviceScaleFactor: 1, mobile: false }); };
+  await fitViewport();
   const close = () => { ws.removeAllListeners('close'); ws.close(); chrome.kill(); };
-  return { cdp, js, exceptions, close };
+  return { cdp, js, exceptions, close, fitViewport };
 }
 
 export async function serversListed(page: Page, ms = 6000): Promise<boolean> {
@@ -82,6 +83,8 @@ export async function joinFromMenu(page: Page, opts: { room?: number; name?: str
   if (opts.loadout) {
     await page.js(`localStorage.setItem('skirmish.loadout', '${JSON.stringify(opts.loadout)}'); location.reload()`);
     await sleep(500);
+    // A reload can drop the emulated viewport, which leaves the page at the window's default size.
+    await page.fitViewport();
     await serversListed(page);
   }
   await page.js(`document.querySelectorAll('#servers .server')[${opts.room ?? 0}].click()${opts.name === undefined ? '' : `; document.getElementById('name').value = '${opts.name}'`}`);

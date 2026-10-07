@@ -113,7 +113,7 @@ test('a shield blocks 33% of bullets from within 40 degrees of its facing, and n
   assert.equal(lostTo(0, 'blast'), 50 * (1 - (60 - WORLD.playerRadius) / 100), 'a blast in front is not blocked');
 });
 
-test('lightweight moves 10% faster', () => {
+test('lightweight moves 25% faster', () => {
   const distanceIn1s = (lightweight: boolean) => {
     const w = emptyWorld();
     const a = spawnAt(w, 500, 500);
@@ -124,7 +124,7 @@ test('lightweight moves 10% faster', () => {
   };
   const base = distanceIn1s(false);
   assert.ok(Math.abs(base - WORLD.baseSpeed) < WORLD.baseSpeed * 0.05, `base speed ${base}`);
-  assert.ok(Math.abs(distanceIn1s(true) / base - 1.1) < 0.01);
+  assert.ok(Math.abs(distanceIn1s(true) / base - 1.25) < 0.01);
 });
 
 test('dead player cannot act and respawns after respawnMs', () => {

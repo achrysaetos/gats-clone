@@ -12,7 +12,8 @@ import { EMPTY_BUFFER } from '../src/client/interp.ts';
 import type { Session } from '../src/client/state.ts';
 import { createPool } from '../src/client/particles.ts';
 import { createCracks } from '../src/client/decals.ts';
-import { glow, PALETTE } from '../src/client/palette.ts';
+import { glow, INK, PALETTE } from '../src/client/palette.ts';
+import { addCorpse, addZombieCorpse, CORPSE, corpseAlpha, deadTone, drawCorpses, drawZombieCorpses, explosiveDeath, liveCorpses, restingGun, ZOMBIE_CORPSE, zombieField, type Corpse, type ZombieCorpse } from '../src/client/corpses.ts';
 import { drawnTags, drawWorld } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
@@ -23,13 +24,13 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const snap = (o: { me?: Partial<PlayerView>; self?: Partial<SelfView>; players?: PlayerView[]; events?: GameEvent[] } = {}): Snapshot => ({
   t: 'snap', tick: 1, ackSeq: 0,
-  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, ...o.self },
+  self: { id: 1, ammo: 12, mag: 12, speed: 300, reloading: false, reloadFrac: 0, perks: {}, pending: null, ability: null, abilityReadyIn: 0, alive: o.me?.alive ?? true, dash: null, respawnIn: 0, kills: 0, deaths: 0, viewRadius: 900, suppression: 0, streak: 0, nemesis: null, ...o.self },
   players: [player(1, o.me), ...(o.players ?? [])], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [],
   match: { mode: 'FFA', map: 'Boneyard', nextMap: 'Old Town', mapChangeIn: 0, teamScore: { red: 0, blue: 0 }, winner: null, restartIn: 0, roundEndsAt: null }, events: o.events ?? [],
 });
 
 const kill = (over: Partial<KillEvent> = {}): KillEvent =>
-  ({ e: 'kill', killer: 'Atlas', victim: 'p1', killerId: 7, victimId: 1, weapon: 'Hornet', bounty: false, assisters: [], ...over });
+  ({ e: 'kill', killer: 'Atlas', victim: 'p1', killerId: 7, victimId: 1, weapon: 'Hornet', bounty: false, assisters: [], ended: 0, revenge: false, ...over });
 
 const moments = (prev: Snapshot | null, next: Snapshot, now = 1000) => addMoments(NO_MOMENTS, prev, next, now);
 
@@ -58,7 +59,8 @@ test('a bounty kill gets a gold callout, and moments expire', () => {
   const m = moments(prev, snap({ me: { score: 300 }, events: [kill({ killer: 'p1', killerId: 1, victim: 'Atlas', victimId: 7, bounty: true })] }));
   assert.deepEqual(m.callouts.map((c) => c.title), [`BOUNTY +${WORLD.bountyScore}`]);
   assert.deepEqual(m.popups.map((p) => [p.x, p.y]), [[300, 200]], 'without a blow this snapshot, the victim\'s last position');
-  assert.deepEqual(addMoments(m, prev, prev, 1000 + CALLOUT_MS), NO_MOMENTS);
+  const later = addMoments(m, prev, prev, 1000 + CALLOUT_MS);
+  assert.deepEqual([later.callouts, later.popups], [[], []]);
 });
 
 test('moments that land together queue, so at most two callouts share the screen', () => {
@@ -148,7 +150,7 @@ function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
-  const s = { myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
+  const s = { myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
   drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
   return strokes;
 }
@@ -177,8 +179,8 @@ test('while you wait to respawn, your killer wears a red ring', () => {
 });
 
 test('the reticle spread follows the gun and Grip', () => {
-  assert.equal(spreadFor('smg', {}, false), GUNS.smg.spread);
-  assert.ok(Math.abs(spreadFor('smg', { 1: 'grip' }, false) - GUNS.smg.spread * 0.6) < 1e-12, 'grip narrows it');
+  assert.equal(spreadFor('smg', {}, true), GUNS.smg.spread);
+  assert.ok(Math.abs(spreadFor('smg', { 1: 'grip' }, true) - GUNS.smg.spread * 0.6) < 1e-12, 'grip narrows it');
   assert.ok(spreadFor('shotgun', {}, true) > spreadFor('sniper', {}, true), 'a shotgun reticle is wider than a sniper\'s');
 });
 
@@ -228,7 +230,7 @@ const lightness = (color: unknown): number => {
   return (r! + g! + b!) / (3 * 255);
 };
 
-test("every gun's rounds glow: no tracer pass is drawn darker than mid-grey, evolved hues included", () => {
+test("by day every gun's round is a solid slug in its own bullet color with a lighter highlight", () => {
   worldStrokes(snap());
   for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
     const base = worldStrokes(snap({ players: [player(2, { gun })] }));
@@ -236,8 +238,83 @@ test("every gun's rounds glow: no tracer pass is drawn darker than mid-grey, evo
     frame.bullets = [{ id: 9, x: 140, y: 0, vx: 1500, vy: 0, owner: 2, gun }];
     const strokes = worldStrokes(frame);
     const from = strokes.findIndex((c, i) => c !== base[i]);
-    const tracer = strokes.slice(from, from + strokes.length - base.length);
-    assert.ok(tracer.length > 0, `${gun} draws a tracer`);
-    for (const c of tracer) assert.ok(lightness(c) >= 0.5, `${gun} tracer pass ${String(c)} glows`);
+    const round = strokes.slice(from, from + strokes.length - base.length);
+    const color = GUNS[gun].look.bullet.color;
+    assert.ok(round.filter((c) => c === color).length >= 2, `${gun} draws its slug and trail in ${color}`);
+    assert.ok(round.some((c) => c !== color && lightness(c) > lightness(color)), `${gun} slug has a lighter highlight`);
   }
+});
+
+test('a fallen player lies where they died as an obviously dead body, for 30s, then fades away', () => {
+  const corpse: Corpse = { victim: 2, x: 200, y: 0, angle: 0, color: '#e5484d', gun: 'shotgun', map: 'Boneyard', born: 0, blow: 0, blast: false };
+  let corpses = addCorpse([], corpse);
+  assert.equal(liveCorpses(corpses, 'Boneyard', 29_000).length, 1, 'still there after 29s');
+  assert.equal(liveCorpses(corpses, 'Boneyard', 30_000).length, 0, 'gone at 30s');
+  assert.equal(liveCorpses(corpses, 'Old Town', 1000).length, 0, 'a new map clears the field');
+  assert.equal(corpseAlpha(corpse, 10_000), 1, 'solid for most of its life');
+  assert.ok(corpseAlpha(corpse, 28_500) < 1 && corpseAlpha(corpse, 28_500) > 0, 'fading over the last seconds');
+  for (let i = 0; i < 100; i++) corpses = addCorpse(corpses, { ...corpse, victim: 100 + i });
+  assert.equal(corpses.length, CORPSE.cap, 'the field holds a bounded number');
+  assert.notEqual(deadTone('#e5484d'), '#e5484d', 'the dead are washed toward grey');
+
+  const strokes: unknown[] = [];
+  const fills: unknown[] = [];
+  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop === 'stroke') return () => strokes.push(target.strokeStyle);
+      if (prop === 'fill') return () => fills.push(target.fillStyle);
+      return () => {};
+    },
+    set(target, prop, value) { target[prop] = value; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  drawCorpses(ctx, [corpse], 5000);
+  assert.ok(fills.includes(deadTone(corpse.color)), 'a grey body');
+  assert.ok(fills.some((f) => typeof f === 'string' && f.startsWith('#7a10')), 'in a pool of blood');
+  assert.ok(strokes.filter((c) => c === INK).length >= 2, 'outlined and crossed out');
+});
+
+test('every corpse drops its gun somewhere different, and a blast flings it further', () => {
+  const at = { x: 0, y: 0 };
+  const rest = (c: Corpse) => restingGun(c, at, CORPSE.lifeMs / 2);
+  const corpses = Array.from({ length: 40 }, (_, i): Corpse => ({ victim: i + 1, x: 0, y: 0, angle: 0, color: '#3e63dd', gun: 'pistol', map: 'm', born: 1000 * i, blow: null, blast: false }));
+  const guns = corpses.map(rest);
+  const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs);
+  assert.ok(spread(guns.map((g) => Math.atan2(g.y, g.x))) > 4, 'dropped on every side');
+  assert.ok(spread(guns.map((g) => Math.hypot(g.x, g.y))) > WORLD.playerRadius * 0.6, 'at different distances');
+  assert.ok(spread(guns.map((g) => ((g.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI))) > 4, 'lying at any angle');
+  const reach = (blast: boolean) => Math.min(...corpses.map((c) => Math.hypot(rest({ ...c, blast }).x, rest({ ...c, blast }).y)));
+  assert.ok(reach(true) > reach(false), 'a blast throws the gun clear');
+  assert.deepEqual(restingGun(corpses[0]!, at, 0), { ...restingGun(corpses[0]!, at, 0) }, 'the same corpse always lands the same way');
+  const settled = restingGun(corpses[0]!, at, CORPSE.slideMs * 2), later = restingGun(corpses[0]!, at, CORPSE.lifeMs - 1);
+  assert.deepEqual(settled, later, 'and it stays put once it lands');
+  assert.ok(explosiveDeath('Grenade') && explosiveDeath('Boom Slug') && !explosiveDeath('Pistol'));
+});
+
+test('dead zombies stay all night, fade together at dawn, and the field is bounded', () => {
+  const z = (id: number): ZombieCorpse => ({ id, x: id * 10, y: 0, kind: 'walker', born: 0, blow: null });
+  let list: ZombieCorpse[] = [];
+  for (let i = 1; i <= ZOMBIE_CORPSE.cap + 50; i++) list = addZombieCorpse(list, z(i));
+  assert.equal(list.length, ZOMBIE_CORPSE.cap, 'a huge night keeps a bounded field');
+  const night = zombieField({ list, dawnAt: null }, true, 600_000);
+  assert.equal(night.alpha, 1, 'still there however late in the night');
+  assert.equal(night.list.length, ZOMBIE_CORPSE.cap);
+  const dawn = zombieField(night, false, 1_000_000);
+  assert.ok(dawn.alpha === 1 && dawn.dawnAt === 1_000_000, 'dawn starts the fade');
+  const mid = zombieField(dawn, false, 1_000_000 + ZOMBIE_CORPSE.dawnFadeMs / 2);
+  assert.ok(mid.alpha > 0.4 && mid.alpha < 0.6, 'fading');
+  const gone = zombieField(mid, false, 1_000_000 + ZOMBIE_CORPSE.dawnFadeMs + 1);
+  assert.deepEqual([gone.list.length, gone.alpha], [0, 0], 'cleared once faded');
+
+  const fills: unknown[] = [];
+  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop === 'fill') return () => fills.push(target.fillStyle);
+      return () => {};
+    },
+    set(target, prop, value) { target[prop] = value; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  drawZombieCorpses(ctx, Array.from({ length: 200 }, (_, i) => z(i + 1)), 1, 5000);
+  assert.ok(fills.length <= 6, `two hundred dead walkers draw in a handful of batched fills (${fills.length})`);
 });

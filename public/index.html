@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#d9dade">
+  <meta name="theme-color" content="#121419">
   <title>Skirmish</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -15,11 +15,10 @@
       <header class="brand">
         <div class="wordmark">
           <svg class="emblem" viewBox="0 0 64 64" aria-hidden="true">
-            <path d="M32 3 57 17.5v29L32 61 7 46.5v-29z" fill="#1b1d22" stroke="#ffd34d" stroke-width="3" stroke-linejoin="round"/>
-            <path d="M32 11 50 21.5v21L32 53 14 42.5v-21z" fill="#2a2e37"/>
-            <circle cx="32" cy="32" r="12" fill="none" stroke="#f2f3f5" stroke-width="3.5"/>
-            <path d="M32 14v10M32 40v10M14 32h10M40 32h10" stroke="#f2f3f5" stroke-width="3.5" stroke-linecap="round"/>
-            <circle cx="32" cy="32" r="3.5" fill="#ff5a5f"/>
+            <path d="M14 4h36l10 10v36L50 60H14L4 50V14z" fill="#15171b" stroke="#ff5a1f" stroke-width="3" stroke-linejoin="miter"/>
+            <circle cx="32" cy="32" r="13" fill="none" stroke="#ece6d6" stroke-width="3.5"/>
+            <path d="M32 12v11M32 41v11M12 32h11M41 32h11" stroke="#ece6d6" stroke-width="3.5"/>
+            <rect x="29" y="29" width="6" height="6" fill="#ff5a1f"/>
           </svg>
           <h1 class="logo"><em>S</em>KIRMISH</h1>
         </div>
@@ -38,7 +37,7 @@
           <div id="squad" class="squad"></div>
           <div class="play-actions">
             <p id="menu-status" class="status" role="status"></p>
-            <button id="play" type="submit" class="primary">Play</button>
+            <button id="play" type="submit" class="primary">Deploy</button>
           </div>
         </form>
         <aside class="side">
@@ -61,10 +60,11 @@
       <input id="chat-input" class="chat-input" maxlength="120" placeholder="Say something. Enter sends, Esc cancels." autocomplete="off" hidden>
     </div>
     <div class="touch-buttons">
-      <button id="touch-reload" type="button" aria-label="Reload">R</button>
-      <button id="touch-ability" type="button" aria-label="Ability">&#9733;</button>
+      <button id="touch-reload" type="button" aria-label="Reload"></button>
+      <button id="touch-ability" type="button" aria-label="Ability"></button>
     </div>
     <div id="squad-chip" class="squad-chip" hidden></div>
+    <div class="rotate-hint" role="status"><span aria-hidden="true">&#8635;</span>Turn your phone sideways to play</div>
     <div id="banner" class="banner" hidden></div>
     <div id="report" class="banner report" hidden></div>
     <div id="objective" class="objective" role="status" hidden></div>
@@ -74,6 +74,7 @@
         <h2 id="death-title">You were eliminated</h2>
         <p id="death-cause" class="death-cause" hidden></p>
         <p id="death-lost" class="death-lost" hidden></p>
+        <div id="death-recap" class="recap" hidden></div>
         <p id="death-sub" class="muted"></p>
         <div id="loadout-death" class="loadout"></div>
         <button id="respawn" type="button" class="primary">Respawn</button>

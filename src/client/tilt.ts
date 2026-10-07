@@ -1,7 +1,7 @@
 import { ROYALE, WORLD, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, CrateView, RunView, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
-import { paintFloor, paintFoliage, paintGrain, type Grain } from './grain.ts';
+import { paintFloor, paintFoliage, paintGrain, paintHazard, type Grain } from './grain.ts';
 import { PALETTE } from './palette.ts';
 
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
@@ -12,22 +12,31 @@ type SolidKind = 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'bric
 type Bed = { inset: number; ground: string; leaves: readonly (readonly [string, number])[] };
 type Material = { top: string; grain: Grain; height: number; bed?: Bed };
 
-const GRAIN: Grain = { specks: 1400, blotches: 4, scratches: 0.6, seams: null, tile: 160 };
+/**
+ * The world wears the same kit as the interface (style.css): gunmetal, khaki and olive with an ink outline, each solid
+ * cel-shaded in two hard steps, a light edge toward the light and a dark one away from it, over the bone concrete floor.
+ * Surfaces stay quiet so a solid reads by its colour and its edges, as the guns and bodies do.
+ */
+const GRAIN: Grain = { specks: 120, blotches: 0, scratches: 0.2, seams: null, tile: 160 };
 
 export const MATERIALS: Record<SolidKind, Material> = {
-  sandstone: { top: '#d1b89f', grain: GRAIN, height: 46 },
-  concrete: { top: '#a3abba', grain: GRAIN, height: 46 },
-  curb: { top: '#b4b9c2', grain: GRAIN, height: 20 },
-  planter: { top: '#b9bdc6', grain: GRAIN, height: 26, bed: { inset: 6, ground: '#1c2617', leaves: [['#2c3b23', 0.4], ['#3a4f2c', 0.35], ['#4b6338', 0.2], ['#64804a', 0.06]] } },
-  slate: { top: '#7f8999', grain: { ...GRAIN, seams: 'panel', tile: 50 }, height: 36 },
-  brick: { top: '#c7a383', grain: { ...GRAIN, seams: 'brick', tile: 50 }, height: 28 },
-  pad: { top: '#bcc0c8', grain: GRAIN, height: 14 },
-  core: { top: '#4d5462', grain: GRAIN, height: 56 },
+  sandstone: { top: '#b4a07a', grain: { ...GRAIN, seams: 'panel', tile: 100 }, height: 46 },
+  concrete: { top: '#5d636d', grain: { ...GRAIN, seams: 'panel', tile: 200, rivets: true }, height: 46 },
+  curb: { top: '#2b2e34', grain: GRAIN, height: 20 },
+  planter: { top: '#6c7356', grain: GRAIN, height: 26, bed: { inset: 6, ground: '#252b1d', leaves: [['#3a4429', 0.45], ['#4d5934', 0.35], ['#66744a', 0.2]] } },
+  slate: { top: '#4f5560', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 36 },
+  brick: { top: '#a8946b', grain: { ...GRAIN, seams: 'brick', tile: 50 }, height: 28 },
+  pad: { top: '#454a53', grain: GRAIN, height: 14 },
+  core: { top: '#3c414b', grain: GRAIN, height: 56 },
 };
 
-const INK_EDGE = 'rgba(26, 28, 34, 0.92)';
-const LIP_COLOR = '#4a4f5a';
-const HIGHLIGHT = 'rgba(255, 255, 255, 0.75)';
+/** The arena's edge is hazard tape in the interface's orange, so the map is framed like every other piece of kit. */
+const HAZARD = { a: '#2b2e34', b: '#d9541f', band: 12 } as const;
+
+const INK_EDGE = '#1c1f26';
+const LIP_COLOR = '#2a2d34';
+/** The two hard cel steps, `edge` px wide, on every top face. */
+const BEVEL = { light: 'rgba(255, 255, 255, 0.2)', dark: 'rgba(10, 12, 16, 0.28)', edge: 3 } as const;
 
 export type Solid = { kind: SolidKind; x: number; y: number; w: number; h: number; wear?: number };
 
@@ -61,8 +70,9 @@ type GroundLayer = { canvas: HTMLCanvasElement; x: number; y: number; scale: num
 
 const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
-const BLUR_PX = 12;
-const SHADOW_ALPHA = 0.3;
+/** Crisp, graphic drop shadows rather than soft photographic ones. */
+const BLUR_PX = 3;
+const SHADOW_ALPHA = 0.24;
 const FLOOR_SEED = 7;
 
 function layerCanvas(size: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -197,25 +207,31 @@ export function drawSolids(ctx: CanvasRenderingContext2D, solids: readonly Solid
   ctx.fill();
   ctx.stroke();
   for (const [kind, list] of byKind) drawTops(ctx, kind, list);
-  ctx.strokeStyle = INK_EDGE;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  for (const s of solids) ctx.rect(s.x, s.y, s.w, s.h);
-  ctx.stroke();
-  ctx.strokeStyle = HIGHLIGHT;
-  ctx.lineWidth = 1.2;
+  const e = BEVEL.edge;
+  ctx.fillStyle = BEVEL.light;
   ctx.beginPath();
   for (const s of solids) {
-    ctx.moveTo(s.x + 1.5, s.y + s.h - 1.5);
-    ctx.lineTo(s.x + 1.5, s.y + 1.5);
-    ctx.lineTo(s.x + s.w - 1.5, s.y + 1.5);
+    if (s.kind === 'curb') continue;
+    ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + s.w, s.y); ctx.lineTo(s.x + s.w - e, s.y + e); ctx.lineTo(s.x + e, s.y + e); ctx.lineTo(s.x + e, s.y + s.h - e); ctx.lineTo(s.x, s.y + s.h); ctx.closePath();
   }
+  ctx.fill();
+  ctx.fillStyle = BEVEL.dark;
+  ctx.beginPath();
+  for (const s of solids) {
+    if (s.kind === 'curb') continue;
+    ctx.moveTo(s.x + s.w, s.y); ctx.lineTo(s.x + s.w, s.y + s.h); ctx.lineTo(s.x, s.y + s.h); ctx.lineTo(s.x + e, s.y + s.h - e); ctx.lineTo(s.x + s.w - e, s.y + s.h - e); ctx.lineTo(s.x + s.w - e, s.y + e); ctx.closePath();
+  }
+  ctx.fill();
+  ctx.strokeStyle = INK_EDGE;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const s of solids) ctx.rect(s.x, s.y, s.w, s.h);
   ctx.stroke();
 }
 
 function drawTops(ctx: CanvasRenderingContext2D, kind: SolidKind, list: readonly Solid[]) {
   const m = MATERIALS[kind];
-  ctx.fillStyle = patternOf(ctx, tops, kind, () => paintGrain(m.top, m.grain, kind.length * 7919));
+  ctx.fillStyle = patternOf(ctx, tops, kind, () => (kind === 'curb' ? paintHazard(HAZARD.a, HAZARD.b, HAZARD.band) : paintGrain(m.top, m.grain, kind.length * 7919)));
   ctx.beginPath();
   for (const s of list) ctx.rect(s.x, s.y, s.w, s.h);
   // Grain needs no filtering, and filtered pattern fills cost a software canvas 2-3ms a frame across the 6000 maps' big blocks.

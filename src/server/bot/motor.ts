@@ -2,7 +2,7 @@ import { GUNS, rulesOf, WORLD, type AbilityId } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
-import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, landingErr, leadSeconds, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
@@ -16,6 +16,10 @@ export type Motor = {
   stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
   stuckTicks: number;
+  /** Where the bot last made real headway, and when; see `CRAWL`. */
+  progress: { x: number; y: number; tick: number };
+  /** A sidestep at right angles to the way it wants to go, held until `until`, round something the nav grid does not hold. */
+  detour: { side: 1 | -1; until: number } | null;
   /** A squad bot's next step toward its errand, kept a while so two equal ways round a turret never flip it side to side. */
   siegeStep: { to: Point; at: Point; tick: number; kite: boolean } | null;
   /** Where a squad bot is tending, kept so it finishes a job it has started instead of leaving at the threshold that sent it. */
@@ -27,7 +31,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, siegeStep: null, tending: null, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
+  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, progress: { x: 0, y: 0, tick: 0 }, detour: null, siegeStep: null, tending: null, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -60,6 +64,13 @@ const BLOCKED_TICKS = 3;
 const REPLAN_PX = 48;
 const NEAR_GOAL_PX = 300;
 const MAX_EXPANSIONS = 6000;
+/**
+ * A bot pressing its keys that has not got `px` from where it last made headway within `ticks` is crawling along a wall:
+ * the per-tick stuck count misses it, since sliding a pixel along the wall reads as gaining on the waypoint. Its route is
+ * then replanned with no search budget, which finds the way round when a far goal outran the budgeted search; and since
+ * crates are not in the nav grid, it also sidesteps at right angles for `detourTicks`, alternating sides each time.
+ */
+const CRAWL = { px: 60, ticks: 30, detourTicks: 24 } as const;
 const STAND_MS: readonly [number, number] = [700, 1500];
 const STEP_MS: readonly [number, number] = [300, 700];
 const UNDER_FIRE_STEP_ODDS = 0.75;
@@ -206,14 +217,19 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
   }
 }
 
-function plan(arena: BotArena, me: Point, to: Point): NonNullable<Motor['route']> {
-  const found = findPath(arena.nav, me, to, MAX_EXPANSIONS);
+function plan(arena: BotArena, me: Point, to: Point, budget = MAX_EXPANSIONS): NonNullable<Motor['route']> {
+  const found = findPath(arena.nav, me, to, budget);
   const last = found?.[found.length - 1];
   return { goal: to, points: found ?? [to], version: arena.version, partial: last !== undefined && dist(last, to) > WAYPOINT_PX };
 }
 
-function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: number): { at: Point; route: Motor['route']; replanned: boolean } {
+function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: number, crawling = false): { at: Point; route: Motor['route']; replanned: boolean } {
   const old = m.route;
+  if (crawling) {
+    const route = plan(arena, me, to, Infinity);
+    const points = route.partial ? route.points : [...route.points.slice(0, -1), to];
+    return { at: points[0]!, route: { ...route, points }, replanned: true };
+  }
   const wallsMoved = old !== null && old.version !== arena.version && !walkable(arena.nav, me, old.points[0] ?? to);
   const partEnded = old !== null && old.partial && dist(me, old.points[old.points.length - 1]!) < WAYPOINT_PX * 2;
   const wanted = !old || wallsMoved || partEnded || dist(old.goal, to) > REPLAN_PX || m.stuckTicks > STUCK_TICKS;
@@ -240,7 +256,8 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): Drive 
   const off = m.dir === null ? Infinity : Math.abs(Math.atan2(Math.sin(want - (m.dir * Math.PI) / 4), Math.cos(want - (m.dir * Math.PI) / 4)));
   const blocked = m.stuckTicks >= BLOCKED_TICKS;
   const hold = !blocked && m.dir !== null && (off < HOLD_SLACK || (tick - m.dirSince < MIN_HOLD_TICKS && off < Math.PI / 2));
-  const dir = hold && m.dir !== null ? m.dir : (octant + sidestepOctant(m.stuckTicks) + 8) % 8;
+  const detour = m.detour && tick < m.detour.until ? m.detour.side * 2 : 0;
+  const dir = detour ? (octant + detour + 8) % 8 : hold && m.dir !== null ? m.dir : (octant + sidestepOctant(m.stuckTicks) + 8) % 8;
   const turnsBack = m.pace.lastDir !== null && octantGap(dir, m.pace.lastDir) >= 3;
   if (turnsBack && tick - m.pace.lastTurnBackTick < MIN_LEG_TICKS) return { keys: none, dir: null, dirSince: tick, pace: m.pace };
   const a = (dir * Math.PI) / 4, cx = Math.cos(a), cy = Math.sin(a);
@@ -254,8 +271,10 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const me = v.me;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
-  const way = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick) : { at: null, route: m.route, replanned: false };
-  const drive = keysToward(m, me, way.at, v.tick);
+  const crawling = m.dir !== null && v.tick - m.progress.tick > CRAWL.ticks;
+  const way = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick, crawling) : { at: null, route: m.route, replanned: false };
+  const detour = crawling ? { side: (m.detour?.side === 1 ? -1 : 1) as 1 | -1, until: v.tick + CRAWL.detourTicks } : m.detour;
+  const drive = keysToward({ ...m, detour }, me, way.at, v.tick);
   const gained = way.at ? dist(m.last, way.at) - dist(me, way.at) : 0;
   const pressing = drive.dir !== null;
   const gun = GUNS[me.gun];
@@ -278,8 +297,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     if (v.tick >= engaged.noticeAtTick) {
       const sigma = aimSigma(engaged, me, sharp, v.tick);
       const err = v.tick === engaged.noticeAtTick ? landingErr(sigma, c.rand) : drift(before.err, sigma, TICK_MS, c.rand);
-      const flight = leadSeconds(t.d, gun.bulletSpeed);
-      const rx = t.p.x + engaged.vx * flight - me.x, ry = t.p.y + engaged.vy * flight - me.y;
+      const meet = intercept(me, { x: t.p.x, y: t.p.y, vx: engaged.vx, vy: engaged.vy }, gun.bulletSpeed, rulesOf(gun).muzzleBoost, MUZZLE_PX, engaged.leadMul);
+      const rx = meet.x - me.x, ry = meet.y - me.y;
       look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx - mine.x, engaged.vy - mine.y), hand: handFor(sharp), d: t.d, err };
       wantsFire = t.d < gun.range * 0.95;
       threat = { d: t.d };
@@ -314,7 +333,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false },
     motor: {
       route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
-      stuckTicks: pressing && gained < 1 && !way.replanned ? m.stuckTicks + 1 : 0, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
+      stuckTicks: pressing && gained < 1 && !way.replanned ? m.stuckTicks + 1 : 0,
+      progress: !pressing || crawling || dist(me, m.progress) > CRAWL.px ? { x: me.x, y: me.y, tick: v.tick } : m.progress, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
     },
   };
 }

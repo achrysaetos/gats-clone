@@ -12,6 +12,7 @@ import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/s
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
+import { flightSec } from '../src/shared/sim/ballistics.ts';
 import { median } from './lib/stats.ts';
 
 const minutes = Number(process.argv[2] ?? 10);
@@ -56,7 +57,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
     }
     const d = Math.hypot(enemy.x - me.x, enemy.y - me.y);
     const vel = next.seen?.id === enemy.id ? { x: enemy.x - next.seen.x, y: enemy.y - next.seen.y } : { x: 0, y: 0 };
-    const flightTicks = (d / GUNS[me.gun].bulletSpeed) * WORLD.tickHz * HUMAN_LEAD;
+    const flightTicks = flightSec(GUNS[me.gun].bulletSpeed, d) * WORLD.tickHz * HUMAN_LEAD;
     const bearing = Math.atan2(enemy.y - me.y, enemy.x - me.x);
     const angularSpeed = next.seen?.id === enemy.id ? Math.abs(Math.atan2(Math.sin(bearing - Math.atan2(next.seen.y - me.y, next.seen.x - me.x)), Math.cos(bearing - Math.atan2(next.seen.y - me.y, next.seen.x - me.x)))) * WORLD.tickHz : 0;
     const sigma = HUMAN_AIM_SIGMA + HUMAN_AIM_SIGMA_PER_RAD_PER_SEC * angularSpeed;

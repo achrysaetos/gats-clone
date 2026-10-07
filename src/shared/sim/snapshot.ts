@@ -1,4 +1,4 @@
-import { byTurret, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { byTurret, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
   BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
@@ -37,6 +37,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
+    ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
 }
@@ -66,6 +67,9 @@ function selfView(w: World, p: Player): SelfView {
     kills: p.kills,
     deaths: p.deaths,
     viewRadius: stats.viewRadius,
+    suppression: life.k === 'alive' ? Math.round(life.suppression * 100) / 100 : 0,
+    streak: p.lifeKills,
+    nemesis: p.nemesis,
   };
 }
 

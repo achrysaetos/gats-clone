@@ -1,4 +1,4 @@
-import { GUNS, isPerkId, PERK_INFO, pickOptions, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
+import { GUN_IDS, GUNS, isPerkId, PERK_INFO, pickOptions, STREAK, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
@@ -8,9 +8,10 @@ import { PERK_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
-import { drawSilhouette } from './sprites.ts';
+import { drawGunCard } from './gunart.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 import { resultTitle } from './royale.ts';
+import type { Recap } from './records.ts';
 import { outTillDawnText, reportRows, reportTitle, turretLine } from './zombies.ts';
 
 const CHAT_VISIBLE_MS = 15000;
@@ -37,11 +38,17 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const deathSub = $('death-sub');
   const deathCause = $('death-cause');
   const deathLost = $('death-lost');
+  const deathRecap = $('death-recap');
+  let recapShown: Recap | null = null;
   const respawn = $<HTMLButtonElement>('respawn');
   const report = $('report');
   const deathLoadout = $('loadout-death');
   respawn.onclick = onRespawn;
   const keys = { perk: '', chat: '', banner: '', death: '', objective: '', report: '' };
+  // On a touch screen the dock opens collapsed to a pill, so a level-up never covers the fight until the player taps it open.
+  const touchScreen = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  let docked = touchScreen;
+  const setDocked = (on: boolean) => { docked = on; perkPanel.classList.toggle('collapsed', on); };
   let objectiveSeen = NO_OBJECTIVE_SEEN;
   let deathAt = -Infinity;
 
@@ -59,9 +66,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const gunTile = (gun: GunId) => {
     const { name, desc } = GUNS[gun];
     const art = document.createElement('canvas');
-    art.width = 216;
-    art.height = 68;
-    drawSilhouette(art, gun, GUNS[gun].look.accent);
+    drawGunCard(art, gun, 108, 34, GUN_IDS.filter((id) => GUNS[id].from === GUNS[gun].from));
     const label = document.createElement('b');
     label.textContent = name;
     const detail = document.createElement('small');
@@ -78,8 +83,15 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     const options = pickOptions(pending, gun);
     const title = document.createElement('h2');
     const hint = document.createElement('span');
-    hint.textContent = ` · press 1-${perkKeyLabel(options.length - 1)} or click`;
-    title.append(pending.k === 'perk' ? `Level up · tier ${pending.tier} perk` : `Level up · evolve your ${GUNS[gun].name}`, hint);
+    hint.textContent = touchScreen ? ' · tap a choice' : ` · press 1-${perkKeyLabel(options.length - 1)} or click`;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'perk-toggle';
+    toggle.setAttribute('aria-label', 'Hide or show the level-up choices');
+    toggle.onclick = (e) => { e.stopPropagation(); setDocked(!docked); };
+    title.append(pending.k === 'perk' ? `Level up · tier ${pending.tier} perk` : `Level up · evolve your ${GUNS[gun].name}`, hint, toggle);
+    title.onclick = () => { if (docked) setDocked(false); };
+    setDocked(docked);
     const desc = document.createElement('p');
     desc.className = 'perk-desc';
     const describe = (tile?: { name: string; desc: string }) => {
@@ -272,8 +284,12 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       const text = outTillDawnText(run, snap.self.deaths > 0, snap.self.respawnIn);
       deathTitle.textContent = text.title;
       deathSub.textContent = text.sub;
-      deathCause.hidden = deathLost.hidden = true;
+      deathCause.hidden = deathLost.hidden = deathRecap.hidden = true;
       return;
+    }
+    if (state.recap !== recapShown) {
+      recapShown = state.recap;
+      renderRecap(deathRecap, state.recap, state.kill?.killerId !== null && state.kill?.killerId !== state.s.myId ? state.kill?.killer ?? null : null);
     }
     const text = deathText(state.kill, state.loss);
     deathTitle.textContent = text.title;
@@ -321,4 +337,31 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       chatInput.hidden = true;
     },
   };
+}
+
+/** The life just lost as a row of stat tiles, each stamped when it set a record, then the records and who to take revenge on. */
+function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null) {
+  el.hidden = !recap;
+  if (!recap) return;
+  const tiles = recap.stats.map((s) => {
+    const tile = Object.assign(document.createElement('div'), { className: s.best ? 'recap-stat best' : 'recap-stat' });
+    tile.append(
+      Object.assign(document.createElement('b'), { textContent: s.value }),
+      Object.assign(document.createElement('span'), { textContent: s.label }),
+    );
+    if (s.best) tile.append(Object.assign(document.createElement('i'), { textContent: 'New best' }));
+    return tile;
+  });
+  const row = Object.assign(document.createElement('div'), { className: 'recap-row' });
+  row.append(...tiles);
+  const b = recap.bests;
+  const best = Object.assign(document.createElement('p'), {
+    className: 'recap-bests',
+    textContent: `Your best · ${b.kills} kills · ${Math.round(b.damage).toLocaleString('en-US')} damage · level ${b.level}`,
+  });
+  const lines: HTMLElement[] = [row, best];
+  if (nemesis) {
+    lines.push(Object.assign(document.createElement('p'), { className: 'recap-nemesis', textContent: `${nemesis} is your nemesis now. Kill them for +${STREAK.revengeScore}.` }));
+  }
+  el.replaceChildren(...lines);
 }

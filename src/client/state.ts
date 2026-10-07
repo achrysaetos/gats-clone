@@ -3,6 +3,7 @@ import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/p
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
 import type { Moments } from './moments.ts';
+import type { Bests, LifeLog, Recap } from './records.ts';
 import type { SnapBuffer } from './interp.ts';
 import type { PendingEffect } from './eventclock.ts';
 import type { ParticlePool } from './particles.ts';
@@ -12,15 +13,18 @@ import type { Retry } from './reconnect.ts';
 import type { LocalRound, ShotEvent } from './rounds.ts';
 import type { TurretAim } from './siege.ts';
 import type { TrailPoint } from './trails.ts';
+import type { Corpse, ZombieCorpse } from './corpses.ts';
 import type { CrackPool } from './decals.ts';
 
 export type Effect =
   | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
-  | { kind: 'death'; x: number; y: number; victim: number; born: number }
+  /** `by` is the killer, `weapon` the kill feed's label for what killed. */
+  | { kind: 'death'; x: number; y: number; victim: number; by: number | null; weapon: string; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
   | { kind: 'flash'; x: number; y: number; angle: number; owner: number; born: number }
   | { kind: 'slash'; x: number; y: number; angle: number; born: number }
-  | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number }
+  /** `by` is the squad player whose shot, blade or blast killed the zombie, null for a turret's kill. */
+  | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; by: number | null; born: number }
   /** A turret's round from its muzzle at (`x`, `y`), flying `reach` px before it stops. */
   | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number };
 
@@ -47,6 +51,9 @@ export type Session = {
   firing: Firing;
   lastSelf: { x: number; y: number };
   effects: Effect[];
+  corpses: Corpse[];
+  /** The night's dead zombies, kept until dawn; `dawnAt` is when the night that left them ended, null while it lasts. */
+  zombieCorpses: { list: ZombieCorpse[]; dawnAt: number | null };
   rounds: LocalRound[];
   /** Whether each of the server's gun rounds in view is drawn locally instead, from `coverServerRounds`. */
   roundCover: Map<number, boolean>;
@@ -57,6 +64,9 @@ export type Session = {
   lastShotAt: Map<number, number>;
   feedback: Feedback;
   moments: Moments;
+  /** The life in progress, for the death card's recap, and this browser's single-life records. */
+  life: LifeLog | null;
+  bests: Bests;
   feed: FeedLine[];
   chat: ChatLine[];
   trails: Map<number, TrailPoint[]>;
@@ -82,5 +92,5 @@ type MenuStatus =
 export type ClientState =
   | { phase: 'menu'; status: MenuStatus }
   | { phase: 'playing'; s: Session }
-  | { phase: 'dead'; s: Session; kill: KillEvent | null; loss: Loss | null }
+  | { phase: 'dead'; s: Session; kill: KillEvent | null; loss: Loss | null; recap: Recap | null }
   | { phase: 'reconnecting'; s: Session; rejoin: Rejoin; retry: Retry; dial: WebSocket | null };

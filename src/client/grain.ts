@@ -9,7 +9,11 @@ function seeded(seed: number): () => number {
   };
 }
 
-export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | null; tile: number };
+/**
+ * A material's surface: faint specks, soft blotches and scratches for wear, and optional seams. `rivets` studs each panel
+ * corner. The kit's look is flat and graphic, so every one of these stays quiet: a surface reads by its colour and edges.
+ */
+export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | null; tile: number; rivets?: boolean };
 
 function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
@@ -79,13 +83,41 @@ export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasE
     g.beginPath();
     const course = grain.seams === 'brick' ? tile / 4 : tile / 2;
     for (let y = course; y <= tile; y += course) { g.moveTo(0, y - 0.5); g.lineTo(tile, y - 0.5); }
+    // Panels are square plates: a seam down the tile's edge as well as across it.
+    if (grain.seams === 'panel') for (let x = course; x <= tile; x += course) { g.moveTo(x - 0.5, 0); g.lineTo(x - 0.5, tile); }
     if (grain.seams === 'brick') {
       for (let row = 0; row < 4; row++) {
         for (const x of row % 2 ? [tile / 4, (3 * tile) / 4] : [0.5, tile / 2]) { g.moveTo(x, row * course); g.lineTo(x, (row + 1) * course); }
       }
     }
     g.stroke();
+    if (grain.rivets) {
+      g.fillStyle = 'rgba(20, 22, 26, 0.35)';
+      const step = tile / 2;
+      for (let y = 0; y <= tile; y += step) for (let x = 0; x <= tile; x += step) {
+        wrap(tile, x + 5, y + 5, 2, (px, py) => { g.beginPath(); g.arc(px, py, 1.4, 0, Math.PI * 2); g.fill(); });
+      }
+    }
   }
+  return c;
+}
+
+/** Hazard tape: diagonal stripes of `a` and `b`, `band` wide, on a square tile that repeats seamlessly. */
+export function paintHazard(a: string, b: string, band: number): HTMLCanvasElement {
+  const tile = band * 2;
+  const [c, g] = canvas(tile);
+  g.fillStyle = a;
+  g.fillRect(0, 0, tile, tile);
+  g.fillStyle = b;
+  g.beginPath();
+  for (const o of [-tile, 0, tile]) {
+    g.moveTo(o, tile);
+    g.lineTo(o + band, tile);
+    g.lineTo(o + band + tile, 0);
+    g.lineTo(o + tile, 0);
+    g.closePath();
+  }
+  g.fill();
   return c;
 }
 
@@ -94,11 +126,12 @@ export function paintFoliage(ground: string, leaves: readonly (readonly [string,
   const rand = seeded(seed);
   g.fillStyle = ground;
   g.fillRect(0, 0, tile, tile);
-  const total = (tile * tile) / 6;
+  // Flat, chunky leaf clusters rather than fine noise, so a planter reads as one graphic shape like everything else.
+  const total = (tile * tile) / 26;
   for (const [color, share] of leaves) {
     g.fillStyle = color;
     for (let i = 0; i < total * share; i++) {
-      const r = 1.3 + rand() * 1.9, a = rand() * Math.PI;
+      const r = 2.4 + rand() * 3.2, a = rand() * Math.PI;
       wrap(tile, rand() * tile, rand() * tile, r * 1.6, (x, y) => {
         g.beginPath();
         g.ellipse(x, y, r * 1.5, r * 0.7, a, 0, Math.PI * 2);
@@ -109,21 +142,30 @@ export function paintFoliage(ground: string, leaves: readonly (readonly [string,
   return c;
 }
 
-const FLOOR = { base: '#e5e4e6', stains: 40, specks: 40, scratches: 0.25 } as const;
+/**
+ * The arena floor: poured bone concrete in big slabs. A slab is a shade lighter or darker than its neighbours and its joints
+ * are thin dark lines, the way a tactical map shows ground: flat, calm and easy to read figures against.
+ */
+const FLOOR = { base: '#d9d4c7', slab: 250, slabShift: 0.035, joint: 'rgba(60, 54, 44, 0.16)', stains: 18, specks: 6 } as const;
 
 export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: number) {
   const rand = seeded(seed);
   g.fillStyle = FLOOR.base;
   g.fillRect(0, 0, size, size);
+  for (let y = 0; y < size; y += FLOOR.slab) {
+    for (let x = 0; x < size; x += FLOOR.slab) {
+      const k = (rand() - 0.5) * 2 * FLOOR.slabShift;
+      g.fillStyle = k > 0 ? `rgba(255, 255, 255, ${k.toFixed(3)})` : `rgba(70, 60, 44, ${(-k).toFixed(3)})`;
+      g.fillRect(x, y, FLOOR.slab, FLOOR.slab);
+    }
+  }
   const area = (size * size) / 1_000_000;
   for (let i = 0; i < FLOOR.stains * area; i++) {
-    const r = 80 + rand() * 260, light = rand() < 0.3;
-    blotch(g, rand() * size, rand() * size, r, light ? '255, 255, 255' : '120, 110, 100', light ? 0.1 : 0.018 + rand() * 0.02);
+    const r = 60 + rand() * 200;
+    blotch(g, rand() * size, rand() * size, r, '96, 84, 66', 0.02 + rand() * 0.025);
   }
   speckle(g, rand, size, FLOOR.specks * area * 100, '#5a544e', '#ffffff');
-  g.strokeStyle = 'rgba(70, 66, 62, 0.06)';
-  g.lineWidth = 1;
-  g.beginPath();
-  for (let i = 0; i < FLOOR.scratches * area * 100; i++) scratch(g, rand, rand() * size, rand() * size, 20 + rand() * 70);
-  g.stroke();
+  g.fillStyle = FLOOR.joint;
+  for (let x = FLOOR.slab; x < size; x += FLOOR.slab) g.fillRect(x - 1, 0, 2, size);
+  for (let y = FLOOR.slab; y < size; y += FLOOR.slab) g.fillRect(0, y - 1, size, 2);
 }

@@ -1,6 +1,7 @@
-import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
+import { MUZZLE_PX } from './sim/ballistics.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
@@ -19,7 +20,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
-    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
+    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
   };
   w.players.set(p.id, p);
   spawn(w, p, loadout, opts.at);
@@ -81,6 +82,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   p.angle = inp.angle;
   const moving = walks(inp) || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
+  if (w.now - life.suppressedAt >= SUPPRESSION.holdMs) life.suppression = Math.max(0, life.suppression - SUPPRESSION.decayPerSec * dt);
   const stats = effectiveStats(p);
   if (moving) {
     const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs, MAPS[w.map].size);
@@ -92,8 +94,9 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const armed = w.match.k === 'playing';
   if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     life.shieldUntil = -Infinity;
-    const muzzle = WORLD.playerRadius + 4;
-    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray);
+    const muzzle = MUZZLE_PX;
+    // Bloom is a duel rule, so short bursts beat long sprays between players; against the horde a held trigger stays steady.
+    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), w.run ? 0 : life.spray, life.suppression);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

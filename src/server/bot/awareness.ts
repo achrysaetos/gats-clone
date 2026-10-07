@@ -39,6 +39,8 @@ export type Perception = {
 const FORGET_MS = 8000;
 const HEARD_MS = 4000;
 const UNDER_FIRE_MS = 500;
+/** Rounds cracking past count as being under fire, as they would for a person: an LMG burst or a sniper's near miss, not a lone pistol round. */
+const SUPPRESSED_UNDER_FIRE = 0.25;
 const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
 
@@ -103,7 +105,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     awareness: { contacts: live, heard, mates, hitTick },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
-      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS, zones: snap.zones, solids, allies: mates,
+      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS || snap.self.suppression >= SUPPRESSED_UNDER_FIRE, zones: snap.zones, solids, allies: mates,
     },
   };
 }

@@ -1,11 +1,13 @@
-import { GUN_IDS, GUNS, WORLD, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
+import { GUN_IDS, GUNS, rulesOf, WORLD, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import type { BulletView, GameEvent, Snapshot, WallView } from '../shared/protocol.ts';
 import { segmentEntersCircleAt, segmentEntersRectAt, type Rect } from '../shared/sim/movement.ts';
+import { flightSec, flownAfter, speedAt } from '../shared/sim/ballistics.ts';
 import { MAX_RANGE_MUL } from '../shared/sim/stats.ts';
 
 type Point = { x: number; y: number };
 type Body = { x: number; y: number; r: number };
-export const TRACER = { tail: 0.022 } as const;
+/** Seconds of flight a tracer's tail spans; long enough that slower rounds still trail a readable streak. */
+export const TRACER = { tail: 0.045 } as const;
 /** What stops a round as drawn: cover, and the bodies of the shooter's enemies and zombies where the page draws them. */
 export type RoundScene = { solids: readonly Rect[]; bodies: readonly Body[] };
 export type ShotEvent = Extract<GameEvent, { e: 'shot' }>;
@@ -44,11 +46,11 @@ export function fireRounds(shot: Shot, muzzle: Point, angle: number, scene: Roun
   });
 }
 
-const flown = (r: LocalRound, now: number) => (Math.hypot(r.vx, r.vy) * Math.max(0, now - r.born)) / 1000;
+const flown = (r: LocalRound, now: number) => flownAfter(Math.hypot(r.vx, r.vy), Math.max(0, now - r.born) / 1000, 0, rulesOf(GUNS[r.gun]).muzzleBoost);
 
 export const roundLive = (r: LocalRound, now: number): boolean => flown(r, now) <= r.reach;
 
-const LONGEST_FLIGHT_MS = 1000 * MAX_RANGE_MUL * Math.max(...GUN_IDS.map((g) => GUNS[g].range / GUNS[g].bulletSpeed));
+const LONGEST_FLIGHT_MS = 1000 * Math.max(...GUN_IDS.map((g) => flightSec(GUNS[g].bulletSpeed, GUNS[g].range * MAX_RANGE_MUL, rulesOf(GUNS[g]).muzzleBoost)));
 
 /** Who fired a shot whose event this page received recently enough that its rounds may still be flying, by the server time of each one's last shot. */
 export function recentShooters(lastShotAt: ReadonlyMap<number, number>, renderMs: number): Set<number> {
@@ -67,7 +69,9 @@ export function coverServerRounds(prev: ReadonlyMap<number, boolean>, bullets: r
 export function drawnRounds(bullets: readonly BulletView[], local: readonly LocalRound[], covered: ReadonlyMap<number, boolean>, now: number): BulletView[] {
   const views = local.filter((r) => roundLive(r, now)).map((r) => {
     const d = flown(r, now), speed = Math.hypot(r.vx, r.vy);
-    const k = Math.min(1, d / (speed * TRACER.tail));
+    // The tail streaks as far as the round flies in `TRACER.tail` at its current speed, so a fresh round's tail reaches back to the muzzle.
+    const fast = speedAt(speed, d, rulesOf(GUNS[r.gun]).muzzleBoost) / speed;
+    const k = fast * Math.min(1, d / (speed * fast * TRACER.tail));
     return { id: r.id, x: r.x + (r.vx / speed) * d, y: r.y + (r.vy / speed) * d, vx: r.vx * k, vy: r.vy * k, owner: r.owner, gun: r.gun };
   });
   return [...bullets.filter((b) => !covered.get(b.id)), ...views];

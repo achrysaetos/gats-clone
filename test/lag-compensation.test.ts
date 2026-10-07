@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, rulesOf, WORLD } from '../src/shared/defs.ts';
+import { flightSec } from '../src/shared/sim/ballistics.ts';
 import { INTERP_DELAY_MS, parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { MAX_REWIND_MS, rewindCapFor } from '../src/shared/sim/combat.ts';
@@ -23,7 +24,7 @@ function victimThatSteppedAside(walls: Wall[] = []): { w: World; shooter: Player
   const w = emptyWorld();
   w.walls.push(...walls);
   const shooter = spawnAt(w, 500, 500);
-  const victim = spawnAt(w, 700, 500);
+  const victim = spawnAt(w, 640, 500);
   run(w, 500);
   const sawAt = w.now - 100;
   press(w, victim, { down: true });
@@ -62,8 +63,8 @@ function latestHitAfterCover(rewindCapMs: number, range: number): number {
   let latest = -Infinity;
   for (let delayMs = 0; delayMs <= MAX_REWIND_MS + 200; delayMs += TICK_MS) {
     const w = emptyWorld();
-    const shooter = spawnAt(w, 500, 380);
-    const victim = spawnAt(w, 500 + range, 380);
+    const shooter = spawnAt(w, 700 - range, 380);
+    const victim = spawnAt(w, 700, 380);
     w.walls.push({ x: 600, y: 400, w: 20, h: 300, built: false, material: 'concrete', expiresAt: Infinity });
     run(w, 300);
     press(w, victim, { down: true });
@@ -80,8 +81,8 @@ function latestHitAfterCover(rewindCapMs: number, range: number): number {
 const RTT_MS = 40;
 for (const [label, capMs] of [['the rewind cap', MAX_REWIND_MS], [`a ${RTT_MS}ms round trip's cap`, rewindCapFor(RTT_MS)]] as const) {
   test(`a victim who reached cover can be hit only for ${label} less the bullet's flight, however far back the client claims to see`, (t) => {
-    const range = 200;
-    const flightMs = (range / GUNS.pistol.bulletSpeed) * 1000;
+    const range = 130;
+    const flightMs = flightSec(GUNS.pistol.bulletSpeed, range, rulesOf(GUNS.pistol).muzzleBoost) * 1000;
     const latest = latestHitAfterCover(capMs, range);
     t.diagnostic(`latest hit ${Math.round(latest)}ms after reaching cover (cap ${Math.round(capMs)}ms, flight ${Math.round(flightMs)}ms)`);
     assert.ok(latest >= 0, 'a shot fired just after the victim reached cover still lands');

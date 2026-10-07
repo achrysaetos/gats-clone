@@ -1,5 +1,6 @@
-import { ARMORS, HP_MULTIPLIER, ROYALE, WORLD, ZOMBIES } from '../defs.ts';
+import { ARMORS, GUNS, HP_MULTIPLIER, KILL_REWARD, ROYALE, rulesOf, STREAK, SUPPRESSION, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
+import { flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { goDown } from './downed.ts';
@@ -84,16 +85,22 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   const named = credited ?? killer;
   const bounty = credited !== null && isHunted(w, victim);
   const assisters = assistersOf(w, victim, credited);
+  const ended = victim.lifeKills;
+  const revenge = credited !== null && credited.nemesis === victim.id;
+  if (credited) victim.nemesis = credited.id;
   const knock = w.royale ? fall(w, w.royale, victim, named) : (die(w, victim, w.now + WORLD.respawnMs), false);
   w.events.push({
     e: 'kill', killer: named?.name ?? '', victim: victim.name, killerId: named?.id ?? null, victimId: victim.id, weapon: label, bounty,
-    assisters: assisters.map((p) => p.id), ...(knock && { knock: true as const }),
+    assisters: assisters.map((p) => p.id), ...(knock && { knock: true as const }), ended, revenge,
   });
   for (const p of assisters) addScore(w, p, WORLD.assistScore);
   if (!credited) return;
   credited.kills++;
   credited.lifeKills++;
-  addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0));
+  if (revenge) credited.nemesis = null;
+  const shutdown = ended >= STREAK.shutdownAt;
+  addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0) + (shutdown ? STREAK.shutdownScore : 0) + (revenge ? STREAK.revengeScore : 0));
+  refuel(credited);
   MODES[w.mode].onKill(w, credited, victim);
 }
 
@@ -101,6 +108,14 @@ export function die(w: World, victim: Player, respawnAt: number) {
   victim.life = { k: 'dead', respawnAt };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
+}
+
+/** A kill gives the killer back some health and, unless they are mid-reload, some of their mag (`KILL_REWARD`). */
+function refuel(p: Player) {
+  if (p.life.k !== 'alive') return;
+  const stats = effectiveStats(p);
+  p.life.hp = Math.min(stats.maxHp, p.life.hp + KILL_REWARD.heal * stats.maxHp);
+  if (p.life.reloadUntil === null) p.life.ammo = Math.min(stats.mag, p.life.ammo + Math.ceil(KILL_REWARD.ammo * stats.mag));
 }
 
 function assistersOf(w: World, victim: Player, killer: Player | null): Player[] {
@@ -173,9 +188,29 @@ function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | n
   return false;
 }
 
+const SUPPRESS_REACH = WORLD.playerRadius + SUPPRESSION.px;
+
+/** A gun round whose path this step comes within `SUPPRESS_REACH` of an enemy suppresses them, once per round. */
+function suppressAlong(w: World, b: Bullet, dx: number, dy: number, view: View) {
+  if (b.gun === null) return;
+  const len2 = dx * dx + dy * dy;
+  for (const p of w.players.values()) {
+    if (p.id === b.owner || p.life.k !== 'alive' || friendly(b.team, p) || b.suppressed?.includes(p.id)) continue;
+    const at = view.poseOf(p);
+    if (!at) continue;
+    const t = len2 === 0 ? 0 : clamp(((at.x - b.x) * dx + (at.y - b.y) * dy) / len2, 0, 1);
+    if (dist2(at.x, at.y, b.x + dx * t, b.y + dy * t) > SUPPRESS_REACH * SUPPRESS_REACH) continue;
+    (b.suppressed ??= []).push(p.id);
+    p.life.suppression = Math.min(1, p.life.suppression + rulesOf(GUNS[b.gun]).suppress);
+    p.life.suppressedAt = w.now;
+  }
+}
+
 function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const speed = Math.hypot(b.vx, b.vy);
-  const travel = Math.min(b.left, speed * dt);
+  const from = b.flown ?? 0;
+  const travel = Math.min(b.left, b.gun === null ? speed * dt : flownAfter(speed, dt, from, rulesOf(GUNS[b.gun]).muzzleBoost) - from);
+  if (b.gun !== null) b.flown = from + travel;
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   const candidates: BulletHit[] = [
@@ -204,11 +239,13 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const hits = b.lobbed ? [] : candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
   for (const hit of hits) {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
+    if (!hit.victim || b.penetrate === 0) suppressAlong(w, b, dx * hit.t, dy * hit.t, view);
     hit.apply(x, y);
     if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner, view);
     b.penetrate--;
     b.passed.push(hit.victim.id);
   }
+  suppressAlong(w, b, dx, dy, view);
   b.x += dx;
   b.y += dy;
   b.left -= travel;

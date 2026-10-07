@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addTrauma, decay, MAX_SHAKE_PX, offset, traumaFor } from '../src/client/shake.ts';
+import { addKick, addTrauma, decay, heftOf, MAX_SHAKE_PX, offset, RECOIL_KICK, settleKick, traumaFor } from '../src/client/shake.ts';
 import type { SoundCue, SoundId } from '../src/client/sfx.ts';
 
 const cue = (o: Partial<Extract<SoundCue, { id: Exclude<SoundId, 'hurt'> }>>): SoundCue => ({ id: 'hit', x: 0, y: 0, self: false, gain: 1, ...o });
@@ -34,5 +34,33 @@ test('bigger hits and closer booms shake harder; distant booms and other players
   assert.equal(traumaFor(cue({ id: 'shot:sniper', self: false }), me, 900), 0, 'someone else firing does not kick your camera');
   const kick = traumaFor(cue({ id: 'shot:pistol', self: true }), me, 900);
   assert.ok(kick > 0 && kick < traumaFor(hurt(0), me, 900), 'firing kicks, less than being hit');
-  assert.equal(traumaFor(cue({ id: 'shot:railSlug', self: true }), me, 900), traumaFor(cue({ id: 'shot:shotgun', self: true }), me, 900), 'an evolved gun kicks like its class');
+  assert.ok(traumaFor(cue({ id: 'shot:shotgun', self: true }), me, 900) > traumaFor(cue({ id: 'shot:pistol', self: true }), me, 900), 'a heavier gun kicks harder');
+});
+
+test('a grenade shakes harder the closer it lands, and a big blast harder than a small pop', () => {
+  const boom = (x: number, r: number) => traumaFor(cue({ id: 'boom', x, r }), me, 900);
+  assert.ok(boom(30, 160) > boom(250, 160) && boom(250, 160) > boom(600, 160), 'closer shakes harder');
+  assert.ok(boom(30, 160) - boom(250, 160) > boom(250, 160) - boom(450, 160), 'and climbs steeply near you');
+  assert.ok(boom(200, 160) > boom(200, 90) && boom(200, 90) > boom(200, 40), 'a grenade over a frag over a crate');
+  assert.ok(boom(700, 160) > 0, 'a grenade across the screen still nudges slightly');
+  assert.equal(boom(900, 160), 0, 'one past the edge of the view does not');
+});
+
+test('big guns recoil: the camera shoves back along the aim, more for heavier guns, and settles', () => {
+  assert.ok(heftOf('sniper') > heftOf('handCannon') && heftOf('handCannon') > heftOf('pistol'));
+  assert.ok(heftOf('shotgun') > heftOf('smg') && heftOf('juggernaut') > heftOf('assault'));
+  const rightward = addKick({ x: 0, y: 0 }, 'sniper', 0);
+  assert.ok(rightward.x < 0 && Math.abs(rightward.y) < 1e-9, 'firing right shoves the camera left');
+  assert.ok(Math.abs(addKick({ x: 0, y: 0 }, 'smg', 0).x) < 1, 'an SMG barely kicks');
+  let k = { x: 0, y: 0 };
+  for (let i = 0; i < 50; i++) k = addKick(k, 'minigun', 0);
+  assert.ok(Math.hypot(k.x, k.y) <= RECOIL_KICK.maxPx + 1e-9, 'a held trigger never shoves past the cap');
+  for (let i = 0; i < 60; i++) k = settleKick(k, 16);
+  assert.deepEqual(k, { x: 0, y: 0 }, 'and it settles back');
+});
+
+test('a held minigun rumbles but never pins the shake at full', () => {
+  let t = 0;
+  for (let i = 0; i < 60; i++) t = decay(addTrauma(t, traumaFor(cue({ id: 'shot:minigun', self: true }), me, 900)), 33);
+  assert.ok(t > 0 && t < 0.5, `trauma ${t}`);
 });

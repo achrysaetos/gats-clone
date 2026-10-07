@@ -1,9 +1,10 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, WORLD } from '../src/shared/defs.ts';
+import { GUNS, rulesOf, WORLD } from '../src/shared/defs.ts';
 import type { BulletView, PlayerView } from '../src/shared/protocol.ts';
 import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundScene, TRACER, type RoundScene, type Shot } from '../src/client/rounds.ts';
+import { flightSec, flownAfter } from '../src/shared/sim/ballistics.ts';
 import { MAX_RANGE_MUL } from '../src/shared/sim/stats.ts';
 
 const ME = 1;
@@ -21,8 +22,9 @@ test('a round is drawn from its muzzle the moment it fires, its tail never reach
   assert.ok(born && near(born.x, 100) && near(born.y, 100) && born.owner === 7, JSON.stringify(born));
   assert.ok(near(born.x - born.vx * TRACER.tail, 100), 'no tail behind the muzzle at birth');
   const [later] = drawnRounds([], [round!], NONE, 1100);
-  assert.ok(later && near(later.x, 100 + GUNS.pistol.bulletSpeed * 0.1), JSON.stringify(later));
-  const gone = 1000 + (1000 * GUNS.pistol.range) / GUNS.pistol.bulletSpeed + 20;
+  assert.ok(later && near(later.x, 100 + flownAfter(GUNS.pistol.bulletSpeed, 0.1)), JSON.stringify(later));
+  assert.ok(flownAfter(GUNS.pistol.bulletSpeed, 0.1) > GUNS.pistol.bulletSpeed * 0.1, 'it leaves the muzzle faster than it cruises');
+  const gone = 1000 + 1000 * flightSec(GUNS.pistol.bulletSpeed, GUNS.pistol.range) + 20;
   assert.deepEqual(drawnRounds([], [round!], NONE, gone), [], 'stops drawing past its range');
 });
 
@@ -63,7 +65,7 @@ test('a round passes through its shooter and their teammates and stops at their 
 });
 
 test('a shooter counts as recent while a round from their last received shot could still be flying', () => {
-  const longest = 1000 * MAX_RANGE_MUL * Math.max(...Object.values(GUNS).map((g) => g.range / g.bulletSpeed));
+  const longest = 1000 * Math.max(...Object.values(GUNS).map((g) => flightSec(g.bulletSpeed, g.range * MAX_RANGE_MUL, rulesOf(g).muzzleBoost)));
   const last = new Map([[2, 10_000], [3, 10_000 - longest - 1]]);
   assert.deepEqual([...recentShooters(last, 10_000)], [2], 'forgotten once its longest flight is over');
   assert.deepEqual([...recentShooters(last, 10_000 - 2)], [2, 3]);

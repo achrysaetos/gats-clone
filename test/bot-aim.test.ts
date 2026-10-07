@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
-import { drift, freshAim, HANDS, turn, wrapAngle, type AimState, type Hand } from '../src/server/bot/aim.ts';
+import { drift, freshAim, HANDS, intercept, MUZZLE_PX, turn, wrapAngle, type AimState, type Hand } from '../src/server/bot/aim.ts';
+import { GUNS, rulesOf } from '../src/shared/defs.ts';
+import { flownAfter } from '../src/shared/sim/ballistics.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -125,4 +127,21 @@ test('a bot fires only once its gun has come round onto the enemy, so a flick be
     behind += firstShot({ x: 600, y: 1000 }, seed);
   }
   assert.ok(behind / 10 >= ahead / 10 + 150, `first shot ${(ahead / 10).toFixed(0)}ms ahead vs ${(behind / 10).toFixed(0)}ms behind`);
+});
+
+test('a bot leads a moving target to where the round and the target meet, by the round\'s real flight', () => {
+  for (const gun of ['pistol', 'lmg', 'sniper'] as const) {
+    const cruise = GUNS[gun].bulletSpeed, boost = rulesOf(GUNS[gun]).muzzleBoost;
+    for (const d of [150, 400, 800]) {
+      const target = { x: d, y: 0, vx: 0, vy: 255 };
+      const meet = intercept({ x: 0, y: 0 }, target, cruise, boost, MUZZLE_PX);
+      const there = { x: target.x + target.vx * meet.sec, y: target.y + target.vy * meet.sec };
+      const a = Math.atan2(meet.y, meet.x);
+      const flown = MUZZLE_PX + flownAfter(cruise, meet.sec, 0, boost);
+      const round = { x: Math.cos(a) * flown, y: Math.sin(a) * flown };
+      assert.ok(Math.hypot(round.x - there.x, round.y - there.y) < 2, `${gun} at ${d}px: round ${Math.round(round.x)},${Math.round(round.y)} meets the target at ${Math.round(there.x)},${Math.round(there.y)}`);
+    }
+  }
+  const still = intercept({ x: 0, y: 0 }, { x: 300, y: 0, vx: 0, vy: 0 }, 900, 4, MUZZLE_PX);
+  assert.deepEqual([still.x, still.y], [300, 0], 'a still target needs no lead');
 });

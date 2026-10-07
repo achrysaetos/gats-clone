@@ -29,9 +29,25 @@ export const UI_ICONS = {
   target: 'M5 12a7 7 0 1 0 14 0a7 7 0 1 0 -14 0M12 1v6M12 17v6M1 12h6M17 12h6',
   scrap: 'M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10',
   core: 'M12 2l7 10-7 10-7-10z',
+  reload: 'M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 3v4.5H15',
+  flame: 'M12 23c-4.4 0-7.5-3-7.5-7.2 0-3.6 2.4-5.6 3.9-8.8.9 1.9 1.9 3 3.1 3.3-.2-2.8.9-5.7 3.3-8.3.6 4.1 5.2 7 5.2 13 0 4.8-3.4 8-8 8z',
+  lock: 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11',
 } as const;
 
 const paths = new Map<string, Path2D>();
+
+/** A solid glyph, for marks that must read at a glance. */
+export function fillIcon(ctx: CanvasRenderingContext2D, d: string, x: number, y: number, size: number, color: string) {
+  let path = paths.get(d);
+  if (!path) paths.set(d, (path = new Path2D(d)));
+  const k = size / 24;
+  ctx.save();
+  ctx.translate(x - size / 2, y - size / 2);
+  ctx.scale(k, k);
+  ctx.fillStyle = color;
+  ctx.fill(path);
+  ctx.restore();
+}
 
 export function strokeIcon(ctx: CanvasRenderingContext2D, d: string, x: number, y: number, size: number, color: string, width = 2.2) {
   let path = paths.get(d);

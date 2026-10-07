@@ -17,7 +17,7 @@ for (const kind of ['walker', 'plated', 'runner', 'brute'] as const satisfies re
     const w = createWorld('ZOM', i + 1, 'outpost');
     w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
     w.run!.core.hp = 1e9;
-    w.run!.survivors = 0;
+    w.run!.bastionFireAt = Infinity;
     const cx = Math.floor(core.x / ZOM.cell) + 2, cy = Math.floor(core.y / ZOM.cell);
     w.buildings.push({ id: newId(w), kind: 'mortar', cx, cy, hp: 1e9, owner: -1, ammo: 1e9, nextFireAt: 0 });
     w.buildingsVersion++;

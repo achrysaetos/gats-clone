@@ -6,34 +6,71 @@ import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { clearOfRects, clock, edgePoint, boardRows, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
 import { serverNow } from './interp.ts';
-import { PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
+import { fillIcon, PERK_ICONS, strokeIcon, UI_ICONS } from './icons.ts';
 import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { glow, PALETTE, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, useHint } from './zombies.ts';
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
-import { drawGunGlyph } from './sprites.ts';
+import { drawGunArt } from './gunart.ts';
 import type { Session } from './state.ts';
 
-const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 17 } as const;
+/** The kit's condensed face (style.css), with the system face standing in until it loads. */
+const HUD_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
+const touchScreen = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+/** Text sizes. A phone is held further from the eye and its HUD draws a little smaller (HUD_SCALE), so touch screens get bigger type. */
+const TYPE = touchScreen ? ({ micro: 13, label: 14, body: 16, title: 18, figure: 24 } as const) : ({ micro: 12, label: 13, body: 15, title: 17, figure: 22 } as const);
 const SPACE = { sm: 8, md: 12, lg: 16 } as const;
-const PANEL_FILL = 'rgba(96, 101, 112, 0.94)';
-const PANEL_INK = '#f1f2f5';
-const PANEL_MUTED = '#c4c8d0';
-const PANEL_RADIUS = 6;
+/** The kit's gunmetal plates (style.css): bone ink, grey labels, one orange accent, and a clipped corner instead of a round one. */
+const PANEL_FILL = 'rgba(19, 21, 25, 0.86)';
+const PANEL_INK = '#ece6d6';
+const PANEL_MUTED = '#9a9ea6';
+const PANEL_CUT = 7;
+const ACCENT = '#ff5a1f';
+/** Text on a plate needs no halo; the plate is its ground. */
+const ON_PANEL = { ink: PANEL_INK, muted: PANEL_MUTED, track: 'rgba(236, 230, 214, 0.14)', glyph: PANEL_INK, halo: 'rgba(0, 0, 0, 0)' } as const;
 const ON_WORLD = {
   day: { ink: '#454953', muted: '#80848e', track: '#9b9fa9', glyph: '#4f535d', halo: 'rgba(230, 229, 232, 0.9)' },
   night: { ink: '#eef1f6', muted: '#b4bccb', track: 'rgba(210, 216, 230, 0.35)', glyph: '#dfe4ee', halo: 'rgba(24, 30, 56, 0.6)' },
 } as const;
-type OnWorld = (typeof ON_WORLD)[keyof typeof ON_WORLD];
+type OnWorld = { ink: string; muted: string; track: string; glyph: string; halo: string };
 const EDGE = 16;
 const FEED_ROW = 24;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
 const HURT_EDGE = { depth: 0.06, alpha: 0.05, alphaPerStrength: 0.12 } as const;
+/**
+ * Suppression shades the screen's edges in a soft vignette that starts `clear` of the way out to the corners and is `alpha` dark there at full strength, easing toward
+ * the server's value at `ease` per ms. Past `readable` the HUD text takes its night colors so ammo stays legible over the shade.
+ */
+const SUPPRESS_EDGE = { clear: 0.32, alpha: 0.88, ease: 0.008, readable: 0.4 } as const;
+let shownSuppression = 0;
+let suppressShade: { w: number; h: number; image: HTMLCanvasElement } | null = null;
+
+/** A soft elliptical vignette, baked once per screen size, since a full-screen radial gradient costs milliseconds to rasterize every frame. */
+function vignette(w: number, h: number): HTMLCanvasElement {
+  if (suppressShade?.w === w && suppressShade.h === h) return suppressShade.image;
+  const image = document.createElement('canvas');
+  const scale = 0.5;
+  image.width = Math.max(1, Math.round(w * scale));
+  image.height = Math.max(1, Math.round(h * scale));
+  const g = image.getContext('2d')!;
+  // Squashed to the screen's shape, so the circle that reaches the corners is the screen's own ellipse.
+  const cx = image.width / 2;
+  g.translate(cx, image.height / 2);
+  g.scale(1, image.height / image.width);
+  const outer = cx * Math.SQRT2;
+  const fill = g.createRadialGradient(0, 0, outer * SUPPRESS_EDGE.clear, 0, 0, outer);
+  fill.addColorStop(0, 'rgba(8, 9, 14, 0)');
+  fill.addColorStop(0.5, 'rgba(8, 9, 14, 0.5)');
+  fill.addColorStop(1, 'rgba(8, 9, 14, 1)');
+  g.fillStyle = fill;
+  g.fillRect(-cx, -cx, image.width, image.width);
+  suppressShade = { w, h, image };
+  return image;
+}
 const HP_FILL = ['#ef6b60', '#d6463e'] as const;
 
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point; on: OnWorld };
@@ -41,7 +78,42 @@ type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((id) => [GUNS[id].name, id]));
 const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id, info]) => [info.name, id as PerkId]));
 
-export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
+/**
+ * Where an idle stick's guide ring sits, in px in from its bottom-left (move) or bottom-right (aim) corner, where the touch buttons arc above it (style.css),
+ * and how faint it is before and after the player has first used that stick.
+ */
+const STICK_GUIDE = { inset: 96, aimRight: 150, alpha: 0.24, usedAlpha: 0.1 } as const;
+const sticksUsed = { move: false, aim: false };
+
+/** Touch screens draw a faint ring where each stick goes while no thumb is on it, so players know the sticks are there. */
+function drawStickGuides(ctx: CanvasRenderingContext2D, sticks: Sticks, w: number, h: number) {
+  const guides = [
+    { key: 'move', active: sticks.move, x: STICK_GUIDE.inset, label: 'MOVE' },
+    { key: 'aim', active: sticks.aim, x: w - STICK_GUIDE.aimRight, label: 'AIM · FIRE' },
+  ] as const;
+  for (const g of guides) {
+    if (g.active) { sticksUsed[g.key] = true; continue; }
+    const y = h - STICK_GUIDE.inset;
+    ctx.globalAlpha = sticksUsed[g.key] ? STICK_GUIDE.usedAlpha : STICK_GUIDE.alpha;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(g.x, y, STICK_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(g.x, y, STICK_RADIUS * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '700 15px "Barlow Condensed", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(g.label, g.x, y + STICK_RADIUS + 12);
+  }
+}
+
+export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks, dpr: number, w: number, h: number, touchScreen: boolean) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (touchScreen) drawStickGuides(ctx, sticks, w, h);
   for (const st of [sticks.move, sticks.aim]) {
     if (!st) continue;
     const v = stickVector(st);
@@ -59,21 +131,36 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
 }
 
 /** `spread` is your current aim spread, or null when no reticle should be drawn. */
-export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera, snap: Snapshot, s: Session, now: number, crosshair: Point, spread: number | null, fullBoard = false) {
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+/**
+ * On a small screen the whole HUD draws smaller, panels and text alike, by drawing it on a virtual screen 1 / `scale` as
+ * large: `scale` is the short side over `fullAt`, never below `min`, or `touchMin` on a touch screen, where text shrunk
+ * any further gets hard to read on a phone.
+ */
+const HUD_SCALE = { fullAt: 560, min: 0.62, touchMin: 0.9 } as const;
+let hudScale = 1;
+export const hudScaleFor = (w: number, h: number, touch = touchScreen): number =>
+  Math.max(touch ? HUD_SCALE.touchMin : HUD_SCALE.min, Math.min(1, Math.min(w, h) / HUD_SCALE.fullAt));
+
+export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: Camera, snap: Snapshot, s: Session, now: number, screenCrosshair: Point, spread: number | null, fullBoard = false) {
+  hudScale = hudScaleFor(screenCam.w, screenCam.h);
+  const k = hudScale;
+  ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
   hudFont = '';
+  const cam = k === 1 ? screenCam : { ...screenCam, w: screenCam.w / k, h: screenCam.h / k, scale: screenCam.scale / k };
+  const crosshair = { x: screenCrosshair.x / k, y: screenCrosshair.y / k };
   const { w, h } = cam;
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
-  const on = nightAmount() > 0.5 ? ON_WORLD.night : ON_WORLD.day;
+  const on = nightAmount() > 0.5 || shownSuppression > SUPPRESS_EDGE.readable ? ON_WORLD.night : ON_WORLD.day;
   const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf), on };
   lastHudAt = now;
   panels = [];
   buildChips = [];
-  const compact = w < 640 || h < 520;
+  const compact = w < 640 || h < 520 || k < 1;
+  drawSuppression(hud);
   drawHurtVignette(hud);
   drawHurtArcs(hud);
   const boardBottom = drawLeaderboard(hud, compact, fullBoard);
-  drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
+  drawKillFeed(hud, boardBottom + SPACE.sm, touchScreen && k < 1 ? 2 : compact ? 3 : 5);
   drawMinimap(hud, compact ? 96 : 160);
   const below = drawPill(hud, compact);
   ctx.globalAlpha = 1;
@@ -84,9 +171,20 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   drawHuntedArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
+  trackAbility(snap.self, now);
   if (spread !== null) drawReticle(hud, crosshair, spread);
   drawHitmarker(hud, crosshair);
   drawAssist(hud, crosshair);
+}
+
+/** Near misses close in a dark shade round the screen's edges, deepest when fully suppressed. */
+function drawSuppression({ ctx, w, h, snap, me, dt }: Hud) {
+  const target = me?.alive ? snap.self.suppression : 0;
+  shownSuppression += (target - shownSuppression) * Math.min(1, dt * SUPPRESS_EDGE.ease);
+  if (shownSuppression < 0.01) return;
+  ctx.globalAlpha = SUPPRESS_EDGE.alpha * shownSuppression;
+  ctx.drawImage(vignette(w, h), 0, 0, w, h);
+  ctx.globalAlpha = 1;
 }
 
 /** Stacked translucent edge bands instead of a full-screen radial gradient, which costs several milliseconds to rasterize. */
@@ -167,18 +265,18 @@ function drawAssist({ ctx, s, now }: Hud, at: Point) {
   ctx.globalAlpha = 1;
 }
 
-function drawScorePopups({ ctx, s, now, cam }: Hud) {
+function drawScorePopups({ ctx, s, now, cam, selfAt }: Hud) {
   for (const p of s.moments.popups) {
     const k = (now - p.born) / POPUP_MS;
     if (k < 0 || k >= 1) continue;
-    const at = worldToScreen(cam, p);
+    const at = p.onSelf ? selfAt : worldToScreen(cam, p);
     ctx.globalAlpha = 1 - k * k * k;
-    outlined(ctx, `+${p.amount}`, at.x, at.y - 36 - 44 * k, Math.round(17 + 5 * Math.max(0, 1 - k * 5)), PALETTE.gold, 850);
+    outlined(ctx, p.text ?? `+${p.amount}`, at.x, at.y - 36 - 44 * k, Math.round(17 + 5 * Math.max(0, 1 - k * 5)), p.color ?? PALETTE.gold, 850);
   }
   ctx.globalAlpha = 1;
 }
 
-const CALLOUT_GAP = 44;
+const CALLOUT_GAP = 70;
 
 function drawCallouts({ ctx, w, h, s, now, selfAt }: Hud) {
   let row = 0;
@@ -189,11 +287,39 @@ function drawCallouts({ ctx, w, h, s, now, selfAt }: Hud) {
     const pop = 1 + 0.25 * Math.max(0, 1 - age / 160);
     ctx.globalAlpha = Math.min(1, age / 90, (CALLOUT_MS - age) / 450);
     const y = h * 0.24 + row * CALLOUT_GAP;
-    outlined(ctx, c.title, w / 2, y, Math.round(22 * pop), c.color, 850);
-    outlined(ctx, c.line, w / 2, y + 20, TYPE.body, '#ffffff', 600);
+    drawCalloutPlate(ctx, c, w / 2, y, pop, age);
     row++;
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * A callout is a stamped plate: the title in heavy italic capitals in its colour, the line in bone beneath, on a dark band
+ * edged in the title's colour that slides open as it lands.
+ */
+function drawCalloutPlate(ctx: CanvasRenderingContext2D, c: { title: string; line: string; color: string }, x: number, y: number, pop: number, age: number) {
+  const size = Math.round(32 * pop);
+  setFont(ctx, 900, size, true);
+  const tw = ctx.measureText(c.title).width;
+  setFont(ctx, 700, TYPE.body);
+  const lw = ctx.measureText(c.line).width;
+  const open = Math.min(1, age / 140);
+  const pw = (Math.max(tw, lw) + 48) * (0.6 + 0.4 * open), ph = 62;
+  const left = x - pw / 2, top = y - 24;
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha * 0.88;
+  plate(ctx, left, top, pw, ph);
+  ctx.fillStyle = PANEL_FILL;
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = c.color;
+  ctx.fillRect(left, top, pw - PANEL_CUT, 3);
+  setFont(ctx, 900, size, true);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = c.color;
+  ctx.fillText(c.title, x, y);
+  text(ctx, c.line, x, y + 24, TYPE.body, PANEL_INK, 'center', 700);
 }
 
 function drawRingBurst(ctx: CanvasRenderingContext2D, at: Point, color: string, age: number) {
@@ -214,7 +340,29 @@ const RETICLE = { minGap: 5, maxGap: 90, tick: 7, ring: 6, ringClearance: 6 } as
 export const reticleGap = (spread: number, distPx: number): number =>
   Math.min(RETICLE.maxGap, Math.max(RETICLE.minGap, Math.tan(spread) * distPx));
 
+
 let reticleDrawnGap = 0;
+
+/** The ability chip pulses gold for `readyPulseMs` once the cooldown is over, and shakes red for `deniedMs` after Space is pressed too early. */
+const ABILITY_CUE = { readyPulseMs: 900, deniedMs: 450 } as const;
+let abilityDeniedAt = -Infinity;
+let abilityBackAt = -Infinity;
+let abilityWasCooling = false;
+
+/** Space was pressed while the ability was still cooling down. */
+export const noteAbilityDenied = (now: number) => { abilityDeniedAt = now; };
+
+function trackAbility(self: SelfView, now: number) {
+  const cooling = self.ability !== null && self.abilityReadyIn > 0;
+  if (abilityWasCooling && !cooling && self.ability !== null) abilityBackAt = now;
+  abilityWasCooling = cooling;
+}
+
+const deniedShake = (now: number) => {
+  const k = (now - abilityDeniedAt) / ABILITY_CUE.deniedMs;
+  return k >= 0 && k < 1 ? Math.sin(k * Math.PI * 6) * 3 * (1 - k) : 0;
+};
+
 export const drawnReticleGap = (): number => reticleDrawnGap;
 
 function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
@@ -222,7 +370,7 @@ function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   const gap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
   reticleDrawnGap = gap;
   ctx.lineCap = 'round';
-  for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.5)'], [1.5, '#ffffff']] as const) {
+  for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.75)'], [1.5, '#ffffff']] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
     ctx.beginPath();
@@ -252,11 +400,20 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
   if (!hm) return;
   const k = (now - hm.born) / HITMARKER_MS[hm.kill ? 'kill' : 'hit'];
   if (k < 0 || k >= 1) return;
-  const [inner, outer] = hm.kill ? [7, 15] : [5, 10];
-  const pop = 1 + (1 - k) * 0.25;
-  ctx.globalAlpha = 1 - k * k;
+  const [inner, outer] = hm.kill ? [8, 20] : [5, 10];
+  const pop = 1 + (1 - k) * (hm.kill ? 0.45 : 0.25);
   ctx.lineCap = 'round';
-  for (const [width, color] of [[4, 'rgba(30, 32, 38, 0.5)'], [hm.kill ? 2.5 : 2, hm.kill ? '#ff4d4f' : '#ffffff']] as const) {
+  if (hm.kill) {
+    // A kill also rings out from the crosshair, so it reads as a different event from a hit even out of the corner of an eye.
+    ctx.globalAlpha = (1 - k) * 0.9;
+    ctx.lineWidth = 2.5 * (1 - k) + 0.5;
+    ctx.strokeStyle = '#ff4d4f';
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, 14 + 26 * (1 - (1 - k) ** 3), 0, TAU);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1 - k * k;
+  for (const [width, color] of [[hm.kill ? 6 : 4, 'rgba(30, 32, 38, 0.55)'], [hm.kill ? 3.5 : 2, hm.kill ? '#ff4d4f' : '#ffffff']] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
     ctx.beginPath();
@@ -269,18 +426,34 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
   ctx.globalAlpha = 1;
 }
 
-const MINIMAP = { bg: 'rgba(92, 98, 108, 0.94)', block: '#959aa4', built: '#7f8fb0' } as const;
+const MINIMAP = { bg: 'rgba(19, 21, 25, 0.86)', block: '#454a53', built: '#6a7da6' } as const;
 const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff' };
 
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];
 
-function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius: number | number[] = PANEL_RADIUS, fill: string = PANEL_FILL) {
+/** A plate with its top right and bottom left corners clipped; a tall one also gets the kit's orange corner bracket. */
+function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string = PANEL_FILL) {
   panels.push({ x, y, w, h });
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, radius);
+  plate(ctx, x, y, w, h);
   ctx.fillStyle = fill;
   ctx.fill();
+  if (h < 60) return;
+  ctx.fillStyle = ACCENT;
+  ctx.fillRect(x, y, 14, 2);
+  ctx.fillRect(x, y, 2, 14);
+}
+
+function plate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const c = Math.min(PANEL_CUT, h / 3);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w - c, y);
+  ctx.lineTo(x + w, y + c);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x + c, y + h);
+  ctx.lineTo(x, y + h - c);
+  ctx.closePath();
 }
 
 function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, frac: number, color: string | CanvasGradient, track: string) {
@@ -300,10 +473,10 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 let hudFont = '';
 let lastHudAt = 0;
 const fonts = new Map<number, string>();
-function setFont(ctx: CanvasRenderingContext2D, weight: number, size: number) {
-  const key = weight * 1000 + size;
+function setFont(ctx: CanvasRenderingContext2D, weight: number, size: number, italic = false) {
+  const key = (italic ? -1 : 1) * (weight * 1000 + size);
   let font = fonts.get(key);
-  if (!font) fonts.set(key, (font = `${weight} ${size}px ${HUD_FONT}`));
+  if (!font) fonts.set(key, (font = `${italic ? 'italic ' : ''}${weight} ${size}px ${HUD_FONT}`));
   if (font !== hudFont) { ctx.font = font; hudFont = font; }
 }
 
@@ -327,8 +500,8 @@ function worldText(ctx: CanvasRenderingContext2D, on: OnWorld, s: string, x: num
   ctx.fillText(s, x, y);
 }
 
-function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, weight: number) {
-  setFont(ctx, weight, size);
+function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, weight: number, italic = false) {
+  setFont(ctx, weight, size, italic);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
@@ -339,14 +512,14 @@ function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number
   ctx.fillText(s, x, y);
 }
 
-const FEED_ICON_W = 34;
+const FEED_ICON_W = 44;
 const BOUNTY_TAG = `+${WORLD.bountyScore} BOUNTY`;
 
 /** Class guns read as their icon; an evolved gun is spelled out in its accent color, since its silhouette is easy to mistake. */
 function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: number; draw(x: number, y: number): void } {
   const gun = GUN_BY_NAME.get(label);
   if (gun && GUNS[gun].stage === 0) {
-    return { width: FEED_ICON_W, draw: (x, y) => drawGunGlyph(ctx, gun, x, y, FEED_ICON_W - SPACE.sm, 10, PANEL_INK) };
+    return { width: FEED_ICON_W, draw: (x, y) => drawGunArt(ctx, gun, x, y - 7, FEED_ICON_W - SPACE.sm, 14, { flat: PANEL_INK, align: 'left' }) };
   }
   const perk = PERK_BY_NAME.get(label);
   if (perk) return { width: 20, draw: (x, y) => strokeIcon(ctx, PERK_ICONS[perk], x + 8, y, 13, PANEL_INK, 2.2) };
@@ -425,14 +598,12 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
   });
 }
 
+/** A line you took part in carries an orange edge. */
 function feedRow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, mine: boolean) {
-  panel(ctx, x, y - 10, w, 20, 5);
+  panel(ctx, x, y - 10, w, 20);
   if (!mine) return;
-  ctx.strokeStyle = PALETTE.gold;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(x + 0.75, y - 9.25, w - 1.5, 18.5, 5);
-  ctx.stroke();
+  ctx.fillStyle = ACCENT;
+  ctx.fillRect(x, y - 10, 3, 20);
 }
 
 const FEED_TEAM: Record<ColorId, string> = { ...byColor((c) => tint(COLORS[c], 0.55)), red: '#ffb0b2', blue: '#b5c6ff' };
@@ -447,11 +618,12 @@ const ownColor = (snap: Snapshot, me: PlayerView) => (me.team && !snap.run ? FEE
 
 const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(s.snaps, now));
 
-const BOARD = { w: 168, compactW: 140, row: 21, pad: 10 } as const;
+/** On a phone the board lists only the top `touchTop` and you, so it ends above the ability button (style.css). */
+const BOARD = { w: 168, compactW: 140, row: 21, pad: 10, touchTop: 3 } as const;
 
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const { ctx, w, h, snap, s, me } = hud;
-  const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null);
+  const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
   const pw = compact ? BOARD.compactW : BOARD.w;
   const x = w - pw - EDGE, top = EDGE;
@@ -527,9 +699,10 @@ function drawMinimap(hud: Hud, size: number) {
   const { ctx, w, h, snap, s, me } = hud;
   const k = size / s.worldSize;
   const pad = 8;
-  const x0 = w - EDGE - size - pad * 2, y0 = h - EDGE - size - pad * 2;
+  // On a touch screen the bottom right is the aiming thumb's, so the minimap sits top left under the vitals, as in mobile shooters.
+  const x0 = touchScreen ? EDGE : w - EDGE - size - pad * 2, y0 = touchScreen ? EDGE + VITALS.height + 8 : h - EDGE - size - pad * 2;
   const base = fadePanel(hud, 'minimap', x0, y0, size + pad * 2, size + pad * 2);
-  panel(ctx, x0, y0, size + pad * 2, size + pad * 2, PANEL_RADIUS, MINIMAP.bg);
+  panel(ctx, x0, y0, size + pad * 2, size + pad * 2, MINIMAP.bg);
   const x = x0 + pad, y = y0 + pad;
   for (const wall of s.walls) {
     ctx.fillStyle = wall.built ? MINIMAP.built : MINIMAP.block;
@@ -675,7 +848,7 @@ function drawObjectiveLine(hud: Hud, top: number, full: boolean): number {
   for (const [line, color] of lines) {
     setFont(ctx, 600, TYPE.label);
     const lw = ctx.measureText(line).width + 18;
-    panel(ctx, w / 2 - lw / 2, y, lw, 20, 5);
+    panel(ctx, w / 2 - lw / 2, y, lw, 20);
     text(ctx, line, w / 2, y + 10, TYPE.label, color, 'center', 600);
     y += 24;
   }
@@ -698,7 +871,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   const mournedW = mourned ? ctx.measureText(mourned).width + 8 : 0;
   const total = 16 + scrapW + 44 + 16 + 90 + 14 + peopleW + 58 + mournedW;
   let x = cx - total / 2;
-  panel(ctx, x - 10, y - 11, total + 20, 22, 5);
+  panel(ctx, x - 10, y - 11, total + 20, 22);
   strokeIcon(ctx, UI_ICONS.scrap, x + 6, y, 12, PALETTE.gold, 2.2);
   text(ctx, `${run.scrap}`, x + 16, y, TYPE.body, PANEL_INK, 'left', 750);
   x += 16 + scrapW + 6;
@@ -784,8 +957,10 @@ function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { ke
 /** The build bar's kind chips as last drawn, in CSS px, so a click on one picks its kind. */
 let buildChips: (Rect & { kind: BuildingKind })[] = [];
 export const drawnBuildChips = (): readonly (Rect & { kind: BuildingKind })[] => buildChips;
-export const buildChipAt = (x: number, y: number): BuildingKind | null =>
-  buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.kind ?? null;
+export const buildChipAt = (sx: number, sy: number): BuildingKind | null => {
+  const x = sx / hudScale, y = sy / hudScale;
+  return buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.kind ?? null;
+};
 
 function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; y: number }, y: number) {
   const pulse = 0.5 + 0.5 * Math.sin(now / 110);
@@ -799,7 +974,8 @@ function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; 
   strokeIcon(ctx, UI_ICONS.core, clear.x - Math.cos(at.angle) * 24, clear.y - Math.sin(at.angle) * 24, 15, PALETTE.hunted, 2.4);
 }
 
-const VITALS = { bar: 200, compactBar: 140, barH: 9, row: 30 } as const;
+/** The vitals plate: its bar widths, inner padding, row step and full height (the touch minimap sits just below it). */
+const VITALS = { bar: 200, compactBar: 140, barH: 8, row: 30, pad: 12, height: 126 } as const;
 
 function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
   ctx.fillStyle = color;
@@ -816,48 +992,57 @@ function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, colo
   ctx.fill();
 }
 
-function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
+/** Health, ammo, gun and level, and the ability and perks, on one plate in the top left, sized to what it holds. */
+function drawVitals({ ctx, snap, me, w }: Hud, compact: boolean) {
   if (!me) return;
+  const on = ON_PANEL;
   const self = snap.self;
-  const x = EDGE + 4;
-  let y = EDGE + 10;
+  const x = EDGE + VITALS.pad;
+  let y = EDGE + VITALS.pad + 6;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
-  panels.push({ x: EDGE, y: EDGE, w: bw + 150, h: 4 * VITALS.row });
   const hpFrac = me.hp / me.maxHp;
+  const hpText = `${Math.ceil(me.hp)} / ${me.maxHp}`;
+  const gun = GUNS[me.gun];
+  const gunName = gun.name.toUpperCase();
+  const lp = levelProgress(me.level, me.score);
+  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
+  setFont(ctx, 600, TYPE.body);
+  const hpRow = bw + 10 + ctx.measureText(hpText).width + (me.hunted ? huntedBadgeWidth(ctx) + 10 : 0) + (self.streak >= 2 ? streakBadgeWidth(ctx, self.streak) + 10 : 0);
+  setFont(ctx, 700, TYPE.label);
+  const gunRow = ctx.measureText(gunName).width + gun.stage * 9 + 100;
+  const abilityRow = abilityWidth(ctx, self) + 14 + owned.length * 22;
+  panel(ctx, EDGE, EDGE, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
   fill.addColorStop(0, HP_FILL[0]);
   fill.addColorStop(1, HP_FILL[1]);
   bar(ctx, x, y - VITALS.barH / 2, bw, VITALS.barH, hpFrac, fill, on.track);
-  const hpText = `${Math.ceil(me.hp)} / ${me.maxHp}`;
-  worldText(ctx, on, hpText, x + bw + 10, y, TYPE.body + 1, hpFrac <= 0.35 ? PALETTE.hpBad : on.muted, 500);
-  if (me.hunted) {
-    setFont(ctx, 500, TYPE.body + 1);
-    drawHuntedBadge(ctx, x + bw + 20 + ctx.measureText(hpText).width, y);
-  }
+  text(ctx, hpText, x + bw + 10, y + 1, TYPE.body, hpFrac <= 0.35 ? PALETTE.hpBad : on.ink, 'left', 600);
+  setFont(ctx, 600, TYPE.body);
+  let bx = x + bw + 20 + ctx.measureText(hpText).width;
+  if (me.hunted) bx += drawHuntedBadge(ctx, bx, y) + 10;
+  if (self.streak >= 2) drawStreakBadge(ctx, bx, y, self.streak);
   y += VITALS.row;
   drawAmmoGlyph(ctx, x, y, on.glyph);
   if (self.reloading) {
-    worldText(ctx, on, 'reloading', x + 34, y, TYPE.body, PALETTE.gold, 700);
-    bar(ctx, x + 104, y - 2, 60, 4, self.reloadFrac, PALETTE.gold, on.track);
+    text(ctx, 'RELOADING', x + 34, y + 1, TYPE.body, PALETTE.gold, 'left', 800);
+    bar(ctx, x + 112, y - 2, 60, 4, self.reloadFrac, PALETTE.gold, on.track);
   } else {
-    worldText(ctx, on, `${self.ammo} / ${self.mag}`, x + 34, y + 1, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : on.ink, 750);
+    text(ctx, `${self.ammo}`, x + 34, y + 1, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : on.ink, 'left', 800);
+    setFont(ctx, 800, TYPE.figure);
+    text(ctx, `/ ${self.mag}`, x + 38 + ctx.measureText(`${self.ammo}`).width, y + 3, TYPE.body, on.muted, 'left', 600);
   }
-  y += 24;
-  const lp = levelProgress(me.level, me.score);
-  const gun = GUNS[me.gun];
-  setFont(ctx, 700, TYPE.micro);
-  const gunName = gun.name.toUpperCase();
-  worldText(ctx, on, gunName, x, y, TYPE.micro, gun.stage ? gun.look.accent : on.muted, 700);
+  y += 26;
+  text(ctx, gunName, x, y, TYPE.label, gun.stage ? glow(gun.look.accent, 0.74) : on.ink, 'left', 700);
+  setFont(ctx, 700, TYPE.label);
   let lx = x + ctx.measureText(gunName).width + 6;
   if (gun.stage) { drawStagePips(ctx, me.gun, lx, y); lx += gun.stage * 9 + 4; }
-  worldText(ctx, on, `LV ${lp.displayLevel}`, lx + 4, y, TYPE.micro, on.muted, 700);
-  bar(ctx, lx + 36, y - 1.5, 44, 3, lp.frac, PALETTE.gold, on.track);
-  y += 22;
+  text(ctx, `LV ${lp.displayLevel}`, lx + 4, y, TYPE.label, on.muted, 'left', 700);
+  bar(ctx, lx + 40, y - 1.5, 44, 3, lp.frac, PALETTE.gold, on.track);
+  y += 26;
   drawAbility(ctx, x, y, self, on);
-  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
   let px = x + abilityWidth(ctx, self) + 14;
   for (const perk of owned) {
-    strokeIcon(ctx, PERK_ICONS[perk], px + 7, y, 13, on.glyph, 2.2);
+    strokeIcon(ctx, PERK_ICONS[perk], px + 7, y, 14, on.glyph, 2.2);
     px += 22;
   }
 }
@@ -865,34 +1050,69 @@ function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
 type SelfView = Snapshot['self'];
 
 const abilityLabel = (self: SelfView): string =>
-  self.ability ? (self.abilityReadyIn > 0 ? `${(self.abilityReadyIn / 1000).toFixed(1)}s` : 'SPACE') : abilityHint(self.pending).join(' ');
+  self.ability ? (self.abilityReadyIn > 0 ? `${(self.abilityReadyIn / 1000).toFixed(1)}s` : touchScreen ? 'READY' : 'READY · SPACE') : abilityHint(self.pending).join(' ');
 
 function abilityWidth(ctx: CanvasRenderingContext2D, self: SelfView): number {
-  setFont(ctx, 700, TYPE.micro);
-  return 22 + ctx.measureText(abilityLabel(self)).width;
+  setFont(ctx, 700, self.ability ? TYPE.body : TYPE.micro);
+  return 30 + ctx.measureText(abilityLabel(self)).width;
 }
 
 function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, on: OnWorld) {
+  const muted = touchScreen ? on.ink : on.muted;
   if (!self.ability) {
-    worldText(ctx, on, abilityLabel(self), x, y, TYPE.micro, on.muted, 600);
+    worldText(ctx, on, abilityLabel(self), x, y, TYPE.micro, muted, 600);
     return;
   }
   const ready = self.abilityReadyIn <= 0;
   const left = Math.max(0, Math.min(1, self.abilityReadyIn / ABILITY_COOLDOWN_MS[self.ability]));
-  ctx.lineWidth = 2;
+  const denied = !ready && performance.now() - abilityDeniedAt < ABILITY_CUE.deniedMs;
+  const cx = x + 12 + deniedShake(performance.now());
+  ctx.lineWidth = 3;
   ctx.strokeStyle = on.track;
   ctx.beginPath();
-  ctx.arc(x + 8, y, 10, 0, TAU);
+  ctx.arc(cx, y, 13, 0, TAU);
   ctx.stroke();
-  ctx.strokeStyle = PALETTE.gold;
+  ctx.strokeStyle = denied ? PALETTE.hpBad : PALETTE.gold;
   ctx.beginPath();
-  ctx.arc(x + 8, y, 10, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
+  ctx.arc(cx, y, 13, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
   ctx.stroke();
-  strokeIcon(ctx, PERK_ICONS[self.ability], x + 8, y, 11, ready ? PALETTE.gold : on.muted, 2.2);
-  worldText(ctx, on, abilityLabel(self), x + 22, y, TYPE.micro, ready ? PALETTE.gold : on.ink, 700);
+  const pulse = (performance.now() - abilityBackAt) / ABILITY_CUE.readyPulseMs;
+  if (ready && pulse >= 0 && pulse < 1) {
+    ctx.globalAlpha = 1 - pulse;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.beginPath();
+    ctx.arc(cx, y, 13 + pulse * 14, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  strokeIcon(ctx, PERK_ICONS[self.ability], cx, y, 13, ready ? PALETTE.gold : denied ? PALETTE.hpBad : muted, 2.2);
+  worldText(ctx, on, abilityLabel(self), x + 30, y + 1, TYPE.body, ready ? PALETTE.gold : denied ? PALETTE.hpBad : on.ink, 750);
 }
 
-function drawHuntedBadge(ctx: CanvasRenderingContext2D, x: number, y: number) {
+function streakBadgeWidth(ctx: CanvasRenderingContext2D, streak: number): number {
+  setFont(ctx, 850, TYPE.body);
+  return ctx.measureText(`${streak}`).width + 26;
+}
+
+function huntedBadgeWidth(ctx: CanvasRenderingContext2D): number {
+  setFont(ctx, 800, TYPE.micro);
+  return ctx.measureText('HUNTED').width + 24;
+}
+
+/** Your kills this life, once there are two: a flame and the count, hotter-looking as it climbs. */
+function drawStreakBadge(ctx: CanvasRenderingContext2D, x: number, y: number, streak: number) {
+  const label = `${streak}`;
+  const bw = streakBadgeWidth(ctx, streak);
+  ctx.beginPath();
+  ctx.roundRect(x, y - 10, bw, 20, 4);
+  ctx.fillStyle = streak >= 5 ? '#ff5a1f' : 'rgba(255, 90, 31, 0.85)';
+  ctx.fill();
+  fillIcon(ctx, UI_ICONS.flame, x + 10, y - 0.5, 13, '#fff4e0');
+  text(ctx, label, x + 19, y + 0.5, TYPE.body, '#ffffff', 'left', 850);
+}
+
+function drawHuntedBadge(ctx: CanvasRenderingContext2D, x: number, y: number): number {
   setFont(ctx, 800, TYPE.micro);
   const bw = ctx.measureText('HUNTED').width + 24;
   ctx.beginPath();
@@ -901,6 +1121,7 @@ function drawHuntedBadge(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.fill();
   strokeIcon(ctx, UI_ICONS.target, x + 9, y, 10, '#ffffff', 2.2);
   text(ctx, 'HUNTED', x + 17, y + 0.5, TYPE.micro, '#ffffff', 'left', 800);
+  return bw;
 }
 
 function drawStagePips(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {
@@ -919,7 +1140,7 @@ function drawStagePips(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: 
 }
 
 const ABILITY_TIER: Tier = 3;
-const ABILITY_SCORE = LEVELS.find((l) => l.pick?.k === 'perk' && l.pick.tier === ABILITY_TIER)?.score;
+export const ABILITY_SCORE = LEVELS.find((l) => l.pick?.k === 'perk' && l.pick.tier === ABILITY_TIER)?.score;
 
 export const abilityHint = (pending: PendingPick | null): [string, string] =>
   pending?.k === 'perk' && pending.tier === ABILITY_TIER ? ['Pick an', 'ability'] : ['Ability', `at ${ABILITY_SCORE}`];

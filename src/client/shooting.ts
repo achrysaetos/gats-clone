@@ -20,6 +20,8 @@ const unperkedShot = (ev: ShotEvent): Shot => ({ owner: ev.owner, gun: ev.gun, r
 type Page = {
   hands: (s: Session) => Hands;
   playCues: (s: Session, cues: readonly SoundCue[], viewRadius: number) => void;
+  /** Your own shot left toward `angle`, for the camera's recoil. */
+  recoil: (gun: GunId, angle: number) => void;
 };
 
 export function createShooting(page: Page) {
@@ -37,9 +39,11 @@ export function createShooting(page: Page) {
 
   function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
     const { aim, sinceMove } = page.hands(s);
-    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(gun, sinceMove), nextSprayShot(s.firing)) };
+    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(gun, sinceMove), snap.run ? 0 : nextSprayShot(s.firing), snap.self.suppression) };
     page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
-    return showShot(s, shot, s.lastSelf, Math.atan2(aim.dy, aim.dx), sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
+    const angle = Math.atan2(aim.dy, aim.dx);
+    page.recoil(gun, angle);
+    return showShot(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
   }
 
   function triggerInput(s: Session): TriggerInput {

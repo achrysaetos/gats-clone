@@ -128,7 +128,7 @@ test('a round or grenade from a player who left still spares their old team', ()
   step(w, TICK_MS);
   w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 900, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
   removePlayer(w, shooter.id);
-  run(w, 500);
+  run(w, 900);
   assert.equal(hpOf(mate), WORLD.baseHp, 'neither the round nor the blast hurt a teammate');
   assert.ok(hpOf(enemy) < WORLD.baseHp, 'the round flew on to the enemy');
 });

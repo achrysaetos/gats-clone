@@ -288,19 +288,24 @@ const STEPS: Record<string, () => Promise<void>> = {
     await cdp('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }] });
     await sleep(300);
+    expect('a phone held upright is asked to turn sideways', await js(`getComputedStyle(document.querySelector('.rotate-hint')).display !== 'none'`));
+    await shot('touch-portrait');
+    await cdp('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 2, mobile: true });
+    await sleep(300);
+    expect('turned sideways, the hint is gone', await js(`getComputedStyle(document.querySelector('.rotate-hint')).display === 'none'`));
     expect('touch buttons visible on a coarse pointer', await js(`getComputedStyle(document.querySelector('.touch-buttons')).display !== 'none'`));
     const touch = (type: string, points: { x: number; y: number; id: number }[]) => cdp('Input.dispatchTouchEvent', { type, touchPoints: points });
     const before = me()!;
-    await touch('touchStart', [{ x: 90, y: 600, id: 1 }]);
-    for (let i = 1; i <= 5; i++) { await touch('touchMove', [{ x: 90 + i * 12, y: 600, id: 1 }]); await sleep(30); }
+    await touch('touchStart', [{ x: 110, y: 290, id: 1 }]);
+    for (let i = 1; i <= 5; i++) { await touch('touchMove', [{ x: 110 + i * 12, y: 290, id: 1 }]); await sleep(30); }
     await sleep(600);
     await shot('touch-move');
     await touch('touchEnd', []);
     const after = me()!;
     expect('left thumb drag moves the player right on the server', !!after && after.x > before.x + 50, `x ${before.x.toFixed(0)} -> ${after?.x.toFixed(0)}`);
     const ammo = frames.last!.self.ammo;
-    await touch('touchStart', [{ x: 300, y: 500, id: 2 }]);
-    for (let i = 1; i <= 4; i++) { await touch('touchMove', [{ x: 300, y: 500 - i * 15, id: 2 }]); await sleep(30); }
+    await touch('touchStart', [{ x: 600, y: 250, id: 2 }]);
+    for (let i = 1; i <= 4; i++) { await touch('touchMove', [{ x: 600, y: 250 - i * 15, id: 2 }]); await sleep(30); }
     const fired = await until(() => frames.last!.self.ammo < ammo);
     await touch('touchEnd', []);
     expect('right thumb push fires: server ammo decreases', fired, `ammo ${ammo} -> ${frames.last!.self.ammo}`);

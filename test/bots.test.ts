@@ -158,7 +158,7 @@ test('a bot stepping out from cover onto the target it hid from fires at once, w
     const plan = k === 'peekAndHide'
       ? { k, target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 }
       : { k, target: enemy.id };
-    const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: 0, noticeAtTick: 5 }, engagedSeen: 10 };
+    const lostLongAgo = { ...mem.motor, engaged: { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: 0, noticeAtTick: 5, leadMul: 1 }, engagedSeen: 10 };
     return botThink(snapshotFor(w, bot.id), arenaFor(w), { ...mem, persona: 'cautious', intent: { ...plan, since: w.tick, holdUntil: 1e9 }, motor: lostLongAgo }, r).input.fire;
   };
   assert.equal(firstShot('peekAndHide'), true, 'aim held behind cover');

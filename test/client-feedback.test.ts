@@ -7,7 +7,7 @@ import type { DamageKind, GameEvent } from '../src/shared/protocol.ts';
 const ME = 1;
 const dmg = (attacker: number | null, victim: number, amount: number, kind: DamageKind = 'player'): GameEvent =>
   ({ e: 'dmg', attacker, victim, amount, x: victim * 10, y: 0, kind });
-const kill = (killerId: number, victimId: number, assisters: number[] = []): GameEvent => ({ e: 'kill', killer: 'k', victim: 'v', killerId, victimId, weapon: 'Pistol', bounty: false, assisters });
+const kill = (killerId: number, victimId: number, assisters: number[] = []): GameEvent => ({ e: 'kill', killer: 'k', victim: 'v', killerId, victimId, weapon: 'Pistol', bounty: false, assisters, ended: 0, revenge: false });
 const apply = (events: GameEvent[], now = 1000, fb: Feedback = NO_FEEDBACK, players: { id: number; x: number; y: number }[] = []) => addFeedback(fb, events, players, ME, 100, now);
 
 test('the hitmarker shows only for damage you deal to a player or a zombie', () => {

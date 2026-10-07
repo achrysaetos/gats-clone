@@ -2,6 +2,8 @@ import { INK, PALETTE, shade, tint } from './palette.ts';
 import { LIGHT } from './tilt.ts';
 
 const SCALE_STEP = 20;
+/** How far, as a share of the radius, the dark and light crescents of a body's cel shading reach in. */
+const CEL = { shadeShift: 0.16, lightShift: 0.12 } as const;
 const RIM = 1.8;
 const SHADOW_SHIFT = 0.55;
 const SHADOW_FEATHER = 1.3;
@@ -37,10 +39,21 @@ export function bodySprite(color: string, radius: number, armor: number, pxPerUn
     g.translate(radius + 1, radius + 1);
     disc(g, radius, INK);
     const r = radius - RIM - armor;
-    const soft = g.createLinearGradient(-r, -r, r, r);
-    soft.addColorStop(0, tint(color, 0.14));
-    soft.addColorStop(1, shade(color, 0.9));
-    disc(g, r, soft);
+    // Cel-shaded like the walls and guns: a hard darker crescent away from the light, a hard lighter one toward it.
+    g.save();
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.clip();
+    disc(g, r, shade(color, 0.8));
+    g.translate(-r * CEL.shadeShift, -r * CEL.shadeShift);
+    disc(g, r, color);
+    g.translate(r * CEL.shadeShift, r * CEL.shadeShift);
+    g.fillStyle = tint(color, 0.32);
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.arc(r * CEL.lightShift, r * CEL.lightShift, r, 0, Math.PI * 2, true);
+    g.fill();
+    g.restore();
     return c;
   });
 }

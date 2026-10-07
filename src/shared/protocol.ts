@@ -55,6 +55,8 @@ export type PlayerView = {
   hunted: boolean;
   /** Fresh from a spawn and not yet firing: takes no damage. */
   spawnShield?: true;
+  /** Kills this life, sent once it reaches `STREAK.showAt`. */
+  streak?: number;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
@@ -104,15 +106,22 @@ export type SelfView = {
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;
+  /** 0..1, how suppressed you are by rounds passing close; it widens your reticle and shades the screen's edges. */
+  suppression: number;
+  /** Kills this life, and the player who last killed you until you take your revenge. */
+  streak: number; nemesis: number | null;
 };
 
 /** `victim` is the id of the player, crate, zombie or squad wall hit; all come from the world's one id sequence. */
 export type DamageKind = 'player' | 'crate' | 'zombie' | 'building';
 
 export type GameEvent =
-  /** `assisters` are the other players paid an assist for this kill. */
-  /** `knock` when the victim went down with a squadmate still standing: the knock pays the kill. */
-  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[]; knock?: true }
+  /**
+   * `assisters` are the other players paid an assist for this kill. `knock` when the victim went down with a squadmate
+   * still standing: the knock pays the kill. `ended` is the victim's streak this kill ended, and `revenge` says the victim
+   * had last killed the killer.
+   */
+  | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[]; knock?: true; ended: number; revenge: boolean }
   | { e: 'hunted'; id: number; name: string }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }

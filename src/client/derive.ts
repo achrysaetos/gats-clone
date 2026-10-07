@@ -151,11 +151,11 @@ export const topScorers = (rows: readonly LeaderRow[], count: number): LeaderRow
 
 const BOARD_TOP = 5;
 
-export function boardRows(rows: readonly LeaderRow[], myId: number, full: number | null): { place: number; row: LeaderRow }[] {
+export function boardRows(rows: readonly LeaderRow[], myId: number, full: number | null, top = BOARD_TOP): { place: number; row: LeaderRow }[] {
   const ranked = rankRows(rows).map((row, i) => ({ place: i + 1, row }));
   if (full !== null) return ranked.slice(0, full);
   const mine = ranked.find((r) => r.row.id === myId);
-  return mine && mine.place > BOARD_TOP ? [...ranked.slice(0, BOARD_TOP), mine] : ranked.slice(0, BOARD_TOP);
+  return mine && mine.place > top ? [...ranked.slice(0, top), mine] : ranked.slice(0, top);
 }
 
 /** The round-end podium: the winning team's best in team modes, with the final team score; in FFA the winner, then everyone else's best. */
