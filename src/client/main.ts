@@ -52,6 +52,7 @@ import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, wit
 import { trackRootScale } from './uiscale.ts';
 import { createCelebration } from './celebrate.ts';
 import { resetEmotes, noteEmote, setParty } from './emotefx.ts';
+import { chatter, toggleChatter } from './chatter.ts';
 import { createEmoteWheel } from './emotewheel.ts';
 import { isAnniversary, isCenturion } from './friendly.ts';
 import { EMOTES } from '../shared/emotes.ts';
@@ -143,6 +144,7 @@ function setState(next: ClientState) {
     delight.reset();
     celebrate.reset();
     resetEmotes();
+    chatter.reset();
     wheel.close();
     setParty(false);
     held.clear();
@@ -302,6 +304,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   queueHits(snap.events, s.myId, snap.tick * TICK_MS);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   celebrate.onSnap(snap, now);
+  chatter.onSnap(snap, s.myId, now);
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
   shooting.settleShots(s, snap, now);
@@ -618,6 +621,11 @@ function onKeyDown(e: KeyboardEvent) {
     s.chat.push({ from: '', text: off ? 'Music off (Shift+M to turn on)' : 'Music on', team: null, at: performance.now() });
     return;
   }
+  if (e.code === 'KeyC' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    const on = toggleChatter();
+    s.chat.push({ from: '', text: on ? 'Soldier chatter on (C to turn off)' : 'Soldier chatter off (C to turn on)', team: null, at: performance.now() });
+    return;
+  }
   if (e.code === 'KeyM') {
     const muted = audio.toggleMute();
     setSoundMuted(muted);
@@ -794,6 +802,11 @@ async function checkAnniversary(account: string | null) {
   } catch { /* the hat is a nicety */ }
 }
 if (params.has('dev')) {
+  Object.assign(((window as unknown as { skirmishChatter?: object }).skirmishChatter ??= {}), {
+    chatter,
+    /** Forces a line from soldier `pid` (default: you): `say(undefined, { personality: 'poet', tag: 'justKilled' })`. */
+    say: (pid?: number, opts?: Parameters<typeof chatter.say>[2]) => { const s = sessionOf(state); return s ? chatter.say(pid ?? s.myId, performance.now(), { own: (pid ?? s.myId) === s.myId, ...opts }) : null; },
+  });
   void import('./celebratedemo.ts').then((m) => Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { celebrate: (kind: string) => celebrate.demo(m.demoCelebration(kind)) }));
 }
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion()) kick = addKick(kick, gun, angle); } });

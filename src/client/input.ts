@@ -37,6 +37,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['Enter', 'Chat'],
   ['T', 'Hold for the emote wheel, flick toward a plate, let go'],
   ['M', 'Mute sound'],
+  ['C', 'Soldier chatter on or off'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],
 ];
 

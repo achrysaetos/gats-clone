@@ -13,7 +13,9 @@ import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
 import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
-import { drawEmoteBubbles, drawEmoteGestures, partyOn } from './emotefx.ts';
+import { drawEmoteBubbles, drawEmoteGestures, emoteOf, partyOn } from './emotefx.ts';
+import { chatter, drawChatter } from './chatter.ts';
+import { uiScaleFor } from './uiscale.ts';
 import { reducedMotion } from './screenfx.ts';
 import { fillIcon, UI_ICONS } from './icons.ts';
 import { careerImage } from './medals.ts';
@@ -170,6 +172,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawGunTop(ctx, gunFxOf(s), now, view);
   drawBars(ctx, tags, dark);
   drawEmoteBubbles(ctx, alive, now, dark);
+  // Soldier chatter: skipped under the killcam, slow-motion and the round-end celebration, and for anyone showing an emote.
+  const overlay = !!snap.match.winner || ['dl-slowmo', 'dl-play', 'dl-hold', 'dl-settle'].some((c) => !!document?.body?.classList?.contains(c));
+  const emoting = (pid: number) => emoteOf(pid, now) !== null;
+  chatter.tick(snap, s.myId, now, { overlay, emoting });
+  if (!overlay) drawChatter(ctx, alive, now, dark, cam.scale, uiScaleFor(cam.w, cam.h), reducedMotion(), emoting);
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now, dark);
