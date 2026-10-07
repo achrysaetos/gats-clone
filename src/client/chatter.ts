@@ -260,7 +260,7 @@ export class Chatter {
   private live(b: Bubble, now: number) { return now - b.at < b.holdMs + CHATTER.fadeMs; }
 
   /**
-   * Decides whether anybody speaks now. One new bubble per call, at most `maxBubbles` on screen, your own soldier first and then the
+   * Decides whether anybody on your side speaks now (you and your teammates only). One new bubble per call, at most `maxBubbles` on screen, your own soldier first and then the
    * nearest; each soldier waits a random 14-30 s between lines (yours 10-22 s).
    */
   tick(snap: Snapshot, myId: number, now: number, opts: TickOpts = {}) {
@@ -270,7 +270,7 @@ export class Chatter {
     const eye = me?.alive ? me : null;
     if (!eye) return;
     const near = snap.players
-      .filter((p) => p.alive && !p.hidden && Math.hypot(p.x - eye.x, p.y - eye.y) < CHATTER.hearRange && !this.bubbles.some((b) => b.pid === p.id) && !opts.emoting?.(p.id))
+      .filter((p) => hearsChatter(eye, p) && p.alive && !p.hidden && Math.hypot(p.x - eye.x, p.y - eye.y) < CHATTER.hearRange && !this.bubbles.some((b) => b.pid === p.id) && !opts.emoting?.(p.id))
       .sort((a, b) => (a.id === myId ? -1 : b.id === myId ? 1 : Math.hypot(a.x - eye.x, a.y - eye.y) - Math.hypot(b.x - eye.x, b.y - eye.y)));
     for (const p of near) {
       const s = this.soldiers.get(p.id);
@@ -297,6 +297,10 @@ export class Chatter {
 }
 
 export const chatter = new Chatter();
+
+/** Chatter is for your own side: you hear yourself and your teammates (squad in Zombies or Last Squad), never an enemy or, in FFA, anyone else. */
+export const hearsChatter = (me: Pick<PlayerView, 'id' | 'team'>, p: Pick<PlayerView, 'id' | 'team'>): boolean =>
+  p.id === me.id || (me.team !== null && p.team === me.team);
 
 // ---- drawing ----
 

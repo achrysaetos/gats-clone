@@ -52,9 +52,9 @@ test('lines wrap to at most two lines', () => {
 });
 
 /** A chatter with you (id 1) spawned at t=0 and ready to speak. */
-function ready(extra: PlayerView[] = [], seed = 5) {
+function ready(extra: PlayerView[] = [], seed = 5, me: Partial<PlayerView> = {}) {
   const c = new Chatter(seed);
-  const s = snap({ players: [player(1), ...extra] });
+  const s = snap({ players: [player(1, me), ...extra] });
   c.onSnap(s, 1, 0);
   for (const sol of c.soldiers.values()) sol.nextAt = 0;
   return { c, s };
@@ -74,8 +74,8 @@ test('a quiet soldier speaks, once, then waits out a 10-22 s cooldown', () => {
   assert.equal(c.bubbles.length, 1);
 });
 
-test('bots wait 14-30 s between lines', () => {
-  const bot = ready([player(2, { x: 800 })]);
+test('teammate bots wait 14-30 s between lines', () => {
+  const bot = ready([player(2, { x: 800, team: 'red' })], 5, { team: 'red' });
   bot.c.soldiers.get(1)!.nextAt = Infinity;
   bot.c.tick(bot.s, 1, 1000);
   assert.deepEqual(bot.c.bubbles.map((b) => b.pid), [2]);
@@ -122,9 +122,9 @@ test('an enemy within 650 px keeps a soldier quiet; a friend, or one farther off
 });
 
 test('never more than 2 bubbles, one new bubble per tick, yours first', () => {
-  const others = [2, 3, 4, 5].map((id) => player(id, { x: Math.round(800 * Math.cos(id * 1.57)), y: Math.round(800 * Math.sin(id * 1.57)) }));
+  const others = [2, 3, 4, 5].map((id) => player(id, { x: Math.round(800 * Math.cos(id * 1.57)), y: Math.round(800 * Math.sin(id * 1.57)), team: 'red' }));
   const c = new Chatter(11);
-  const s = snap({ players: [player(1), ...others] });
+  const s = snap({ players: [player(1, { team: 'red' }), ...others] });
   c.onSnap(s, 1, 0);
   for (const sol of c.soldiers.values()) sol.nextAt = 0;
   c.tick(s, 1, 100);
@@ -267,4 +267,12 @@ test('a fresh event tag is preferred about 70% of the time, idle otherwise', () 
   let none = 0;
   for (let i = 0; i < 100; i++) { sol.said.clear(); if (c.pick(sol, [], 1e9 + i * 1e6)?.tag === null) none++; }
   assert.equal(none, 100);
+});
+
+test('you only hear chatter from yourself and your teammates, never from enemies or anyone in free-for-all', async () => {
+  const { hearsChatter } = await import('../src/client/chatter.ts');
+  assert.equal(hearsChatter({ id: 1, team: null }, { id: 1, team: null }), true, 'yourself in FFA');
+  assert.equal(hearsChatter({ id: 1, team: null }, { id: 2, team: null }), false, 'another FFA player');
+  assert.equal(hearsChatter({ id: 1, team: 'red' }, { id: 2, team: 'red' }), true, 'a teammate');
+  assert.equal(hearsChatter({ id: 1, team: 'red' }, { id: 3, team: 'blue' }), false, 'an enemy');
 });
