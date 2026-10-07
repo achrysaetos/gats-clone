@@ -7,6 +7,7 @@ import { gzipSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
+import { isSlot, parsePicks } from '../shared/cosmetics.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
 import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
@@ -120,6 +121,23 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
     try { name = decodeURIComponent(path.slice('/api/profile/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
     const p = profiles.get(name);
     return p ? json(res, 200, profileView(p)) : json(res, 404, { error: 'No such player' });
+  }
+  if (req.method === 'POST' && path === '/api/equip') {
+    if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
+    const body = await readBody(req);
+    if (typeof body !== 'object' || body === null) return json(res, 400, { error: 'Bad request' });
+    const b = body as Record<string, unknown>;
+    const bearer = /^Bearer (.+)$/.exec(String(req.headers.authorization ?? ''))?.[1];
+    const token = bearer ?? (typeof b.token === 'string' ? b.token.slice(0, 128) : '');
+    const account = token ? accounts.nameForToken(token) : null;
+    if (!account) return json(res, 401, { error: 'Sign in to change your look' });
+    const asked: Record<string, unknown> = isSlot(b.slot) ? { [b.slot]: b.id } : typeof b.equipped === 'object' && b.equipped !== null ? (b.equipped as Record<string, unknown>) : {};
+    const picks = parsePicks(asked);
+    const wanted = Object.keys(asked).length;
+    if (wanted === 0 || Object.keys(picks).length !== wanted) return json(res, 400, { error: 'Unknown slot or item' });
+    const result = profiles.equip(account, picks, true);
+    if (!result.ok) return json(res, 403, { error: 'Item not unlocked', rejected: result.rejected, equipped: result.equipped });
+    return json(res, 200, { equipped: result.equipped, unlocked: profiles.get(account)?.unlocked ?? [] });
   }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {
     if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });

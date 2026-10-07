@@ -40,6 +40,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
     ...(alive && life.golden && { golden: true as const }),
     ...(p.badge && { badge: p.badge }),
+    ...(p.cos && { cos: p.cos }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
 }

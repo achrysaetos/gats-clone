@@ -1,3 +1,4 @@
+import type { Cos } from '../cosmetics.ts';
 import { AIRDROP, BARREL, byTurret, PERK_TIERS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
@@ -66,6 +67,8 @@ export type Player = {
   nemesis: number | null;
   /** The lifetime medal this player wears, set by the server from their profile; the simulation never reads it. */
   badge: Badge | null;
+  /** What this player wears (cosmetics, account level), set by the server from their profile or a bot's name; the simulation never reads it. */
+  cos: Cos | null;
   /** This player's run of kills each within `MEDAL_RULES.multiMs` of the last, for the multi-kill medals. */
   chain: { count: number; at: number };
   /** When this life fell under `MEDAL_RULES.closeCallHp`, for the Close Call medal; -1 once paid, until it heals back up. */

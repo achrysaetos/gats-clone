@@ -1,6 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, WEAPON_IDS, type Badge, type MedalId, type WeaponId } from '../shared/defs.ts';
+import { challengesView, cleanItems, DAILY_POOL, rollChallenges, WEEKLY_POOL, type ChallengesState } from '../shared/challenges.ts';
+import { COSMETIC_BY_ID, dayKey, levelState, lifeGains, resolveEquipped, roundGains, SLOTS, toCos, isCosmeticId, type Cos, type Equipped, type Picks, type ProgressMsg, type RoundResult } from '../shared/cosmetics.ts';
+import { challengeEvents, equip as equipOn, grantUnlocks, hasNews, newPending, settle, syncLevel, type Pending } from './progression.ts';
 
 /**
  * Every human name has a profile, signed in or not: career kills and deaths, matches, best streak, distance walked, every
@@ -23,9 +26,25 @@ export type Profile = {
   badges: Record<string, number>;
   firstSeen: number;
   lastSeen: number;
+  /** Account progression (see cosmetics.ts): total XP, and the level and prestige stars it works out to. */
+  xp: number;
+  level: number;
+  prestige: number;
+  /** Every cosmetic id this profile may wear, defaults included. */
+  unlocked: string[];
+  /** What it wears, defaults left out. */
+  equipped: Picks;
+  /** Daily and weekly challenges; the sets roll over lazily, when a key no longer matches the clock. */
+  challenges: ChallengesState;
+  /** The UTC day of the last round won, for the first-win-of-the-day bonus. */
+  lastWinDay: string;
 };
 
-export type ProfileDelta = { kills?: number; deaths?: number; games?: number; streak?: number; distance?: number; medals?: readonly MedalId[]; weaponKills?: readonly WeaponId[] };
+/** Career stats, plus events that only feed challenges (`wins`, `finishes`, `nights`, `zkills`, `bastion`) and are not stored. */
+export type ProfileDelta = {
+  kills?: number; deaths?: number; games?: number; streak?: number; distance?: number; medals?: readonly MedalId[]; weaponKills?: readonly WeaponId[];
+  wins?: number; finishes?: number; nights?: number; zkills?: number; bastion?: number;
+};
 
 export type Profiles = {
   get(name: string): Profile | null;
@@ -33,6 +52,18 @@ export type Profiles = {
   record(name: string, delta: ProfileDelta, now?: number): Badge[];
   /** The rarest lifetime medal a name holds, the one it wears in matches. */
   featured(name: string): Badge | null;
+  /** Pays the XP a finished life earned (kills and score, capped), and counts toward challenges. */
+  life(name: string, life: { score: number; kills: number }, now?: number): void;
+  /** Pays a round end's XP (doubled for the first win of the UTC day) and feeds the round's results to challenges. */
+  round(name: string, result: RoundResult, now?: number): void;
+  /** What the player has not yet been told since the last call (XP, level-ups, unlocks), as a `progress` message; null when nothing is new. */
+  notice(name: string, now?: number): ProgressMsg | null;
+  /** The player's whole progress as a `progress` message with nothing gained, or null without a profile. */
+  state(name: string, now?: number): ProgressMsg | null;
+  /** Wears `picks` (see `equip` in progression.ts); makes the profile if need be. `strict` applies nothing when any pick is refused. */
+  equip(name: string, picks: Picks, strict?: boolean): { ok: boolean; rejected: string[]; equipped: Equipped };
+  /** What a name wears, as the snapshot carries it, or null for no profile. */
+  cos(name: string): Cos | null;
   /** Wipes a name's profile, when an account is registered under it, so nobody inherits what guests did under that name. */
   reset(name: string): void;
   flush(): Promise<void>;
@@ -41,8 +72,14 @@ export type Profiles = {
 const key = (name: string) => name.toLowerCase();
 const SAVE_DELAY_MS = 2000;
 
-export const freshProfile = (name: string, now: number): Profile =>
-  ({ name, kills: 0, deaths: 0, games: 0, bestStreak: 0, distance: 0, medals: {}, weaponKills: {}, badges: {}, firstSeen: now, lastSeen: now });
+export const freshProfile = (name: string, now: number): Profile => {
+  const p: Profile = {
+    name, kills: 0, deaths: 0, games: 0, bestStreak: 0, distance: 0, medals: {}, weaponKills: {}, badges: {}, firstSeen: now, lastSeen: now,
+    xp: 0, level: 1, prestige: 0, unlocked: [], equipped: {}, challenges: { day: '', daily: [], week: '', weekly: [] }, lastWinDay: '',
+  };
+  grantUnlocks(p);
+  return p;
+};
 
 /** How far a profile has come on a track. */
 export function trackCount(p: Profile, track: (typeof CAREER_IDS)[number]): number {
@@ -98,11 +135,26 @@ function clean(raw: unknown): Profile | null {
     if (v && typeof v === 'object') for (const id of ids) if (num((v as Record<string, unknown>)[id])) out[id] = num((v as Record<string, unknown>)[id]);
     return out;
   };
+  const c = r.challenges && typeof r.challenges === 'object' ? (r.challenges as Record<string, unknown>) : {};
   const keys = CAREER_IDS.flatMap((track) => [0, 1, 2, 3].map((tier) => badgeKey({ track, tier: tier as Badge['tier'] })));
-  return {
+  const p: Profile = {
     name: r.name, kills: num(r.kills), deaths: num(r.deaths), games: num(r.games), bestStreak: num(r.bestStreak), distance: num(r.distance),
     medals: pick(MEDAL_IDS, r.medals), weaponKills: pick(WEAPON_IDS, r.weaponKills), badges: pick(keys, r.badges) as Record<string, number>, firstSeen: num(r.firstSeen), lastSeen: num(r.lastSeen),
+    // Profiles saved before progression existed have none of this: they start at level 1 and are retro-granted what their lifetime medals earn.
+    xp: Math.floor(num(r.xp)), level: 1, prestige: 0,
+    unlocked: Array.isArray(r.unlocked) ? r.unlocked.filter((id): id is string => typeof id === 'string' && COSMETIC_BY_ID.has(id)) : [],
+    equipped: {},
+    challenges: {
+      day: typeof c.day === 'string' ? c.day.slice(0, 10) : '', daily: cleanItems(c.daily, DAILY_POOL),
+      week: typeof c.week === 'string' ? c.week.slice(0, 8) : '', weekly: cleanItems(c.weekly, WEEKLY_POOL),
+    },
+    lastWinDay: typeof r.lastWinDay === 'string' ? r.lastWinDay.slice(0, 10) : '',
   };
+  syncLevel(p);
+  grantUnlocks(p);
+  const eq = r.equipped && typeof r.equipped === 'object' ? (r.equipped as Record<string, unknown>) : {};
+  for (const slot of SLOTS) { const id = eq[slot]; if (isCosmeticId(slot, id) && p.unlocked.includes(id)) p.equipped[slot] = id; }
+  return p;
 }
 
 export async function openProfiles(dataDir: string): Promise<Profiles> {
@@ -118,6 +170,19 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
+  /** What each online player has not yet been told, by profile key. */
+  const news = new Map<string, Pending>();
+  const noteFor = (k: string) => { let n = news.get(k); if (!n) news.set(k, (n = newPending())); return n; };
+  const edit = (name: string, now: number) => {
+    let p = byKey.get(key(name));
+    if (!p) byKey.set(key(name), (p = freshProfile(name, now)));
+    return p;
+  };
+  const message = (p: Profile, now: number, n: Pending): ProgressMsg => {
+    p.challenges = rollChallenges(p.challenges, now, p.name, new Set(p.unlocked));
+    return { t: 'progress', xp: p.xp, ...levelState(p.xp), gained: n.gained, levelUps: n.levelUps, unlocks: n.unlocks, challenges: challengesView(p.challenges, now), equipped: resolveEquipped(p.equipped) };
+  };
+
   let saveQueue = Promise.resolve();
   const save = () => {
     saveQueue = saveQueue
@@ -130,17 +195,57 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
   return {
     get: (name) => byKey.get(key(name)) ?? null,
     record(name, delta, now = Date.now()) {
-      let p = byKey.get(key(name));
-      if (!p) byKey.set(key(name), (p = freshProfile(name, now)));
+      const p = edit(name, now);
       const earned = applyDelta(p, delta, now);
+      settle(p, noteFor(key(name)), { events: challengeEvents(delta) }, now);
       saveSoon();
       return earned;
+    },
+    life(name, life, now = Date.now()) {
+      const p = edit(name, now);
+      settle(p, noteFor(key(name)), { gains: lifeGains(life.score, life.kills) }, now);
+      saveSoon();
+    },
+    round(name, result, now = Date.now()) {
+      const p = edit(name, now);
+      const gains = roundGains(result);
+      const today = dayKey(now);
+      if (result.won && p.lastWinDay !== today) {
+        gains.push({ reason: 'firstWin', xp: gains.reduce((sum, g) => sum + g.xp, 0) });
+        p.lastWinDay = today;
+      }
+      settle(p, noteFor(key(name)), { gains, events: { wins: result.won ? 1 : 0, finishes: result.finished ? 1 : 0, nights: result.nights, bastion: result.bastion ? 1 : 0 } }, now);
+      saveSoon();
+    },
+    notice(name, now = Date.now()) {
+      const p = byKey.get(key(name)), n = news.get(key(name));
+      if (!p || !n || !hasNews(n)) return null;
+      news.delete(key(name));
+      return message(p, now, n);
+    },
+    state(name, now = Date.now()) {
+      const p = byKey.get(key(name));
+      if (!p) return null;
+      const n = news.get(key(name)) ?? newPending();
+      news.delete(key(name));
+      return message(p, now, n);
+    },
+    equip(name, picks, strict = false) {
+      const p = edit(name, Date.now());
+      const r = equipOn(p, picks, strict);
+      if (r.ok || !strict) saveSoon();
+      return { ...r, equipped: resolveEquipped(p.equipped) };
+    },
+    cos(name) {
+      const p = byKey.get(key(name));
+      return p ? toCos(p.equipped, p.level, p.prestige) : null;
     },
     featured(name) {
       const p = byKey.get(key(name));
       return p ? featuredBadge(p) : null;
     },
     reset(name) {
+      news.delete(key(name));
       if (byKey.delete(key(name))) saveSoon();
     },
     flush() {
@@ -150,8 +255,14 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
   };
 }
 
-/** A profile as the API serves it. */
-export const profileView = (p: Profile) => ({ ...p, featured: featuredBadge(p) });
+/** A profile as the API serves it: everything stored, plus the level state, the resolved equipped set and the challenges with their texts and reset times. */
+export function profileView(p: Profile, now = Date.now()) {
+  p.challenges = rollChallenges(p.challenges, now, p.name, new Set(p.unlocked));
+  return { ...p, featured: featuredBadge(p), ...levelState(p.xp), equipped: resolveEquipped(p.equipped), challenges: challengesView(p.challenges, now) };
+}
 
 /** A profile store that keeps nothing, for rooms and tests that need none. */
-export const NO_PROFILES: Profiles = { get: () => null, record: () => [], featured: () => null, reset: () => {}, flush: () => Promise.resolve() };
+export const NO_PROFILES: Profiles = {
+  get: () => null, record: () => [], featured: () => null, reset: () => {}, flush: () => Promise.resolve(),
+  life: () => {}, round: () => {}, notice: () => null, state: () => null, equip: () => ({ ok: false, rejected: [], equipped: resolveEquipped(undefined) }), cos: () => null,
+};

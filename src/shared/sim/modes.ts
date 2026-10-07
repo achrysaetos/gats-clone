@@ -19,7 +19,8 @@ export type ModeRules = {
   start?(w: World): void;
 };
 
-const TEAM_NAME = { red: 'Red team', blue: 'Blue team' } as const;
+/** What a team winner is called in `RoundWinner.name`. */
+export const TEAM_NAME = { red: 'Red team', blue: 'Blue team' } as const;
 
 function smallerTeam(w: World): Team {
   let red = 0, blue = 0;

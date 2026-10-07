@@ -4,6 +4,7 @@ import {
 } from './defs.ts';
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 import { isEmoteId, type EmoteId } from './emotes.ts';
+import { isCosmeticId, isSlot, parsePicks, type Cos, type Equipped, type Picks, type ProgressMsg, type Slot } from './cosmetics.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
 export type Team = ColorId | null;
@@ -31,7 +32,8 @@ export const clampAspect = (aspect: number): number => Math.min(VIEW_ASPECT.max,
 export const viewExtents = (viewRadius: number, aspect: number): { halfW: number; halfH: number } => ({ halfW: viewRadius, halfH: viewRadius / clampAspect(aspect) });
 
 export type ClientMsg =
-  | { t: 'join'; name: string; loadout: Loadout; token?: string; aspect: number }
+  /** `cosmetics` are the picks to wear: validated against the catalog here, against what the profile has unlocked by the server. */
+  | { t: 'join'; name: string; loadout: Loadout; token?: string; aspect: number; cosmetics?: Picks }
   | { t: 'view'; aspect: number }
   /** `viewAt` is the server time of the world the client was drawing when it sampled `input`, so the server can judge its shots against that world. */
   | { t: 'input'; seq: number; input: InputState; viewAt: number | null }
@@ -44,7 +46,9 @@ export type ClientMsg =
   /** Zombies: put a wall on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. */
   | { t: 'build'; kind: BuildingKind; cx: number; cy: number }
   | { t: 'demolish'; cx: number; cy: number }
-  | { t: 'ready' };
+  | { t: 'ready' }
+  /** Wear catalog item `id` in `slot`; the server answers `equipped`. */
+  | { t: 'equip'; slot: Slot; id: string };
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
@@ -62,6 +66,8 @@ export type PlayerView = {
   streak?: number;
   /** The rarest lifetime medal on this player's profile, worn by their name. */
   badge?: Badge;
+  /** What this player wears (non-default cosmetics, account level, prestige stars); see cosmetics.ts. */
+  cos?: Cos;
   /** Holds an airdrop's golden gun for this life. */
   golden?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
@@ -236,7 +242,8 @@ export type Snapshot = {
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
 export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'airdrop'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
-export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
+/** `cos` maps player id to what they wear, sent only when it changes; `fillSnapshot` folds it onto each `PlayerView.cos`. */
+export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>> & { cos?: Record<number, Cos> };
 
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
@@ -248,6 +255,10 @@ export type ServerMsg =
   | { t: 'emote'; pid: number; id: EmoteId }
   /** You just earned a lifetime medal (`CAREER`), and the score it paid. */
   | { t: 'badge'; badge: Badge; score: number }
+  /** Your XP, level, unlocks and challenges; see `ProgressMsg`. */
+  | ProgressMsg
+  /** Your full equipped set, after an `equip` (`progress` carries it at join). */
+  | { t: 'equipped'; equipped: Equipped }
   | { t: 'error'; message: string };
 
 const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof v === 'string' && (xs as readonly string[]).includes(v);
@@ -293,7 +304,9 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     case 'join': {
       const loadout = parseLoadout(v.loadout);
       if (!loadout) return null;
-      return { t: 'join', name: cleanName(v.name), loadout, token: typeof v.token === 'string' ? v.token.slice(0, 128) : undefined, aspect: parseAspect(v.aspect) };
+      // A join with an unknown cosmetic id still joins; the unknown picks are dropped.
+      const picks = parsePicks(v.cosmetics);
+      return { t: 'join', name: cleanName(v.name), loadout, token: typeof v.token === 'string' ? v.token.slice(0, 128) : undefined, aspect: parseAspect(v.aspect), ...(Object.keys(picks).length > 0 && { cosmetics: picks }) };
     }
     case 'view':
       return { t: 'view', aspect: parseAspect(v.aspect) };
@@ -324,6 +337,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return cx === null || cy === null ? null : { t: 'demolish', cx, cy };
     }
     case 'ready': return { t: 'ready' };
+    case 'equip':
+      return isSlot(v.slot) && isCosmeticId(v.slot, v.id) ? { t: 'equip', slot: v.slot, id: v.id } : null;
     default:
       return null;
   }
