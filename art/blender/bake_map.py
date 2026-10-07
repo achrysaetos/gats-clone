@@ -189,18 +189,23 @@ def rooftop(x, y, w, h, mat, r):
     stone = mat == 'sandstone'
     para = 9
     S.box(x, y, w, h, 0, top - 7, 'sandstone' if stone else 'building', top, bevel=1.0)
-    S.box(x - 1, y - 1, w + 2, h + 2, 0, 4, 'concrete_dark', top)
+    S.box(x - 0.5, y - 0.5, w + 1, h + 1, 0, 4, 'concrete_dark', top)
     cap = 'sandstone_cap' if stone else 'concrete_cap'
     for px, py, pw, ph in [(x, y, w, para), (x, y + h - para, w, para), (x, y + para, para, h - 2 * para), (x + w - para, y + para, para, h - 2 * para)]:
         S.box(px, py, pw, ph, top - 7, top, cap, top, bevel=0.8)
     deck = top - 6
+    # A dark metal trim along the coping's inner edge frames the deck.
+    t = 1.4
+    for px, py, pw, ph in [(x + para - t, y + para - t, w - 2 * para + 2 * t, t), (x + para - t, y + h - para, w - 2 * para + 2 * t, t),
+                           (x + para - t, y + para, t, h - 2 * para), (x + w - para, y + para, t, h - 2 * para)]:
+        S.box(px, py, pw, ph, top, top + 0.4, 'metal_dark', top)
     S.box(x + para, y + para, w - 2 * para, h - 2 * para, top - 7, deck, 'roof', top)
     # South face: a louvred plant-room panel and downpipes at the corners.
     if w >= 120:
         px = x + w * r.uniform(0.25, 0.6)
         south_face(px, 34, y + h, 10, top - 12, 'slats', top, 0.6)
     for dx in (x + 4, x + w - 7):
-        S.box(dx, y + h, 3, 2, 0, top - 4, 'metal', top)
+        S.box(dx, y + h, 3, 0.9, 0, top - 7, 'metal', top)
 
     placed = []
     inner = (x + para + 5, y + para + 5, w - 2 * para - 10, h - 2 * para - 10)
@@ -222,19 +227,41 @@ def rooftop(x, y, w, h, mat, r):
         return anchors + [(r.uniform(ix, ix + iw - aw), r.uniform(iy, iy + ih - ah)) for _ in range(n)]
 
     area = inner[2] * inner[3]
-    units = 1 + (area > 90000) + (area > 160000)
-    for _ in range(units):
-        aw, ah = r.choice([(78, 40), (40, 78), (56, 40)])
-        if inner[2] < aw or inner[3] < ah:
-            aw, ah = 40, 34
-        c = put(aw, ah, spots(aw, ah))
+    if area > 60000:
+        # A stair and plant housing standing above the parapet: the roof's one big shape.
+        pw = max(60, min(120, round(inner[2] * 0.28)))
+        ph = max(60, min(110, round(inner[3] * 0.3)))
+        c = put(pw, ph + 4, spots(pw, ph + 4)[:8])
         if c:
-            fan_unit(*c, deck, top, 2 if max(aw, ah) >= 56 else 1)
+            hx, hy, lift = c[0], c[1] + 4, 10
+            S.box(hx, hy, pw, ph, deck, top + lift - 2, 'building', top, bevel=1.0)
+            S.box(hx, hy, pw, ph, top + lift - 2, top + lift, cap, top, bevel=0.8)
+            S.box(hx + 4, hy + 4, pw - 8, ph - 8, top + lift, top + lift + 0.4, 'roof', top)
+            south_face(hx + pw * 0.3, 16, hy + ph, deck, deck + 13, 'metal_dark', top, 0.5)
+            S.cylinder(hx + pw - 12, hy + 12, 4, top + lift, top + lift + 5, 'metal', top, 14)
+            S.cylinder(hx + pw - 12, hy + 12, 6, top + lift + 5, top + lift + 6.5, 'metal_light', top, 18)
+    units = 1 + (area > 70000) + (area > 130000)
+    for _ in range(units):
+        aw, ah = r.choice([(78, 40), (40, 78), (110, 50), (50, 110), (56, 40)])
+        if inner[2] < aw + 8 or inner[3] < ah + 8:
+            aw, ah = 40, 34
+        c = put(aw + 8, ah + 8, spots(aw + 8, ah + 8))
+        if c:
+            # Units stand on a steel frame a little bigger than they are.
+            S.box(c[0], c[1], c[2], c[3], deck, deck + 1.5, 'metal_dark', top, bevel=0.3)
+            fan_unit(c[0] + 4, c[1] + 4, aw, ah, deck + 1.5, top, max(1, round(max(aw, ah) / 40)))
     # Roof hatch.
-    c = put(26, 26, spots(26, 26))
+    c = put(34, 34, spots(34, 34))
     if c:
-        S.box(c[0], c[1], 26, 26, deck, deck + 3, 'metal', top, bevel=0.5)
-        S.box(c[0] + 3, c[1] + 3, 20, 20, deck + 3, deck + 3.6, 'metal_dark', top)
+        hx, hy = c[0] + 4, c[1] + 4
+        S.box(hx, hy, 26, 26, deck, deck + 3, 'metal', top, bevel=0.5)
+        S.box(hx + 3, hy + 3, 20, 20, deck + 3, deck + 3.6, 'metal_dark', top)
+        # A safety rail on three sides of the hatch.
+        a, b = (c[0] + 1, c[1] + 1), (c[0] + 33, c[1] + 33)
+        for px, py in [(a[0], a[1]), (b[0], a[1]), (a[0], b[1]), (b[0], b[1])]:
+            S.cylinder(px, py, 1.1, deck, deck + 8, 'rail', top, 8)
+        for (x0, y0), (x1, y1) in [((a[0], a[1]), (b[0], a[1])), ((a[0], a[1]), (a[0], b[1])), ((b[0], a[1]), (b[0], b[1]))]:
+            S.hcylinder(x0, y0, x1, y1, 1.0, deck + 8, 'rail', top, 8)
     # Mushroom vents.
     for _ in range(1 + int(area > 60000)):
         c = put(12, 12, spots(12, 12))
@@ -273,7 +300,7 @@ def planter(x, y, w, h, r):
     n = max(4, int(iw * ih / 55))
     for k in range(n):
         br = r.uniform(6.5, 12.0)
-        m = br * 0.7
+        m = br * 0.95
         z = top + r.uniform(-1.0, 5.0)
         north = K * (z + br * 0.6 - top)
         if iw < 2 * m or ih < 2 * m + north:
