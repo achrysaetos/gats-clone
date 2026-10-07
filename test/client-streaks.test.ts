@@ -1,9 +1,9 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { STREAK } from '../src/shared/defs.ts';
+import { MEDALS, STREAK, type MedalId } from '../src/shared/defs.ts';
 import type { KillEvent } from '../src/client/derive.ts';
-import { addMoments, MULTI_KILL_MS, NO_MOMENTS, type Moments } from '../src/client/moments.ts';
+import { addMoments, MEDAL_STAGGER_MS, NO_MOMENTS, type Moments } from '../src/client/moments.ts';
 import { freshLog, logSnapshot, NO_BESTS, recapOf } from '../src/client/records.ts';
 import { soundsFor } from '../src/client/sfx.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
@@ -35,37 +35,31 @@ function killsAt(times: number[], best = Infinity) {
   return { m, titles };
 }
 
-test('kills in quick succession chain into multi-kills, and a pause breaks the chain', () => {
-  const { titles } = killsAt([1000, 2000, 3000, 4000]);
-  assert.deepEqual(titles, [[], ['DOUBLE KILL'], ['TRIPLE KILL'], ['QUAD KILL']]);
-  const slow = killsAt([1000, 1000 + MULTI_KILL_MS + 1]);
-  assert.deepEqual(slow.titles, [[], []]);
+const medal = (medal: MedalId, id = 1) => ({ e: 'medal' as const, id, medal });
+
+test('medals you earn become toasts, biggest first, each a beat after the last; nobody else\'s do', () => {
+  const m = addMoments(NO_MOMENTS, snap(), snap({ self: { streak: 3 }, events: [myKill(9), medal('onFire'), medal('quadKill'), medal('longShot'), medal('bounty', 7)] }), 1000);
+  assert.deepEqual(m.medals.map((t) => t.medal), ['quadKill', 'longShot', 'onFire'].sort((a, b) => MEDALS[b as MedalId].score - MEDALS[a as MedalId].score));
+  assert.deepEqual(m.medals.map((t) => t.born), [1000, 1000 + MEDAL_STAGGER_MS, 1000 + 2 * MEDAL_STAGGER_MS]);
+  assert.deepEqual(m.callouts, [], 'medals take the place of text callouts');
 });
 
-test('streak milestones are announced as they are reached, folded into one callout with a multi-kill', () => {
-  const { m, titles } = killsAt([1000, 10_000, 20_000, 30_000, 40_000]);
-  assert.deepEqual(titles, [[], [], ['ON FIRE'], [], ['RAMPAGE']]);
-  const together = killsAt([1000, 2000, 3000]);
-  assert.deepEqual(together.titles.at(-1), ['TRIPLE KILL'], 'the multi-kill leads');
-  assert.match(together.m.callouts.at(-1)!.line, /ON FIRE/, 'the milestone rides on its line');
-  assert.ok(m.callouts.length);
-});
-
-test('revenge and shutdowns lead the callout, and pass the personal best only once a life', () => {
-  const revenge = addMoments(NO_MOMENTS, snap(), snap({ self: { streak: 1 }, events: [myKill(9, { revenge: true })] }), 1000);
-  assert.equal(revenge.callouts[0]?.title, 'REVENGE');
-  const shutdown = addMoments(NO_MOMENTS, snap(), snap({ self: { streak: 1 }, events: [myKill(9, { ended: STREAK.shutdownAt + 2 })] }), 1000);
-  assert.equal(shutdown.callouts[0]?.title, 'SHUTDOWN');
-  assert.match(shutdown.callouts[0]!.line, /7-kill streak/);
+test('passing your record streak is announced once a life, and only past a real record', () => {
   const best = killsAt([1000, 10_000, 20_000, 30_000, 40_000], 3);
-  assert.deepEqual(best.titles, [[], [], ['ON FIRE'], ['NEW BEST'], ['RAMPAGE']], 'passing the record is announced once');
+  assert.deepEqual(best.titles, [[], [], [], ['NEW BEST'], []]);
   assert.equal(best.m.best, true);
+  assert.deepEqual(killsAt([1000, 2000, 3000], 1).titles.flat(), [], 'a record of 1 is no record');
 });
 
 test('a kill that gives health back floats the health it gave on you', () => {
   const m = addMoments(NO_MOMENTS, snap({ me: { hp: 40 } }), snap({ me: { hp: 75 }, self: { streak: 1 }, events: [myKill(9)] }), 1000);
   const heal = m.popups.find((p) => p.onSelf);
   assert.equal(heal?.text, '+35 HP');
+});
+
+test('a medal rings in its tier\'s metal, once a snapshot for the best of them', () => {
+  const ids = soundsFor(snap(), snap({ events: [medal('longShot'), medal('quadKill'), medal('bounty', 7)] })).map((c) => c.id);
+  assert.deepEqual(ids, ['medal:gold']);
 });
 
 test('the kill sound climbs with the streak, and big kills get the fanfare', () => {

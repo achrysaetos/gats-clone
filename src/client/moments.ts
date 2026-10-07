@@ -1,4 +1,4 @@
-import { GUNS, STREAK, WORLD, ZOMBIES } from '../shared/defs.ts';
+import { GUNS, MEDALS, STREAK, WORLD, ZOMBIES, type MedalId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf, type KillEvent } from './derive.ts';
 import { TICK_MS } from './interp.ts';
@@ -12,18 +12,17 @@ const TONE: Record<RunCallout['tone'], string> = { night: '#a08cff', dawn: PALET
 export type Callout = { title: string; line: string; color: string; ring: boolean; born: number };
 /** A number floating up off the world: score in gold by default, or `text` in `color`, such as the health a kill gave back, which rides with you (`onSelf`). */
 export type ScorePopup = { x: number; y: number; amount: number; born: number; text?: string; color?: string; onSelf?: boolean };
-/** `chain` counts your kills landed within `MULTI_KILL_MS` of the one before; `best` is the streak record already beaten this life. */
-export type Moments = { callouts: Callout[]; popups: ScorePopup[]; chain: { count: number; at: number }; best: boolean };
+/** A medal you earned, shown as a toast from `born` (see medaltoasts.ts). */
+export type MedalToast = { medal: MedalId; born: number };
+/** `best` is the streak record already beaten this life. */
+export type Moments = { callouts: Callout[]; popups: ScorePopup[]; medals: MedalToast[]; best: boolean };
 
-export const NO_MOMENTS: Moments = { callouts: [], popups: [], chain: { count: 0, at: -Infinity }, best: false };
+export const NO_MOMENTS: Moments = { callouts: [], popups: [], medals: [], best: false };
 
-/** Kills this close together chain into a multi-kill. */
-export const MULTI_KILL_MS = 4000;
-const MULTI_NAMES = ['', '', 'DOUBLE KILL', 'TRIPLE KILL', 'QUAD KILL'];
-const MULTI_MAX = 'MASSACRE';
-/** Streak milestones within one life, each announced as it is reached. */
-export const STREAK_NAMES: readonly (readonly [number, string])[] = [[3, 'ON FIRE'], [5, 'RAMPAGE'], [8, 'UNSTOPPABLE'], [12, 'UNTOUCHABLE'], [20, 'LEGENDARY']];
-export const MOMENT_COLORS = { multi: '#ff8a3d', streak: '#ff5a1f', shutdown: '#ffd23f', revenge: '#ff4d6d', best: '#5ee0a0', heal: '#5ee0a0' } as const;
+export const MOMENT_COLORS = { best: '#5ee0a0', heal: '#5ee0a0' } as const;
+/** How long a medal toast stays up, and how far apart medals earned together land, so each one gets its own beat. */
+export const MEDAL_MS = 2600;
+export const MEDAL_STAGGER_MS = 420;
 export const CALLOUT_MS = 2400;
 export const RING_MS = 700;
 export const POPUP_MS = 1100;
@@ -39,7 +38,12 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
   const popups = m.popups.filter((p) => now - p.born < POPUP_MS);
   const me = selfOf(next);
   // The report card holds the screen once the core falls.
-  if ((!me?.alive && !me?.downed) || next.run?.phase === 'over') return { callouts: [], popups, chain: m.chain, best: false };
+  const medals = m.medals.filter((t) => now - t.born < MEDAL_MS);
+  // Bigger medals land first; each one after a short beat, so a Quad Kill and its streak medal each get their moment.
+  const earnedNow = next.events.flatMap((ev) => (ev.e === 'medal' && ev.id === next.self.id ? [ev.medal] : []))
+    .sort((a, b) => MEDALS[b].score - MEDALS[a].score);
+  for (const medal of earnedNow) medals.push({ medal, born: Math.max(now, (medals.at(-1)?.born ?? -Infinity) + MEDAL_STAGGER_MS) });
+  if ((!me?.alive && !me?.downed) || next.run?.phase === 'over') return { callouts: [], popups, medals, best: false };
   for (const c of runCallouts(prev?.run, next.run, (prev?.tick ?? 0) * TICK_MS, next.tick * TICK_MS, squadShare(next.players))) {
     announce({ title: c.title, line: c.line, color: TONE[c.tone], ring: c.tone !== 'warn' });
   }
@@ -60,40 +64,21 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
   }
   const kills = next.events.filter((ev): ev is KillEvent => ev.e === 'kill' && ev.killerId === next.self.id && ev.victimId !== next.self.id);
   const earned = life ? life.me.score - life.was.score : 0;
-  let chain = m.chain;
-  const beats: Beat[] = [];
   for (const ev of kills) {
-    chain = now - chain.at <= MULTI_KILL_MS ? { count: chain.count + 1, at: now } : { count: 1, at: now };
-    if (ev.revenge) beats.push({ rank: 5, title: 'REVENGE', line: `${ev.victim} paid up · +${STREAK.revengeScore}`, color: MOMENT_COLORS.revenge });
-    if (ev.ended >= STREAK.shutdownAt) beats.push({ rank: 4, title: 'SHUTDOWN', line: `Ended ${ev.victim}'s ${ev.ended}-kill streak · +${STREAK.shutdownScore}`, color: MOMENT_COLORS.shutdown });
-    if (ev.bounty) beats.push({ rank: 4, title: `BOUNTY +${WORLD.bountyScore}`, line: `${ev.victim} was hunted`, color: PALETTE.gold });
     const at = fallOf(prev, next, ev.victimId);
     if (at && earned > 0) popups.push({ ...at, amount: Math.round(earned / kills.length), born: now });
   }
-  if (kills.length && chain.count >= 2) {
-    beats.push({ rank: 3, title: MULTI_NAMES[chain.count] ?? MULTI_MAX, line: `${chain.count} kills in a row`, color: MOMENT_COLORS.multi });
-  }
-  const streak = next.self.streak, before = prev?.self.streak ?? 0;
-  const milestone = STREAK_NAMES.filter(([n]) => before < n && streak >= n).at(-1);
-  if (milestone) beats.push({ rank: 2, title: milestone[1], line: `${streak} kills without dying`, color: MOMENT_COLORS.streak });
+  const streak = next.self.streak;
   let best = streak === 0 ? false : m.best;
   if (!best && streak > bestStreak && bestStreak >= STREAK.showAt) {
     best = true;
-    beats.push({ rank: 1, title: 'NEW BEST', line: `${streak} kills in one life`, color: MOMENT_COLORS.best });
-  }
-  // Everything one snapshot earns shares one callout: the biggest beat leads, and the rest ride along on its line.
-  if (beats.length) {
-    beats.sort((a, b) => b.rank - a.rank);
-    const [lead, ...rest] = beats;
-    announce({ title: lead!.title, line: [lead!.line, ...rest.map((b) => b.title)].join(' · '), color: lead!.color, ring: lead!.rank >= 3 });
+    announce({ title: 'NEW BEST', line: `${streak} kills in one life`, color: MOMENT_COLORS.best, ring: true });
   }
   if (kills.length && life && life.me.hp > life.was.hp) {
     popups.push({ x: life.me.x, y: life.me.y, amount: 0, text: `+${Math.round(life.me.hp - life.was.hp)} HP`, color: MOMENT_COLORS.heal, born: now, onSelf: true });
   }
-  return { callouts, popups, chain, best };
+  return { callouts, popups, medals, best };
 }
-
-type Beat = { rank: number; title: string; line: string; color: string };
 
 function fallOf(prev: Snapshot | null, next: Snapshot, victim: number): { x: number; y: number } | null {
   const blow = next.events.filter((ev) => ev.e === 'dmg' && ev.kind === 'player' && ev.victim === victim).at(-1);

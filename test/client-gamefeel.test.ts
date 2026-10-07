@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { clearOfRects, deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
 import { spreadFor } from '../src/shared/sim/stats.ts';
-import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, NO_MOMENTS } from '../src/client/moments.ts';
+import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, MEDAL_MS, NO_MOMENTS } from '../src/client/moments.ts';
 import { approachAlpha, drawHud, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
@@ -54,20 +54,22 @@ test('your kill floats the score you actually earned at the victim, catch-up inc
   assert.deepEqual(someoneElse.popups, [], 'another player\'s kill');
 });
 
-test('a bounty kill gets a gold callout, and moments expire', () => {
+test('a bounty kill gets its gold medal, and moments expire', () => {
   const prev = snap({ me: { score: 0 }, players: [player(7, { x: 300, y: 200 })] });
-  const m = moments(prev, snap({ me: { score: 300 }, events: [kill({ killer: 'p1', killerId: 1, victim: 'Atlas', victimId: 7, bounty: true })] }));
-  assert.deepEqual(m.callouts.map((c) => c.title), [`BOUNTY +${WORLD.bountyScore}`]);
+  const m = moments(prev, snap({ me: { score: 300 }, events: [kill({ killer: 'p1', killerId: 1, victim: 'Atlas', victimId: 7, bounty: true }), { e: 'medal', id: 1, medal: 'bounty' }] }));
+  assert.deepEqual(m.medals.map((t) => t.medal), ['bounty']);
   assert.deepEqual(m.popups.map((p) => [p.x, p.y]), [[300, 200]], 'without a blow this snapshot, the victim\'s last position');
-  const later = addMoments(m, prev, prev, 1000 + CALLOUT_MS);
-  assert.deepEqual([later.callouts, later.popups], [[], []]);
+  const later = addMoments(m, prev, prev, 1000 + Math.max(CALLOUT_MS, MEDAL_MS));
+  assert.deepEqual([later.callouts, later.popups, later.medals], [[], [], []]);
 });
 
 test('moments that land together queue, so at most two callouts share the screen', () => {
-  const prev = snap({ me: { gun: 'skirmisher', score: 0 }, players: [player(7, { x: 300, y: 200 })] });
-  const next = snap({ me: { gun: 'phantom', score: 300 }, events: [kill({ killer: 'p1', killerId: 1, victim: 'Atlas', victimId: 7, bounty: true })] });
-  const borns = moments(prev, next).callouts.map((c) => c.born);
-  assert.equal(borns.length, 3);
+  const prev = snap({ me: { gun: 'skirmisher', score: 0 } });
+  const first = moments(prev, snap({ me: { gun: 'phantom', score: 0 } }));
+  assert.deepEqual(first.callouts.map((c) => c.born), [1000, 1000 + CALLOUT_STAGGER_MS], 'evolving and turning hunted queue one after the other');
+  // A new personal best a moment later queues behind them.
+  const m = addMoments(first, snap({ me: { gun: 'phantom' }, self: { streak: 3 } }), snap({ me: { gun: 'phantom' }, self: { streak: 4 } }), 1100, 3);
+  const borns = m.callouts.map((c) => c.born);
   assert.deepEqual(borns, [1000, 1000 + CALLOUT_STAGGER_MS, 1000 + 2 * CALLOUT_STAGGER_MS]);
   for (let t = 1000; t < 1000 + 3 * CALLOUT_MS; t += 50) {
     assert.ok(borns.filter((b) => t >= b && t - b < CALLOUT_MS).length <= 2, `at most two on screen at ${t}`);

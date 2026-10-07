@@ -11,6 +11,7 @@ import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
 import { assistAngle, type AssistTarget } from './aimassist.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
+import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
 import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied } from './hud.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
@@ -501,6 +502,7 @@ function drawFrame(now: number) {
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), snap.run ? 0 : nextSprayShot(s.firing), snap.self.suppression) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
+  medalToasts(state.phase === 'menu' ? [] : s.moments.medals, now);
   touchButtons(buttonFaces(snap.self, abilityHint(snap.self.pending)[0] === 'Ability' ? ABILITY_SCORE : undefined));
   overlays.update(state, s, latest, now, muted);
 }
@@ -593,6 +595,7 @@ for (const type of ['pointerup', 'pointercancel'] as const) {
   window.addEventListener(type, (e) => { if (e.pointerType === 'touch') sticks = releaseStick(sticks, e.pointerId); });
 }
 const touchButtons = createTouchButtons($('touch-reload'), $('touch-ability'));
+const medalToasts = createMedalToasts($('medals'));
 for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'reload']] as const) {
   const button = $(id);
   button.addEventListener('pointerdown', (e) => {

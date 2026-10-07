@@ -1,4 +1,4 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, STREAK, ZOM, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, MEDALS, STREAK, ZOM, type MedalTier, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
@@ -6,7 +6,7 @@ import { ringMoved } from './royale.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'knock' | 'ring';
 
@@ -24,6 +24,7 @@ type Recipe = readonly Layer[];
 const crack = (cutoffHz: number, ms: number, gain: number): Layer => ({ src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [cutoffHz, cutoffHz * 0.4], ms, gain });
 const thump = (pitchHz: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [pitchHz, pitchHz * 0.35], ms, gain });
 const note = (pitchHz: number, delayMs: number, ms = 110, gain = 0.25): Layer => ({ src: 'tone', wave: 'square', pitchHz: [pitchHz, pitchHz], ms, gain, delayMs });
+const bell = (pitchHz: number, delayMs: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [pitchHz, pitchHz * 0.996], ms, gain, delayMs });
 
 const CLASS_SHOTS: Record<WeaponId, Recipe> = {
   pistol: [crack(2600, 70, 0.5), thump(260, 60, 0.35)],
@@ -86,6 +87,11 @@ export const SOUNDS: Record<SoundId, Recipe> = {
     { src: 'tone', wave: 'triangle', pitchHz: [1100, 500], ms: 60, gain: 0.12, delayMs: 50 },
   ],
   kill: [note(880, 0), note(1320, 70, 160)],
+  // A medal rings like struck metal, brighter and fuller up the tiers.
+  'medal:bronze': [bell(1047, 0, 380, 0.16), bell(1568, 60, 300, 0.1)],
+  'medal:silver': [bell(1175, 0, 420, 0.17), bell(1760, 70, 360, 0.12), bell(2349, 140, 300, 0.08)],
+  'medal:gold': [bell(1319, 0, 520, 0.2), bell(1661, 80, 480, 0.15), bell(1976, 160, 520, 0.14), { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [7000, 9000], ms: 420, gain: 0.08, delayMs: 160 }],
+  'medal:platinum': [bell(1568, 0, 640, 0.22), bell(1976, 90, 600, 0.17), bell(2349, 180, 640, 0.15), bell(3136, 270, 700, 0.1), { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [6000, 10000], ms: 700, gain: 0.1, delayMs: 200 }],
   ...killSteps(),
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
   reload: [{ src: 'noise', filter: 'highpass', q: 1, cutoffHz: [3000, 3000], ms: 40, gain: 0.25 }, { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [2200, 2200], ms: 50, gain: 0.25, delayMs: 110 }],
@@ -166,6 +172,8 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       case 'kill':
         if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(killSound(ev, next.self.streak));
         break;
+      case 'medal':
+        break;
       case 'zkill':
         if (ev.by === next.self.id) cues.push({ id: 'splat', x: ev.x, y: ev.y, self: true, gain: 1 });
         break;
@@ -180,6 +188,10 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         break;
     }
   }
+  // One sting per snapshot, for the best medal in it.
+  const TIERS: readonly MedalTier[] = ['bronze', 'silver', 'gold', 'platinum'];
+  const won = next.events.flatMap((ev) => (ev.e === 'medal' && ev.id === next.self.id ? [TIERS.indexOf(MEDALS[ev.medal].tier)] : []));
+  if (won.length) mine(`medal:${TIERS[Math.max(...won)]!}`);
   for (const ev of next.events) {
     if (ev.e !== 'dmg') continue;
     if (ev.kind === 'building' && !cues.some((c) => c.id === 'wallHit')) cues.push({ id: 'wallHit', x: ev.x, y: ev.y, self: false, gain: 1 });

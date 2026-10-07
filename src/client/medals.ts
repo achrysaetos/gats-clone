@@ -1,0 +1,129 @@
+import { MEDALS, type MedalId, type MedalTier } from '../shared/defs.ts';
+
+/**
+ * Medal art as SVG, so a medal is as crisp in a toast as on a profile page. A medal's metal and outline come from its tier:
+ * bronze is a notched coin, silver an eight-point star, gold a shield in a laurel, platinum a winged star burst. Its enamel
+ * face is coloured by family and carries the medal's own glyph, and ribbon tails hang behind it.
+ */
+export type MedalArt = { tier: MedalTier; enamel: string; ribbon: string; glyph: string };
+
+const FAMILY = {
+  chain: { enamel: '#a3302a', ribbon: '#d9541f' },
+  range: { enamel: '#2b5d93', ribbon: '#4f8fd6' },
+  survive: { enamel: '#2f7a4c', ribbon: '#58b07c' },
+  grudge: { enamel: '#7a1f3a', ribbon: '#c23b5e' },
+  hunt: { enamel: '#8a5a12', ribbon: '#e0a42a' },
+  streak: { enamel: '#b8410f', ribbon: '#ff7a2f' },
+} as const;
+
+/** 24-unit glyphs, drawn in bone with an ink edge. */
+export const GLYPHS = {
+  drop: 'M12 2.5c3.2 5 6.3 8.2 6.3 12.2a6.3 6.3 0 0 1-12.6 0c0-4 3.1-7.2 6.3-12.2z',
+  chevrons2: 'M5 8l7 5 7-5v3.5l-7 5-7-5zM5 3l7 5 7-5v3.5l-7 5-7-5z',
+  chevrons3: 'M5 13l7 4.5 7-4.5v3l-7 4.5-7-4.5zM5 8l7 4.5 7-4.5v3l-7 4.5-7-4.5zM5 3l7 4.5 7-4.5v3l-7 4.5-7-4.5z',
+  chevrons4: 'M5 16l7 4 7-4v2.6l-7 4-7-4zM5 11.5l7 4 7-4v2.6l-7 4-7-4zM5 7l7 4 7-4v2.6l-7 4-7-4zM5 2.5l7 4 7-4v2.6l-7 4-7-4z',
+  skull: 'M12 2.5c-5 0-8.5 3.5-8.5 8 0 2.8 1.4 4.6 3 5.6V19a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-2.9c1.6-1 3-2.8 3-5.6 0-4.5-3.5-8-8.5-8zM8.5 9.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm7 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM12 13.5l1.4 2.5h-2.8z',
+  scope: 'M12 3.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17zm0 2.2a6.3 6.3 0 1 0 0 12.6 6.3 6.3 0 0 0 0-12.6zM11 1h2v6h-2zM11 17h2v6h-2zM1 11h6v2H1zM17 11h6v2h-6zM12 10.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z',
+  blast: 'M12 1.5l2.2 6.3 6.3-2.6-3 6 6 2.6-6.4 2 2.7 6.2-6.1-3.1L12 22.5l-1.7-5.6-6.1 3.1 2.7-6.2-6.4-2 6-2.6-3-6 6.3 2.6z',
+  heart: 'M12 21.2C5.2 15.9 2.5 12.6 2.5 8.7A5 5 0 0 1 12 6.3a5 5 0 0 1 9.5 2.4c0 3.9-2.7 7.2-9.5 12.5zM6 11.5h3l1.5-3 2.5 6 1.5-3H18v1.6h-2.5l-2.4 4.6-2.5-6-.8 1.6H6z',
+  shieldCrack: 'M12 1.8l8.3 3.1v6.6c0 5.3-3.6 9.3-8.3 10.7-4.7-1.4-8.3-5.4-8.3-10.7V4.9zM12.6 5.5l-2.3 5.2 3 1.2-2.5 6.1 4.6-7.2-3-1.3 1.8-4z',
+  revenge: 'M12 3a9 9 0 1 1-8.3 5.5l2 .9A6.8 6.8 0 1 0 12 5.2V8L7.5 4.1 12 .2zM9.4 9.8l1.4-1.4 1.2 1.2 1.2-1.2 1.4 1.4-1.2 1.2 1.2 1.2-1.4 1.4-1.2-1.2-1.2 1.2-1.4-1.4 1.2-1.2z',
+  power: 'M10.8 2h2.4v9.5h-2.4zM6.3 5.4l1.6 1.8a7 7 0 1 0 8.2 0l1.6-1.8a9.4 9.4 0 1 1-11.4 0z',
+  bounty: 'M12 2l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 15.5l-5.4 3 1.2-6-4.5-4.2 6.1-.7z',
+  flame: 'M12 22.5c-4.4 0-7.5-3-7.5-7.2 0-3.6 2.4-5.6 3.9-8.8.9 1.9 1.9 3 3.1 3.3-.2-2.8.9-5.7 3.3-8.3.6 4.1 5.2 7 5.2 13 0 4.8-3.4 8-8 8zm0-2.4c1.9 0 3.2-1.3 3.2-3.2 0-2.2-1.6-3.4-2.4-5.3-.9 1.4-2.6 2.4-3.6 4.2-.6 2.2.8 4.3 2.8 4.3z',
+  crown: 'M3 7.5l4.6 3.6L12 4l4.4 7.1L21 7.5l-1.8 10.5H4.8zM4.8 19.5h14.4V22H4.8z',
+  bolt: 'M13.5 1.5L4.5 13.5h6l-1.5 9 9-12h-6z',
+} as const;
+
+const ART: Record<MedalId, MedalArt> = {
+  firstBlood: { tier: 'silver', ...FAMILY.grudge, glyph: GLYPHS.drop },
+  doubleKill: { tier: 'bronze', ...FAMILY.chain, glyph: GLYPHS.chevrons2 },
+  tripleKill: { tier: 'silver', ...FAMILY.chain, glyph: GLYPHS.chevrons3 },
+  quadKill: { tier: 'gold', ...FAMILY.chain, glyph: GLYPHS.chevrons4 },
+  massacre: { tier: 'platinum', ...FAMILY.chain, glyph: GLYPHS.skull },
+  longShot: { tier: 'bronze', ...FAMILY.range, glyph: GLYPHS.scope },
+  pointBlank: { tier: 'bronze', ...FAMILY.range, glyph: GLYPHS.blast },
+  clutch: { tier: 'silver', ...FAMILY.survive, glyph: GLYPHS.heart },
+  closeCall: { tier: 'bronze', ...FAMILY.survive, glyph: GLYPHS.shieldCrack },
+  revenge: { tier: 'silver', ...FAMILY.grudge, glyph: GLYPHS.revenge },
+  shutdown: { tier: 'gold', ...FAMILY.hunt, glyph: GLYPHS.power },
+  bounty: { tier: 'gold', ...FAMILY.hunt, glyph: GLYPHS.bounty },
+  onFire: { tier: 'bronze', ...FAMILY.streak, glyph: GLYPHS.flame },
+  rampage: { tier: 'silver', ...FAMILY.streak, glyph: GLYPHS.flame },
+  unstoppable: { tier: 'gold', ...FAMILY.streak, glyph: GLYPHS.bolt },
+  untouchable: { tier: 'platinum', ...FAMILY.streak, glyph: GLYPHS.shieldCrack },
+  legendary: { tier: 'platinum', ...FAMILY.streak, glyph: GLYPHS.crown },
+};
+
+export const medalArt = (id: MedalId): MedalArt => ART[id];
+// Each medal's tier on screen is the one its rules give it.
+for (const id of Object.keys(ART) as MedalId[]) ART[id] = { ...ART[id], tier: MEDALS[id].tier };
+
+/** Light, mid and dark of each metal, for its rim's gradient and bevel. */
+export const METAL: Record<MedalTier, readonly [string, string, string]> = {
+  bronze: ['#f2c08a', '#c07a3e', '#6e3e16'],
+  silver: ['#ffffff', '#c3c9d2', '#6c7380'],
+  gold: ['#fff1a8', '#e3b23a', '#8a5f0c'],
+  platinum: ['#f2fbff', '#a9d4ec', '#4d6f8a'],
+};
+
+const star = (n: number, outer: number, inner: number, rot = -Math.PI / 2) =>
+  Array.from({ length: n * 2 }, (_, i) => {
+    const r = i % 2 ? inner : outer, a = rot + (i * Math.PI) / n;
+    return `${(50 + Math.cos(a) * r).toFixed(2)},${(50 + Math.sin(a) * r).toFixed(2)}`;
+  }).join(' ');
+
+/** The rim's outline, in a 100-unit box centred at 50,50. */
+function rimShape(tier: MedalTier): string {
+  switch (tier) {
+    case 'bronze': return `<polygon points="${star(16, 40, 36.5)}"/>`;
+    case 'silver': return `<polygon points="${star(8, 44, 33, -Math.PI / 2 + Math.PI / 8)}"/>`;
+    case 'gold': return '<path d="M50 6 L86 18 V48 C86 70 70 86 50 94 C30 86 14 70 14 48 V18 Z"/>';
+    case 'platinum': return `<polygon points="${star(12, 46, 34)}"/>`;
+  }
+}
+
+/** Ribbon tails behind the medal, and wings or laurel for the higher tiers. */
+function behind(tier: MedalTier, ribbon: string, metal: readonly [string, string, string], uid: string): string {
+  const tails = `<g stroke="#14161a" stroke-width="2" stroke-linejoin="round">
+    <path d="M30 60 L18 98 L28 92 L34 100 L44 66 Z" fill="${ribbon}"/>
+    <path d="M70 60 L82 98 L72 92 L66 100 L56 66 Z" fill="${ribbon}"/>
+    <path d="M30 60 L18 98 L23 95 L36 63 Z M70 60 L82 98 L77 95 L64 63 Z" fill="rgba(0,0,0,0.25)" stroke="none"/></g>`;
+  if (tier === 'gold') {
+    const leaf = (x: number, y: number, a: number) => `<ellipse cx="${x}" cy="${y}" rx="7" ry="3.2" transform="rotate(${a} ${x} ${y})"/>`;
+    const side = (s: 1 | -1) => [0, 1, 2, 3, 4].map((i) => leaf(50 + s * (34 + i * 1.5), 30 + i * 12, s * (60 - i * 18))).join('');
+    return `${tails}<g fill="url(#m${uid})" stroke="#14161a" stroke-width="1.5">${side(1)}${side(-1)}</g>`;
+  }
+  if (tier === 'platinum') {
+    const wing = (s: 1 | -1) => `<path d="M${50 + s * 30} 40 C${50 + s * 52} 30 ${50 + s * 60} 20 ${50 + s * 62} 10 C${50 + s * 58} 30 ${50 + s * 56} 46 ${50 + s * 36} 58 Z" fill="url(#m${uid})" stroke="#14161a" stroke-width="2"/>
+      <path d="M${50 + s * 36} 46 C${50 + s * 50} 40 ${50 + s * 54} 32 ${50 + s * 57} 22" fill="none" stroke="${metal[2]}" stroke-width="1.5"/>`;
+    return `${tails}${wing(1)}${wing(-1)}`;
+  }
+  return tails;
+}
+
+let uids = 0;
+
+/** A medal as an SVG string, `size` px square. */
+export function medalSvg(art: MedalArt, size: number, title?: string): string {
+  const uid = `${(uids++).toString(36)}`;
+  const metal = METAL[art.tier];
+  const rim = rimShape(art.tier);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -4 128 108" width="${size}" height="${size}" role="img"${title ? ` aria-label="${title}"` : ''}>
+  <defs>
+    <linearGradient id="m${uid}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${metal[0]}"/><stop offset="0.45" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/>
+    </linearGradient>
+    <radialGradient id="e${uid}" cx="0.4" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="${art.enamel}" stop-opacity="1"/><stop offset="1" stop-color="#0d0e11" stop-opacity="1"/>
+    </radialGradient>
+    <clipPath id="c${uid}">${rim}</clipPath>
+  </defs>
+  ${behind(art.tier, art.ribbon, metal, uid)}
+  <g fill="url(#m${uid})" stroke="#14161a" stroke-width="2.5" stroke-linejoin="round">${rim}</g>
+  <g clip-path="url(#c${uid})"><path d="M0 0 L100 0 L0 100 Z" fill="rgba(255,255,255,0.18)"/></g>
+  <circle cx="50" cy="50" r="27" fill="url(#e${uid})" stroke="${metal[2]}" stroke-width="3"/>
+  <circle cx="50" cy="50" r="27" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-dasharray="40 200" transform="rotate(-140 50 50)"/>
+  <g transform="translate(30.8 30.8) scale(1.6)"><path d="${art.glyph}" fill="#ece6d6" stroke="#14161a" stroke-width="0.8" stroke-linejoin="round" fill-rule="evenodd"/></g>
+</svg>`;
+}
