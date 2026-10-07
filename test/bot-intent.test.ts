@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import type { World } from '../src/shared/sim/world.ts';
-import { arenaFor } from '../src/server/bot/arena.ts';
+import { GUNS } from '../src/shared/defs.ts';
+import { arenaFor, openSpot } from '../src/server/bot/arena.ts';
+import { isOpen } from '../src/server/bot/nav.ts';
 import { freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx, type Personality, type Plan } from '../src/server/bot/intent.ts';
 import { step } from '../src/shared/sim.ts';
@@ -76,7 +78,7 @@ test('a bot in a fight with its magazine nearly dry reloads in cover, and fights
   bot.life.ammo = 3;
   const reload = decide(w, bot.id, { k: 'engage', target: 0 });
   assert.equal(reload.k, 'reloadInCover');
-  bot.life.ammo = 30;
+  bot.life.ammo = GUNS.assault.mag;
   assert.equal(decide(w, bot.id, { ...reload, holdUntil: 0 }).k, 'engage');
 });
 
@@ -251,4 +253,12 @@ test('a bot whose target slips out of sight for a moment keeps fighting, and giv
   };
   assert.equal(lost(TICK_MS), 'engage', 'one tick out of sight');
   assert.notEqual(lost(1000), 'engage', 'a second out of sight');
+});
+
+test('an open spot asked for inside a big block is found outside it, not inside', () => {
+  const w = emptyWorld();
+  setWalls(w, [{ x: 1000, y: 1000, w: 600, h: 600 }]);
+  const arena = arenaFor(w);
+  const r = seeded(3);
+  for (let i = 0; i < 20; i++) assert.ok(isOpen(arena.nav, openSpot(arena, r, { at: { x: 1300, y: 1300 }, r: 120 })));
 });

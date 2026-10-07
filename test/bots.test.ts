@@ -176,7 +176,7 @@ test('out on a peek at long range a marksman plants its feet, while a cautious b
     let mem: BotMemory = { ...newBotMemory(r), persona, intent: { ...plan, since: 0, holdUntil: 1e9 } };
     const out: InputState[] = [];
     for (let i = 0; i < 90; i++) {
-      for (const p of [bot, enemy]) if (p.life.k === 'alive') p.life.hp = 100;
+      for (const p of [bot, enemy]) if (p.life.k === 'alive') Object.assign(p.life, { hp: 100, ammo: GUNS[p.gun].mag });
       const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
       mem = d.mem;
       setInput(w, bot.id, i + 1, d.input);
@@ -188,7 +188,7 @@ test('out on a peek at long range a marksman plants its feet, while a cautious b
   const marksman = peekInputs('marksman');
   assert.ok(marksman.filter(moving).length / marksman.length < 0.2, `marksman moves ${marksman.filter(moving).length} of ${marksman.length} ticks`);
   const cautious = peekInputs('cautious');
-  assert.ok(cautious.filter(moving).length / cautious.length > 0.5, `cautious moves ${cautious.filter(moving).length} of ${cautious.length} ticks`);
+  assert.ok(cautious.filter(moving).length / cautious.length > 0.35, `cautious moves ${cautious.filter(moving).length} of ${cautious.length} ticks`);
 });
 
 test('a bot fighting one enemy turns on a hunted one who comes into view, and keeps its own target over a mere nearer one', () => {

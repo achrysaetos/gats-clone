@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
-import type { InputState } from '../src/shared/protocol.ts';
+import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, rulesOf, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
+import { VIEW_PRELOAD_MARGIN, type InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick, isSteady, pendingPick, spreadFor } from '../src/shared/sim/stats.ts';
@@ -34,14 +34,14 @@ function spray(gun: GunId, still: boolean, count: number): number[] {
 
 const widest = (angles: readonly number[]) => Math.max(...angles.map(Math.abs));
 
-test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG much worse, a walking sniper misses past 300px', () => {
-  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 2 };
+test('pistol, SMG and shotgun are as accurate on the move as standing; assault a little worse, LMG far worse, a walking sniper misses past 150px', () => {
+  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.3, lmg: 3 };
   for (const weapon of WEAPON_IDS.filter((w) => w !== 'sniper')) {
     const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true);
     assert.ok(Math.abs(ratio - expected[weapon]!) < 1e-9, `${weapon} moves at ${ratio}x spread`);
   }
   for (const gun of ['sniper', 'longshot', 'piercer'] as const) {
-    assert.ok(spreadFor(gun, {}, false) > Math.atan(WORLD.playerRadius / 300), `a walking ${gun} can miss a body 300px off`);
+    assert.ok(spreadFor(gun, {}, false) > Math.atan(WORLD.playerRadius / 150), `a walking ${gun} can miss a body 150px off`);
     assert.ok(spreadFor(gun, {}, true) < Math.atan(WORLD.playerRadius / 1000), `a planted ${gun} is sure at 1000px`);
   }
 });
@@ -67,7 +67,7 @@ test('a sniper\'s rounds stay inside its still cone standing and stray far past 
   assert.ok(widest(spray('pistol', false, 20)) <= GUNS.pistol.spread, 'a pistol walking stays in its cone');
 });
 
-test('an assault rifle held down blooms after its first shots, up to double, and taps stay tight', () => {
+test('an assault rifle held down blooms after its first shots, up to half again, and taps stay tight', () => {
   const { w, p } = shooter('assault');
   const held: number[][] = [];
   while (held.length < 25) {
@@ -75,7 +75,7 @@ test('an assault rifle held down blooms after its first shots, up to double, and
     if (out.length) held.push(out);
   }
   const spray = p.life.k === 'alive' ? p.life.spray : 0;
-  assert.equal(spreadFor('assault', {}, true, spray), 2 * GUNS.assault.spread, 'a long spray reaches the cap');
+  assert.equal(spreadFor('assault', {}, true, spray), 1.5 * GUNS.assault.spread, 'a long spray reaches the cap');
   assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
   assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
@@ -107,7 +107,7 @@ function gaps(w: World, p: Player, ticks: number): number[] {
   return fired.slice(1).map((t, i) => t - fired[i]!);
 }
 
-test('a minigun spins up: its first shots come slowly and the held rate climbs to its fireMs, then spins back down after release', () => {
+test('a minigun spins up: its first shots come slowly and the held rate climbs to its fireMs, then spins back down over its downMs after release', () => {
   const { w, p } = shooter('minigun');
   const first = gaps(w, p, 90);
   assert.ok(first[0]! * TICK_MS >= 2.5 * GUNS.minigun.fireMs, `first gap ${first[0]! * TICK_MS}ms`);
@@ -115,21 +115,34 @@ test('a minigun spins up: its first shots come slowly and the held rate climbs t
   const meanMs = (late.reduce((a, b) => a + b, 0) * TICK_MS) / late.length;
   assert.ok(Math.abs(meanMs - GUNS.minigun.fireMs) < 2, `spun-up gap ${meanMs}ms`);
   for (let i = 0; i < 30; i++) tick(w, p, {});
+  assert.ok(gaps(w, p, 6)[0]! < first[0]!, 'a second off the trigger it is still partly spun, so a bot\'s pause to re-aim does not cost the whole spin-up');
+  for (let i = 0; i < rulesOf(GUNS.minigun).spinUp!.downMs / TICK_MS; i++) tick(w, p, {});
   const again = gaps(w, p, 10);
-  assert.ok(again[0]! * TICK_MS >= 2.5 * GUNS.minigun.fireMs, 'a second after release it starts slow again');
+  assert.ok(again[0]! * TICK_MS >= 2.5 * GUNS.minigun.fireMs, 'spun down it starts slow again');
   const light = shooter('lightMg');
   assert.ok(gaps(light.w, light.p, 10)[0]! * TICK_MS < GUNS.lightMg.fireMs + TICK_MS, 'a light MG does not spin up');
 });
 
-test('a sniper sees 35% further, its Optics stack on top, and the server sends what that view holds', () => {
+test('a sniper\'s scope stretches its view 15% only once it is steady, and the server sends what that view holds', () => {
   const w = emptyWorld();
   const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
   const pistol = spawnAt(w, 1000, 1400);
-  const target = spawnAt(w, 2100, 1200);
-  assert.equal(snapshotFor(w, sniper.id).self.viewRadius, WORLD.viewRadius * 1.35);
-  assert.equal(snapshotFor(w, pistol.id).self.viewRadius, WORLD.viewRadius);
-  assert.ok(snapshotFor(w, sniper.id).players.some((q) => q.id === target.id), 'the sniper sees 1100px out');
-  assert.ok(!snapshotFor(w, pistol.id).players.some((q) => q.id === target.id), 'the pistol does not');
+  const target = spawnAt(w, 1000 + WORLD.viewRadius + VIEW_PRELOAD_MARGIN + WORLD.playerRadius + 60, 1000);
+  const view = (p: Player) => snapshotFor(w, p.id).self.viewRadius;
+  const sees = (p: Player) => snapshotFor(w, p.id).players.some((q) => q.id === target.id);
+  run(w, 400);
+  assert.equal(view(sniper), WORLD.viewRadius * 1.15);
+  assert.equal(view(pistol), WORLD.viewRadius);
+  assert.ok(sees(sniper), 'the planted sniper sees past the pistol\'s view');
+  press(w, sniper, { up: true });
+  step(w, TICK_MS);
+  assert.equal(view(sniper), WORLD.viewRadius, 'walking drops the scope');
+  assert.ok(!sees(sniper), 'and what only it showed');
+  press(w, sniper, {});
+  run(w, 300);
+  assert.equal(view(sniper), WORLD.viewRadius, 'still settling');
+  run(w, 100);
+  assert.equal(view(sniper), WORLD.viewRadius * 1.15, 'steady again');
 });
 
 test('each class is offered its own five attachments', () => {

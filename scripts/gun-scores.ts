@@ -24,5 +24,5 @@ for (const stage of [0, 1, 2] as const) {
   }
 }
 
-console.log('\nrange past the owner\'s horizontal view, no perks');
+console.log('\nrange past the owner\'s horizontal view standing still, no perks');
 for (const o of rangeBeyondView()) console.log(`  ${GUNS[o.id].name.padEnd(16)} range ${o.range} > view ${o.view}`);

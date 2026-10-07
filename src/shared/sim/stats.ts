@@ -47,6 +47,11 @@ function bloomMul({ bloom }: GunRules, sprayShot: number): number {
 /** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */
 export const isSteady = (gun: GunId, sinceMoveMs: number): boolean => sinceMoveMs > 0 && sinceMoveMs >= rulesOf(GUNS[gun]).steadyMs;
 
+export function viewRadiusOf(p: Player, now: number): number {
+  const view = effectiveStats(p).viewRadius;
+  return p.life.k === 'alive' && isSteady(p.gun, now - p.life.lastMoveAt) ? view * rulesOf(GUNS[p.gun]).viewMul : view;
+}
+
 export const reloadMsFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((ms, perk) => ms * (PERK_MODS[perk].reloadMul ?? 1), GUNS[gun].reloadMs);
 
@@ -70,7 +75,7 @@ export function effectiveStats(p: Player): Stats {
     reloadMs: reloadMsFor(p.gun, p.perks),
     regenPerSec: WORLD.regenPerSec,
     regenDelayMs: WORLD.regenDelayMs,
-    viewRadius: WORLD.viewRadius * rulesOf(weapon).viewMul,
+    viewRadius: WORLD.viewRadius,
     piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
   for (const perk of Object.values(p.perks)) {

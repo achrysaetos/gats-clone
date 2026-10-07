@@ -2,8 +2,8 @@
 // Usage: LAG=<one-way ms> JITTER=<ms> node guns.ts <run-dir>
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { GUNS, type WeaponId } from '../../../../src/shared/defs.ts';
-import { joinFromMenu, key, openPage, respawnIfDead, sleep, type Page } from './lib/browser.ts';
+import { GUNS, rulesOf, type WeaponId } from '../../../../src/shared/defs.ts';
+import { dirKey, joinFromMenu, key, openPage, respawnIfDead, sleep, type Page } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: LAG=<ms> JITTER=<ms> node guns.ts <run-dir>'); process.exit(2); }
@@ -91,7 +91,7 @@ const cooled = await trigger(rifle);
 await crop(rifle, 'guns-assault-released.png');
 await sleep(roundTrip + 300);
 log(`assault reticle gap: idle ${idle.reticleGap.toFixed(1)}px  held ${samples.map((s) => s.reticleGap.toFixed(0)).join(' ')} -> ${held.reticleGap.toFixed(1)}px  400ms after release ${cooled.reticleGap.toFixed(1)}px`);
-check(idle.gun === 'assault' && held.reticleGap >= 1.8 * idle.reticleGap, `a held assault rifle's reticle opens to about double (${(held.reticleGap / idle.reticleGap).toFixed(2)}x, spray ${held.spray.toFixed(1)})`);
+check(idle.gun === 'assault' && held.reticleGap >= 1.4 * idle.reticleGap, `a held assault rifle's reticle opens to about half again (${(held.reticleGap / idle.reticleGap).toFixed(2)}x, spray ${held.spray.toFixed(1)})`);
 check(Math.abs(cooled.reticleGap - idle.reticleGap) < 0.5 && cooled.spray === 0, 'it closes again within 400ms of letting go');
 checkCounts('assault hold', await felt(rifle), rifle.serverShots() - before);
 rifle.close();
@@ -121,26 +121,35 @@ log(`minigun gaps between own shots (ms): ${spin.map((g) => g.toFixed(0)).join('
 check(spin[0]! >= 2.2 * fireMs, `the first gap is long (${spin[0]!.toFixed(0)}ms, fireMs ${fireMs})`);
 check(Math.abs(lateMean - fireMs) <= 0.2 * fireMs, `held 2s it fires at its fireMs (${lateMean.toFixed(1)}ms mean over the last 15)`);
 checkCounts('minigun hold', spun, mini.serverShots() - before);
-await sleep(1200);
+const { downMs } = rulesOf(GUNS.minigun).spinUp!;
+await sleep(downMs + 400);
 before = mini.serverShots();
 const again = await hold(400);
-check(again.gaps[0]! >= 2.2 * fireMs, `after a second off the trigger it starts slow again (${again.gaps[0]?.toFixed(0)}ms)`);
+check(again.gaps[0]! >= 2.2 * fireMs, `after ${downMs}ms off the trigger it starts slow again (${again.gaps[0]?.toFixed(0)}ms)`);
 checkCounts('minigun hold again', again.fs, mini.serverShots() - before);
 mini.close();
 
-const zoomOf = async (weapon: WeaponId): Promise<{ page: Browser; pxPerUnit: number }> => {
-  const page = await open(`Looker ${weapon}`, weapon);
-  await respawnIfDead(page, 6000);
-  const pxPerUnit = await page.js(`(() => { const a = skirmishDev.toScreen(0, 0), b = skirmishDev.toScreen(1000, 0); return (b.x - a.x) / 1000; })()`);
-  if (weapon === 'sniper') await shot(page, 'guns-sniper-view.png');
-  page.close();
-  return { page, pxPerUnit };
-};
-const looks = [await zoomOf('pistol'), await zoomOf('sniper')];
-const zoom = looks[0]!.pxPerUnit / looks[1]!.pxPerUnit;
-check(Math.abs(zoom - 1.35) < 0.01, `a sniper's camera takes in 1.35x the pistol's view (${zoom.toFixed(3)}x)`);
+const pxPerUnitOf = (page: Browser): Promise<number> => page.js(`(() => { const a = skirmishDev.toScreen(0, 0), b = skirmishDev.toScreen(1000, 0); return (b.x - a.x) / 1000; })()`);
+const pistol = await open('Looker pistol', 'pistol');
+await respawnIfDead(pistol, 6000);
+const pistolPx = await pxPerUnitOf(pistol);
+pistol.close();
+const sniper = await open('Looker sniper', 'sniper');
+await respawnIfDead(sniper, 6000);
+await sleep(600);
+const plantedZoom = pistolPx / (await pxPerUnitOf(sniper));
+await shot(sniper, 'guns-sniper-view.png');
+await dirKey(sniper, 'keyDown', 'up');
+await sleep(roundTrip + 500);
+const walkingZoom = pistolPx / (await pxPerUnitOf(sniper));
+await shot(sniper, 'guns-sniper-walking.png');
+await dirKey(sniper, 'keyUp', 'up');
+sniper.close();
+const scope = rulesOf(GUNS.sniper).viewMul;
+check(Math.abs(plantedZoom - scope) < 0.01, `a planted sniper's camera takes in ${scope}x the pistol's view (${plantedZoom.toFixed(3)}x)`);
+check(Math.abs(walkingZoom - 1) < 0.01, `walking, it sees what the pistol sees (${walkingZoom.toFixed(3)}x)`);
 
-const exceptions = [...rifle.exceptions, ...mini.exceptions, ...looks.flatMap((l) => l.page.exceptions)];
+const exceptions = [...rifle.exceptions, ...mini.exceptions, ...pistol.exceptions, ...sniper.exceptions];
 for (const e of exceptions) log(`page exception: ${e}`);
 const pass = results.every(Boolean) && exceptions.length === 0;
 log(pass ? 'RESULT PASS' : 'RESULT FAIL');

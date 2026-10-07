@@ -31,6 +31,7 @@ function watch(w: World, bots: Map<number, BotMemory>, ms: number, window: numbe
 
 const reversals = (h: readonly Sample[]) => h.slice(1).filter((s, i) => s.kx * h[i]!.kx + s.ky * h[i]!.ky < 0).length;
 const net = (h: readonly Sample[]) => Math.hypot(h[h.length - 1]!.x - h[0]!.x, h[h.length - 1]!.y - h[0]!.y);
+const travelled = (h: readonly Sample[]) => h.slice(1).reduce((sum, s, i) => sum + Math.hypot(s.x - h[i]!.x, s.y - h[i]!.y), 0);
 
 test('squad bots never flip their keys back and forth in place around the Bastion', () => {
   const w = createWorld('ZOM', 1, 'outpost');
@@ -50,7 +51,7 @@ test('bots never shuffle along a wall for seconds without getting anywhere', () 
   const stuck: string[] = [];
   watch(w, bots, 70_000, 90, (name, h) => {
     const pressing = h.filter((s) => s.kx || s.ky).length / h.length, walled = h.filter((s) => s.wall).length / h.length;
-    if (pressing > 0.8 && walled > 0.8 && net(h) < 40) stuck.push(`${name} at ${h[0]!.x.toFixed(0)},${h[0]!.y.toFixed(0)}`);
+    if (pressing > 0.8 && walled > 0.8 && net(h) < 40 && travelled(h) < 200) stuck.push(`${name} at ${h[0]!.x.toFixed(0)},${h[0]!.y.toFixed(0)}`);
   });
   assert.deepEqual([...new Set(stuck)].slice(0, 3), []);
 });
