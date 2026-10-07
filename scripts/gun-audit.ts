@@ -46,4 +46,4 @@ for (const c of WEAPON_IDS) console.log(`  ${c.padEnd(9)}${([0, 1, 2] as const).
 
 const breaches = doctrineBreaches();
 console.log(`\n${breaches.length} doctrine breaches (DOCTRINE in scripts/lib/gunscore.ts)`);
-for (const b of breaches) console.log(`  ${GUNS[b.id].name.padEnd(16)}${b.rule.padEnd(9)}${b.detail}`);
+for (const b of breaches) console.log(`  ${GUNS[b.id].name.padEnd(16)}${b.rule.padEnd(12)}${b.detail}`);

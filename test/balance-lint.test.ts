@@ -5,7 +5,19 @@ import { doctrineBreaches, dominatedPairs, edgesOver, rangeBeyondView, type Pair
 
 const KNOWN_DOMINATED: readonly Pair[] = [];
 const KNOWN_BEYOND_VIEW: readonly GunId[] = [];
-const KNOWN_BREACHES: Partial<Record<GunId, readonly string[]>> = {};
+const KNOWN_BREACHES: Partial<Record<GunId, readonly string[]>> = {
+  skirmisher: ['upgrade@100'],
+  sawedOff: ['upgrade@100'],
+  carbine: ['upgrade@300'],
+  grenadier: ['upgrade@300'],
+  piercer: ['upgrade@600', 'upgrade@900'],
+  artillery: ['upgrade@600', 'upgrade@900'],
+  repeater: ['upgrade@600', 'upgrade@900'],
+  ghost: ['upgrade@600', 'upgrade@900'],
+  lightMg: ['upgrade@100', 'upgrade@300'],
+  juggernaut: ['upgrade@600'],
+  twinMg: ['upgrade@100', 'upgrade@300'],
+};
 
 const key = ([a, b]: Pair) => `${a} > ${b}`;
 
