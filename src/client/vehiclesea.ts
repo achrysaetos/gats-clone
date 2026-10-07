@@ -4,6 +4,8 @@
  * tyre fenders, a wheelhouse with big windows, a funnel with its band. Nose toward +x.
  */
 import { Model, chain, mat, move, rotX, rotY, rotZ, type Mat, type Paint, type Station } from './vehiclemesh.ts';
+import { KESTREL, PATROL, TRAWLER } from '../shared/maps/causewaygeo.ts';
+import type { ShipSpec } from '../shared/maps/causewayship.ts';
 
 const GLASS = mat('#1e2a3a', { gloss: true });
 const FONT = (px: number) => `700 ${px}px "Barlow Condensed", "Arial Narrow", sans-serif`;
@@ -95,6 +97,67 @@ const lerpPlan = (plan: readonly (readonly [number, number])[]) => (x: number) =
   return 0;
 };
 
+/* -- deck-open hulls for the Causeway harbour ----------------------------------------------------------------------------- */
+
+/** The harbour's liveries, matching its deck and gangway art (themes/harborships.ts). */
+const DECK_LOOKS: Record<string, { hull: string; cap: string; boot: string; name: string }> = {
+  'containerShip|blue': { hull: '#2c3e57', cap: '#cfcbbb', boot: '#a8442e', name: 'K-1' },
+  'containerShip|green': { hull: '#24402f', cap: '#d8d2b8', boot: '#b58e32', name: 'H-4' },
+  'trawler|white': { hull: '#d6dad3', cap: '#c04a30', boot: '#2f5f8c', name: 'ME 2' },
+  'trawler|blue': { hull: '#2a4f78', cap: '#e0d6b0', boot: '#c04a30', name: 'SB 5' },
+  'patrolBoat|grey': { hull: '#6d7d84', cap: '#aab4b8', boot: '#3a464c', name: 'PB-17' },
+  'patrolBoat|green': { hull: '#5a6a58', cap: '#a8b0a0', boot: '#2e3a30', name: 'PB-22' },
+};
+
+/**
+ * A berthed ship's hull with its deck left open (the `deck` variant): exactly the outline `ship()` gives the harbour (bow +x, the
+ * quay on +y), from the waterline to the gunwale, its round-shouldered rail, the boot-topping at the waterline, tyres against the
+ * quay, a hawse pipe and the hull number on the bow. The deck inside the gunwale band is cut away, so the theme's own deck,
+ * fittings and rooms show through.
+ */
+function deckHull(kind: string, spec: ShipSpec, livery: string, free: number, number?: string): Model {
+  const L = DECK_LOOKS[`${kind}|${livery}`] ?? Object.entries(DECK_LOOKS).find(([k]) => k.startsWith(kind))![1];
+  const m = new Model();
+  m.top = free;
+  const P = 64, len = spec.length / P, beam = spec.beam / P, bow = spec.bow / P, stern = spec.stern / P, wall = spec.wall / P;
+  // Half beam at a distance u (metres) from the bow tip: the same profile ship() builds the outline from.
+  const half = (u: number) => {
+    if (u <= bow) { const t = Math.max(0, u / bow); return (beam * (1 - (1 - t) ** 2)) / 2; }
+    if (u >= len - stern) { const t = Math.min(1, (u - (len - stern)) / stern); return (beam * (1 - (1 - spec.transom) * t ** 1.7)) / 2; }
+    return beam / 2;
+  };
+  const xOf = (u: number) => len / 2 - u, uOf = (x: number) => len / 2 - x;
+  const hull = mat(L.hull), cap = mat(L.cap), boot = mat(L.boot), hawse = mat('#1c1f26'), line = mat('#e2dccb');
+  const bowX = xOf(bow * 0.45);
+  const paint: Paint = (x, y, z, _nx, ny, nz) => {
+    if (nz > 0.45) return cap;
+    if (z < 0.24) return boot;
+    if (z < 0.3) return line;
+    if ((ny > 0.3 || ny < -0.3) && Math.hypot(x - bowX, z - free * 0.62) < 0.2) return hawse;
+    return hull;
+  };
+  const p = m.part(paint, {
+    clipLow: 0, open: true,
+    cut: (x, y, z) => z > free - 0.1 && x > -len / 2 + wall && Math.abs(y) < half(uOf(x)) - wall,
+  });
+  const st: Station[] = [];
+  const us: number[] = [len];
+  for (let k = 1; k <= 3; k++) us.push(len - (stern * k) / 3);
+  for (let k = 1; k <= 3; k++) us.push(len - stern - ((len - stern - bow) * k) / 4);
+  for (let k = 0; k <= 8; k++) us.push(bow * (1 - k / 8));
+  for (const u of us) st.push({ x: xOf(u), w: Math.max(0.001, half(u)), h: free, z: 0, n: 7 });
+  m.loft(p, [{ ...st[0]!, w: 0, h: 0 }, ...st.slice(0, -1), { ...st[st.length - 1]!, w: 0, h: 0 }], { ring: 36, sub: 2 });
+  // Old tyres hung against the quay.
+  const tyre = m.part('#26292e');
+  for (let k = 1; k <= 4; k++) {
+    const u = bow + ((len - stern - bow) * k) / 5;
+    m.tube(tyre, -0.16, 0.16, 0, 0, 0.32, { ring: 14, cap: 0.08, xf: chain(rotZ(Math.PI / 2), move(xOf(u), half(u) + 0.1, free * 0.55)) });
+  }
+  const label = number ?? L.name;
+  m.sideDecals(xOf(bow * 1.6), 0, xOf(0) + 0.2, free + 0.2, 48, [p], (g) => stencil(g, label, xOf(bow * 0.85), -free * 0.6, Math.min(0.75, free * 0.45), '#e2dccb', 0, 0.1));
+  return m;
+}
+
 /* -- the tug: shapes.ts `boat`, 12 x 4 m ------------------------------------------------------------------------------- */
 
 export function tugboat(livery = 'black'): Model {
@@ -122,7 +185,8 @@ export function tugboat(livery = 'black'): Model {
 
 /* -- trawler, 18 x 5.4 m ------------------------------------------------------------------------------------------------ */
 
-export function trawler(livery = 'blue'): Model {
+export function trawler(livery = 'blue', variant?: string, number?: string): Model {
+  if (variant === 'deck') return deckHull('trawler', TRAWLER.spec, livery, 1.15, number);
   const L: HullLook = livery === 'white' ? { hull: '#d6dad3', boot: '#c04a30', cap: '#2f5f8c', deck: '#7a6a52', plank: true } : { hull: '#2f5f8c', boot: '#c04a30', cap: '#e2dccb', deck: '#7a6a52', plank: true };
   const m = new Model();
   m.top = 1.5;
@@ -147,7 +211,8 @@ export function trawler(livery = 'blue'): Model {
 
 /* -- patrol boat, 15 x 4 m ------------------------------------------------------------------------------------------------ */
 
-export function patrolBoat(livery = 'grey'): Model {
+export function patrolBoat(livery = 'grey', variant?: string, number?: string): Model {
+  if (variant === 'deck') return deckHull('patrolBoat', PATROL.spec, livery, 1.0, number);
   const L: HullLook = livery === 'green' ? { hull: '#5a6a58', boot: '#2e3a30', cap: '#a8b0a0', deck: '#4c5a4a' } : { hull: '#6d7d84', boot: '#3a464c', cap: '#aab4b8', deck: '#55605f' };
   const m = new Model();
   m.top = 1.35;
@@ -169,13 +234,14 @@ export function patrolBoat(livery = 'grey'): Model {
   m.lights.push({ key: 'nav', at: [-1.2, 0, 4.7], color: '#ff4a40', radius: 120, intensity: 0.45, blinkMs: 1500, size: 4 });
   const blink = m.part(mat('#e0443a', { gloss: true }));
   m.blob(blink, -1.2, 0, 4.68, 0.1, 0.1, 0.1);
-  m.decals(-7.6, -2.1, 7.6, 2.1, 48, [0], (g) => { stencil(g, livery === 'green' ? 'PB-22' : 'PB-17', 5.4, 0, 0.55, '#e2dccb', -Math.PI / 2, 0.1); });
+  m.decals(-7.6, -2.1, 7.6, 2.1, 48, [0], (g) => { stencil(g, number ?? (livery === 'green' ? 'PB-22' : 'PB-17'), 5.4, 0, 0.55, '#e2dccb', -Math.PI / 2, 0.1); });
   return m;
 }
 
 /* -- feeder container ship, 32 x 9.6 m ----------------------------------------------------------------------------------- */
 
-export function containerShip(livery = 'blue'): Model {
+export function containerShip(livery = 'blue', variant?: string, number?: string): Model {
+  if (variant === 'deck') return deckHull('containerShip', KESTREL.spec, livery, 1.5, number);
   const L: HullLook = livery === 'green' ? { hull: '#24402f', boot: '#a8442e', cap: '#d8d2b8', deck: '#5f6a5a' } : { hull: '#2c3e57', boot: '#a8442e', cap: '#cfcbbb', deck: '#6b6a5e' };
   const m = new Model();
   m.top = 2.2;
@@ -210,7 +276,7 @@ export function containerShip(livery = 'blue'): Model {
 
 /* -- submarine, 30 x 4.4 m ------------------------------------------------------------------------------------------------- */
 
-export function submarine(livery = 'black'): Model {
+export function submarine(livery = 'black', _variant?: string, number?: string): Model {
   const col = livery === 'grey' ? '#4f5866' : '#2a2e34';
   const m = new Model();
   m.top = 2.1;
@@ -239,7 +305,9 @@ export function submarine(livery = 'black'): Model {
   m.slab(fin, [[-14.6, -2.2], [-13.4, -1.0], [-13.4, 1.0], [-14.6, 2.2], [-15.0, 2.2], [-15.0, -2.2]], 0.55, 0.7, { bevel: 0.04 });
   const hatch = m.part(mat('#4f5560', { gloss: true }));
   for (const x of [-8, 9.5]) m.tube(hatch, 2.15, 2.25, 0, 0, 0.36, { ring: 14, xf: chain(rotY(-Math.PI / 2), move(x, 0, 0)) });
-  m.sideDecals(1.5, 1.8, 6.6, 4.8, 48, [sail], (g) => { stencil(g, livery === 'grey' ? 'S-12' : 'S-07', 4.2, -3.4, 0.7, '#e2dccb', 0, 0.12); });
+  m.sideDecals(1.5, 1.8, 6.6, 4.8, 48, [sail], (g) => { stencil(g, number ?? (livery === 'grey' ? 'S-12' : 'S-07'), 4.2, -3.4, 0.7, '#e2dccb', 0, 0.12); });
+  // The number again, big on the casing forward of the sail, to read from above.
+  m.decals(5.5, -1, 9, 1, 48, [h], (g) => stencil(g, number ?? (livery === 'grey' ? '12' : '07'), 7.4, 0, 0.9, 'rgba(226,220,203,0.85)', Math.PI / 2, 0.1));
   m.lights.push({ key: 'sail', at: [4.2, 0, 4.7], color: '#ff4a40', radius: 120, intensity: 0.4, blinkMs: 1600, size: 4 });
   void rotX;
   return m;

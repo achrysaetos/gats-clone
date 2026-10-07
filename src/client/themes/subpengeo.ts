@@ -96,7 +96,7 @@ export function drawSubmarines(g: G, now: number, view: ThemeView, map: MapDef):
     const b = boundsOf(p.points), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     if (b.x + b.w < view.x0 - 100 || b.x > view.x1 + 100 || b.y + b.h < view.y0 - 100 || b.y > view.y1 + 100) continue;
     // The west boat's bow points west, its twin's east; the model's nose is +x. The model is 1920 px long, the hull polygon 1800.
-    if (!drawVehicle(g, 'submarine', { x: cx, y: cy, rot: cx < map.size / 2 ? Math.PI : 0, scale: b.w / 1920, livery: 'grey', t: now, polys: subs })) all = false;
+    if (!drawVehicle(g, 'submarine', { x: cx, y: cy, rot: cx < map.size / 2 ? Math.PI : 0, scale: b.w / 1920, livery: 'grey', number: cx < map.size / 2 ? '77' : '41', t: now, polys: subs })) all = false;
   }
   return all;
 }

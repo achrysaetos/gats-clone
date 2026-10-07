@@ -5,7 +5,7 @@
 import { bakeRaw } from './vehiclemesh.ts';
 import { modelOf, type VehicleKind } from './vehiclemodels.ts';
 
-export type BakeJob = { id: number; kind: VehicleKind; livery: string; variant: string; rot: number; scale: number; res: number; ss: number };
+export type BakeJob = { id: number; kind: VehicleKind; livery: string; variant: string; number: string; rot: number; scale: number; res: number; ss: number };
 
 const scope = self as unknown as { fonts?: FontFaceSet; location: Location; onmessage: ((e: MessageEvent<BakeJob>) => void) | null; postMessage: (m: unknown, t?: Transferable[]) => void };
 // The stencils on the airframes are set in the game's own condensed face.
@@ -21,7 +21,7 @@ scope.onmessage = async (e) => {
   const j = e.data;
   try {
     await font;
-    const r = bakeRaw(modelOf(j.kind, j.livery, j.variant), { rot: j.rot, scale: j.scale, res: j.res, ss: j.ss });
+    const r = bakeRaw(modelOf(j.kind, j.livery, j.variant, j.number), { rot: j.rot, scale: j.scale, res: j.res, ss: j.ss });
     scope.postMessage({ id: j.id, w: r.w, h: r.h, ox: r.ox, oy: r.oy, res: r.res, ms: r.ms, px: r.px }, [r.px.buffer]);
   } catch (err) {
     // The page bakes this one itself.

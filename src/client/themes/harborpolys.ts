@@ -5,7 +5,8 @@ import type { GeoInfo } from '../geoart.ts';
 import { INK } from '../palette.ts';
 import { LIGHT } from '../tilt.ts';
 import { BOX_PAINT, C, LINES, TAU, hash2, hexA, mix, rrect, sprite, stamp, trace, type Sprite } from './harborkit.ts';
-import { bobOf, liveryOf } from './harborships.ts';
+import { bobOf, kitHulls, liveryOf } from './harborships.ts';
+import { claimShadows } from '../vehicleshadow.ts';
 
 /**
  * Every solid of the harbour, painted once into a sprite and stamped each frame: containers in faded paint with corrugated sides,
@@ -504,6 +505,8 @@ export function drawHarborSet(g: CanvasRenderingContext2D, group: readonly MapPo
   for (const p of ordered) {
     const sh = shapeOf(p);
     if (sh.x1 < info.view.x0 - 60 || sh.x0 > info.view.x1 + 60 || sh.y1 + 140 < info.view.y0 || sh.y0 > info.view.y1) continue;
+    // The vehicle kit's hull carries the gunwale once it has baked (harborships.ts drawShips).
+    if (p.material === 'hull' && kitHulls.has(p.group ?? '')) { claimShadows([p]); continue; }
     stamp(g, spriteOf(p), sh.x0, sh.y0);
   }
   g.restore();

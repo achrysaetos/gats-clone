@@ -18,7 +18,11 @@ scorch, snow) is procedural per surface point; text and roundels are decals proj
 
 The bake runs in a pool of web workers (up to 3), 2x supersampled; a quick low-res preview comes first so nothing is missing for
 long, and the vehicles on screen get their full bake first. The result is cached as one canvas per (kind, livery, variant,
-rotation to 0.5 degrees, scale, lod), so **a vehicle costs one `drawImage` per frame** plus a few ellipses for props and rotors.
+rotation to 0.5 degrees, scale, lod, number), so **a vehicle costs one `drawImage` per frame** plus a few ellipses for props
+and rotors. Finished bakes are also kept in IndexedDB (`vehiclecache.ts`) as PNGs keyed by the sprite (including its resolution,
+which carries the screen's density) and a fingerprint of the kit (the source of every model builder and of the renderer, plus
+`KIT_VERSION` in `vehiclemodels.ts`: bump it when you change only a shared helper inside a model file), so only the first visit
+pays for a bake. Blocked or full storage just means baking again.
 
 Projection: the model's roof (`Model.top`) sits on the collision footprint, the same rule as walls, and its sides hang below it
 as the front face (`TILT` = 0.36 m of screen per metre of height). Taller things (a fin, a funnel, a mast) rise up the screen.
@@ -45,6 +49,7 @@ prewarmVehicle('c130', { x, y, rot, livery: 'grey' });
 - `x, y, rot, scale` are exactly the `Transform` you gave `place(shape, at, ...)`: the shape's origin, nose toward +x.
 - `livery`, `variant`: optional strings from the table below; unknown ones fall back to the default.
 - `t`: clock in ms for props, rotors and blinking lamps (pass your theme's reduced-motion-aware clock).
+- `number`: a hull or fleet number painted on (`submarine` on the sail and casing, ships on the bow); the model's default when absent.
 - `lod` < 1 bakes a smaller sprite (overviews). `polys`: the map polygons the vehicle stands on; geoart then skips its generic
   drop shadow for them (the model casts its own).
 - A theme that paints into its own cached sprite once can force a synchronous bake with `vehicleSprite(kind, opts, true)`.
@@ -80,9 +85,9 @@ Sizes in metres at `PX_PER_M = 64`, nose toward +x, centred on the origin.
 | `dieselLoco` | `locomotive` | `freight`, `green`, `rust` | |
 | `boxcar` | `trainCar` | `rust`, `green`, `grey` | `rust` |
 | `tugboat` | `boat` (12 x 4), cut at the waterline | `black`, `red` | |
-| `trawler` | 18 x 5.4 | `blue`, `white` | |
-| `patrolBoat` | 15 x 4 | `grey` (PB-17), `green` (PB-22) | |
-| `containerShip` | 32 x 9.6 | `blue` (KESTREL), `green` (HALCYON) | |
+| `trawler` | 18 x 5.4 | `blue`, `white` | `deck` (Causeway's TRAWLER hull, deck open) |
+| `patrolBoat` | 15 x 4 | `grey` (PB-17), `green` (PB-22) | `deck` (Causeway's PATROL hull) |
+| `containerShip` | 32 x 9.6 | `blue` (KESTREL), `green` (HALCYON) | `deck` (Causeway's KESTREL hull) |
 | `submarine` | 30 x 4.4, cut at the waterline | `black`, `grey` | |
 
 ## Where it is used
@@ -93,24 +98,29 @@ Sizes in metres at `PX_PER_M = 64`, nose toward +x, centred on the origin.
   `themes/wastelandpoly.ts` `kitPoly`; the hand art remains the fallback.
 - Rail Yard: the five carriages (car 3 hollow) and both engines (`themes/railyardgeo.ts` `kitTrain`).
 - Summit: the lot's pickups (`snowed`), the sleds, the groomer and their twins (`themes/summitpolys.ts` `kitVehicle`).
-- Not wired yet: Harbour's ships are walkable decks drawn by `harborships.ts`; `tugboat`, `trawler`, `patrolBoat` and
-  `containerShip` match them in look and can stand in the water as scenery. Sub Pen's boats are grid walls; `submarine` is ready.
+- Harbour (Causeway): the berthed ships' hulls are the `deck` variants, built from the very `ShipSpec`s in
+  `maps/causewaygeo.ts` (bow +x, quay on +y; place at the hull's bounds centre, rot -90 degrees, the twin +90). The hull is
+  drawn after the theme's deck sprite: its deck is cut open and see-through, so only the gunwale rail, the sides, the
+  boot-topping and the tyres against the quay cover the deck's edge, and the hand-drawn gunwale bands are skipped once it has
+  baked (`harborships.ts` `drawShips`, `kitHulls`). Rooms, deck furniture, gangways and doors stay the theme's.
+- Sub Pen: the moored boats (`themes/subpengeo.ts` `drawSubmarines`), numbered 77 and 41.
 
 ## Adding a model
 
 Write a function `(livery?, variant?) => Model` in one of the model files and add it to `BUILDERS` in `vehiclemodels.ts`. Build
 in metres with the `Model` helpers: `loft` (a tube from cross-sections: half width, half height, superellipse `n`; `jag` tears the
 last ring), `tube`, `blob`, `slab` (an extruded, bevelled polygon; pass `xf` to stand it up as a fin), `box`, `wheel`.
-`part(paint, { clip, clipLow, cut, inner })` gives each piece its own paint and outline group, and can cut it open (a hollow
-shell, a hull at its waterline, a doorway). Paint functions get the surface point and normal in model space; build materials
+`part(paint, { clip, clipLow, cut, inner, open })` gives each piece its own paint and outline group, and can cut it open (a
+hollow shell, a hull at its waterline, a doorway); `open` makes the inside see-through, for a shell drawn over the theme's own floor. Paint functions get the surface point and normal in model space; build materials
 with `mat()` outside them, never inside. Set `m.top` to the roof height that sits on the collision. Props and rotors are
 `m.spinners`, lamps `m.lights`. Check it in a gallery next to a soldier before wiring it in.
 
 ## Requests
 
 Theme authors: add a line here if you need a kind, livery or variant that is missing.
+- Sub Pen: submarine hull numbers (`number: '77'` / `'41'`): done and wired.
+- Harbour: deck-open hulls for the berthed ships: done and wired.
 - Rail Yard: steam `loco` with tender, `carriage` (`green` / `mail`, `hollow`): done and wired.
 - Wasteland: airliner halves (`hollow`, with the breaches) and the wrecks: done and wired.
 - Summit: the sled capsules (`sled-1..3` in `maps/summitgeo.ts`) are 2.5 m long along y but only 1.4 m apart, so their
   collisions (and so their art) overlap; space them further apart, or turn them, if they should stand side by side.
-- Sub Pen (subpen): `submarine` hull numbers. The old hand-drawn boats were stencilled `77` (west slip) and `41` (east slip); the kit stencils `S-07` (black) and `S-12` (grey). Please accept a `number` on `VehicleOpts` (or a `variant`) so the map can ask for `77` and `41`. Sub Pen draws the grey livery at `scale` 0.9375 (hull polygon 1800 px) from `drawSubmarines` in `src/client/themes/subpengeo.ts`.

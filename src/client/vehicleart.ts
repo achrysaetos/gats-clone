@@ -5,7 +5,8 @@
  * blink no faster than once a second.
  */
 import { bake, bakeRaw, PX_PER_M, TILT, toCanvas, type Baked, type Model, type Spinner } from './vehiclemesh.ts';
-import { modelOf, VEHICLE_KINDS, type VehicleKind } from './vehiclemodels.ts';
+import { kitFingerprint, modelOf, VEHICLE_KINDS, type VehicleKind } from './vehiclemodels.ts';
+import { cachedSprite, storeSprite } from './vehiclecache.ts';
 import type { BakeJob } from './vehicleworker.ts';
 import type { MapPoly } from '../shared/geom.ts';
 import { claimShadows } from './vehicleshadow.ts';
@@ -15,7 +16,10 @@ export type VehicleOpts = {
   x: number; y: number; rot?: number; scale?: number; livery?: string; variant?: string; t?: number; lod?: number;
   /** The map polygons this vehicle stands on: their generic drop shadow is skipped, since the model casts its own. */
   polys?: readonly MapPoly[];
+  /** A hull or fleet number painted on (submarines, ships); the model's own default when absent. */
+  number?: string | number;
 };
+const num = (o: VehicleOpts): string => (o.number === undefined ? '' : String(o.number));
 
 /** Under prefers-reduced-motion props and rotors hold still and beacons stay lit. */
 const calm = (() => { try { return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } })();
@@ -36,7 +40,7 @@ function resFor(m: Model, scale: number, lod: number): number {
 
 type Slot = { full?: Baked; preview?: Baked; asked: boolean; seen: number };
 const sprites = new Map<string, Slot>();
-type Job = BakeJob & { key: string; preview: boolean };
+type Job = BakeJob & { key: string; preview: boolean; store: string };
 const queue: Job[] = [];
 const inflight = new Map<number, Job>();
 type Lane = { w: Worker; busy: boolean };
@@ -54,7 +58,7 @@ function lanesOf(): Lane[] | null {
         const d = e.data, job = inflight.get(d.id);
         inflight.delete(d.id);
         lane.busy = false;
-        if (job) settle(job, d.error ? bake(modelOf(job.kind, job.livery, job.variant), job) : toCanvas(d));
+        if (job) settle(job, d.error ? bake(modelOf(job.kind, job.livery, job.variant, job.number), job) : toCanvas(d));
         pump();
       };
       lane.w.onerror = () => { lanes = null; for (const j of inflight.values()) queue.unshift(j); inflight.clear(); pump(); };
@@ -67,8 +71,10 @@ function lanesOf(): Lane[] | null {
 function settle(job: Job, b: Baked) {
   const slot = sprites.get(job.key);
   if (!slot) return;
-  if (job.preview) slot.preview = b; else slot.full = b;
+  if (job.preview) slot.preview = b;
+  else { slot.full = b; storeSprite(job.store, fingerprint(), b); }
 }
+const fingerprint = () => kitFingerprint(bakeRaw.toString());
 
 function pump() {
   const ls = lanesOf();
@@ -80,13 +86,13 @@ function pump() {
     if (i < 0) { i = 0; for (let k = 1; k < queue.length; k++) if ((sprites.get(queue[k]!.key)?.seen ?? 0) > (sprites.get(queue[i]!.key)?.seen ?? 0)) i = k; }
     const job = queue.splice(i, 1)[0]!;
     if (lane) { lane.busy = true; inflight.set(job.id, job); lane.w.postMessage(job satisfies BakeJob); continue; }
-    settle(job, toCanvas(bakeRaw(modelOf(job.kind, job.livery, job.variant), job)));
+    settle(job, toCanvas(bakeRaw(modelOf(job.kind, job.livery, job.variant, job.number), job)));
   }
 }
 
 const keyOf = (kind: VehicleKind, o: VehicleOpts) => {
   const q = Math.round((((o.rot ?? 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) * (180 / Math.PI) * 2) / 2;
-  return { q, key: `${kind}|${o.livery ?? ''}|${o.variant ?? ''}|${q}|${o.scale ?? 1}|${o.lod ?? 1}` };
+  return { q, key: `${kind}|${o.livery ?? ''}|${o.variant ?? ''}|${num(o)}|${q}|${o.scale ?? 1}|${o.lod ?? 1}` };
 };
 
 /** Asks for a vehicle's sprite (several can be asked for at once, before they are seen). */
@@ -98,18 +104,25 @@ export function vehicleSprite(kind: VehicleKind, o: VehicleOpts, sync = false): 
   let slot = sprites.get(key);
   if (!slot) sprites.set(key, (slot = { asked: false, seen: 0 }));
   if (sync && !slot.full) {
-    const m = modelOf(kind, o.livery, o.variant);
+    const m = modelOf(kind, o.livery, o.variant, num(o));
     slot.full = bake(m, { rot: (q * Math.PI) / 180, scale: o.scale ?? 1, res: resFor(m, o.scale ?? 1, o.lod ?? 1) });
     slot.asked = true;
   }
   if (!slot.asked) {
     slot.asked = true;
-    const m = modelOf(kind, o.livery, o.variant);
+    const m = modelOf(kind, o.livery, o.variant, num(o));
     const res = resFor(m, o.scale ?? 1, o.lod ?? 1);
-    const base = { kind, livery: o.livery ?? '', variant: o.variant ?? '', rot: (q * Math.PI) / 180, scale: o.scale ?? 1, key };
-    if (lanesOf()) queue.push({ ...base, id: nextId++, res: Math.min(res, 0.4), ss: 1, preview: true });
-    queue.push({ ...base, id: nextId++, res, ss: 2, preview: false });
-    pump();
+    const store = `${fingerprint()}|${key}|${res.toFixed(3)}`;
+    const base = { kind, livery: o.livery ?? '', variant: o.variant ?? '', number: num(o), rot: (q * Math.PI) / 180, scale: o.scale ?? 1, key, store };
+    const s = slot;
+    // A sprite kept from an earlier visit skips the bake; otherwise a quick preview, then the full bake.
+    void cachedSprite(store, fingerprint()).then((hit) => {
+      if (hit) { s.full ??= hit; return; }
+      if (s.full) return;
+      if (lanesOf()) queue.push({ ...base, id: nextId++, res: Math.min(res, 0.4), ss: 1, preview: true });
+      queue.push({ ...base, id: nextId++, res, ss: 2, preview: false });
+      pump();
+    });
   }
   return slot.full ?? slot.preview ?? null;
 }
@@ -130,7 +143,7 @@ export function drawVehicle(ctx: CanvasRenderingContext2D, kind: VehicleKind, o:
   if (!b) return false;
   const c = b.canvas as CanvasImageSource & { width: number; height: number };
   ctx.drawImage(c, o.x + b.ox, o.y + b.oy, c.width / b.res, c.height / b.res);
-  const m = modelOf(kind, o.livery, o.variant);
+  const m = modelOf(kind, o.livery, o.variant, num(o));
   for (const s of m.spinners) if (!s.over) spinner(ctx, m, o, s);
   lamps(ctx, m, o);
   return true;
@@ -138,13 +151,13 @@ export function drawVehicle(ctx: CanvasRenderingContext2D, kind: VehicleKind, o:
 
 /** What hangs over the players: the helicopter's main rotor. */
 export function drawVehicleOver(ctx: CanvasRenderingContext2D, kind: VehicleKind, o: VehicleOpts): void {
-  const m = modelOf(kind, o.livery, o.variant);
+  const m = modelOf(kind, o.livery, o.variant, num(o));
   for (const s of m.spinners) if (s.over) spinner(ctx, m, o, s);
 }
 
 /** Practical lights in world px, for the lighting pass. */
 export function vehicleLights(kind: VehicleKind, o: VehicleOpts & { id?: string }): { key: string; x: number; y: number; color: string; radius: number; intensity: number; size: number }[] {
-  const m = modelOf(kind, o.livery, o.variant);
+  const m = modelOf(kind, o.livery, o.variant, num(o));
   const t = o.t ?? 0;
   return m.lights.filter((l) => !l.blinkMs || lampOn(l.blinkMs, l.phase ?? 0, t)).map((l) => {
     const p = vehiclePoint(m, o, l.at);

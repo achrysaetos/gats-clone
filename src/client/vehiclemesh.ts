@@ -33,6 +33,8 @@ type Part = {
   cut?: (x: number, y: number, z: number) => boolean;
   /** The colour of the inside faces (seen from behind), when the part is cut open. */
   inner?: RGB;
+  /** Cut open and see-through: the inside is not drawn at all, so whatever is under the sprite shows in the hole. */
+  open?: boolean;
 };
 
 export type Spinner = {
@@ -92,10 +94,10 @@ export class Model {
   side?: Decal;
   private nextGroup = 1;
 
-  part(paint: Paint | string | Mat, opts: { group?: number; ink?: number; clip?: number; clipLow?: number; inner?: string; cut?: (x: number, y: number, z: number) => boolean } = {}): number {
+  part(paint: Paint | string | Mat, opts: { group?: number; ink?: number; clip?: number; clipLow?: number; inner?: string; open?: boolean; cut?: (x: number, y: number, z: number) => boolean } = {}): number {
     const p: Part = {
       paint: typeof paint === 'string' ? solid(paint) : typeof paint === 'function' ? paint : ((m: Mat) => () => m)(paint), group: opts.group ?? this.nextGroup++,
-      ...(opts.ink !== undefined && { ink: opts.ink }), ...(opts.clip !== undefined && { clip: opts.clip }), ...(opts.clipLow !== undefined && { clipLow: opts.clipLow }), ...(opts.cut && { cut: opts.cut }), ...(opts.inner !== undefined && { inner: rgbOf(opts.inner) }),
+      ...(opts.ink !== undefined && { ink: opts.ink }), ...(opts.clip !== undefined && { clip: opts.clip }), ...(opts.clipLow !== undefined && { clipLow: opts.clipLow }), ...(opts.cut && { cut: opts.cut }), ...(opts.open && { open: true }), ...(opts.inner !== undefined && { inner: rgbOf(opts.inner) }),
     };
     this.parts.push(p);
     return this.parts.length - 1;
@@ -369,7 +371,7 @@ const LIT = 0.9;
 
 type Raw = { px: Uint8ClampedArray; w: number; h: number; ox: number; oy: number; res: number; ms: number };
 export type Baked = {
-  canvas: HTMLCanvasElement | OffscreenCanvas;
+  canvas: HTMLCanvasElement | OffscreenCanvas | ImageBitmap;
   /** World px from the vehicle's origin to the canvas's top-left, and the canvas's px per world px. */
   ox: number; oy: number; res: number;
   ms: number;
@@ -443,7 +445,7 @@ export function bakeRaw(m: Model, o: BakeOpts): Raw {
   const inkR = inkW / 2;
   const disc = (r: number) => { const o: number[] = []; const ri = Math.ceil(r); for (let dy = -ri; dy <= ri; dy++) for (let dx = -ri; dx <= ri; dx++) if (dx * dx + dy * dy <= r * r + 0.25) o.push(dy * TW + dx); return Int32Array.from(o); };
   const D_OUT = disc(inkR), D_IN = disc(inkR * 0.72), D_FOLD = disc(Math.max(0.8, inkR * 0.5));
-  const SHADOW_BIT = 1, INK_BIT = 2, SPEC_BIT = 4;
+  const SHADOW_BIT = 1, INK_BIT = 2, SPEC_BIT = 4, HOLE_BIT = 8;
   const P = m.pos, N = m.nrm, T = m.tri, TP = m.triPart, parts = m.parts;
 
   for (let ty = 0; ty < Hr; ty += TILE) for (let tx = 0; tx < Wr; tx += TILE) {
@@ -456,6 +458,8 @@ export function bakeRaw(m: Model, o: BakeOpts): Raw {
     for (let t = 0; t < nt; t++) {
       const q = t * 4;
       if (sb[q + 2]! < bx0 || sb[q]! > bx0 + TW || sb[q + 3]! < by0 || sb[q + 1]! > by0 + TW) continue;
+      // A see-through part casts no contact shadow, or it would darken whatever shows in its hole.
+      if (parts[TP[t]!]!.open) continue;
       const a = T[t * 3]!, b = T[t * 3 + 1]!, c = T[t * 3 + 2]!;
       cover(hx[a]! - ox - bx0, hy[a]! - oy - by0, hx[b]! - ox - bx0, hy[b]! - oy - by0, hx[c]! - ox - bx0, hy[c]! - oy - by0, TW, mask);
       grow(sb[q]!, sb[q + 1]!, sb[q + 2]!, sb[q + 3]!);
@@ -491,6 +495,7 @@ export function bakeRaw(m: Model, o: BakeOpts): Raw {
       if (sideParts[pi] && (ny > 0.45 || ny < -0.45)) { const al = sample(side!, ny > 0 ? x : side!.x0 * 2 + side!.w / side!.px - x, -z); if (al > 0) { const d = side!.data!; r += (d[SI]! - r) * al; g += (d[SI + 1]! - g) * al; bb += (d[SI + 2]! - bb) * al; } }
       const wnx = nx * cr - ny * sr, wny = nx * sr + ny * cr;
       const d = wnx * LX + wny * LY + nz * LZ;
+      if (part.open && wny * VY + nz * VZ < -0.02) { grp[i] = 0; mask[i]! |= HOLE_BIT; return; }
       if (part.clip !== undefined && wny * VY + nz * VZ < -0.02) {
         // The inside of a cut-open shell: flat and dark, its own colour if it has one.
         const inn = part.inner;
@@ -515,7 +520,7 @@ export function bakeRaw(m: Model, o: BakeOpts): Raw {
         if (t !== t0b) { shadeAt(i); continue; }
         col[i * 3] = col[i0 * 3]!; col[i * 3 + 1] = col[i0 * 3 + 1]!; col[i * 3 + 2] = col[i0 * 3 + 2]!;
         grp[i] = grp[i0]!; nB[i * 3] = nB[i0 * 3]!; nB[i * 3 + 1] = nB[i0 * 3 + 1]!; nB[i * 3 + 2] = nB[i0 * 3 + 2]!;
-        mask[i]! |= mask[i0]! & SPEC_BIT;
+        mask[i]! |= mask[i0]! & (SPEC_BIT | HOLE_BIT);
       }
     }
     // Ink: where the surface ends, where one part meets another across a step in depth, and along folds.
@@ -551,7 +556,7 @@ export function bakeRaw(m: Model, o: BakeOpts): Raw {
         else if (grp[i]) {
           if (f & SPEC_BIT) { r += 250; g += 250; b += 244; } else { r += col[i * 3]!; g += col[i * 3 + 1]!; b += col[i * 3 + 2]!; }
           al += 1;
-        } else if (f & SHADOW_BIT) { r += 10 * SHADOW_A; g += 12 * SHADOW_A; b += 18 * SHADOW_A; al += SHADOW_A; }
+        } else if ((f & SHADOW_BIT) && !(f & HOLE_BIT)) { r += 10 * SHADOW_A; g += 12 * SHADOW_A; b += 18 * SHADOW_A; al += SHADOW_A; }
       }
       if (al > 0) {
         const o2 = ((ty / ss + oy2) * outW + tx / ss + ox2) * 4;

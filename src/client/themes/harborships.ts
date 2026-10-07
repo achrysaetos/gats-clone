@@ -2,6 +2,15 @@ import { halfTurn } from '../../shared/geom.ts';
 import { PLACED_SHIPS, QUAY, SIZE, type PlacedShip } from '../../shared/maps/causewaydata.ts';
 import { INK } from '../palette.ts';
 import { C, TAU, calm, clock, hash2, hexA, painted, sprite, stamp, trace } from './harborkit.ts';
+import { drawVehicle, vehicleSprite, type VehicleKind } from '../vehicleart.ts';
+
+/** The ships whose hull the vehicle kit drew (by group id): their gunwale bands then skip the hand art (harborpolys.ts). */
+export const kitHulls = new Set<string>();
+const HULL_KIT: Record<PlacedShip['kind'], { kind: VehicleKind; livery: [string, string] }> = {
+  container: { kind: 'containerShip', livery: ['blue', 'green'] },
+  trawler: { kind: 'trawler', livery: ['white', 'blue'] },
+  patrol: { kind: 'patrolBoat', livery: ['grey', 'green'] },
+};
 
 /**
  * The moored ships: their liveries, the slow swell they ride, their decks (planking, bay lashing points, painted names,
@@ -62,9 +71,9 @@ function deckSprite(s: PlacedShip) {
 }
 
 /**
- * Ship decks and their gangways and lines, drawn straight over the water and under every wall.
- * TODO(vehicle art): hull, gunwale and superstructure art are to move to drawVehicle() (docs/maps/VEHICLES.md, src/client/vehicleart.ts)
- * once it lands; collision, the walkable deck, gangways, water and deck furniture stay here.
+ * Ship decks and their gangways and lines, drawn straight over the water and under every wall. The hull (sides, gunwale rail,
+ * boot-topping, tyres) is the vehicle kit's deck-open model (docs/maps/VEHICLES.md); the walkable deck, its furniture and rooms,
+ * gangways and water stay here, and the hand-drawn shadow and gunwales are the fallback while the hull bakes.
  */
 export function drawShips(g: CanvasRenderingContext2D, now: number, view: { x0: number; y0: number; x1: number; y1: number }): void {
   for (const s of PLACED_SHIPS) {
@@ -73,12 +82,17 @@ export function drawShips(g: CanvasRenderingContext2D, now: number, view: { x0: 
     if (x1 < view.x0 - 80 || x0 > view.x1 + 80 || y1 < view.y0 - 80 || y0 > view.y1 + 80) continue;
     const { dy } = bobOf(s.id, now);
     const d = deckSprite(s);
-    // A soft shadow of the hull on the water, then the deck.
     g.save();
+    const kit = HULL_KIT[s.kind];
+    const hull = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 + dy, rot: s.east ? Math.PI / 2 : -Math.PI / 2, livery: kit.livery[s.east ? 1 : 0], variant: 'deck', t: now };
+    const ready = !!vehicleSprite(kit.kind, hull);
+    // A soft shadow of the hull on the water.
     g.fillStyle = 'rgba(8, 24, 32, 0.32)';
     trace(g, s.hull.map((p) => ({ x: p.x + (s.east ? 7 : -7), y: p.y + 9 + dy })));
     g.fill();
+    // The deck, then the hull over it: its deck is cut open, so only the gunwale rail and the sides cover the deck's edge.
     stamp(g, d.sprite, d.x0, d.y0 + dy);
+    if (ready && drawVehicle(g, kit.kind, hull)) kitHulls.add(s.id);
     // The ship's name painted large on the deck, on the foredeck for the west half, aft for the east.
     const name = s.name;
     const span = y1 - y0;
