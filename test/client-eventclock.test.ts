@@ -35,7 +35,7 @@ test('a kill puffs where the killing blow landed, and a hit names its victim for
     { e: 'kill', killer: 'a', victim: 'c', killerId: ME, victimId: 3, weapon: 'Pistol', bounty: false, assisters: [] },
   ]), 500);
   const fx = later.map((p) => p.fx);
-  assert.deepEqual(fx.filter((f) => f.kind === 'death'), [{ kind: 'death', x: 8, y: 9, victim: 2 }], 'no puff without a known blow');
+  assert.deepEqual(fx.filter((f) => f.kind === 'death'), [{ kind: 'death', x: 8, y: 9, victim: 2, by: ME }], 'no puff without a known blow');
   assert.deepEqual(fx.filter((f) => f.kind === 'impact').map((f) => f.kind === 'impact' && f.victim), [2, 2, null], 'crates never flash a player');
 });
 

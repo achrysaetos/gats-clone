@@ -30,6 +30,12 @@ const feltFlashes = new Set<number>();
 const feltKicks = new Set<number>();
 
 const feel = (cue: FeelCue) => { if (DEV) fireFeel.push({ cue, at: performance.now() }); };
+const juice: { cue: 'kick' | 'hit' | 'kill' | 'remoteSound' | 'remoteFlash'; at: number; px?: number; owner?: number }[] = [];
+const noteJuice = (j: (typeof juice)[number]) => { if (DEV && juice.length < 4000) juice.push(j); };
+export const noteKick = (px: number) => noteJuice({ cue: 'kick', at: performance.now(), px });
+export const noteStop = (kind: 'hit' | 'kill') => noteJuice({ cue: kind, at: performance.now() });
+export const noteRemoteSound = (cues: readonly SoundCue[]) => { for (const c of cues) if (c.id.startsWith('shot:')) noteJuice({ cue: 'remoteSound', at: performance.now() }); };
+export const noteRemoteFlash = (owner: number) => noteJuice({ cue: 'remoteFlash', at: performance.now(), owner });
 export const noteOwnShotSound = (cues: readonly SoundCue[]) => { if (cues.some((c) => c.self && c.id.startsWith('shot:'))) feel('sound'); };
 export const noteLateShot = () => feel('late');
 export const noteRejectedShot = () => feel('reject');
@@ -121,5 +127,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), juice: () => juice.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
 }

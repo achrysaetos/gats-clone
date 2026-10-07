@@ -9,8 +9,8 @@ export type PendingEffect = { at: number; fx: EffectSpec };
 
 function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | null {
   switch (ev.e) {
-    case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null };
-    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null };
+    case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null, by: null };
+    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null, by: ev.attacker };
     case 'boom': return { kind: 'boom', x: ev.x, y: ev.y, r: ev.r };
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
@@ -34,7 +34,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'wiped': return null;
     case 'kill': {
       const blow = snap.events.filter((d) => d.e === 'dmg' && d.kind === 'player' && d.victim === ev.victimId).at(-1);
-      return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId } : null;
+      return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId, by: ev.killerId } : null;
     }
   }
 }

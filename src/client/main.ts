@@ -27,10 +27,11 @@ import { bodyColor, drawBackdrop, drawWorld } from './render.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
-import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
+import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
-import { addTrauma, decay, offset, traumaFor } from './shake.ts';
+import { addStop, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
+import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
@@ -79,6 +80,8 @@ let mouseAiming = false;
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
 let trauma = 0;
+let kick = NO_KICK;
+let hitstop = NO_HITSTOP;
 let lastFrameAt = 0;
 let shownView: number = WORLD.viewRadius;
 
@@ -241,7 +244,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
+    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
     coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
@@ -259,7 +262,10 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
   s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
-  playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
+  const cues = soundsFor(prev, snap);
+  playCues(s, cues.filter((c) => c.self), snap.self.viewRadius || WORLD.viewRadius);
+  // Other players' sounds wait for the render clock, so a shot is heard as its muzzle flash is drawn.
+  s.pendingSounds.push(...cues.filter((c) => !c.self).map((cue) => ({ at: snap.tick * TICK_MS, cue })));
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
@@ -315,7 +321,8 @@ setInterval(() => {
   const sent = sendInput(s.firing, s.seq, input, now);
   s.firing = sent.firing;
   if (sent.rejected) shooting.takeBack(s, sent.rejected);
-  const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
+  // The server judges a shot against the world as drawn, and hitstop draws it a beat behind.
+  const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, now) - stopLag(hitstop, now));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
@@ -398,22 +405,41 @@ function frame(now: number) {
 function drawFrame(now: number) {
   const s = drawnSessionOf(state);
   const latest = s && newestSnap(s.snaps);
-  const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
-  if (!s || !interpolated || !latest) {
+  if (!s || !latest || !sampleAt(s.snaps.snaps, renderTime(s.snaps, now))) {
     drawBackdrop(ctx, view.w, view.h, view.dpr, now);
     return;
   }
   if (s === sessionOf(state)) shooting.fireIfDue(s, performance.now());
-  const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
+  const released = releaseDue(s.pendingFx, renderTime(s.snaps, now) - stopLag(hitstop, now));
   s.pendingFx = released.rest;
-  for (const { fx } of released.due) startEffect(s, fx, now, deathTint(s, fx));
+  for (const { fx } of released.due) {
+    const stop = stopFor(fx, s.myId);
+    if (stop && addStop(hitstop, now, stop) !== hitstop) {
+      hitstop = addStop(hitstop, now, stop);
+      noteStop(stop);
+    }
+  }
+  const lag = stopLag(hitstop, now);
+  const fxNow = now - lag;
+  const drawnAt = renderTime(s.snaps, now) - lag;
+  const interpolated = sampleAt(s.snaps.snaps, drawnAt)!;
+  for (const { fx } of released.due) startEffect(s, fx, fxNow, deathTint(s, fx));
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
-  const shots = releaseDue(s.pendingShots, renderTime(s.snaps, now));
+  const heard = releaseDue(s.pendingSounds, drawnAt);
+  s.pendingSounds = heard.rest;
+  if (heard.due.length) {
+    playCues(s, heard.due.map((p) => p.cue), latest.self.viewRadius || WORLD.viewRadius);
+    noteRemoteSound(heard.due.map((p) => p.cue));
+  }
+  const shots = releaseDue(s.pendingShots, drawnAt);
   s.pendingShots = shots.rest;
-  for (const { shot } of shots.due) shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
-  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
+  for (const { shot } of shots.due) {
+    shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
+    noteRemoteFlash(shot.owner);
+  }
+  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, drawnAt));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
@@ -421,9 +447,10 @@ function drawFrame(now: number) {
   shownView = easeView(shownView, snap.self.viewRadius || WORLD.viewRadius, now - lastFrameAt);
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, shownView);
   trauma = decay(trauma, now - lastFrameAt);
+  kick = settleKick(kick, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const shakenCamera = { ...aimCamera, x: aimCamera.x + shake.x / aimCamera.scale, y: aimCamera.y + shake.y / aimCamera.scale };
+  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
@@ -431,7 +458,7 @@ function drawFrame(now: number) {
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now: fxNow, selfAngle, killerId, ghost });
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing)) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
@@ -598,7 +625,7 @@ function toggleMuted(name: string) {
 }
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
-const shooting = createShooting({ hands, playCues });
+const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); noteKick(Math.hypot(kick.x, kick.y)); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [

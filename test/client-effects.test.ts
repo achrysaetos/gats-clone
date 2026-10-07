@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { HIT_FLASH_MS, hitFlashes, KICK_MS, kicks } from '../src/client/effects.ts';
 import type { Effect } from '../src/client/state.ts';
 
-const hit = (victim: number | null, born: number): Effect => ({ kind: 'impact', surface: victim === null ? 'crate' : 'player', x: 0, y: 0, victim, born });
+const hit = (victim: number | null, born: number): Effect => ({ kind: 'impact', surface: victim === null ? 'crate' : 'player', x: 0, y: 0, victim, by: null, born });
 
 test('a body flashes from its newest hit until the flash runs out', () => {
   const now = 1000;

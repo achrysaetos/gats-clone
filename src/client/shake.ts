@@ -1,5 +1,5 @@
 import type { Point } from './camera.ts';
-import { GUN_IDS, GUNS, type WeaponId } from '../shared/defs.ts';
+import { GUN_IDS, GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
 import type { SoundCue } from './sfx.ts';
 
 export const MAX_SHAKE_PX = 10;
@@ -18,6 +18,33 @@ export function offset(t: number, now: number): Point {
 }
 
 const RECOIL: Partial<Record<WeaponId, number>> = { shotgun: 0.22, sniper: 0.3 };
+
+/** How far your own shot shoves the camera back along your aim, in screen px, before the spring returns it. */
+export const KICK_PX: Record<WeaponId, number> = { pistol: 4, smg: 2.5, shotgun: 9, assault: 3.5, sniper: 12, lmg: 3 };
+const KICK_STAGE = 0.15;
+const KICK_BLAST = 5;
+export const KICK_MAX_PX = 16;
+const KICK_RETURN_MS = 70;
+
+export const NO_KICK: Point = { x: 0, y: 0 };
+
+export function kickPx(gun: GunId): number {
+  const g = GUNS[gun];
+  return KICK_PX[g.base] * (1 + KICK_STAGE * g.stage) + (g.blast ? KICK_BLAST : 0);
+}
+
+/** Adds a shot's shove against its aim, capped so a held trigger never drags the view off its player. */
+export function addKick(kick: Point, gun: GunId, angle: number): Point {
+  const px = kickPx(gun);
+  const x = kick.x - Math.cos(angle) * px, y = kick.y - Math.sin(angle) * px;
+  const len = Math.hypot(x, y);
+  return len <= KICK_MAX_PX ? { x, y } : { x: (x / len) * KICK_MAX_PX, y: (y / len) * KICK_MAX_PX };
+}
+
+export function settleKick(kick: Point, dtMs: number): Point {
+  const k = Math.exp(-Math.max(0, dtMs) / KICK_RETURN_MS);
+  return Math.hypot(kick.x, kick.y) * k < 0.05 ? NO_KICK : { x: kick.x * k, y: kick.y * k };
+}
 
 export function traumaFor(cue: SoundCue, listener: Point, viewRadius: number): number {
   if (cue.id === 'hurt') return 0.25 + 0.5 * cue.damageFrac;
