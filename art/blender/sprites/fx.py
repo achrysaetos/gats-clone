@@ -91,14 +91,14 @@ def build_muzzle(b):
     outer = petal_material('flash-outer', (1.0, 0.32, 0.04), 0.12)
     mid = petal_material('flash-mid', (1.0, 0.62, 0.15), 0.16)
     core = petal_material('flash-core', (1.0, 0.92, 0.7), 0.4)
-    reach = (40, 30, 44, 26)[b.frame % 4] * rnd.uniform(0.95, 1.05)
+    reach = (36, 28, 40, 24)[b.frame % 4] * rnd.uniform(0.95, 1.05)
 
     def spike(material, angle, length, width, z=4.0):
         m = C.M((1.5, 0, z), (0, 0, angle), (1, 1, 0.25))
         kit.cyl('solid', material, (length / 2, 0, 0), width, length, radius2=0.0, rot=(0, math.pi / 2, 0), segs=12, matrix=m)
 
-    kit.sphere('solid', core, (2.5, 0, 4), 5.0, scale=(1.3, 1, 0.3), segs=20)
-    kit.sphere('solid', mid, (4, 0, 3.5), 8.0, scale=(1.4, 1, 0.25), segs=20)
+    kit.sphere('solid', core, (3.5, 0, 4), 5.0, scale=(1.2, 1, 0.3), segs=20)
+    kit.sphere('solid', mid, (7, 0, 3.5), 8.0, scale=(1.2, 1, 0.25), segs=20)
     spike(core, 0, reach * 0.55, 3.2, 4.5)
     spike(mid, 0, reach * 0.8, 5.0)
     spike(outer, 0, reach, 7.5, 3.0)

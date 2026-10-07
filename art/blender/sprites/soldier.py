@@ -116,11 +116,11 @@ def build_downed(b):
         kit.sphere('team', m['team'], p(8, y, 7), 7.2 * s, scale=(1.0, 1.0, 0.75))
     kit.sphere('solid', m['helmet'], p(17, 2, 6.5), 7.6 * s, scale=(1.1, 1.0, 0.85), segs=24)
     kit.box('solid', m['visor'], p(18, 2, 13.2), (8 * s, 3 * s, 1.2 * s), bevel=0.5 * s, rot=(0, 0, 0.2))
-    for a, e, h in (((8, -14, 7), (2, -26, 4.5), (-6, -33, 3.5)), ((8, 14, 7), (18, 24, 4.5), (28, 22, 3.5))):
+    for a, e, h in (((8, -14, 7), (2, -25, 4.5), (-5, -31, 3.5)), ((8, 14, 7), (17, 23, 4.5), (26, 21, 3.5))):
         kit.limb('team', m['team'], p(*a), p(*e), 4.2 * s, 3.8 * s)
         kit.limb('team', m['cloth'], p(*e), p(*h), 3.8 * s, 3.3 * s)
         kit.sphere('solid', m['glove'], p(*h), 3.4 * s)
-    for a, k, f in (((-14, -7, 5), (-26, -10, 4.5), (-37, -16, 4)), ((-14, 7, 5), (-27, 9, 4.5), (-38, 7, 4))):
+    for a, k, f in (((-14, -7, 5), (-24, -10, 4.5), (-33, -15, 4)), ((-14, 7, 5), (-25, 9, 4.5), (-34, 7, 4))):
         kit.limb('team', m['cloth'], p(*a), p(*k), 4.4 * s, 4.0 * s)
         kit.limb('team', m['cloth'], p(*k), p(*f), 4.0 * s, 3.6 * s)
         kit.box('solid', m['gear'], p(f[0] - 2, f[1], f[2] + 1), (6 * s, 7 * s, 10 * s), bevel=2 * s)

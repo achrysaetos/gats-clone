@@ -66,8 +66,17 @@ def plank(kit, b, material, center, size, stage, splinter, rot_z=0.0):
     kit.box('solid', material, center, size, rot=(0, 0, rot_z), bevel=0.3)
 
 
-def debris(kit, b, material, size, count, height=0.6, spread=7.0):
-    """Broken boards and chips lying on the floor around a footprint, inside the frame's margin."""
+def on_floor(b, h, x, y, r):
+    """Clamps a floor point so an item of reach r stays inside the frame once the shear has moved the floor south by
+    shear * h (h is the footprint's z_ref)."""
+    box, k = b.entry['box'], b.spec['camera']['shear'] * h
+    x = min(max(x, box['x'] + r), box['x'] + box['w'] - r)
+    y = min(max(y, -(box['y'] + box['h']) + k + r), -box['y'] + k - r)
+    return x, y
+
+
+def debris(kit, b, material, size, count, h, height=0.6, spread=7.0):
+    """Broken boards and chips lying on the floor around a footprint, inside the frame."""
     rnd = b.rnd
     for _ in range(count):
         side = rnd.choice(('s', 's', 'w', 'e', 'n'))
@@ -80,6 +89,7 @@ def debris(kit, b, material, size, count, height=0.6, spread=7.0):
         else:
             x, y = size + rnd.uniform(-1, 4), -rnd.uniform(0, size)
         ln = rnd.uniform(2, 7)
+        x, y = on_floor(b, h, x, y, ln / 2 + 1.5)
         kit.box('solid', material, (x, y, height), (ln, rnd.uniform(0.8, 2.5), rnd.uniform(0.6, 1.4)), rot=(rnd.uniform(-0.2, 0.2), rnd.uniform(-0.2, 0.2), rnd.uniform(0, math.pi)), bevel=0.2)
 
 
@@ -125,10 +135,10 @@ def wood_crate(b, size, h, stage, lid=None, label=None):
     if label and stage < 2:
         C.text(label, size * 0.15, (c, -c, h + 0.45), C.mat('stencil', (0.012, 0.01, 0.008), rough=0.9, grime=0.3, grime_scale=2.0), b.colls['solid'], b.root, rot=(0, 0, 0))
     if stage == 2:
-        debris(kit, b, boards, size, 9)
-        debris(kit, b, splinter, size, 8, height=0.4)
+        debris(kit, b, boards, size, 9, h)
+        debris(kit, b, splinter, size, 8, h, height=0.4)
     elif stage == 1:
-        debris(kit, b, splinter, size, 4, height=0.4)
+        debris(kit, b, splinter, size, 4, h, height=0.4)
 
 
 def metal_crate(b, size, h, stage, body_color, trim=None, label=None):
@@ -177,9 +187,13 @@ def metal_crate(b, size, h, stage, body_color, trim=None, label=None):
     else:
         for _ in range(3):
             kit.box('solid', body, (rnd.uniform(4, size - 4), -rnd.uniform(4, size - 4), rnd.uniform(2, h * 0.5)), (rnd.uniform(6, 12), rnd.uniform(4, 9), 1.2), rot=(rnd.uniform(-0.6, 0.6), rnd.uniform(-0.6, 0.6), rnd.uniform(0, 3)), bevel=0.3)
-        kit.sphere('solid', scorch, (c, -c, h * 0.62), size * 0.3, scale=(1.2, 1, 0.1))
-        debris(kit, b, dark, size, 8)
-        debris(kit, b, body, size, 6)
+        kit.box('solid', inside, (c, -c, h * 0.62), (size - 8, size - 8, 0.4))
+        for _ in range(6):
+            kit.box('solid', rnd.choice((dark, body)), (rnd.uniform(9, size - 9), -rnd.uniform(9, size - 9), h * 0.62 + 1.5), (rnd.uniform(5, 9), rnd.uniform(3, 6), 3), rot=(rnd.uniform(-0.3, 0.3), rnd.uniform(-0.3, 0.3), rnd.uniform(0, 3)), bevel=0.6)
+        for _ in range(4):
+            kit.sphere('solid', scorch, (rnd.uniform(6, size - 6), -rnd.uniform(6, size - 6), h - 3.5), size * rnd.uniform(0.08, 0.14), scale=(1.5, 1, 0.12))
+        debris(kit, b, dark, size, 8, h)
+        debris(kit, b, body, size, 6, h)
 
 
 def build_crate(b):
@@ -239,7 +253,7 @@ def cracks(kit, b, material, x0, y0, x1, y1, z, count):
             a += rnd.uniform(-0.8, 0.8)
 
 
-def rubble(kit, b, material, size, count, big=3.5):
+def rubble(kit, b, material, size, count, h, big=3.5):
     rnd = b.rnd
     for _ in range(count):
         side = rnd.random()
@@ -248,6 +262,7 @@ def rubble(kit, b, material, size, count, big=3.5):
         else:
             x, y = rnd.choice((rnd.uniform(-5, 1), size + rnd.uniform(-1, 5))), -rnd.uniform(0, size)
         s = rnd.uniform(0.8, big)
+        x, y = on_floor(b, h, x, y, s * 1.2 + 1.5)
         kit.box('solid', material, (x, y, s * 0.4), (s * rnd.uniform(1, 1.8), s * rnd.uniform(0.8, 1.5), s), rot=(rnd.uniform(0, 1), rnd.uniform(0, 1), rnd.uniform(0, 3)), bevel=s * 0.25)
 
 
@@ -285,7 +300,7 @@ def build_siege_wall(b):
                     continue
                 kit.box('solid', guard, (x, y, h / 2 - 1), (3.2, 3.2, h - 2), bevel=0.6)
     if stage >= 1:
-        rubble(kit, b, broken, size, 10 if stage == 1 else 28, big=2.5 if stage == 1 else 5.0)
+        rubble(kit, b, broken, size, 10 if stage == 1 else 28, h, big=2.5 if stage == 1 else 5.0)
     if stage == 2:
         for _ in range(7):
             x, y = rnd.uniform(6, size - 6), -rnd.uniform(6, size * 0.65)

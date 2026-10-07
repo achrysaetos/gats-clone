@@ -1,7 +1,8 @@
 /// <reference types="node" />
 // Usage: node scripts/art/check-sprites.ts <sprites-spec.json> <bakeDir>
 // Checks a sprite bake against the catalog: every frame of every layer exists as an RGBA PNG of exactly
-// round(box.w*px) x round(box.h*px), and each gun's barrel ends where the game spawns its bullets.
+// round(box.w*px) x round(box.h*px), nothing is cut off at a frame's edge, and each gun's barrel ends where the game
+// spawns its bullets.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -16,6 +17,8 @@ const spec = JSON.parse(readFileSync(specPath, 'utf8')) as Spec;
 
 /** How far a muzzle may sit from its barrel's last opaque pixel, allowing for the outline and antialiasing. */
 const MUZZLE_SLACK_PX = 1.5;
+/** Alpha (0-255) above which a pixel on a frame's border counts as art cut off by the box. */
+const EDGE_ALPHA = 64;
 
 const problems: string[] = [];
 let frames = 0;
@@ -28,6 +31,12 @@ for (const [name, e] of Object.entries(spec.sprites)) {
     const meta = await sharp(path).metadata();
     if (meta.format !== 'png' || meta.channels !== 4) problems.push(`${path}: ${meta.format} with ${meta.channels} channels, want RGBA png`);
     if (meta.width !== w || meta.height !== h) problems.push(`${path}: ${meta.width}x${meta.height}, want ${w}x${h}`);
+    const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alpha = (x: number, y: number) => data[(y * info.width + x) * 4 + 3]!;
+    let edge = 0;
+    for (let x = 0; x < info.width; x++) edge = Math.max(edge, alpha(x, 0), alpha(x, info.height - 1));
+    for (let y = 0; y < info.height; y++) edge = Math.max(edge, alpha(0, y), alpha(info.width - 1, y));
+    if (edge > EDGE_ALPHA) problems.push(`${path}: art reaches the frame edge (alpha ${edge})`);
     frames++;
   }
   if (name.startsWith('gun.') && existsSync(join(bakeDir, name, 'base', '0_0.png'))) {

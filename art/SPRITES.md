@@ -31,3 +31,11 @@ node scripts/art/contact-sheet.ts art/build/sprites-spec.json art/build/sprites 
 - Siege walls built from chunks read as sugar cubes. Stage 1 is now one block with chipped outlines and hairline cracks; stage 2 is a jagged stump with rebar and rubble.
 - Glow layers rendered on a transparent film lost the color of additive (emission plus transparent) shapes, so glow now renders on black and takes alpha from brightness.
 - Muzzle flash and fireball first saturated to white blobs. Cut emission about 4x and blurred the flash 1.4 px so its spikes fade.
+- Full bake: 405 frames in 594 s (about 10 minutes) on 4 CPU cores. check-sprites passes: every size matches and every gun barrel ends within 1.5 px of its muzzle. Rebaking a sprite gives byte-identical PNGs.
+- check-sprites now also fails on art cut off by the frame edge. It caught crate and wall debris (the shear moves the floor south by shear times the top height), the downed soldier's limbs and the muzzle core. Floor debris is now clamped into the frame with the shear accounted for.
+- The gutted metal crate showed one big black disc. Replaced it with scattered contents and small scorch marks.
+
+## Known gaps
+
+- Crates, walls, zombies and the core have no `shadow` layer in the catalog, so they carry only a soft contact shadow in `base`. The long sun shadow the map casts for static walls is missing for them. Adding `shadow` layers with boxes long enough for a 24 degree sun (about 2.25 times the height) would fix it.
+- The soldier's sun shadow is physically consistent with the map (long and dark at 24 degrees), which reads heavier than the reference's soldiers. The painter may want to draw it at reduced alpha.
