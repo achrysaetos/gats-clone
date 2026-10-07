@@ -5,7 +5,9 @@ import { TEAM_COLORS } from './palette.ts';
 
 type Point = { x: number; y: number };
 
-const RING_LOOK = { storm: '#4b2f86', stormAlpha: 0.2, edge: '#b48cff', next: 'rgba(255, 255, 255, 0.75)', drop: '#ffd34d' } as const;
+/** The ring in the kit's hazard colours: a rust-red storm edged in signal orange, with the next circle dashed in bone. */
+const RING_LOOK = { storm: '#7a2414', stormAlpha: 0.24, edge: '#ff5a1f', next: 'rgba(236, 230, 214, 0.85)', drop: '#ffc94a', muted: '#9a9ea6' } as const;
+const KIT_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
 
 export const squadLabel = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
@@ -83,7 +85,7 @@ export function drawDropsWorld(ctx: CanvasRenderingContext2D, royale: RoyaleView
       ctx.arc(d.x, d.y, size * (0.8 + 0.25 * pulse), 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 0.95;
-      ctx.font = '800 22px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.font = `800 26px ${KIT_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = RING_LOOK.drop;
@@ -142,15 +144,15 @@ export function drawTracker(ctx: CanvasRenderingContext2D, royale: RoyaleView, m
     const x = left + col * i + col / 2;
     const color = TEAM_COLORS[s.team];
     if (s.team === mine) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
-      ctx.beginPath();
-      ctx.roundRect(x - col / 2 + 1, top, col - 2, h, 4);
-      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 90, 31, 0.18)';
+      ctx.fillRect(x - col / 2 + 1, top, col - 2, h);
+      ctx.fillStyle = '#ff5a1f';
+      ctx.fillRect(x - col / 2 + 1, top + h - 2, col - 2, 2);
     }
     if (s.place !== null && s.place > 1) {
       ctx.globalAlpha = 0.7;
-      ctx.fillStyle = '#c4c8d0';
-      ctx.font = '700 10px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.fillStyle = RING_LOOK.muted;
+      ctx.font = `700 12px ${KIT_FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`#${s.place}`, x, top + h / 2);
@@ -163,7 +165,7 @@ export function drawTracker(ctx: CanvasRenderingContext2D, royale: RoyaleView, m
       ctx.arc(x, y, pip, 0, Math.PI * 2);
       if (p === 'up') { ctx.fillStyle = color; ctx.fill(); }
       else if (p === 'down') { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
-      else { ctx.globalAlpha = 0.35; ctx.fillStyle = '#c4c8d0'; ctx.fill(); ctx.globalAlpha = 1; }
+      else { ctx.globalAlpha = 0.35; ctx.fillStyle = RING_LOOK.muted; ctx.fill(); ctx.globalAlpha = 1; }
     });
   });
 }
