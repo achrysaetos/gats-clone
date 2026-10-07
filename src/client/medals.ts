@@ -77,6 +77,9 @@ const ART: Record<MedalId, MedalArt> = {
   reaper: { tier: 'platinum', ...FAMILY.arms, glyph: GLYPHS.skull },
   pinnedDown: { tier: 'bronze', ...FAMILY.arms, glyph: GLYPHS.pinned },
   beltFed: { tier: 'gold', ...FAMILY.arms, glyph: GLYPHS.belt },
+  kaboom: { tier: 'bronze', ...FAMILY.streak, glyph: GLYPHS.blast },
+  chainReaction: { tier: 'gold', ...FAMILY.chain, glyph: GLYPHS.bolt },
+  specialDelivery: { tier: 'silver', ...FAMILY.hunt, glyph: GLYPHS.pinned },
 };
 
 export const medalArt = (id: MedalId): MedalArt => ART[id];

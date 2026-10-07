@@ -1,0 +1,277 @@
+import { addPulse, decayPulse, decideFx, gradeFor, vignetteReach, watchdog, type Context, type FxMode, type Grade } from './fxparams.ts';
+
+/**
+ * The shader pass. The 2D world is uploaded as a texture once a frame and composited into a WebGL canvas that sits under
+ * the game canvas: a half-res bloom of only the brightest light (threshold on luminance, so the bone floor never blooms),
+ * a per-context colour grade, a soft vignette, a whisper of animated grain and, on big hits, a brief chromatic split.
+ * The HUD is drawn afterwards on the (cleared) 2D canvas above, so it stays crisp and unprocessed, and input still lands
+ * on the 2D canvas. Anything that goes wrong (no WebGL, software GL, a lost context, a slow upload) turns the pass off
+ * and the plain canvas path draws the world exactly as before, at zero cost.
+ */
+
+const VERT = `attribute vec2 a; varying vec2 v; void main(){ v = a * 0.5 + 0.5; gl_Position = vec4(a, 0.0, 1.0); }`;
+
+const BRIGHT = `
+precision mediump float;
+varying vec2 v; uniform sampler2D src; uniform vec2 texel; uniform float thr;
+vec3 pick(vec2 uv){
+  vec3 c = texture2D(src, uv).rgb;
+  float m = 0.5 * (dot(c, vec3(0.299, 0.587, 0.114)) + max(c.r, max(c.g, c.b)));
+  float w = clamp((m - thr) / (1.0 - thr), 0.0, 1.0);
+  return c * w * w;
+}
+void main(){
+  vec2 o = texel;
+  gl_FragColor = vec4((pick(v + vec2(-o.x, -o.y)) + pick(v + vec2(o.x, -o.y)) + pick(v + vec2(-o.x, o.y)) + pick(v + vec2(o.x, o.y))) * 0.25, 1.0);
+}`;
+
+const DOWN = `
+precision mediump float;
+varying vec2 v; uniform sampler2D src; uniform vec2 texel;
+void main(){
+  vec2 o = texel;
+  gl_FragColor = (texture2D(src, v + vec2(-o.x, -o.y)) + texture2D(src, v + vec2(o.x, -o.y)) + texture2D(src, v + vec2(-o.x, o.y)) + texture2D(src, v + vec2(o.x, o.y))) * 0.25;
+}`;
+
+const BLUR = `
+precision mediump float;
+varying vec2 v; uniform sampler2D src; uniform vec2 dir;
+void main(){
+  vec3 c = texture2D(src, v).rgb * 0.2270270;
+  c += (texture2D(src, v + dir * 1.3846154).rgb + texture2D(src, v - dir * 1.3846154).rgb) * 0.3162162;
+  c += (texture2D(src, v + dir * 3.2307692).rgb + texture2D(src, v - dir * 3.2307692).rgb) * 0.0702703;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
+const COMPOSITE = `
+precision highp float;
+varying vec2 v;
+uniform sampler2D src, bloomA, bloomB;
+uniform float bloom, ca, vig, grain, seed, gamma, sat, gscale;
+uniform vec2 reach;
+uniform vec3 lift, gain;
+float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+void main(){
+  vec3 c;
+  if (ca > 0.0) {
+    vec2 d = (v - 0.5) * ca;
+    c = vec3(texture2D(src, v + d).r, texture2D(src, v).g, texture2D(src, v - d).b);
+  } else c = texture2D(src, v).rgb;
+  vec3 b = (texture2D(bloomA, v).rgb * 0.55 + texture2D(bloomB, v).rgb * 0.95) * bloom;
+  b *= vec3(1.0, 0.88, 0.7);
+  c = 1.0 - (1.0 - c) * (1.0 - min(b, vec3(0.95)));
+  float ax = 1.0 - clamp(min(v.x, 1.0 - v.x) / reach.x, 0.0, 1.0);
+  float ay = 1.0 - clamp(min(v.y, 1.0 - v.y) / reach.y, 0.0, 1.0);
+  float edge = 1.0 - (1.0 - ax * ax) * (1.0 - ay * ay);
+  c = mix(c, vec3(0.047, 0.055, 0.078), vig * edge);
+  c = max(c * gain + lift * (1.0 - c), 0.0);
+  c = pow(c, vec3(1.0 / gamma));
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, sat);
+  float n = hash(floor(gl_FragCoord.xy / gscale) + seed) - 0.5;
+  c += n * 2.0 * grain * (1.0 - 0.5 * l);
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
+type Prog = { p: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
+type Target = { tex: WebGLTexture; fbo: WebGLFramebuffer; w: number; h: number };
+
+let canvas: HTMLCanvasElement | null = null;
+let gl: WebGLRenderingContext | null = null;
+let mode: FxMode = 'off';
+let reason = 'not started';
+let progs: Record<'bright' | 'down' | 'blur' | 'comp', Prog>;
+let srcTex: WebGLTexture;
+let half: [Target, Target], quarter: [Target, Target];
+let sized = '';
+let shown = false;
+let pulseNow = 0, pulseAt = 0;
+let vigStrength = 0.4;
+let wasSlow = watchdog();
+let chosen: FxMode = 'off';
+let broken = false;
+let forced = false;
+
+/** True while the shaders own the vignette, so ambience.ts leaves it out of the 2D canvas. */
+export function owningVignette(): boolean { return mode !== 'off'; }
+/** The vignette strength the 2D path would have painted this frame. */
+export function setVignette(strength: number): void { vigStrength = strength; }
+/** Why the pass is on or off, for the dev probe and tests. */
+export function fxState(): { mode: FxMode; reason: string } { return { mode, reason }; }
+
+/** A big hit or blast: a brief chromatic split at the screen edges. 0..1; ignored when the pass is off or calm. */
+export function pulse(strength: number): void {
+  if (mode !== 'full') return;
+  pulseNow = addPulse(decayPulse(pulseNow, performance.now() - pulseAt), strength);
+  pulseAt = performance.now();
+}
+
+function compile(g: WebGLRenderingContext, frag: string, names: string[]): Prog {
+  const sh = (type: number, src: string) => {
+    const s = g.createShader(type)!;
+    g.shaderSource(s, src);
+    g.compileShader(s);
+    if (!g.getShaderParameter(s, g.COMPILE_STATUS)) throw new Error(g.getShaderInfoLog(s) ?? 'shader');
+    return s;
+  };
+  const p = g.createProgram()!;
+  g.attachShader(p, sh(g.VERTEX_SHADER, VERT));
+  g.attachShader(p, sh(g.FRAGMENT_SHADER, frag));
+  g.bindAttribLocation(p, 0, 'a');
+  g.linkProgram(p);
+  if (!g.getProgramParameter(p, g.LINK_STATUS)) throw new Error(g.getProgramInfoLog(p) ?? 'link');
+  const u: Prog['u'] = {};
+  for (const n of names) u[n] = g.getUniformLocation(p, n);
+  return { p, u };
+}
+
+function texture(g: WebGLRenderingContext): WebGLTexture {
+  const t = g.createTexture()!;
+  g.bindTexture(g.TEXTURE_2D, t);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+  return t;
+}
+
+function target(g: WebGLRenderingContext, w: number, h: number): Target {
+  const tex = texture(g);
+  g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, w, h, 0, g.RGBA, g.UNSIGNED_BYTE, null);
+  const fbo = g.createFramebuffer()!;
+  g.bindFramebuffer(g.FRAMEBUFFER, fbo);
+  g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
+  return { tex, fbo, w, h };
+}
+
+function free(g: WebGLRenderingContext, ts: Target[]) { for (const t of ts) { g.deleteTexture(t.tex); g.deleteFramebuffer(t.fbo); } }
+
+/** Sets the pass up on its canvas. Safe to call once at startup; leaves everything off (and the canvas hidden) on any failure. */
+export function initPostfx(el: HTMLCanvasElement): FxMode {
+  canvas = el;
+  const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const nav = navigator as Navigator & { deviceMemory?: number; connection?: { saveData?: boolean } };
+  let renderer: string | undefined;
+  try {
+    gl = el.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' }) as WebGLRenderingContext | null;
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    if (gl && info) renderer = String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL));
+  } catch { gl = null; }
+  const decision = decideFx({ search: location.search, reducedMotion, saveData: !!nav.connection?.saveData, deviceMemory: nav.deviceMemory, renderer, glOk: !!gl });
+  forced = new URLSearchParams(location.search).has('fx');
+  mode = chosen = decision.mode;
+  reason = decision.reason;
+  // Dev only: flip the pass at runtime to compare the same scene with and without it.
+  if (new URLSearchParams(location.search).has('dev')) (window as unknown as { __postfx: unknown }).__postfx = { set: (on: boolean) => { mode = on && !broken ? chosen : 'off'; if (!on) skipFrame(); }, state: fxState };
+  if (mode !== 'off' && gl) {
+    try {
+      progs = {
+        bright: compile(gl, BRIGHT, ['src', 'texel', 'thr']),
+        down: compile(gl, DOWN, ['src', 'texel']),
+        blur: compile(gl, BLUR, ['src', 'dir']),
+        comp: compile(gl, COMPOSITE, ['src', 'bloomA', 'bloomB', 'bloom', 'ca', 'vig', 'grain', 'seed', 'gamma', 'sat', 'gscale', 'reach', 'lift', 'gain']),
+      };
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.disable(gl.BLEND);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      srcTex = texture(gl);
+      el.addEventListener('webglcontextlost', (e) => { e.preventDefault(); disable('context lost'); });
+    } catch (err) {
+      disable(`shader failed: ${String(err).slice(0, 80)}`);
+    }
+  } else if (gl) {
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    gl = null;
+  }
+  el.hidden = true;
+  return mode;
+}
+
+function disable(why: string) {
+  mode = 'off';
+  broken = true;
+  reason = why;
+  if (canvas) canvas.hidden = true;
+  shown = false;
+}
+
+function resizeTargets(w: number, h: number) {
+  const g = gl!;
+  const key = `${w}x${h}`;
+  if (key === sized) return;
+  if (sized) free(g, [...half, ...quarter]);
+  sized = key;
+  const hw = Math.max(2, w >> 1), hh = Math.max(2, h >> 1), qw = Math.max(2, w >> 2), qh = Math.max(2, h >> 2);
+  half = [target(g, hw, hh), target(g, hw, hh)];
+  quarter = [target(g, qw, qh), target(g, qw, qh)];
+}
+
+function pass(g: WebGLRenderingContext, prog: Prog, out: Target | null, w: number, h: number, inputs: WebGLTexture[], names: string[]) {
+  g.useProgram(prog.p);
+  g.bindFramebuffer(g.FRAMEBUFFER, out ? out.fbo : null);
+  g.viewport(0, 0, w, h);
+  inputs.forEach((t, i) => { g.activeTexture(g.TEXTURE0 + i); g.bindTexture(g.TEXTURE_2D, t); g.uniform1i(prog.u[names[i]], i); });
+  g.drawArrays(g.TRIANGLES, 0, 3);
+}
+
+/**
+ * Composites `source` (the 2D world) into the shader canvas. Returns true when it did, and the caller should then clear
+ * the 2D canvas before drawing the HUD over it; false means nothing changed and the 2D canvas already shows the world.
+ */
+export function processFrame(source: HTMLCanvasElement, c: Context, now: number, cssW: number, cssH: number, dpr: number): boolean {
+  if (mode === 'off' || !gl || !canvas) return false;
+  if (gl.isContextLost()) { disable('context lost'); return false; }
+  const t0 = performance.now();
+  const g = gl, w = source.width, h = source.height;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  if (!shown) { canvas.hidden = false; shown = true; }
+  resizeTargets(w, h);
+  const grade: Grade = gradeFor(c);
+  g.activeTexture(g.TEXTURE0);
+  g.bindTexture(g.TEXTURE_2D, srcTex);
+  g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, source);
+  const [h0, h1] = half, [q0, q1] = quarter;
+  g.useProgram(progs.bright.p);
+  g.uniform2f(progs.bright.u.texel, 1 / w, 1 / h);
+  g.uniform1f(progs.bright.u.thr, grade.bloomThreshold);
+  pass(g, progs.bright, h0, h0.w, h0.h, [srcTex], ['src']);
+  g.useProgram(progs.blur.p);
+  g.uniform2f(progs.blur.u.dir, 1 / h0.w, 0);
+  pass(g, progs.blur, h1, h1.w, h1.h, [h0.tex], ['src']);
+  g.uniform2f(progs.blur.u.dir, 0, 1 / h0.h);
+  pass(g, progs.blur, h0, h0.w, h0.h, [h1.tex], ['src']);
+  g.useProgram(progs.down.p);
+  g.uniform2f(progs.down.u.texel, 1 / h0.w, 1 / h0.h);
+  pass(g, progs.down, q0, q0.w, q0.h, [h0.tex], ['src']);
+  g.useProgram(progs.blur.p);
+  g.uniform2f(progs.blur.u.dir, 1 / q0.w, 0);
+  pass(g, progs.blur, q1, q1.w, q1.h, [q0.tex], ['src']);
+  g.uniform2f(progs.blur.u.dir, 0, 1 / q0.h);
+  pass(g, progs.blur, q0, q0.w, q0.h, [q1.tex], ['src']);
+
+  const p = progs.comp, u = p.u;
+  g.useProgram(p.p);
+  const pl = pulseNow > 0 ? decayPulse(pulseNow, now - pulseAt) : 0;
+  const [rx, ry] = vignetteReach(cssW, cssH);
+  g.uniform1f(u.bloom, grade.bloomStrength);
+  g.uniform1f(u.ca, pl * 0.012);
+  g.uniform1f(u.vig, vigStrength);
+  g.uniform1f(u.grain, grade.grain);
+  g.uniform1f(u.seed, mode === 'calm' ? 7 : Math.floor(now / 100) % 997);
+  g.uniform1f(u.gamma, grade.gamma);
+  g.uniform1f(u.sat, grade.sat);
+  g.uniform1f(u.gscale, Math.max(1, Math.round(dpr)));
+  g.uniform2f(u.reach, rx, ry);
+  g.uniform3f(u.lift, ...grade.lift);
+  g.uniform3f(u.gain, ...grade.gain);
+  pass(g, p, null, w, h, [srcTex, h0.tex, q0.tex], ['src', 'bloomA', 'bloomB']);
+  if (wasSlow(performance.now() - t0) && !forced) disable('too slow');
+  return true;
+}
+
+/** The plain-canvas path drew this frame (a menu with no world, say): hide the shader canvas so a stale frame never shows. */
+export function skipFrame(): void { if (shown && canvas) { canvas.hidden = true; shown = false; } }

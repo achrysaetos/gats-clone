@@ -1,4 +1,4 @@
-import { byTurret, PERK_TIERS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { AIRDROP, BARREL, byTurret, PERK_TIERS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -29,6 +29,8 @@ export type Life =
     /** 0..1 from enemy rounds passing close (see `SUPPRESSION`); `suppressedAt` is when the last one did. */
     suppression: number;
     suppressedAt: number;
+    /** Holds an airdrop's golden gun for this life: its rounds hit `AIRDROP.goldMul` as hard. */
+    golden: boolean;
   }
   /** Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
   | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number }
@@ -108,6 +110,17 @@ export type Bullet = {
 export type Shooter = TurretKind | 'bastion';
 
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null; drop?: true };
+
+/**
+ * An explosive barrel (center `x`, `y`). At 0 hp it hisses until `fuseAt`, then bursts and stands again at `respawnAt`.
+ * `by` is whoever lit it, with the `chain` (the id of the barrel that began it) it belongs to.
+ */
+export type Barrel = { id: number; x: number; y: number; hp: number; fuseAt: number | null; respawnAt: number | null; by: { attacker: number | null; team: Team; chain: number } | null };
+/** Barrels that burst one after another from one spark, and the kills they made, so a chain of two or more barrels that kills two or more earns Chain Reaction. */
+export type Chain = { by: number | null; barrels: number; kills: number; paid: boolean; at: number };
+/** A supply plane on its way: it passes (`x`, `y`) at `dropAt`, the crate lands at `landAt` and, once landed, stands as crate `crateId` until `expiresAt`. */
+export type Flight = { x: number; y: number; a: number; dropAt: number; landAt: number; crateId: number | null; expiresAt: number };
+export type Airdrops = { due: number[]; flight: Flight | null };
 
 export type Thrown =
   | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
@@ -203,6 +216,9 @@ export type World = {
   players: Map<number, Player>;
   bullets: Bullet[];
   crates: Crate[];
+  barrels: Barrel[];
+  chains: Map<number, Chain>;
+  airdrops: Airdrops;
   walls: Wall[];
   wallsVersion: number;
   thrown: Thrown[];
@@ -249,7 +265,7 @@ export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
+    players: new Map(), bullets: [], crates: [], barrels: [], chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
     zombies: [], buildings: [], buildingsVersion: 0, run: null, royale: null,
   };
@@ -274,6 +290,9 @@ export function loadMap(w: World, map: MapId) {
   w.walls = def.walls.map((r) => ({ ...r, built: false as const, expiresAt: Infinity }));
   w.wallsVersion++;
   w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
+  w.barrels = hasArenaSurprises(w.mode) ? def.barrels.map((b) => ({ id: newId(w), x: b.x, y: b.y, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null })) : [];
+  w.chains = new Map();
+  w.airdrops = { due: hasArenaSurprises(w.mode) ? planAirdrops(w) : [], flight: null };
   w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0 })) : [];
   w.bullets = [];
   w.thrown = [];
@@ -284,6 +303,26 @@ export function loadMap(w: World, map: MapId) {
   if (w.mode === 'BR') w.royale = newRoyale(w);
 }
 
+/** Barrels and airdrops stand on the versus maps only. */
+export const hasArenaSurprises = (mode: ModeId): boolean => mode === 'FFA' || mode === 'TDM' || mode === 'DOM';
+
+/** When this round's supply planes come: `AIRDROP.perRound` of them, at random times in the round's clock, spaced at least `gapMs` apart. */
+function planAirdrops(w: World): number[] {
+  const round = MAP_MS[w.mode];
+  const [lo, hi] = AIRDROP.perRound;
+  // Its own stream, derived from the world's, so planning never shifts the rolls a fight draws.
+  let state = (w.rng ^ 0x5bd1e995) | 0;
+  const next = () => { state = (state + 0x6d2b79f5) | 0; return mulberry32(state); };
+  const n = lo + Math.floor(next() * (hi - lo + 1));
+  const times: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const at = w.now + round * (AIRDROP.from + next() * (AIRDROP.to - AIRDROP.from));
+    if (times.every((t) => Math.abs(t - at) >= AIRDROP.gapMs)) times.push(at);
+  }
+  return times.sort((a, b) => a - b);
+}
+
+export const barrelRect = (b: Barrel): Rect => ({ x: b.x - BARREL.size / 2, y: b.y - BARREL.size / 2, w: BARREL.size, h: BARREL.size });
 export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 export function coreRect(w: World): Rect | null {
   const core = MAPS[w.map].siege?.core;
@@ -291,7 +330,7 @@ export function coreRect(w: World): Rect | null {
 }
 
 /** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. */
-export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
+export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect), ...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect)];
 
 /** What stops bodies: cover, plus the squad's walls and the core in a zombies run. */
 export function solidRects(w: World): Rect[] {

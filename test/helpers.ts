@@ -19,6 +19,8 @@ export function emptyWorld(mode: ModeId = 'FFA'): World {
   const w = createWorld(mode, 1, ROTATION[mode][0]);
   w.walls = [];
   w.crates = [];
+  w.barrels = [];
+  w.airdrops = { due: [], flight: null };
   return w;
 }
 

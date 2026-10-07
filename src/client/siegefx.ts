@@ -1,7 +1,7 @@
 import { ZOM, ZOMBIES } from '../shared/defs.ts';
 import type { BuildingView, RunView, Snapshot } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
-import { coreCracks, coreStage, drawCoreLight } from './coreart.ts';
+import { coreCracks, coreStage, drawCoreLight, glowSprite } from './coreart.ts';
 import { drawParticles } from './effects.ts';
 import { burst, createBudget, createPool, take, type Budget, type ParticlePool } from './particles.ts';
 import type { Strike } from './zombieart.ts';
@@ -14,6 +14,7 @@ export const SIEGE_CAP = 700;
 const HEAL_MS = 900;
 const PUFF_MS = 220;
 const PUFF_CAP = 48;
+const LAMP = '#ffb347';
 
 type Puff = { x: number; y: number; angle: number; size: number; born: number };
 type View = { x0: number; y0: number; x1: number; y1: number };
@@ -108,7 +109,7 @@ function updateCore(fx: SiegeFx, run: RunView, now: number, dt: number, rand: ()
     if (hp <= 0) {
       for (let i = 0; i < 4; i++) {
         burst(fx.pool, 'chips', x, y, (i / 4) * TAU, now, rand, undefined, 3);
-        burst(fx.pool, 'smoke', x, y, (i / 4) * TAU, now, rand, '#4a4845');
+        burst(fx.pool, 'smoke', x, y, (i / 4) * TAU, now, rand, '#5a5550');
       }
       burst(fx.pool, 'zap', x, y, 0, now, rand, undefined, 4);
     }
@@ -124,7 +125,7 @@ function updateCore(fx: SiegeFx, run: RunView, now: number, dt: number, rand: ()
     const n = due(fx, `core${i}`, stage.smokeRate, dt);
     if (!n) continue;
     const at = plumeAt(run, i);
-    const tone = stage.dark > 0.6 ? '#3a3836' : stage.dark > 0.3 ? '#55524e' : '#77736d';
+    const tone = stage.dark > 0.6 ? '#3f3c38' : stage.dark > 0.3 ? '#5a5550' : '#77716a';
     for (let j = 0; j < n; j++) burst(fx.pool, 'plume', at.x + (rand() - 0.5) * 6, at.y + (rand() - 0.5) * 6, 0, now, rand, tone, 1 + stage.dark);
     if (stage.dark >= 1 || run.phase === 'over') burst(fx.pool, 'embers', at.x, at.y, 0, now, rand, undefined, 0.5 * n);
   }
@@ -148,22 +149,33 @@ function updateBuildings(fx: SiegeFx, buildings: readonly BuildingView[], view: 
     const bad = b.hp <= 2;
     const n = due(fx, key, bad ? 4 : 1.6, dt);
     for (let i = 0; i < n; i++) {
-      burst(fx.pool, 'plume', r.x + r.w * (0.3 + rand() * 0.4), r.y + r.h * (0.3 + rand() * 0.4), 0, now, rand, bad ? '#3e3c3a' : '#6b6863', bad ? 1.2 : 0.8);
+      burst(fx.pool, 'plume', r.x + r.w * (0.3 + rand() * 0.4), r.y + r.h * (0.3 + rand() * 0.4), 0, now, rand, bad ? '#3f3c38' : '#5a5550', bad ? 1.2 : 0.8);
       if (bad && rand() < 0.5) burst(fx.pool, b.kind === 'wall' ? 'embers' : 'hotSparks', r.x + r.w / 2, r.y + r.h / 2, rand() * TAU, now, rand, undefined, 0.5);
     }
   }
 }
 
 /** The small white hit puff where a blow lands: a burst of short strokes and a ring, gone in a blink. */
-function drawPuffs(ctx: CanvasRenderingContext2D, fx: SiegeFx, now: number) {
+function drawPuffs(ctx: CanvasRenderingContext2D, fx: SiegeFx, now: number, pxPerUnit: number) {
+  // Each blow is a light source for a blink: a warm pool on whatever it struck.
+  const warm = glowSprite(LAMP, pxPerUnit);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of fx.puffs) {
+    const k = (now - p.born) / PUFF_MS;
+    if (k < 0 || k >= 1) continue;
+    const reach = p.size * 3.2;
+    ctx.globalAlpha = 0.5 * (1 - k) * (1 - k);
+    ctx.drawImage(warm, p.x - reach, p.y - reach, reach * 2, reach * 2);
+  }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.lineCap = 'round';
   for (const p of fx.puffs) {
     const k = (now - p.born) / PUFF_MS;
     if (k < 0 || k >= 1) continue;
     const e = 1 - (1 - k) * (1 - k);
     ctx.globalAlpha = 1 - k;
-    ctx.strokeStyle = '#fffbe8';
-    ctx.lineWidth = 2.6 * (1 - k) + 0.6;
+    ctx.strokeStyle = '#ffd27a';
+    ctx.lineWidth = 2.6 * (1 - k) + 1;
     ctx.beginPath();
     for (let i = -2; i <= 2; i++) {
       const a = p.angle + i * 0.45;
@@ -171,7 +183,7 @@ function drawPuffs(ctx: CanvasRenderingContext2D, fx: SiegeFx, now: number) {
       ctx.lineTo(p.x + Math.cos(a) * p.size * (0.7 + 0.8 * e), p.y + Math.sin(a) * p.size * (0.7 + 0.8 * e));
     }
     ctx.stroke();
-    ctx.lineWidth = 1.6 * (1 - k) + 0.5;
+    ctx.lineWidth = 1.6 * (1 - k) + 1;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * (0.4 + 0.6 * e), 0, TAU);
     ctx.stroke();
@@ -197,6 +209,6 @@ export function drawSiegeFx(ctx: CanvasRenderingContext2D, snap: Snapshot, view:
     drawCoreLight(ctx, run, now, hit, Math.max(0, 1 - (now - fx.healAt) / HEAL_MS), night, pxPerUnit);
   }
   drawParticles(ctx, fx.pool, now, night);
-  drawPuffs(ctx, fx, now);
+  drawPuffs(ctx, fx, now, pxPerUnit);
 }
 

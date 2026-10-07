@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: node scripts/map-lint.ts
 import { fileURLToPath } from 'node:url';
-import { GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
+import { BARREL, GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
@@ -12,7 +12,7 @@ export function standable(def: MapDef, n: number): Uint8Array {
   const free = new Uint8Array(n * n);
   const at = (i: number) => (i + 0.5) * CELL;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) free[j * n + i] = at(i) >= R && at(j) >= R && at(i) <= def.size - R && at(j) <= def.size - R ? 1 : 0;
-  for (const s of [...def.walls, ...crateRects(def)]) {
+  for (const s of [...def.walls, ...crateRects(def), ...barrelRects(def)]) {
     const i0 = Math.max(0, Math.floor((s.x - R) / CELL)), i1 = Math.min(n - 1, Math.floor((s.x + s.w + R) / CELL));
     const j0 = Math.max(0, Math.floor((s.y - R) / CELL)), j1 = Math.min(n - 1, Math.floor((s.y + s.h + R) / CELL));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (circleHitsRect(at(i), at(j), R, s)) free[j * n + i] = 0;
@@ -21,6 +21,7 @@ export function standable(def: MapDef, n: number): Uint8Array {
 }
 
 const crateRects = (def: MapDef): Rect[] => def.crates.map((c) => ({ x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
+const barrelRects = (def: MapDef): Rect[] => def.barrels.map((b) => ({ x: b.x - BARREL.size / 2, y: b.y - BARREL.size / 2, w: BARREL.size, h: BARREL.size }));
 const centerOf = (c: number, n: number): Center => ({ x: ((c % n) + 0.5) * CELL, y: (Math.floor(c / n) + 0.5) * CELL });
 /** The raster cells on both sides of `v` when it sits on a cell edge, so a zone and its turned twin are judged alike. */
 const cellsEitherSide = (v: number, n: number) => [Math.floor((v - 1) / CELL), Math.floor((v + 1) / CELL)].filter((k) => k >= 0 && k < n);
@@ -98,6 +99,16 @@ export function lintMap(def: MapDef): string[] {
     if (!inside(c, 0)) problems.push(`crate ${i} leaves the world`);
     if (def.walls.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
   });
+  const barrels = barrelRects(def);
+  barrels.forEach((b, i) => {
+    if (!inside(b, 0)) problems.push(`barrel ${i} leaves the world`);
+    if (def.walls.some((w) => rectsOverlap(w, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps a wall`);
+    if (crates.some((c) => rectsOverlap(c, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps a crate`);
+    if (barrels.some((o, j) => j > i && rectsOverlap(o, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps another barrel`);
+    for (const [side, regions] of Object.entries(def.spawns)) {
+      if (regions.some((r) => rectsOverlap(r, b, WORLD.playerRadius + BARREL.spawnGap))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} sits within ${BARREL.spawnGap}px of a ${side} spawn`);
+    }
+  });
   const spawnSides = Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][];
 
   for (const [side, regions] of spawnSides) {
@@ -121,6 +132,7 @@ export function lintMap(def: MapDef): string[] {
     if (!cellsEitherSide(z.y, n).some((row) => cellsEitherSide(z.x, n).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
     if (def.walls.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
     if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
+    if (barrels.some((b) => circleHitsRect(z.x, z.y, ZONE_RADIUS, b))) problems.push(`zone ${i} at ${where(z)} overlaps a barrel`);
   });
 
   if (def.siege) return problems;
@@ -141,6 +153,7 @@ export function lintMap(def: MapDef): string[] {
   const spawns = asymmetryOf(spawnSides.flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
   for (const c of withoutHalfTurnTwin(def.crates, def.size)) problems.push(`the crate at ${where(c)} has no twin at the half turn`);
+  for (const b of withoutHalfTurnTwin(def.barrels, def.size)) problems.push(`the barrel at ${where(b)} has no twin at the half turn`);
   for (const z of withoutHalfTurnTwin(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
   return problems;
 }

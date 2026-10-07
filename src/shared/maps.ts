@@ -21,6 +21,8 @@ export type MapDef = {
   /** Every point inside a region is a clear spot for a player's center. */
   spawns: { red: readonly Rect[]; blue: readonly Rect[]; ffa: readonly Rect[] };
   crates: readonly Center[];
+  /** Explosive barrels (versus modes), centers; half-turn twins like the crates. */
+  barrels: readonly Center[];
   /** Zombies only: the core the squad defends and the edge strips the horde walks in from. */
   siege?: { core: Center; horde: Readonly<Record<Side, Rect>> };
 };
@@ -45,6 +47,7 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
     zones: [],
     spawns: { red: squad, blue: squad, ffa: squad },
     crates: [],
+    barrels: [],
     siege: { core: { x: size / 2, y: size / 2 }, horde: Object.fromEntries(fourWays([quarter.horde], size).map((r, i) => [SIDES[i], r])) as Record<Side, Rect> },
   };
 }

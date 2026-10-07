@@ -90,3 +90,17 @@ test('a wall a pixel inside a player\'s reach of a spawn lets a player stand in 
 test('a side with no spawn region is reported', () => {
   assert.deepEqual(lintMap({ ...clean, spawns: { ...clean.spawns, ffa: [] } }), ['no ffa spawn region']);
 });
+
+const withBarrels = (...barrels: MapDef['barrels']) => lintMap({ ...clean, barrels: [...clean.barrels, ...barrels, ...barrels.map((c) => ({ x: clean.size - c.x, y: clean.size - c.y }))] });
+
+test('a barrel inside or beside a spawn region, in a wall, on a crate or over a zone is a problem', () => {
+  assert.deepEqual(withBarrels({ x: 700, y: 250 }), [], 'a barrel out in the open is fine');
+  assert.ok(withBarrels({ x: 75, y: 75 }).some((p) => /within \d+px of a (red|ffa|blue) spawn/.test(p)), 'in a spawn');
+  assert.ok(withBarrels({ x: 175, y: 75 }).some((p) => p.includes('barrel')), 'beside a spawn');
+  assert.ok(withBarrels({ x: 100, y: 225 }).some((p) => p.includes('overlaps a wall')), 'in a wall');
+  assert.ok(withBarrels({ x: 425, y: 825 }).some((p) => p.includes('overlaps a crate')), 'on a crate');
+});
+
+test('a lone barrel without its half-turn twin is a problem', () => {
+  assert.ok(lintMap({ ...clean, barrels: [{ x: 700, y: 250 }] }).some((p) => p.includes('no twin')));
+});

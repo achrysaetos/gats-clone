@@ -70,21 +70,21 @@ export const BURSTS: Record<BurstKind, BurstSpec> = {
   puff: { count: 16, speed: [90, 300], life: [360, 560], size: [4, 6], grow: 0, drag: 5, spread: Math.PI, colors: ['#ffffff'], shape: 'spark' },
   casing: { count: 1, speed: [90, 160], life: [1400, 1800], size: [4, 4], grow: 0, drag: 5, spread: 0.4, colors: [PALETTE.casing], shape: 'casing' },
   /** Metal on claw: a fan of hot streaks that die fast, the punch of a hit. */
-  hotSparks: { count: 6, speed: [260, 620], life: [110, 260], size: [1.6, 2.8], grow: 0, drag: 7, spread: 0.85, colors: ['#fff6d0', '#ffd25a', '#ff9a3a'], shape: 'spark' },
+  hotSparks: { count: 6, speed: [260, 620], life: [110, 260], size: [1.6, 2.8], grow: 0, drag: 7, spread: 0.85, colors: ['#fff6d6', '#ffd27a', '#ff9a3c'], shape: 'spark' },
   /** The core's charge arcing out of a crack. */
   zap: { count: 5, speed: [180, 460], life: [120, 280], size: [1.4, 2.4], grow: 0, drag: 6, spread: 0.7, colors: ['#e8fdff', '#7fe6f5', '#4fd1e8'], shape: 'spark' },
   /** Flecks of armour plate knocked off a building. */
   chips: { count: 4, speed: [120, 300], life: [380, 700], size: [2.4, 4.4], grow: 0, drag: 6, spread: 0.9, colors: ['#3c414b', '#5d636d', '#2c3037', '#d9541f'], shape: 'chip', spin: 0.09 },
   /** A slow column of smoke off a burning building: few big puffs that swell and climb. */
-  plume: { count: 1, speed: [6, 26], life: [1400, 2200], size: [7, 11], grow: 1.6, drag: 1.2, spread: Math.PI, colors: ['#5a5753', '#6b6863', '#4a4845'], shape: 'smoke', rise: [26, 44] },
-  embers: { count: 2, speed: [20, 90], life: [600, 1100], size: [1.4, 2.4], grow: 0, drag: 2, spread: Math.PI, colors: ['#ffd25a', '#ff8a3a', '#ff5a1f'], shape: 'ember', rise: [30, 60] },
+  plume: { count: 1, speed: [6, 26], life: [1400, 2200], size: [7, 11], grow: 1.6, drag: 1.2, spread: Math.PI, colors: ['#5a5550', '#6b655f', '#4a4642'], shape: 'smoke', rise: [26, 44] },
+  embers: { count: 2, speed: [20, 90], life: [600, 1100], size: [1.4, 2.4], grow: 0, drag: 2, spread: Math.PI, colors: ['#ffe08a', '#ff9a3c', '#d9541f'], shape: 'ember', rise: [30, 60] },
   /** Grit kicked up off the floor by a blow. */
   dust: { count: 3, speed: [40, 120], life: [320, 520], size: [5, 8], grow: 1.1, drag: 5, spread: 1.2, colors: ['#c9c2b2', '#b4ad9c'], shape: 'smoke', rise: [4, 12] },
   /** A zombie coming apart: pale bone flecks to go with the gore. */
   bone: { count: 5, speed: [160, 420], life: [300, 560], size: [2.4, 4.2], grow: 0, drag: 7, spread: Math.PI, colors: ['#e8dfc8', '#cfc4a8'], shape: 'chip', spin: 0.12 },
   muzzleSmoke: { count: 2, speed: [30, 90], life: [380, 620], size: [4, 7], grow: 1.3, drag: 4, spread: 0.5, colors: ['#bdb9b1', '#a7a39c'], shape: 'smoke', rise: [8, 20] },
   /** Repair: cool motes lifting off a mended surface. */
-  mend: { count: 4, speed: [20, 70], life: [500, 900], size: [1.6, 2.6], grow: 0, drag: 2, spread: Math.PI, colors: ['#9ff0c0', '#e8fdff', '#4fd1e8'], shape: 'ember', rise: [30, 60] },
+  mend: { count: 4, speed: [20, 70], life: [500, 900], size: [1.6, 2.6], grow: 0, drag: 2, spread: Math.PI, colors: ['#8ff0c4', '#e8fdff', '#8ff0c4'], shape: 'ember', rise: [30, 60] },
 };
 
 const between = ([lo, hi]: [number, number], r: number) => lo + (hi - lo) * r;

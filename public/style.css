@@ -138,6 +138,16 @@ button.primary::after {
   transition: right 0.18s, opacity 0.18s;
 }
 button.primary:hover:not(:disabled) { background: var(--accent-hot); }
+/* A glint crosses the Deploy plate every few seconds; pressing it sinks the plate and flashes it. */
+button.primary::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 28%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 233, 176, 0.6), transparent); transform: skewX(-20deg);
+  animation: deploy-glint 4.5s ease-in-out 1s infinite;
+}
+button.primary:disabled::before { display: none; }
+button.primary { transition: transform 0.08s, background 0.12s, filter 0.12s; }
+button.primary:active:not(:disabled) { transform: translateY(2px) scale(0.985); filter: brightness(1.18); }
+@keyframes deploy-glint { 0% { left: -40%; } 24%, 100% { left: 125%; } }
 button.primary:hover:not(:disabled)::after { right: 14px; opacity: 0.9; }
 button.secondary { background: transparent; }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font: inherit; letter-spacing: 0; }
@@ -197,6 +207,15 @@ kbd {
   text-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
 }
 .logo em { font-style: inherit; color: var(--accent); }
+/* A slow shine crosses the wordmark now and then; the plain colours show through whenever it is not passing. */
+.logo, .logo em {
+  background: linear-gradient(105deg, var(--base) 42%, var(--glint) 50%, var(--base) 58%) 0 0 / 300% 100% no-repeat;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; text-shadow: none;
+  animation: logo-shine 7s ease-in-out 1.2s infinite;
+}
+.logo { --base: var(--ink); --glint: #fff6dc; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.5)); }
+.logo em { --base: var(--accent); --glint: #ffd9a0; }
+@keyframes logo-shine { 0% { background-position: 0 0; } 22%, 100% { background-position: 100% 0; } }
 .tagline {
   display: flex;
   align-items: center;
@@ -255,7 +274,13 @@ kbd {
 .tile b { font: 700 18px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; }
 .tile small { color: var(--muted); font: 500 var(--t-micro)/1.2 var(--text); letter-spacing: 0.02em; }
 .tile[aria-pressed="true"] b { color: var(--accent); }
-.weapon { background: var(--panel-2); }
+.weapon { background: var(--panel-2); transition: transform 0.16s cubic-bezier(.2, 1.4, .4, 1), background 0.12s, box-shadow 0.16s, border-color 0.12s; }
+/* Cards lift toward you and take a warm light from the top edge; a chosen one keeps its glow. */
+.tile:hover:not(:disabled) { transform: translateY(-3px); box-shadow: inset 0 2px 0 rgba(255, 179, 71, 0.55), inset 0 18px 24px -14px rgba(255, 90, 31, 0.3); }
+.tile:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+.tile[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--accent), inset 0 16px 26px -14px rgba(255, 90, 31, 0.4); }
+.tile[aria-pressed="true"]:not(:hover) { animation: tile-settle 0.3s cubic-bezier(.2, 1.5, .4, 1); }
+@keyframes tile-settle { 0% { transform: scale(0.95); } 100% { transform: none; } }
 .gun-art { width: 100%; max-width: 150px; height: auto; aspect-ratio: 150 / 56; }
 /* Each class gun's kit card: power, rate, reach and mobility as short bars against the other classes. */
 .gun-stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; width: 100%; margin-top: 6px; align-items: center; }
@@ -353,7 +378,9 @@ a.wordmark { text-decoration: none; }
   border-top: 2px solid var(--accent);
   padding: 8px;
   --cut: 8px;
+  animation: dock-in 0.3s cubic-bezier(.2, 1.2, .4, 1) both;
 }
+@keyframes dock-in { from { transform: translateY(24px); opacity: 0; } }
 /* A zombies run draws its key hints along the bottom (drawSiege in hud.ts), so the dock sits above them. */
 .perk-panel.siege { bottom: 52px; }
 .perk-panel h2 { margin: 0 2px 6px; font-size: var(--t-label); color: var(--ink); letter-spacing: 0.18em; }
@@ -371,6 +398,14 @@ a.wordmark { text-decoration: none; }
   align-items: center;
   background: var(--panel-2);
 }
+.perk { animation: perk-in 0.34s cubic-bezier(.2, 1.5, .4, 1) calc(0.12s + var(--i, 0) * 60ms) both; overflow: hidden; }
+.perk::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 233, 176, 0.35), transparent); transform: skewX(-20deg);
+  animation: perk-shimmer 0.7s ease-out calc(0.4s + var(--i, 0) * 60ms) both;
+}
+@keyframes perk-in { from { transform: translateY(18px) scale(0.85); opacity: 0; } }
+@keyframes perk-shimmer { from { left: -60%; } to { left: 130%; } }
 .perk:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-wash); }
 .perk kbd { justify-self: start; min-width: 0; padding: 0 4px; font-size: 11px; border-bottom-width: 2px; }
 .perk-icon { width: 22px; height: 22px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -503,7 +538,16 @@ a.wordmark { text-decoration: none; }
   padding: 22px 20px 20px;
   box-shadow: var(--lift);
   --cut: 14px;
+  animation: card-slam 0.45s cubic-bezier(.2, 1.1, .4, 1) both;
 }
+/* The card drops in oversized and lands with a jolt. */
+@keyframes card-slam {
+  0% { transform: scale(1.14) translateY(-10px); opacity: 0; }
+  50% { transform: scale(0.985); opacity: 1; }
+  66% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); } 100% { transform: none; }
+}
+.death-card > h2:first-child { animation: stamp-title 0.4s cubic-bezier(.2, 1.5, .4, 1) 0.18s both; }
+@keyframes stamp-title { from { transform: scale(1.6) rotate(-3deg); opacity: 0; } }
 /* Hazard tape along the top edge. */
 .death-card::before {
   content: "";
@@ -527,7 +571,7 @@ a.wordmark { text-decoration: none; }
 /* The life just lost, as four stamped stats; a record gets an orange plate and a tag. */
 .recap { margin-top: var(--s4); }
 .recap-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.recap-stat { position: relative; display: grid; gap: 2px; padding: 9px 6px 8px; background: var(--well); border: 1px solid var(--line); text-align: center; }
+.recap-stat { animation: recap-stamp 0.32s cubic-bezier(.2, 1.5, .4, 1) calc(0.35s + var(--i, 0) * 90ms) both; position: relative; display: grid; gap: 2px; padding: 9px 6px 8px; background: var(--well); border: 1px solid var(--line); text-align: center; }
 .recap-stat b { font: 800 26px/1 var(--display); font-variant-numeric: tabular-nums; }
 .recap-stat span { font: 700 11px/1 var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
 .recap-stat.best { border-color: var(--accent); background: var(--accent-wash); }
@@ -538,6 +582,7 @@ a.wordmark { text-decoration: none; }
   font: italic 900 11px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
   animation: stamp 0.35s cubic-bezier(.2, 1.6, .4, 1) both;
 }
+@keyframes recap-stamp { from { transform: scale(1.5); opacity: 0; } }
 @keyframes stamp { from { transform: translateX(-50%) rotate(-12deg) scale(2.2); opacity: 0; } }
 .recap-bests { margin-top: var(--s2); font: 600 var(--t-label) var(--display); letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; }
 .recap-nemesis { margin-top: var(--s2); padding: 7px 10px; border-left: 3px solid var(--danger); background: rgba(255, 77, 94, 0.1); font: 600 var(--t-label) var(--text); }
@@ -664,10 +709,36 @@ a.wordmark { text-decoration: none; }
 }
 .medal-toast {
   display: grid; justify-items: center; gap: 3px; width: 140px;
-  animation: medal-in 0.42s cubic-bezier(.18, 1.6, .4, 1) both, medal-out 0.4s ease-in calc(var(--life) - 0.4s) both;
+  --pow: 1;
+  --ray: 255, 211, 77;
+  position: relative;
+  animation: medal-in 0.42s cubic-bezier(.18, 1.6, .4, 1) both, medal-shake 0.4s linear 0.24s both, medal-out 0.4s ease-in calc(var(--life) - 0.4s) both;
+}
+.tier-silver { --ray: 236, 230, 214; }
+.tier-bronze { --ray: 255, 179, 71; }
+.tier-platinum { --ray: 236, 244, 255; }
+/* Light rays turn slowly behind the medal, fading with its life; a platinum one throws the widest, brightest fan. */
+.medal-rays {
+  position: absolute; left: 50%; top: 50%; width: calc(250px * (0.7 + var(--pow) * 0.3)); aspect-ratio: 1; margin: calc(-125px * (0.7 + var(--pow) * 0.3)) 0 0 calc(-125px * (0.7 + var(--pow) * 0.3));
+  border-radius: 50%; pointer-events: none;
+  background: repeating-conic-gradient(rgba(var(--ray), 0.62) 0 7deg, transparent 7deg 22.5deg);
+  -webkit-mask: radial-gradient(circle, #000 14%, transparent 70%); mask: radial-gradient(circle, #000 14%, transparent 70%);
+  opacity: 0;
+  animation: medal-spin 7s linear both, medal-rays 1.6s ease-out both;
+}
+/* A shockwave ring leaves the medal as it lands. */
+.medal-ring {
+  position: absolute; inset: 4px; border-radius: 50%; pointer-events: none; border: calc(2px + var(--pow) * 2px) solid rgba(var(--ray), 0.9);
+  opacity: 0; animation: medal-ring 0.55s ease-out 0.26s both;
+}
+.medal-spark {
+  position: absolute; left: 50%; top: 50%; width: var(--sz); height: var(--sz); margin: calc(var(--sz) / -2) 0 0 calc(var(--sz) / -2); pointer-events: none;
+  background: #ffe9b0; filter: drop-shadow(0 0 4px rgba(var(--ray), 1));
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  opacity: 0; animation: medal-spark var(--sd) cubic-bezier(.1, .7, .3, 1) var(--dl) both;
 }
 .medal-art { position: relative; width: 108px; height: 108px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
-.medal-art svg { display: block; }
+.medal-art svg { display: block; position: relative; }
 .medal-art::after {
   content: ""; position: absolute; inset: 6px; border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 65%);
@@ -679,7 +750,7 @@ a.wordmark { text-decoration: none; }
 .medal-shine::before {
   content: ""; position: absolute; top: -20%; bottom: -20%; width: 30%; left: -50%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent); transform: skewX(-20deg);
-  animation: medal-sweep 0.7s ease-out 0.3s both;
+  animation: medal-sweep 2.4s ease-in-out 0.3s infinite;
 }
 .medal-name {
   font: italic 900 24px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink);
@@ -689,23 +760,37 @@ a.wordmark { text-decoration: none; }
 .medal-toast.career .medal-art { width: 140px; height: 140px; }
 .medal-toast.career .medal-name { font-size: 28px; }
 .medal-banner { font: 800 13px/1 var(--display); letter-spacing: 0.3em; text-transform: uppercase; color: #0d0e11; background: var(--gold); padding: 4px 10px; }
-.medal-score { font: 800 18px/1 var(--display); color: var(--gold); text-shadow: 0 2px 0 #0b0c0f, 0 0 8px rgba(0, 0, 0, 0.8); }
+.medal-score { font: 800 18px/1 var(--display); font-variant-numeric: tabular-nums; color: var(--gold); text-shadow: 0 2px 0 #0b0c0f, 0 0 8px rgba(0, 0, 0, 0.8); animation: medal-pop 0.4s cubic-bezier(.2, 1.7, .4, 1) 0.34s both; }
+.medal-name { animation: medal-pop 0.4s cubic-bezier(.2, 1.7, .4, 1) 0.2s both; }
+.tier-platinum .medal-name { background: linear-gradient(100deg, #bfe6ff 30%, #ffffff 50%, #bfe6ff 70%) 0 0 / 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; text-shadow: none; filter: drop-shadow(0 2px 0 #0b0c0f); animation: medal-pop 0.4s cubic-bezier(.2, 1.7, .4, 1) 0.2s both, name-foil 2.2s linear 0.6s infinite; }
 .tier-bronze .medal-name { color: #f2c08a; }
 .tier-silver .medal-name { color: #eef2f7; }
 .tier-gold .medal-name { color: #ffd95a; }
 .tier-platinum .medal-name { color: #bfe6ff; }
-.tier-platinum .medal-art, .tier-gold .medal-art { animation: medal-glow 1.2s ease-in-out 0.4s 2; }
+.tier-platinum .medal-art, .tier-gold .medal-art { animation: medal-glow 1.2s ease-in-out 0.4s 3; }
 @keyframes medal-in { from { transform: scale(2.6) rotate(-14deg); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
 @keyframes medal-out { to { transform: translateY(-26px) scale(0.85); opacity: 0; } }
 @keyframes medal-flash { from { opacity: 1; transform: scale(0.6); } to { opacity: 0; transform: scale(1.5); } }
-@keyframes medal-sweep { to { left: 120%; } }
-@keyframes medal-glow { 50% { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 14px rgba(255, 214, 90, 0.85)); } }
+@keyframes medal-sweep { 0% { left: -50%; } 32%, 100% { left: 120%; } }
+@keyframes medal-spin { to { rotate: 360deg; } }
+@keyframes medal-rays { 0% { opacity: 0; scale: 0.3; } 18% { opacity: 1; scale: 1; } 100% { opacity: 0; } }
+@keyframes medal-ring { from { opacity: 0.95; transform: scale(0.9); } to { opacity: 0; transform: scale(calc(1.6 + var(--pow) * 0.5)); } }
+@keyframes medal-spark { 0% { opacity: 0; transform: translate(0, 0) scale(0.2) rotate(0); } 18% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(var(--rot)); } }
+@keyframes medal-pop { from { opacity: 0; transform: translateY(8px) scale(0.5); } }
+@keyframes name-foil { to { background-position: -250% 0; } }
+/* The stamp's impact: the whole toast jolts, harder for a higher tier. */
+@keyframes medal-shake {
+  0% { translate: 0 0; } 14% { translate: calc(var(--pow) * -7px) calc(var(--pow) * 4px); } 30% { translate: calc(var(--pow) * 6px) calc(var(--pow) * -5px); }
+  48% { translate: calc(var(--pow) * -4px) calc(var(--pow) * 2px); } 68% { translate: calc(var(--pow) * 2px) calc(var(--pow) * -1px); } 100% { translate: 0 0; }
+}
+@keyframes medal-glow { 50% { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 22px rgba(var(--ray), 0.95)); } }
 @media (pointer: coarse) and (max-height: 519px) {
   .medals { top: 18%; gap: 6px; }
   .medal-toast { width: 92px; }
   .medal-art { width: 64px; height: 64px; }
   .medal-art svg { width: 64px; height: 64px; }
   .medal-name { font-size: 15px; }
+  .medal-rays { width: 150px; margin: -75px 0 0 -75px; }
 }
 
 /* The profile page (profile.html): a service record of career numbers, lifetime medals and match medals. */
@@ -731,4 +816,16 @@ a.wordmark { text-decoration: none; }
   .profile-stats { grid-template-columns: repeat(3, 1fr); }
   .profile-name { font-size: 36px; }
   .profile-head { gap: var(--s3); }
+}
+
+/* Reduced motion keeps every state and drops the movement: no shake, shine, glint, sparkle or slide. */
+@media (prefers-reduced-motion: reduce) {
+  .logo, .logo em { animation: none; background: none; -webkit-text-fill-color: currentColor; color: var(--ink); }
+  .logo em { color: var(--accent); }
+  button.primary::before, .perk::after, .medal-rays, .medal-ring, .medal-spark { display: none; }
+  .tile:hover:not(:disabled) { transform: none; }
+  .medal-toast, .medal-toast .medal-art, .medal-shine::before, .medal-name, .medal-score, .death-card, .death-card > h2:first-child,
+  .recap-stat, .perk, .perk-panel, .tile { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; }
+  .medal-toast { animation: medal-out 0.4s ease-in calc(var(--life) - 0.4s) both !important; }
+  .perk-panel.collapsed { animation: none; }
 }

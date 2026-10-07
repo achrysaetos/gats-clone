@@ -236,7 +236,7 @@ function paintBase(g: CanvasRenderingContext2D) {
 }
 
 /** The light a lit crystal throws on the floor, a soft round falloff, painted once and tinted by alpha. */
-function glowSprite(color: string, pxPerUnit: number) {
+export function glowSprite(color: string, pxPerUnit: number) {
   return cached(`glow|${color}`, 256, Math.min(pxPerUnit, 1), (g) => {
     const grad = g.createRadialGradient(0, 0, 0, 0, 0, 128);
     grad.addColorStop(0, color);
@@ -313,12 +313,7 @@ export function drawCoreBody(ctx: CanvasRenderingContext2D, run: RunView, now: n
       ctx.stroke();
     }
   }
-  if (hit > 0) {
-    ctx.globalAlpha = 0.45 * hit;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(jx - HALF, jy - HALF, HALF * 2, HALF * 2);
-    ctx.globalAlpha = 1;
-  }
+  // A bite's flash is light, not paint: drawn in the light pass (drawCoreLight) as a flare of the crystal and its pool.
   drawHealthRing(ctx, x, y, frac, now);
 }
 
@@ -421,6 +416,13 @@ export function drawCoreLight(ctx: CanvasRenderingContext2D, run: RunView, now: 
   const reach = 140 + 10 * pulse;
   ctx.globalAlpha = (0.06 + 0.1 * night) * power + 0.12 * hit;
   ctx.drawImage(glow, x - reach, y - reach, reach * 2, reach * 2);
+  if (hit > 0) {
+    // A bite flares the core's light, added over whatever is there, never painted white over its armour.
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.4 * hit;
+    ctx.drawImage(glow, x - 90, y - 90, 180, 180);
+    ctx.globalCompositeOperation = 'source-over';
+  }
   if (stage.alarm) {
     const red = glowSprite(ALARM, pxPerUnit);
     ctx.globalAlpha = (0.08 + 0.18 * night) * alarmBeat;
@@ -528,8 +530,8 @@ export function drawCoreLight(ctx: CanvasRenderingContext2D, run: RunView, now: 
   if (stage.sputter && stage.cracks > 0) {
     const cracks = coreCracks(x, y);
     ctx.lineCap = 'round';
-    ctx.strokeStyle = stage.alarm ? '#ff9a5a' : '#8be9f7';
-    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = stage.alarm ? '#ff9a3c' : '#8be9f7';
+    ctx.lineWidth = 1.5;
     ctx.globalAlpha = (0.55 + 0.45 * Math.sin(now / 90)) * Math.max(0.3, power);
     ctx.beginPath();
     for (let i = 0; i < stage.cracks; i++) {
@@ -543,7 +545,7 @@ export function drawCoreLight(ctx: CanvasRenderingContext2D, run: RunView, now: 
   // A fresh repair: a cool shimmer sweeping over the block.
   if (heal > 0) {
     ctx.globalAlpha = 0.5 * heal;
-    ctx.strokeStyle = '#9ff0c0';
+    ctx.strokeStyle = '#8ff0c4';
     ctx.lineWidth = 3;
     ctx.strokeRect(x - HALF - 4 - 10 * (1 - heal), y - HALF - 4 - 10 * (1 - heal), HALF * 2 + 8 + 20 * (1 - heal), HALF * 2 + 8 + 20 * (1 - heal));
     ctx.globalAlpha = 1;

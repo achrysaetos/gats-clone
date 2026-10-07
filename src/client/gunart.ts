@@ -16,8 +16,12 @@ type Shape =
   | { kind: 'dot'; at: Pt; r: number; tone: Tone; barrel?: true };
 type Art = { pivot: number; accent: readonly [number, number, number, number]; shapes: readonly Shape[] };
 
-const TONES: Record<Tone, string> = {
+const BASE_TONES: Record<Tone, string> = {
   metal: '#555c67', dark: '#2c3037', poly: '#666b74', wood: '#93633a', tan: '#b19d72', olive: '#6a7255', glass: '#8fc0de', bead: '#efe7d0',
+};
+/** An airdrop's golden gun: every painted part keeps its shape and light but wears gold (gold means reward). */
+const GOLD_TONES: Record<Tone, string> = {
+  metal: '#d9a92b', dark: '#7a5a14', poly: '#e6bd47', wood: '#b8862a', tan: '#f0d27a', olive: '#c9a227', glass: '#fff3b0', bead: '#fff8dc',
 };
 const SHINE = 'rgba(255, 255, 255, 0.28)';
 const SEAM = 'rgba(0, 0, 0, 0.55)';
@@ -181,8 +185,9 @@ function trace(ctx: CanvasRenderingContext2D, pts: readonly Pt[], close: boolean
  * Draws the gun's art in its own units (call after scaling the context). `flat` fills every solid part in one colour, for
  * the kill feed's small glyphs; otherwise each part is shaded top to bottom and edged, with seams and highlights on top.
  */
-function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string) {
+function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, golden = false) {
   const b = build(gun);
+  const TONES = golden ? GOLD_TONES : BASE_TONES;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   if (!flat) {
@@ -243,7 +248,7 @@ function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string) {
   }
   if (b.accent && !flat) {
     trace(ctx, b.accent, true);
-    ctx.fillStyle = GUNS[gun].look.accent;
+    ctx.fillStyle = golden ? '#fff1a8' : GUNS[gun].look.accent;
     ctx.fill();
   }
 }
@@ -254,14 +259,14 @@ export const artBounds = (gun: GunId) => {
 };
 
 /** Fits the gun's art into the box at (`x`, `y`) of `w` by `h`, centred, at `scale` units per px if given (so siblings compare true size). */
-export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left' } = {}) {
+export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left'; golden?: boolean } = {}) {
   const b = build(gun);
   const k = opts.scale ?? Math.min(w / (b.maxX - b.minX), h / (b.maxY - b.minY));
   const left = opts.align === 'left' ? x : x + (w - (b.maxX - b.minX) * k) / 2;
   ctx.save();
   ctx.translate(left - b.minX * k, y + h / 2 - ((b.minY + b.maxY) / 2) * k);
   ctx.scale(k, k);
-  paint(ctx, gun, opts.flat);
+  paint(ctx, gun, opts.flat, opts.golden);
   ctx.restore();
 }
 
@@ -277,8 +282,8 @@ const HOLD_REAR: Record<WeaponId, number> = { pistol: 0.62, smg: 0.38, shotgun: 
 
 const images = new Map<string, HTMLCanvasElement>();
 
-function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
-  const key = `${gun}|${dusted}`;
+function worldImage(gun: GunId, dusted: boolean, golden = false): HTMLCanvasElement {
+  const key = `${gun}|${dusted}|${golden}`;
   let image = images.get(key);
   if (image) return image;
   const b = build(gun);
@@ -287,7 +292,7 @@ function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
   image.height = Math.ceil((b.maxY - b.minY) * WORLD_GUN.res) + 4;
   const g = image.getContext('2d');
   if (g) {
-    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4);
+    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4, { golden });
     if (dusted) {
       // Dust settles on it: a flat grey wash over the paint only.
       g.globalCompositeOperation = 'source-atop';
@@ -324,14 +329,14 @@ export const heldForeshorten = (angle: number): number => 1 - 0.15 * Math.abs(Ma
  * A held gun aimed along `aim`, in the holder's frame (x along the aim, from the body's centre), its bore on the aim line,
  * mirrored when aimed left (see `heldFlipped`) and foreshortened toward up or down (see `heldForeshorten`).
  */
-export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, aim = 0) {
+export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, aim = 0, golden = false) {
   const { w, h, bore, front } = worldSize(gun);
   const rear = HOLD_REAR[GUNS[gun].base] * radius;
   const fore = heldForeshorten(aim);
   ctx.save();
   ctx.translate(rear, 0);
   ctx.scale(fore, heldFlipped(aim) ? -1 : 1);
-  ctx.drawImage(worldImage(gun, false), -front, -bore, w, h);
+  ctx.drawImage(worldImage(gun, false, golden), -front, -bore, w, h);
   ctx.restore();
 }
 

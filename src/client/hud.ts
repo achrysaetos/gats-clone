@@ -12,6 +12,7 @@ import { glow, PALETTE, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, useHint } from './zombies.ts';
+import { airdropLine, drawAirdropMap } from './arenafx.ts';
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
 import { drawGunArt } from './gunart.ts';
 import type { Session } from './state.ts';
@@ -570,7 +571,7 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
   const { ctx, w, s, now } = hud;
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
   const right = w - EDGE;
-  lines.forEach((f, i) => {
+  const drawRow = (f: (typeof lines)[number], i: number) => {
     const y = top + i * FEED_ROW + 10;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600) * 0.95;
     setFont(ctx, 650, TYPE.label + 1);
@@ -582,6 +583,17 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
       ctx.fillStyle = color;
       ctx.fillRect(right - pw + 4, y - 5, 2, 10);
       text(ctx, line, right - pw + SPACE.md, y, TYPE.label + 1, PANEL_INK, 'left', 650);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    if (f.e === 'airdrop') {
+      const row = airdropLine(f);
+      if (!row) return;
+      const pw = ctx.measureText(row.text).width + SPACE.md * 2 + 8;
+      feedRow(ctx, right - pw, y, pw, f.k === 'taken');
+      ctx.fillStyle = row.color;
+      ctx.fillRect(right - pw + 4, y - 5, 4, 10);
+      text(ctx, row.text, right - pw + SPACE.md + 6, y, TYPE.label + 1, PANEL_INK, 'left', 650);
       ctx.globalAlpha = 1;
       return;
     }
@@ -620,8 +632,23 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
     text(ctx, f.victim, x, y, TYPE.label + 1, nameColor(hud, f.victimId), 'left', 650);
     if (tag) text(ctx, tag, x + vw + SPACE.sm, y, TYPE.micro, f.bounty ? FEED_TEAM.red : PALETTE.gold, 'left', 800);
     ctx.globalAlpha = 1;
+  };
+  lines.forEach((f, i) => {
+    // A new line punches in from the right with a little overshoot; one of yours also flashes.
+    const age = now - f.at;
+    const slide = REDUCED || age > FEED_IN_MS ? 0 : 1 - easeOutBack(Math.max(0, age) / FEED_IN_MS);
+    feedAge = age;
+    ctx.translate(slide * 150, 0);
+    drawRow(f, i);
+    ctx.translate(-slide * 150, 0);
   });
+  feedAge = 1e9;
 }
+
+const FEED_IN_MS = 320;
+const FEED_FLASH_MS = 620;
+let feedAge = 1e9;
+const easeOutBack = (t: number): number => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
 /** A line you took part in carries an orange edge. */
 function feedRow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, mine: boolean) {
@@ -629,6 +656,18 @@ function feedRow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number,
   if (!mine) return;
   ctx.fillStyle = ACCENT;
   ctx.fillRect(x, y - 10, 3, 20);
+  const flash = popOf(feedAge, FEED_FLASH_MS);
+  if (flash > 0) {
+    const a = ctx.globalAlpha;
+    ctx.globalAlpha = a * flash * 0.7;
+    ctx.fillStyle = '#ffd7b0';
+    plate(ctx, x, y - 10, w, 20);
+    ctx.fill();
+    ctx.globalAlpha = a * flash * 0.5;
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(x - 4 * flash, y - 10, 3 + 4 * flash, 20);
+    ctx.globalAlpha = a;
+  }
 }
 
 const FEED_TEAM: Record<ColorId, string> = { ...byColor((c) => tint(COLORS[c], 0.55)), red: '#ffb0b2', blue: '#b5c6ff' };
@@ -645,6 +684,9 @@ const timeLeft = ({ snap, s, now }: Hud) => roundTimeLeft(snap.match, serverNow(
 
 /** On a phone the board lists only the top `touchTop` and you, so it ends above the ability button (style.css). */
 const BOARD = { w: 168, compactW: 140, row: 21, pad: 10, touchTop: 3 } as const;
+
+let boardYs = new Map<number, number>();
+const boardMine = { place: null as number | null, climbAt: -1e9 };
 
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const { ctx, w, h, snap, s, me } = hud;
@@ -664,6 +706,10 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
     y += head;
   }
   const mineColor = me ? ownColor(snap, me) : PALETTE.gold;
+  const myPlace = rows.find((r) => r.row.id === s.myId)?.place ?? null;
+  if (myPlace !== null && boardMine.place !== null && myPlace < boardMine.place) boardMine.climbAt = hud.now;
+  boardMine.place = myPlace;
+  const rowYs = new Map<number, number>();
   rows.forEach(({ place, row: r }, i) => {
     if (split && i === rows.length - 1) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
@@ -673,6 +719,24 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
     const mine = r.id === s.myId;
     const color = mine ? mineColor : PANEL_INK;
     const weight = mine ? 750 : 500;
+    // Rows glide to their slot when the order changes; yours flares when you climb.
+    const slotY = y;
+    const from = boardYs.get(r.id) ?? slotY;
+    const rowY = REDUCED ? slotY : Math.abs(slotY - from) < 0.4 ? slotY : from + (slotY - from) * (1 - Math.exp(-hud.dt / 70));
+    rowYs.set(r.id, rowY);
+    y = rowY;
+    if (mine) {
+      const climb = popOf(hud.now - boardMine.climbAt, 900);
+      if (climb > 0) {
+        ctx.globalAlpha = climb * 0.55;
+        ctx.fillStyle = mineColor;
+        ctx.fillRect(x + 3, y - BOARD.row / 2 + 1, pw - 6, BOARD.row - 2);
+        ctx.globalAlpha = climb * (0.5 + 0.5 * Math.sin(hud.now / 70));
+        ctx.fillStyle = '#fff1d2';
+        ctx.fillRect(x + 3, y - BOARD.row / 2 + 1, 2, BOARD.row - 2);
+        ctx.globalAlpha = 1;
+      }
+    }
     text(ctx, String(place), x + BOARD.pad + 2, y, TYPE.body, mine ? mineColor : PANEL_MUTED, 'left', weight);
     const nx = x + BOARD.pad + 22;
     if (r.team && teams) {
@@ -683,8 +747,9 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
     }
     text(ctx, mine ? 'you' : r.name, nx + (r.team && teams ? 11 : 0), y, TYPE.body, color, 'left', weight);
     text(ctx, String(r.kills), x + pw - BOARD.pad - 2, y, TYPE.body, color, 'right', weight);
-    y += BOARD.row;
+    y = slotY + BOARD.row;
   });
+  boardYs = rowYs;
   ctx.globalAlpha = 1;
   return top + ph;
 }
@@ -795,6 +860,7 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.fillStyle = hud.now - s.coreHitAt < CORE_ALERT_MS && Math.floor(hud.now / 200) % 2 ? PALETTE.hunted : '#4fd1e8';
     ctx.fillRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
   }
+  drawAirdropMap(ctx, snap.airdrop, serverNow(s.snaps, hud.now), hud.now, x, y, k, size, base);
   const clockNow = snap.royale ? serverNow(s.snaps, hud.now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingMap(ctx, snap.royale, clockNow, hud.now, x, y, k, size);
@@ -1020,6 +1086,136 @@ function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; 
   return tall;
 }
 
+/** Players who ask the OS for less motion keep the HUD's colour cues but lose the pops, throbs, glints and sparkles. */
+/** The bible's heal green and its hottest spark, the only near-whites the HUD's effects use. */
+const HEAL = '#8ff0c4';
+const SPARK_WHITE = '#ffe9b0';
+const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** 1 as a cue starts, easing to 0 over `ms`; 0 before and after (and always with reduced motion). */
+const popOf = (age: number, ms: number): number => (REDUCED || age < 0 || age > ms ? 0 : 1 - age / ms);
+
+function mixHex(a: string, b: string, t: number): string {
+  const k = Math.max(0, Math.min(1, t));
+  const ch = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const m = (i: number) => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * k);
+  return `rgb(${m(0)},${m(1)},${m(2)})`;
+}
+
+type Spark = { x: number; y: number; vx: number; vy: number; born: number; life: number; r: number; color: string };
+let sparks: Spark[] = [];
+
+/** A burst of four-point glints flying out from a point, in HUD space. */
+function burst(x: number, y: number, n: number, color: string, speed: number, now: number, r: number) {
+  if (REDUCED) return;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + Math.random() * 0.6;
+    const v = speed * (0.45 + Math.random() * 0.75);
+    sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 8, born: now, life: 520 + Math.random() * 380, r: r * (0.6 + Math.random() * 0.7), color: i % 3 === 0 ? SPARK_WHITE : color });
+  }
+  if (sparks.length > 90) sparks = sparks.slice(-90);
+}
+
+function starPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, rot: number) {
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = rot + (i * Math.PI) / 4;
+    const rr = i % 2 === 0 ? r : r * 0.26;
+    if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+
+function drawSparks(ctx: CanvasRenderingContext2D, now: number) {
+  if (!sparks.length) return;
+  sparks = sparks.filter((p) => now - p.born < p.life);
+  for (const p of sparks) {
+    const age = now - p.born;
+    const t = age / p.life, sec = age / 1000;
+    ctx.globalAlpha = (1 - t) * (0.6 + 0.4 * Math.sin(age / 75));
+    ctx.fillStyle = p.color;
+    starPath(ctx, p.x + p.vx * sec * (1 - t * 0.4), p.y + p.vy * sec + 40 * sec * sec, p.r * (1 - t * 0.5), age / 160);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** A soft diagonal band of light crossing a rect left to right as `t` runs 0 to 1. */
+function sheen(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, t: number, color: string) {
+  if (REDUCED || w < 4) return;
+  const bw = Math.max(10, w * 0.35);
+  const bx = x - bw + (w + bw) * t;
+  const x0 = Math.max(x, bx), x1 = Math.min(x + w, bx + bw);
+  if (x1 <= x0) return;
+  const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.5, color);
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x0, y, x1 - x0, h);
+}
+
+/** An idle glint that crosses a bar for the first part of every `period`. */
+function glintOn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, now: number, period: number) {
+  const t = (now % period) / period;
+  if (t < 0.32) sheen(ctx, x, y, w, h, t / 0.32, 'rgba(255,255,255,0.85)');
+}
+
+/** What the vitals plate remembers between frames so its numbers roll and its cues fire once. */
+const vfx = {
+  id: -1, at: -1e9, hp: 0, shownHp: 0, trail: 1, hold: 0, hurtAt: -1e9, healAt: -1e9,
+  ammo: 0, ammoAt: -1e9, level: 0, levelAt: -1e9, shownFrac: 0, shownScore: 0, streak: 0, streakAt: -1e9, abilitySpark: -1, levelBurst: false,
+};
+
+function stepVitals({ dt, now }: Hud, me: PlayerView, self: SelfView, displayLevel: number, frac: number) {
+  const hpFrac = me.hp / me.maxHp;
+  const fresh = vfx.id !== me.id || now - vfx.at > 400;
+  vfx.id = me.id;
+  vfx.at = now;
+  if (fresh) {
+    Object.assign(vfx, { hp: me.hp, shownHp: me.hp, trail: hpFrac, ammo: self.ammo, level: displayLevel, shownFrac: frac, shownScore: me.score, streak: self.streak, hurtAt: -1e9, healAt: -1e9 });
+    sparks = [];
+    return;
+  }
+  if (me.hp < vfx.hp - 0.5) { vfx.hurtAt = now; vfx.hold = now + 360; vfx.trail = Math.max(vfx.trail, vfx.hp / me.maxHp); }
+  else if (me.hp > vfx.hp + 0.5) vfx.healAt = now;
+  vfx.hp = me.hp;
+  if (hpFrac > vfx.trail) vfx.trail = hpFrac;
+  else if (now > vfx.hold) vfx.trail = Math.max(hpFrac, vfx.trail - dt * 0.0007);
+  const ease = REDUCED ? 1 : 1 - Math.exp(-dt / 90);
+  vfx.shownHp += (me.hp - vfx.shownHp) * ease;
+  if (Math.abs(vfx.shownHp - me.hp) < 0.5) vfx.shownHp = me.hp;
+  if (self.ammo !== vfx.ammo) vfx.ammoAt = now;
+  vfx.ammo = self.ammo;
+  if (displayLevel > vfx.level) { vfx.levelAt = now; vfx.shownFrac = 0; vfx.levelBurst = true; }
+  vfx.level = displayLevel;
+  vfx.shownFrac += (frac - vfx.shownFrac) * (REDUCED ? 1 : 1 - Math.exp(-dt / 140));
+  vfx.shownScore += (me.score - vfx.shownScore) * (REDUCED ? 1 : 1 - Math.exp(-dt / 160));
+  if (Math.abs(vfx.shownScore - me.score) < 0.6) vfx.shownScore = me.score;
+  if (self.streak > vfx.streak) vfx.streakAt = now;
+  vfx.streak = self.streak;
+}
+
+/** The health bar: the fill, a pale chunk behind it that holds then drains after a hit, a white flash on the hit, and a green shimmer on a heal. */
+function drawHealthBar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, frac: number, fill: CanvasGradient, track: string, now: number) {
+  bar(ctx, x, y, w, h, frac, fill, track);
+  if (vfx.trail > frac + 0.004) {
+    const x0 = x + Math.max(h, w * frac), x1 = x + Math.max(h, w * vfx.trail);
+    ctx.fillStyle = now < vfx.hold || REDUCED ? '#fff1d2' : '#f2c27a';
+    ctx.fillRect(x0 - 1, y, Math.max(0, x1 - x0 + 1), h);
+  }
+  const hurt = popOf(now - vfx.hurtAt, 260);
+  if (hurt > 0) {
+    ctx.globalAlpha = hurt * 0.75;
+    ctx.fillStyle = '#fff1d2';
+    ctx.fillRect(x, y, Math.max(h, w * frac), h);
+    ctx.globalAlpha = 1;
+  }
+  const heal = (now - vfx.healAt) / 750;
+  if (heal >= 0 && heal < 1) sheen(ctx, x, y, Math.max(h, w * frac), h, heal, 'rgba(143,240,196,0.95)');
+}
+
 /** The vitals plate: its bar widths, inner padding, row step and full height (the touch minimap sits just below it). */
 const VITALS = { bar: 200, compactBar: 140, barH: 8, row: 30, pad: 12, height: 126 } as const;
 
@@ -1039,7 +1235,8 @@ function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, colo
 }
 
 /** Health, ammo, gun and level, and the ability and perks, on one plate in the top left, sized to what it holds. */
-function drawVitals({ ctx, snap, me, w }: Hud, compact: boolean) {
+function drawVitals(hud: Hud, compact: boolean) {
+  const { ctx, snap, me, w, now } = hud;
   if (!me) return;
   const on = ON_PANEL;
   const self = snap.self;
@@ -1047,43 +1244,76 @@ function drawVitals({ ctx, snap, me, w }: Hud, compact: boolean) {
   let y = EDGE + VITALS.pad + 6;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
   const hpFrac = me.hp / me.maxHp;
-  const hpText = `${Math.ceil(me.hp)} / ${me.maxHp}`;
+  const hpText = `${Math.ceil(vfx.shownHp)} / ${me.maxHp}`;
   const gun = GUNS[me.gun];
   const gunName = gun.name.toUpperCase();
   const lp = levelProgress(me.level, me.score);
+  stepVitals(hud, me, self, lp.displayLevel, lp.frac);
   const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
   setFont(ctx, 600, TYPE.body);
   const hpRow = bw + 10 + ctx.measureText(hpText).width + (me.hunted ? huntedBadgeWidth(ctx) + 10 : 0) + (self.streak >= 2 ? streakBadgeWidth(ctx, self.streak) + 10 : 0);
   setFont(ctx, 700, TYPE.label);
-  const gunRow = ctx.measureText(gunName).width + gun.stage * 9 + 100;
+  const gunRow = ctx.measureText(gunName).width + gun.stage * 9 + 148;
   const abilityRow = abilityWidth(ctx, self) + 14 + owned.length * 22;
   panel(ctx, EDGE, EDGE, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
   fill.addColorStop(0, HP_FILL[0]);
   fill.addColorStop(1, HP_FILL[1]);
-  bar(ctx, x, y - VITALS.barH / 2, bw, VITALS.barH, hpFrac, fill, on.track);
-  text(ctx, hpText, x + bw + 10, y + 1, TYPE.body, hpFrac <= 0.35 ? PALETTE.hpBad : on.ink, 'left', 600);
+  drawHealthBar(ctx, x, y - VITALS.barH / 2, bw, VITALS.barH, hpFrac, fill, on.track, now);
+  const lowHp = hpFrac <= 0.35;
+  const hurtPop = popOf(now - vfx.hurtAt, 220);
+  const hpPulse = lowHp && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (hpFrac <= 0.15 ? 90 : 160)) : 0;
+  text(ctx, hpText, x + bw + 10, y + 1, TYPE.body, lowHp ? mixHex(PALETTE.hpBad, '#ffd0d0', hpPulse * 0.6) : popOf(now - vfx.healAt, 420) > 0 ? HEAL : on.ink, 'left', 600 + Math.round(hurtPop * 100));
   setFont(ctx, 600, TYPE.body);
   let bx = x + bw + 20 + ctx.measureText(hpText).width;
   if (me.hunted) bx += drawHuntedBadge(ctx, bx, y) + 10;
-  if (self.streak >= 2) drawStreakBadge(ctx, bx, y, self.streak);
+  if (self.streak >= 2) drawStreakBadge(ctx, bx, y, self.streak, now);
   y += VITALS.row;
   drawAmmoGlyph(ctx, x, y, on.glyph);
   if (self.reloading) {
     text(ctx, 'RELOADING', x + 34, y + 1, TYPE.body, PALETTE.gold, 'left', 800);
     bar(ctx, x + 112, y - 2, 60, 4, self.reloadFrac, PALETTE.gold, on.track);
+    glintOn(ctx, x + 112, y - 2, 60 * self.reloadFrac, 4, now, 700);
   } else {
-    text(ctx, `${self.ammo}`, x + 34, y + 1, TYPE.figure, self.ammo === 0 ? PALETTE.hpBad : on.ink, 'left', 800);
+    const empty = self.ammo === 0;
+    const low = self.ammo <= Math.max(1, Math.round(self.mag * 0.25));
+    const throb = low && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (empty ? 80 : 150)) : 0;
+    const pop = popOf(now - vfx.ammoAt, 190);
+    ctx.translate(x + 34, y + 1);
+    const sc = 1 + 0.38 * pop * pop;
+    ctx.scale(sc, sc);
+    text(ctx, `${self.ammo}`, 0, 0, TYPE.figure, low ? mixHex(PALETTE.hpBad, '#ffffff', empty ? 0.1 + throb * 0.35 : throb * 0.4) : on.ink, 'left', 800);
+    ctx.scale(1 / sc, 1 / sc);
+    ctx.translate(-(x + 34), -(y + 1));
     setFont(ctx, 800, TYPE.figure);
     text(ctx, `/ ${self.mag}`, x + 38 + ctx.measureText(`${self.ammo}`).width, y + 3, TYPE.body, on.muted, 'left', 600);
+    if (low && !REDUCED) {
+      ctx.globalAlpha = 0.18 + throb * 0.3;
+      ctx.strokeStyle = PALETTE.hpBad;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - 4, y - 14, 112, 28);
+      ctx.globalAlpha = 1;
+    }
   }
   y += 26;
   text(ctx, gunName, x, y, TYPE.label, gun.stage ? glow(gun.look.accent, 0.74) : on.ink, 'left', 700);
   setFont(ctx, 700, TYPE.label);
   let lx = x + ctx.measureText(gunName).width + 6;
   if (gun.stage) { drawStagePips(ctx, me.gun, lx, y); lx += gun.stage * 9 + 4; }
-  text(ctx, `LV ${lp.displayLevel}`, lx + 4, y, TYPE.label, on.muted, 'left', 700);
-  bar(ctx, lx + 40, y - 1.5, 44, 3, lp.frac, PALETTE.gold, on.track);
+  const lvPop = popOf(now - vfx.levelAt, 380);
+  setFont(ctx, 700, TYPE.label);
+  const lvW = ctx.measureText(`LV ${lp.displayLevel}`).width;
+  ctx.translate(lx + 4 + lvW / 2, y);
+  const lvS = 1 + 0.45 * lvPop;
+  ctx.scale(lvS, lvS);
+  text(ctx, `LV ${lp.displayLevel}`, -lvW / 2, 0, TYPE.label, lvPop > 0 ? mixHex(on.muted, PALETTE.gold, lvPop) : on.muted, 'left', 700);
+  ctx.scale(1 / lvS, 1 / lvS);
+  ctx.translate(-(lx + 4 + lvW / 2), -y);
+  const barX = lx + 40;
+  if (vfx.levelBurst) { vfx.levelBurst = false; burst(barX + 22, y, 18, PALETTE.gold, 80, now, 5.5); }
+  bar(ctx, barX, y - 1.5, 44, 3, vfx.shownFrac, PALETTE.gold, on.track);
+  glintOn(ctx, barX, y - 1.5, 44 * vfx.shownFrac, 3, now, 2600);
+  text(ctx, String(Math.round(vfx.shownScore)), barX + 52, y, TYPE.label, PALETTE.gold, 'left', 700);
   y += 26;
   drawAbility(ctx, x, y, self, on);
   let px = x + abilityWidth(ctx, self) + 14;
@@ -1091,6 +1321,7 @@ function drawVitals({ ctx, snap, me, w }: Hud, compact: boolean) {
     strokeIcon(ctx, PERK_ICONS[perk], px + 7, y, 14, on.glyph, 2.2);
     px += 22;
   }
+  drawSparks(ctx, now);
 }
 
 type SelfView = Snapshot['self'];
@@ -1124,6 +1355,7 @@ function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: 
   ctx.stroke();
   const pulse = (performance.now() - abilityBackAt) / ABILITY_CUE.readyPulseMs;
   if (ready && pulse >= 0 && pulse < 1) {
+    if (!REDUCED && vfx.abilitySpark !== abilityBackAt) { vfx.abilitySpark = abilityBackAt; burst(cx, y, 9, PALETTE.gold, 34, performance.now(), 4.5); }
     ctx.globalAlpha = 1 - pulse;
     ctx.lineWidth = 3;
     ctx.strokeStyle = PALETTE.gold;
@@ -1147,15 +1379,36 @@ function huntedBadgeWidth(ctx: CanvasRenderingContext2D): number {
 }
 
 /** Your kills this life, once there are two: a flame and the count, hotter-looking as it climbs. */
-function drawStreakBadge(ctx: CanvasRenderingContext2D, x: number, y: number, streak: number) {
+function drawStreakBadge(ctx: CanvasRenderingContext2D, x: number, y: number, streak: number, now: number) {
   const label = `${streak}`;
   const bw = streakBadgeWidth(ctx, streak);
+  const heat = Math.min(1, (streak - 1) / 8);
+  const pop = popOf(now - vfx.streakAt, 260);
+  const grow = 1 + 0.05 * Math.min(8, streak - 2) + 0.42 * pop;
+  const cx = x + bw / 2;
+  ctx.translate(cx, y);
+  ctx.scale(grow, grow);
+  if (heat > 0.2 && !REDUCED) {
+    ctx.globalAlpha = 0.25 + 0.2 * Math.sin(now / 120) + heat * 0.25;
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.roundRect(-bw / 2 - 3, -13, bw + 6, 26, 7);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   ctx.beginPath();
-  ctx.roundRect(x, y - 10, bw, 20, 4);
-  ctx.fillStyle = streak >= 5 ? '#ff5a1f' : 'rgba(255, 90, 31, 0.85)';
+  ctx.roundRect(-bw / 2, -10, bw, 20, 4);
+  ctx.fillStyle = mixHex('#e8481a', '#ffa21f', heat);
   ctx.fill();
-  fillIcon(ctx, UI_ICONS.flame, x + 10, y - 0.5, 13, '#fff4e0');
-  text(ctx, label, x + 19, y + 0.5, TYPE.body, '#ffffff', 'left', 850);
+  const flick = REDUCED ? 1 : 1 + 0.12 * Math.sin(now / 70 + streak) * (0.4 + heat);
+  ctx.translate(-bw / 2 + 10, -0.5);
+  ctx.scale(1, flick);
+  fillIcon(ctx, UI_ICONS.flame, 0, 0, 13 + heat * 3, '#fff4e0');
+  ctx.scale(1, 1 / flick);
+  ctx.translate(bw / 2 - 10, 0.5);
+  text(ctx, label, -bw / 2 + 19, 0.5, TYPE.body, '#ffffff', 'left', 850);
+  ctx.scale(1 / grow, 1 / grow);
+  ctx.translate(-cx, -y);
 }
 
 function drawHuntedBadge(ctx: CanvasRenderingContext2D, x: number, y: number): number {

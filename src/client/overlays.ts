@@ -108,6 +108,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       const b = document.createElement('button');
       b.type = 'button';
       b.className = tile.className;
+      b.style.setProperty('--i', String(slot));
       b.setAttribute('aria-label', `${tile.name}: ${tile.desc}`);
       const kbd = document.createElement('kbd');
       kbd.textContent = perkKeyLabel(slot);
@@ -345,8 +346,9 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
 function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null, nemesisHuman: boolean) {
   el.hidden = !recap;
   if (!recap) return;
-  const tiles = recap.stats.map((s) => {
+  const tiles = recap.stats.map((s, i) => {
     const tile = Object.assign(document.createElement('div'), { className: s.best ? 'recap-stat best' : 'recap-stat' });
+    tile.style.setProperty('--i', String(i));
     tile.append(
       Object.assign(document.createElement('b'), { textContent: s.value }),
       Object.assign(document.createElement('span'), { textContent: s.label }),

@@ -19,6 +19,7 @@ import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './input
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
+import { EMOTE_INTERVAL_MS, EMOTE_RANGE } from '../shared/emotes.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
@@ -31,7 +32,7 @@ const BOTS_PER_HUMAN = 3;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; aspect: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; lastEmoteAt: number; aspect: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -206,7 +207,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
+      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, lastEmoteAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
       const key = profileKey(joinedClient, name);
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
@@ -225,6 +226,19 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'build': build(world, id, msg.kind, msg.cx, msg.cy); return;
       case 'demolish': demolish(world, id, msg.cx, msg.cy); return;
       case 'ready': toggleReady(world, id); return;
+      case 'emote': {
+        const now = Date.now();
+        const p = world.players.get(id);
+        // Too fast, or from a body that is not standing: dropped without a word, so spamming gets nothing back.
+        if (!p || p.life.k !== 'alive' || now - client.lastEmoteAt < EMOTE_INTERVAL_MS) return;
+        client.lastEmoteAt = now;
+        for (const c of joined()) {
+          const q = world.players.get(c.playerId);
+          const near = q && Math.hypot(q.x - p.x, q.y - p.y) <= EMOTE_RANGE;
+          if (c === client || near || (p.team !== null && q?.team === p.team)) send(c.ws, { t: 'emote', pid: p.id, id: msg.id });
+        }
+        return;
+      }
       case 'chat': {
         const now = Date.now();
         if (now - client.lastChatAt < CHAT_INTERVAL_MS) { send(client.ws, { t: 'error', message: 'Slow down' }); return; }

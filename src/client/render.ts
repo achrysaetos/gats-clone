@@ -4,13 +4,16 @@ import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, Z
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
-import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
+import { drawJuice } from './killfx.ts';
 import { glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
 import { serverNow } from './interp.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
-import { drawBodyShadows, drawSoldier, stepGait, type Gait } from './bodies.ts';
-import { drawHeldGun, heldHands } from './gunart.ts';
+import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
+import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
+import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
+import { drawEmoteBubbles, drawEmoteGestures, partyOn } from './emotefx.ts';
+import { reducedMotion } from './screenfx.ts';
 import { fillIcon, UI_ICONS } from './icons.ts';
 import { careerImage } from './medals.ts';
 import type { Session } from './state.ts';
@@ -22,11 +25,11 @@ import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
 import { heftOf } from './shake.ts';
 import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corpses.ts';
-import { drawCracks, hostKey } from './decals.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
+import { applyPose, bodyPose, drawGunGlints, drawMotionAbove, drawMotionBelow, drawShieldShimmer, noteStride, observeMotion } from './motionfx.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
@@ -35,7 +38,7 @@ const CULL_MARGIN = 80;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null };
+type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; /** The real clock, for juice that keeps moving through a hit-stop. */ fxNow?: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
@@ -87,6 +90,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
   drawLooseShadows(ctx, [...crates, ...wallSolids(s.walls.filter((w) => w.built)).filter((w) => solidInView(view, w))]);
   drawCasings(ctx, s.particles, now);
+  observeMotion(snap, s.myId, now, colorOf);
 
   const alive = snap.players.filter((p) => p.alive && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
   const downed = snap.players.filter((p) => p.downed && inView(view, p.x - R * 3, p.y - R * 3, R * 6, R * 6));
@@ -99,11 +103,14 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const walls = wallSolids(s.walls).filter((w) => solidInView(view, w));
   const standing = (siege === 'static' ? [] : siege).filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
+  const airClock = snap.airdrop ? serverNow(s.snaps, now) : null;
+  drawBarrels(ctx, snap, now, view);
+  drawBeacon(ctx, snap.airdrop, airClock, now, view);
+  drawPlaneShadow(ctx, snap.airdrop, airClock, view);
   if (snap.buildings && snap.run) {
     drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
   }
   if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt, k);
-  drawCracks(ctx, s.cracks, now, new Set([...s.walls, ...crates, ...standing].map(hostKey)));
   noteGunMap(gunFxOf(s), snap.match.map);
   drawGunFloor(ctx, gunFxOf(s), now, view);
   s.corpses = liveCorpses(s.corpses, snap.match.map, now);
@@ -129,6 +136,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     drawZombies(ctx, zombies, snap, flashes, now, k);
   }
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId, now, k);
+  drawGunGlints(ctx, s.corpses, now, (x, y) => inView(view, x - R, y - R, R * 2, R * 2));
+  drawMotionBelow(ctx, now);
   const tags = bodyTags(alive, s, now);
   drawNamesUnderBodies(ctx, tags, dark);
   const recoil = kicks(s.effects, now);
@@ -143,21 +152,27 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
       self, rival: !self && p.team === null && p.color === mine?.color,
       flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k,
     });
+    if (p.golden) drawGoldShine(ctx, p.x, p.y, muzzleTip(p.x, p.y, angle, p.gun, R), p.id, now);
   }
+  drawEmoteGestures(ctx, alive, colorOf, now, partyOn() ? s.myId : null, reducedMotion());
   for (const t of snap.thrown) if (t.kind !== 'landMine' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects.filter((e) => e.kind !== 'flash' && e.kind !== 'boom' && e.kind !== 'slash'), now);
   drawBlastFx(ctx, now, view);
+  drawArenaLight(ctx, snap, now, view);
+  drawParachute(ctx, snap.airdrop, airClock, now, view);
   drawParticles(ctx, s.particles, now);
+  drawMotionAbove(ctx, now);
   drawSiegeFx(ctx, snap, view, now, dark, k, s.coreHitAt);
   drawGunTop(ctx, gunFxOf(s), now, view);
   drawBars(ctx, tags, dark);
+  drawEmoteBubbles(ctx, alive, now, dark);
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now, dark);
   const nemesis = killer || snap.self.nemesis === null ? undefined : alive.find((p) => p.id === snap.self.nemesis && !p.hidden);
   if (nemesis) drawKillerMark(ctx, nemesis, now, dark, 'NEMESIS');
-  drawDamageNumbers(ctx, s.feedback.numbers, now);
+  drawJuice(ctx, f.fxNow ?? now, MARK_Y - 10);
   drawLetterbox(ctx, cam, dpr);
 }
 
@@ -360,6 +375,7 @@ let gaitsPrunedAt = 0;
 function gaitOf(p: PlayerView, now: number): Gait {
   const g = stepGait(gaits.get(p.id), p.x, p.y, now);
   gaits.set(p.id, g);
+  if (!p.hidden) noteStride(p.id, g, p.x, p.y, now);
   if (now - gaitsPrunedAt > 5000) {
     gaitsPrunedAt = now;
     for (const [id, o] of gaits) if (now - o.t > 5000) gaits.delete(id);
@@ -389,13 +405,17 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.setLineDash([]);
     ctx.globalAlpha = alpha;
   }
+  const gait = gaitOf(p, look.now);
+  const pose = bodyPose(p.id, look.now, gaitAmount(gait));
+  ctx.save();
+  applyPose(ctx, pose);
   const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
   const hands = heldHands(p.gun, R, p.angle).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
   drawSoldier(ctx, color, 0, 0, R, {
-    angle: p.angle, armor: p.armorTier, hands, jump, gait: gaitOf(p, look.now), flash: look.flash,
+    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash,
     gun: (g) => {
       g.translate(-jump, 0);
-      drawHeldGun(g, p.gun, R, p.angle);
+      drawHeldGun(g, p.gun, R, p.angle, p.golden === true);
       g.translate(jump, 0);
     },
   }, look.pxPerUnit);
@@ -423,7 +443,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.beginPath();
     ctx.arc(0, 0, R + 2, Math.PI * 1.1, Math.PI * 1.4);
     ctx.stroke();
-    ctx.globalAlpha = alpha;
+    drawShieldShimmer(ctx, look.now, alpha);
   }
   if (p.shield) {
     ctx.beginPath();
@@ -433,6 +453,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.strokeStyle = PALETTE.shield;
     ctx.stroke();
   }
+  ctx.restore();
   ctx.restore();
 }
 
@@ -531,23 +552,3 @@ function drawBars(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: num
   ctx.globalAlpha = 1;
 }
 
-function drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: readonly DamageNumber[], now: number) {
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  for (const n of numbers) {
-    const k = (now - n.born) / NUMBER_MS;
-    if (k < 0 || k >= 1) continue;
-    const player = n.kind === 'player';
-    ctx.globalAlpha = 1 - k * k;
-    ctx.font = `800 ${player ? 20 : 15}px "Barlow Condensed", system-ui, sans-serif`;
-    const label = String(Math.max(1, Math.round(n.amount)));
-    const y = n.y + MARK_Y - 10 - numberHeight(n, now);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(28, 31, 38, 0.75)';
-    ctx.strokeText(label, n.x, y);
-    ctx.fillStyle = player ? PALETTE.gold : '#fff3dc';
-    ctx.fillText(label, n.x, y);
-  }
-  ctx.globalAlpha = 1;
-}

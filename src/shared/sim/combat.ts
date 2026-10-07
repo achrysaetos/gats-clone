@@ -5,9 +5,11 @@ import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
+import { barrelsInBlast, damageBarrel, payChain } from './barrels.ts';
+import { openAirdrop } from './airdrop.ts';
 import { damageZombie } from './run.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
-import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
+import { barrelRect, crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.33;
@@ -26,11 +28,11 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 const SELF_KILL_CREDIT_MS = 10_000;
 
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
-type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null };
+type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null; /** Set when a barrel's burst made the blast: the chain it belongs to. */ chain?: number };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
 type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number; gun?: GunId | null; volley?: number };
 /** How a kill was made, for the weapon feats: the gun whose round landed it, whether it took one hit from full health, and how pinned the victim was. */
-type KillHow = { gun: GunId | null; oneHit: boolean; pinned: number };
+type KillHow = { gun: GunId | null; oneHit: boolean; pinned: number; chain?: number };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k === 'dead' || w.match.k === 'over') return;
@@ -60,7 +62,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
   if (a && src.via === 'bullet' && src.volley !== undefined) noteVolley(w, a, victim, src.gun ?? null, src.volley);
-  if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned });
+  if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned, ...(src.chain !== undefined && { chain: src.chain }) });
 }
 
 /** A shotgun blast whose pellets land on `WEAPON_MEDALS.twoBirdsHits` enemies earns Two Birds the moment the second is hit. */
@@ -115,7 +117,10 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   if (revenge) credited.nemesis = null;
   addScore(w, credited, WORLD.killScore);
   // Every medal one kill earns is paid and announced, however many there are.
-  for (const medal of [...killMedals(w, credited, victim, { bounty, revenge, ended }), ...weaponMedals(w, credited, victim, how, credited === killer)]) award(w, credited, medal);
+  const barrel = how.chain !== undefined && credited.id !== victim.id;
+  for (const medal of [...killMedals(w, credited, victim, { bounty, revenge, ended }), ...weaponMedals(w, credited, victim, how, credited === killer), ...(barrel ? ['kaboom' as const] : [])]) award(w, credited, medal);
+  const chain = barrel ? w.chains.get(how.chain!) : undefined;
+  if (chain) { chain.kills++; payChain(w, chain); }
   refuel(credited);
   MODES[w.mode].onKill(w, credited, victim);
 }
@@ -248,11 +253,11 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   const h = c.size / 2;
   w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate' });
   if (c.hp > 0) return;
-  c.respawnAt = w.royale ? Infinity : w.now + CRATE_RESPAWN_MS;
+  c.respawnAt = w.royale || c.drop ? Infinity : w.now + CRATE_RESPAWN_MS;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (!attacker) return;
   addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
-  if (c.drop) openDrop(w, attacker);
+  if (c.drop) { if (w.royale) openDrop(w, attacker); else openAirdrop(w, attacker, c); }
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
@@ -278,6 +283,10 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const d = Math.sqrt(dist2(x, y, nx, ny));
     if (d >= radius || sheltered(view.walls, x, y, nx, ny)) continue;
     damageCrate(w, c, maxDamage * (1 - d / radius), by.attacker);
+  }
+  for (const { b, d } of barrelsInBlast(w, x, y, radius)) {
+    if (sheltered(view.walls, x, y, b.x, b.y)) continue;
+    damageBarrel(w, b, maxDamage * (1 - d / radius), { attacker: by.attacker, team: by.team, ...(by.chain !== undefined && { chain: by.chain }) }, d);
   }
   for (const z of w.zombies) {
     const r = ZOMBIES[z.kind].radius;
@@ -329,6 +338,9 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
+    })),
+    ...w.barrels.filter((o) => o.respawnAt === null).map((o) => ({
+      t: segmentEntersRectAt(b.x, b.y, dx, dy, barrelRect(o)), victim: null, apply: () => damageBarrel(w, o, b.damage, { attacker: owner, team: b.team }),
     })),
     ...[...w.players.values()]
       .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !b.passed.includes(p.id))

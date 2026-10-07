@@ -3,6 +3,7 @@ import type { Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { NIGHT } from './palette.ts';
 import { seeded } from './grain.ts';
+import { owningVignette, setVignette } from './postfx.ts';
 
 /**
  * The air over the arena: a soft vignette, a few drifting motes of dust and, in Zombies' night, a lighting pass that
@@ -17,6 +18,8 @@ let vignette: { w: number; h: number; strength: number; image: HTMLCanvasElement
  * fill costs a software canvas several ms a frame where a plain blit costs a fraction of that. Drawn in screen pixels.
  */
 export function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, strength: number) {
+  // With the shader pass on, the vignette is part of its composite (cheaper, and never doubled).
+  if (owningVignette()) { setVignette(strength); return; }
   const pw = Math.ceil(w * dpr), ph = Math.ceil(h * dpr);
   if (!vignette || vignette.w !== pw || vignette.h !== ph || vignette.strength !== strength) {
     const image = vignette?.image ?? document.createElement('canvas');

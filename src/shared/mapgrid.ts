@@ -4,7 +4,7 @@ import type { Rect } from './sim/movement.ts';
 const MAP_CELL = 50;
 
 type Layer = WallMaterial | 'red' | 'blue' | 'ffa';
-type Cell = { layers: readonly Layer[]; crate: boolean; zone: boolean };
+type Cell = { layers: readonly Layer[]; crate: boolean; zone: boolean; barrel?: boolean };
 
 const FLOOR: Cell = { layers: [], crate: false, zone: false };
 const LEGEND: Record<string, Cell> = {
@@ -13,6 +13,8 @@ const LEGEND: Record<string, Cell> = {
   S: { ...FLOOR, layers: ['sandstone'] },
   P: { ...FLOOR, layers: ['planter'] },
   c: { ...FLOOR, crate: true },
+  /** An explosive barrel. */
+  b: { ...FLOOR, barrel: true },
   R: { ...FLOOR, layers: ['red'] },
   F: { ...FLOOR, layers: ['ffa'] },
   X: { ...FLOOR, layers: ['red', 'ffa'] },
@@ -68,6 +70,7 @@ export function gridMap(name: string, text: string): MapDef {
   const turn = (p: Center): Center => ({ x: size - p.x, y: size - p.y });
   const walls = (material: WallMaterial): MapWall[] => mergeCells(layerAt(material)).map((r) => ({ ...r, material }));
   const westCrates = half.flatMap((row, r) => row.flatMap((cell, c) => (cell.crate ? [center(c, r)] : [])));
+  const westBarrels = half.flatMap((row, r) => row.flatMap((cell, c) => (cell.barrel ? [center(c, r)] : [])));
   const zoneA = center(zoneCells[0]!.c, zoneCells[0]!.r);
   return {
     name,
@@ -76,5 +79,6 @@ export function gridMap(name: string, text: string): MapDef {
     zones: [zoneA, { x: size / 2, y: size / 2 }, turn(zoneA)],
     spawns: { red: mergeCells(layerAt('red')), blue: mergeCells(layerAt('blue')), ffa: mergeCells(layerAt('ffa')) },
     crates: [...westCrates, ...westCrates.map(turn)],
+    barrels: [...westBarrels, ...westBarrels.map(turn)],
   };
 }

@@ -65,11 +65,12 @@ export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
 /** `armor` thickens the ink rim, `shoulders` adds pads behind the arms, and `bar` shows a health bar over the body. */
 export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; armor: number; shoulders: boolean; bar: boolean }> = {
-  // Sickly versions of the kit's own olive, khaki, steel and rust, so the horde belongs to the same world.
-  walker: { body: '#8a9a58', arm: '#66753d', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  brute: { body: '#7d6c8e', arm: '#57495f', eye: '#ff5a1f', armor: 0, shoulders: true, bar: true },
-  runner: { body: '#c4b17a', arm: '#9a874f', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  plated: { body: '#87919c', arm: '#5c6570', eye: '#ffc94a', armor: 4, shoulders: false, bar: false },
-  bloater: { body: '#c47c52', arm: '#9a5838', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  colossus: { body: '#7e3c40', arm: '#57282c', eye: '#ffc94a', armor: 3, shoulders: true, bar: true },
+  // The art bible's horde tones (docs/art/STYLE.md): sickly olive, steel and rust, so the horde belongs to the same toy
+  // line. Kinds part by silhouette first; eyes glow lamp amber, or signal orange on the brute that comes for the core.
+  walker: { body: '#8a9a5b', arm: '#6f7a4e', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  brute: { body: '#7a5a46', arm: '#5e4535', eye: '#ff5a1f', armor: 0, shoulders: true, bar: true },
+  runner: { body: '#6f7a4e', arm: '#59633e', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  plated: { body: '#5c6b6e', arm: '#4a5759', eye: '#ffb347', armor: 4, shoulders: false, bar: false },
+  bloater: { body: '#8a9a5b', arm: '#6f7a4e', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
+  colossus: { body: '#6a4d3c', arm: '#4f3a2d', eye: '#ffb347', armor: 3, shoulders: true, bar: true },
 };

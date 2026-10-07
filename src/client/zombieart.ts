@@ -151,12 +151,12 @@ export const clearZombieAnims = () => anims.clear();
  * `slump` how far it lolls to one side, `sway` how much the body shambles side to side.
  */
 const BUILD: Record<ZombieKind, { arms: number; armLen: number; armW: number; hand: number; head: number; neck: number; slump: number; sway: number; foot: number }> = {
-  walker: { arms: 0.42, armLen: 1.12, armW: 0.3, hand: 0.24, head: 0.5, neck: 0.42, slump: 0.16, sway: 0.08, foot: 0.26 },
-  runner: { arms: 2.3, armLen: 0.95, armW: 0.3, hand: 0.22, head: 0.5, neck: 0.55, slump: 0.06, sway: 0.04, foot: 0.28 },
-  brute: { arms: 0.78, armLen: 1.05, armW: 0.34, hand: 0.36, head: 0.38, neck: 0.36, slump: 0.04, sway: 0.05, foot: 0.24 },
-  plated: { arms: 0.5, armLen: 1.08, armW: 0.3, hand: 0.24, head: 0.48, neck: 0.38, slump: 0.08, sway: 0.06, foot: 0.24 },
-  bloater: { arms: 0.95, armLen: 0.86, armW: 0.24, hand: 0.18, head: 0.34, neck: 0.62, slump: 0.1, sway: 0.1, foot: 0.2 },
-  colossus: { arms: 0.72, armLen: 1.0, armW: 0.3, hand: 0.34, head: 0.34, neck: 0.34, slump: 0.03, sway: 0.04, foot: 0.22 },
+  walker: { arms: 0.42, armLen: 1.12, armW: 0.3, hand: 0.24, head: 0.56, neck: 0.42, slump: 0.16, sway: 0.08, foot: 0.26 },
+  runner: { arms: 2.3, armLen: 0.95, armW: 0.3, hand: 0.22, head: 0.54, neck: 0.55, slump: 0.06, sway: 0.04, foot: 0.28 },
+  brute: { arms: 0.78, armLen: 1.05, armW: 0.34, hand: 0.36, head: 0.46, neck: 0.36, slump: 0.04, sway: 0.05, foot: 0.24 },
+  plated: { arms: 0.5, armLen: 1.08, armW: 0.3, hand: 0.24, head: 0.54, neck: 0.38, slump: 0.08, sway: 0.06, foot: 0.24 },
+  bloater: { arms: 0.95, armLen: 0.86, armW: 0.24, hand: 0.18, head: 0.42, neck: 0.62, slump: 0.1, sway: 0.1, foot: 0.2 },
+  colossus: { arms: 0.72, armLen: 1.0, armW: 0.3, hand: 0.34, head: 0.4, neck: 0.34, slump: 0.03, sway: 0.04, foot: 0.22 },
 };
 
 const SCALE_STEP = 20;
@@ -194,170 +194,155 @@ function celDisc(g: CanvasRenderingContext2D, r: number, color: string, rim: num
   g.beginPath();
   g.arc(0, 0, c, 0, TAU);
   g.clip();
-  disc(g, 0, 0, c, shade(color, 0.78));
+  disc(g, 0, 0, c, shade(color, 0.76));
   disc(g, -c * 0.16, -c * 0.16, c, color);
   g.fillStyle = tint(color, 0.3);
   g.beginPath();
   g.arc(0, 0, c, 0, TAU);
-  g.arc(c * 0.13, c * 0.13, c, 0, TAU, true);
+  g.arc(c * 0.14, c * 0.14, c, 0, TAU, true);
   g.fill();
   g.restore();
 }
 
-/** Inside a disc of radius `c`, clipped, so details never spill past the rim. */
-function inside(g: CanvasRenderingContext2D, c: number, paint: () => void) {
+/** The soldiers' bold ink (bodies.ts), as a share of the radius, at least 2 px. */
+const INK_W = (r: number) => Math.max(2, r * 0.11);
+
+/**
+ * Each kind's torso in its own frame (x along the heading, y across), in radii: zombies share the soldiers' toy build, a
+ * squat body wider across the shoulders than it is deep, so the six read as one toy line with the squad.
+ */
+const TORSO: Record<ZombieKind, { rx: number; ry: number }> = {
+  walker: { rx: 0.66, ry: 0.94 },
+  runner: { rx: 0.56, ry: 0.84 },
+  brute: { rx: 0.74, ry: 1.0 },
+  plated: { rx: 0.7, ry: 0.96 },
+  bloater: { rx: 0.92, ry: 1.0 },
+  colossus: { rx: 0.76, ry: 0.98 },
+};
+
+/** The sprites turn in this many steps, each lit from the world's light, like the soldiers' turning parts. */
+export const ZOMBIE_BUCKETS = 32;
+export const bucketOf = (a: number) => ((Math.round((a / TAU) * ZOMBIE_BUCKETS) % ZOMBIE_BUCKETS) + ZOMBIE_BUCKETS) % ZOMBIE_BUCKETS;
+
+/**
+ * A torso turned to `a`, cel-shaded in world space: ink rim, the shape in its darker tone, the same shape nudged toward
+ * the light in its base tone, and a hard light rim on the lit edge. `detail` paints flat kit over it in the body's frame.
+ */
+function paintTorso(g: CanvasRenderingContext2D, kind: ZombieKind, r: number, a: number) {
+  const look = ZOMBIE_LOOK[kind];
+  const t = TORSO[kind];
+  const ink = INK_W(r);
+  const shape = (dx: number, dy: number, grow: number) => {
+    g.beginPath();
+    g.ellipse(dx, dy, r * t.rx + grow, r * t.ry + grow, a, 0, TAU);
+  };
+  // Colossus: bone spikes along its back, under the hide.
+  if (kind === 'colossus') {
+    g.fillStyle = '#e3d8bd';
+    g.strokeStyle = INK;
+    g.lineWidth = ink;
+    g.lineJoin = 'round';
+    for (const off of [-0.55, 0, 0.55]) {
+      const along = -0.35, c = Math.cos(a), sn = Math.sin(a);
+      const bx = (along * c - off * sn) * r, by = (along * sn + off * c) * r;
+      const tip = { x: bx - c * r * 0.75, y: by - sn * r * 0.75 };
+      const side = { x: -sn * r * 0.2, y: c * r * 0.2 };
+      g.beginPath();
+      g.moveTo(bx + side.x, by + side.y); g.lineTo(tip.x, tip.y); g.lineTo(bx - side.x, by - side.y);
+      g.closePath();
+      g.fill();
+      g.stroke();
+    }
+  }
+  shape(0, 0, ink);
+  g.fillStyle = INK;
+  g.fill();
   g.save();
-  g.beginPath();
-  g.arc(0, 0, c, 0, TAU);
+  shape(0, 0, 0);
   g.clip();
-  paint();
+  g.fillStyle = shade(look.body, 0.74);
+  g.fillRect(-r * 2, -r * 2, r * 4, r * 4);
+  shape(-LIGHT.x * r * 0.16, -LIGHT.y * r * 0.16, 0);
+  g.fillStyle = look.body;
+  g.fill();
+  // Flat kit over the hide, in the body's frame.
+  g.save();
+  g.rotate(a);
+  g.fillStyle = shade(look.body, 0.8);
+  switch (kind) {
+    case 'walker':
+      // A torn shirt over the back.
+      g.fillStyle = '#6c7356';
+      g.fillRect(-r, -r, r * 0.72, r * 2);
+      break;
+    case 'runner':
+      g.fillStyle = '#978562';
+      g.fillRect(-r, -r, r * 0.6, r * 2);
+      break;
+    case 'brute':
+      // A hunched hump of muscle over the shoulders.
+      g.beginPath();
+      g.ellipse(-r * 0.22, 0, r * 0.36, r * 0.62, 0, 0, TAU);
+      g.fill();
+      break;
+    case 'plated':
+      // A plate carrier on its back in the kit's gunmetal.
+      g.fillStyle = '#4f5661';
+      g.beginPath();
+      g.roundRect(-r * 0.62, -r * 0.6, r * 0.62, r * 1.2, r * 0.12);
+      g.fill();
+      g.fillStyle = '#7d8693';
+      g.beginPath();
+      g.roundRect(-r * 0.58, -r * 0.56, r * 0.54, r * 0.22, r * 0.08);
+      g.fill();
+      break;
+    case 'bloater':
+      for (const [x, y, sz] of [[-0.35, -0.42, 0.24], [0.2, 0.45, 0.27], [-0.4, 0.3, 0.2], [0.28, -0.3, 0.17]] as const) {
+        // Pustules in the fire ramp's orange: it bursts.
+        disc(g, x * r, y * r, sz * r + ink * 0.6, INK);
+        disc(g, x * r, y * r, sz * r, '#ff9a3c');
+        disc(g, (x - sz * 0.3) * r, (y - sz * 0.3) * r, sz * r * 0.38, '#ffe08a');
+      }
+      break;
+    case 'colossus':
+      g.fillStyle = shade(look.body, 0.7);
+      g.beginPath();
+      g.roundRect(-r * 0.62, -r * 0.5, r * 0.5, r * 1.0, r * 0.14);
+      g.fill();
+      break;
+  }
+  g.restore();
+  // The hard light rim: the shape less itself nudged away from the light, a crescent on the lit edge.
+  g.fillStyle = tint(look.body, 0.3);
+  g.beginPath();
+  g.ellipse(0, 0, r * t.rx, r * t.ry, a, 0, TAU);
+  g.ellipse(LIGHT.x * r * 0.1, LIGHT.y * r * 0.1, r * t.rx, r * t.ry, a, 0, TAU, true);
+  g.fill();
   g.restore();
 }
 
-const ROT = 'rgba(52, 30, 26, 0.55)';
-
-/** Each kind's torso: the silhouette and the details that tell the six apart at a glance. Drawn unrotated, lit from the world's light. */
-function paintBody(g: CanvasRenderingContext2D, kind: ZombieKind, r: number) {
-  const look = ZOMBIE_LOOK[kind];
-  // Armour shows as plates, not a thicker rim, so the plated read by their kit rather than as dark rings.
-  const rim = 1.8 + look.armor * 0.25;
-  switch (kind) {
-    case 'colossus': {
-      // A ring of bone spikes round a scarred hide.
-      g.fillStyle = '#d9cfb4';
-      g.strokeStyle = INK;
-      g.lineWidth = 1.6;
-      g.beginPath();
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * TAU + 0.3;
-        g.moveTo(Math.cos(a - 0.16) * r * 0.86, Math.sin(a - 0.16) * r * 0.86);
-        g.lineTo(Math.cos(a) * (r + 2.5), Math.sin(a) * (r + 2.5));
-        g.lineTo(Math.cos(a + 0.16) * r * 0.86, Math.sin(a + 0.16) * r * 0.86);
-      }
-      g.fill();
-      g.stroke();
-      celDisc(g, r * 0.9, look.body, rim);
-      inside(g, r * 0.9 - rim, () => {
-        g.fillStyle = shade(look.body, 0.62);
-        for (const [x, y, w, h] of [[-0.5, -0.2, 0.42, 0.3], [0.1, 0.15, 0.46, 0.28], [-0.2, 0.42, 0.36, 0.22]] as const) {
-          g.beginPath();
-          g.roundRect(x * r, y * r, w * r, h * r, 2);
-          g.fill();
-        }
-        g.strokeStyle = 'rgba(28, 31, 38, 0.6)';
-        g.lineWidth = 1.4;
-        g.beginPath();
-        g.moveTo(-r * 0.6, -r * 0.45); g.lineTo(-r * 0.1, -r * 0.3); g.lineTo(r * 0.3, -r * 0.5);
-        g.moveTo(r * 0.5, r * 0.1); g.lineTo(r * 0.2, r * 0.55);
-        g.stroke();
-      });
-      return;
-    }
-    case 'plated': {
-      celDisc(g, r, look.body, rim);
-      inside(g, r - rim, () => {
-        // Riveted plates strapped over the torso, the kit's gunmetal gone dull.
-        g.fillStyle = '#5c6570';
-        g.fillRect(-r, -r * 0.18, r * 2, r * 0.36);
-        g.fillStyle = 'rgba(255, 255, 255, 0.22)';
-        g.fillRect(-r, -r * 0.18, r * 2, r * 0.08);
-        g.fillStyle = '#8a5a3a';
-        g.fillRect(-r * 0.12, -r, r * 0.24, r * 2);
-        g.fillStyle = '#c9cfd6';
-        for (const x of [-0.62, -0.3, 0.3, 0.62]) disc(g, x * r, 0, r * 0.07, '#c9cfd6');
-      });
-      return;
-    }
-    case 'bloater': {
-      celDisc(g, r, look.body, rim);
-      inside(g, r - rim, () => {
-        // Swollen with pustules and dark veins.
-        g.strokeStyle = 'rgba(70, 30, 20, 0.45)';
-        g.lineWidth = 1.1;
-        g.beginPath();
-        g.moveTo(-r * 0.7, r * 0.1); g.quadraticCurveTo(-r * 0.2, -r * 0.1, r * 0.1, r * 0.5);
-        g.moveTo(r * 0.6, -r * 0.4); g.quadraticCurveTo(r * 0.2, -r * 0.05, r * 0.35, r * 0.3);
-        g.stroke();
-        for (const [x, y, s] of [[-0.42, -0.35, 0.22], [0.38, 0.32, 0.26], [0.05, -0.55, 0.16], [-0.5, 0.42, 0.17], [0.55, -0.15, 0.14]] as const) {
-          disc(g, x * r, y * r, s * r + 1, shade('#c9b04a', 0.6));
-          disc(g, x * r, y * r, s * r, '#c9b04a');
-          disc(g, (x - s * 0.35) * r, (y - s * 0.35) * r, s * r * 0.4, '#f0e2a0');
-        }
-      });
-      return;
-    }
-    case 'brute': {
-      celDisc(g, r, look.body, rim);
-      inside(g, r - rim, () => {
-        // A hunched back: a heavy spine ridge and stitched scars.
-        g.fillStyle = shade(look.body, 0.7);
-        g.beginPath();
-        g.ellipse(-r * 0.15, -r * 0.05, r * 0.2, r * 0.62, 0.5, 0, TAU);
-        g.fill();
-        g.strokeStyle = ROT;
-        g.lineWidth = 1.3;
-        g.beginPath();
-        g.moveTo(r * 0.15, -r * 0.55); g.lineTo(r * 0.5, r * 0.2);
-        for (let i = 0; i < 4; i++) { const t = i / 3; g.moveTo(r * (0.18 + 0.32 * t) - 3, r * (-0.5 + 0.7 * t) + 1.5); g.lineTo(r * (0.18 + 0.32 * t) + 3, r * (-0.5 + 0.7 * t) - 1.5); }
-        g.stroke();
-      });
-      return;
-    }
-    case 'runner': {
-      celDisc(g, r, look.body, rim);
-      inside(g, r - rim, () => {
-        // Torn rags over a lean frame.
-        g.fillStyle = shade(look.body, 0.72);
-        g.beginPath();
-        g.moveTo(-r, r * 0.2); g.lineTo(-r * 0.2, r * 0.05); g.lineTo(-r * 0.35, r * 0.4); g.lineTo(r * 0.3, r * 0.25); g.lineTo(r, r * 0.6); g.lineTo(r, r); g.lineTo(-r, r);
-        g.closePath();
-        g.fill();
-      });
-      return;
-    }
-    case 'walker': {
-      celDisc(g, r, look.body, rim);
-      inside(g, r - rim, () => {
-        // A ripped shirt in the kit's khaki and a dark wound.
-        g.fillStyle = '#7c7255';
-        g.beginPath();
-        g.moveTo(-r, -r * 0.1); g.lineTo(-r * 0.3, -r * 0.25); g.lineTo(-r * 0.1, r * 0.05); g.lineTo(r * 0.35, -r * 0.15); g.lineTo(r, r * 0.15); g.lineTo(r, r); g.lineTo(-r, r);
-        g.closePath();
-        g.fill();
-        g.fillStyle = 'rgba(255, 255, 255, 0.14)';
-        g.fillRect(-r, -r * 0.1 - 1, r * 0.7, 1.6);
-        g.fillStyle = ROT;
-        g.beginPath();
-        g.ellipse(r * 0.3, r * 0.42, r * 0.2, r * 0.12, -0.5, 0, TAU);
-        g.fill();
-      });
-      return;
-    }
-  }
-}
-
+/** A head: ink disc, two cel steps; the plated wear a steel helmet, the rest a patchy scalp. */
 function paintHead(g: CanvasRenderingContext2D, kind: ZombieKind, r: number) {
   const look = ZOMBIE_LOOK[kind];
+  const ink = Math.max(1.8, r * 0.16);
   if (kind === 'plated') {
-    // A steel helmet.
-    celDisc(g, r, '#7a838e', 1.6);
+    celDisc(g, r, '#7a838e', ink);
     g.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    g.fillRect(-r * 0.55, -r * 0.62, r * 0.6, r * 0.18);
+    g.fillRect(-r * 0.5, -r * 0.6, r * 0.55, r * 0.16);
     return;
   }
-  celDisc(g, r, tint(look.body, 0.08), 1.5);
+  celDisc(g, r, tint(look.body, 0.1), ink);
   if (kind === 'walker' || kind === 'runner') {
-    // Patchy scalp.
-    g.fillStyle = shade(look.body, 0.6);
+    g.fillStyle = shade(look.body, 0.66);
     g.beginPath();
-    g.ellipse(-r * 0.18, r * 0.12, r * 0.32, r * 0.22, 0.6, 0, TAU);
+    g.ellipse(-r * 0.12, r * 0.2, r * 0.28, r * 0.18, 0.6, 0, TAU);
     g.fill();
   }
 }
 
-export function bodyImage(kind: ZombieKind, pxPerUnit: number) {
+export function bodyImage(kind: ZombieKind, bucket: number, pxPerUnit: number) {
   const r = ZOMBIES[kind].radius;
-  return sprite(`b|${kind}`, r + 3, pxPerUnit, (g) => paintBody(g, kind, r));
+  return sprite(`b|${kind}|${bucket}`, r + 4, pxPerUnit, (g) => paintTorso(g, kind, r, (bucket / ZOMBIE_BUCKETS) * TAU));
 }
 
 function headImage(kind: ZombieKind, pxPerUnit: number) {
@@ -487,9 +472,9 @@ export function drawHorde(ctx: CanvasRenderingContext2D, zombies: readonly Zombi
       ctx.fill();
     }
     // Bodies: one sprite each, stretched along the heading for a lunge and squashed on the blow.
-    const body = bodyImage(kind, pxPerUnit);
-    const half = r + 6;
+    const half = r + 7;
     for (const p of poses) {
+      const body = bodyImage(kind, bucketOf(p.a), pxPerUnit);
       const sz = half * p.bob;
       if (Math.abs(p.stretch - 1) < 0.05) { ctx.drawImage(body, p.bx - sz, p.by - sz, sz * 2, sz * 2); continue; }
       const c = Math.cos(p.a), s = Math.sin(p.a), along = p.stretch, across = 2 - p.stretch;

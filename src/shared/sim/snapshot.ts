@@ -1,6 +1,6 @@
-import { byTurret, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { BARREL, byTurret, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  AirdropView, BarrelView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
@@ -38,6 +38,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
     ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
+    ...(alive && life.golden && { golden: true as const }),
     ...(p.badge && { badge: p.badge }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
@@ -90,6 +91,13 @@ function matchView(w: World): MatchView {
   };
 }
 
+const barrelViews = (w: World): BarrelView[] => w.barrels.filter((b) => b.respawnAt === null).map((b) => [b.id, Math.round(b.x), Math.round(b.y), b.fuseAt !== null ? 0 : Math.max(1, Math.ceil((b.hp / BARREL.hp) * 10))]);
+
+const airdropView = (w: World): AirdropView | null => {
+  const f = w.airdrops.flight;
+  return f && { x: Math.round(f.x), y: Math.round(f.y), a: Math.round(f.a * 100) / 100, dropAt: Math.round(f.dropAt), landAt: Math.round(f.landAt) };
+};
+
 const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
 
 export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = VIEW_ASPECT.max): Snapshot {
@@ -134,12 +142,13 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
   // A medal is news only to the player who earned it.
-  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id)
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id)
     || (e.e !== 'medal' && inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
+    barrels: barrelViews(w), airdrop: airdropView(w),
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
   };

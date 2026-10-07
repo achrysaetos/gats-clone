@@ -5,6 +5,7 @@ import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout,
 import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
+import { musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
 import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
@@ -22,6 +23,7 @@ import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } fro
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
+import { createDelight } from './delight.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
 import { startEffect } from './effects.ts';
 import { startBoom, startSlash } from './blastfx.ts';
@@ -29,13 +31,17 @@ import { gunFxOf, impact as gunImpact } from './gunfx.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
-import { bodyColor, drawBackdrop, drawWorld } from './render.ts';
+import { bodyColor, drawBackdrop, drawWorld, nightAmount } from './render.ts';
+import { initPostfx, processFrame, pulse as fxPulse } from './postfx.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
+import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
+import { stepClock } from './hitstop.ts';
+import { drawHeartbeat, drawScreenPulse, zoomAt } from './screenfx.ts';
 import { addKick, addTrauma, decay, offset, settleKick, traumaFor, type Kick } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
@@ -43,6 +49,11 @@ import { aimTurrets, nextCoreHitAt } from './siege.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
+import { createCelebration } from './celebrate.ts';
+import { resetEmotes, noteEmote, setParty } from './emotefx.ts';
+import { createEmoteWheel } from './emotewheel.ts';
+import { isAnniversary, isCenturion } from './friendly.ts';
+import { EMOTES } from '../shared/emotes.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -52,10 +63,11 @@ const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
-const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
+const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'badge', 'error']);
 
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
+initPostfx($<HTMLCanvasElement>('fx'));
 const menuEl = $('menu');
 const hudEl = $('hud');
 const statusEl = $('menu-status');
@@ -125,6 +137,11 @@ function setState(next: ClientState) {
   }
   if (next.phase === 'menu') {
     overlays.reset();
+    delight.reset();
+    celebrate.reset();
+    resetEmotes();
+    wheel.close();
+    setParty(false);
     held.clear();
     firing = false;
     const st = next.status;
@@ -229,6 +246,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     } else if (msg.t === 'welcome') {
       const resumed = state.phase === 'reconnecting' ? state.s : null;
       const s = newSession(ws, pending.rejoin, msg);
+      void checkAnniversary(msg.account);
       if (resumed) s.chat = [...resumed.chat, { from: '', text: 'Reconnected.', team: null, at: now }];
       setState({ phase: 'playing', s });
     }
@@ -243,7 +261,9 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     }
     case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
-    case 'badge': s.moments = addCareerToast(s.moments, msg.badge, msg.score, now); playCues(s, [{ id: 'medal:platinum', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius); return;
+    case 'emote': noteEmote(msg.pid, msg.id, now); return;
+    case 'badge': if (isCenturion(msg.badge) && aimCamera) { const at = worldToScreen(aimCamera, s.lastSelf); celebrate.puff(at.x, at.y - 30, bodyColor({ color: loadout.color, team: null })); }
+      s.moments = addCareerToast(s.moments, msg.badge, msg.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
     case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
   }
@@ -274,13 +294,16 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now, s.bests.kills);
+  delight.onSnap(s, snap, prev, now, state.phase);
+  queueHits(snap.events, s.myId, snap.tick * TICK_MS);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
+  celebrate.onSnap(snap, now);
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
   shooting.settleShots(s, snap, now);
   for (const ev of snap.events) {
     const repeatsKnock = ev.e === 'life' && ev.k === 'downed' && !!snap.royale;
-    if ((ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life' || ev.e === 'wiped') && !repeatsKnock) s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
+    if ((ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life' || ev.e === 'wiped' || ev.e === 'airdrop') && !repeatsKnock) s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
   }
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
@@ -293,7 +316,9 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
     const recap = s.life && recapOf(s.life, now, s.bests);
     s.life = null;
     if (recap) saveBests((s.bests = recap.bests));
-    setState({ phase: 'dead', s, kill: killOf(snap.events, s.myId), loss: prev && lossOf(prev), recap });
+    const kill = killOf(snap.events, s.myId);
+    setState({ phase: 'dead', s, kill, loss: prev && lossOf(prev), recap });
+    delight.onDeath(s, snap, kill, performance.now());
   }
   else if (dead && state.phase === 'dead' && !state.kill) state.kill = killOf(snap.events, s.myId);
   else if (!dead && state.phase === 'dead') setState({ phase: 'playing', s });
@@ -331,6 +356,13 @@ function deathTint(s: Session, spec: EffectSpec): string | undefined {
   if (spec.kind !== 'death') return undefined;
   const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
   return victim && bodyColor(victim);
+}
+
+/** A death as it lands on screen: the burst at the blow, thrown away from whoever fired it. */
+function noteDeath(s: Session, fx: Extract<EffectSpec, { kind: 'death' }>, color: string | undefined, realNow: number) {
+  const killer = fx.by === null || fx.by === fx.victim ? undefined : [...s.snaps.snaps].reverse().flatMap((sn) => sn.players.filter((p) => p.id === fx.by))[0];
+  const dir = killer && Math.hypot(fx.x - killer.x, fx.y - killer.y) > 1 ? Math.atan2(fx.y - killer.y, fx.x - killer.x) : null;
+  onDeath({ x: fx.x, y: fx.y, color: color ?? '#7a808b', dir, mine: fx.by === s.myId && fx.victim !== s.myId, self: fx.victim === s.myId }, realNow);
 }
 
 /** The enemies drawn this frame with their velocity from the two newest snapshots, for the touch aim assist. */
@@ -461,43 +493,53 @@ function frame(now: number) {
   noteFrameCost(performance.now() - start);
 }
 
-function drawFrame(now: number) {
+function drawFrame(realNow: number) {
+  // A hit-stop holds what is drawn on one instant for a few ms; the snapshots, inputs and sounds keep the real clock.
+  const now = stepClock(stopClock, realNow);
+  musicUpdate(state, realNow, firing);
   const s = drawnSessionOf(state);
   const latest = s && newestSnap(s.snaps);
-  const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
+  // The slow-motion draws the world a little behind the clock (`rt`); the killcam and highlight reel are delight.ts's.
+  const rt = s ? delight.drawnTime(s.snaps, now, realNow) : 0;
+  const interpolated = s && sampleAt(s.snaps.snaps, rt);
   if (!s || !interpolated || !latest) {
     drawBackdrop(ctx, view.w, view.h, view.dpr, now);
+    if (processFrame(canvas, { night: 0, storm: false }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
     return;
   }
   if (s === sessionOf(state)) shooting.fireIfDue(s, performance.now());
-  const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
+  const released = releaseDue(s.pendingFx, rt);
   s.pendingFx = released.rest;
   for (const { fx } of released.due) {
-    if (fx.kind === 'boom') startBoom(fx.x, fx.y, fx.r, now);
+    if (fx.kind === 'boom') { startBoom(fx.x, fx.y, fx.r, now); fxPulse(Math.min(1, 0.25 + fx.r / 260)); }
     else if (fx.kind === 'slash') startSlash(fx.x, fx.y, fx.angle, now);
     else startEffect(s, fx, now, deathTint(s, fx));
     if (fx.kind === 'impact') gunImpact(gunFxOf(s), fx.surface, fx, { walls: s.walls, crates: latest.crates, buildings: latest.buildings, run: latest.run }, now);
-    if (fx.kind === 'death') layCorpse(s, latest, fx, now);
+    if (fx.kind === 'death') { layCorpse(s, latest, fx, now); noteDeath(s, fx, deathTint(s, fx), realNow); }
     if (fx.kind === 'splat') layZombieCorpse(s, fx, now);
   }
+  releaseQueued(rt, realNow);
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
-  const drawn = drawnPosition(s.predict, now, INPUT_MS);
+  const drawn = delight.lag > 0.5 ? null : drawnPosition(s.predict, now, INPUT_MS);
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
   noteAssistTargets(s, players);
-  const shots = releaseDue(s.pendingShots, renderTime(s.snaps, now));
+  const shots = releaseDue(s.pendingShots, rt);
   s.pendingShots = shots.rest;
   for (const { shot } of shots.due) shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
-  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
+  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, rt));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
-  aimCamera = makeCamera(s.lastSelf, view.w, view.h, snap.self.viewRadius || WORLD.viewRadius);
+  const look = delight.look(s.lastSelf, snap.self.viewRadius || WORLD.viewRadius, realNow);
+  aimCamera = makeCamera(look.center, view.w, view.h, look.radius);
   trauma = decay(trauma, now - lastFrameAt);
   kick = settleKick(kick, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
+  // A kill of yours snaps the view in a few percent and lets it back out.
+  const punch = zoomAt(realNow);
+  const shakenCamera = { ...aimCamera, scale: aimCamera.scale * punch, viewHalfW: aimCamera.viewHalfW / punch, viewHalfH: aimCamera.viewHalfH / punch, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
   updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
@@ -505,13 +547,27 @@ function drawFrame(now: number) {
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
+  if (delight.drawKillcam(ctx, s, state.phase === 'dead', view, realNow)) {
+    overlays.update(state, s, latest, now, muted);
+    return;
+  }
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, fxNow: realNow, selfAngle, killerId, ghost });
+  // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
+  if (processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression) : null;
+  drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow);
+  if (me?.alive) drawHeartbeat(ctx, view.w, view.h, view.dpr, now, me.hp / me.maxHp);
+  // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.
+  const fb = s.feedback;
+  s.feedback = { ...fb, hitmarker: null };
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
+  s.feedback = fb;
+  if (state.phase === 'playing') drawHitMarker(ctx, mouse, fb.hitmarker, realNow);
   if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
   medalToasts(state.phase === 'menu' ? [] : s.moments.medals, now);
   touchButtons(buttonFaces(snap.self, abilityHint(snap.self.pending)[0] === 'Ability' ? ABILITY_SCORE : undefined));
   overlays.update(state, s, latest, now, muted);
+  delight.drawReel(s, latest, realNow);
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -538,6 +594,11 @@ function onKeyDown(e: KeyboardEvent) {
     overlays.openChat();
     return;
   }
+  if (e.code === 'KeyT' && state.phase === 'playing') {
+    e.preventDefault();
+    if (!e.repeat) wheel.openWheel();
+    return;
+  }
   if (e.code === 'KeyB') {
     toggleBuild(s);
     return;
@@ -547,8 +608,14 @@ function onKeyDown(e: KeyboardEvent) {
     playClick(s);
     return;
   }
+  if (e.code === 'KeyM' && e.shiftKey) {
+    const off = toggleMusicMuted();
+    s.chat.push({ from: '', text: off ? 'Music off (Shift+M to turn on)' : 'Music on', team: null, at: performance.now() });
+    return;
+  }
   if (e.code === 'KeyM') {
     const muted = audio.toggleMute();
+    setSoundMuted(muted);
     s.chat.push({ from: '', text: muted ? 'Sound off (M to turn on)' : 'Sound on', team: null, at: performance.now() });
     if (!muted) playClick(s);
     return;
@@ -577,15 +644,16 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 function onKeyUp(e: KeyboardEvent) {
+  if (e.code === 'KeyT') wheel.release();
   if (e.code === 'Tab') fullBoard = false;
   const action = actionForKey(e.code);
   if (action) held.delete(action);
 }
 
-for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, audio.unlock, { capture: true });
+for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, () => { audio.unlock(); const bus = audio.bus(); if (bus) musicStart(bus.ctx, bus.out); }, { capture: true });
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
-window.addEventListener('blur', () => { held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; });
+window.addEventListener('blur', () => { wheel.close(); held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; });
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   // Suppresses the emulated mousedown so a thumb on the move stick does not also fire.
@@ -619,7 +687,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
-window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
+window.addEventListener('mousemove', (e) => { wheel.move(e.clientX, e.clientY); mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
 canvas.addEventListener('mousedown', (e) => {
   if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e);
   if (e.button !== 0) return;
@@ -693,6 +761,36 @@ function toggleMuted(name: string) {
 }
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
+const delight = createDelight();
+const celebrate = createCelebration(document.body);
+const wheel = createEmoteWheel(hudEl, (id) => {
+  const s = sessionOf(state);
+  if (!s) return;
+  send(s.ws, { t: 'emote', id });
+  playClick(s);
+});
+/** A phone's emote button: taps the wheel open, and a plate sends. */
+const emoteButton = document.createElement('button');
+emoteButton.type = 'button';
+emoteButton.className = 'touch-emote';
+emoteButton.setAttribute('aria-label', EMOTES.wave.label);
+emoteButton.textContent = 'GG';
+emoteButton.style.font = '800 16px var(--display)';
+emoteButton.addEventListener('pointerdown', (e) => { e.preventDefault(); wheel.toggle(); });
+hudEl.append(emoteButton);
+/** On the account's join anniversary your soldier wears a party hat (and `?party` shows it for a look). */
+async function checkAnniversary(account: string | null) {
+  if (params.has('party')) { setParty(true); return; }
+  if (!account) return;
+  try {
+    const res = await fetch(`/api/profile/${encodeURIComponent(account)}`);
+    const p = res.ok ? ((await res.json()) as { firstSeen?: number }) : null;
+    if (p && isAnniversary(p.firstSeen, Date.now())) setParty(true);
+  } catch { /* the hat is a nicety */ }
+}
+if (params.has('dev')) {
+  void import('./celebratedemo.ts').then((m) => Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { celebrate: (kind: string) => celebrate.demo(m.demoCelebration(kind)) }));
+}
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);

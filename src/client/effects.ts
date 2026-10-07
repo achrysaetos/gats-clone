@@ -293,7 +293,7 @@ export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool,
     } else {
       // A streak behind the spark's head as long as its current speed, so fast sparks read as lines and slow ones as dots.
       const tail = Math.exp(-p.drag * (now - p.born) / 1000) * 0.03;
-      at(2, 'spark', p.color, fade, Math.max(0.8, r * 0.75)).push(x - p.vx * tail, y - p.vy * tail, x, y);
+      at(2, 'spark', p.color, fade, Math.max(1, r * 0.75)).push(x - p.vx * tail, y - p.vy * tail, x, y);
     }
   }
   for (const b of order[0]!) {

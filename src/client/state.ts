@@ -28,9 +28,9 @@ export type Effect =
   /** A turret's round from its muzzle at (`x`, `y`), flying `reach` px before it stops. */
   | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 420, tracer: 240 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 400, tracer: 240 };
 
-type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' }> & { at: number };
+type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' | 'airdrop' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
 
 /** Everything needed to join the same room again as the same player. */

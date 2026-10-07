@@ -35,6 +35,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['E', 'Zombies: hold to revive, repair or reload'],
   ['Tab', 'Hold for the whole leaderboard'],
   ['Enter', 'Chat'],
+  ['T', 'Hold for the emote wheel, flick toward a plate, let go'],
   ['M', 'Mute sound'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],
 ];

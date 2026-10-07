@@ -21,9 +21,9 @@ A..
   ]);
 });
 
-test('red spawns turn into blue ones, FFA spawns and crates turn into more of themselves, and zone A turns into C about B at the centre', () => {
+test('red spawns turn into blue ones, FFA spawns, crates and barrels turn into more of themselves, and zone A turns into C about B at the centre', () => {
   const m = gridMap('Turn', `
-X.
+Xb
 .S
 cA
 R.
@@ -39,6 +39,7 @@ R.
       ffa: [{ x: 0, y: 0, w: 50, h: 50 }, { x: 150, y: 150, w: 50, h: 50 }],
     },
     crates: [{ x: 25, y: 125 }, { x: 175, y: 75 }],
+    barrels: [{ x: 75, y: 25 }, { x: 125, y: 175 }],
   });
 });
 

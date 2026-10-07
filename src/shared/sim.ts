@@ -1,6 +1,8 @@
-import { ABILITY_COOLDOWN_MS, GUNS, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, AIRDROP, GUNS, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
+import { tickAirdrops } from './sim/airdrop.ts';
+import { tickBarrels } from './sim/barrels.ts';
 import { MUZZLE_PX } from './sim/ballistics.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCalls } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
@@ -107,7 +109,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       const b: Bullet = {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
-        left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
+        left: stats.range, damage: life.golden ? gun.damage * AIRDROP.goldMul : gun.damage, piercing: stats.piercing, label: gun.name,
         gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null, volley: w.tick,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
@@ -145,6 +147,8 @@ export function step(w: World, dtMs: number): void {
   for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);
   tickThrown(w, dt);
+  tickBarrels(w);
+  tickAirdrops(w);
   watchCloseCalls(w);
   for (const c of w.crates) {
     if (c.respawnAt !== null && w.now >= c.respawnAt) { c.respawnAt = null; c.hp = WORLD.crateHp; }

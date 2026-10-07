@@ -1,0 +1,77 @@
+/*
+ * Moments worth reliving: the slow-motion letterbox, the killcam and the highlight reel. Field kit per docs/art/STYLE.md:
+ * gunmetal plates with clipped top-right and bottom-left corners, an orange corner bracket, bone Barlow Condensed.
+ * Orange is danger aimed at you (the killer's plate); gold is reward (final kill, your highlight, its medals).
+ * Motion stays snap-and-settle and under 250 ms; reduced motion drops the slide and the stamp and keeps the information.
+ */
+.dl-root { position: fixed; inset: 0; z-index: 25; pointer-events: none; --dl-bars: 0; }
+
+/* Letterbox: flat ink bars, no gradient. */
+.dl-bar { position: absolute; left: 0; right: 0; height: calc(var(--dl-bars) * 9vh); background: #1c1f26; }
+.dl-bar.top { top: 0; }
+.dl-bar.bottom { bottom: 0; }
+
+.plate {
+  background: #3d4450; color: #ece6d6;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  border-top: 2px solid #ff5a1f; border-left: 2px solid #ff5a1f;
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+}
+
+/* FINAL KILL: gold when you made it, bone when it was somebody else's. */
+.dl-final { position: absolute; left: 50%; bottom: calc(9vh + 18px); transform: translate(-50%, 10px); padding: 8px 22px 7px; opacity: 0; transition: opacity 120ms ease-out, transform 180ms cubic-bezier(.2, .9, .3, 1.2); zoom: var(--ui, 1); }
+.dl-final b { font: italic 900 30px/1 "Barlow Condensed", sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.dl-root.final-on .dl-final { opacity: 1; transform: translate(-50%, 0); }
+.dl-final.mine b { color: #ffd34d; }
+
+/* Killcam. */
+.dl-kc { position: absolute; inset: 0; zoom: var(--ui, 1); }
+.dl-kc-tag { position: absolute; left: 20px; top: calc(9vh + 14px); padding: 5px 12px 4px; font: 800 14px/1 "Barlow Condensed", sans-serif; letter-spacing: .24em; color: #ece6d6; }
+.dl-kc-plate {
+  position: absolute; left: 50%; bottom: calc(9vh + 20px); transform: translateX(-50%); min-width: 260px; padding: 9px 26px 10px; text-align: center;
+  display: grid; gap: 2px; animation: dl-plate-in 200ms cubic-bezier(.2, .9, .3, 1.15) both;
+}
+.dl-kc-plate small { font: 800 13px/1 "Barlow Condensed", sans-serif; letter-spacing: .26em; color: #ff5a1f; }
+.dl-kc-name { font: italic 900 32px/1 "Barlow Condensed", sans-serif; letter-spacing: .03em; text-transform: uppercase; overflow-wrap: anywhere; }
+.dl-kc-gun { font: 700 15px/1.1 "Barlow Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #b7bbc2; }
+.dl-kc-skip { position: absolute; right: 20px; bottom: calc(9vh + 20px); font: 700 14px/1 "Barlow Condensed", sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #ece6d6; background: rgba(28, 31, 38, .86); padding: 6px 12px 5px; }
+.dl-kc-skip kbd { font: inherit; color: #ff5a1f; }
+.dl-kc-bar { position: absolute; left: 0; bottom: 9vh; height: 3px; width: 100%; background: #ff5a1f; transform-origin: left; transform: scaleX(0); }
+@keyframes dl-plate-in { from { opacity: 0; transform: translate(-50%, 14px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* The real hud and its death card step aside for the replay, then the card settles back without taking the skip click. */
+body.dl-play #hud { visibility: hidden; }
+body.dl-hold #death { opacity: 0; pointer-events: none !important; }
+body.dl-settle #death { pointer-events: none !important; }
+#death { transition: opacity 160ms ease-out; }
+/* The round's banner waits for the slow motion to play out. */
+#banner, #report { transition: opacity 200ms ease-out; }
+body.dl-slowmo #banner, body.dl-slowmo #report { opacity: 0; }
+
+/* Your highlight, picture-in-picture beside the podium. */
+.dl-reel { position: absolute; left: 24px; top: 168px; width: 354px; padding: 8px 7px 9px; pointer-events: none !important; animation: dl-reel-in 220ms cubic-bezier(.2, .9, .3, 1.1) both; }
+.dl-reel-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 3px 6px; }
+.dl-reel-head b { font: italic 900 20px/1 "Barlow Condensed", sans-serif; letter-spacing: .06em; color: #ffd34d; }
+.dl-reel-head span { font: 800 12px/1 "Barlow Condensed", sans-serif; letter-spacing: .24em; color: #b7bbc2; }
+.dl-reel-frame { position: relative; width: 340px; height: 191px; background: #1c1f26; overflow: hidden; border: 2px solid #1c1f26; }
+.dl-reel-canvas { display: block; width: 340px; height: 191px; }
+.dl-reel-stamps { position: absolute; left: 8px; bottom: 8px; display: grid; gap: 4px; }
+.dl-stamp { display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 4px; background: rgba(28, 31, 38, .9); border-left: 3px solid #ffd34d; }
+.dl-stamp svg { display: block; }
+.dl-stamp b { font: italic 900 17px/1 "Barlow Condensed", sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #ffd34d; }
+.dl-stamp.fresh { animation: dl-stamp 220ms cubic-bezier(.2, .9, .3, 1.3) both; }
+.dl-reel-kills { padding: 6px 3px 0; font: 700 14px/1 "Barlow Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #ece6d6; }
+@keyframes dl-stamp { from { opacity: 0; transform: scale(1.7) rotate(-4deg); } to { opacity: 1; transform: none; } }
+@keyframes dl-reel-in { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 820px) {
+  .dl-reel { left: 10px; top: 130px; width: 230px; padding: 6px 5px 7px; }
+  .dl-reel-frame, .dl-reel-canvas { width: 218px; height: 123px; }
+  .dl-stamp b { font-size: 14px; }
+  .dl-kc-plate { min-width: 200px; }
+  .dl-kc-name { font-size: 26px; }
+  .dl-kc-skip { right: 10px; font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-final, .dl-kc-plate, .dl-reel, .dl-stamp.fresh, #death, #banner, #report { animation: none !important; transition: none !important; }
+}

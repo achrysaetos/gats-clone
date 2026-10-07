@@ -1,8 +1,9 @@
 import {
-  ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
+  AIRDROP, ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
+import { isEmoteId, type EmoteId } from './emotes.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
 export type Team = ColorId | null;
@@ -37,6 +38,8 @@ export type ClientMsg =
   /** `level` names the pending pick being answered, so a pick sent twice, or after the next one opened, is ignored. */
   | { t: 'pick'; level: number; option: PickOption }
   | { t: 'chat'; text: string }
+  /** A cosmetic quick emote; the server rate-limits it and fans it out to nearby players and the emoter's team. */
+  | { t: 'emote'; id: EmoteId }
   | { t: 'respawn'; loadout: Loadout }
   /** Zombies: put a wall on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. */
   | { t: 'build'; kind: BuildingKind; cx: number; cy: number }
@@ -59,12 +62,26 @@ export type PlayerView = {
   streak?: number;
   /** The rarest lifetime medal on this player's profile, worn by their name. */
   badge?: Badge;
+  /** Holds an airdrop's golden gun for this life. */
+  golden?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
 
 /** `gun` is null for shrapnel. */
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
+/**
+ * An explosive barrel: `[id, x, y, hp]`, `hp` in tenths of full health, 1..10, or 0 once lit (it is hissing toward its burst).
+ * Whole px, and none while a burst barrel waits to stand again; the list changes only when one is hurt, so it rides as a sticky field.
+ */
+export type BarrelView = [id: number, x: number, y: number, hp: number];
+/** A supply plane in flight over (`x`, `y`) heading `a` radians, there at `dropAt`; its crate lands at `landAt` and stands until broken. Server times. */
+export type AirdropView = { x: number; y: number; a: number; dropAt: number; landAt: number };
+/** Where the supply plane is at server time `t`: a straight line at `AIRDROP.planeSpeed`, over (`x`, `y`) at `dropAt`. */
+export const planeAt = (f: Pick<AirdropView, 'x' | 'y' | 'a' | 'dropAt'>, t: number): { x: number; y: number } => {
+  const d = (AIRDROP.planeSpeed * (t - f.dropAt)) / 1000;
+  return { x: f.x + Math.cos(f.a) * d, y: f.y + Math.sin(f.a) * d };
+};
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number; drop?: true };
 export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
@@ -140,7 +157,9 @@ export type GameEvent =
   /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */
-  | { e: 'wiped'; team: ColorId; place: number };
+  | { e: 'wiped'; team: ColorId; place: number }
+  /** A supply plane is `inbound` for (`x`, `y`); its crate `landed`; or `by` cracked it open and took a golden gun (`gold`) or a resupply. */
+  | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean };
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -202,6 +221,10 @@ export type Snapshot = {
   leaderboard: LeaderRow[];
   match: MatchView;
   events: GameEvent[];
+  /** Explosive barrels still standing, versus modes. Sticky. */
+  barrels?: BarrelView[];
+  /** The supply plane in flight or the landed crate not yet opened, or null. Sticky. */
+  airdrop?: AirdropView | null;
   /** Zombies only: the horde in view, the squad's walls and the run. */
   zombies?: ZombieView[];
   buildings?: BuildingView[];
@@ -211,7 +234,7 @@ export type Snapshot = {
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'airdrop'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
 
@@ -221,6 +244,8 @@ export type ServerMsg =
   | { t: 'walls'; worldSize: number; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
+  /** Player `pid` is doing emote `id`. */
+  | { t: 'emote'; pid: number; id: EmoteId }
   /** You just earned a lifetime medal (`CAREER`), and the score it paid. */
   | { t: 'badge'; badge: Badge; score: number }
   | { t: 'error'; message: string };
@@ -284,6 +309,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     }
     case 'chat':
       return typeof v.text === 'string' && v.text.trim() ? { t: 'chat', text: v.text.trim().slice(0, 120) } : null;
+    case 'emote':
+      return isEmoteId(v.id) ? { t: 'emote', id: v.id } : null;
     case 'respawn': {
       const loadout = parseLoadout(v.loadout);
       return loadout ? { t: 'respawn', loadout } : null;

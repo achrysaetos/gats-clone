@@ -329,6 +329,8 @@ export const MEDAL_IDS = [
   // Each weapon class has feats of its own (`WEAPON_MEDALS`).
   'doubleTap', 'deadeye', 'runAndGun', 'twoBirds', 'longBarrel', 'disciplined', 'oneShot', 'noScope', 'eagleEye', 'reaper',
   'pinnedDown', 'beltFed',
+  // The arena's surprises: a barrel kill, a barrel chain, and the supply drop.
+  'kaboom', 'chainReaction', 'specialDelivery',
 ] as const;
 export type MedalId = (typeof MEDAL_IDS)[number];
 export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
@@ -363,6 +365,9 @@ export const MEDALS: Record<MedalId, { name: string; desc: string; score: number
   reaper: { name: 'Reaper', desc: 'Sniper: three one-hit kills in one life', score: 300, tier: 'platinum' },
   pinnedDown: { name: 'Pinned Down', desc: 'Machine gun: kill an enemy you have pinned with suppression', score: 75, tier: 'bronze' },
   beltFed: { name: 'Belt Fed', desc: 'Machine gun: three kills from one belt', score: 150, tier: 'gold' },
+  kaboom: { name: 'Kaboom', desc: 'Kill with an explosive barrel you set off', score: 60, tier: 'bronze' },
+  chainReaction: { name: 'Chain Reaction', desc: 'One barrel chain kills two or more', score: 200, tier: 'gold' },
+  specialDelivery: { name: 'Special Delivery', desc: 'Crack open a supply drop', score: 100, tier: 'silver' },
 };
 /** The streak at which each streak medal is earned. */
 export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
@@ -424,6 +429,28 @@ export const CAREER_PAY: Record<MedalTier, number> = { bronze: 100, silver: 200,
 /** One rung of a career track: which track, and which tier of it (0 bronze to 3 platinum). */
 export type Badge = { track: CareerId; tier: 0 | 1 | 2 | 3 };
 export const badgeKey = (b: Badge) => `${b.track}:${b.tier}`;
+
+/**
+ * Explosive barrels stand on the versus maps. A barrel is a `size` px square with `hp`; at zero it hisses for `fuseMs`, then
+ * bursts as a blast of `radius` and `damage`. A barrel caught in a blast lights a shorter fuse (`chainBaseMs` plus `chainPerPx`
+ * a px from the burst), so a row of them goes off in a ripple. It stands again `respawnMs` after bursting.
+ */
+export const BARREL = {
+  size: 36, hp: 24, fuseMs: 420, chainBaseMs: 120, chainPerPx: 1.1, radius: 170, damage: 150, respawnMs: 45_000,
+  /** Maps keep barrels this far (px, beyond the player's body) from every spawn region. */
+  spawnGap: 120,
+} as const;
+
+/**
+ * Airdrops (versus modes): `perRound` of them at random times between `from` and `to` of the round's clock, at least `gapMs` apart.
+ * A plane crosses the map at `planeSpeed` px/s, drops a crate where it passes the target, and the crate falls `fallMs` under its
+ * chute, landing as a crate of `hp` that stands `lifeMs` unless broken. Whoever breaks it gets a golden gun (`goldMul` damage for the life) or, `supplyChance` of the time
+ * or if they already hold one, a full heal, a full magazine and `supplyScore`.
+ */
+export const AIRDROP = {
+  perRound: [1, 2] as const, from: 0.15, to: 0.8, gapMs: 120_000, planeSpeed: 1000, fallMs: 5000, hp: 300, size: 64, lifeMs: 75_000,
+  goldMul: 1.2, supplyChance: 0.4, supplyScore: 150, edge: 400,
+} as const;
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
