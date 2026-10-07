@@ -75,9 +75,8 @@ export type Session = {
   /** The level whose pick was sent and not yet confirmed by a snapshot. */
   pickSentFor: number | null;
   particles: ParticlePool;
-  /** Zombies: the time the core last lost health, each zombie's last heading, whether build mode is on and what it puts up. */
+  /** Zombies: the time the core last lost health, whether build mode is on and what it puts up. Zombie poses live in zombieart.ts. */
   coreHitAt: number;
-  zombieFaces: Map<number, { x: number; y: number; a: number }>;
   building: boolean;
   buildKind: BuildingKind;
   /** Each turret's aim by cell (`cx,cy`). */

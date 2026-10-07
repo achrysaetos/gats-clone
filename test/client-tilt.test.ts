@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGroundCache, drawSolids, LIGHT, LIP, MATERIALS, shadowHull, wallSolids, type Solid } from '../src/client/tilt.ts';
+import { createGroundCache, drawSolids, FOOT, LIGHT, LIP, MATERIALS, paintSolids, shadowHull, wallSolids, type Solid } from '../src/client/tilt.ts';
 import { MAPS } from '../src/shared/maps.ts';
 
 type Call = { name: string; args: number[]; fill: unknown };
@@ -34,18 +34,18 @@ test('a solid casts its shadow from its own rect, as far along the light as it i
   assert.ok(Math.abs((fx! - 160) / len - LIGHT.x / Math.hypot(LIGHT.x, LIGHT.y)) < 1e-9, 'it falls along the light');
 });
 
-test('each top face is exactly its collision rect, and nothing of a solid is drawn more than its lip past it', () => {
+test('each top face is exactly its collision rect, and nothing of a solid is drawn past its lip, its front face and the rubble at its foot', () => {
   const { ctx, calls } = recorder();
   const solids: Solid[] = [
     { kind: 'concrete', x: 10, y: 20, w: 300, h: 40 },
     { kind: 'planter', x: 400, y: 80, w: 44, h: 44, wear: 0.5 },
     { kind: 'brick', x: 500, y: 500, w: 50, h: 50, wear: 0 },
   ];
-  drawSolids(ctx, solids);
+  paintSolids(ctx, solids);
   for (const s of solids) {
     assert.ok(calls.some((c) => c.name === 'rect' && c.args.join() === [s.x, s.y, s.w, s.h].join()), `${s.kind} top at its rect`);
   }
-  const reach = (x: number, y: number) => solids.some((s) => x >= s.x && x <= s.x + s.w + LIP && y >= s.y && y <= s.y + s.h + LIP);
+  const reach = (x: number, y: number) => solids.some((s) => x >= s.x && x <= s.x + s.w + LIP && y >= s.y && y <= s.y + s.h + FOOT);
   for (const c of calls) {
     if (c.name === 'rect' || c.name === 'fillRect') assert.ok(reach(c.args[0]!, c.args[1]!) && reach(c.args[0]! + c.args[2]!, c.args[1]! + c.args[3]!), `${c.name} ${c.args} stays within the lip`);
     if (c.name === 'moveTo' || c.name === 'lineTo') assert.ok(reach(c.args[0]!, c.args[1]!), `${c.name} ${c.args} stays within the lip`);
@@ -53,6 +53,19 @@ test('each top face is exactly its collision rect, and nothing of a solid is dra
   const lip = calls.findIndex((c) => c.name === 'rect' && c.args[0] === 10 + LIP / 2);
   const top = calls.findIndex((c) => c.name === 'rect' && c.args.join() === '10,20,300,40');
   assert.ok(lip >= 0 && lip < top, 'the lips are laid before any top, so nearer solids cover the lips behind them');
+});
+
+test('drawSolids blits one cached sprite per solid, farthest first, and paints each solid only once', () => {
+  const { ctx, calls } = recorder();
+  const near: Solid = { kind: 'concrete', x: 0, y: 400, w: 100, h: 50 }, far: Solid = { kind: 'sandstone', x: 0, y: 100, w: 100, h: 50 };
+  drawSolids(ctx, [near, far]);
+  const images = calls.filter((c) => c.name === 'drawImage');
+  assert.equal(images.length, 2);
+  assert.ok(images[0]!.args[2]! < images[1]!.args[2]!, 'the farther wall is laid first');
+  const strokes = calls.filter((c) => c.name === 'stroke').length;
+  drawSolids(ctx, [near, far]);
+  assert.equal(calls.filter((c) => c.name === 'drawImage').length, 4, 'the second frame blits again');
+  assert.equal(calls.filter((c) => c.name === 'stroke').length, strokes, 'but paints nothing new');
 });
 
 test('the ground layer paints and traces the map once per layout and re-blurs only when the squad builds or loses something', () => {

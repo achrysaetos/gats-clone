@@ -1,4 +1,4 @@
-import { COLORS, type ArmorId, type ZombieKind } from '../shared/defs.ts';
+import { COLORS, type ZombieKind } from '../shared/defs.ts';
 import type { Team } from '../shared/protocol.ts';
 
 export const INK = '#1c1f26';
@@ -29,12 +29,17 @@ export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as cons
 
 export const TEAM_COLORS: Record<Exclude<Team, null>, string> = COLORS;
 
-export const ARMOR_RIM: Record<ArmorId, number> = { none: 0, light: 0.8, medium: 1.6, heavy: 2.4 };
-
 export function shade(hex: string, f: number): string {
   const v = parseInt(hex.slice(1), 16);
   const c = (s: number) => Math.round(Math.min(255, Math.max(0, ((v >> s) & 255) * f)));
   return `rgb(${c(16)}, ${c(8)}, ${c(0)})`;
+}
+
+/** `shade`, but as a hex colour, so the result can be shaded and tinted again. */
+export function shadeHex(hex: string, f: number): string {
+  const v = parseInt(hex.slice(1), 16);
+  const c = (s: number) => Math.round(Math.min(255, Math.max(0, ((v >> s) & 255) * f)));
+  return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
 }
 
 export function tint(hex: string, k: number): string {

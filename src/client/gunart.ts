@@ -123,120 +123,30 @@ const ART: Record<WeaponId, Art> = {
   },
 };
 
-/**
- * The same guns seen from above, for the world: held in a player's hands and lying beside a corpse. Same chunky parts and
- * tones as the side art, laid out in plan: x runs butt to muzzle as before (same `pivot`), y is across the gun, centred on
- * the bore. Extra barrels sit side by side, and Akimbo is a pistol in each hand.
- */
-const sym = (tone: Tone, x0: number, x1: number, half0: number, half1 = half0): Shape => poly(tone, [x0, -half0], [x1, -half1], [x1, half1], [x0, half0]);
-
-const TOP_ART: Record<WeaponId, Art> = {
-  pistol: {
-    pivot: 44,
-    accent: [22, -1.6, 18, 3.2],
-    shapes: [
-      sym('poly', 8, 14, 4.4, 5),
-      sym('metal', 12, 62, 5.5),
-      line('shine', 1.2, [14, -3], [60, -3]),
-      barrel(sym('dark', 59, 64, 3)),
-    ],
-  },
-  smg: {
-    pivot: 64,
-    accent: [30, -1.7, 22, 3.4],
-    shapes: [
-      sym('poly', 0, 20, 4.6, 4),
-      sym('metal', 18, 66, 6.5),
-      line('shine', 1.2, [20, -3.8], [64, -3.8]),
-      sym('poly', 66, 80, 5.5),
-      barrel(sym('dark', 79, 86, 3.2)),
-    ],
-  },
-  shotgun: {
-    pivot: 60,
-    accent: [36, -1.7, 18, 3.4],
-    shapes: [
-      poly('wood', [-3, -7.5], [32, -4.6], [32, 4.6], [-3, 7.5]),
-      sym('metal', 32, 60, 6.5),
-      barrel(sym('metal', 60, 116, 4)),
-      barrel(line('shine', 1.2, [62, -1.6], [114, -1.6])),
-      sym('wood', 70, 96, 6.5),
-      barrel(sym('dark', 113, 119, 5)),
-    ],
-  },
-  assault: {
-    pivot: 94,
-    accent: [26, -1.7, 12, 3.4],
-    shapes: [
-      poly('poly', [-2, -7.5], [24, -5], [24, 5], [-2, 7.5]),
-      sym('metal', 22, 70, 6.5),
-      line('shine', 1.2, [24, -3.8], [68, -3.8]),
-      sym('dark', 40, 57, 4.4),
-      dot('glass', 55, 0, 2.4),
-      sym('poly', 70, 98, 5.5),
-      barrel(sym('dark', 97, 113, 3)),
-      barrel(sym('dark', 111, 120, 4.6)),
-    ],
-  },
-  sniper: {
-    pivot: 80,
-    accent: [52, -1.5, 20, 3],
-    shapes: [
-      poly('tan', [-3, -7.5], [40, -4.4], [100, -5], [100, 5], [40, 4.4], [-3, 7.5]),
-      solid('dark', 2.6, [62, 3], [64, 11]),
-      dot('dark', 64, 12, 3.2),
-      sym('metal', 46, 78, 4.4),
-      sym('dark', 46, 84, 3.6),
-      sym('dark', 40, 48, 6),
-      sym('dark', 82, 92, 6.5),
-      dot('glass', 89, 0, 3),
-      barrel(sym('metal', 96, 143, 3)),
-      barrel(sym('dark', 141, 151, 5)),
-    ],
-  },
-  lmg: {
-    pivot: 92,
-    accent: [26, -1.7, 10, 3.4],
-    shapes: [
-      poly('poly', [-2, -8], [24, -5.5], [24, 5.5], [-2, 8]),
-      rect('olive', 38, 6, 28, 13),
-      sym('metal', 22, 72, 8),
-      sym('dark', 28, 68, 5.4),
-      line('shine', 1.2, [24, -6.6], [70, -6.6]),
-      sym('poly', 72, 94, 6),
-      barrel(sym('metal', 92, 123, 3)),
-      barrel(sym('dark', 121, 130, 5)),
-    ],
-  },
-};
-
 /** What a gun's art becomes once its look is applied: parts in final units, and their bounds. */
 type Built = { shapes: Shape[]; accent: readonly Pt[] | null; minX: number; maxX: number; minY: number; maxY: number };
-type View = 'side' | 'top';
 const built = new Map<string, Built>();
 
-function build(gun: GunId, view: View = 'side'): Built {
-  const hit = built.get(`${gun}|${view}`);
+function build(gun: GunId): Built {
+  const hit = built.get(gun);
   if (hit) return hit;
   const { base, look, stage } = GUNS[gun];
-  const art = view === 'side' ? ART[base] : TOP_ART[base];
+  const art = ART[base];
   const map = ([x, y]: Pt, dy = 0): Pt => [x <= art.pivot ? x : art.pivot + (x - art.pivot) * look.length, y * look.width + dy];
   const moved = (s: Shape, dy: number): Shape =>
     s.kind === 'dot' ? { ...s, at: map(s.at, dy), r: s.r * look.width } : { ...s, pts: s.pts.map((p) => map(p, dy)) } as Shape;
-  // Extra barrels stack over-under in profile, a bore's depth apart; from above they sit side by side about the bore.
+  // Extra barrels stack over-under in profile, a bore's depth apart.
   const bore = 5 * look.width;
   let shapes: Shape[] = [];
   for (const s of art.shapes) {
     if (!s.barrel || look.barrels === 1) { shapes.push(moved(s, 0)); continue; }
-    for (let i = look.barrels - 1; i >= 0; i--) shapes.push(moved(s, view === 'side' ? -i * bore : (i - (look.barrels - 1) / 2) * bore));
+    for (let i = look.barrels - 1; i >= 0; i--) shapes.push(moved(s, -i * bore));
   }
   const [ax, ay, aw, ah] = art.accent;
   const accent: Pt[] | null = stage > 0 ? [map([ax, ay]), map([ax + aw, ay]), map([ax + aw, ay + ah]), map([ax, ay + ah])] : null;
   if (look.hands === 2) {
-    // Akimbo: in profile a second gun peeks out above and ahead of the first; from above, one in each hand.
-    shapes = view === 'side'
-      ? [...shapes.map((s) => shift(s, 16, -13 * look.width)), ...shapes]
-      : [...shapes.map((s) => shift(s, 0, -6 * look.width)), ...shapes.map((s) => shift(s, 0, 6 * look.width))];
+    // Akimbo: a second gun peeks out above and ahead of the first.
+    shapes = [...shapes.map((s) => shift(s, 16, -13 * look.width)), ...shapes];
   }
   const pts = shapes.flatMap((s) => (s.kind === 'dot' ? [s.at] : s.pts));
   const out: Built = {
@@ -244,7 +154,7 @@ function build(gun: GunId, view: View = 'side'): Built {
     minX: Math.min(...pts.map((p) => p[0])), maxX: Math.max(...pts.map((p) => p[0])),
     minY: Math.min(...pts.map((p) => p[1])) - 1, maxY: Math.max(...pts.map((p) => p[1])) + 1,
   };
-  built.set(`${gun}|${view}`, out);
+  built.set(gun, out);
   return out;
 }
 
@@ -271,8 +181,8 @@ function trace(ctx: CanvasRenderingContext2D, pts: readonly Pt[], close: boolean
  * Draws the gun's art in its own units (call after scaling the context). `flat` fills every solid part in one colour, for
  * the kill feed's small glyphs; otherwise each part is shaded top to bottom and edged, with seams and highlights on top.
  */
-function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, view: View = 'side') {
-  const b = build(gun, view);
+function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string) {
+  const b = build(gun);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   if (!flat) {
@@ -344,26 +254,26 @@ export const artBounds = (gun: GunId) => {
 };
 
 /** Fits the gun's art into the box at (`x`, `y`) of `w` by `h`, centred, at `scale` units per px if given (so siblings compare true size). */
-export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left'; view?: View } = {}) {
-  const b = build(gun, opts.view);
+export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left' } = {}) {
+  const b = build(gun);
   const k = opts.scale ?? Math.min(w / (b.maxX - b.minX), h / (b.maxY - b.minY));
   const left = opts.align === 'left' ? x : x + (w - (b.maxX - b.minX) * k) / 2;
   ctx.save();
   ctx.translate(left - b.minX * k, y + h / 2 - ((b.minY + b.maxY) / 2) * k);
   ctx.scale(k, k);
-  paint(ctx, gun, opts.flat, opts.view);
+  paint(ctx, gun, opts.flat);
   ctx.restore();
 }
 
 /**
- * A gun in the world, held or dropped, is one image: its top-down art, seen from above like everything else in the world.
- * Its length in world px is `base` plus `perUnit` of its art length, so a pistol (about 47 px) reads clearly in its owner's
- * hand while a bolt-action (about 76 px) is plainly longer, and a gun is exactly as big on the ground as in its owner's hands.
- * `thicken` widens it across a little past true scale, so a rifle seen from above still reads at play zoom.
+ * A gun in the world, held or dropped, is one image: its side art seen from above at an angle, the three-quarter view the
+ * whole world is drawn in, so it is squashed across its bore to `squash` of its height. Its length in world px is `base`
+ * plus `perUnit` of its art length: a pistol reaches about 30 px past the hand, a rifle about 55 and a bolt-action about
+ * 70, and a gun is exactly as big on the ground as in its owner's hands.
  */
-export const WORLD_GUN = { base: 30, perUnit: 0.3, thicken: 1.7, res: 3 } as const;
+export const WORLD_GUN = { base: 4, perUnit: 0.6, squash: 0.6, res: 3 } as const;
 /** Where the butt of a held gun sits, in body radii ahead of the holder's centre: a pistol is held out, a long gun shouldered. */
-const HOLD_REAR: Record<WeaponId, number> = { pistol: 0.75, smg: 0.5, shotgun: 0.25, assault: 0.3, sniper: 0.2, lmg: 0.3 };
+const HOLD_REAR: Record<WeaponId, number> = { pistol: 0.62, smg: 0.38, shotgun: 0.12, assault: 0.16, sniper: 0, lmg: 0.16 };
 
 const images = new Map<string, HTMLCanvasElement>();
 
@@ -371,13 +281,13 @@ function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
   const key = `${gun}|${dusted}`;
   let image = images.get(key);
   if (image) return image;
-  const b = build(gun, 'top');
+  const b = build(gun);
   image = document.createElement('canvas');
   image.width = Math.ceil((b.maxX - b.minX) * WORLD_GUN.res) + 4;
   image.height = Math.ceil((b.maxY - b.minY) * WORLD_GUN.res) + 4;
   const g = image.getContext('2d');
   if (g) {
-    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4, { view: 'top' });
+    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4);
     if (dusted) {
       // Dust settles on it: a flat grey wash over the paint only.
       g.globalCompositeOperation = 'source-atop';
@@ -389,12 +299,14 @@ function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
   return image;
 }
 
-/** The world size of a gun's image, and its length. */
+/** The world size of a gun's image, its length, world units per art unit along (`k`) and across (`kAcross`) it, and its bore's place in it. */
 function worldSize(gun: GunId) {
-  const b = build(gun, 'top');
+  const b = build(gun);
   const length = b.maxX - b.minX;
   const k = (WORLD_GUN.base + WORLD_GUN.perUnit * length) / length;
-  return { k, length: length * k, w: (((b.maxX - b.minX) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k, h: ((((b.maxY - b.minY) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k) * WORLD_GUN.thicken };
+  const kAcross = k * WORLD_GUN.squash;
+  const pad = 2 / WORLD_GUN.res;
+  return { k, kAcross, length: length * k, w: (length + pad * 2) * k, h: (b.maxY - b.minY + pad * 2) * kAcross, bore: (pad - b.minY) * kAcross, front: pad * k };
 }
 
 /** A dropped gun, dulled as if it lay in the dust, centred on (`x`, `y`) along the context's x axis. */
@@ -403,18 +315,69 @@ export function drawDroppedGun(ctx: CanvasRenderingContext2D, gun: GunId, x: num
   ctx.drawImage(worldImage(gun, true), x - w / 2, y - h / 2, w, h);
 }
 
-/** A held gun, in the holder's frame (x along the aim, from the body's centre), its bore on the aim line. */
-export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number) {
-  const { w, h } = worldSize(gun);
-  const b = build(gun, 'top');
+/** Whether a gun aimed along `angle` is drawn mirrored, so its grip and mag always hang down-screen. */
+export const heldFlipped = (angle: number): boolean => Math.cos(angle) < 0;
+/** How much shorter a gun looks aimed along `angle`: pointing up- or down-screen it is foreshortened by the three-quarter view. */
+export const heldForeshorten = (angle: number): number => 1 - 0.15 * Math.abs(Math.sin(angle));
+
+/**
+ * A held gun aimed along `aim`, in the holder's frame (x along the aim, from the body's centre), its bore on the aim line,
+ * mirrored when aimed left (see `heldFlipped`) and foreshortened toward up or down (see `heldForeshorten`).
+ */
+export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, aim = 0) {
+  const { w, h, bore, front } = worldSize(gun);
   const rear = HOLD_REAR[GUNS[gun].base] * radius;
-  const bore = (2 - b.minY * WORLD_GUN.res) / ((b.maxY - b.minY) * WORLD_GUN.res + 4);
-  ctx.drawImage(worldImage(gun, false), rear, -h * bore, w, h);
+  const fore = heldForeshorten(aim);
+  ctx.save();
+  ctx.translate(rear, 0);
+  ctx.scale(fore, heldFlipped(aim) ? -1 : 1);
+  ctx.drawImage(worldImage(gun, false), -front, -bore, w, h);
+  ctx.restore();
 }
 
-/** Where a held gun's muzzle is, `radius` being the holder's body radius. */
-export function heldMuzzleReach(gun: GunId, radius: number): number {
-  return HOLD_REAR[GUNS[gun].base] * radius + worldSize(gun).length;
+/**
+ * Where the hands hold each class, in its side art units (before an evolution stretches the barrel end): the trigger hand
+ * on the grip, the support hand on the handguard or pump, or cupped under the grip (`fore` null) for a pistol held out in
+ * both hands. The support hand never reaches past `FORE_REACH` body radii, so a long barrel never stretches an arm.
+ */
+const GRIP: Record<WeaponId, { grip: Pt; fore: Pt | null }> = {
+  pistol: { grip: [21, 10], fore: null },
+  smg: { grip: [28, 11], fore: [73, 0] },
+  shotgun: { grip: [30, 4], fore: [83, 4] },
+  assault: { grip: [35, 11], fore: [84, 0] },
+  sniper: { grip: [44, 6], fore: [90, 1] },
+  lmg: { grip: [30, 13], fore: [83, 0] },
+};
+const FORE_REACH = 1.9;
+
+export type Hand = { x: number; y: number };
+/**
+ * Where a held gun's two hands are, in the holder's frame (x along the aim, from the body's centre, y to the right):
+ * `[trigger, support]`, for a gun aimed along `aim` (mirrored and foreshortened with it). Akimbo puts each hand on the grip of
+ * its own pistol.
+ */
+export function heldHands(gun: GunId, radius: number, aim = 0): [Hand, Hand] {
+  const { base, look } = GUNS[gun];
+  const pivot = ART[base].pivot;
+  const { k, kAcross, front } = worldSize(gun);
+  const b = build(gun);
+  const rear = HOLD_REAR[base] * radius;
+  const s = heldFlipped(aim) ? -1 : 1;
+  const short = heldForeshorten(aim);
+  const at = ([x, y]: Pt, dx = 0, dy = 0): Hand => ({
+    x: rear + (((x <= pivot ? x : pivot + (x - pivot) * look.length) + dx - b.minX + 2 / WORLD_GUN.res) * k - front) * short,
+    y: s * (y * look.width + dy) * kAcross,
+  });
+  const { grip, fore } = GRIP[base];
+  if (look.hands === 2) return [at(grip), at(grip, 16, -13 * look.width)];
+  if (fore === null) return [at(grip), at(grip, -3, 6)];
+  const support = at(fore);
+  return [at(grip), { x: Math.min(support.x, FORE_REACH * radius), y: support.y }];
+}
+
+/** How far ahead of its holder's centre a held gun's muzzle is, `radius` being the holder's body radius, aimed along `aim`. */
+export function heldMuzzleReach(gun: GunId, radius: number, aim = 0): number {
+  return HOLD_REAR[GUNS[gun].base] * radius + worldSize(gun).length * heldForeshorten(aim);
 }
 
 /**
@@ -439,6 +402,6 @@ export function drawGunCard(canvas: HTMLCanvasElement, gun: GunId, cssW: number,
 
 /** Where the muzzle of the gun held by a player at (`x`, `y`) aiming along `angle` is, so a drawn round leaves the barrel. */
 export function muzzleTip(x: number, y: number, angle: number, gun: GunId, radius: number) {
-  const reach = heldMuzzleReach(gun, radius);
+  const reach = heldMuzzleReach(gun, radius, angle);
   return { x: x + Math.cos(angle) * reach, y: y + Math.sin(angle) * reach };
 }

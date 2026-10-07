@@ -1,10 +1,13 @@
-import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind } from '../shared/defs.ts';
+import { BUILDINGS, WORLD, ZOM, type TurretKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 import { HIT_FLASH_MS } from './effects.ts';
-import { INK, PALETTE, shade, tint, ZOMBIE_LOOK } from './palette.ts';
-import { bodySprite, drawBody } from './bodies.ts';
+import { INK, PALETTE, tint } from './palette.ts';
+import { drawFallenSoldier } from './bodies.ts';
+import { CORE_GLOW, drawCoreBody } from './coreart.ts';
+import { coreFlash, onStrike, siege } from './siegefx.ts';
+import { animateZombies, biteTarget, cellId, drawHorde } from './zombieart.ts';
 import type { Effect } from './state.ts';
 import { LIGHT } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
@@ -12,8 +15,6 @@ import type { Ghost } from './zombies.ts';
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
 
-const CORE_GLOW = '#4fd1e8';
-const CORE_HIT_MS = 180;
 export const CORE_ALERT_MS = 1500;
 
 /** When the core was last bitten, for the alert. Only the night can bite it, so dawn and the report clear the alert at once. */
@@ -168,6 +169,41 @@ function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: num
   ctx.restore();
 }
 
+/**
+ * A worn turret: gashes across its mount from the claws (one more at each step of wear, fixed per cell), and once badly
+ * hurt a red damage lamp blinking on it. Its smoke rises from siegefx.ts.
+ */
+function drawTurretWear(ctx: CanvasRenderingContext2D, b: BuildingView, cx: number, cy: number, now: number) {
+  const marks = b.hp <= 2 ? 3 : b.hp <= 3 ? 2 : 1;
+  let seed = (b.cx * 73856093) ^ (b.cy * 19349663);
+  const rnd = () => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let i = 0; i < marks; i++) {
+    // Three parallel claw rakes across one side of the mount.
+    const a = rnd() * TAU, ox = cx + Math.cos(a) * 9, oy = cy + Math.sin(a) * 9, d = a + Math.PI / 2;
+    for (let k = -1; k <= 1; k++) {
+      const px = ox + Math.cos(a) * k * 2.4, py = oy + Math.sin(a) * k * 2.4;
+      ctx.moveTo(px - Math.cos(d) * 5, py - Math.sin(d) * 5);
+      ctx.lineTo(px + Math.cos(d) * 5, py + Math.sin(d) * 5);
+    }
+  }
+  ctx.stroke();
+  if (b.hp <= 3 && Math.floor(now / 300) % 2) {
+    ctx.fillStyle = PALETTE.hunted;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(cx - 11, cy - 11, 5, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(cx - 11, cy - 11, 2.2, 0, TAU);
+    ctx.fill();
+  }
+}
+
 /** The ammo gauge: an ink-edged slot under the mount, filled in the kind's accent, flashing red when dry. */
 function drawAmmo(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, now: number) {
   const { x, y, w, h } = cellRect(b.cx, b.cy);
@@ -192,6 +228,7 @@ export function drawSiegeTops(
     if (b.kind !== 'wall') {
       const barrel = barrelOf(aims, b, core, now);
       drawTurretHead(ctx, b.kind, x + w / 2, y + h / 2 - 2, barrel.angle, barrel.recoil);
+      if (b.hp <= 5) drawTurretWear(ctx, b, x + w / 2, y + h / 2 - 2, now);
       drawAmmo(ctx, b, now);
     }
     const hit = flashes.get(`${b.cx},${b.cy}`);
@@ -204,197 +241,120 @@ export function drawSiegeTops(
   }
 }
 
+/**
+ * The Bastion's ground, under everything: a hazard-taped ring painted round it on the floor, the kit's orange on ink, and a
+ * cool underglow that breathes with its crystal. The light it gives off is drawn later, over the night (siegefx.ts).
+ */
 export function drawCoreGlow(ctx: CanvasRenderingContext2D, run: RunView, now: number) {
+  const { x, y } = run.core;
   const pulse = 0.5 + 0.5 * Math.sin(now / 420);
-  ctx.globalAlpha = 0.14 + 0.08 * pulse;
+  ctx.globalAlpha = 0.05 + 0.04 * pulse;
   ctx.fillStyle = CORE_GLOW;
   ctx.beginPath();
-  ctx.arc(run.core.x, run.core.y, 100 + 6 * pulse, 0, TAU);
+  ctx.arc(x, y, 104, 0, TAU);
   ctx.fill();
-  ctx.globalAlpha = 1;
-}
-
-export function drawCoreTop(ctx: CanvasRenderingContext2D, run: RunView, now: number, hitAt: number) {
-  const { x, y } = run.core;
-  const r = coreRectAt(run.core);
-  const frac = Math.max(0, run.core.hp / run.core.maxHp);
-  const hit = Math.max(0, 1 - (now - hitAt) / CORE_HIT_MS);
-  const pulse = 0.5 + 0.5 * Math.sin(now / 420);
-  ctx.fillStyle = '#5a6476';
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = INK;
   ctx.beginPath();
-  for (const [bx, by] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
-    ctx.moveTo(x + bx * 37 + 3.5, y + by * 37);
-    ctx.arc(x + bx * 37, y + by * 37, 3.5, 0, TAU);
-  }
-  ctx.fill();
-  const jolt = hit * 3;
-  const jx = x + Math.sin(now * 0.09) * jolt, jy = y + Math.cos(now * 0.11) * jolt;
-  const glow = frac > 0.35 ? CORE_GLOW : PALETTE.hpBad;
-  ctx.globalAlpha = 0.3 + 0.15 * pulse;
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(jx, jy, 30, 0, TAU);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  const sz = 24 + 3 * pulse;
-  ctx.beginPath();
-  ctx.moveTo(jx, jy - sz); ctx.lineTo(jx + sz * 0.7, jy); ctx.lineTo(jx, jy + sz); ctx.lineTo(jx - sz * 0.7, jy);
-  ctx.closePath();
-  ctx.fillStyle = glow;
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.beginPath();
-  ctx.moveTo(jx, jy - sz + 5); ctx.lineTo(jx + sz * 0.32, jy - 2); ctx.lineTo(jx, jy + 2);
-  ctx.closePath();
-  ctx.fill();
-  if (hit > 0) {
-    ctx.globalAlpha = 0.6 * hit;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.globalAlpha = 1;
-  }
-  ctx.lineCap = 'round';
-  ctx.lineWidth = 7;
-  ctx.strokeStyle = 'rgba(28, 31, 38, 0.3)';
-  ctx.beginPath();
-  ctx.arc(x, y, 84, 0, TAU);
+  ctx.arc(x, y, 104, 0, TAU);
   ctx.stroke();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
-  ctx.beginPath();
-  ctx.arc(x, y, 84, -Math.PI / 2, -Math.PI / 2 + frac * TAU);
+  ctx.setLineDash([10, 10]);
+  ctx.lineDashOffset = 0;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#d9541f';
   ctx.stroke();
-}
-
-/** Each zombie faces the way it last moved, kept between frames since the snapshot carries no heading. */
-export function faceZombies(faces: Map<number, { x: number; y: number; a: number }>, zombies: readonly ZombieView[], toward: { x: number; y: number }) {
-  const seen = new Set<number>();
-  for (const [id, , x, y] of zombies) {
-    seen.add(id);
-    const f = faces.get(id);
-    if (!f) faces.set(id, { x, y, a: Math.atan2(toward.y - y, toward.x - x) });
-    else if (Math.hypot(x - f.x, y - f.y) > 1.5) { f.a = Math.atan2(y - f.y, x - f.x); f.x = x; f.y = y; }
-  }
-  for (const id of faces.keys()) if (!seen.has(id)) faces.delete(id);
-}
-
-function addCircles(ctx: CanvasRenderingContext2D, xyr: readonly number[], pad: number) {
-  for (let i = 0; i < xyr.length; i += 3) {
-    const r = xyr[i + 2]! + pad;
-    ctx.moveTo(xyr[i]! + r, xyr[i + 1]!);
-    ctx.arc(xyr[i]!, xyr[i + 1]!, r, 0, TAU);
-  }
-}
-
-export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], faces: ReadonlyMap<number, { a: number }>, flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
-  ZOMBIE_KINDS.forEach((kind, k) => {
-    const look = ZOMBIE_LOOK[kind];
-    const r = ZOMBIES[kind].radius;
-    const mine = zombies.filter((z) => z[1] === k);
-    if (!mine.length) return;
-    const limbs: number[] = [];
-    for (const [id, , x, y] of mine) {
-      const a = faces.get(id)?.a ?? 0;
-      const sway = Math.sin(now / 180 + id) * 0.18;
-      for (const side of [-1, 1]) {
-        const arm = a + side * 0.55 + sway;
-        limbs.push(x + Math.cos(arm) * r * 1.05, y + Math.sin(arm) * r * 1.05, r * 0.36);
-        if (look.shoulders) limbs.push(x + Math.cos(a + side * Math.PI / 2) * r * 0.8, y + Math.sin(a + side * Math.PI / 2) * r * 0.8, r * 0.46);
-      }
-    }
-    ctx.fillStyle = shade(look.arm, 0.7);
-    ctx.beginPath();
-    addCircles(ctx, limbs, 1);
-    ctx.fill();
-    ctx.fillStyle = look.arm;
-    ctx.beginPath();
-    addCircles(ctx, limbs, 0);
-    ctx.fill();
-    const body = bodySprite(look.body, r, look.armor, pxPerUnit);
-    for (const [, , x, y] of mine) drawBody(ctx, body, x, y, r);
-    ctx.fillStyle = look.eye;
-    ctx.beginPath();
-    for (const [id, , x, y] of mine) {
-      const a = faces.get(id)?.a ?? 0;
-      for (const side of [-1, 1]) {
-        const ex = x + Math.cos(a + side * 0.42) * r * 0.55, ey = y + Math.sin(a + side * 0.42) * r * 0.55;
-        ctx.moveTo(ex + r * 0.15, ey);
-        ctx.arc(ex, ey, r * 0.15, 0, TAU);
-      }
-    }
-    ctx.fill();
-  });
-  for (const [id, kind, x, y] of zombies) {
-    const hit = flashes.get(id);
-    if (hit === undefined) continue;
-    ctx.globalAlpha = 0.8 * (1 - (now - hit) / HIT_FLASH_MS);
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(x, y, ZOMBIES[ZOMBIE_KINDS[kind]].radius, 0, TAU);
-    ctx.fill();
-  }
+  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
-  for (const [, kind, x, y, hp] of zombies) {
-    if (!ZOMBIE_LOOK[ZOMBIE_KINDS[kind]].bar) continue;
-    const r = ZOMBIES[ZOMBIE_KINDS[kind]].radius, half = r - 2;
-    ctx.fillStyle = 'rgba(28, 31, 38, 0.45)';
-    ctx.beginPath();
-    ctx.roundRect(x - half - 1, y - r - 13, half * 2 + 2, 6, 3);
-    ctx.fill();
-    ctx.fillStyle = hp > 3 ? PALETTE.hpBad : '#ff9f43';
-    ctx.beginPath();
-    ctx.roundRect(x - half, y - r - 12, Math.max(4, half * 2 * (hp / 10)), 4, 2);
-    ctx.fill();
-  }
 }
 
-export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, serverNow: number | null, self: boolean) {
+export function drawCoreTop(ctx: CanvasRenderingContext2D, run: RunView, now: number, hitAt: number, pxPerUnit = 1) {
+  drawCoreBody(ctx, run, now, coreFlash(siege, hitAt, now), pxPerUnit);
+}
+
+/**
+ * The horde: each zombie's walk and bite advanced from where it is drawn (zombieart.ts), each blow that lands on the core, a
+ * building or a squad player bursting sparks and chips off it (siegefx.ts), then the horde drawn batched by kind.
+ */
+export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], snap: Pick<Snapshot, 'run' | 'buildings' | 'players'>, flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
+  const core = snap.run ? coreRectAt(snap.run.core) : null;
+  const buildingAt = new Map((snap.buildings ?? []).map((b) => [cellId(b.cx, b.cy), b]));
+  const players = snap.players.filter((p) => p.alive).map((p) => ({ x: p.x, y: p.y, r: R }));
+  animateZombies(zombies, now, snap.run?.core ?? { x: 0, y: 0 }, (kind, x, y) => biteTarget(kind, x, y, core, buildingAt, players), (st) => onStrike(siege, st, now));
+  drawHorde(ctx, zombies, flashes, now, pxPerUnit);
+}
+
+/**
+ * A downed squadmate: their own soldier lying where they fell, in their colour (they are not dead yet), reaching and
+ * struggling; a ring on the floor pulsing red faster as they bleed out; round them the bleed-out draining and, once someone
+ * holds use, the revive filling in green; a medic plate bobbing over them; and the time left.
+ */
+export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, serverNow: number | null, self: boolean, now = 0, pxPerUnit = 1) {
   const down = p.downed;
   if (!down) return;
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.fillStyle = PALETTE.contact;
+  const left = serverNow === null ? ZOM.bleedOutMs : Math.max(0, down.bleedOutAt - serverNow);
+  const urgency = 1 - Math.min(1, left / ZOM.bleedOutMs);
+  const beat = 0.5 + 0.5 * Math.sin(now / (260 - 150 * urgency));
+  // The pulse on the floor, under the body.
+  ctx.globalAlpha = (0.18 + 0.22 * beat) * (down.revive > 0 ? 0.4 : 1);
+  ctx.fillStyle = down.revive > 0 ? PALETTE.hpGood : PALETTE.hpBad;
   ctx.beginPath();
-  ctx.ellipse(LIGHT.x * 8, LIGHT.y * 8, R, R * 0.66, 0, 0, TAU);
+  ctx.arc(p.x, p.y, R + 8 + 5 * beat, 0, TAU);
   ctx.fill();
-  ctx.fillStyle = shade(color, 0.8);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.8;
+  ctx.globalAlpha = 1;
+  const struggle = Math.sin(now / 320 + p.id) * 0.25;
+  drawFallenSoldier(ctx, color, p.x, p.y, R, { angle: p.angle, splay: [0.5 + struggle, 0.7 - struggle], loll: 0.15 * Math.sin(now / 500 + p.id), scale: 1 }, pxPerUnit);
+  // Bleed-out draining, then the revive filling over it.
+  const ring = R + 12;
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(28, 31, 38, 0.55)';
   ctx.beginPath();
-  ctx.ellipse(0, 0, R * 0.95, R * 0.62, 0, 0, TAU);
-  ctx.fill();
+  ctx.arc(p.x, p.y, ring, 0, TAU);
   ctx.stroke();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = left < 8000 ? PALETTE.hunted : '#ff9f43';
   ctx.beginPath();
-  ctx.moveTo(-5, 0); ctx.lineTo(5, 0);
-  ctx.moveTo(0, -5); ctx.lineTo(0, 5);
-  ctx.stroke();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = self ? color : 'rgba(28, 31, 38, 0.25)';
-  ctx.beginPath();
-  ctx.arc(0, 0, R + 10, 0, TAU);
+  ctx.arc(p.x, p.y, ring, -Math.PI / 2, -Math.PI / 2 + (1 - urgency) * TAU);
   ctx.stroke();
   if (down.revive > 0) {
+    ctx.lineWidth = 5;
     ctx.strokeStyle = PALETTE.hpGood;
     ctx.beginPath();
-    ctx.arc(0, 0, R + 10, -Math.PI / 2, -Math.PI / 2 + down.revive * TAU);
+    ctx.arc(p.x, p.y, ring, -Math.PI / 2, -Math.PI / 2 + down.revive * TAU);
     ctx.stroke();
   }
+  if (self) {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ring + 5, 0, TAU);
+    ctx.stroke();
+  }
+  // The medic plate: a white cross on the kit's green, ink-edged, bobbing.
+  const mx = p.x, my = p.y - R - 30 + Math.sin(now / 300) * 2;
+  ctx.fillStyle = INK;
+  ctx.beginPath();
+  ctx.arc(mx, my, 9, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = down.revive > 0 ? PALETTE.hpGood : tint(PALETTE.hpBad, 0.1 * beat);
+  ctx.beginPath();
+  ctx.arc(mx, my, 7.5, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(mx - 1.6, my - 4.5, 3.2, 9);
+  ctx.fillRect(mx - 4.5, my - 1.6, 9, 3.2);
   if (serverNow !== null) {
-    const left = down.bleedOutAt - serverNow;
     ctx.font = '750 12px "Barlow Condensed", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(28, 31, 38, 0.7)';
-    ctx.strokeText(clock(left), 0, -R - 22);
+    ctx.strokeStyle = 'rgba(28, 31, 38, 0.8)';
+    ctx.strokeText(clock(left), p.x, p.y + R + 24);
     ctx.fillStyle = left < 8000 ? PALETTE.hunted : '#ffffff';
-    ctx.fillText(clock(left), 0, -R - 22);
+    ctx.fillText(clock(left), p.x, p.y + R + 24);
   }
-  ctx.restore();
 }
 
 const GHOST_LOOK = { ok: PALETTE.hpGood, no: PALETTE.hpBad, down: '#ff9f43' } as const;

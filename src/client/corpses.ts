@@ -1,6 +1,7 @@
 import { GUNS, WORLD, ZOMBIE_KINDS, ZOMBIES, type GunId, type ZombieKind } from '../shared/defs.ts';
 import { INK, shade, ZOMBIE_LOOK } from './palette.ts';
 import { drawDroppedGun } from './gunart.ts';
+import { drawFallenSoldier } from './bodies.ts';
 
 /**
  * A fallen player left where they died, on the map they died on, drawn as plainly dead until it fades.
@@ -39,11 +40,22 @@ export const corpseAlpha = (c: Corpse, now: number): number => Math.max(0, Math.
 
 /** Washes `color` most of the way to grey (darker still for a burnt body), so the dead never read as a living player of their color. */
 export function deadTone(color: string, burnt = false): string {
+  const [r, g, b] = deadChannels(color, burnt);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** `deadTone` as a hex colour, for the body art to shade. */
+export function deadHex(color: string, burnt = false): string {
+  const [r, g, b] = deadChannels(color, burnt);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+function deadChannels(color: string, burnt: boolean): [number, number, number] {
   const n = parseInt(color.slice(1), 16);
   const g = parseInt(DEAD_GREY.slice(1), 16);
   const dim = burnt ? 0.55 : 1;
   const mix = (shift: number) => Math.round((((n >> shift) & 255) * 0.2 + ((g >> shift) & 255) * 0.8) * dim);
-  return `rgb(${mix(16)}, ${mix(8)}, ${mix(0)})`;
+  return [mix(16), mix(8), mix(0)];
 }
 
 /** A per-corpse number in [0, 1), so every corpse falls a little differently but never flickers. */
@@ -121,18 +133,13 @@ function drawGunAt(ctx: CanvasRenderingContext2D, c: Corpse, gun: { x: number; y
   ctx.restore();
 }
 
-function drawBody(ctx: CanvasRenderingContext2D, c: Corpse, at: { x: number; y: number }, drop: number) {
+function drawBody(ctx: CanvasRenderingContext2D, c: Corpse, at: { x: number; y: number }, drop: number, pxPerUnit: number) {
   const fall = c.angle + (seeded(c, 14) - 0.5) * 1.2;
-  const r = R * (1 + 0.12 * (1 - drop));
-  ctx.fillStyle = deadTone(c.color, c.blast);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  const arm = r * (0.45 + seeded(c, 16) * 0.1);
+  // The soldier lies where they fell, greyed out, arms flung wide and the head lolled, then crossed out.
+  drawFallenSoldier(ctx, deadHex(c.color, c.blast), at.x, at.y, R, {
+    angle: fall, splay: [(seeded(c, 17) - 0.3) * 1.1, (seeded(c, 18) - 0.3) * 1.1], loll: (seeded(c, 19) - 0.5) * 0.3, scale: 1 + 0.12 * (1 - drop),
+  }, pxPerUnit);
+  const arm = R * (0.32 + seeded(c, 16) * 0.06);
   ctx.save();
   ctx.translate(at.x, at.y);
   ctx.rotate(fall);
@@ -154,7 +161,7 @@ function drawBody(ctx: CanvasRenderingContext2D, c: Corpse, at: { x: number; y: 
  * Corpses lie on the ground: under bodies, bullets and the night shade. Each lies in a pool of blood sprayed along the
  * killing blow, its gun dropped at a random spot and angle; an explosive death is scorched, and flings the gun further.
  */
-export function drawCorpses(ctx: CanvasRenderingContext2D, corpses: readonly Corpse[], now: number) {
+export function drawCorpses(ctx: CanvasRenderingContext2D, corpses: readonly Corpse[], now: number, pxPerUnit = 1) {
   for (const c of corpses) {
     const age = now - c.born;
     const alpha = corpseAlpha(c, now);
@@ -170,7 +177,7 @@ export function drawCorpses(ctx: CanvasRenderingContext2D, corpses: readonly Cor
     const body = restingBody(c, age);
     ctx.globalAlpha = alpha;
     drawGunAt(ctx, c, restingGun(c, body, age));
-    drawBody(ctx, c, body, Math.min(1, age / CORPSE.dropMs));
+    drawBody(ctx, c, body, Math.min(1, age / CORPSE.dropMs), pxPerUnit);
   }
   ctx.globalAlpha = 1;
 }

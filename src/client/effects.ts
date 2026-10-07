@@ -1,39 +1,20 @@
 import { BUILDINGS, WORLD, ZOMBIES, type TurretKind } from '../shared/defs.ts';
-import { cellRect, coreRectAt } from '../shared/sim/build.ts';
-import { addCrack, hostOf, inward } from './decals.ts';
 import type { EffectSpec } from './eventclock.ts';
-import { newestSnap } from './interp.ts';
-import { PALETTE, ZOMBIE_LOOK } from './palette.ts';
+import { INK, PALETTE, tint, ZOMBIE_LOOK } from './palette.ts';
+import { LIGHT } from './tilt.ts';
 import { burst, isLive, particleAt, type ParticlePool } from './particles.ts';
 import { EFFECT_LIFE_MS, type Effect, type Session } from './state.ts';
 
 const TAU = Math.PI * 2;
 export const HIT_FLASH_MS = 120;
 
-function coverOf(s: Session) {
-  const snap = newestSnap(s.snaps);
-  return [
-    ...s.walls,
-    ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
-    ...(snap?.buildings ?? []).map((b) => cellRect(b.cx, b.cy)),
-    ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
-  ];
-}
-
 export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: string) {
   s.effects.push({ ...spec, born: now } as Effect);
   const angle = Math.random() * TAU;
   switch (spec.kind) {
     case 'impact': {
-      if (spec.victim !== null) {
-        s.hurtAt.set(spec.victim, now);
-        return;
-      }
-      const host = hostOf(coverOf(s), spec.x, spec.y);
-      const away = host ? inward(host, spec.x, spec.y) + Math.PI : angle;
-      if (host) addCrack(s.cracks, host, spec.x, spec.y, now);
-      burst(s.particles, 'rubble', spec.x, spec.y, away, now);
-      burst(s.particles, 'spark', spec.x, spec.y, away, now);
+      // Struck cover is gunfx.ts's: its chunky holes, chips and sparks replaced the hairline cracks and rubble once drawn here.
+      if (spec.victim !== null) s.hurtAt.set(spec.victim, now);
       return;
     }
     case 'boom':
@@ -41,14 +22,28 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       burst(s.particles, 'smoke', spec.x, spec.y, angle, now);
       return;
     case 'death': burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint); return;
-    case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
+    case 'splat': {
+      const r = ZOMBIES[spec.zombie].radius, big = r / 16;
+      burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body, big);
+      burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].arm, 0.5 * big);
+      burst(s.particles, 'bone', spec.x, spec.y, angle, now, Math.random, undefined, big);
+      burst(s.particles, 'dust', spec.x, spec.y, angle, now, Math.random, undefined, big);
+      if (spec.zombie === 'bloater') burst(s.particles, 'smoke', spec.x, spec.y, angle, now, Math.random, '#9aa860');
+      return;
+    }
     case 'flash': {
       const back = WORLD.playerRadius * 0.9;
       burst(s.particles, 'casing', spec.x - Math.cos(spec.angle) * back, spec.y - Math.sin(spec.angle) * back, spec.angle + Math.PI / 2 + 0.25, now);
       return;
     }
-    case 'slash':
     case 'tracer':
+      // Only the first pellet of a spread puffs, so a scatter's seven rounds leave one cloud.
+      if (!s.effects.some((o) => o !== s.effects.at(-1) && o.kind === 'tracer' && o.born === now && Math.abs(o.x - spec.x) < 12 && Math.abs(o.y - spec.y) < 12)) {
+        burst(s.particles, 'muzzleSmoke', spec.x, spec.y, spec.angle, now);
+        if (spec.turret === 'sentry' || spec.turret === 'cannon') burst(s.particles, 'casing', spec.x - Math.cos(spec.angle) * 26, spec.y - Math.sin(spec.angle) * 26, spec.angle + Math.PI / 2 + 0.25, now);
+      }
+      return;
+    case 'slash':
       return;
   }
 }
@@ -210,48 +205,152 @@ function drawDeathRing(ctx: CanvasRenderingContext2D, x: number, y: number, k: n
   ctx.stroke();
 }
 
+/** A zombie popping: a white flash the size of its body, a ring of its own colour thrown out, then the stain thinning away. */
 function drawSplat(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, r: number, k: number) {
+  if (k < 0.18) {
+    const f = k / 0.18;
+    ctx.globalAlpha = 0.85 * (1 - f);
+    ctx.fillStyle = '#fffbe8';
+    ctx.beginPath();
+    ctx.arc(x, y, r * (0.8 + 0.5 * f), 0, TAU);
+    ctx.fill();
+  }
   ctx.globalAlpha = 0.55 * (1 - k);
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(x, y, r * (0.9 + 0.5 * Math.sqrt(k)), 0, TAU);
   ctx.fill();
-  ctx.globalAlpha = (1 - k) * 0.5;
-  ctx.lineWidth = 3 * (1 - k) + 1;
-  ctx.strokeStyle = color;
+  ctx.globalAlpha = (1 - k) * 0.7;
+  ctx.lineWidth = 4 * (1 - k) + 1;
+  ctx.strokeStyle = INK;
   ctx.beginPath();
-  ctx.arc(x, y, r * (1 + 1.2 * Math.sqrt(k)), 0, TAU);
+  ctx.arc(x, y, r * (1 + 1.4 * Math.sqrt(k)), 0, TAU);
+  ctx.stroke();
+  ctx.lineWidth = 2.5 * (1 - k) + 0.5;
+  ctx.strokeStyle = color;
   ctx.stroke();
 }
 
-export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool, now: number) {
+const SMOKE_LIFT = { x: -LIGHT.x * 0.28, y: -LIGHT.y * 0.28 } as const;
+/** Particles are drawn in this many alpha steps, each step of each colour one path, so hundreds cost a few dozen fills. */
+export const ALPHA_BANDS = 4;
+
+const lit = new Map<string, string>();
+const litOf = (color: string) => {
+  let c = lit.get(color);
+  if (c === undefined) lit.set(color, (c = color.startsWith('#') && color.length === 7 ? tint(color, 0.3) : color));
+  return c;
+};
+
+type Bucket = { color: string; band: number; width: number; xs: number[] };
+const buckets = new Map<string, Bucket>();
+
+/** The bucket for one shape, colour and alpha step, reused frame to frame so drawing allocates nothing once warm. */
+function bucket(shape: string, color: string, alpha: number, width = 0): Bucket {
+  const band = Math.max(1, Math.min(ALPHA_BANDS, Math.ceil(alpha * ALPHA_BANDS)));
+  const key = `${shape}|${color}|${band}`;
+  let b = buckets.get(key);
+  if (!b) buckets.set(key, (b = { color, band, width, xs: [] }));
+  if (!b.xs.length) b.width = width;
+  return b;
+}
+
+/** Which alpha step a particle's alpha falls in, as the alpha it is drawn at. */
+export const bandAlpha = (alpha: number) => Math.max(1, Math.min(ALPHA_BANDS, Math.ceil(alpha * ALPHA_BANDS))) / ALPHA_BANDS;
+
+/**
+ * Smoke first, as flat puffs with a lit cap toward the world's light; then chips (spinning flecks), streaking sparks and
+ * glowing embers over it. `night` (0..1) dims the smoke so a plume reads as smoke, not fog, after dark. Everything is
+ * bucketed by shape, colour and alpha step and drawn one path per bucket.
+ */
+export function drawParticles(ctx: CanvasRenderingContext2D, pool: ParticlePool, now: number, night = 0) {
+  for (const b of buckets.values()) b.xs.length = 0;
+  const smokeAlpha = 0.5 * (1 - 0.35 * night);
+  const order: Bucket[][] = [[], [], [], [], []];
+  const at = (shape: number, name: string, color: string, alpha: number, width = 0) => {
+    const b = bucket(name, color, alpha, width);
+    if (!b.xs.length) order[shape]!.push(b);
+    return b.xs;
+  };
   for (const p of pool.slots) {
-    if (p.shape !== 'smoke' || !isLive(p, now)) continue;
+    if (p.shape === 'casing' || !isLive(p, now)) continue;
     const { x, y, k } = particleAt(p, now);
-    ctx.globalAlpha = 0.45 * (1 - k);
-    ctx.fillStyle = p.color;
+    if (p.shape === 'smoke') {
+      const r = p.size * (1 + p.grow * k);
+      // Swell in fast, then thin out: a puff, not a disc that pops in.
+      const a = Math.min(1, k * 7) * (1 - k);
+      at(0, 'smoke', p.color, a).push(x, y, r);
+      continue;
+    }
+    const fade = 1 - k * k;
+    const r = p.size * (1 - k * 0.5);
+    if (p.shape === 'chip') {
+      const turn = p.spin ? Math.atan2(p.vy, p.vx) + Math.hypot(x - p.x, y - p.y) * p.spin : 0;
+      at(1, 'chip', p.color, fade).push(x, y, r, turn);
+    } else if (p.shape === 'ember') {
+      const flicker = 0.75 + 0.25 * Math.sin((now - p.born) * 0.045 + p.x);
+      at(3, 'ember', p.color, (1 - k) * flicker).push(x, y, r);
+    } else {
+      // A streak behind the spark's head as long as its current speed, so fast sparks read as lines and slow ones as dots.
+      const tail = Math.exp(-p.drag * (now - p.born) / 1000) * 0.03;
+      at(2, 'spark', p.color, fade, Math.max(0.8, r * 0.75)).push(x - p.vx * tail, y - p.vy * tail, x, y);
+    }
+  }
+  for (const b of order[0]!) {
+    const xs = b.xs;
+    ctx.globalAlpha = smokeAlpha * (b.band / ALPHA_BANDS);
+    ctx.fillStyle = b.color;
     ctx.beginPath();
-    ctx.arc(x, y, p.size * (1 + p.grow * k), 0, TAU);
+    for (let i = 0; i < xs.length; i += 3) { ctx.moveTo(xs[i]! + xs[i + 2]!, xs[i + 1]!); ctx.arc(xs[i]!, xs[i + 1]!, xs[i + 2]!, 0, TAU); }
+    ctx.fill();
+    // The lit cap is the puff's own colour a step lighter, so smoke never turns to glowing haze after dark.
+    ctx.globalAlpha *= 0.5 * (1 - 0.5 * night);
+    ctx.fillStyle = litOf(b.color);
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i += 3) {
+      const r = xs[i + 2]!, cx = xs[i]! + SMOKE_LIFT.x * r, cy = xs[i + 1]! + SMOKE_LIFT.y * r;
+      ctx.moveTo(cx + r * 0.62, cy);
+      ctx.arc(cx, cy, r * 0.62, 0, TAU);
+    }
+    ctx.fill();
+  }
+  for (const b of order[1]!) {
+    const xs = b.xs;
+    ctx.globalAlpha = b.band / ALPHA_BANDS;
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i += 4) {
+      const x = xs[i]!, y = xs[i + 1]!, h = xs[i + 2]! * 0.5, turn = xs[i + 3]!;
+      if (!turn) { ctx.rect(x - h, y - h, h * 2, h * 2); continue; }
+      const c = Math.cos(turn) * h, s = Math.sin(turn) * h;
+      ctx.moveTo(x + c - s, y + s + c); ctx.lineTo(x - c - s, y - s + c); ctx.lineTo(x - c + s, y - s - c); ctx.lineTo(x + c + s, y + s - c);
+      ctx.closePath();
+    }
     ctx.fill();
   }
   ctx.lineCap = 'round';
-  for (const p of pool.slots) {
-    if (p.shape === 'smoke' || p.shape === 'casing' || !isLive(p, now)) continue;
-    const { x, y, k } = particleAt(p, now);
-    ctx.globalAlpha = 1 - k * k;
-    const r = p.size * (1 - k * 0.5);
-    if (p.shape === 'chip') {
-      ctx.fillStyle = p.color;
-      ctx.fillRect(x - r / 2, y - r / 2, r, r);
-    } else {
-      const fade = Math.exp(-p.drag * (now - p.born) / 1000) * 0.03;
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = r * 0.6;
-      ctx.beginPath();
-      ctx.moveTo(x - p.vx * fade, y - p.vy * fade);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    }
+  for (const b of order[2]!) {
+    const xs = b.xs;
+    ctx.globalAlpha = b.band / ALPHA_BANDS;
+    ctx.strokeStyle = b.color;
+    ctx.lineWidth = b.width;
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i += 4) { ctx.moveTo(xs[i]!, xs[i + 1]!); ctx.lineTo(xs[i + 2]!, xs[i + 3]!); }
+    ctx.stroke();
+  }
+  for (const b of order[3]!) {
+    const xs = b.xs;
+    const a = b.band / ALPHA_BANDS;
+    ctx.globalAlpha = a * 0.35;
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i += 3) { ctx.moveTo(xs[i]! + xs[i + 2]! * 2.4, xs[i + 1]!); ctx.arc(xs[i]!, xs[i + 1]!, xs[i + 2]! * 2.4, 0, TAU); }
+    ctx.fill();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#fff4d6';
+    ctx.beginPath();
+    for (let i = 0; i < xs.length; i += 3) { ctx.moveTo(xs[i]! + xs[i + 2]! * 0.8, xs[i + 1]!); ctx.arc(xs[i]!, xs[i + 1]!, xs[i + 2]! * 0.8, 0, TAU); }
+    ctx.fill();
   }
   ctx.globalAlpha = 1;
 }

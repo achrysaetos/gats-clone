@@ -5,22 +5,28 @@ import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
 import { NUMBER_MS, numberHeight, type DamageNumber } from './feedback.ts';
-import { ARMOR_RIM, glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
+import { glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
 import { serverNow } from './interp.ts';
-import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, faceZombies, wallFlashes } from './siege.ts';
-import { bodySprite, drawBody, drawBodyShadows } from './bodies.ts';
-import { drawHeldGun } from './gunart.ts';
+import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
+import { drawSiegeFx } from './siegefx.ts';
+import { drawBodyShadows, drawSoldier, stepGait, type Gait } from './bodies.ts';
+import { drawHeldGun, heldHands } from './gunart.ts';
 import { fillIcon, UI_ICONS } from './icons.ts';
 import { careerImage } from './medals.ts';
 import type { Session } from './state.ts';
-import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
+import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, FOOT, LIP, wallSolids, type Solid } from './tilt.ts';
+import { drawDust, drawNight, drawVignette, nightLights } from './ambience.ts';
+import { floorPlanOf } from './floor.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
 import { heftOf } from './shake.ts';
 import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corpses.ts';
 import { drawCracks, hostKey } from './decals.ts';
+import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
+import { drawBlastFx, drawBlastRing, drawDashTrails, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
+import { trackDash } from './blastfx.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
@@ -33,7 +39,7 @@ type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
-const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w + LIP, s.h + LIP);
+const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w + LIP, s.h + LIP + FOOT);
 
 const ground = createGroundCache();
 const mapWallKeys = new WeakMap<readonly WallView[], string>();
@@ -67,8 +73,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
   const dark = easeNight(snap.run, now);
   const siege = snap.run ? [...(snap.buildings ?? []).map(buildingSolid), coreSolid(snap.run)] : 'static';
-  drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege), view.x0, view.y0, view.x1, view.y1);
-  drawGrid(ctx, s.worldSize, tl, br);
+  drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
 
   const mine = snap.players.find((p) => p.id === s.myId);
   // The squad shares one team, so each squadmate wears their own color instead.
@@ -77,6 +82,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   drawTrails(ctx, s.trails, now);
+  drawScorches(ctx, now, view);
 
   const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
   drawLooseShadows(ctx, [...crates, ...wallSolids(s.walls.filter((w) => w.built)).filter((w) => solidInView(view, w))]);
@@ -96,11 +102,16 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (snap.buildings && snap.run) {
     drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
   }
-  if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt);
+  if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt, k);
   drawCracks(ctx, s.cracks, now, new Set([...s.walls, ...crates, ...standing].map(hostKey)));
+  noteGunMap(gunFxOf(s), snap.match.map);
+  drawGunFloor(ctx, gunFxOf(s), now, view);
   s.corpses = liveCorpses(s.corpses, snap.match.map, now);
-  drawCorpses(ctx, s.corpses.filter((c) => inView(view, c.x - R * 3, c.y - R * 3, R * 6, R * 6)), now);
-  if (dark > 0) drawNight(ctx, tl, br, dark);
+  drawCorpses(ctx, s.corpses.filter((c) => inView(view, c.x - R * 3, c.y - R * 3, R * 6, R * 6)), now, k);
+  if (dark > 0) drawNight(ctx, tl, br, dark, nightLights(snap, s.myId, f.selfAngle));
+  drawDust(ctx, tl, br, now, dark);
+  drawVignette(ctx, cam.w, cam.h, dpr, 0.36 + 0.2 * dark);
+  ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
@@ -115,13 +126,14 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
 
   const flashes = hitFlashes(s.effects, now);
   if (zombies.length) {
-    faceZombies(s.zombieFaces, zombies, snap.run?.core ?? s.lastSelf);
-    drawZombies(ctx, zombies, s.zombieFaces, flashes, now, k);
+    drawZombies(ctx, zombies, snap, flashes, now, k);
   }
-  for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId);
+  for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId, now, k);
   const tags = bodyTags(alive, s, now);
   drawNamesUnderBodies(ctx, tags, dark);
   const recoil = kicks(s.effects, now);
+  trackDash(snap.players, now);
+  drawDashTrails(ctx, (id) => { const p = snap.players.find((q) => q.id === id); return p ? colorOf(p) : null; }, now, view);
   for (const p of alive) {
     const self = p.id === s.myId;
     const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
@@ -134,8 +146,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   }
   for (const t of snap.thrown) if (t.kind !== 'landMine' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
-  drawEffects(ctx, s.effects, now);
+  drawEffects(ctx, s.effects.filter((e) => e.kind !== 'flash' && e.kind !== 'boom' && e.kind !== 'slash'), now);
+  drawBlastFx(ctx, now, view);
   drawParticles(ctx, s.particles, now);
+  drawSiegeFx(ctx, snap, view, now, dark, k, s.coreHitAt);
+  drawGunTop(ctx, gunFxOf(s), now, view);
   drawBars(ctx, tags, dark);
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
@@ -146,18 +161,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawLetterbox(ctx, cam, dpr);
 }
 
-/** A plain blend, since a multiply costs a software canvas over a millisecond a frame. */
-function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: number) {
-  ctx.globalAlpha = dark * NIGHT.alpha;
-  ctx.fillStyle = NIGHT.shade;
-  ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
-  ctx.globalAlpha = 1;
-}
-
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
 const BACKDROP_MAP = MAPS.plaza;
 const backdropSolids: Solid[] = [...curbSolids(BACKDROP_MAP.size), ...wallSolids(BACKDROP_MAP.walls.map((w) => ({ ...w, built: false })))];
-const backdropCrates: Solid[] = BACKDROP_MAP.crates.map((c) => ({ kind: 'planter', x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
+const backdropCrates: Solid[] = BACKDROP_MAP.crates.map((c, i) => ({ kind: 'crate', x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE, wear: [0, 0.35, 0.7, 0.1][i % 4] }));
 
 export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, now: number) {
   const { size } = BACKDROP_MAP;
@@ -168,10 +175,11 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const y = freeY / 2 + (freeY / 2) * 0.5 * Math.cos(now / BACKDROP.swayMs);
   const k = dpr * zoom;
   ctx.setTransform(k, 0, 0, k, -x * k, -y * k);
-  drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, 'static'), x, y, x + viewW, y + viewH);
-  drawGrid(ctx, size, { x, y }, { x: x + viewW, y: y + viewH });
+  drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, 'static', floorPlanOf('plaza')), x, y, x + viewW, y + viewH);
   drawLooseShadows(ctx, backdropCrates);
   drawSolids(ctx, [...backdropSolids, ...backdropCrates]);
+  drawDust(ctx, { x, y }, { x: x + viewW, y: y + viewH }, now, 0);
+  drawVignette(ctx, w, h, dpr, 0.38);
 }
 
 function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
@@ -180,14 +188,6 @@ function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) 
   ctx.fillStyle = PALETTE.letterbox;
   if (barW >= 1) { ctx.fillRect(0, 0, barW, cam.h); ctx.fillRect(cam.w - barW, 0, barW, cam.h); }
   if (barH >= 1) { ctx.fillRect(0, 0, cam.w, barH); ctx.fillRect(0, cam.h - barH, cam.w, barH); }
-}
-
-function drawGrid(ctx: CanvasRenderingContext2D, size: number, tl: Point, br: Point) {
-  const x0 = Math.max(0, tl.x), x1 = Math.min(size, br.x), y0 = Math.max(0, tl.y), y1 = Math.min(size, br.y);
-  if (x1 <= x0 || y1 <= y0) return;
-  ctx.fillStyle = PALETTE.grid;
-  for (let x = Math.ceil(x0 / GRID) * GRID; x <= x1; x += GRID) ctx.fillRect(x - 0.5, y0, 1, y1 - y0);
-  for (let y = Math.ceil(y0 / GRID) * GRID; y <= y1; y += GRID) ctx.fillRect(x0, y - 0.5, x1 - x0, 1);
 }
 
 function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
@@ -236,101 +236,9 @@ function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
 }
 
 function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
-  switch (t.kind) {
-    case 'gasCloud': return drawGas(ctx, t, now);
-    case 'landMine': {
-      ctx.fillStyle = PALETTE.contact;
-      ctx.beginPath();
-      ctx.arc(t.x + 3, t.y + 4, 14, 0, TAU);
-      ctx.fill();
-      const body = ctx.createRadialGradient(t.x - 4, t.y - 5, 1, t.x, t.y, 13);
-      body.addColorStop(0, '#8a919d');
-      body.addColorStop(1, '#2c313b');
-      ctx.fillStyle = body;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 13, 0, TAU);
-      ctx.fill();
-      const on = Math.floor(now / 400) % 2;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, on ? 7 : 5, 0, TAU);
-      ctx.fillStyle = on ? 'rgba(255, 77, 79, 0.35)' : 'rgba(0, 0, 0, 0)';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 4, 0, TAU);
-      ctx.fillStyle = on ? '#ff4d4f' : '#7a1f21';
-      ctx.fill();
-      return;
-    }
-    case 'grenade':
-    case 'fragGrenade':
-    case 'gasGrenade': {
-      if (t.kind !== 'gasGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
-      const band = t.kind === 'gasGrenade' ? '#7bb33a' : t.kind === 'fragGrenade' ? '#e07a22' : '#c7c9cc';
-      ctx.fillStyle = PALETTE.contact;
-      ctx.beginPath();
-      ctx.arc(t.x + 5, t.y + 6, 11, 0, TAU);
-      ctx.fill();
-      if (t.kind === 'fragGrenade') {
-        ctx.fillStyle = INK;
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * TAU + now / 300;
-          ctx.fillRect(t.x + Math.cos(a) * 13 - 2, t.y + Math.sin(a) * 13 - 2, 4, 4);
-        }
-      }
-      const body = ctx.createRadialGradient(t.x - 4, t.y - 4, 1, t.x, t.y, 11);
-      body.addColorStop(0, '#7d8592');
-      body.addColorStop(1, '#262a31');
-      ctx.fillStyle = body;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 11, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = band;
-      ctx.fillRect(t.x - 10.5, t.y - 2.5, 21, 5);
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.beginPath();
-      ctx.arc(t.x - 4, t.y - 4, 2.5, 0, TAU);
-      ctx.fill();
-      return;
-    }
-  }
-}
-
-const GAS_PUFFS = 7;
-
-function drawGas(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
-  ctx.fillStyle = PALETTE.gas;
-  ctx.beginPath();
-  ctx.arc(t.x, t.y, t.r, 0, TAU);
-  ctx.fill();
-  for (let i = 0; i < GAS_PUFFS; i++) {
-    const a = (i / GAS_PUFFS) * TAU + now / 2400 * (i % 2 ? 1 : -1);
-    const d = t.r * (0.45 + 0.12 * Math.sin(now / 700 + i));
-    ctx.beginPath();
-    ctx.arc(t.x + Math.cos(a) * d, t.y + Math.sin(a) * d, t.r * 0.42, 0, TAU);
-    ctx.fill();
-  }
-  ctx.setLineDash([10, 10]);
-  ctx.lineDashOffset = -now / 60;
-  ctx.strokeStyle = PALETTE.gasEdge;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(t.x, t.y, t.r, 0, TAU);
-  ctx.stroke();
-  ctx.setLineDash([]);
-}
-
-function drawBlastRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, now: number) {
-  const pulse = 0.5 + 0.5 * Math.sin(now / 90);
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, TAU);
-  ctx.fillStyle = `rgba(229, 72, 77, ${(0.07 + 0.06 * pulse).toFixed(3)})`;
-  ctx.fill();
-  ctx.setLineDash([14, 10]);
-  ctx.lineDashOffset = -now / 40;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = `rgba(229, 72, 77, ${(0.55 + 0.35 * pulse).toFixed(3)})`;
-  ctx.stroke();
-  ctx.setLineDash([]);
+  if (t.kind === 'gasCloud') return drawGasCloud(ctx, t, now);
+  if (t.kind === 'grenade' || t.kind === 'fragGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
+  drawThrownBody(ctx, t, now);
 }
 
 const TRAIL_BANDS = 4;
@@ -406,7 +314,7 @@ function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[
 type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number };
 const TIER_COLORS = { 1: '#c9ced8', 2: PALETTE.gold } as const;
 /** How far a gun jumps back in the hands when fired; a heavy gun (see `heftOf`) jumps up to `RECOIL_HEAVY` times as far. */
-const RECOIL = R * 0.18;
+const RECOIL = 3;
 const RECOIL_HEAVY = 2.6;
 const MARK_Y = -R - 8;
 const RING = R + 5;
@@ -445,47 +353,75 @@ function drawHuntedMark(ctx: CanvasRenderingContext2D, now: number) {
   ctx.stroke();
 }
 
+/** Each drawn body's walk cycle, from where it was drawn last frame. */
+const gaits = new Map<number, Gait>();
+let gaitsPrunedAt = 0;
+
+function gaitOf(p: PlayerView, now: number): Gait {
+  const g = stepGait(gaits.get(p.id), p.x, p.y, now);
+  gaits.set(p.id, g);
+  if (now - gaitsPrunedAt > 5000) {
+    gaitsPrunedAt = now;
+    for (const [id, o] of gaits) if (now - o.t > 5000) gaits.delete(id);
+  }
+  return g;
+}
+
 function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, look: PlayerLook) {
   const alpha = p.hidden ? 0.25 : 1;
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.globalAlpha = alpha;
   if (look.self || look.rival) {
+    // A ring on the ground under the feet: yours in your colour, a same-coloured rival's dashed red.
     ctx.beginPath();
     ctx.arc(0, 0, RING, 0, TAU);
+    if (look.self) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha * 0.14;
+      ctx.fill();
+    }
     ctx.lineWidth = 2;
     ctx.strokeStyle = look.self ? color : PALETTE.rival;
-    ctx.globalAlpha = alpha * (look.self ? 0.55 : 0.9);
+    ctx.globalAlpha = alpha * (look.self ? 0.6 : 0.9);
     if (look.rival) ctx.setLineDash([5, 4]);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = alpha;
   }
-  ctx.rotate(p.angle);
   const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
-  ctx.translate(-jump, 0);
-  drawHeldGun(ctx, p.gun, R);
-  ctx.translate(jump, 0);
-  ctx.rotate(-p.angle);
-  drawBody(ctx, bodySprite(color, R, ARMOR_RIM[p.armorTier], look.pxPerUnit), 0, 0, R);
-  if (look.flash > 0) {
-    ctx.globalAlpha = look.flash * 0.8 * alpha;
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, TAU);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.globalAlpha = alpha;
-  }
+  const hands = heldHands(p.gun, R, p.angle).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
+  drawSoldier(ctx, color, 0, 0, R, {
+    angle: p.angle, armor: p.armorTier, hands, jump, gait: gaitOf(p, look.now), flash: look.flash,
+    gun: (g) => {
+      g.translate(-jump, 0);
+      drawHeldGun(g, p.gun, R, p.angle);
+      g.translate(jump, 0);
+    },
+  }, look.pxPerUnit);
+  ctx.globalAlpha = alpha;
   const { stage } = GUNS[p.gun];
   if (p.hunted && !look.self) drawHuntedMark(ctx, look.now);
   ctx.globalAlpha = alpha;
   if (stage !== 0) drawTierMark(ctx, stage);
   if (p.spawnShield) {
-    ctx.globalAlpha = alpha * (0.55 + 0.25 * Math.sin(look.now / 120));
+    // A bubble over the fresh spawn: a faint blue fill, a pulsing rim, and a glint toward the light.
+    const pulse = 0.5 + 0.5 * Math.sin(look.now / 120);
     ctx.beginPath();
-    ctx.arc(0, 0, R + 5, 0, TAU);
+    ctx.arc(0, 0, R + 6, 0, TAU);
+    ctx.fillStyle = PALETTE.shield;
+    ctx.globalAlpha = alpha * (0.1 + 0.05 * pulse);
+    ctx.fill();
+    ctx.globalAlpha = alpha * (0.55 + 0.3 * pulse);
     ctx.lineWidth = 2;
     ctx.strokeStyle = PALETTE.shield;
+    ctx.stroke();
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, R + 2, Math.PI * 1.1, Math.PI * 1.4);
     ctx.stroke();
     ctx.globalAlpha = alpha;
   }

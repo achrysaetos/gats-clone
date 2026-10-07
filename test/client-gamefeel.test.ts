@@ -13,7 +13,7 @@ import type { Session } from '../src/client/state.ts';
 import { createPool } from '../src/client/particles.ts';
 import { createCracks } from '../src/client/decals.ts';
 import { glow, INK, PALETTE } from '../src/client/palette.ts';
-import { addCorpse, addZombieCorpse, CORPSE, corpseAlpha, deadTone, drawCorpses, drawZombieCorpses, explosiveDeath, liveCorpses, restingGun, ZOMBIE_CORPSE, zombieField, type Corpse, type ZombieCorpse } from '../src/client/corpses.ts';
+import { addCorpse, addZombieCorpse, CORPSE, corpseAlpha, deadHex, deadTone, drawCorpses, drawZombieCorpses, explosiveDeath, liveCorpses, restingGun, ZOMBIE_CORPSE, zombieField, type Corpse, type ZombieCorpse } from '../src/client/corpses.ts';
 import { drawnTags, drawWorld } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
@@ -268,12 +268,15 @@ test('a fallen player lies where they died as an obviously dead body, for 30s, t
       if (prop in target) return target[prop];
       if (prop === 'stroke') return () => strokes.push(target.strokeStyle);
       if (prop === 'fill') return () => fills.push(target.fillStyle);
-      return () => {};
+      return () => ({ addColorStop() {} });
     },
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
+  // The body art paints its cached sprites through the same recording context.
+  Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
   drawCorpses(ctx, [corpse], 5000);
-  assert.ok(fills.includes(deadTone(corpse.color)), 'a grey body');
+  assert.ok(fills.includes(deadHex(corpse.color)), 'a grey body');
+  assert.ok(!fills.includes(corpse.color), 'never in the living colour');
   assert.ok(fills.some((f) => typeof f === 'string' && f.startsWith('#7a10')), 'in a pool of blood');
   assert.ok(strokes.filter((c) => c === INK).length >= 2, 'outlined and crossed out');
 });

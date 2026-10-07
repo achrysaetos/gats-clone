@@ -2,7 +2,7 @@ import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { isSteady, rangeFor, silencedFor, spreadFor } from '../shared/sim/stats.ts';
 import { noteLateShot, noteRejectedShot } from './devprobe.ts';
-import { startEffect } from './effects.ts';
+import { gunFxOf, muzzleFlash } from './gunfx.ts';
 import { dueAt, nextSprayShot, serverGun, settle, type PredictedShot, type TriggerInput } from './fire.ts';
 import { newestSnap, renderTime, sampleAt, TICK_MS } from './interp.ts';
 import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
@@ -33,7 +33,9 @@ export function createShooting(page: Page) {
     const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextLocalRoundId);
     nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
-    startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner }, now);
+    // The flash effect still times the shooter's recoil kick; gunfx draws the flash and ejects the casing.
+    s.effects.push({ kind: 'flash', ...muzzle, angle, owner: shot.owner, born: now });
+    muzzleFlash(gunFxOf(s), muzzle, angle, shot.gun, now);
     return rounds.map((r) => r.id);
   }
 

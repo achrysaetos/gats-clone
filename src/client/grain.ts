@@ -1,4 +1,4 @@
-function seeded(seed: number): () => number {
+export function seeded(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -13,9 +13,9 @@ function seeded(seed: number): () => number {
  * A material's surface: faint specks, soft blotches and scratches for wear, and optional seams. `rivets` studs each panel
  * corner. The kit's look is flat and graphic, so every one of these stays quiet: a surface reads by its colour and edges.
  */
-export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | null; tile: number; rivets?: boolean };
+export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | 'bags' | null; tile: number; rivets?: boolean };
 
-function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+export function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
   c.width = c.height = side;
   return [c, c.getContext('2d')!];
@@ -30,7 +30,7 @@ function wrap(tile: number, x: number, y: number, reach: number, paint: (x: numb
   }
 }
 
-function blotch(g: CanvasRenderingContext2D, x: number, y: number, r: number, rgb: string, alpha: number) {
+export function blotch(g: CanvasRenderingContext2D, x: number, y: number, r: number, rgb: string, alpha: number) {
   const fade = g.createRadialGradient(x, y, 0, x, y, r);
   fade.addColorStop(0, `rgba(${rgb}, ${alpha})`);
   fade.addColorStop(1, `rgba(${rgb}, 0)`);
@@ -49,7 +49,7 @@ function scratch(g: CanvasRenderingContext2D, rand: () => number, x: number, y: 
   }
 }
 
-function speckle(g: CanvasRenderingContext2D, rand: () => number, tile: number, count: number, dark: string, light: string) {
+export function speckle(g: CanvasRenderingContext2D, rand: () => number, tile: number, count: number, dark: string, light: string) {
   for (let i = 0; i < count; i++) {
     const fleck = rand() < 0.04;
     g.fillStyle = rand() < 0.65 ? dark : light;
@@ -77,7 +77,8 @@ export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasE
   g.beginPath();
   for (let i = 0; i < grain.scratches * area; i++) scratch(g, rand, rand() * tile, rand() * tile, 6 + rand() * 14);
   g.stroke();
-  if (grain.seams) {
+  if (grain.seams === 'bags') paintBags(g, tile, rand);
+  else if (grain.seams) {
     g.strokeStyle = 'rgba(30, 28, 26, 0.28)';
     g.lineWidth = 1;
     g.beginPath();
@@ -91,6 +92,7 @@ export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasE
       }
     }
     g.stroke();
+    if (grain.seams === 'panel') paintPlates(g, tile, tile / 2);
     if (grain.rivets) {
       g.fillStyle = 'rgba(20, 22, 26, 0.35)';
       const step = tile / 2;
@@ -100,6 +102,54 @@ export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasE
     }
   }
   return c;
+}
+
+/** Pressed plates: a light lip along each plate's top-left and a dark one along its bottom-right, in the kit's two cel steps. */
+function paintPlates(g: CanvasRenderingContext2D, tile: number, plate: number) {
+  for (let y = 0; y < tile; y += plate) {
+    for (let x = 0; x < tile; x += plate) {
+      g.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      g.fillRect(x + 1, y + 1, plate - 2, 2);
+      g.fillRect(x + 1, y + 1, 2, plate - 2);
+      g.fillStyle = 'rgba(10, 12, 16, 0.16)';
+      g.fillRect(x + 1, y + plate - 3, plate - 2, 2);
+      g.fillRect(x + plate - 3, y + 1, 2, plate - 2);
+    }
+  }
+}
+
+/** A sandbag wall seen from above: rows of stuffed bags, each with a lit crown, a shaded underside and a stitched seam. */
+function paintBags(g: CanvasRenderingContext2D, tile: number, rand: () => number) {
+  const rows = 6, bagW = tile / 4, rowH = tile / rows;
+  for (let row = 0; row < rows; row++) {
+    for (let i = 0; i < 4; i++) {
+      const x0 = i * bagW + (row % 2 ? bagW / 2 : 0), y0 = row * rowH;
+      for (const wrapX of [0, -tile]) {
+        const x = x0 + wrapX;
+        if (x + bagW < 0 || x > tile) continue;
+        const k = (rand() - 0.5) * 0.12;
+        g.fillStyle = k > 0 ? `rgba(255, 244, 220, ${k.toFixed(3)})` : `rgba(60, 46, 26, ${(-k).toFixed(3)})`;
+        g.beginPath();
+        g.roundRect(x + 0.5, y0 + 0.5, bagW - 1, rowH - 1, 4);
+        g.fill();
+        g.fillStyle = 'rgba(255, 246, 224, 0.2)';
+        g.beginPath();
+        g.roundRect(x + 3, y0 + 2, bagW - 8, rowH * 0.4, 3);
+        g.fill();
+        g.fillStyle = 'rgba(52, 40, 22, 0.2)';
+        g.fillRect(x + 3, y0 + rowH - 4, bagW - 6, 2);
+        g.strokeStyle = 'rgba(46, 36, 22, 0.55)';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.roundRect(x + 0.5, y0 + 0.5, bagW - 1, rowH - 1, 4);
+        g.stroke();
+        g.strokeStyle = 'rgba(46, 36, 22, 0.38)';
+        g.beginPath();
+        g.moveTo(x + bagW * 0.3, y0 + rowH / 2); g.lineTo(x + bagW * 0.7, y0 + rowH / 2);
+        g.stroke();
+      }
+    }
+  }
 }
 
 /** Hazard tape: diagonal stripes of `a` and `b`, `band` wide, on a square tile that repeats seamlessly. */
@@ -140,32 +190,4 @@ export function paintFoliage(ground: string, leaves: readonly (readonly [string,
     }
   }
   return c;
-}
-
-/**
- * The arena floor: poured bone concrete in big slabs. A slab is a shade lighter or darker than its neighbours and its joints
- * are thin dark lines, the way a tactical map shows ground: flat, calm and easy to read figures against.
- */
-const FLOOR = { base: '#d9d4c7', slab: 250, slabShift: 0.035, joint: 'rgba(60, 54, 44, 0.16)', stains: 18, specks: 6 } as const;
-
-export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: number) {
-  const rand = seeded(seed);
-  g.fillStyle = FLOOR.base;
-  g.fillRect(0, 0, size, size);
-  for (let y = 0; y < size; y += FLOOR.slab) {
-    for (let x = 0; x < size; x += FLOOR.slab) {
-      const k = (rand() - 0.5) * 2 * FLOOR.slabShift;
-      g.fillStyle = k > 0 ? `rgba(255, 255, 255, ${k.toFixed(3)})` : `rgba(70, 60, 44, ${(-k).toFixed(3)})`;
-      g.fillRect(x, y, FLOOR.slab, FLOOR.slab);
-    }
-  }
-  const area = (size * size) / 1_000_000;
-  for (let i = 0; i < FLOOR.stains * area; i++) {
-    const r = 60 + rand() * 200;
-    blotch(g, rand() * size, rand() * size, r, '96, 84, 66', 0.02 + rand() * 0.025);
-  }
-  speckle(g, rand, size, FLOOR.specks * area * 100, '#5a544e', '#ffffff');
-  g.fillStyle = FLOOR.joint;
-  for (let x = FLOOR.slab; x < size; x += FLOOR.slab) g.fillRect(x - 1, 0, 2, size);
-  for (let y = FLOOR.slab; y < size; y += FLOOR.slab) g.fillRect(0, y - 1, size, 2);
 }

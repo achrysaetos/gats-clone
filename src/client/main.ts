@@ -24,6 +24,8 @@ import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
 import { startEffect } from './effects.ts';
+import { startBoom, startSlash } from './blastfx.ts';
+import { gunFxOf, impact as gunImpact } from './gunfx.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
@@ -252,7 +254,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, life: null, bests: loadBests(), feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 
@@ -471,7 +473,10 @@ function drawFrame(now: number) {
   const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
   s.pendingFx = released.rest;
   for (const { fx } of released.due) {
-    startEffect(s, fx, now, deathTint(s, fx));
+    if (fx.kind === 'boom') startBoom(fx.x, fx.y, fx.r, now);
+    else if (fx.kind === 'slash') startSlash(fx.x, fx.y, fx.angle, now);
+    else startEffect(s, fx, now, deathTint(s, fx));
+    if (fx.kind === 'impact') gunImpact(gunFxOf(s), fx.surface, fx, { walls: s.walls, crates: latest.crates, buildings: latest.buildings, run: latest.run }, now);
     if (fx.kind === 'death') layCorpse(s, latest, fx, now);
     if (fx.kind === 'splat') layZombieCorpse(s, fx, now);
   }
