@@ -5,17 +5,18 @@ import { TICK_MS } from './interp.ts';
 import { ringMoved } from './royale.ts';
 
 export type SoundId =
-  | `shot:${GunId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
+  | `shot:${GunId}` | 'shot:silenced' | `reload:${WeaponId}`
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'fanfare' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
-  | 'knock' | 'ring';
+  | 'knock' | 'ring' | 'step' | 'spawn' | 'impact:flesh' | 'impact:wall' | 'impact:crate' | 'impact:zombie';
 
 /** Each kill in a streak sounds two semitones above the last, up to the fifth. */
 export type KillStep = 2 | 3 | 4 | 5;
 const KILL_STEPS: readonly KillStep[] = [2, 3, 4, 5];
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
-type Timing = { ms: number; gain: number; delayMs?: number };
+/** `selfOnly` layers (shell casings, bolt clacks) are only heard from your own gun, so a distant firefight is not a pile of tinkles. */
+type Timing = { ms: number; gain: number; delayMs?: number; attackMs?: number; selfOnly?: true };
 export type Layer =
   | ({ src: 'tone'; wave: Wave; pitchHz: readonly [number, number] } & Timing)
   | ({ src: 'noise'; filter: 'lowpass' | 'highpass' | 'bandpass'; q: number; cutoffHz: readonly [number, number] } & Timing);
@@ -25,14 +26,46 @@ const crack = (cutoffHz: number, ms: number, gain: number): Layer => ({ src: 'no
 const thump = (pitchHz: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [pitchHz, pitchHz * 0.35], ms, gain });
 const note = (pitchHz: number, delayMs: number, ms = 110, gain = 0.25): Layer => ({ src: 'tone', wave: 'square', pitchHz: [pitchHz, pitchHz], ms, gain, delayMs });
 const bell = (pitchHz: number, delayMs: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [pitchHz, pitchHz * 0.996], ms, gain, delayMs });
+/** A pure sine ping: the glassy top of a chime or the ring of struck metal. */
+const ping = (hz: number, delayMs: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'sine', pitchHz: [hz, hz * 0.997], ms, gain, delayMs });
+/** A 3-8 ms burst of bright noise: the transient click that makes a shot or a hit feel like it has an edge. */
+const snap = (hz: number, gain: number, delayMs = 0, ms = 8): Layer => ({ src: 'noise', filter: 'highpass', q: 0.7, cutoffHz: [hz, hz], ms, gain, delayMs });
+const air = (hz0: number, hz1: number, ms: number, gain: number, delayMs = 0): Layer => ({ src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [hz0, hz1], ms, gain, delayMs });
+const shimmer = (ms: number, gain: number, delayMs: number): Layer => ({ src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [6500, 10000], ms, gain, delayMs });
+/** A rising air sweep: the whoosh under a level-up or evolution. */
+const whoosh = (from: number, to: number, ms: number, gain: number, delayMs = 0): Layer => ({ src: 'noise', filter: 'bandpass', q: 1.6, cutoffHz: [from, to], ms, gain, delayMs });
 
+/** Little glints scattered over a span, at fixed pseudo-random times and pitches so a cue is always the same cue. */
+function sparkles(n: number, fromMs: number, spanMs: number, baseHz: number, gain: number): Layer[] {
+  const out: Layer[] = [];
+  for (let i = 0; i < n; i++) {
+    const r = (Math.sin(i * 12.9898 + baseHz) * 43758.5453) % 1, q = Math.abs(r);
+    out.push(ping(baseHz * (1 + Math.floor(q * 5) / 4), fromMs + (i / n) * spanMs + q * 30, 120 + q * 160, gain * (1 - 0.5 * i / n)));
+  }
+  return out;
+}
+
+/** Spent brass hitting the floor a beat after the shot. */
+const casing = (hz: number, big = false): Layer[] => [
+  { ...ping(hz, big ? 260 : 190, big ? 120 : 80, big ? 0.07 : 0.05), selfOnly: true },
+  { ...ping(hz * 1.45, big ? 330 : 240, 60, 0.04), selfOnly: true },
+  { ...ping(hz * 0.8, big ? 400 : 300, 45, 0.025), selfOnly: true },
+];
+
+// Every shot is a transient click, a body (crack + thump) and a tail; the heavier the gun the longer and lower the tail.
 const CLASS_SHOTS: Record<WeaponId, Recipe> = {
-  pistol: [crack(2600, 70, 0.5), thump(260, 60, 0.35)],
-  smg: [crack(3200, 45, 0.4), thump(320, 40, 0.25)],
-  shotgun: [crack(1400, 180, 0.7), thump(140, 160, 0.6)],
-  assault: [crack(2200, 80, 0.5), thump(200, 70, 0.4)],
-  sniper: [crack(1800, 260, 0.75), thump(110, 240, 0.6), { src: 'tone', wave: 'sawtooth', pitchHz: [900, 300], ms: 90, gain: 0.15 }],
-  lmg: [crack(1900, 70, 0.45), thump(170, 70, 0.4)],
+  pistol: [snap(5000, 0.5), crack(2600, 70, 0.5), thump(260, 60, 0.35), air(1600, 300, 150, 0.14, 8), ...casing(4300)],
+  smg: [snap(6000, 0.4), crack(3200, 45, 0.4), thump(320, 40, 0.25), air(2000, 400, 90, 0.1, 5), ...casing(5200)],
+  shotgun: [snap(3500, 0.6), crack(1400, 180, 0.7), { src: 'tone', wave: 'sine', pitchHz: [95, 40], ms: 280, gain: 0.8 }, air(2400, 150, 330, 0.4, 10), thump(140, 160, 0.6),
+    { src: 'noise', filter: 'bandpass', q: 3, cutoffHz: [1200, 900], ms: 40, gain: 0.25, delayMs: 420, selfOnly: true }, ...casing(2700, true)],
+  assault: [snap(5500, 0.5), crack(2200, 80, 0.5), thump(200, 70, 0.4), air(1800, 300, 120, 0.12, 6), ...casing(4800)],
+  // The crack, then the report rolling back off the hills: two decaying echoes.
+  sniper: [snap(4500, 0.7), crack(1800, 260, 0.75), thump(110, 240, 0.6), { src: 'tone', wave: 'sawtooth', pitchHz: [900, 300], ms: 90, gain: 0.15 },
+    ping(1500, 4, 520, 0.08),
+    { src: 'noise', filter: 'bandpass', q: 0.8, cutoffHz: [1500, 300], ms: 420, gain: 0.22, delayMs: 150 },
+    { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [1100, 180], ms: 520, gain: 0.12, delayMs: 330 },
+    { src: 'noise', filter: 'bandpass', q: 3, cutoffHz: [1100, 1000], ms: 50, gain: 0.2, delayMs: 520, selfOnly: true }, ...casing(3600, true)],
+  lmg: [snap(5000, 0.4), crack(1900, 70, 0.45), thump(170, 70, 0.4), air(1500, 250, 110, 0.12, 6), ...casing(3900)],
 };
 
 const BRANCH_PITCH = [[0.84, 1.18], [0.92, 1.09]] as const;
@@ -53,19 +86,25 @@ const retune = (layer: Layer, k: number, stage: number): Layer => {
 function shotRecipe(gun: GunId): Recipe {
   const g = GUNS[gun];
   const k = pitchOf(gun);
-  const layers = CLASS_SHOTS[g.base].map((l) => retune(l, k, g.stage));
+  const layers = louder(CLASS_SHOTS[g.base].map((l) => retune(l, k, g.stage)), 1.8) as Layer[];
   if (g.blast) layers.push(thump(70, 260, 0.65));
   if (g.penetrate) layers.push({ src: 'tone', wave: 'sawtooth', pitchHz: [1500 * k, 400 * k], ms: 80, gain: 0.14 });
   if (g.pellets > 1 && g.base !== 'shotgun') layers.push(crack(3000 * k, 40, 0.3));
   return layers;
 }
 
+/** The "ka-ching" of a kill: a register bell and a spill of coin glints, bigger the longer the streak. */
+const ching = (size: number): Layer[] => [
+  ping(2637, 40, 360, 0.16 * size), ping(3951, 60, 420, 0.12 * size), ping(5274, 90, 300, 0.07 * size),
+  snap(7000, 0.12 * size, 40, 25), ...sparkles(Math.round(3 * size), 110, 220, 3136, 0.05 * size),
+];
+
 function killSteps(): Record<`kill:${KillStep}`, Recipe> {
   const out: Partial<Record<`kill:${KillStep}`, Recipe>> = {};
   for (const n of KILL_STEPS) {
     const k = 2 ** (((n - 1) * 2) / 12);
     // From the third kill a high third note joins, so a streak sounds like it is climbing to something.
-    out[`kill:${n}`] = [note(880 * k, 0), note(1320 * k, 70, 160), ...(n >= 3 ? [note(1760 * k, 140, 200, 0.2)] : [])];
+    out[`kill:${n}`] = [note(880 * k, 0), note(1320 * k, 70, 160), ...(n >= 3 ? [note(1760 * k, 140, 200, 0.2)] : []), ...ching(1 + (n - 1) * 0.15)];
   }
   return out as Record<`kill:${KillStep}`, Recipe>;
 }
@@ -76,43 +115,114 @@ function shotSounds(): Record<`shot:${GunId}`, Recipe> {
   return out as Record<`shot:${GunId}`, Recipe>;
 }
 
+const mechClick = (hz: number, delayMs: number, gain = 0.25): Layer[] => [snap(hz, gain, delayMs, 14), { src: 'tone', wave: 'square', pitchHz: [hz / 5, hz / 9], ms: 22, gain: gain * 0.45, delayMs }];
+const thunk = (hz: number, delayMs: number, gain = 0.3): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [hz, hz * 0.5], ms: 70, gain, delayMs });
+
+// Magazine out, then magazine in; each class has its own rhythm.
+const RELOADS: Record<WeaponId, Recipe> = {
+  pistol: [...mechClick(3200, 0), thunk(180, 0), ...mechClick(2600, 140), thunk(240, 150, 0.35)],
+  smg: [...mechClick(3600, 0), thunk(210, 0), ...mechClick(3000, 170), thunk(280, 180, 0.35)],
+  assault: [...mechClick(2800, 0), thunk(150, 0), { ...air(1400, 600, 60, 0.12, 120) }, ...mechClick(2300, 260), thunk(200, 270, 0.4), ...mechClick(3500, 360, 0.18)],
+  lmg: [...mechClick(2200, 0, 0.3), thunk(110, 0, 0.4), whoosh(900, 500, 140, 0.1, 200), ...mechClick(1900, 520, 0.3), thunk(130, 540, 0.45)],
+  shotgun: [...mechClick(3000, 0), ...mechClick(3200, 140), ...mechClick(3400, 280), ...mechClick(1500, 470, 0.35), thunk(90, 480, 0.4)],
+  sniper: [...mechClick(2400, 0, 0.3), thunk(130, 0, 0.35), ...mechClick(2000, 300), thunk(170, 310, 0.35), ...mechClick(1400, 520, 0.3)],
+};
+function reloadSounds(): Record<`reload:${WeaponId}`, Recipe> {
+  return Object.fromEntries((Object.keys(RELOADS) as WeaponId[]).map((c) => [`reload:${c}`, louder(RELOADS[c], 0.45)])) as Record<`reload:${WeaponId}`, Recipe>;
+}
+
+/** The debris of a blast pattering back down: short filtered bursts, thinning out. */
+const debris = (n: number, fromMs: number, spanMs: number, gain: number): Layer[] => {
+  const out: Layer[] = [];
+  for (let i = 0; i < n; i++) {
+    const q = Math.abs((Math.sin(i * 78.233 + 3) * 43758.5453) % 1), t = i / n;
+    out.push({ src: 'noise', filter: 'bandpass', q: 3, cutoffHz: [1800 + q * 3000, 900 + q * 1200], ms: 25 + q * 40, gain: gain * (1 - 0.7 * t), delayMs: fromMs + t * spanMs + q * 40 });
+  }
+  return out;
+};
+
+/** Scales a recipe's loudness, for sounds that measured too quiet against the stings. */
+const louder = (recipe: Recipe, k: number): Recipe => recipe.map((l) => ({ ...l, gain: Math.min(1, l.gain * k) }));
+
+const MEDAL_CHORD = [1568, 1976, 2349, 3136];
+
 export const SOUNDS: Record<SoundId, Recipe> = {
   ...shotSounds(),
-  'shot:silenced': [{ src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1200, 300], ms: 60, gain: 0.35 }],
-  hit: [{ src: 'tone', wave: 'square', pitchHz: [900, 500], ms: 45, gain: 0.18 }, crack(4000, 30, 0.2)],
+  ...reloadSounds(),
+  'shot:silenced': [snap(4000, 0.2), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1200, 300], ms: 60, gain: 0.35 }, thump(200, 40, 0.12)],
+  // Your own hit: a crunchy tick (click + crunch + glassy ping) over a flesh thock.
+  hit: louder([snap(5000, 0.3, 0, 10), { src: 'tone', wave: 'square', pitchHz: [1500, 700], ms: 45, gain: 0.16 }, { src: 'noise', filter: 'bandpass', q: 1.5, cutoffHz: [3800, 1500], ms: 55, gain: 0.3 }, ping(2400, 0, 80, 0.12), thump(210, 70, 0.3)], 2),
+  'impact:flesh': louder([{ src: 'noise', filter: 'bandpass', q: 1, cutoffHz: [1400, 400], ms: 70, gain: 0.35 }, thump(190, 60, 0.3)], 1.6),
+  'impact:wall': louder([snap(5500, 0.35, 0, 6), ping(2800, 0, 160, 0.14), ping(4100, 0, 90, 0.06),
+    { src: 'tone', wave: 'sine', pitchHz: [3400, 900], ms: 180, gain: 0.07, delayMs: 25 }, { ...ping(2300, 70, 110, 0.04) }], 1.6),
+  'impact:crate': louder([{ src: 'tone', wave: 'triangle', pitchHz: [320, 150], ms: 80, gain: 0.5 }, { src: 'noise', filter: 'bandpass', q: 2, cutoffHz: [1100, 500], ms: 50, gain: 0.35 }, ping(780, 0, 60, 0.08)], 1.6),
+  'impact:zombie': louder([{ src: 'noise', filter: 'bandpass', q: 1.3, cutoffHz: [800, 160], ms: 120, gain: 0.4 }, { src: 'tone', wave: 'triangle', pitchHz: [240, 60], ms: 100, gain: 0.25 }, { src: 'noise', filter: 'lowpass', q: 4, cutoffHz: [500, 150], ms: 160, gain: 0.18, delayMs: 30 }], 1.6),
   hurt: [{ src: 'tone', wave: 'sawtooth', pitchHz: [220, 90], ms: 140, gain: 0.3 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [800, 200], ms: 120, gain: 0.3 }],
-  boom: [{ src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [1600, 60], ms: 700, gain: 0.9 }, thump(90, 500, 0.8)],
+  boom: [
+    { src: 'tone', wave: 'sine', pitchHz: [62, 28], ms: 1000, gain: 0.95 },
+    { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [1600, 60], ms: 700, gain: 0.9 }, thump(90, 500, 0.8),
+    snap(2500, 0.4, 0, 20), crack(1200, 160, 0.5),
+    air(500, 70, 950, 0.25, 120),
+    ...debris(9, 180, 620, 0.2), ping(2200, 260, 90, 0.04), ping(3100, 420, 70, 0.03),
+  ],
   slash: [
     { src: 'noise', filter: 'bandpass', q: 2.5, cutoffHz: [5200, 1400], ms: 150, gain: 0.55 },
     { src: 'tone', wave: 'triangle', pitchHz: [1100, 500], ms: 60, gain: 0.12, delayMs: 50 },
   ],
-  kill: [note(880, 0), note(1320, 70, 160)],
+  kill: [note(880, 0), note(1320, 70, 160), ...ching(1)],
   // A medal rings like struck metal, brighter and fuller up the tiers.
-  'medal:bronze': [bell(1047, 0, 380, 0.16), bell(1568, 60, 300, 0.1)],
-  'medal:silver': [bell(1175, 0, 420, 0.17), bell(1760, 70, 360, 0.12), bell(2349, 140, 300, 0.08)],
-  'medal:gold': [bell(1319, 0, 520, 0.2), bell(1661, 80, 480, 0.15), bell(1976, 160, 520, 0.14), { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [7000, 9000], ms: 420, gain: 0.08, delayMs: 160 }],
-  'medal:platinum': [bell(1568, 0, 640, 0.22), bell(1976, 90, 600, 0.17), bell(2349, 180, 640, 0.15), bell(3136, 270, 700, 0.1), { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [6000, 10000], ms: 700, gain: 0.1, delayMs: 200 }],
+  'medal:bronze': [bell(1047, 0, 380, 0.16), bell(1568, 60, 300, 0.1), ping(2093, 30, 260, 0.06), ...sparkles(2, 120, 150, 3136, 0.04)],
+  'medal:silver': [bell(1175, 0, 420, 0.17), bell(1760, 70, 360, 0.12), bell(2349, 140, 300, 0.08), ping(3520, 60, 360, 0.06), ...sparkles(4, 150, 250, 3520, 0.05)],
+  'medal:gold': [bell(1319, 0, 520, 0.2), bell(1661, 80, 480, 0.15), bell(1976, 160, 520, 0.14), ping(2637, 40, 600, 0.08), ping(3951, 240, 500, 0.06),
+    { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [7000, 9000], ms: 420, gain: 0.08, delayMs: 160 }, whoosh(600, 5000, 260, 0.1), ...sparkles(6, 200, 350, 3951, 0.05)],
+  // Platinum is an event: a sub swell under a rising whoosh, a six-bell run, a held shimmering chord and a shower of glints.
+  'medal:platinum': [
+    { src: 'tone', wave: 'sine', pitchHz: [98, 196], ms: 900, gain: 0.35, attackMs: 40 },
+    whoosh(300, 7000, 380, 0.16),
+    bell(1047, 0, 700, 0.18), bell(1319, 70, 700, 0.17), bell(1568, 140, 760, 0.18), bell(1976, 210, 800, 0.17),
+    ...MEDAL_CHORD.map((hz, i) => ping(hz, 300 + i * 20, 1500, 0.16 - i * 0.015)),
+    ping(4186, 360, 1100, 0.07), ping(6272, 420, 900, 0.04),
+    snap(6000, 0.14, 300, 30), shimmer(1100, 0.1, 280),
+    ...sparkles(14, 320, 800, 3136, 0.06),
+  ],
+  // A lifetime medal: a brass-like fanfare (do-mi-sol-do) with a ringing chord, bigger even than platinum's.
+  fanfare: [
+    { src: 'tone', wave: 'sine', pitchHz: [82, 131], ms: 1300, gain: 0.35, attackMs: 60 },
+    whoosh(250, 6000, 420, 0.14),
+    ...[523, 659, 784, 1047].map((hz, i): Layer => ({ src: 'tone', wave: 'sawtooth', pitchHz: [hz, hz], ms: i === 3 ? 1100 : 170, gain: i === 3 ? 0.17 : 0.13, delayMs: 120 + i * 140 })),
+    ...[1047, 1319, 1568, 2093].map((hz, i) => bell(hz, 680 + i * 25, 1500, 0.16)),
+    ...[2093, 3136, 4186].map((hz, i) => ping(hz, 720 + i * 40, 1400, 0.07)),
+    // A toy-military march: a snare roll leading into the chord.
+    ...[0, 60, 120, 180, 230, 280, 330, 380, 430].map((d, i): Layer => ({ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [3200, 2200], ms: 40, gain: 0.1 + i * 0.012, delayMs: d })),
+    shimmer(1300, 0.1, 650), ...sparkles(16, 700, 900, 3136, 0.06),
+  ],
   ...killSteps(),
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
-  reload: [{ src: 'noise', filter: 'highpass', q: 1, cutoffHz: [3000, 3000], ms: 40, gain: 0.25 }, { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [2200, 2200], ms: 50, gain: 0.25, delayMs: 110 }],
-  levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22)],
+  levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22), whoosh(400, 4500, 260, 0.12), ping(1568, 180, 500, 0.08), ping(2093, 240, 450, 0.06), ...sparkles(4, 220, 220, 3136, 0.04)],
   evolve: [
     { src: 'tone', wave: 'sawtooth', pitchHz: [180, 720], ms: 420, gain: 0.16 },
     note(392, 60, 120, 0.18), note(587, 170, 120, 0.2), note(784, 280, 380, 0.24),
     { src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [6000, 9000], ms: 500, gain: 0.12, delayMs: 280 },
+    whoosh(250, 6500, 400, 0.2), { src: 'tone', wave: 'sine', pitchHz: [70, 140], ms: 500, gain: 0.3, attackMs: 30 },
+    ping(1568, 290, 800, 0.1), ping(2349, 320, 800, 0.08), ...sparkles(8, 300, 450, 3520, 0.05),
   ],
-  perk: [{ src: 'tone', wave: 'triangle', pitchHz: [660, 660], ms: 60, gain: 0.22 }, { src: 'tone', wave: 'triangle', pitchHz: [990, 990], ms: 90, gain: 0.22, delayMs: 60 }],
-  bounty: [note(988, 0, 80, 0.22), note(1319, 80, 320, 0.24), { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [7000, 7000], ms: 200, gain: 0.1, delayMs: 80 }],
+  perk: [{ src: 'tone', wave: 'triangle', pitchHz: [660, 660], ms: 60, gain: 0.22 }, { src: 'tone', wave: 'triangle', pitchHz: [990, 990], ms: 90, gain: 0.22, delayMs: 60 }, ping(1980, 60, 200, 0.06)],
+  bounty: [note(988, 0, 80, 0.22), note(1319, 80, 320, 0.24), { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [7000, 7000], ms: 200, gain: 0.1, delayMs: 80 }, ...ching(1.5)],
   click: [{ src: 'tone', wave: 'square', pitchHz: [1800, 1800], ms: 18, gain: 0.15 }],
   bite: [{ src: 'noise', filter: 'bandpass', q: 1.4, cutoffHz: [900, 260], ms: 130, gain: 0.5 }, { src: 'tone', wave: 'sawtooth', pitchHz: [150, 60], ms: 110, gain: 0.22 }],
-  splat: [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [700, 180], ms: 110, gain: 0.35 }, { src: 'tone', wave: 'triangle', pitchHz: [210, 70], ms: 90, gain: 0.25 }],
+  splat: [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [700, 180], ms: 110, gain: 0.35 }, { src: 'tone', wave: 'triangle', pitchHz: [210, 70], ms: 90, gain: 0.25 },
+    { src: 'noise', filter: 'bandpass', q: 4, cutoffHz: [500, 200], ms: 80, gain: 0.2, delayMs: 60 }, snap(3500, 0.08, 0, 10)],
+  step: [{ src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [900, 350], ms: 45, gain: 0.07 }, { src: 'tone', wave: 'sine', pitchHz: [130, 70], ms: 50, gain: 0.05 }],
+  // Dropping into the world: a whistle falling away, then the landing.
+  spawn: louder([{ src: 'tone', wave: 'sine', pitchHz: [1100, 220], ms: 200, gain: 0.07 }, { src: 'tone', wave: 'sine', pitchHz: [150, 38], ms: 420, gain: 0.7, delayMs: 170 },
+    air(1000, 100, 260, 0.3, 170), snap(1800, 0.12, 170, 14), ping(1100, 200, 200, 0.04)], 0.6),
   'turret:sentry': [crack(4200, 35, 0.3), { src: 'tone', wave: 'square', pitchHz: [1400, 900], ms: 25, gain: 0.08 }],
   'turret:cannon': [crack(900, 300, 0.7), thump(70, 380, 0.75), { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [700, 80], ms: 420, gain: 0.35 }],
   'turret:scatter': [crack(2600, 120, 0.45), { src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [2400, 600], ms: 140, gain: 0.3 }],
   'turret:mortar': [thump(120, 220, 0.6), { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [500, 120], ms: 260, gain: 0.3 }],
   wallHit: [thump(150, 90, 0.4), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1400, 300], ms: 80, gain: 0.3 }],
   wallUp: [thump(320, 50, 0.45), thump(240, 70, 0.45), { ...thump(240, 70, 0.4), delayMs: 80 }],
-  wallDown: [{ src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [1500, 90], ms: 480, gain: 0.6 }, thump(85, 300, 0.55)],
+  wallDown: [{ src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [1500, 90], ms: 480, gain: 0.6 }, thump(85, 300, 0.55), ...debris(5, 100, 380, 0.15)],
   coreHit: [{ src: 'tone', wave: 'square', pitchHz: [240, 190], ms: 130, gain: 0.16 }, thump(95, 160, 0.5)],
   horn: [
     { src: 'tone', wave: 'sawtooth', pitchHz: [110, 98], ms: 1300, gain: 0.22 },
@@ -133,6 +243,38 @@ export const SOUNDS: Record<SoundId, Recipe> = {
     { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [420, 140], ms: 1300, gain: 0.16 },
   ],
 };
+
+/**
+ * How far a cue's pitch and loudness wander each time it plays (a fraction, either way), so a held trigger does not
+ * machine-gun one identical sample. Melodic cues stay in tune.
+ */
+export function varianceOf(id: SoundId): { pitch: number; gain: number } {
+  if (id.startsWith('shot:') || id.startsWith('turret:')) return { pitch: 0.06, gain: 0.12 };
+  if (id === 'step') return { pitch: 0.18, gain: 0.3 };
+  if (id === 'hit' || id.startsWith('impact:') || id === 'wallHit' || id === 'bite' || id === 'splat' || id === 'slash') return { pitch: 0.07, gain: 0.12 };
+  if (id === 'boom' || id === 'wallDown') return { pitch: 0.04, gain: 0.06 };
+  if (id.startsWith('reload:')) return { pitch: 0.03, gain: 0.08 };
+  return { pitch: 0, gain: 0 };
+}
+
+/** 0 = ambience that may be dropped when the mix is busy, 1 = ordinary, 2 = feedback the player must never miss. */
+export function priorityOf(cue: { id: SoundId; self: boolean }): 0 | 1 | 2 {
+  const { id } = cue;
+  if (id === 'step' || id.startsWith('impact:') || id.startsWith('turret:')) return 0;
+  if (id.startsWith('shot:')) return cue.self ? 1 : 0;
+  if (id === 'hit' || id === 'hurt' || id === 'death' || id === 'boom' || id === 'fanfare' || id === 'spawn' || id === 'levelup' || id === 'evolve' || id === 'bounty' || id.startsWith('medal:') || id.startsWith('kill')) return 2;
+  return 1;
+}
+
+/** The least time between two plays of one cue from other players, so a crowd's gunfire is a roar rather than a buzz. */
+export function minGapMs(id: SoundId): number {
+  if (id.startsWith('shot:') || id.startsWith('turret:')) return 28;
+  if (id.startsWith('impact:')) return 60;
+  return 0;
+}
+
+/** Distance moved between steps. Crossing a cell of this size sounds one footstep, so the cadence follows speed. */
+const STEP_PX = 64;
 
 /** A bounty, revenge or shutdown gets the fanfare, a Last Squad knock its own thud; any other kill climbs in pitch with the streak it extends. */
 function killSound(ev: Extract<Snapshot['events'][number], { e: 'kill' }>, streak: number): Exclude<SoundId, 'hurt'> {
@@ -165,12 +307,18 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       case 'dmg': {
         const iHitSomeone = (ev.kind === 'player' || ev.kind === 'zombie') && ev.attacker === next.self.id && ev.victim !== next.self.id;
         if (iHitSomeone && !cues.some((c) => c.id === 'hit')) mine('hit');
+        // What a hit lands on has its own voice, one per kind a snapshot so a shotgun blast is one thwack.
+        const surface = ev.kind === 'crate' ? 'impact:crate' : ev.kind === 'zombie' ? 'impact:zombie' : ev.kind === 'player' && ev.victim !== next.self.id && ev.attacker !== null ? 'impact:flesh' : null;
+        if (surface && !(surface === 'impact:flesh' && iHitSomeone) && !cues.some((c) => c.id === surface)) cues.push({ id: surface, x: ev.x, y: ev.y, self: false, gain: 0.8 });
         break;
       }
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1, r: ev.r }); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
       case 'kill':
         if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(killSound(ev, next.self.streak));
+        break;
+      case 'impact':
+        if (!cues.some((c) => c.id === 'impact:wall')) cues.push({ id: 'impact:wall', x: ev.x, y: ev.y, self: false, gain: 0.8 });
         break;
       case 'medal':
         break;
@@ -219,9 +367,13 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       cues.push({ id: 'hurt', ...at, self: true, gain: 0.5 + 0.5 * damageFrac, damageFrac });
     }
     if (GUNS[me.gun].stage > GUNS[was.gun].stage) mine('evolve');
+    const cell = (p: { x: number; y: number }) => [Math.floor(p.x / STEP_PX), Math.floor(p.y / STEP_PX)];
+    const [cx0, cy0] = cell(was), [cx1, cy1] = cell(me);
+    if ((cx0 !== cx1 || cy0 !== cy1) && !me.dashing && Math.hypot(me.x - was.x, me.y - was.y) < STEP_PX * 3) cues.push({ id: 'step', ...at, self: true, gain: 1 });
     if (Object.keys(next.self.perks).length > Object.keys(prev.self.perks).length) mine('perk');
   }
-  if (next.self.reloading && !prev.self.reloading) mine('reload');
+  if (next.self.reloading && !prev.self.reloading && me) mine(`reload:${GUNS[me.gun].base}`);
+  if (me?.alive && was && !was.alive && !was.downed) mine('spawn');
   if (next.self.pending !== null && next.self.pending.level !== prev.self.pending?.level) mine('levelup');
   if (!next.self.alive && prev.self.alive && !me?.downed) mine('death');
   return cues;
