@@ -11,6 +11,8 @@ import os
 
 import bmesh
 import bpy
+
+from device import use_device
 from mathutils import Matrix, Vector, noise
 
 SPEC = None
@@ -28,7 +30,7 @@ def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
-    scene.cycles.device = 'CPU'
+    use_device(scene)
     scene.cycles.samples = SPEC['render']['samples']
     scene.cycles.seed = 1
     scene.cycles.use_denoising = True

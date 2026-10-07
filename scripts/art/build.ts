@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: npm run art [-- --only maps|sprites|water] [--maps plaza,oldtown]
+// Usage: [BLENDER=<binary>] [ART_GPU=1] npm run art [-- --only maps|sprites|water|sounds] [--maps plaza,oldtown]   ART_GPU=1 renders on the GPU when Blender finds one.
 // Rebuilds every baked asset the client loads and rewrites public/assets/manifest.json. Each bake is keyed by a hash of
 // everything it reads, so an unchanged map or sprite set is reused from art/build instead of rendered again.
 import { spawnSync } from 'node:child_process';
