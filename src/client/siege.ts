@@ -59,7 +59,7 @@ function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: numb
   return { angle: aim.drawn, recoil: Math.max(0, 1 - (now - aim.firedAt) / RECOIL_MS) };
 }
 
-const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: string; ammo: string }> = {
+export const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: string; ammo: string }> = {
   sentry: { head: '#7a8291', barrel: '#2c313b', accent: '#f5c400', ammo: '#f5c400' },
   cannon: { head: '#6e6052', barrel: '#22262d', accent: '#e5484d', ammo: '#ff9f43' },
   scatter: { head: '#5f7f7a', barrel: '#262c30', accent: '#3fd1b8', ammo: '#3fd1b8' },

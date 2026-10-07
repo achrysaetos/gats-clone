@@ -62,7 +62,7 @@ function partsOf(gun: GunId): Part[] {
   return [-1, 1].flatMap((side) => parts.map((p) => ({ ...p, y: p.y + side * half })));
 }
 
-const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
+export const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
 
 export function drawGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flat?: string) {
   for (const p of GUN_PARTS[gun]) {
