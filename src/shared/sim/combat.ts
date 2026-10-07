@@ -1,5 +1,5 @@
 import { ARMORS, CRATE_TIERS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
-import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
+import { INTERP_DELAY_MS, type Hit, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { goDown } from './downed.ts';
@@ -27,7 +27,7 @@ const SELF_KILL_CREDIT_MS = 10_000;
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
 type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
-type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number };
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number; hit?: Hit };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k === 'dead' || w.match.k === 'over') return;
@@ -53,7 +53,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp);
   if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
-  w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
+  w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player', ...(src.hit && { hit: src.hit }) });
   if (life.hp <= 0) kill(w, victim, a, src.label);
 }
 
@@ -114,12 +114,12 @@ function assistersOf(w: World, victim: Player, killer: Player | null): Player[] 
     });
 }
 
-function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null) {
+function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null, hit?: Hit) {
   if (c.respawnAt !== null) return;
   const dealt = Math.min(c.hp, amount);
   c.hp -= amount;
   const h = c.size / 2;
-  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate' });
+  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate', ...(hit && { hit }) });
   if (c.hp > 0) return;
   c.respawnAt = w.royale ? Infinity : w.now + CRATE_RESPAWN_MS;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
@@ -178,10 +178,11 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const travel = Math.min(b.left, speed * dt);
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
+  const dir = Math.atan2(b.vy, b.vx);
   const candidates: BulletHit[] = [
-    ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y, dir }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
-      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
+      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: (x: number, y: number) => damageCrate(w, c, b.damage, owner, { x, y, dir }),
     })),
     ...[...w.players.values()]
       .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !b.passed.includes(p.id))
@@ -190,7 +191,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y }),
+          apply: (x: number, y: number) => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, hit: { x, y, dir } }),
         }] : [];
       }),
     // Zombies are judged where they stand now, even for a rewound shot: they are slow, and they keep no pose history.
@@ -198,7 +199,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
         t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
-        apply: () => damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit'),
+        apply: (x: number, y: number) => damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit', { x, y, dir }),
       })),
   ];
   const hits = b.lobbed ? [] : candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);

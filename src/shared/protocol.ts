@@ -108,14 +108,18 @@ export type SelfView = {
 
 /** `victim` is the id of the player, crate, zombie or squad wall hit; all come from the world's one id sequence. */
 export type DamageKind = 'player' | 'crate' | 'zombie' | 'building';
+/** Where a round struck and the way it flew, in radians. */
+export type Hit = { x: number; y: number; dir: number };
 
 export type GameEvent =
   /** `assisters` are the other players paid an assist for this kill. */
   /** `knock` when the victim went down with a squadmate still standing: the knock pays the kill. */
   | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[]; knock?: true }
   | { e: 'hunted'; id: number; name: string }
-  | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
-  | { e: 'impact'; x: number; y: number }
+  /** `hit` is where a round struck its victim and the way it flew, on bullet hits only, so sparks and blood land where it hit. */
+  | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind; hit?: Hit }
+  /** A round stopped against a wall at (`x`, `y`), flying toward `dir`. */
+  | { e: 'impact'; x: number; y: number; dir: number }
   | { e: 'boom'; x: number; y: number; r: number }
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }

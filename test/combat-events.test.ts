@@ -27,7 +27,12 @@ test('one bullet hitting a player emits exactly one dmg event naming attacker, v
   const b = spawnAt(w, 700, 500);
   const got = hits(fireAndCollect(w, a));
   assert.equal(got.length, 1, JSON.stringify(got));
-  assert.deepEqual(got[0], { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: b.x, y: b.y, kind: 'player' });
+  const { hit, ...ev } = got[0] as Extract<GameEvent, { e: 'dmg' }>;
+  assert.deepEqual(ev, { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: b.x, y: b.y, kind: 'player' });
+  assert.ok(hit, 'a bullet hit says where it struck');
+  assert.ok(Math.abs(Math.hypot(hit.x - b.x, hit.y - b.y) - WORLD.playerRadius) < 0.5, `on the victim's edge, got ${hit.x},${hit.y}`);
+  assert.ok(hit.x < b.x, 'on the side facing the shooter');
+  assert.ok(Math.abs(hit.dir) < GUNS.pistol.spread + 1e-9, 'flying the way it was fired');
 });
 
 test('dmg amount is what armor let through', () => {
@@ -57,7 +62,10 @@ test('a crate hit emits one crate-kind dmg event with the crate id', () => {
   const a = spawnAt(w, 500, 500);
   w.crates.push({ id: 999, x: 640, y: 478, size: 44, hp: WORLD.crateHp, respawnAt: null });
   const got = hits(fireAndCollect(w, a));
-  assert.deepEqual(got, [{ e: 'dmg', attacker: a.id, victim: 999, amount: PISTOL_DMG, x: 662, y: 500, kind: 'crate' }]);
+  assert.equal(got.length, 1);
+  const { hit, ...ev } = got[0] as Extract<GameEvent, { e: 'dmg' }>;
+  assert.deepEqual(ev, { e: 'dmg', attacker: a.id, victim: 999, amount: PISTOL_DMG, x: 662, y: 500, kind: 'crate' });
+  assert.ok(hit && Math.abs(hit.x - 640) < 1e-6, 'struck on the crate face that faced the shooter');
 });
 
 test('a wall hit emits an impact at the wall face and no dmg', () => {
@@ -68,6 +76,7 @@ test('a wall hit emits an impact at the wall face and no dmg', () => {
   assert.equal(got.length, 1, JSON.stringify(got));
   const [ev] = got;
   assert.ok(ev?.e === 'impact');
+  assert.ok(Math.abs(ev.dir) < GUNS.pistol.spread + 1e-9, 'with the way the round flew');
   assert.ok(Math.abs(ev.x - 650) < 1 && Math.abs(ev.y - 500) < 10, `impact at ${ev.x},${ev.y}`);
 });
 

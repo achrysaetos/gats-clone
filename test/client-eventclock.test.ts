@@ -18,7 +18,7 @@ test('shots are left to the drawn muzzle, mine and everyone else\'s', () => {
 
 test('impacts, sparks and booms are drawn on the render clock, even from my own bullets', () => {
   const later = scheduleEffects(snapWith([
-    { e: 'impact', x: 1, y: 1 },
+    { e: 'impact', x: 1, y: 1, dir: 0 },
     { e: 'dmg', attacker: ME, victim: 2, amount: 10, x: 2, y: 2, kind: 'player' },
     { e: 'boom', x: 3, y: 3, r: 50 },
     { e: 'kill', killer: 'a', victim: 'b', killerId: ME, victimId: 2, weapon: 'Pistol', bounty: false, assisters: [] },
@@ -51,7 +51,7 @@ test('a knife slash draws an arc at the strike point on the render clock, includ
 });
 
 test('deferred effects release exactly when the render clock reaches their tick', () => {
-  const later = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1 }]), 1000);
+  const later = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1, dir: 0 }]), 1000);
   const early = releaseDue(later, 999);
   assert.deepEqual(early.due, [], 'nothing shows before its tick');
   assert.equal(early.rest.length, 1);

@@ -9,8 +9,8 @@ export type PendingEffect = { at: number; fx: EffectSpec };
 
 function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | null {
   switch (ev.e) {
-    case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null, by: null };
-    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null, by: ev.attacker };
+    case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, dir: ev.dir, victim: null, by: null };
+    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.hit?.x ?? ev.x, y: ev.hit?.y ?? ev.y, dir: ev.hit?.dir ?? null, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null, by: ev.attacker };
     case 'boom': return { kind: 'boom', x: ev.x, y: ev.y, r: ev.r };
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };

@@ -27,12 +27,17 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     case 'impact': {
       if (spec.victim !== null) {
         s.hurtAt.set(spec.victim, now);
+        // The round carries on through: blood sprays out the far side, sparks glance back toward the shooter.
+        if (spec.dir !== null) {
+          burst(s.particles, 'spark', spec.x, spec.y, spec.dir + Math.PI, now);
+          burst(s.particles, spec.surface === 'zombie' ? 'ichor' : 'blood', spec.x, spec.y, spec.dir, now);
+        }
         return;
       }
       const host = hostOf(coverOf(s), spec.x, spec.y);
-      const away = host ? inward(host, spec.x, spec.y) + Math.PI : angle;
+      const away = spec.dir !== null ? reflect(spec.dir, host ? inward(host, spec.x, spec.y) + Math.PI : null) : host ? inward(host, spec.x, spec.y) + Math.PI : angle;
       if (host) addCrack(s.cracks, host, spec.x, spec.y, now);
-      burst(s.particles, 'rubble', spec.x, spec.y, away, now);
+      burst(s.particles, spec.surface === 'crate' ? 'splinter' : 'rubble', spec.x, spec.y, away, now);
       burst(s.particles, 'spark', spec.x, spec.y, away, now);
       return;
     }
@@ -51,6 +56,12 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     case 'tracer':
       return;
   }
+}
+
+/** The way a round glances off a face whose outward normal is `normal`: mirrored about it, or straight back when the face is unknown. */
+export function reflect(dir: number, normal: number | null): number {
+  if (normal === null) return dir + Math.PI;
+  return 2 * normal - dir + Math.PI;
 }
 
 export function hitFlashes(effects: readonly Effect[], now: number): Map<number, number> {

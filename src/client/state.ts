@@ -16,7 +16,8 @@ import type { TrailPoint } from './trails.ts';
 import type { CrackPool } from './decals.ts';
 
 export type Effect =
-  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; by: number | null; born: number }
+  /** (`x`, `y`) is where the round struck, and `dir` the way it flew, when the server knows. */
+  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; dir: number | null; victim: number | null; by: number | null; born: number }
   | { kind: 'death'; x: number; y: number; victim: number; by: number | null; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
   | { kind: 'flash'; x: number; y: number; angle: number; owner: number; born: number }

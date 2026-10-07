@@ -35,7 +35,7 @@ export function particleAt(p: Particle, now: number): { x: number; y: number; k:
   return { x: p.x + p.vx * travel, y: p.y + p.vy * travel, k: (now - p.born) / p.life };
 }
 
-type BurstKind = 'spark' | 'rubble' | 'debris' | 'smoke' | 'puff' | 'gore' | 'casing';
+type BurstKind = 'spark' | 'rubble' | 'splinter' | 'debris' | 'smoke' | 'puff' | 'gore' | 'blood' | 'ichor' | 'casing';
 
 type BurstSpec = {
   count: number; speed: [number, number]; life: [number, number]; size: [number, number];
@@ -49,6 +49,9 @@ export const BURSTS: Record<BurstKind, BurstSpec> = {
   debris: { count: 22, speed: [240, 720], life: [380, 720], size: [4, 9], grow: 0, drag: 4.5, spread: Math.PI, colors: ['#3a3631', '#5a5249', '#ffb347', '#ff7a2f'], shape: 'chip' },
   smoke: { count: 7, speed: [40, 150], life: [600, 1000], size: [12, 22], grow: 1.4, drag: 2.5, spread: Math.PI, colors: ['#a3a09a', '#8c8984', '#b6b3ad'], shape: 'smoke' },
   gore: { count: 12, speed: [140, 380], life: [260, 520], size: [3, 7], grow: 0, drag: 7, spread: Math.PI, colors: ['#4c6e22', '#2f3a1c', '#a3c766'], shape: 'chip' },
+  splinter: { count: 5, speed: [90, 260], life: [2600, 4200], size: [2, 4.5], grow: 0, drag: 10, spread: 1.0, colors: ['#8a6a43', '#a5824f', '#6e5232'], shape: 'chip' },
+  blood: { count: 6, speed: [120, 320], life: [220, 420], size: [2, 3.6], grow: 0, drag: 8, spread: 0.45, colors: ['#9e1b1b', '#c22a2a', '#6f1010'], shape: 'chip' },
+  ichor: { count: 6, speed: [120, 320], life: [220, 420], size: [2, 3.6], grow: 0, drag: 8, spread: 0.45, colors: ['#4c6e22', '#6f8f2a', '#2f3a1c'], shape: 'chip' },
   puff: { count: 16, speed: [90, 300], life: [360, 560], size: [4, 6], grow: 0, drag: 5, spread: Math.PI, colors: ['#ffffff'], shape: 'spark' },
   casing: { count: 1, speed: [90, 160], life: [1400, 1800], size: [4, 4], grow: 0, drag: 5, spread: 0.4, colors: [PALETTE.casing], shape: 'casing' },
 };

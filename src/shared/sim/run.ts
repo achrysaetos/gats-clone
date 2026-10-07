@@ -1,5 +1,6 @@
 import { BUILDINGS, hordeCount, isBoss, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
+import type { Hit } from '../protocol.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
@@ -107,22 +108,22 @@ export function demolish(w: World, id: number, cx: number, cy: number): boolean 
 }
 
 /** One hit marker per zombie and attacker a tick, so a shotgun's pellets in one zombie read as one hit. */
-function markHit(w: World, z: Zombie, dealt: number, attacker: number | null) {
+function markHit(w: World, z: Zombie, dealt: number, attacker: number | null, hit: Hit | undefined) {
   const same = w.events.find((e) => e.e === 'dmg' && e.kind === 'zombie' && e.victim === z.id && e.attacker === attacker);
   const amount = Math.round(((same?.e === 'dmg' ? same.amount : 0) + dealt) * 10) / 10;
   if (same?.e === 'dmg') same.amount = amount;
-  else w.events.push({ e: 'dmg', attacker, victim: z.id, amount, x: z.x, y: z.y, kind: 'zombie' });
+  else w.events.push({ e: 'dmg', attacker, victim: z.id, amount, x: z.x, y: z.y, kind: 'zombie', ...(hit && { hit }) });
 }
 
 /**
  * Only a player's own direct hit is sent to the client: a blast's boom already shows, and a crowd's worth of blast or turret hits would fill the snapshot.
  */
-export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit') {
+export function damageZombie(w: World, z: Zombie, amount: number, attacker: Player | null, via: 'hit' | 'blast' | Shooter = 'hit', hit?: Hit) {
   const run = w.run;
   if (!run || z.hp <= 0) return;
   const dealt = Math.min(z.hp, amount);
   z.hp -= amount;
-  if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
+  if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null, hit);
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
   const shooter = via === 'hit' || via === 'blast' ? null : via;
