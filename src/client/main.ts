@@ -42,7 +42,7 @@ import { setSfxSink } from './sfxbus.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
 import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
-import { drawHeartbeat, drawScreenPulse, reducedMotion, zoomAt } from './screenfx.ts';
+import { drawHeartbeat, drawScreenPulse, reducedMotion, setPulseHook, zoomAt } from './screenfx.ts';
 import { addKick, addTrauma, decay, offset, settleKick, traumaFor, type Kick } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
@@ -70,6 +70,8 @@ const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome'
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
 initPostfx($<HTMLCanvasElement>('fx'));
+// When the post pass owns the world, a kill's chromatic split is its pulse rather than the 2D one (screenfx.ts).
+setPulseHook((strength) => fxPulse(0.6 * strength));
 const menuEl = $('menu');
 const hudEl = $('hud');
 const statusEl = $('menu-status');
@@ -561,9 +563,10 @@ function drawFrame(realNow: number) {
   }
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, fxNow: realNow, selfAngle, killerId, ghost });
   // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
-  if (processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+  const glWorld = processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr);
+  if (glWorld) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression) : null;
-  drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow);
+  drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow, !glWorld);
   if (me?.alive) drawHeartbeat(ctx, view.w, view.h, view.dpr, now, me.hp / me.maxHp);
   // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.
   const fb = s.feedback;

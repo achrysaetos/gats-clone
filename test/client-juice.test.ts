@@ -95,3 +95,20 @@ test('screen pulses are short, a heartbeat is two thumps, and health speeds it u
   assert.ok(heartbeat(0.04) > 0.9 && heartbeat(0.24) > 0.5 && heartbeat(0.5) < 0.05);
   assert.ok(beatHz(0.05) > beatHz(0.3) && beatHz(0.0) <= 2.4 + 1e-9);
 });
+
+test('when the WebGL pass owns the world, a kill never paints the cleared HUD canvas solid (no black-out), only the faint amber wash', async () => {
+  const { pulseScreen, drawScreenPulse, setPulseHook } = await import('../src/client/screenfx.ts');
+  const fills: { op: string; alpha: number; style: unknown }[] = [];
+  const ctx = {
+    canvas: {}, globalCompositeOperation: 'source-over', globalAlpha: 1, fillStyle: '',
+    save() {}, restore() {}, setTransform() {}, drawImage() {},
+    fillRect(this: { globalCompositeOperation: string; globalAlpha: number; fillStyle: unknown }) { fills.push({ op: this.globalCompositeOperation, alpha: this.globalAlpha, style: this.fillStyle }); },
+  } as unknown as CanvasRenderingContext2D;
+  let gl = 0;
+  setPulseHook((s) => { gl = s; });
+  pulseScreen(1000, 1);
+  setPulseHook(null);
+  drawScreenPulse(ctx, 800, 600, 1, 1010, false);
+  assert.ok(gl > 0, 'the post pass takes the chromatic pulse');
+  assert.ok(fills.every((f) => f.op === 'source-over' && f.alpha <= 0.2), JSON.stringify(fills));
+});
