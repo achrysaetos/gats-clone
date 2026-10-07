@@ -468,12 +468,12 @@ function drawFlash(ctx: CanvasRenderingContext2D, f: Flash, k: number) {
   const fade = 1 - k;
   // The belt guns flicker: each flash is longer or shorter and burns a different side.
   const flick = f.base === 'lmg' || f.base === 'smg' ? 0.75 + 0.35 * Math.sin(f.seed * 97) : 1;
-  const scale = 1.05 * f.power * (f.quiet ? 0.5 : 1) * flick * (1 - k * 0.35);
+  const scale = 0.62 * f.power * (f.quiet ? 0.5 : 1) * flick * (1 - k * 0.35);
   const len = look.len * scale;
   ctx.globalAlpha = 0.18 * fade;
   ctx.fillStyle = '#ffa42e';
   ctx.beginPath();
-  ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * 0.7 * f.power * (0.8 + 0.2 * fade), 0, TAU);
+  ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * 0.42 * f.power * (0.8 + 0.2 * fade), 0, TAU);
   ctx.fill();
   if (f.base === 'sniper' || f.base === 'shotgun') {
     // A big bloom: a wide pale halo and a white-hot heart that outlast the flame itself.
@@ -481,12 +481,12 @@ function drawFlash(ctx: CanvasRenderingContext2D, f: Flash, k: number) {
     ctx.globalAlpha = 0.1 * fade;
     ctx.fillStyle = '#ffe08a';
     ctx.beginPath();
-    ctx.arc(bx, by, look.glow * 0.95 * f.power, 0, TAU);
+    ctx.arc(bx, by, look.glow * 0.55 * f.power, 0, TAU);
     ctx.fill();
     ctx.globalAlpha = 0.35 * fade;
     ctx.fillStyle = '#fff6c8';
     ctx.beginPath();
-    ctx.arc(f.x + Math.cos(f.angle) * 6, f.y + Math.sin(f.angle) * 6, look.glow * 0.32 * f.power, 0, TAU);
+    ctx.arc(f.x + Math.cos(f.angle) * 6, f.y + Math.sin(f.angle) * 6, look.glow * 0.2 * f.power, 0, TAU);
     ctx.fill();
   }
   ctx.globalAlpha = Math.min(1, fade * 1.6);
