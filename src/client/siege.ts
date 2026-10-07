@@ -1,19 +1,8 @@
-import { BUILDINGS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind } from '../shared/defs.ts';
-import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
-import { cellRect, coreRectAt } from '../shared/sim/build.ts';
-import { clock } from './derive.ts';
+import { ZOM, type TurretKind } from '../shared/defs.ts';
+import type { RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
 import { HIT_FLASH_MS } from './effects.ts';
-import { INK, PALETTE, shade, ZOMBIE_LOOK } from './palette.ts';
-import { bodySprite, drawBody } from './bodies.ts';
 import type { Effect } from './state.ts';
-import { LIGHT } from './tilt.ts';
-import type { Ghost } from './zombies.ts';
 
-const TAU = Math.PI * 2;
-const R = WORLD.playerRadius;
-
-const CORE_GLOW = '#4fd1e8';
-const CORE_HIT_MS = 180;
 export const CORE_ALERT_MS = 1500;
 
 /** When the core was last bitten, for the alert. Only the night can bite it, so dawn and the report clear the alert at once. */
@@ -34,6 +23,17 @@ export function wallFlashes(effects: readonly Effect[], now: number): Map<string
 /** `to` is the angle of the turret's last shot (fired at `firedAt`), and `drawn` eases toward it, last eased at `at`. */
 export type TurretAim = { to: number; drawn: number; at: number; firedAt: number };
 
+const TURN_PER_SEC = 14;
+
+/** Eases each turret's drawn barrel toward its last shot's angle. */
+export function easeTurrets(aims: ReadonlyMap<string, TurretAim>, now: number) {
+  for (const aim of aims.values()) {
+    const d = aim.to - aim.drawn;
+    aim.drawn += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, ((now - aim.at) / 1000) * TURN_PER_SEC);
+    aim.at = now;
+  }
+}
+
 /** A turret turns only to fire, so each shot's angle is its aim until the next; aims of turrets gone from the snapshot are dropped. */
 export function aimTurrets(aims: Map<string, TurretAim>, snap: Snapshot, now: number) {
   for (const ev of snap.events) {
@@ -46,146 +46,12 @@ export function aimTurrets(aims: Map<string, TurretAim>, snap: Snapshot, now: nu
   for (const key of aims.keys()) if (!standing.has(key)) aims.delete(key);
 }
 
-const TURN_PER_SEC = 14;
-const RECOIL_MS = 110;
-
-/** The barrel's drawn angle eases toward its aim; a turret that never fired faces away from the core. */
-function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: number; y: number }, now: number): { angle: number; recoil: number } {
-  const aim = aims.get(`${b.cx},${b.cy}`);
-  if (!aim) return { angle: Math.atan2((b.cy + 0.5) * ZOM.cell - core.y, (b.cx + 0.5) * ZOM.cell - core.x), recoil: 0 };
-  const d = aim.to - aim.drawn;
-  aim.drawn += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, ((now - aim.at) / 1000) * TURN_PER_SEC);
-  aim.at = now;
-  return { angle: aim.drawn, recoil: Math.max(0, 1 - (now - aim.firedAt) / RECOIL_MS) };
-}
-
 export const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: string; ammo: string }> = {
   sentry: { head: '#7a8291', barrel: '#2c313b', accent: '#f5c400', ammo: '#f5c400' },
   cannon: { head: '#6e6052', barrel: '#22262d', accent: '#e5484d', ammo: '#ff9f43' },
   scatter: { head: '#5f7f7a', barrel: '#262c30', accent: '#3fd1b8', ammo: '#3fd1b8' },
   mortar: { head: '#5a5f4a', barrel: '#1f2326', accent: '#b98cff', ammo: '#b98cff' },
 };
-
-function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, pxPerUnit: number) {
-  const look = TURRET_LOOK[kind];
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(angle);
-  ctx.translate(-recoil * 5, 0);
-  ctx.fillStyle = look.barrel;
-  ctx.beginPath();
-  const reach = BUILDINGS[kind].turret.muzzle;
-  switch (kind) {
-    case 'sentry': for (const side of [-1, 1]) ctx.roundRect(4, side * 5 - 2.5, reach - 4, 5, 1.5); break;
-    case 'cannon': ctx.roundRect(2, -6.5, reach - 8, 13, 2); ctx.roundRect(reach - 9, -9, 9, 18, 2); break;
-    case 'scatter': ctx.moveTo(4, -4); ctx.lineTo(reach, -9); ctx.lineTo(reach, 9); ctx.lineTo(4, 4); ctx.closePath(); break;
-    case 'mortar': ctx.roundRect(0, -9, reach, 18, 4); break;
-  }
-  ctx.fill();
-  ctx.restore();
-  const r = kind === 'sentry' || kind === 'scatter' ? 11 : 14;
-  drawBody(ctx, bodySprite(look.head, r, 0, pxPerUnit), cx, cy, r);
-  ctx.fillStyle = look.accent;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 3.5, 0, TAU);
-  ctx.fill();
-}
-
-function drawAmmo(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, now: number) {
-  const { x, y, w, h } = cellRect(b.cx, b.cy);
-  const empty = b.ammo === 0;
-  ctx.fillStyle = 'rgba(28, 31, 38, 0.7)';
-  ctx.beginPath();
-  ctx.roundRect(x + 7, y + h - 9, w - 14, 5, 2.5);
-  ctx.fill();
-  if (empty && Math.floor(now / 250) % 2) return;
-  ctx.fillStyle = empty ? PALETTE.hpBad : TURRET_LOOK[b.kind].ammo;
-  ctx.beginPath();
-  ctx.roundRect(x + 8, y + h - 8, empty ? w - 16 : Math.max(3, ((w - 16) * b.ammo) / 10), 3, 1.5);
-  ctx.fill();
-}
-
-export function drawSiegeTops(
-  ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, aims: Map<string, TurretAim>, core: { x: number; y: number }, now: number, pxPerUnit: number,
-) {
-  for (const b of buildings) {
-    const { x, y, w, h } = cellRect(b.cx, b.cy);
-    if (b.kind !== 'wall') {
-      const barrel = barrelOf(aims, b, core, now);
-      drawTurretHead(ctx, b.kind, x + w / 2, y + h / 2, barrel.angle, barrel.recoil, pxPerUnit);
-      drawAmmo(ctx, b, now);
-    }
-    const hit = flashes.get(`${b.cx},${b.cy}`);
-    if (hit !== undefined) {
-      ctx.globalAlpha = 0.7 * (1 - (now - hit) / HIT_FLASH_MS);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x, y, w, h);
-      ctx.globalAlpha = 1;
-    }
-  }
-}
-
-export function drawCoreGlow(ctx: CanvasRenderingContext2D, run: RunView, now: number) {
-  const pulse = 0.5 + 0.5 * Math.sin(now / 420);
-  ctx.globalAlpha = 0.14 + 0.08 * pulse;
-  ctx.fillStyle = CORE_GLOW;
-  ctx.beginPath();
-  ctx.arc(run.core.x, run.core.y, 100 + 6 * pulse, 0, TAU);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-}
-
-export function drawCoreTop(ctx: CanvasRenderingContext2D, run: RunView, now: number, hitAt: number) {
-  const { x, y } = run.core;
-  const r = coreRectAt(run.core);
-  const frac = Math.max(0, run.core.hp / run.core.maxHp);
-  const hit = Math.max(0, 1 - (now - hitAt) / CORE_HIT_MS);
-  const pulse = 0.5 + 0.5 * Math.sin(now / 420);
-  ctx.fillStyle = '#5a6476';
-  ctx.beginPath();
-  for (const [bx, by] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
-    ctx.moveTo(x + bx * 37 + 3.5, y + by * 37);
-    ctx.arc(x + bx * 37, y + by * 37, 3.5, 0, TAU);
-  }
-  ctx.fill();
-  const jolt = hit * 3;
-  const jx = x + Math.sin(now * 0.09) * jolt, jy = y + Math.cos(now * 0.11) * jolt;
-  const glow = frac > 0.35 ? CORE_GLOW : PALETTE.hpBad;
-  ctx.globalAlpha = 0.3 + 0.15 * pulse;
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(jx, jy, 30, 0, TAU);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  const sz = 24 + 3 * pulse;
-  ctx.beginPath();
-  ctx.moveTo(jx, jy - sz); ctx.lineTo(jx + sz * 0.7, jy); ctx.lineTo(jx, jy + sz); ctx.lineTo(jx - sz * 0.7, jy);
-  ctx.closePath();
-  ctx.fillStyle = glow;
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.beginPath();
-  ctx.moveTo(jx, jy - sz + 5); ctx.lineTo(jx + sz * 0.32, jy - 2); ctx.lineTo(jx, jy + 2);
-  ctx.closePath();
-  ctx.fill();
-  if (hit > 0) {
-    ctx.globalAlpha = 0.6 * hit;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.globalAlpha = 1;
-  }
-  ctx.lineCap = 'round';
-  ctx.lineWidth = 7;
-  ctx.strokeStyle = 'rgba(28, 31, 38, 0.3)';
-  ctx.beginPath();
-  ctx.arc(x, y, 84, 0, TAU);
-  ctx.stroke();
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
-  ctx.beginPath();
-  ctx.arc(x, y, 84, -Math.PI / 2, -Math.PI / 2 + frac * TAU);
-  ctx.stroke();
-}
 
 /** Each zombie faces the way it last moved, kept between frames since the snapshot carries no heading. */
 export function faceZombies(faces: Map<number, { x: number; y: number; a: number }>, zombies: readonly ZombieView[], toward: { x: number; y: number }) {
@@ -197,164 +63,4 @@ export function faceZombies(faces: Map<number, { x: number; y: number; a: number
     else if (Math.hypot(x - f.x, y - f.y) > 1.5) { f.a = Math.atan2(y - f.y, x - f.x); f.x = x; f.y = y; }
   }
   for (const id of faces.keys()) if (!seen.has(id)) faces.delete(id);
-}
-
-function addCircles(ctx: CanvasRenderingContext2D, xyr: readonly number[], pad: number) {
-  for (let i = 0; i < xyr.length; i += 3) {
-    const r = xyr[i + 2]! + pad;
-    ctx.moveTo(xyr[i]! + r, xyr[i + 1]!);
-    ctx.arc(xyr[i]!, xyr[i + 1]!, r, 0, TAU);
-  }
-}
-
-export function drawZombies(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], faces: ReadonlyMap<number, { a: number }>, flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
-  ZOMBIE_KINDS.forEach((kind, k) => {
-    const look = ZOMBIE_LOOK[kind];
-    const r = ZOMBIES[kind].radius;
-    const mine = zombies.filter((z) => z[1] === k);
-    if (!mine.length) return;
-    const limbs: number[] = [];
-    for (const [id, , x, y] of mine) {
-      const a = faces.get(id)?.a ?? 0;
-      const sway = Math.sin(now / 180 + id) * 0.18;
-      for (const side of [-1, 1]) {
-        const arm = a + side * 0.55 + sway;
-        limbs.push(x + Math.cos(arm) * r * 1.05, y + Math.sin(arm) * r * 1.05, r * 0.36);
-        if (look.shoulders) limbs.push(x + Math.cos(a + side * Math.PI / 2) * r * 0.8, y + Math.sin(a + side * Math.PI / 2) * r * 0.8, r * 0.46);
-      }
-    }
-    ctx.fillStyle = shade(look.arm, 0.7);
-    ctx.beginPath();
-    addCircles(ctx, limbs, 1);
-    ctx.fill();
-    ctx.fillStyle = look.arm;
-    ctx.beginPath();
-    addCircles(ctx, limbs, 0);
-    ctx.fill();
-    const body = bodySprite(look.body, r, look.armor, pxPerUnit);
-    for (const [, , x, y] of mine) drawBody(ctx, body, x, y, r);
-    ctx.fillStyle = look.eye;
-    ctx.beginPath();
-    for (const [id, , x, y] of mine) {
-      const a = faces.get(id)?.a ?? 0;
-      for (const side of [-1, 1]) {
-        const ex = x + Math.cos(a + side * 0.42) * r * 0.55, ey = y + Math.sin(a + side * 0.42) * r * 0.55;
-        ctx.moveTo(ex + r * 0.15, ey);
-        ctx.arc(ex, ey, r * 0.15, 0, TAU);
-      }
-    }
-    ctx.fill();
-  });
-  for (const [id, kind, x, y] of zombies) {
-    const hit = flashes.get(id);
-    if (hit === undefined) continue;
-    ctx.globalAlpha = 0.8 * (1 - (now - hit) / HIT_FLASH_MS);
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(x, y, ZOMBIES[ZOMBIE_KINDS[kind]].radius, 0, TAU);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  for (const [, kind, x, y, hp] of zombies) {
-    if (!ZOMBIE_LOOK[ZOMBIE_KINDS[kind]].bar) continue;
-    const r = ZOMBIES[ZOMBIE_KINDS[kind]].radius, half = r - 2;
-    ctx.fillStyle = 'rgba(28, 31, 38, 0.45)';
-    ctx.beginPath();
-    ctx.roundRect(x - half - 1, y - r - 13, half * 2 + 2, 6, 3);
-    ctx.fill();
-    ctx.fillStyle = hp > 3 ? PALETTE.hpBad : '#ff9f43';
-    ctx.beginPath();
-    ctx.roundRect(x - half, y - r - 12, Math.max(4, half * 2 * (hp / 10)), 4, 2);
-    ctx.fill();
-  }
-}
-
-export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, serverNow: number | null, self: boolean) {
-  const down = p.downed;
-  if (!down) return;
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.fillStyle = PALETTE.contact;
-  ctx.beginPath();
-  ctx.ellipse(LIGHT.x * 8, LIGHT.y * 8, R, R * 0.66, 0, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = shade(color, 0.8);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, R * 0.95, R * 0.62, 0, 0, TAU);
-  ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(-5, 0); ctx.lineTo(5, 0);
-  ctx.moveTo(0, -5); ctx.lineTo(0, 5);
-  ctx.stroke();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = self ? color : 'rgba(28, 31, 38, 0.25)';
-  ctx.beginPath();
-  ctx.arc(0, 0, R + 10, 0, TAU);
-  ctx.stroke();
-  if (down.revive > 0) {
-    ctx.strokeStyle = PALETTE.hpGood;
-    ctx.beginPath();
-    ctx.arc(0, 0, R + 10, -Math.PI / 2, -Math.PI / 2 + down.revive * TAU);
-    ctx.stroke();
-  }
-  if (serverNow !== null) {
-    const left = down.bleedOutAt - serverNow;
-    ctx.font = '750 12px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3;
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(28, 31, 38, 0.7)';
-    ctx.strokeText(clock(left), 0, -R - 22);
-    ctx.fillStyle = left < 8000 ? PALETTE.hunted : '#ffffff';
-    ctx.fillText(clock(left), 0, -R - 22);
-  }
-  ctx.restore();
-}
-
-const GHOST_LOOK = { ok: PALETTE.hpGood, no: PALETTE.hpBad, down: '#ff9f43' } as const;
-
-export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x: number; y: number }, core: { x: number; y: number }, now: number, pxPerUnit: number) {
-  ctx.setLineDash([12, 10]);
-  ctx.lineDashOffset = -now / 60;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(214, 160, 20, 0.75)';
-  ctx.beginPath();
-  ctx.arc(core.x, core.y, ZOM.buildRadius, 0, TAU);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(40, 44, 52, 0.45)';
-  ctx.beginPath();
-  ctx.arc(self.x, self.y, ZOM.reachPx, 0, TAU);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  const { x, y, w, h } = cellRect(ghost.cx, ghost.cy);
-  const color = ghost.refusal === null ? GHOST_LOOK.ok : ghost.refusal === 'taken' ? GHOST_LOOK.down : GHOST_LOOK.no;
-  if (ghost.kind !== 'wall' && ghost.refusal !== 'taken') {
-    ctx.globalAlpha = 0.6;
-    drawTurretHead(ctx, ghost.kind, x + w / 2, y + h / 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, pxPerUnit);
-  }
-  ctx.globalAlpha = 0.3 + 0.1 * Math.sin(now / 160);
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, w, h);
-  ctx.globalAlpha = 1;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = color;
-  ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
-  if (!ghost.label) return;
-  ctx.font = '800 14px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const lw = ctx.measureText(ghost.label).width + 16;
-  ctx.fillStyle = 'rgba(28, 32, 40, 0.82)';
-  ctx.beginPath();
-  ctx.roundRect(x + w / 2 - lw / 2, y - 34, lw, 24, 7);
-  ctx.fill();
-  ctx.fillStyle = color === GHOST_LOOK.ok ? '#ffffff' : color;
-  ctx.fillText(ghost.label, x + w / 2, y - 21);
 }

@@ -23,7 +23,7 @@ import { startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
-import { bodyColor, drawBackdrop, drawWorld } from './render.ts';
+import { bodyColor, drawBackdrop, drawWorld, initWorld, resizeWorld } from './render.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
@@ -34,7 +34,7 @@ import { addStop, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
 import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
-import { aimTurrets, nextCoreHitAt } from './siege.ts';
+import { aimTurrets, easeTurrets, faceZombies, nextCoreHitAt } from './siege.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
@@ -45,10 +45,13 @@ const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
+/** Bloom is on unless the address says `?bloom=0`, for measuring its cost and for slow GPUs. */
+const bloomWanted = () => new URLSearchParams(location.search).get('bloom') !== '0';
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
+const worldCanvas = $<HTMLCanvasElement>('world');
 const menuEl = $('menu');
 const hudEl = $('hud');
 const statusEl = $('menu-status');
@@ -378,6 +381,7 @@ function resize() {
   view = { w: window.innerWidth, h: window.innerHeight, dpr };
   canvas.width = Math.round(view.w * dpr);
   canvas.height = Math.round(view.h * dpr);
+  resizeWorld(view.w, view.h, dpr);
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
     const s = sessionOf(state);
@@ -406,7 +410,7 @@ function drawFrame(now: number) {
   const s = drawnSessionOf(state);
   const latest = s && newestSnap(s.snaps);
   if (!s || !latest || !sampleAt(s.snaps.snaps, renderTime(s.snaps, now))) {
-    drawBackdrop(ctx, view.w, view.h, view.dpr, now);
+    drawBackdrop(ctx, view.w, view.h, now);
     return;
   }
   if (s === sessionOf(state)) shooting.fireIfDue(s, performance.now());
@@ -431,13 +435,13 @@ function drawFrame(now: number) {
   s.pendingSounds = heard.rest;
   if (heard.due.length) {
     playCues(s, heard.due.map((p) => p.cue), latest.self.viewRadius || WORLD.viewRadius);
-    noteRemoteSound(heard.due.map((p) => p.cue));
+    noteRemoteSound(heard.due.map((p) => p.cue), now);
   }
   const shots = releaseDue(s.pendingShots, drawnAt);
   s.pendingShots = shots.rest;
   for (const { shot } of shots.due) {
     shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
-    noteRemoteFlash(shot.owner);
+    noteRemoteFlash(shot.owner, now);
   }
   s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, drawnAt));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
@@ -452,6 +456,8 @@ function drawFrame(now: number) {
   const shake = offset(trauma, now);
   const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
   updateTrails(s, snap, now);
+  faceZombies(s.zombieFaces, snap.zombies ?? [], snap.run?.core ?? s.lastSelf);
+  easeTurrets(s.turretAims, fxNow);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   noteFrame(s, snap, aimCamera, selfAngle, now);
@@ -653,6 +659,10 @@ if (invited === 'bad') {
   squad = selectedRoom = invited;
   revealSquad = true;
 }
+await initWorld(worldCanvas, { bloom: bloomWanted() }).catch((err: unknown) => {
+  state = { phase: 'menu', status: { kind: 'error', message: 'Skirmish needs WebGL, which this browser could not start.' } };
+  console.error(err);
+});
 resize();
 setState(state);
 requestAnimationFrame(frame);

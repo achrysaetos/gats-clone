@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addCrack, crackFade, CRACKS, createCracks, drawCracks, hostKey, hostOf, inward } from '../src/client/decals.ts';
+import { addCrack, crackFade, CRACKS, createCracks, hostKey, hostOf, inward } from '../src/client/decals.ts';
 
 const wall = { x: 100, y: 200, w: 120, h: 50 };
 
@@ -39,20 +39,3 @@ test('a crack holds, then fades out by the end of its life', () => {
   assert.equal(crackFade(c, 1000 + CRACKS.lifeMs), 0);
 });
 
-test('cracks are drawn only while their host stands and they have life left', () => {
-  const segments: number[] = [];
-  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
-    get(target, prop) {
-      if (prop in target) return target[prop];
-      if (prop === 'moveTo') return () => segments.push(1);
-      return () => {};
-    },
-    set(target, prop, value) { target[prop] = value; return true; },
-  }) as unknown as CanvasRenderingContext2D;
-  const pool = createCracks();
-  addCrack(pool, wall, 100, 220, 0, Math.random);
-  const drawn = (now: number, standing: Set<string>) => { segments.length = 0; drawCracks(ctx, pool, now, standing); return segments.length; };
-  assert.ok(drawn(10, new Set([hostKey(wall)])) > 0, 'on a standing wall');
-  assert.equal(drawn(10, new Set()), 0, 'gone with a broken crate');
-  assert.equal(drawn(CRACKS.lifeMs, new Set([hostKey(wall)])), 0, 'gone once faded');
-});

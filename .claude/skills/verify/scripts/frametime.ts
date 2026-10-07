@@ -82,13 +82,12 @@ async function fightFor(ms: number) {
 
 await fightFor(WARMUP_MS);
 await js(`skirmishDev.takeFrameCosts()`);
-const bakesBefore: number = await js(`skirmishDev.shadowBakes()`);
 await js(`window.__raf = []; (function tick(t) { window.__raf.push(t); requestAnimationFrame(tick); })(performance.now())`);
 sampling = true;
 await fightFor(SECONDS * 1000);
 sampling = false;
 const costs: number[] = await js(`skirmishDev.takeFrameCosts()`);
-const bakes = (await js(`skirmishDev.shadowBakes()`)) - bakesBefore;
+const world: { tiles: number; atlas: boolean } | null = await js(`skirmishDev.world()`);
 const stamps: number[] = await js(`window.__raf`);
 const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
 writeFileSync(join(EV, 'frametime-view.png'), Buffer.from(data, 'base64'));
@@ -106,7 +105,7 @@ log(`busy: avg ${(busy.players / busy.snaps).toFixed(1)} players, ${(busy.bullet
 log(`frame cost  ${fmt(stats(costs))}`);
 if (SOFTWARE) log(`rastered frame cost  ${fmt(stats(rastered))}`);
 log(`raf interval ${fmt(stats(intervals))}`);
-log(`ground layer bakes while sampling: ${bakes} over ${costs.length} frames`);
+log(`ground tiles on the GPU: ${world?.tiles ?? 'none'}, sprite atlas ${world?.atlas ? 'loaded' : 'missing'}`);
 for (const e of exceptions) log(`exception: ${e}`);
 log(exceptions.length || !costs.length ? 'RESULT FAIL' : 'RESULT PASS');
 process.exit(exceptions.length || !costs.length ? 1 : 0);
