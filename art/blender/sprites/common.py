@@ -43,7 +43,8 @@ class Model:
     """How a built model is baked: the height the shear keeps in place (None = flat), overhead light for sprites the
     painter rotates, a soft contact shadow in the base layer, and an optional hook run before each layer renders."""
 
-    def __init__(self, z_ref=None, overhead=False, contact=False, samples=None, on_layer=None, outline=None):
+    def __init__(self, z_ref=None, overhead=False, contact=False, samples=None, on_layer=None, outline=None, soften=0.0):
+        self.soften = soften
         self.outline = outline
         self.z_ref = z_ref
         self.overhead = overhead
@@ -114,7 +115,8 @@ def sun_direction(spec, overhead):
 def add_lights(spec, overhead):
     sun = spec['sun']
     data = bpy.data.lights.new('sun', 'SUN')
-    data.energy = sun['strength'] * (0.9 if overhead else 1.0)
+    # overhead light gives a flat top the same light the real sun gives it, so rotated sprites match the map
+    data.energy = sun['strength'] * (math.sin(math.radians(sun['elevation'])) * 1.2 if overhead else 1.0)
     data.angle = math.radians(sun['softness'] if not overhead else 6.0)
     data.color = sun['color']
     obj = link(bpy.data.objects.new('sun', data))
@@ -124,13 +126,13 @@ def add_lights(spec, overhead):
     obj.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
     contact = bpy.data.lights.new('contact', 'SUN')
     contact.energy = sun['strength'] * 0.6
-    contact.angle = math.radians(40)
+    contact.angle = math.radians(25)
     cobj = link(bpy.data.objects.new('contact', contact))
     world = bpy.data.worlds.new('sky')
     world.use_nodes = True
     bg = world.node_tree.nodes['Background']
     bg.inputs['Color'].default_value = (*spec['sky']['color'], 1)
-    bg.inputs['Strength'].default_value = spec['sky']['strength'] * (1.4 if overhead else 1.0)
+    bg.inputs['Strength'].default_value = spec['sky']['strength']
     bpy.context.scene.world = world
     return obj, cobj, bg
 
@@ -276,7 +278,44 @@ def mat(name, color, rough=0.6, metal=0.0, grime=0.25, grime_scale=0.35, emit=No
     return m
 
 
-def wood(name, color, scale=1.0, dark=0.55):
+def stripes(name, a, b, width=4.0, rough=0.55, ink=0.0, ao=0.0):
+    """Diagonal hazard bands of colors a and b, `width` game units each."""
+    if name in _cache:
+        return _cache[name]
+    m, nt, bsdf = _principled(name)
+    tc = nt.nodes.new('ShaderNodeTexCoord')
+    sep = nt.nodes.new('ShaderNodeSeparateXYZ')
+    nt.links.new(tc.outputs['Object'], sep.inputs['Vector'])
+    add = nt.nodes.new('ShaderNodeMath')
+    add.operation = 'ADD'
+    nt.links.new(sep.outputs['X'], add.inputs[0])
+    nt.links.new(sep.outputs['Y'], add.inputs[1])
+    add2 = nt.nodes.new('ShaderNodeMath')
+    add2.operation = 'ADD'
+    nt.links.new(add.outputs[0], add2.inputs[0])
+    nt.links.new(sep.outputs['Z'], add2.inputs[1])
+    div = nt.nodes.new('ShaderNodeMath')
+    div.operation = 'DIVIDE'
+    nt.links.new(add2.outputs[0], div.inputs[0])
+    div.inputs[1].default_value = width * 2
+    fr = nt.nodes.new('ShaderNodeMath')
+    fr.operation = 'FRACT'
+    nt.links.new(div.outputs[0], fr.inputs[0])
+    r = nt.nodes.new('ShaderNodeValToRGB')
+    r.color_ramp.interpolation = 'CONSTANT'
+    r.color_ramp.elements[0].position, r.color_ramp.elements[0].color = 0.0, (*a, 1)
+    r.color_ramp.elements[1].position, r.color_ramp.elements[1].color = 0.5, (*b, 1)
+    nt.links.new(fr.outputs[0], r.inputs['Fac'])
+    n = _noise(nt, 0.4, 6, 0.6)
+    g = _ramp(nt, n.outputs['Fac'], [(0.3, (0.6, 0.6, 0.6)), (0.6, (1, 1, 1))])
+    col = _multiply(nt, r.outputs['Color'], g.outputs['Color'])
+    nt.links.new(shade(nt, col, ink, ao), bsdf.inputs['Base Color'])
+    bsdf.inputs['Roughness'].default_value = rough
+    _cache[name] = m
+    return m
+
+
+def wood(name, color, scale=1.0, dark=0.55, ink=0.3, ao=0.4):
     """Planks with grain along local X."""
     if name in _cache:
         return _cache[name]
@@ -291,7 +330,7 @@ def wood(name, color, scale=1.0, dark=0.55):
     n.inputs['Distortion'].default_value = 2.0
     nt.links.new(mp.outputs['Vector'], n.inputs['Vector'])
     r = _ramp(nt, n.outputs['Fac'], [(0.3, scalec(color, dark)), (0.55, color), (0.75, scalec(color, 1.15))])
-    nt.links.new(r.outputs['Color'], bsdf.inputs['Base Color'])
+    nt.links.new(shade(nt, r.outputs['Color'], ink, ao), bsdf.inputs['Base Color'])
     bsdf.inputs['Roughness'].default_value = 0.8
     b = nt.nodes.new('ShaderNodeBump')
     b.inputs['Strength'].default_value = 0.25
@@ -446,6 +485,30 @@ def outline(a, color, width=1.0):
     safe = np.where(out_a > 1e-5, out_a, 1.0)
     rgb = (a[..., :3] * alpha[..., None] + np.array(color, np.float32) * (grown * (1 - alpha))[..., None]) / safe[..., None]
     return np.concatenate([rgb, out_a[..., None]], axis=2)
+
+
+def blur(a, sigma):
+    """Gaussian blur of straight-alpha RGBA, done on premultiplied color so edges don't darken."""
+    r = int(math.ceil(sigma * 3))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    pm = np.concatenate([a[..., :3] * a[..., 3:4], a[..., 3:4]], axis=2)
+    for axis in (0, 1):
+        pad = [(0, 0)] * 3
+        pad[axis] = (r, r)
+        p = np.pad(pm, pad)
+        pm = sum(k[i] * np.take(p, range(i, i + pm.shape[axis]), axis=axis) for i in range(2 * r + 1))
+    alpha = pm[..., 3:4]
+    return np.concatenate([pm[..., :3] / np.where(alpha > 1e-5, alpha, 1.0), alpha], axis=2)
+
+
+def edge_fade(w, h, px):
+    """1 inside, easing to 0 over the last `px` pixels at each edge."""
+    def ramp(n):
+        d = np.minimum(np.arange(n) + 0.5, n - 0.5 - np.arange(n)) / px
+        d = np.clip(d, 0, 1)
+        return d * d * (3 - 2 * d)
+    return np.outer(ramp(h), ramp(w)).astype(np.float32)
 
 
 def over(top, under):

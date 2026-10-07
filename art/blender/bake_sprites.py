@@ -45,12 +45,15 @@ SHOW, HOLDOUT, GHOST, HIDE = 'show', 'holdout', 'ghost', 'hide'
 
 # Every render pass: which roles show, whether the shadow catcher, the sun, the overhead contact light and the sky
 # take part, and whether colors stay raw (glow) or get the map's grade.
-LIT = dict(catcher=False, sun=True, contact=False, sky=True, raw=False)
+# Contact shadows fade out over this many pixels at the frame's edge, so no frame shows a cut edge.
+CONTACT_FADE_PX = 7
+
+LIT = dict(catcher=False, sun=True, contact=False, sky=True, raw=False, film=True)
 PASSES = {
     'base': dict(LIT, roles={'solid': SHOW, 'team': SHOW}),
     'team': dict(LIT, roles={'solid': HOLDOUT, 'team': SHOW}),
     **{t: dict(LIT, roles={'solid': HOLDOUT, 'team': HOLDOUT, t: SHOW}) for t in C.ARMOR},
-    'glow': dict(LIT, roles={'solid': SHOW, 'team': SHOW}, sun=False, sky=False, raw=True),
+    'glow': dict(LIT, roles={'solid': SHOW, 'team': SHOW}, sun=False, sky=False, raw=True, film=False),
     'shadow': dict(LIT, roles={'solid': GHOST, 'team': GHOST}, catcher=True),
     'contact': dict(LIT, roles={'solid': GHOST, 'team': GHOST}, catcher=True, sun=False, contact=True),
 }
@@ -79,6 +82,7 @@ def render_pass(spec, name, colls, catcher, lights, model, tmp):
             o.is_holdout = state == HOLDOUT
             o.visible_camera = state != GHOST
     catcher.hide_render = not p['catcher']
+    bpy.context.scene.render.film_transparent = p['film']
     sun.hide_render = not p['sun']
     contact.hide_render = not p['contact']
     bg.inputs['Strength'].default_value = sky if p['sky'] else 0.0
@@ -99,13 +103,15 @@ def render_pass(spec, name, colls, catcher, lights, model, tmp):
 
 def render_layer(spec, layer, colls, catcher, lights, model, tmp):
     a = render_pass(spec, layer, colls, catcher, lights, model, tmp)
+    if model.soften:
+        a = C.blur(a, model.soften)
     if layer != 'base':
         return a
     if model.outline:
         a = C.outline(a, *model.outline)
     if model.contact:
         shadow = render_pass(spec, 'contact', colls, catcher, lights, model, tmp)
-        shadow[..., 3] *= model.contact
+        shadow[..., 3] *= model.contact * C.edge_fade(shadow.shape[1], shadow.shape[0], CONTACT_FADE_PX)
         a = C.over(a, shadow)
     return a
 

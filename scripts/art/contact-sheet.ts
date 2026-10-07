@@ -151,32 +151,47 @@ async function guns() {
   await save(c, labels, [], 'sheet-guns.png');
 }
 
+/** Lays sprites left to right at a zoom, wrapping rows, each placed by its box so frames never overlap. */
+function flow(c: Img, zoom: number, top: number) {
+  let x = 20, y = top, rowH = 0;
+  return (name: string) => {
+    const e = spec.sprites[name];
+    if (!e) return { x: 0, y: 0 };
+    const w = e.box.w * S * zoom, h = e.box.h * S * zoom;
+    if (x + w > c.w - 20) { x = 20; y += rowH + 16; rowH = 0; }
+    const at = { x: x - e.box.x * S * zoom, y: y - e.box.y * S * zoom };
+    x += w + 12;
+    rowH = Math.max(rowH, h);
+    return at;
+  };
+}
+
 async function props() {
-  const c = canvas(1500, 900);
-  const labels: [number, number, string][] = [[10, 18, 'crates by tier and damage stage, walls, pad and turrets, core, thrown (game scale x2)']];
+  const c = canvas(1500, 1500);
+  const zoom = 1.5;
+  const labels: [number, number, string][] = [[10, 18, 'crates by tier and damage stage, siege walls, pad, turrets, engineer walls, core, thrown (game scale x1.5)']];
+  const place = flow(c, zoom, 270);
   const tiers = ['plain', 'loot', 'rich', 'cache', 'drop'];
-  for (let t = 0; t < tiers.length; t++) for (let s = 0; s < 3; s++) {
-    await draw(c, `crate.${tiers[t]}.${s}`, 'base', 0, 0, 30 + (t * 3 + s) * 95, 50, { zoom: 2 });
+  for (const t of tiers) for (let s = 0; s < 3; s++) { const at = place(`crate.${t}.${s}`); await draw(c, `crate.${t}.${s}`, 'base', 0, 0, at.x, at.y, { zoom }); }
+  for (let s = 0; s < 3; s++) { const at = place(`siege.wall.${s}`); await draw(c, `siege.wall.${s}`, 'base', 0, 0, at.x, at.y, { zoom }); }
+  for (const t of ['', 'sentry', 'cannon', 'scatter', 'mortar']) {
+    const at = place('siege.pad');
+    await draw(c, 'siege.pad', 'base', 0, 0, at.x, at.y, { zoom });
+    if (!t) continue;
+    await draw(c, `turret.${t}`, 'base', 0, 0, at.x + 25 * S * zoom, at.y + 25 * S * zoom, { zoom, rot: -0.6 });
+    await draw(c, `turret.${t}`, 'glow', 0, 0, at.x + 25 * S * zoom, at.y + 25 * S * zoom, { zoom, rot: -0.6, blend: 'add' });
   }
-  for (let s = 0; s < 3; s++) await draw(c, `siege.wall.${s}`, 'base', 0, 0, 30 + s * 120, 300, { zoom: 2 });
-  await draw(c, 'siege.pad', 'base', 0, 0, 400, 300, { zoom: 2 });
-  const turrets = ['sentry', 'cannon', 'scatter', 'mortar'];
-  for (let i = 0; i < 4; i++) {
-    const x = 520 + i * 120;
-    await draw(c, 'siege.pad', 'base', 0, 0, x, 300, { zoom: 2 });
-    await draw(c, `turret.${turrets[i]}`, 'base', 0, 0, x + 50 * 2, 300 + 50 * 2, { zoom: 2, rot: -0.6 });
-    await draw(c, `turret.${turrets[i]}`, 'glow', 0, 0, x + 50 * 2, 300 + 50 * 2, { zoom: 2, rot: -0.6, blend: 'add' });
+  for (const n of ['engineer.wall.h', 'engineer.wall.v', 'core']) {
+    const at = place(n);
+    await draw(c, n, 'base', 0, 0, at.x, at.y, { zoom });
+    await draw(c, n, 'glow', 0, 0, at.x, at.y, { zoom, blend: 'add' });
   }
-  await draw(c, 'engineer.wall.h', 'base', 0, 0, 30, 560, { zoom: 2 });
-  await draw(c, 'engineer.wall.v', 'base', 0, 0, 640, 480, { zoom: 2 });
-  await draw(c, 'core', 'base', 0, 0, 760, 480, { zoom: 2 });
-  await draw(c, 'core', 'glow', 0, 0, 760, 480, { zoom: 2, blend: 'add' });
-  const thrown = ['grenade', 'fragGrenade', 'gasGrenade', 'landMine'];
-  for (let i = 0; i < 4; i++) {
-    await draw(c, `thrown.${thrown[i]}`, 'base', 0, 0, 80 + i * 90, 760, { zoom: 2 });
-    await draw(c, `thrown.${thrown[i]}`, 'glow', 0, 0, 80 + i * 90, 760, { zoom: 2, blend: 'add' });
+  for (const t of ['grenade', 'fragGrenade', 'gasGrenade', 'landMine']) {
+    const at = place(`thrown.${t}`);
+    await draw(c, `thrown.${t}`, 'base', 0, 0, at.x, at.y, { zoom });
+    await draw(c, `thrown.${t}`, 'glow', 0, 0, at.x, at.y, { zoom, blend: 'add' });
   }
-  await save(c, labels, [{ left: 20, top: 130, width: 340, height: 220, zoom: 1 }, { left: 640, top: 520, width: 320, height: 280, zoom: 1 }], 'sheet-props.png');
+  await save(c, labels, [{ left: 20, top: 130, width: 340, height: 220, zoom: 1 }, { left: 640, top: 520, width: 320, height: 280, zoom: 0.8 }], 'sheet-props.png');
 }
 
 async function effects() {
