@@ -24,6 +24,9 @@ before(async () => {
   publicDir = join(siteDir, 'public');
   await mkdir(publicDir);
   await writeFile(join(publicDir, 'index.html'), '<!doctype html><title>skirmish-e2e</title>');
+  await mkdir(join(publicDir, 'assets'));
+  await writeFile(join(publicDir, 'assets', 'tile.0123abcd.webp'), 'RIFF');
+  await writeFile(join(publicDir, 'assets', 'manifest.json'), '{}');
   await writeFile(join(siteDir, 'secret.txt'), 'outside public');
   server = await startServer({ port: 0, dataDir, publicDir, stepsPerTick: STEPS_PER_TICK });
   base = `http://localhost:${server.port}`;
@@ -80,6 +83,10 @@ test('serves public/ statically without escaping it', async () => {
   assert.match(await index.text(), /skirmish-e2e/);
   assert.equal((await fetch(base + '/..%2fsecret.txt')).status, 404, 'encoded traversal stays inside public/');
   assert.equal((await fetch(base + '/nope.js')).status, 404);
+  const hashed = await fetch(base + '/assets/tile.0123abcd.webp');
+  assert.equal(hashed.headers.get('content-type'), 'image/webp');
+  assert.match(hashed.headers.get('cache-control') ?? '', /immutable/, 'hash-named art is cached for good');
+  assert.equal((await fetch(base + '/assets/manifest.json')).headers.get('cache-control'), 'no-cache', 'the manifest naming them is revalidated');
 });
 
 test('unknown room rejects the websocket upgrade', async () => {

@@ -1,6 +1,7 @@
 /// <reference types="node" />
 // Usage: node frametime.ts <run-dir> [seconds] [width] [height]   Measures client frame cost in a busy FFA room while the driven player fires.
 // SQUAD=1 starts a zombies squad through the menu instead and fires at the nearest zombie; point it at a scratch copy whose night holds a full horde.
+// DPR=2 emulates a 2x display; BLOOM=0 joins with bloom off (`?bloom=0`).
 // `frame cost` times each real frame's draw calls. With SOFTWARE=1 (no GPU canvas) it also logs `rastered frame cost`, which waits for the pixels,
 // dropping each batch's first redraw, which waits on the compositor. On the GPU canvas the pixel reads would move it to the CPU mid-run and skew every later frame.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,6 +19,8 @@ const BENCH_EVERY_STEPS = 2;
 const BENCH_FRAMES = 8;
 const SOFTWARE = process.env.SOFTWARE === '1';
 const SQUAD = process.env.SQUAD === '1';
+const DPR = Number(process.env.DPR ?? 1);
+const BLOOM = process.env.BLOOM !== '0';
 const BASE = existsSync(join(RUN, 'url'))
   ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '')
   : `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
@@ -34,7 +37,7 @@ let sampling = false;
 const page = await openPage({
   profile: 'skirmish-frametime-',
   args: SOFTWARE ? ['--disable-gpu', '--disable-accelerated-2d-canvas'] : [],
-  viewport: { width: VIEW.w, height: VIEW.h },
+  viewport: { width: VIEW.w, height: VIEW.h, dpr: DPR },
   onEvent: (method, params) => {
     if (method !== 'Network.webSocketFrameReceived') return;
     const msg = JSON.parse(params.response.payloadData);
@@ -46,7 +49,7 @@ const page = await openPage({
   },
 });
 const { cdp, js, exceptions, close } = page;
-await cdp('Page.navigate', { url: `${BASE}/?dev` });
+await cdp('Page.navigate', { url: `${BASE}/?dev${BLOOM ? '' : '&bloom=0'}` });
 await serversListed(page);
 await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.getElementById('name').value = 'Bench'`);
 await js(SQUAD ? `document.getElementById('squad-start').click()` : `document.querySelector('#servers .server').click(); document.getElementById('play').click()`);
@@ -82,13 +85,12 @@ async function fightFor(ms: number) {
 
 await fightFor(WARMUP_MS);
 await js(`skirmishDev.takeFrameCosts()`);
-const bakesBefore: number = await js(`skirmishDev.shadowBakes()`);
 await js(`window.__raf = []; (function tick(t) { window.__raf.push(t); requestAnimationFrame(tick); })(performance.now())`);
 sampling = true;
 await fightFor(SECONDS * 1000);
 sampling = false;
 const costs: number[] = await js(`skirmishDev.takeFrameCosts()`);
-const bakes = (await js(`skirmishDev.shadowBakes()`)) - bakesBefore;
+const world: { tiles: number; atlas: boolean } | null = await js(`skirmishDev.world?.() ?? null`);
 const stamps: number[] = await js(`window.__raf`);
 const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
 writeFileSync(join(EV, 'frametime-view.png'), Buffer.from(data, 'base64'));
@@ -101,12 +103,12 @@ const stats = (xs: number[]) => {
 };
 const fmt = (o: ReturnType<typeof stats>) => `n=${o.n} avg=${o.avg.toFixed(2)} p50=${o.p50.toFixed(2)} p95=${o.p95.toFixed(2)} p99=${o.p99.toFixed(2)} max=${o.max.toFixed(2)}ms`;
 const intervals = stamps.slice(1).map((t, i) => t - stamps[i]!);
-log(`frametime ${VIEW.w}x${VIEW.h} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
+log(`frametime ${VIEW.w}x${VIEW.h} dpr ${DPR} bloom ${BLOOM ? 'on' : 'off'} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
 log(`busy: avg ${(busy.players / busy.snaps).toFixed(1)} players, ${(busy.bullets / busy.snaps).toFixed(1)} bullets${SQUAD ? ` and ${(busy.zombies / busy.snaps).toFixed(1)} zombies` : ''} in view per snapshot`);
 log(`frame cost  ${fmt(stats(costs))}`);
 if (SOFTWARE) log(`rastered frame cost  ${fmt(stats(rastered))}`);
 log(`raf interval ${fmt(stats(intervals))}`);
-log(`ground layer bakes while sampling: ${bakes} over ${costs.length} frames`);
+log(`ground tiles on the GPU: ${world?.tiles ?? 'none'}, sprite atlas ${world?.atlas ? 'loaded' : 'missing'}`);
 for (const e of exceptions) log(`exception: ${e}`);
 log(exceptions.length || !costs.length ? 'RESULT FAIL' : 'RESULT PASS');
 process.exit(exceptions.length || !costs.length ? 1 : 0);

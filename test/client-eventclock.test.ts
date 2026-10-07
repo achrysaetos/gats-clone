@@ -18,7 +18,7 @@ test('shots are left to the drawn muzzle, mine and everyone else\'s', () => {
 
 test('impacts, sparks and booms are drawn on the render clock, even from my own bullets', () => {
   const later = scheduleEffects(snapWith([
-    { e: 'impact', x: 1, y: 1 },
+    { e: 'impact', x: 1, y: 1, dir: 0 },
     { e: 'dmg', attacker: ME, victim: 2, amount: 10, x: 2, y: 2, kind: 'player' },
     { e: 'boom', x: 3, y: 3, r: 50 },
     { e: 'kill', killer: 'a', victim: 'b', killerId: ME, victimId: 2, weapon: 'Pistol', bounty: false, assisters: [] },
@@ -35,7 +35,7 @@ test('a kill puffs where the killing blow landed, and a hit names its victim for
     { e: 'kill', killer: 'a', victim: 'c', killerId: ME, victimId: 3, weapon: 'Pistol', bounty: false, assisters: [] },
   ]), 500);
   const fx = later.map((p) => p.fx);
-  assert.deepEqual(fx.filter((f) => f.kind === 'death'), [{ kind: 'death', x: 8, y: 9, victim: 2 }], 'no puff without a known blow');
+  assert.deepEqual(fx.filter((f) => f.kind === 'death'), [{ kind: 'death', x: 8, y: 9, victim: 2, by: ME }], 'no puff without a known blow');
   assert.deepEqual(fx.filter((f) => f.kind === 'impact').map((f) => f.kind === 'impact' && f.victim), [2, 2, null], 'crates never flash a player');
 });
 
@@ -51,7 +51,7 @@ test('a knife slash draws an arc at the strike point on the render clock, includ
 });
 
 test('deferred effects release exactly when the render clock reaches their tick', () => {
-  const later = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1 }]), 1000);
+  const later = scheduleEffects(snapWith([{ e: 'impact', x: 1, y: 1, dir: 0 }]), 1000);
   const early = releaseDue(later, 999);
   assert.deepEqual(early.due, [], 'nothing shows before its tick');
   assert.equal(early.rest.length, 1);

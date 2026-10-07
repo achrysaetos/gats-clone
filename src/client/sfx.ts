@@ -113,6 +113,87 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   ],
 };
 
+/** The recordings `npm run art:sounds` ships, named as in art/sounds.json. Several cues share one at different rates. */
+export const SAMPLE_IDS = [
+  'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'reload',
+  'hit', 'hurt', 'boom', 'slash', 'kill', 'bounty', 'levelup', 'evolve', 'perk', 'click',
+  'bite', 'splat', 'wallHit', 'wallUp', 'wallDown', 'coreHit', 'horn', 'chime', 'revived', 'knock', 'ring', 'cannon', 'mortar',
+] as const;
+export type SampleId = (typeof SAMPLE_IDS)[number];
+export type SampleLayer = { sample: SampleId; rate: number; gain: number };
+
+const layer = (sample: SampleId, rate = 1, gain = 1): SampleLayer => ({ sample, rate, gain });
+
+/** A blast gun keeps its class's report and adds the launcher's thump, the way its synth recipe adds a low thump. */
+function shotLayers(gun: GunId): SampleLayer[] {
+  const g = GUNS[gun];
+  const shot = layer(g.base, pitchOf(gun));
+  return g.blast ? [shot, layer('launcher', 1, 0.8)] : [shot];
+}
+
+function shotSamples(): Record<`shot:${GunId}`, readonly SampleLayer[]> {
+  const out: Partial<Record<`shot:${GunId}`, readonly SampleLayer[]>> = {};
+  for (const id of GUN_IDS) out[`shot:${id}`] = shotLayers(id);
+  return out as Record<`shot:${GunId}`, readonly SampleLayer[]>;
+}
+
+export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
+  ...shotSamples(),
+  'shot:silenced': [layer('silenced')],
+  hit: [layer('hit')],
+  hurt: [layer('hurt')],
+  boom: [layer('boom')],
+  slash: [layer('slash')],
+  kill: [layer('kill')],
+  bounty: [layer('kill'), layer('bounty')],
+  death: [layer('hurt', 0.6)],
+  reload: [layer('reload')],
+  levelup: [layer('levelup')],
+  evolve: [layer('evolve')],
+  perk: [layer('perk')],
+  click: [layer('click')],
+  bite: [layer('bite')],
+  splat: [layer('splat')],
+  wallHit: [layer('wallHit')],
+  wallUp: [layer('wallUp')],
+  wallDown: [layer('wallDown', 0.75)],
+  coreHit: [layer('coreHit')],
+  horn: [layer('horn')],
+  chime: [layer('chime')],
+  downed: [layer('hurt', 0.75)],
+  revived: [layer('revived')],
+  knock: [layer('knock')],
+  ring: [layer('ring')],
+  'turret:sentry': [layer('smg', 1.35, 0.55)],
+  'turret:cannon': [layer('cannon')],
+  'turret:scatter': [layer('shotgun', 1.2, 0.7)],
+  'turret:mortar': [layer('mortar')],
+};
+
+/** Every play of a sample is nudged by up to this fraction of its rate, so a held trigger doesn't machine-gun one identical clip. */
+export const RATE_JITTER = 0.04;
+
+export type Voice = { kind: 'sample'; layers: readonly SampleLayer[] } | { kind: 'synth'; recipe: Recipe };
+
+/** A cue plays its recording once every layer has decoded, and its synth recipe until then. `random` is in [0, 1). */
+export function voiceFor(id: SoundId, decoded: (sample: SampleId) => boolean, random: () => number): Voice {
+  const layers = SAMPLES[id];
+  if (!layers.every((l) => decoded(l.sample))) return { kind: 'synth', recipe: SOUNDS[id] };
+  const jitter = 1 + (random() * 2 - 1) * RATE_JITTER;
+  return { kind: 'sample', layers: layers.map((l) => ({ ...l, rate: l.rate * jitter })) };
+}
+
+const AUDIBLE_RADII = 1.2;
+
+/** How loud and where in the stereo field a cue lands for a listener, or null when it is out of earshot. */
+export function placeCue(cue: SoundCue, listener: { x: number; y: number }, viewRadius: number): { gain: number; pan: number } | null {
+  if (cue.self) return { gain: cue.gain, pan: 0 };
+  const dx = cue.x - listener.x;
+  const falloff = Math.max(0, 1 - Math.hypot(dx, cue.y - listener.y) / (viewRadius * AUDIBLE_RADII)) ** 2;
+  if (falloff <= 0) return null;
+  return { gain: falloff * cue.gain, pan: Math.max(-1, Math.min(1, dx / viewRadius)) * 0.8 };
+}
+
 /** Each 100 hp the core loses sounds once, so a crowd chewing on it reads as a steady alarm rather than a buzz. */
 const CORE_HIT_STEP = 100;
 

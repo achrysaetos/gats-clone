@@ -21,8 +21,10 @@ const ROOM_MODES: [string, ModeId][] = [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.map': 'application/json', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon', '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
 };
+/** Files under /assets/ are named by their content's hash, so a browser may keep them for good. */
+const IMMUTABLE = /^\/assets\/.*\.[0-9a-f]{8,}\.[a-z0-9]+$/;
 
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -69,7 +71,7 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
   if (!file.startsWith(publicDir + sep)) { res.writeHead(404).end(); return; }
   try {
     const { etag, data, gz } = await loadStatic(file);
-    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag };
+    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': IMMUTABLE.test(pathname) ? 'public, max-age=31536000, immutable' : 'no-cache', etag };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return; }
     const useGzip = gz !== null && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
     if (useGzip) headers['content-encoding'] = 'gzip';

@@ -102,3 +102,20 @@ This part also changes no rules:
 5. Remaining maps and pieces in batches: floor and cover, then soldiers and guns, then props and effects.
 
 Blender has to be installed on the dev machine before step 2.
+
+## What changed from the plan, and why
+
+The overhaul followed the plan above: PixiJS behind `drawWorld`, the HUD on Canvas2D, scripted Blender bakes, atlases committed under `public/assets/`, one `npm run art`. These parts went differently, each for a reason found while building it.
+
+- **Camera.** Straight down, with an oblique shear of 0.3: a wall's top sits on its collision rect and its south face hangs below it, 0.3 of its height. Tops on the rect keep every hit honest; the short face gives the reference's sense of height without hiding the floor behind it.
+- **Soldiers and zombies are baked per facing, lit by the sun.** The plan was one sprite lit from straight above, rotated at runtime. That leaves soldiers flatter than the walls around them, whose light comes from the low sun. Baking 32 soldier facings and 16 zombie facings at 2 px per unit keeps one sun on everything and costs about 10.5 Mpx in all; the rotation left over is at most half a step (5.6° for soldiers) and is applied at runtime. Guns, turrets, thrown items and effects still rotate one sprite, lit from above.
+- **The gun's muzzle comes from the game, not from the render.** `GUN_PARTS` in `src/client/sprites.ts` already feeds shot prediction, so the bake reads it and builds each gun to match. `scripts/art/check-sprites.ts` fails the build when a baked barrel ends more than 1.5 px from its muzzle point. They agree by construction, the other way round.
+- **Rubble and scorch marks are a decal pool, not a floor RenderTexture.** A pool of at most 90 decals, each fading out over its last 6 of 40 seconds, needs no texture management across map changes or camera moves and costs a handful of sprites.
+- **Water is a scrolling tile, not a displacement filter.** The map's edge is a baked quay, so water shows only past the margin; a 512 px tileable texture panned at two speeds reads as moving water there and costs no filter pass.
+- **Bloom comes from an emissive layer at a quarter of the resolution.** Glowing things (fire, muzzle flashes, tracers, turret lights, the core) draw a second time into a small render target, which is blurred and added. A full-screen filter would blur the whole frame at 2x DPR every frame.
+- **Names, bars and timers stay on the HUD canvas.** Canvas2D text is crisp and cheap; Pixi text is neither. The scene model gives the labels their positions, so they still follow the world.
+- **WebP only, no KTX2 yet.** The atlas is two 2048 px pages and at most 30 ground tiles (the view plus a ring of prefetch) stay on the GPU: about 150 MB of texture memory at worst, which desktop GPUs hold. KTX2 would cut that four- to eightfold but needs a Basis encoder in the build and a transcoder in the page; it is the first lever if integrated GPUs struggle.
+- **No shader warm-up screen.** Every effect draws with Pixi's sprite batcher or the bloom pass, and both run from the first frame of play, so the first explosion compiles nothing new.
+- **`scripts/map-overview.ts` stitches the baked tiles with sharp** instead of rendering in a browser.
+- **Sounds are sampled MP3s** (CC0, from Freesound) fetched and encoded by `scripts/art/sounds.ts`, with the old synthesizer kept as the fallback while they load.
+- **The sun shadows fall south-west** (`ART.sun.shadow` `[-0.62, 0.78]`, elevation 26°), matching the planters and walls in the reference. The live soldier shadow reads the same values, and is drawn at 60% strength because at full strength it outweighs the soldier.

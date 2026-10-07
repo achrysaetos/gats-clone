@@ -10,13 +10,15 @@ import type { Firing } from './fire.ts';
 import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
 import type { LocalRound, ShotEvent } from './rounds.ts';
+import type { SoundCue } from './sfx.ts';
 import type { TurretAim } from './siege.ts';
 import type { TrailPoint } from './trails.ts';
 import type { CrackPool } from './decals.ts';
 
 export type Effect =
-  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
-  | { kind: 'death'; x: number; y: number; victim: number; born: number }
+  /** (`x`, `y`) is where the round struck, and `dir` the way it flew, when the server knows. */
+  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; dir: number | null; victim: number | null; by: number | null; born: number }
+  | { kind: 'death'; x: number; y: number; victim: number; by: number | null; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
   | { kind: 'flash'; x: number; y: number; angle: number; owner: number; born: number }
   | { kind: 'slash'; x: number; y: number; angle: number; born: number }
@@ -53,6 +55,8 @@ export type Session = {
   pendingFx: PendingEffect[];
   /** Other players' shots, waiting for the render clock to reach their tick. */
   pendingShots: { at: number; shot: ShotEvent }[];
+  /** Sounds of what others did, waiting for the render clock to reach their tick. */
+  pendingSounds: { at: number; cue: SoundCue }[];
   /** The server time of each shooter's last shot event, for `recentShooters`. */
   lastShotAt: Map<number, number>;
   feedback: Feedback;

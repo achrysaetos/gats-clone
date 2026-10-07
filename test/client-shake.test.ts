@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addTrauma, decay, MAX_SHAKE_PX, offset, traumaFor } from '../src/client/shake.ts';
+import { addKick, addTrauma, decay, KICK_MAX_PX, kickPx, MAX_SHAKE_PX, NO_KICK, offset, settleKick, traumaFor } from '../src/client/shake.ts';
 import type { SoundCue, SoundId } from '../src/client/sfx.ts';
 
 const cue = (o: Partial<Extract<SoundCue, { id: Exclude<SoundId, 'hurt'> }>>): SoundCue => ({ id: 'hit', x: 0, y: 0, self: false, gain: 1, ...o });
@@ -35,4 +35,20 @@ test('bigger hits and closer booms shake harder; distant booms and other players
   const kick = traumaFor(cue({ id: 'shot:pistol', self: true }), me, 900);
   assert.ok(kick > 0 && kick < traumaFor(hurt(0), me, 900), 'firing kicks, less than being hit');
   assert.equal(traumaFor(cue({ id: 'shot:railSlug', self: true }), me, 900), traumaFor(cue({ id: 'shot:shotgun', self: true }), me, 900), 'an evolved gun kicks like its class');
+});
+
+test('your own shot shoves the camera back along your aim, heavier guns harder, and the spring brings it home', () => {
+  const right = addKick(NO_KICK, 'pistol', 0);
+  assert.ok(right.x < -2 && Math.abs(right.y) < 1e-9, `aiming east shoves the view west, got ${right.x}`);
+  const down = addKick(NO_KICK, 'sniper', Math.PI / 2);
+  assert.ok(down.y < -8, 'a sniper kicks far harder than any shake trauma a shot adds');
+  assert.ok(kickPx('shotgun') > kickPx('smg') && kickPx('railSlug') > kickPx('shotgun'), 'class sets the kick and evolving adds to it');
+  let held = NO_KICK;
+  for (let i = 0; i < 40; i++) held = addKick(held, 'lmg', 0);
+  assert.ok(Math.hypot(held.x, held.y) <= KICK_MAX_PX, 'a held trigger stays within the cap');
+  let k = addKick(NO_KICK, 'sniper', 0);
+  const after = settleKick(k, 16);
+  assert.ok(Math.abs(after.x) < Math.abs(k.x), 'returns every frame');
+  for (let i = 0; i < 40; i++) k = settleKick(k, 16);
+  assert.deepEqual(k, NO_KICK, 'and comes to rest exactly');
 });
