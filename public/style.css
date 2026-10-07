@@ -37,7 +37,7 @@
   --radius-sm: 2px;
   --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
   --text: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --t-micro: 11px;
+  --t-micro: 12px;
   --t-label: 13px;
   --t-body: 15px;
   --t-title: 22px;
@@ -181,7 +181,12 @@ kbd {
     radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255, 90, 31, 0.1), transparent 70%),
     linear-gradient(180deg, rgba(12, 13, 16, 0.55), rgba(12, 13, 16, 0.86) 45%, rgba(12, 13, 16, 0.94));
 }
-.menu-card { max-width: 1000px; margin: 0 auto; }
+/*
+ * --ui is the client's one UI scale (src/client/uiscale.ts): 1 up to a 900px short side, then in step with it to 2.4 at 2160p.
+ * The menu card and the in-game overlays zoom by it, so on a 1440p or 4K screen they keep the proportions they have at 900px
+ * and grow with the canvas HUD, which draws at the same scale.
+ */
+.menu-card { max-width: 1000px; margin: 0 auto; zoom: var(--ui, 1); }
 .brand { display: grid; justify-items: center; margin: 0 0 var(--s5); }
 .wordmark { display: flex; align-items: center; gap: clamp(10px, 2vw, 18px); }
 .emblem { width: clamp(42px, 7vw, 64px); height: auto; }
@@ -254,7 +259,7 @@ kbd {
 .gun-art { width: 100%; max-width: 150px; height: auto; aspect-ratio: 150 / 56; }
 /* Each class gun's kit card: power, rate, reach and mobility as short bars against the other classes. */
 .gun-stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; width: 100%; margin-top: 6px; align-items: center; }
-.gun-stats span { font: 700 10px/1 var(--display); letter-spacing: 0.14em; color: var(--faint); text-align: left; }
+.gun-stats span { font: 700 11px/1 var(--display); letter-spacing: 0.14em; color: var(--faint); text-align: left; }
 .gun-stats i { display: block; height: 4px; background: linear-gradient(90deg, var(--ink) var(--v), rgba(236, 230, 214, 0.1) var(--v)); }
 .weapon[aria-pressed="true"] .gun-stats i { background: linear-gradient(90deg, var(--accent) var(--v), rgba(255, 90, 31, 0.15) var(--v)); }
 
@@ -331,7 +336,7 @@ a.wordmark { text-decoration: none; }
 .muted-list li { display: flex; justify-content: space-between; gap: var(--s3); }
 
 /* In-game overlays */
-.hud { position: fixed; inset: 0; pointer-events: none; }
+.hud { position: fixed; inset: 0; pointer-events: none; zoom: var(--ui, 1); }
 .hud > * { pointer-events: auto; }
 
 /* Docked at the bottom between the chat (left) and the minimap (right, 192px wide), clear of the aim area. */
@@ -386,7 +391,7 @@ a.wordmark { text-decoration: none; }
   width: min(380px, calc(100vw - 24px));
   pointer-events: none;
 }
-.chat-log { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 14px; }
+.chat-log { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 3px; font-size: 15px; }
 .chat-log li {
   background: rgba(19, 21, 25, 0.78);
   border-left: 2px solid var(--line-strong);
@@ -524,13 +529,13 @@ a.wordmark { text-decoration: none; }
 .recap-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .recap-stat { position: relative; display: grid; gap: 2px; padding: 9px 6px 8px; background: var(--well); border: 1px solid var(--line); text-align: center; }
 .recap-stat b { font: 800 26px/1 var(--display); font-variant-numeric: tabular-nums; }
-.recap-stat span { font: 700 10px/1 var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+.recap-stat span { font: 700 11px/1 var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
 .recap-stat.best { border-color: var(--accent); background: var(--accent-wash); }
 .recap-stat.best b { color: var(--accent); }
 .recap-stat i {
   position: absolute; top: -8px; left: 50%; transform: translateX(-50%) rotate(-3deg);
   padding: 2px 6px; background: var(--accent); color: var(--accent-ink);
-  font: italic 900 10px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
+  font: italic 900 11px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
   animation: stamp 0.35s cubic-bezier(.2, 1.6, .4, 1) both;
 }
 @keyframes stamp { from { transform: translateX(-50%) rotate(-12deg) scale(2.2); opacity: 0; } }

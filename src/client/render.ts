@@ -514,12 +514,16 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = dark > 0.5 ? NIGHT.label : PALETTE.hunted;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(19, 21, 25, 0.85)';
+  ctx.strokeText(`${label} · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
   ctx.fillText(`${label} · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
 }
 
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
-const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 22, font: 14, nameAlpha: 0.7, badge: 20 } as const;
+const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 22, font: 15, plate: '#131519', plateAlpha: 0.78, ink: '#ece6d6', badge: 20 } as const;
 
 type Tag = { p: PlayerView; bar: number; name: boolean };
 let tagsDrawn: { id: number; bar: boolean; name: boolean }[] = [];
@@ -536,23 +540,33 @@ function bodyTags(bodies: readonly PlayerView[], s: Session, now: number): Tag[]
 }
 
 function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number) {
-  ctx.font = `600 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
+  ctx.font = `700 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = dark > 0.5 ? NIGHT.label : PALETTE.label;
-  ctx.globalAlpha = TAG.nameAlpha;
-  for (const { p, name } of tags) if (name) ctx.fillText(p.name, p.x, p.y + TAG.name);
+  // Each name sits on a small gunmetal plate with clipped corners, the HUD's field kit, so it reads on the bone floor by day.
+  ctx.fillStyle = TAG.plate;
+  ctx.globalAlpha = TAG.plateAlpha * (dark > 0.5 ? 0.8 : 1);
+  for (const { p, name } of tags) {
+    if (!name) continue;
+    const w = ctx.measureText(p.name).width + 10, h = TAG.font + 5, x = p.x - w / 2, y = p.y + TAG.name - TAG.font + 1, c = 4;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + w - c, y); ctx.lineTo(x + w, y + c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + c, y + h); ctx.lineTo(x, y + h - c);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.globalAlpha = 1;
+  ctx.fillStyle = TAG.ink;
+  for (const { p, name } of tags) if (name) ctx.fillText(p.name, p.x, p.y + TAG.name);
   // The rarest lifetime medal a player holds rides before their name, so a decorated veteran is plain to see.
   for (const { p, name } of tags) {
     if (!name || !p.badge) continue;
     const img = careerImage(p.badge);
     if (!img) continue;
-    const x = p.x - ctx.measureText(p.name).width / 2 - TAG.badge - 3;
+    const x = p.x - ctx.measureText(p.name).width / 2 - TAG.badge - 8;
     ctx.drawImage(img, x, p.y + TAG.name - TAG.badge * 0.78, TAG.badge, TAG.badge);
   }
   // A player on a streak wears a flame and their kill count beside their name: a target worth a shutdown.
-  const hot = tags.filter((t) => t.name && t.p.streak).map((t) => ({ p: t.p, x: t.p.x + ctx.measureText(t.p.name).width / 2 + 6 }));
+  const hot = tags.filter((t) => t.name && t.p.streak).map((t) => ({ p: t.p, x: t.p.x + ctx.measureText(t.p.name).width / 2 + 9 }));
   if (!hot.length) return;
   ctx.font = `800 ${TAG.font + 1}px "Barlow Condensed", system-ui, sans-serif`;
   ctx.textAlign = 'left';

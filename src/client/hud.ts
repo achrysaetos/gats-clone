@@ -15,12 +15,16 @@ import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, us
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
 import { drawGunArt } from './gunart.ts';
 import type { Session } from './state.ts';
+import { uiScaleFor } from './uiscale.ts';
 
 /** The kit's condensed face (style.css), with the system face standing in until it loads. */
 const HUD_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
 const touchScreen = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-/** Text sizes. A phone is held further from the eye and its HUD draws a little smaller (HUD_SCALE), so touch screens get bigger type. */
-const TYPE = touchScreen ? ({ micro: 13, label: 14, body: 16, title: 18, figure: 24 } as const) : ({ micro: 12, label: 13, body: 15, title: 17, figure: 22 } as const);
+/**
+ * Text sizes, before the HUD's scale (uiscale.ts). The smallest is 13 px, so on a desktop of 560px or more on its short side
+ * (scale 1 and up) no HUD text falls under 13 CSS px; a phone's HUD draws at 0.9, still just under 12.
+ */
+const TYPE = { micro: 13, label: 14, body: 16, title: 18, figure: 24 } as const;
 const SPACE = { sm: 8, md: 12, lg: 16 } as const;
 /** The kit's gunmetal plates (style.css): bone ink, grey labels, one orange accent, and a clipped corner instead of a round one. */
 const PANEL_FILL = 'rgba(19, 21, 25, 0.86)';
@@ -135,15 +139,9 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks, dpr: n
 }
 
 /** `spread` is your current aim spread, or null when no reticle should be drawn. */
-/**
- * On a small screen the whole HUD draws smaller, panels and text alike, by drawing it on a virtual screen 1 / `scale` as
- * large: `scale` is the short side over `fullAt`, never below `min`, or `touchMin` on a touch screen, where text shrunk
- * any further gets hard to read on a phone.
- */
-const HUD_SCALE = { fullAt: 560, min: 0.62, touchMin: 0.9 } as const;
+/** The whole HUD, panels and text alike, draws on a virtual screen 1 / `scale` as large: see UI_SCALE (uiscale.ts). */
 let hudScale = 1;
-export const hudScaleFor = (w: number, h: number, touch = touchScreen): number =>
-  Math.max(touch ? HUD_SCALE.touchMin : HUD_SCALE.min, Math.min(1, Math.min(w, h) / HUD_SCALE.fullAt));
+export const hudScaleFor = (w: number, h: number, touch = touchScreen): number => uiScaleFor(w, h, touch);
 
 export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: Camera, snap: Snapshot, s: Session, now: number, screenCrosshair: Point, spread: number | null, fullBoard = false) {
   hudScale = hudScaleFor(screenCam.w, screenCam.h);
@@ -266,7 +264,7 @@ function drawAssist({ ctx, s, now }: Hud, at: Point) {
   const k = (now - assist.born) / ASSIST_MS;
   if (k < 0 || k >= 1) return;
   ctx.globalAlpha = 1 - k * k;
-  outlined(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 30 - 16 * k, 14, PALETTE.gold, 800);
+  outlined(ctx, `+${WORLD.assistScore} assist`, at.x, at.y - 30 - 16 * k, TYPE.body, PALETTE.gold, 800);
   ctx.globalAlpha = 1;
 }
 
@@ -510,11 +508,33 @@ function outlined(ctx: CanvasRenderingContext2D, s: string, x: number, y: number
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = Math.max(2.5, size / 6);
-  ctx.strokeStyle = 'rgba(28, 30, 36, 0.7)';
+  ctx.lineWidth = Math.max(3, size / 4.5);
+  ctx.strokeStyle = 'rgba(19, 21, 25, 0.9)';
   ctx.strokeText(s, x, y);
   ctx.fillStyle = color;
   ctx.fillText(s, x, y);
+}
+
+/**
+ * A line of text over the world, on its own gunmetal plate with clipped corners, so it reads on the bone floor by day as
+ * well as by night. Returns the plate's height.
+ */
+function platedLine(ctx: CanvasRenderingContext2D, s: string, cx: number, cy: number, size: number, color: string, weight: number, accent: string | null = null): number {
+  setFont(ctx, weight, size);
+  const pw = ctx.measureText(s).width + size * 1.4, ph = Math.round(size * 1.65);
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha * 0.92;
+  plate(ctx, cx - pw / 2, cy - ph / 2, pw, ph);
+  ctx.fillStyle = PANEL_FILL;
+  ctx.fill();
+  ctx.globalAlpha = alpha;
+  panels.push({ x: cx - pw / 2, y: cy - ph / 2, w: pw, h: ph });
+  if (accent) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(cx - pw / 2, cy - ph / 2, 3, ph - Math.min(PANEL_CUT, ph / 3));
+  }
+  text(ctx, s, cx, cy + 1, size, color, 'center', weight);
+  return ph;
 }
 
 const FEED_ICON_W = 44;
@@ -780,7 +800,7 @@ function drawMinimap(hud: Hud, size: number) {
     drawRingMap(ctx, snap.royale, clockNow, hud.now, x, y, k, size);
     ctx.globalAlpha = base;
     const lines = [ringLine(snap.royale, clockNow), ...(snap.royale.redeploys ? [] : ['Last lives'])];
-    lines.forEach((line, i) => outlined(ctx, line, x0 + (size + pad * 2) / 2, y0 - 12 - (lines.length - 1 - i) * 18, TYPE.label + 1, i === 0 ? '#ffffff' : PALETTE.lossOnDark, 700));
+    lines.forEach((line, i) => platedLine(ctx, line, x0 + (size + pad * 2) / 2, y0 - 16 - (lines.length - 1 - i) * 28, TYPE.label + 1, i === 0 ? PANEL_INK : PALETTE.lossOnDark, 700));
   }
   const self = me ?? s.lastSelf;
   ctx.fillStyle = '#ffffff';
@@ -872,25 +892,28 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   const people = `${run.survivors}`;
   const peopleW = ctx.measureText(people).width;
   const mourned = run.phase === 'night' && run.lost > 0 ? `−${run.lost} tonight` : null;
+  setFont(ctx, 500, TYPE.label);
+  const scrapLabelW = ctx.measureText('scrap').width, peopleLabelW = ctx.measureText('survivors').width;
   setFont(ctx, 700, TYPE.label);
   const mournedW = mourned ? ctx.measureText(mourned).width + 8 : 0;
-  const total = 16 + scrapW + 44 + 16 + 90 + 14 + peopleW + 58 + mournedW;
+  const total = 16 + scrapW + 6 + scrapLabelW + 14 + 16 + 90 + 14 + peopleW + 6 + peopleLabelW + mournedW;
   let x = cx - total / 2;
-  panel(ctx, x - 10, y - 11, total + 20, 22);
+  panel(ctx, x - 10, y - 12, total + 20, 24);
   strokeIcon(ctx, UI_ICONS.scrap, x + 6, y, 12, PALETTE.gold, 2.2);
   text(ctx, `${run.scrap}`, x + 16, y, TYPE.body, PANEL_INK, 'left', 750);
   x += 16 + scrapW + 6;
   text(ctx, 'scrap', x, y, TYPE.label, PANEL_MUTED, 'left', 500);
-  x += 38;
+  x += scrapLabelW + 14;
   strokeIcon(ctx, UI_ICONS.core, x + 6, y, 12, coreColor, 2.2);
   bar(ctx, x + 16, y - 3, 90, 6, frac, coreColor, 'rgba(255, 255, 255, 0.18)');
   x += 16 + 90 + 14;
   text(ctx, people, x, y, TYPE.body, alert ? coreColor : PANEL_INK, 'left', 750);
   text(ctx, 'survivors', x + peopleW + 6, y, TYPE.label, PANEL_MUTED, 'left', 500);
-  if (mourned) text(ctx, mourned, x + peopleW + 66, y, TYPE.label, PALETTE.lossOnDark, 'left', 700);
-  if (alert) drawCoreAlert(hud, run.core, y + 26);
+  if (mourned) text(ctx, mourned, x + peopleW + 6 + peopleLabelW + 8, y, TYPE.label, PALETTE.lossOnDark, 'left', 700);
+  let below = y + 30;
+  if (alert) below += drawCoreAlert(hud, run.core, below) + 6;
   if (run.phase === 'over') return;
-  if (run.phase === 'day') outlined(ctx, `Tonight · ${forecast(run.night, squadShare(hud.snap.players))}`, cx, y + 26, TYPE.label + 1, PALETTE.gold, 700);
+  if (run.phase === 'day') platedLine(ctx, `Tonight · ${forecast(run.night, squadShare(hud.snap.players))}`, cx, below, TYPE.body, PALETTE.gold, 700, ACCENT);
   if (me?.downed) {
     drawDownedSelf(hud, me.downed);
     return;
@@ -898,7 +921,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   if (!me?.alive) return;
   const use = useHint(hud.snap, s.lastSelf);
   const row = h - (compact ? 150 : 30);
-  if (use) outlined(ctx, use, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750);
+  if (use) platedLine(ctx, use, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750, ACCENT);
   if (s.building) {
     hintBar(ctx, s, BUILD_HINTS.filter((p) => p.pick), w / 2, row - 32, null);
     hintBar(ctx, s, BUILD_HINTS.filter((p) => !p.pick), w / 2, row, 'BUILD');
@@ -907,12 +930,28 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   }
 }
 
-function drawDownedSelf({ ctx, w, h, s, now, on }: Hud, downed: NonNullable<PlayerView['downed']>) {
+/** You're down: a red-edged plate with the title, how long you have or who is reviving you, and the revive bar. */
+function drawDownedSelf({ ctx, w, h, s, now }: Hud, downed: NonNullable<PlayerView['downed']>) {
   const k = 0.5 + 0.5 * Math.sin(now / 260);
-  outlined(ctx, "You're down", w / 2, h * 0.64, 22, PALETTE.hunted, 850);
-  outlined(ctx, downedLine(downed, serverNow(s.snaps, now)), w / 2, h * 0.64 + 24, TYPE.body + 1, '#ffffff', 650);
+  const line = downedLine(downed, serverNow(s.snaps, now));
+  const y = h * 0.64;
+  setFont(ctx, 850, 24);
+  const tw = ctx.measureText("You're down").width;
+  setFont(ctx, 650, TYPE.body + 1);
+  const pw = Math.max(tw, ctx.measureText(line).width, 180) + 36, ph = 78;
+  const left = w / 2 - pw / 2, top = y - 18;
+  ctx.globalAlpha = 0.92;
+  plate(ctx, left, top, pw, ph);
+  ctx.fillStyle = PANEL_FILL;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  panels.push({ x: left, y: top, w: pw, h: ph });
+  ctx.fillStyle = PALETTE.hunted;
+  ctx.fillRect(left, top, pw - PANEL_CUT, 3);
+  text(ctx, "You're down", w / 2, y + 1, 24, PALETTE.hunted, 'center', 850);
+  text(ctx, line, w / 2, y + 26, TYPE.body + 1, PANEL_INK, 'center', 650);
   ctx.globalAlpha = 0.6 + 0.4 * k;
-  bar(ctx, w / 2 - 90, h * 0.64 + 40, 180, 5, downed.revive, PALETTE.hpGood, on.track);
+  bar(ctx, w / 2 - 90, y + 44, 180, 5, downed.revive, PALETTE.hpGood, ON_PANEL.track);
   ctx.globalAlpha = 1;
 }
 
@@ -926,13 +965,13 @@ function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: numb
   drawTracker(ctx, royale, mine, x + 6, y + 4);
   if (me?.downed) { drawDownedSelf(hud, me.downed); return; }
   const revive = reviveHint(snap, me);
-  if (revive) outlined(ctx, revive, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750);
+  if (revive) platedLine(ctx, revive, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750, ACCENT);
   if (me?.alive) return;
   const clockNow = serverNow(s.snaps, now);
   if (clockNow === null) return;
   const lines = spectateLines(snap, royale, clockNow);
-  outlined(ctx, lines.title, w / 2, h - 96, 18, '#ffffff', 800);
-  outlined(ctx, lines.sub, w / 2, h - 72, TYPE.body + 1, PANEL_MUTED, 650);
+  platedLine(ctx, lines.title, w / 2, h - 100, TYPE.title + 2, PANEL_INK, 800, ACCENT);
+  platedLine(ctx, lines.sub, w / 2, h - 66, TYPE.body, PANEL_MUTED, 650);
 }
 
 function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {
@@ -967,16 +1006,18 @@ export const buildChipAt = (sx: number, sy: number): BuildingKind | null => {
   return buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.kind ?? null;
 };
 
-function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; y: number }, y: number) {
+/** Returns the height of the warning's plate, so lines below it can stand clear. */
+function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; y: number }, y: number): number {
   const pulse = 0.5 + 0.5 * Math.sin(now / 110);
-  ctx.globalAlpha = 0.7 + 0.3 * pulse;
-  outlined(ctx, 'CORE UNDER ATTACK', w / 2, y, 15, PALETTE.hunted, 850);
+  ctx.globalAlpha = 0.75 + 0.25 * pulse;
+  const tall = platedLine(ctx, 'CORE UNDER ATTACK', w / 2, y, TYPE.body, PALETTE.hunted, 850, PALETTE.hunted);
   ctx.globalAlpha = 1;
   const at = edgePoint(selfAt, worldToScreen(cam, core), w, h, EDGE_INSET + 10);
-  if (!at) return;
+  if (!at) return tall;
   const clear = clearOfRects(selfAt, at, panels, ARROW_CLEARANCE);
   edgeArrow(ctx, clear, at.angle, 1.25 + 0.2 * pulse, 1);
   strokeIcon(ctx, UI_ICONS.core, clear.x - Math.cos(at.angle) * 24, clear.y - Math.sin(at.angle) * 24, 15, PALETTE.hunted, 2.4);
+  return tall;
 }
 
 /** The vitals plate: its bar widths, inner padding, row step and full height (the touch minimap sits just below it). */

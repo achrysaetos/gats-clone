@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { ABILITY_COOLDOWN_MS } from '../src/shared/defs.ts';
 import { buttonFaces } from '../src/client/touchbuttons.ts';
 import { hudScaleFor } from '../src/client/hud.ts';
+import { domScaleFor } from '../src/client/uiscale.ts';
 import type { Snapshot } from '../src/shared/protocol.ts';
 
 const self = (over: Partial<Snapshot['self']>) => ({ ammo: 12, mag: 12, reloading: false, reloadFrac: 0, ability: null, abilityReadyIn: 0, pending: null, ...over }) as Snapshot['self'];
@@ -27,4 +28,14 @@ test('the reload button fills as the reload runs and flags an empty mag', () => 
 test('a touch screen HUD never shrinks below 90%, so its text stays readable on a phone', () => {
   assert.equal(hudScaleFor(844, 390, true), 0.9);
   assert.ok(hudScaleFor(844, 390, false) < 0.75);
+});
+
+test('a big screen HUD grows with the short side, so it fills the same share of a 1440p or 4K screen as of a 900px one', () => {
+  assert.equal(hudScaleFor(1280, 800, false), 1);
+  assert.equal(hudScaleFor(1920, 1080, false), 1.2);
+  assert.ok(Math.abs(hudScaleFor(2560, 1440, false) - 1.6) < 1e-9);
+  assert.equal(hudScaleFor(3840, 2160, false), 2.4);
+  assert.equal(hudScaleFor(7680, 4320, false), 2.4);
+  assert.equal(domScaleFor(844, 390), 1);
+  assert.equal(domScaleFor(2560, 1440), 1.6);
 });

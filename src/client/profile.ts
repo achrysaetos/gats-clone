@@ -1,5 +1,6 @@
 import { badgeKey, CAREER, CAREER_IDS, CAREER_TIERS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId } from '../shared/defs.ts';
 import { careerArt, careerName, medalArt, medalSvg } from './medals.ts';
+import { trackRootScale } from './uiscale.ts';
 
 /**
  * A player's profile page (profile.html?name=...): their worn medal and career numbers, every lifetime track with the
@@ -103,3 +104,4 @@ form.addEventListener('submit', (e) => {
 });
 const asked = new URLSearchParams(location.search).get('name');
 if (asked) { input.value = asked; void load(asked); } else $('profile-status').textContent = 'Look up a player by name.';
+trackRootScale();

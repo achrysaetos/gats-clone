@@ -40,6 +40,7 @@ import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './s
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
+import { trackRootScale } from './uiscale.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -740,3 +741,4 @@ if (invited === 'bad') {
 resize();
 setState(state);
 requestAnimationFrame(frame);
+trackRootScale();
