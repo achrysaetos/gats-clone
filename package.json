@@ -6,7 +6,8 @@
     "build": "esbuild src/client/main.ts --bundle --format=esm --outfile=public/game.js --sourcemap",
     "start": "npm run build && node src/server/main.ts",
     "test": "node --test 'test/**/*.test.ts'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "art:sprites": "node scripts/art/export-sprites.ts art/build/sprites-spec.json && ${BLENDER:-blender} -b -P art/blender/bake_sprites.py -- art/build/sprites-spec.json art/build/sprites && node scripts/art/check-sprites.ts art/build/sprites-spec.json art/build/sprites"
   },
   "dependencies": {
     "ws": "^8.22.0"

@@ -108,8 +108,23 @@ async function soldierAt(c: Img, x: number, y: number, angle: number, team: stri
   await draw(c, `gun.${gun}`, 'base', 0, 0, x, y, { rot: angle, zoom });
 }
 
+/** Lays sprites left to right at a zoom, wrapping rows, each placed by its box so frames never overlap. */
+function flow(c: Img, zoom: number, top: number) {
+  let x = 20, y = top, rowH = 0;
+  return (name: string) => {
+    const e = spec.sprites[name];
+    if (!e) return { x: 0, y: 0 };
+    const w = e.box.w * S * zoom, h = e.box.h * S * zoom;
+    if (x + w > c.w - 20) { x = 20; y += rowH + 16; rowH = 0; }
+    const at = { x: x - e.box.x * S * zoom, y: y - e.box.y * S * zoom };
+    x += w + 12;
+    rowH = Math.max(rowH, h);
+    return at;
+  };
+}
+
 async function characters() {
-  const c = canvas(1500, 1000);
+  const c = canvas(1500, 1500);
   const labels: [number, number, string][] = [];
   const armors = [null, 'armorLight', 'armorMedium', 'armorHeavy'];
   labels.push([10, 18, 'soldiers at game scale (2 px/unit), 8 of 32 facings, red and blue, assault rifle; then armor tiers']);
@@ -123,15 +138,12 @@ async function characters() {
   for (let a = 0; a < 4; a++) await soldierAt(c, 110 + a * 200, 560, -0.6, a % 2 ? 'blue' : 'red', armors[a]!, 'assault', 2.5);
   await draw(c, 'soldier.downed', 'base', 0, 0, 1000, 560, { rot: 0.7, zoom: 2 });
   await draw(c, 'soldier.downed', 'team', 0, 0, 1000, 560, { rot: 0.7, zoom: 2, tint: hex(spec.teamColors['green']!) });
-  labels.push([10, 720, 'zombies (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
-  const kinds = ['walker', 'brute', 'runner', 'plated', 'bloater', 'colossus'];
-  let x = 40;
-  for (const k of kinds) {
+  labels.push([10, 720, 'zombies at x1.5 (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
+  const place = flow(c, 1.5, 740);
+  for (const k of ['walker', 'brute', 'runner', 'plated', 'bloater', 'colossus']) {
     const e = spec.sprites[`zombie.${k}`];
     if (!e) continue;
-    const r = -e.box.x / 1.9;
-    for (let i = 0; i < 4; i++) { await draw(c, `zombie.${k}`, 'base', i * (e.dirs / 4), 0, x + r * S, 830, {}); x += r * S * 2 + 12; }
-    x += 16;
+    for (let i = 0; i < 4; i++) { const at = place(`zombie.${k}`); await draw(c, `zombie.${k}`, 'base', i * (e.dirs / 4), 0, at.x, at.y, { zoom: 1.5 }); }
   }
   await save(c, labels, [{ left: 440, top: 410, width: 140, height: 110, zoom: 2 }, { left: 1030, top: 820, width: 140, height: 110, zoom: 2 }], 'sheet-characters.png');
 }
@@ -149,21 +161,6 @@ async function guns() {
     labels.push([x - 20, y + 30, names[i]!.slice(4)]);
   }
   await save(c, labels, [], 'sheet-guns.png');
-}
-
-/** Lays sprites left to right at a zoom, wrapping rows, each placed by its box so frames never overlap. */
-function flow(c: Img, zoom: number, top: number) {
-  let x = 20, y = top, rowH = 0;
-  return (name: string) => {
-    const e = spec.sprites[name];
-    if (!e) return { x: 0, y: 0 };
-    const w = e.box.w * S * zoom, h = e.box.h * S * zoom;
-    if (x + w > c.w - 20) { x = 20; y += rowH + 16; rowH = 0; }
-    const at = { x: x - e.box.x * S * zoom, y: y - e.box.y * S * zoom };
-    x += w + 12;
-    rowH = Math.max(rowH, h);
-    return at;
-  };
 }
 
 async function props() {
