@@ -31,7 +31,10 @@ import { drawDust, drawNight, drawVignette, nightLights } from './ambience.ts';
 import { lightBackdrop, lightWorld } from './lightfeed.ts';
 import { decorNightLights, drawFixtures } from './fixtures.ts';
 import { floorPlanOf } from './floor.ts';
+import { doorOccluders, drawDoors, drawGeoDebug, drawPolys, drawRoofs, geoDebug, polyOccluders, type GeoInfo } from './geoart.ts';
+import { leavesFromViews } from '../shared/sim/doors.ts';
 import './themes/index.ts';
+import { drawAmbientGround, drawAmbientSky } from './ambientfeed.ts';
 import { mapOf, themeOf } from './themes/registry.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
@@ -44,7 +47,7 @@ import { drawDropsWorld, drawRingWorld } from './royale.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
 import { dropCarried, reloadScene, selfReload, stepReload, type ReloadFrame } from './reloadanim.ts';
-import { emitSfxAt } from './sfxbus.ts';
+import { reloadFoley } from './reloadsfx.ts';
 import { drawFlashSmokeBody, drawFlashSmokeFx, isFlashSmoke } from './flashsmoke.ts';
 import { applyPose, bodyPose, drawGunGlints, drawMotionAbove, drawMotionBelow, drawShieldShimmer, noteStride, observeMotion } from './motionfx.ts';
 
@@ -93,7 +96,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
   const dark = easeNight(snap.run, now, themeOf(mapOf(snap.match.map)?.theme)?.dusk);
   const siege = snap.run ? [...(snap.buildings ?? []).filter(standsUp).map(buildingSolid), coreSolid(snap.run)] : 'static';
-  drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
+  drawGround(ctx, ground.get(`${snap.match.map}|${mapWallsKey(s.walls)}`, s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
+  // A theme's ground-level animation (water, decks) goes under every wall, shadow and body.
+  { const t0 = themeOf(mapOf(snap.match.map)?.theme), m0 = mapOf(snap.match.map); if (t0?.ground && m0) t0.ground(ctx, now, view, m0); }
 
   if (snap.targets) { const layout = layoutOf(snap.match.map); if (layout) drawRangeFloor(ctx, layout, s.worldSize, view); }
   const mine = snap.players.find((p) => p.id === s.myId);
@@ -122,6 +127,15 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const walls = wallSolids(s.walls).filter((w) => solidInView(view, w));
   const standing = (siege === 'static' ? [] : siege).filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
+  // Polygon walls, doors and roofs (docs/maps/GEOMETRY.md) come from the map itself; door state comes from the snapshot.
+  const geoMap = mapOf(snap.match.map);
+  const geo: GeoInfo | null = geoMap && (geoMap.polys?.length || geoMap.doors?.length || geoMap.roofs?.length) ? { now, view, dark, map: geoMap } : null;
+  const leaves = geo ? leavesFromViews(geoMap!.doors, snap.doors) : [];
+  if (geo) {
+    drawPolys(ctx, geo);
+    drawDoors(ctx, geo, snap.doors);
+    if (geoDebug()) drawGeoDebug(ctx, geo, leaves);
+  }
   // The yard's practical lights and wall fittings (decor.ts): drawn over the walls, under every body.
   const decor = floorPlanOf(snap.match.map)?.decor;
   const fx = { dark, now, reduced: reducedMotion(), alarm: !!snap.run && snap.run.core.hp > 0 && snap.run.core.hp <= snap.run.core.maxHp * 0.35 };
@@ -129,6 +143,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const airClock = snap.airdrop ? serverNow(s.snaps, now) : null;
   const theme = themeOf(mapOf(snap.match.map)?.theme), themeMap = mapOf(snap.match.map);
   if (theme?.under && themeMap) theme.under(ctx, now, view, themeMap);
+  // Ambient life (ambient.ts): critters on the floor and wall tops, drawn under every body; the flyers come after the roofs.
+  drawAmbientGround(ctx, { snap, s, now, view, dark });
   drawBarrels(ctx, snap, now, view);
   drawProps(ctx, snap, now, view);
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
@@ -146,7 +162,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const flashes = hitFlashes(s.effects, now);
   if (zombies.length) drawZombies(ctx, zombies, snap, flashes, now, k);
   // With the shader pass on, the world so far is handed to it to be lit (shadows, lamps, night); the rest of the frame is its overlay.
-  const lit = lightWorld(ctx, { snap, selfId: s.myId, selfAngle: f.selfAngle, tl, br, dark, now, airLanded: !!snap.airdrop && airClock !== null && airClock >= snap.airdrop.landAt, solids: [...walls, ...standing, ...crates], decor, fx });
+  const lit = lightWorld(ctx, { snap, selfId: s.myId, selfAngle: f.selfAngle, tl, br, dark, now, airLanded: !!snap.airdrop && airClock !== null && airClock >= snap.airdrop.landAt, solids: [...walls, ...standing, ...crates], occluders: geo ? [...polyOccluders(geoMap!, view), ...doorOccluders(leaves, view)] : undefined, decor, fx });
   if (dark > 0) {
     if (!lit) drawNight(ctx, tl, br, dark, [...nightLights(snap, s.myId, f.selfAngle), ...(decor ? decorNightLights(decor, view, fx) : [])]);
     if (zombies.length) drawHordeEyes(ctx, dark);
@@ -183,7 +199,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     const kick = recoil.get(p.id);
     const jolt = flinchOffset(flinches, p.id, now);
     // Everyone's reload arms follow their reload clock; yours is the predicted one, so the hands move the instant you press the key.
-    const reload = stepReload(p.id, p.gun, self && s.firing?.trigger.alive ? selfReload(s.firing, now) : p.rl, now);
+    const rl = self && s.firing?.trigger.alive ? selfReload(s.firing, now) : p.rl;
+    const reload = stepReload(p.id, p.gun, rl, now);
+    // The reload's foley rides the same clock and beats: yours centred and a touch louder, everyone else's in the world.
+    reloadFoley.step({ id: p.id, gun: p.gun, x: p.x, y: p.y, self, hidden: p.hidden }, rl, now, { mapId: s.mapId, listener: s.lastSelf, viewRadius: snap.self.viewRadius });
     if (reload?.drops.length) dropMags(gunFxOf(s), p, angle, reload, now, self);
     drawPlayer(ctx, { ...p, angle, x: p.x + jolt.x, y: p.y + jolt.y }, colorOf(p), {
       self, rival: !self && p.team === null && p.color === mine?.color,
@@ -205,6 +224,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawMotionAbove(ctx, now);
   drawSiegeFx(ctx, snap, view, now, dark, k, s.coreHitAt);
   drawGunTop(ctx, gunFxOf(s), now, view);
+  // Roofs hang over everything and thin out above you and your squad; they hide nothing the light has not already hidden.
+  if (geo?.map.roofs?.length) drawRoofs(ctx, geo, [s.lastSelf, ...snap.players.filter((p) => p.alive && p.id !== s.myId && mine?.team && p.team === mine.team)]);
+  drawAmbientSky(ctx, now, view);
   drawBars(ctx, tags, dark);
   drawEmoteBubbles(ctx, alive, now, dark);
   // Soldier chatter: skipped under the killcam, slow-motion and the round-end celebration, and for anyone showing an emote.
@@ -478,11 +500,10 @@ function drawReloadMark(ctx: CanvasRenderingContext2D) {
   ctx.restore();
 }
 
-/** The magazines a reload lets go of this frame fall to the floor from the hand that held them, each with a tiny tink. */
+/** The magazines a reload lets go of this frame fall to the floor from the hand that held them (the clatter is the reload foley's, by the floor they land on). */
 function dropMags(fx: ReturnType<typeof gunFxOf>, p: PlayerView, angle: number, frame: ReloadFrame, now: number, self: boolean) {
   for (const beat of frame.drops) {
-    const spot = dropCarried(fx, p.x, p.y, angle, reloadScene(p.gun, R, angle, beat, 1), now);
-    if (spot) emitSfxAt('tink', spot.x, spot.y, self, { delayMs: 110 });
+    dropCarried(fx, p.x, p.y, angle, reloadScene(p.gun, R, angle, beat, 1), now);
   }
 }
 

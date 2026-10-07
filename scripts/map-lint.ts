@@ -5,6 +5,9 @@ import { BARREL, GUN_IDS, GUNS, PROP_FX, PROPS, WORLD } from '../src/shared/defs
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 import { TARGETS, targetPos } from '../src/shared/range.ts';
+import { staticSolids } from '../src/shared/mapgeo.ts';
+import { doorLeaves } from '../src/shared/sim/doors.ts';
+import { segmentEntersConvexAt } from '../src/shared/geom.ts';
 
 export const CELL = 25;
 const R = WORLD.playerRadius;
@@ -13,7 +16,7 @@ export function standable(def: MapDef, n: number): Uint8Array {
   const free = new Uint8Array(n * n);
   const at = (i: number) => (i + 0.5) * CELL;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) free[j * n + i] = at(i) >= R && at(j) >= R && at(i) <= def.size - R && at(j) <= def.size - R ? 1 : 0;
-  for (const s of [...def.walls, ...crateRects(def), ...barrelRects(def), ...propRects(def)]) {
+  for (const s of [...staticSolids(def), ...crateRects(def), ...barrelRects(def), ...propRects(def)]) {
     const i0 = Math.max(0, Math.floor((s.x - R) / CELL)), i1 = Math.min(n - 1, Math.floor((s.x + s.w + R) / CELL));
     const j0 = Math.max(0, Math.floor((s.y - R) / CELL)), j1 = Math.min(n - 1, Math.floor((s.y + s.h + R) / CELL));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (circleHitsRect(at(i), at(j), R, s)) free[j * n + i] = 0;
@@ -62,16 +65,16 @@ function crosses(ax: number, ay: number, bx: number, by: number, r: Rect): boole
     const a = (r.y - ay) / dy, b = (r.y + r.h - ay) / dy;
     t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b));
   }
-  return t0 <= t1;
+  return t0 <= t1 && (!r.pts || segmentEntersConvexAt(ax, ay, dx, dy, r.pts) !== null);
 }
 
 function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: number) => number, size: number): Center | null {
   const edges = [...new Set(rects.flatMap(({ r }) => [r.x, r.x + r.w, r.y, r.y + r.h]).flatMap((v) => [v, size - v]).concat(0, size))].sort((a, b) => a - b);
   const index = new Map(edges.map((v, i) => [v, i]));
   const k = edges.length - 1;
-  const cover = new Uint32Array(k * k);
+  const cover = new Float64Array(k * k);
   for (const { r, key } of rects) {
-    for (let j = index.get(r.y)!; j < index.get(r.y + r.h)!; j++) for (let i = index.get(r.x)!; i < index.get(r.x + r.w)!; i++) cover[j * k + i]! |= key;
+    for (let j = index.get(r.y)!; j < index.get(r.y + r.h)!; j++) for (let i = index.get(r.x)!; i < index.get(r.x + r.w)!; i++) cover[j * k + i]! += key;
   }
   for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) {
     if (turnKey(cover[j * k + i]!) !== cover[(k - 1 - j) * k + (k - 1 - i)]) return { x: (edges[i]! + edges[i + 1]!) / 2, y: (edges[j]! + edges[j + 1]!) / 2 };
@@ -79,7 +82,16 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   return null;
 }
 
-const MATERIAL_KEY = { concrete: 1, gallery: 1 << 10, marble: 1 << 11, vitrine: 1 << 12, plinth: 1 << 13, counter: 1 << 14, sandstone: 2, planter: 4, stall: 8, shopfront: 16, stack: 32, cart: 64, shrine: 128, hull: 1 << 20, tower: 1 << 21, bulkhead: 1 << 22, rack: 1 << 23, water: 1 << 24, hedge: 1 << 26, pond: 1 << 27, parkstone: 1 << 28, trunk: 1 << 29, bench: 1 << 30, play: 2 ** 31 } as const;
+/** Each wall material gets its own bit, 2 ** index in order of first sight, so no two materials share a key (up to 52 of them). */
+const MATERIAL_BITS = new Map<string, number>();
+export function materialKey(material: string): number {
+  let k = MATERIAL_BITS.get(material);
+  if (k === undefined) {
+    if (MATERIAL_BITS.size >= 52) throw new Error('map-lint: more than 52 wall materials; widen asymmetryOf to bigint');
+    MATERIAL_BITS.set(material, (k = 2 ** MATERIAL_BITS.size));
+  }
+  return k;
+}
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
 
@@ -90,21 +102,53 @@ function withoutHalfTurnTwin(points: readonly Center[], size: number): Center[] 
   return points.filter((p) => have.get(key({ x: size - p.x, y: size - p.y })) !== have.get(key(p)));
 }
 
+/** Polygons and doors: inside the world, twinned by the half turn, doors sit in gaps they can fill. */
+function lintGeometry(def: MapDef, solid: readonly Rect[]): string[] {
+  const problems: string[] = [];
+  const key = (pts: readonly { x: number; y: number }[], m: string) => `${m}|${pts.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`).sort().join(';')}`;
+  const polys = def.polys ?? [];
+  const have = new Map<string, number>();
+  for (const p of polys) have.set(key(p.points, p.material), (have.get(key(p.points, p.material)) ?? 0) + 1);
+  for (const p of polys) {
+    const turned = key(p.points.map((q) => ({ x: def.size - q.x, y: def.size - q.y })), p.material);
+    if (have.get(turned) !== have.get(key(p.points, p.material))) problems.push(`polygon ${p.id ?? p.material} near ${where(p.points[0]!)} has no twin at the half turn`);
+  }
+  const doorKey = (d: NonNullable<MapDef['doors']>[number]) => `${d.kind}|${d.axis}|${d.axis === 'h' ? Math.round(d.x + d.w / 2) : Math.round(d.x)}|${d.axis === 'v' ? Math.round(d.y + d.w / 2) : Math.round(d.y)}|${d.w}`;
+  const doors = def.doors ?? [];
+  const doorsHave = new Set(doors.map(doorKey));
+  for (const d of doors) {
+    const centre = { ...d, x: def.size - d.x - (d.axis === 'h' ? d.w : 0), y: def.size - d.y - (d.axis === 'v' ? d.w : 0) };
+    if (!doorsHave.has(doorKey(centre))) problems.push(`door ${d.id} at ${where(d)} has no twin at the half turn`);
+    const shut = doorLeaves(d, 0, 1);
+    if (shut.some((l) => solid.some((w) => rectsOverlap(w, l)))) problems.push(`door ${d.id} at ${where(d)} sits inside a wall; leave a gap ${d.w}px wide for it`);
+    if (d.w < 96) problems.push(`door ${d.id} is ${d.w}px wide; players need 96 or more`);
+    // Both sides of the span must be standable for a player to walk through.
+    const mid = d.axis === 'h' ? { x: d.x + d.w / 2, y: d.y } : { x: d.x, y: d.y + d.w / 2 };
+    for (const side of [-1, 1]) {
+      const p = d.axis === 'h' ? { x: mid.x, y: mid.y + side * (R + 14) } : { x: mid.x + side * (R + 14), y: mid.y };
+      if (solid.some((w) => circleHitsRect(p.x, p.y, R, w))) problems.push(`door ${d.id} at ${where(d)} opens onto a wall on its ${side < 0 ? 'near' : 'far'} side`);
+    }
+  }
+  return problems;
+}
+
 export function lintMap(def: MapDef): string[] {
   const problems: string[] = [];
   const n = Math.ceil(def.size / CELL);
+  const solid = staticSolids(def);
   const free = standable(def, n);
   const crates = crateRects(def);
   const inside = (r: Rect, margin: number) => r.x >= margin && r.y >= margin && r.x + r.w <= def.size - margin && r.y + r.h <= def.size - margin;
   def.walls.forEach((w, i) => { if (!inside(w, 0)) problems.push(`wall ${i} leaves the world`); });
+  problems.push(...lintGeometry(def, solid));
   crates.forEach((c, i) => {
     if (!inside(c, 0)) problems.push(`crate ${i} leaves the world`);
-    if (def.walls.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
+    if (solid.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
   });
   const barrels = barrelRects(def);
   barrels.forEach((b, i) => {
     if (!inside(b, 0)) problems.push(`barrel ${i} leaves the world`);
-    if (def.walls.some((w) => rectsOverlap(w, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps a wall`);
+    if (solid.some((w) => rectsOverlap(w, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps a wall`);
     if (crates.some((c) => rectsOverlap(c, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps a crate`);
     if (barrels.some((o, j) => j > i && rectsOverlap(o, b))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} overlaps another barrel`);
     for (const [side, regions] of Object.entries(def.spawns)) {
@@ -115,7 +159,7 @@ export function lintMap(def: MapDef): string[] {
   props.forEach((b, i) => {
     const at = def.props[i]!, name = `${at.kind} prop ${i} at ${where(at)}`;
     if (!inside(b, 0)) problems.push(`${name} leaves the world`);
-    if (def.walls.some((w) => rectsOverlap(w, b))) problems.push(`${name} overlaps a wall`);
+    if (solid.some((w) => rectsOverlap(w, b))) problems.push(`${name} overlaps a wall`);
     if (crates.some((c) => rectsOverlap(c, b))) problems.push(`${name} overlaps a crate`);
     if (barrels.some((o) => rectsOverlap(o, b))) problems.push(`${name} overlaps a barrel`);
     if (props.some((o, j) => j > i && rectsOverlap(o, b))) problems.push(`${name} overlaps another prop`);
@@ -129,7 +173,7 @@ export function lintMap(def: MapDef): string[] {
     if (regions.length === 0) problems.push(`no ${side} spawn region`);
     regions.forEach((r, i) => {
       if (!inside(r, R)) problems.push(`${side} spawn ${i} lets a player stand past the edge`);
-      if ([...def.walls, ...crates].some((s) => rectsOverlap(s, r, R))) problems.push(`${side} spawn ${i} lets a player stand in a wall or crate`);
+      if ([...solid, ...crates].some((s) => rectsOverlap(s, r, R))) problems.push(`${side} spawn ${i} lets a player stand in a wall or crate`);
     });
   }
 
@@ -144,7 +188,7 @@ export function lintMap(def: MapDef): string[] {
   def.zones.forEach((z, i) => {
     if (z.x - ZONE_RADIUS < 0 || z.y - ZONE_RADIUS < 0 || z.x + ZONE_RADIUS > def.size || z.y + ZONE_RADIUS > def.size) problems.push(`zone ${i} at ${where(z)} reaches past the map's edge`);
     if (!cellsEitherSide(z.y, n).some((row) => cellsEitherSide(z.x, n).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
-    if (def.walls.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
+    if (solid.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
     if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
     if (barrels.some((b) => circleHitsRect(z.x, z.y, ZONE_RADIUS, b))) problems.push(`zone ${i} at ${where(z)} overlaps a barrel`);
     if (props.some((b) => circleHitsRect(z.x, z.y, ZONE_RADIUS, b))) problems.push(`zone ${i} at ${where(z)} overlaps a prop`);
@@ -158,13 +202,13 @@ export function lintMap(def: MapDef): string[] {
   const blue = def.spawns.blue.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
   sight: for (const a of red) {
     for (const b of blue) {
-      if (def.walls.some((w) => crosses(a.x, a.y, b.x, b.y, w))) continue;
+      if (solid.some((w) => crosses(a.x, a.y, b.x, b.y, w))) continue;
       problems.push(`the red spawn at ${where(a)} can see the blue spawn at ${where(b)}`);
       break sight;
     }
   }
 
-  const walls = asymmetryOf(def.walls.map((r) => ({ r, key: MATERIAL_KEY[r.material] })), (k) => k, def.size);
+  const walls = asymmetryOf(def.walls.map((r) => ({ r, key: materialKey(r.material) })), (k) => k, def.size);
   if (walls) problems.push(`walls are not the same after a half turn around ${where(walls)}`);
   const spawns = asymmetryOf(spawnSides.flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
@@ -193,7 +237,7 @@ function lintRange(def: MapDef, free: Uint8Array, n: number): string[] {
     for (const p of at) {
       if (p.x - r < 0 || p.y - r < 0 || p.x + r > def.size || p.y + r > def.size) problems.push(`${name} leaves the world`);
       const box: Rect = { x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r };
-      if (def.walls.some((w) => circleHitsRect(p.x, p.y, r, w))) problems.push(`${name} touches a wall`);
+      if (staticSolids(def).some((w) => circleHitsRect(p.x, p.y, r, w))) problems.push(`${name} touches a wall`);
       if ([...barrels, ...props].some((b) => rectsOverlap(b, box))) problems.push(`${name} overlaps a barrel or prop`);
       if (p.x < range.line) problems.push(`${name} stands behind the firing line`);
     }
@@ -204,17 +248,18 @@ function lintRange(def: MapDef, free: Uint8Array, n: number): string[] {
     const open = [150, 250, 350].some((reach) => Array.from({ length: 12 }, (_, k) => (k / 12) * 2 * Math.PI).some((a) => {
       const sx = d.x + Math.cos(a) * reach, sy = d.y + Math.sin(a) * reach;
       if (sx < 0 || sy < 0 || sx >= def.size || sy >= def.size) return false;
-      return free[Math.floor(sy / CELL) * n + Math.floor(sx / CELL)] === 1 && !def.walls.some((w) => crosses(sx, sy, d.x, d.y, w));
+      return free[Math.floor(sy / CELL) * n + Math.floor(sx / CELL)] === 1 && !staticSolids(def).some((w) => crosses(sx, sy, d.x, d.y, w));
     }));
     if (!open) problems.push(`${name} has no clear line of fire from anywhere a player can stand`);
   });
   return problems;
 }
 
-function sightlines(def: MapDef): { from: Center; to: Center; length: number }[] {
+function sightlines(def: MapDef, closed = false): { from: Center; to: Center; length: number }[] {
   const step = 50, lines: { from: Center; to: Center; length: number }[] = [];
   const inside = (p: Center) => p.x > 0 && p.y > 0 && p.x < def.size && p.y < def.size;
-  const blocked = (p: Center) => def.walls.some((w) => p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h);
+  const solid: readonly Rect[] = [...staticSolids(def), ...(closed ? (def.doors ?? []).flatMap((d) => doorLeaves(d, 0, 1)) : [])];
+  const blocked = (p: Center) => solid.some((w) => p.x >= w.x && p.x <= w.x + w.w && p.y >= w.y && p.y <= w.y + w.h && (!w.pts || segmentEntersConvexAt(p.x, p.y, 0, 0, w.pts) !== null));
   const starts: { p: Center; d: Center }[] = [];
   for (let v = step / 2; v < def.size; v += step) {
     starts.push({ p: { x: 0.5, y: v }, d: { x: 1, y: 0 } }, { p: { x: v, y: 0.5 }, d: { x: 0, y: 1 } });
@@ -235,12 +280,16 @@ function sightlines(def: MapDef): { from: Center; to: Center; length: number }[]
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const reach = Math.max(...GUN_IDS.map((g) => GUNS[g].range));
-  for (const id of MAP_IDS) {
+  for (const id of [...MAP_IDS, 'geo-test' as const]) {
     const problems = lintMap(MAPS[id]);
     console.log(problems.length ? `${id}: ${problems.length} problem(s)\n${problems.map((p) => `  ${p}`).join('\n')}` : `${id}: ok`);
     const lines = sightlines(MAPS[id]).sort((a, b) => b.length - a.length);
     const over = (min: number) => lines.filter((l) => l.length > min).length;
     const top = lines[0];
+    if (MAPS[id].doors?.length) {
+      const shut = sightlines(MAPS[id], true).sort((a, b) => b.length - a.length)[0];
+      if (shut) console.log(`  with every door shut: longest sightline ${Math.round(shut.length)}px ${where(shut.from)} to ${where(shut.to)}`);
+    }
     if (top) console.log(`  longest sightline ${Math.round(top.length)}px ${where(top.from)} to ${where(top.to)}; ${over(reach)} lines past the longest gun (${reach}px), ${over(reach + WORLD.viewRadius)} past it plus the view (${reach + WORLD.viewRadius}px)`);
   }
 }

@@ -5,6 +5,7 @@ import type {
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { flashAmount, GAS_RADIUS, SMOKE } from './abilities.ts';
+import { doorViews } from './doors.ts';
 import { sightBlocked, smokeDisks, smokeRadius } from './vision.ts';
 import { empMul, propState } from './props.ts';
 import { dist2 } from './movement.ts';
@@ -18,8 +19,9 @@ import { isEnemy, sameTeam, type Player, type Royale, type Run, type World } fro
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
 
+/** The walls on the wire: map walls, polygon parts and built walls; door leaves are rebuilt by the client from the map and `Snapshot.doors`. */
 export function wallViews(w: World): WallView[] {
-  return w.walls.map(({ expiresAt: _, ...view }) => view);
+  return w.walls.filter((wall) => wall.door === undefined).map(({ expiresAt: _, door: __, ...view }) => view);
 }
 
 function isHidden(w: World, p: Player): boolean {
@@ -178,6 +180,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
     barrels: barrelViews(w), props: propViews(w), airdrop: airdropView(w),
+    ...(MAPS[w.map].doors?.length && { doors: doorViews(w).filter(([i]) => { const d = MAPS[w.map].doors![i]!; return inView(d.x + (d.axis === 'h' ? d.w / 2 : 0), d.y + (d.axis === 'v' ? d.w / 2 : 0), d.w + 300); }) }),
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
     ...(w.range && { targets: targetViews(w), range: rangeView(w, me.id) }),

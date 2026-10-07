@@ -8,7 +8,7 @@ import { makeSnapshotEncoder } from '../src/shared/wire.ts';
 import type { PlayerView } from '../src/shared/protocol.ts';
 import { heldHands } from '../src/client/gunart.ts';
 import { reloadAt } from '../src/client/interp.ts';
-import { BEATS, shellCount, shellSeat, SOUND_BEATS } from '../src/client/reloadbeats.ts';
+import { BEATS, shellCount, shellSeat, soundTimeline } from '../src/client/reloadbeats.ts';
 import { clearReloads, dropBeats, reloadScene, selfReload, stepReload } from '../src/client/reloadanim.ts';
 import { SOUNDS } from '../src/client/sfx.ts';
 import { NO_FIRING, settle } from '../src/client/fire.ts';
@@ -53,23 +53,30 @@ test('interpolating between snapshots keeps the reload clock exact, finishing on
   assert.deepEqual(reloadAt(undefined, undefined, 0.5, 100), {});
 });
 
-test('every beat sits inside the reload, in order, and the reload sounds click on those beats at the class gun\'s length', () => {
+test('every beat sits inside the reload and in order, and the foley timeline fires on those beats', () => {
   for (const [name, beats] of Object.entries(BEATS)) {
     const times = Object.values(beats);
     assert.ok(times.every((t) => t > 0 && t < 1), name);
   }
-  for (const k of ['box', 'lmg', 'sniper'] as const) {
+  for (const k of ['box', 'lmg', 'sniper', 'akimbo'] as const) {
     const t = Object.values(BEATS[k]);
     assert.deepEqual(t, [...t].sort((a, b) => a - b), `${k} beats in order`);
   }
-  const delays = (base: WeaponId) => new Set(SOUNDS[`reload:${base}`].map((l) => l.delayMs ?? 0));
-  for (const base of BASES) {
-    for (const [what, share] of Object.entries(SOUND_BEATS[base])) {
-      assert.ok(delays(base).has(Math.round(share * GUNS[base].reloadMs)), `${base} ${what} click lands on its beat`);
-    }
-  }
+  const at = (gun: GunId) => soundTimeline(gun).map((e) => [e.id, e.at] as const);
+  const B = BEATS;
+  assert.deepEqual(at('assault').filter(([id]) => id !== 'foley:drop').map(([, t]) => t), [B.box.release, B.box.out, B.box.pouch, B.box.near, B.box.seat, B.box.slap, B.box.rackBack, B.box.rack]);
+  assert.ok(at('assault').some(([id, t]) => id === 'foley:drop' && t === B.box.drop), 'the mag drop lands on the let-go beat of the animation');
+  for (const base of BASES) assert.ok(soundTimeline(base).length >= 4, base);
   const n = shellCount(GUNS.shotgun.mag);
-  for (let i = 0; i < n; i++) assert.ok(delays('shotgun').has(Math.round(shellSeat(i, n) * GUNS.shotgun.reloadMs)), `shell ${i}`);
+  for (let i = 0; i < n; i++) assert.ok(at('shotgun').some(([id, t]) => id === 'foley:shellin' && t === shellSeat(i, n)), `shell ${i} clicks home on its seat beat`);
+  assert.deepEqual(at('shotgun').slice(-2), [['foley:pumpback', B.tube.pumpBack], ['foley:pump', B.tube.pump]]);
+  assert.deepEqual(at('sniper').map(([id]) => id), ['foley:boltup', 'foley:boltdraw', 'foley:boltrear', 'foley:pouch', 'foley:clipseat', 'foley:ratchet', 'foley:boltfwd', 'foley:boltlock']);
+  assert.equal(at('lmg').find(([id]) => id === 'foley:slam')![1], B.lmg.shut);
+  // The magazine drop sound is exactly the beat dropBeats() reports for the animation.
+  for (const gun of GUN_IDS) {
+    const drops = soundTimeline(gun).filter((e) => e.id === 'foley:drop').map((e) => e.at);
+    assert.deepEqual(drops, [...dropBeats(gun)].sort((a, b) => a - b), `${gun} drop sounds match the animation's drops`);
+  }
 });
 
 test('every class and evolved gun starts and ends a reload in exactly the held pose, with the support hand moving in between', () => {

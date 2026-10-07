@@ -3,6 +3,7 @@ import { MAPS, type MapId } from '../maps.ts';
 export { planeAt } from '../protocol.ts';
 import { award } from './combat.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from './movement.ts';
+import { staticSolids } from '../mapgeo.ts';
 import { addScore, effectiveStats } from './stats.ts';
 import { crateRect, newId, rand, type Crate, type Player, type Pose, type World } from './world.ts';
 
@@ -24,7 +25,7 @@ export function dropSpots(map: MapId): readonly Pose[] {
   const n = Math.ceil(def.size / CELL);
   const at = (i: number) => (i + 0.5) * CELL;
   const solids: Rect[] = [
-    ...def.walls,
+    ...staticSolids(def),
     ...def.crates.map((c) => ({ x: c.x - 22, y: c.y - 22, w: 44, h: 44 })),
     ...def.barrels.map((b) => ({ x: b.x - 18, y: b.y - 18, w: 36, h: 36 })),
     ...def.props.map((q) => { const h = PROPS[q.kind].size / 2; return { x: q.x - h, y: q.y - h, w: 2 * h, h: 2 * h }; }),

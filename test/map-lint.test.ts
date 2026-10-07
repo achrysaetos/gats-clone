@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type MapDef, type MapId } from '../src/shared/maps.ts';
 import { WORLD } from '../src/shared/defs.ts';
 import { gridMap } from '../src/shared/mapgrid.ts';
-import { lintMap } from '../scripts/map-lint.ts';
+import { lintMap, materialKey } from '../scripts/map-lint.ts';
 
 for (const id of MAP_IDS) {
   test(`${MAPS[id].name} passes the map lint`, () => {
@@ -119,4 +119,11 @@ test('a prop inside or beside a spawn region, in a wall, on a crate or barrel, o
 test('a lone prop, or one whose twin is another kind, is a problem', () => {
   assert.ok(lintMap({ ...clean, props: [{ x: 700, y: 250, kind: 'propane' }] }).some((p) => p.includes('no twin of its kind')));
   assert.ok(lintMap({ ...clean, props: [{ x: 700, y: 250, kind: 'propane' }, { x: clean.size - 700, y: clean.size - 250, kind: 'gas' }] }).some((p) => p.includes('no twin of its kind')));
+});
+
+test('every wall material the maps use has its own lint key, a distinct power of two', () => {
+  const materials = [...new Set(Object.values(MAPS).flatMap((m) => m.walls.map((w) => w.material)))];
+  const keys = materials.map(materialKey);
+  assert.equal(new Set(keys).size, materials.length, 'two materials share a key');
+  for (const k of keys) assert.ok(Number.isInteger(Math.log2(k)), `${k} is not a power of two`);
 });

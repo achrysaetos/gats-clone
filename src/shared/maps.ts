@@ -1,5 +1,6 @@
 import { SIDES, type ModeId, type PropKind, type Side } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
+import type { MapDoor, MapPoly, MapRoof } from './geom.ts';
 import { CAUSEWAY } from './maps/causeway.ts';
 import { OLDTOWN } from './maps/oldtown.ts';
 import { PLAZA } from './maps/plaza.ts';
@@ -10,11 +11,17 @@ import { MARKET } from './maps/market.ts';
 import { MUSEUM } from './maps/museum.ts';
 import { SUBPEN } from './maps/subpen.ts';
 import { PARK } from './maps/park.ts';
+import { WASTELAND } from './maps/wasteland.ts';
+import { RAILYARD } from './maps/railyard.ts';
+import { SUMMIT } from './maps/summit.ts';
+import { GEO_TEST } from './maps/geotest.ts';
+import { EMBASSY } from './maps/embassy.ts';
+import { AIRBASE } from './maps/airbase.ts';
 
 export type Center = { x: number; y: number };
-export type WallMaterial = 'concrete' | 'sandstone' | 'planter' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play';
+export type WallMaterial = 'concrete' | 'sandstone' | 'planter' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap';
 /** A map's own look (src/client/themes): its floor, wall art, decor and lights. */
-export type ThemeId = 'market' | 'museum' | 'subpen' | 'park';
+export type ThemeId = 'market' | 'museum' | 'subpen' | 'park' | 'summit' | 'railyard' | 'harbor' | 'embassy' | 'airbase' | 'wasteland';
 export type MapWall = Rect & { material: WallMaterial };
 
 export const ZONE_RADIUS = 180;
@@ -26,6 +33,12 @@ export type MapDef = {
   theme?: ThemeId;
   size: number;
   walls: readonly MapWall[];
+  /** Non-rectangular solids (planes, hulls, round tanks); see docs/maps/GEOMETRY.md. */
+  polys?: readonly MapPoly[];
+  /** Sliding and swinging doors, server-driven. */
+  doors?: readonly MapDoor[];
+  /** Roofs drawn over interiors, fading out while you stand inside. */
+  roofs?: readonly MapRoof[];
   /** DOM capture points A, B and C. */
   zones: readonly Center[];
   /** Every point inside a region is a clear spot for a player's center. */
@@ -67,8 +80,9 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
   };
 }
 
-export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'market', 'museum', 'subpen', 'park', 'outpost', 'range'] as const;
-export type MapId = (typeof MAP_IDS)[number];
+export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'market', 'museum', 'subpen', 'park', 'railyard', 'summit', 'outpost', 'range', 'embassy', 'airbase', 'wasteland'] as const;
+/** `geo-test` is the geometry test range: a real map for the sim, but in no rotation (see src/shared/maps/geotest.ts). */
+export type MapId = (typeof MAP_IDS)[number] | 'geo-test';
 
 export const MAPS: Record<MapId, MapDef> = {
   causeway: CAUSEWAY,
@@ -79,6 +93,12 @@ export const MAPS: Record<MapId, MapDef> = {
   museum: MUSEUM,
   subpen: SUBPEN,
   park: PARK,
+  wasteland: WASTELAND,
+  railyard: RAILYARD,
+  summit: SUMMIT,
+  embassy: EMBASSY,
+  airbase: AIRBASE,
+  'geo-test': GEO_TEST,
   range: RANGE_MAP,
   outpost: siegeMap('Outpost', 3000, {
     walls: [
@@ -91,11 +111,11 @@ export const MAPS: Record<MapId, MapDef> = {
 };
 
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
-  FFA: ['plaza', 'oldtown', 'museum', 'subpen', 'causeway', 'market', 'quarry', 'park'],
-  TDM: ['causeway', 'plaza', 'market', 'museum', 'subpen', 'quarry', 'oldtown', 'park'],
-  DOM: ['quarry', 'causeway', 'market', 'oldtown', 'museum', 'subpen', 'plaza', 'park'],
+  FFA: ['plaza', 'oldtown', 'museum', 'subpen', 'causeway', 'market', 'quarry', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland'],
+  TDM: ['causeway', 'plaza', 'market', 'museum', 'subpen', 'quarry', 'oldtown', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland'],
+  DOM: ['quarry', 'causeway', 'market', 'oldtown', 'museum', 'subpen', 'plaza', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland'],
   ZOM: ['outpost'],
-  BR: ['oldtown', 'quarry', 'plaza', 'causeway', 'park', 'subpen', 'museum', 'market'],
+  BR: ['oldtown', 'quarry', 'plaza', 'causeway', 'park', 'subpen', 'museum', 'market', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland'],
   RNG: ['range'],
 };
 

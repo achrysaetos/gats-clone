@@ -1,7 +1,12 @@
 import { KNOCK, WORLD } from '../defs.ts';
 import type { Dash, InputState } from '../protocol.ts';
+import { boxPts, circleHitsConvex, convexOverlap, pushOutConvex, segmentEntersConvexAt, type Convex } from '../geom.ts';
 
-export type Rect = { x: number; y: number; w: number; h: number };
+/**
+ * A solid's box. A convex polygon part also carries its points in `pts` (flat, positive area) and `x, y, w, h` is its bounding box,
+ * so everything that takes `Rect[]` handles polygons without knowing. `nb`: rounds fly over it. `ns`: sight and light pass it.
+ */
+export type Rect = { x: number; y: number; w: number; h: number; pts?: Convex; nb?: true; ns?: true };
 
 const DASH_MS = 200;
 const DASH_DISTANCE = 240;
@@ -13,12 +18,16 @@ export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.ma
 export const dist2 = (ax: number, ay: number, bx: number, by: number) => (ax - bx) ** 2 + (ay - by) ** 2;
 
 export function rectsOverlap(a: Rect, b: Rect, pad = 0) {
-  return a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y;
+  if (!(a.x - pad < b.x + b.w && a.x + a.w + pad > b.x && a.y - pad < b.y + b.h && a.y + a.h + pad > b.y)) return false;
+  // Boxes meet; a polygon part still has to touch for real.
+  if (!a.pts && !b.pts) return true;
+  return convexOverlap(a.pts ?? boxPts(a.x, a.y, a.w, a.h, pad), b.pts ?? boxPts(b.x, b.y, b.w, b.h, a.pts ? pad : 0));
 }
 
 export function circleHitsRect(x: number, y: number, r: number, b: Rect) {
   const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
-  return dist2(x, y, cx, cy) < r * r;
+  if (dist2(x, y, cx, cy) >= r * r) return false;
+  return b.pts ? circleHitsConvex(x, y, r, b.pts) : true;
 }
 
 export function angleDiff(a: number, b: number) {
@@ -47,15 +56,32 @@ export function segmentEntersRectAt(px: number, py: number, dx: number, dy: numb
     t1 = Math.min(t1, b);
     if (t0 > t1) return null;
   }
+  if (r.pts) return segmentEntersConvexAt(px, py, dx, dy, r.pts);
   return t0;
+}
+
+/** The solid the segment (p, p + d) enters first, and where along it (0..1), or null. */
+export function earliestHit<T extends Rect>(solids: readonly T[], px: number, py: number, dx: number, dy: number): { t: number; b: T } | null {
+  let best: { t: number; b: T } | null = null;
+  for (const b of solids) {
+    const t = segmentEntersRectAt(px, py, dx, dy, b);
+    if (t !== null && (!best || t < best.t)) best = { t, b };
+  }
+  return best;
 }
 
 function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: number, size: number): { x: number; y: number } {
   let x = clamp(nx, r, size - r), y = clamp(ny, r, size - r);
+  let bent = false;
   for (const b of solids) {
     const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
     const d2 = dist2(x, y, cx, cy);
     if (d2 >= r * r) continue;
+    if (b.pts) {
+      const out = pushOutConvex(x, y, r, b.pts);
+      if (out) { x = out.x; y = out.y; bent = true; }
+      continue;
+    }
     if (d2 > 0) {
       const d = Math.sqrt(d2);
       x = cx + ((x - cx) / d) * r;
@@ -70,6 +96,16 @@ function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: numbe
       const shallowest = exits.reduce((m, o) => (o.depth < m.depth ? o : m));
       x = shallowest.x;
       y = shallowest.y;
+    }
+  }
+  // Pushed off a polygon, the push can land in a neighbour (an angled hull next to a wall), so settle again.
+  for (let pass = 0; bent && pass < 3; pass++) {
+    bent = false;
+    for (const b of solids) {
+      if (!b.pts) continue;
+      if (dist2(x, y, clamp(x, b.x, b.x + b.w), clamp(y, b.y, b.y + b.h)) >= r * r) continue;
+      const out = pushOutConvex(x, y, r, b.pts);
+      if (out) { x = out.x; y = out.y; bent = true; }
     }
   }
   return { x: clamp(x, r, size - r), y: clamp(y, r, size - r) };

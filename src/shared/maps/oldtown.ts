@@ -1,6 +1,8 @@
 import { gridMap } from '../mapgrid.ts';
+import { withGeometry } from '../mapgeo.ts';
+import { OLDTOWN_GEO } from './yardgeo.ts';
 
-export const OLDTOWN = gridMap('Old Town', `
+const OLDTOWN_GRID = gridMap('Old Town', `
   ............................................................
   ............................................................
   ...............................o......................FFFFF.
@@ -122,3 +124,6 @@ export const OLDTOWN = gridMap('Old Town', `
   ............................................................
   ............................................................
 `);
+
+/** Roofs, doors and the odd round or curved wall come from yardgeo.ts. */
+export const OLDTOWN = withGeometry(OLDTOWN_GRID, OLDTOWN_GEO);

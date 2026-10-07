@@ -3,12 +3,12 @@ import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
-import { takeReplan, type BotArena } from './arena.ts';
+import { doorCentre, takeReplan, type BotArena } from './arena.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
 import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
 import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
-import { justLost, type Intent, type IntentCtx } from './intent.ts';
+import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
 
 export type Motor = {
@@ -89,6 +89,15 @@ const STEP_MS: readonly [number, number] = [300, 700];
 const UNDER_FIRE_STEP_ODDS = 0.75;
 const STRAFE_MS: readonly [number, number] = [450, 1000];
 const STRAFE_PX = 120;
+/** A strafe leg that would end this near a mate is flipped the other way, so a pair side by side do not pile into one spot. */
+const MATE_CLEAR_PX = 90;
+/** Mates closer than this push a bot's goal away from them, softly (full push at touching, none at this range). */
+const MATE_SPACE_PX = 150;
+const MATE_SHOVE_PX = 260;
+const MATE_SHOVE_MIN = 0.35;
+/** Enemies within this of a bot are a crowd, and each one past the first widens the distance it holds. */
+const CROWD_PX = 400;
+const CROWD_HOLD = 0.5;
 const PEEK_SWAY_PX = 70;
 const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
 export const MIN_TURN_BACK_MS = 400;
@@ -168,14 +177,33 @@ function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, leg
   return legFor(step, step === 0 ? STAND_MS : STEP_MS);
 }
 
-function legHeading(me: Point, at: Point, step: 1 | -1, advance: boolean): number {
-  const a = Math.atan2(at.y - me.y, at.x - me.x) + (step * Math.PI) / (advance ? 4 : 2);
+/** A strafe leg's heading round `at`: closing in (45 degrees off head-on), side on (90), or backing off (135, back and sideways). */
+type Leg = 'in' | 'side' | 'out';
+const LEG_ANGLE: Record<Leg, number> = { in: Math.PI / 4, side: Math.PI / 2, out: (3 * Math.PI) / 4 };
+
+function legHeading(me: Point, at: Point, step: 1 | -1, leg: Leg): number {
+  const a = Math.atan2(at.y - me.y, at.x - me.x) + step * LEG_ANGLE[leg];
   return Math.round(a / (Math.PI / 4)) * (Math.PI / 4);
 }
 
-function legPoint(me: Point, heading: number, arena: BotArena): Point | null {
+function legPoint(me: Point, heading: number, arena: BotArena, mates: readonly Point[] = []): Point | null {
   const p = { x: me.x + Math.cos(heading) * STRAFE_PX, y: me.y + Math.sin(heading) * STRAFE_PX };
-  return isOpen(arena.nav, p) && walkable(arena.nav, me, p) ? p : null;
+  return isOpen(arena.nav, p) && walkable(arena.nav, me, p) && !mates.some((m) => dist(m, p) < MATE_CLEAR_PX && dist(m, p) < dist(m, me)) ? p : null;
+}
+
+/** Which way the mates crowding a bot would have it step: the sum of their pushes, each strongest when touching, or null when none is near. */
+function shove(me: Point, mates: readonly Point[], id: number): Point | null {
+  let x = 0, y = 0;
+  for (const m of mates) {
+    const d = dist(m, me);
+    if (d >= MATE_SPACE_PX) continue;
+    // Two bots on one pixel part along each one's own lane, so they do not both pick the same way.
+    const [ux, uy] = d < 1 ? [Math.cos(lane(id, 2) * Math.PI * 2), Math.sin(lane(id, 2) * Math.PI * 2)] : [(me.x - m.x) / d, (me.y - m.y) / d];
+    const k = 1 - d / MATE_SPACE_PX;
+    x += ux * k; y += uy * k;
+  }
+  const len = Math.hypot(x, y);
+  return len === 0 ? null : { x: x / Math.max(1, len), y: y / Math.max(1, len) };
 }
 
 function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbility: AbilityId | null): { steer: Steer; stance: Motor['stance'] } {
@@ -220,18 +248,71 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const fight = (to: Point | null): Steer => ({ to, face: t.p, reload: false, crates: false });
       if (readyAbility === 'knife' && t.d < KNIFE_CHASE_PX) return { steer: fight(t.p), stance: m.stance };
       const closing = t.d > c.band.max || (c.band.rushes && t.d > c.band.ideal);
-      const stance = nextStance(m, v, c, !closing && plants(v, c, t.d, false));
+      // It holds its gun's range: with an enemy inside it (more of them, further out) it backs off while it fires, rather than trading at arm's length.
+      const crowd = v.threats.filter((x) => x.d < CROWD_PX).length;
+      const backing = !c.band.rushes && t.d < c.band.hold * (1 + CROWD_HOLD * Math.min(2, Math.max(0, crowd - 1)));
+      const leg: Leg = closing ? 'in' : backing ? 'out' : 'side';
+      const stance = nextStance(m, v, c, !closing && !backing && plants(v, c, t.d, false));
       const step = stance.step;
       if (step === 0) return { steer: fight(null), stance };
-      const heading = stance.heading ?? legHeading(me, t.p, step, closing);
-      const ahead = legPoint(me, heading, c.arena);
+      let heading = stance.heading ?? legHeading(me, t.p, step, leg);
+      if (backing && Math.cos(heading - Math.atan2(t.p.y - me.y, t.p.x - me.x)) > 0.2) heading = legHeading(me, t.p, step, 'out');
+      const ahead = legPoint(me, heading, c.arena, v.allies);
       if (ahead) return { steer: fight(ahead), stance: { ...stance, heading } };
       const back = step === 1 ? -1 : 1;
-      const turned = legHeading(me, t.p, back, closing);
+      const turned = legHeading(me, t.p, back, leg);
       const until = v.tick + Math.round(between(STRAFE_MS, c.rand) / TICK_MS);
-      return { steer: fight(legPoint(me, turned, c.arena) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
+      return { steer: fight(legPoint(me, turned, c.arena, v.allies) ?? (closing ? t.p : null)), stance: { ...stance, step: back, heading: turned, since: v.tick, until } };
     }
   }
+}
+
+/** Intents that wander or travel, which a mate's shadow may bend; a held spot, cover or a retreat is never moved off. */
+const SPACED = new Set<Intent['k']>(['patrol', 'takePosition', 'search', 'flank', 'engage']);
+
+/**
+ * Soft separation: a bot with mates inside `MATE_SPACE_PX` steers a step away from them, so a squad does not stack in a
+ * doorway or on one line of travel. Only as a bend of where it is already going (or a step apart when it stands still),
+ * and only onto ground it can walk to; at a spot it is holding it stays put.
+ */
+function spaced(intent: Intent, me: Point & { id: number }, at: Point | null, to: Point | null, mates: readonly Point[], arena: BotArena): Point | null {
+  if (!SPACED.has(intent.k) || mates.length === 0) return at;
+  if (to && at && intent.k !== 'engage' && dist(me, to) < MATE_SPACE_PX) return at;
+  if (intent.k !== 'engage' && doorTurn(me, at, mates, arena)) return me;
+  const push = shove(me, mates, me.id);
+  if (!push || (!at && Math.hypot(push.x, push.y) < MATE_SHOVE_MIN)) return at;
+  const base = at ?? me;
+  const k = Math.hypot(push.x, push.y);
+  const bent = { x: base.x + push.x * MATE_SHOVE_PX, y: base.y + push.y * MATE_SHOVE_PX };
+  return k > 0 && isOpen(arena.nav, bent) && walkable(arena.nav, me, bent) ? bent : at;
+}
+
+const DOOR_QUEUE_PX = 150;
+const DOOR_CLEAR_PX = 110;
+const LEVEL_PX = 8;
+
+/** Whether `c` lies close to the straight way from `a` to `b` (and not behind `a`). */
+function onTheWay(a: Point, b: Point, c: Point): boolean {
+  const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+  if (len2 < 1) return false;
+  const t = ((c.x - a.x) * dx + (c.y - a.y) * dy) / len2;
+  return t > 0 && dist(c, { x: a.x + dx * Math.min(1, t), y: a.y + dy * Math.min(1, t) }) < DOOR_QUEUE_PX * 0.5;
+}
+
+/**
+ * Clearing a room: a bot heading through a door a mate is already at the door of waits its turn instead of stacking in the
+ * doorway behind him. Once it is itself in the doorway it carries on, so nobody stalls there.
+ */
+function doorTurn(me: Point, at: Point | null, mates: readonly Point[], arena: BotArena): boolean {
+  if (!at) return false;
+  for (const d of arena.doors) {
+    const c = doorCentre(d), mine = dist(me, c);
+    if (!onTheWay(me, at, c) || mine < DOOR_CLEAR_PX || mine > DOOR_QUEUE_PX * 3) continue;
+    // Whoever is nearer the door goes first; level, the one standing further west (then north) does, so two never both wait.
+    const first = (m: Point) => { const dm = dist(m, c); return dm < mine - LEVEL_PX || (dm <= mine + LEVEL_PX && (m.x < me.x || (m.x === me.x && m.y < me.y))); };
+    if (mates.some((m) => dist(m, c) < DOOR_QUEUE_PX && first(m))) return true;
+  }
+  return false;
 }
 
 function plan(arena: BotArena, me: Point, to: Point, budget = MAX_EXPANSIONS): NonNullable<Motor['route']> {
@@ -289,7 +370,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
   const crawling = m.dir !== null && v.tick - m.progress.tick > CRAWL.ticks;
-  const way = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick, crawling) : { at: null, route: m.route, replanned: false };
+  const routed = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick, crawling) : { at: null, route: m.route, replanned: false };
+  const way = { ...routed, at: spaced(intent, me, routed.at, s.to, v.allies, c.arena) };
   const detour = crawling ? { side: (m.detour?.side === 1 ? -1 : 1) as 1 | -1, until: v.tick + CRAWL.detourTicks } : m.detour;
   const drive = keysToward({ ...m, detour }, me, way.at, v.tick);
   const gained = way.at ? dist(m.last, way.at) - dist(me, way.at) : 0;

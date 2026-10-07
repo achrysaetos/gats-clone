@@ -1,7 +1,7 @@
 import { abilityCooldownMs } from '../shared/sim/stats.ts';
 import { settleOf } from './fire.ts';
 import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
-import { byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
@@ -87,7 +87,6 @@ function vignette(w: number, h: number): HTMLCanvasElement {
   suppressShade = { w, h, image };
   return image;
 }
-const HP_FILL = ['#ef6b60', '#d6463e'] as const;
 
 type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point; on: OnWorld };
 
@@ -162,7 +161,16 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks, dpr: n
 let hudScale = 1;
 export const hudScaleFor = (w: number, h: number, touch = touchScreen): number => uiScaleFor(w, h, touch);
 
+/** Dev-only (`?dev`, via `skirmishDev.forceVitals`): overlay values on your own snapshot so each vitals state can be captured on demand. */
+type ForcedVitals = { self?: Partial<Snapshot['self']>; me?: Partial<PlayerView> };
+let forcedVitals: ForcedVitals | null = null;
+export const forceVitals = (f: ForcedVitals | null): void => { forcedVitals = f; };
+
 export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: Camera, snap: Snapshot, s: Session, now: number, screenCrosshair: Point, spread: number | null, fullBoard = false) {
+  if (forcedVitals) {
+    const f = forcedVitals;
+    snap = { ...snap, self: { ...snap.self, ...f.self }, players: snap.players.map((p) => (p.id === s.myId ? { ...p, ...f.me } : p)) };
+  }
   hudScale = hudScaleFor(screenCam.w, screenCam.h);
   const k = hudScale;
   ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
@@ -174,6 +182,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   const on = nightAmount() > 0.5 || shownSuppression > SUPPRESS_EDGE.readable ? ON_WORLD.night : ON_WORLD.day;
   const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf), on };
   lastHudAt = now;
+  hudCrosshair = crosshair;
+  spreadOff = spread === null;
   panels = [];
   buildChips = [];
   const compact = w < 640 || h < 520 || k < 1;
@@ -464,22 +474,51 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
   ctx.globalAlpha = 1;
 }
 
-const MINIMAP = { bg: 'rgba(19, 21, 25, 0.86)', block: '#454a53', built: '#6a7da6' } as const;
+const MINIMAP = { bg: 'rgba(24, 27, 33, 0.93)', block: '#454a53', built: '#6a7da6' } as const;
 const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff', tesla: '#8fb8ff', depot: '#8a9a5b', post: '#8ff0c4', spikes: '#9aa3b0' };
 
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];
 
-/** A plate with its top right and bottom left corners clipped; a tall one also gets the kit's orange corner bracket. */
-function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill: string = PANEL_FILL) {
-  panels.push({ x, y, w, h });
-  plate(ctx, x, y, w, h);
-  ctx.fillStyle = fill;
+/**
+ * The kit's plate in the menu's cel-shaded 2.5D (menu.css `.plate`): a lit top face, a darker front lip below it, ink outlines and a hard
+ * shadow down and to the right (the key light is top left). Returns the lip's height. A `fill` replaces the two-step face.
+ */
+const CEL = { ink: '#1c1f26', top: '#4c535f', body: '#343a44', lip: '#22262d', well: '#16181d', shadow: 'rgba(5, 6, 9, 0.55)' } as const;
+function celPlate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill?: string): number {
+  const lip = h < 40 ? 3 : 5;
+  plate(ctx, x + 3, y + 3, w, h + lip);
+  ctx.fillStyle = CEL.shadow;
   ctx.fill();
+  plate(ctx, x, y, w, h + lip);
+  ctx.fillStyle = CEL.lip;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = CEL.ink;
+  ctx.stroke();
+  plate(ctx, x, y, w, h);
+  ctx.fillStyle = fill ?? CEL.body;
+  ctx.fill();
+  if (!fill) {
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = CEL.top;
+    ctx.fillRect(x, y, w, h < 40 ? 3 : 5);
+    ctx.restore();
+  }
+  ctx.stroke();
+  return lip;
+}
+
+/** A cel-shaded plate with its top right and bottom left corners clipped; a tall one also gets the kit's orange corner bracket. */
+function panel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, fill?: string) {
+  const lip = celPlate(ctx, x, y, w, h, fill);
+  panels.push({ x, y, w, h: h + lip });
   if (h < 60) return;
   ctx.fillStyle = ACCENT;
-  ctx.fillRect(x, y, 14, 2);
-  ctx.fillRect(x, y, 2, 14);
+  ctx.fillRect(x + 3, y + 3, 14, 3);
+  ctx.fillRect(x + 3, y + 3, 3, 14);
 }
 
 function plate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
@@ -559,9 +598,7 @@ function platedLine(ctx: CanvasRenderingContext2D, s: string, cx: number, cy: nu
   const pw = ctx.measureText(s).width + size * 1.4, ph = Math.round(size * 1.65);
   const alpha = ctx.globalAlpha;
   ctx.globalAlpha = alpha * 0.92;
-  plate(ctx, cx - pw / 2, cy - ph / 2, pw, ph);
-  ctx.fillStyle = PANEL_FILL;
-  ctx.fill();
+  celPlate(ctx, cx - pw / 2, cy - ph / 2, pw, ph);
   ctx.globalAlpha = alpha;
   panels.push({ x: cx - pw / 2, y: cy - ph / 2, w: pw, h: ph });
   if (accent) {
@@ -831,6 +868,13 @@ function drawMinimap(hud: Hud, size: number) {
   const x = x0 + pad, y = y0 + pad;
   for (const wall of s.walls) {
     ctx.fillStyle = wall.built ? MINIMAP.built : MINIMAP.block;
+    if (wall.pts) {
+      ctx.beginPath();
+      for (let i = 0; i < wall.pts.length; i += 2) (i ? ctx.lineTo : ctx.moveTo).call(ctx, x + wall.pts[i]! * k, y + wall.pts[i + 1]! * k);
+      ctx.closePath();
+      ctx.fill();
+      continue;
+    }
     ctx.fillRect(x + wall.x * k, y + wall.y * k, Math.max(1.5, wall.w * k), Math.max(1.5, wall.h * k));
   }
   for (const z of snap.zones) {
@@ -1218,12 +1262,6 @@ function sheen(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
   ctx.fillRect(x0, y, x1 - x0, h);
 }
 
-/** An idle glint that crosses a bar for the first part of every `period`. */
-function glintOn(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, now: number, period: number) {
-  const t = (now % period) / period;
-  if (t < 0.32) sheen(ctx, x, y, w, h, t / 0.32, 'rgba(255,255,255,0.85)');
-}
-
 /** What the vitals plate remembers between frames so its numbers roll and its cues fire once. */
 const vfx = {
   id: -1, at: -1e9, hp: 0, shownHp: 0, trail: 1, hold: 0, hurtAt: -1e9, healAt: -1e9,
@@ -1259,186 +1297,230 @@ function stepVitals({ dt, now }: Hud, me: PlayerView, self: SelfView, displayLev
   vfx.streak = self.streak;
 }
 
-/** The health bar: the fill, a pale chunk behind it that holds then drains after a hit, a white flash on the hit, and a green shimmer on a heal. */
-function drawHealthBar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, frac: number, fill: CanvasGradient, track: string, now: number) {
-  bar(ctx, x, y, w, h, frac, fill, track);
-  if (vfx.trail > frac + 0.004) {
-    const x0 = x + Math.max(h, w * frac), x1 = x + Math.max(h, w * vfx.trail);
-    ctx.fillStyle = now < vfx.hold || REDUCED ? '#fff1d2' : '#f2c27a';
-    ctx.fillRect(x0 - 1, y, Math.max(0, x1 - x0 + 1), h);
+/** The corner kit's height (the touch minimap sits just below it); see the toy-box vitals below. */
+const VITALS = { height: 138 } as const;
+const AMMO = { live: '#e6b850', liveLow: ACCENT, spent: '#2a2f38', empty: PALETTE.hpBad, pipsMax: 20 } as const;
+const STATUS = { shield: '#6eb4ff', rush: HEAL, sprint: ACCENT, settle: PALETTE.gold } as const;
+/** Where the vitals plate's origin is on the HUD, so sparks (drawn in HUD space) can start from inside it. */
+const vitalsAt = { x: 0, y: 0 };
+
+/** The held gun's art, baked once per gun, skin and screen scale (the art is dozens of paths; the HUD redraws every frame). */
+const gunSprites = new Map<string, HTMLCanvasElement>();
+function gunSprite(ctx: CanvasRenderingContext2D, gun: GunId, skin: string | undefined, golden: boolean, w: number, h: number): HTMLCanvasElement {
+  const res = Math.max(1, ctx.getTransform?.()?.a ?? 1);
+  const key = `${gun}|${skin ?? ''}|${golden ? 1 : 0}|${w}x${h}@${res.toFixed(2)}`;
+  let sprite = gunSprites.get(key);
+  if (!sprite) {
+    if (gunSprites.size > 24) gunSprites.clear();
+    sprite = document.createElement('canvas');
+    sprite.width = Math.ceil(w * res);
+    sprite.height = Math.ceil(h * res);
+    const g = sprite.getContext('2d')!;
+    g.scale(res, res);
+    drawGunArt(g, gun, 0, 0, w, h, { skin, golden });
+    gunSprites.set(key, sprite);
   }
+  return sprite;
+}
+
+/** A raised chip with a lip under it: used by the status tabs and the perk icons. */
+function cel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, face: string, r = 4, lip = 2) {
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h + lip, r);
+  ctx.fillStyle = mixHex(face, '#000000', 0.38);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = face;
+  ctx.fill();
+  ctx.stroke();
+}
+
+/** A coloured status tab with ink text; `fill` (0..1) darkens the part already used up, like a draining bar. Returns its width. */
+function statusTab(ctx: CanvasRenderingContext2D, x: number, cy: number, label: string, color: string, icon: string | null, fill = 1): number {
+  setFont(ctx, 800, TYPE.micro);
+  const w = ctx.measureText(label).width + (icon ? 29 : 14);
+  cel(ctx, x, cy - 8, w, 16, color, 4, 2);
+  if (fill < 0.99) {
+    ctx.fillStyle = 'rgba(28, 31, 38, 0.42)';
+    ctx.fillRect(x + 1 + (w - 2) * Math.max(0, fill), cy - 7, (w - 2) * (1 - Math.max(0, fill)), 14);
+  }
+  if (icon) strokeIcon(ctx, icon, x + 11, cy, 12, CEL.ink, 2.6);
+  text(ctx, label, x + (icon ? 20 : 7), cy + 0.5, TYPE.micro, CEL.ink, 'left', 800);
+  return w;
+}
+
+const hpColor = (frac: number): string => (frac > 0.5 ? PALETTE.hpGood : frac > 0.35 ? '#ffb347' : frac > 0.15 ? ACCENT : PALETTE.hpBad);
+
+/** The health bar: a chunky segment per 100 hp (4 at least), each with a lit top band, the hit's trailing chunk held pale, a flash on a hit and a shimmer on a heal. */
+function drawHealthSegs(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, maxHp: number, frac: number, color: string, now: number, pulse: number) {
+  const n = Math.max(4, Math.min(8, Math.ceil(maxHp / 100)));
+  const gap = 3;
+  const sw = (w - (n - 1) * gap) / n;
+  ctx.fillStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.roundRect(x - 2, y - 2, w + 4, h + 4, 4);
+  ctx.fill();
   const hurt = popOf(now - vfx.hurtAt, 260);
-  if (hurt > 0) {
-    ctx.globalAlpha = hurt * 0.75;
-    ctx.fillStyle = '#fff1d2';
-    ctx.fillRect(x, y, Math.max(h, w * frac), h);
-    ctx.globalAlpha = 1;
+  const lit = hurt > 0 ? mixHex(color, '#fff1d2', hurt * 0.8) : color;
+  const trailColor = now < vfx.hold || REDUCED ? '#fff1d2' : '#f2c27a';
+  for (let i = 0; i < n; i++) {
+    const sx = x + i * (sw + gap);
+    ctx.fillStyle = '#262a32';
+    ctx.fillRect(sx, y, sw, h);
+    const f = Math.max(0, Math.min(1, frac * n - i)), t = Math.max(0, Math.min(1, vfx.trail * n - i));
+    if (t > f + 0.004) { ctx.fillStyle = trailColor; ctx.fillRect(sx + sw * f, y, sw * (t - f), h); }
+    if (f <= 0) continue;
+    ctx.fillStyle = lit;
+    ctx.fillRect(sx, y, sw * f, h);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(sx, y, sw * f, Math.round(h * 0.34));
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(sx, y + h - 3, sw * f, 3);
   }
   const heal = (now - vfx.healAt) / 750;
-  if (heal >= 0 && heal < 1) sheen(ctx, x, y, Math.max(h, w * frac), h, heal, 'rgba(143,240,196,0.95)');
+  if (heal >= 0 && heal < 1) sheen(ctx, x, y, w * frac, h, heal, 'rgba(143,240,196,0.95)');
+  if (pulse > 0) {
+    ctx.globalAlpha = 0.35 + 0.55 * pulse;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+    ctx.globalAlpha = 1;
+  }
 }
 
-/** The vitals plate: its bar widths, inner padding, row step and full height (the touch minimap sits just below it). */
-const VITALS = { bar: 200, compactBar: 140, barH: 8, row: 30, pad: 12, height: 126 } as const;
-
-function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
-  ctx.fillStyle = color;
+/** The level as a ring badge: the ring fills with XP toward the next level. */
+function drawLevelRing(ctx: CanvasRenderingContext2D, cx: number, cy: number, level: number, frac: number, pop: number) {
+  ctx.fillStyle = CEL.ink;
   ctx.beginPath();
-  for (let i = 0; i < 4; i++) {
-    const bx = x + i * 6;
-    ctx.moveTo(bx, y + 7);
-    ctx.lineTo(bx, y - 4);
-    ctx.lineTo(bx + 2, y - 8);
-    ctx.lineTo(bx + 4, y - 4);
-    ctx.lineTo(bx + 4, y + 7);
-    ctx.closePath();
-  }
+  ctx.arc(cx, cy, 13, 0, TAU);
   ctx.fill();
-}
-
-/** Health, ammo, gun and level, and the ability and perks, on one plate in the top left, sized to what it holds. */
-function drawVitals(hud: Hud, compact: boolean) {
-  const { ctx, snap, me, w, now } = hud;
-  if (!me) return;
-  const on = ON_PANEL;
-  const self = snap.self;
-  const ins = inset();
-  const x = EDGE + ins.l + VITALS.pad;
-  let y = EDGE + ins.t + VITALS.pad + 6;
-  const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
-  const hpFrac = me.hp / me.maxHp;
-  const hpText = `${Math.ceil(vfx.shownHp)} / ${me.maxHp}`;
-  const gun = GUNS[me.gun];
-  const gunName = gun.name.toUpperCase();
-  const lp = levelProgress(me.level, me.score);
-  stepVitals(hud, me, self, lp.displayLevel, lp.frac);
-  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
-  setFont(ctx, 600, TYPE.body);
-  const hpRow = bw + 10 + ctx.measureText(hpText).width + (me.hunted ? huntedBadgeWidth(ctx) + 10 : 0) + (self.streak >= 2 ? streakBadgeWidth(ctx, self.streak) + 10 : 0);
-  setFont(ctx, 700, TYPE.label);
-  const gunRow = ctx.measureText(gunName).width + gun.stage * 9 + 148;
-  const abilityRow = abilityWidth(ctx, self) + 14 + owned.length * 22;
-  panel(ctx, EDGE + ins.l, EDGE + ins.t, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
-  const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
-  fill.addColorStop(0, HP_FILL[0]);
-  fill.addColorStop(1, HP_FILL[1]);
-  drawHealthBar(ctx, x, y - VITALS.barH / 2, bw, VITALS.barH, hpFrac, fill, on.track, now);
-  const lowHp = hpFrac <= 0.35;
-  const hurtPop = popOf(now - vfx.hurtAt, 220);
-  const hpPulse = lowHp && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (hpFrac <= 0.15 ? 90 : 160)) : 0;
-  text(ctx, hpText, x + bw + 10, y + 1, TYPE.body, lowHp ? mixHex(PALETTE.hpBad, '#ffd0d0', hpPulse * 0.6) : popOf(now - vfx.healAt, 420) > 0 ? HEAL : on.ink, 'left', 600 + Math.round(hurtPop * 100));
-  setFont(ctx, 600, TYPE.body);
-  let bx = x + bw + 20 + ctx.measureText(hpText).width;
-  if (me.hunted) bx += drawHuntedBadge(ctx, bx, y) + 10;
-  if (self.streak >= 2) drawStreakBadge(ctx, bx, y, self.streak, now);
-  y += VITALS.row;
-  drawAmmoGlyph(ctx, x, y, on.glyph);
-  if (self.reloading) {
-    text(ctx, 'RELOADING', x + 34, y + 1, TYPE.body, PALETTE.gold, 'left', 800);
-    bar(ctx, x + 112, y - 2, 60, 4, self.reloadFrac, PALETTE.gold, on.track);
-    glintOn(ctx, x + 112, y - 2, 60 * self.reloadFrac, 4, now, 700);
-  } else {
-    const empty = self.ammo === 0;
-    const low = self.ammo <= Math.max(1, Math.round(self.mag * 0.25));
-    const throb = low && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (empty ? 80 : 150)) : 0;
-    const pop = popOf(now - vfx.ammoAt, 190);
-    ctx.translate(x + 34, y + 1);
-    const sc = 1 + 0.38 * pop * pop;
-    ctx.scale(sc, sc);
-    text(ctx, `${self.ammo}`, 0, 0, TYPE.figure, low ? mixHex(PALETTE.hpBad, '#ffffff', empty ? 0.1 + throb * 0.35 : throb * 0.4) : on.ink, 'left', 800);
-    ctx.scale(1 / sc, 1 / sc);
-    ctx.translate(-(x + 34), -(y + 1));
-    setFont(ctx, 800, TYPE.figure);
-    text(ctx, `/ ${self.mag}`, x + 38 + ctx.measureText(`${self.ammo}`).width, y + 3, TYPE.body, on.muted, 'left', 600);
-    if (low && !REDUCED) {
-      ctx.globalAlpha = 0.18 + throb * 0.3;
-      ctx.strokeStyle = PALETTE.hpBad;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(x - 4, y - 14, 112, 28);
-      ctx.globalAlpha = 1;
-    }
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#2a2f38';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 10.5, 0, TAU);
+  ctx.stroke();
+  if (frac > 0.01) {
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10.5, -Math.PI / 2, -Math.PI / 2 + Math.min(1, frac) * TAU);
+    ctx.stroke();
   }
-  drawSprintChip(ctx, x + 178, y, self.sprint === true, self.sprint === true || !hud.s.firing ? 0 : settleOf(hud.s.firing), on);
-  y += 26;
-  text(ctx, gunName, x, y, TYPE.label, gun.stage ? glow(gun.look.accent, 0.74) : on.ink, 'left', 700);
-  setFont(ctx, 700, TYPE.label);
-  let lx = x + ctx.measureText(gunName).width + 6;
-  if (gun.stage) { drawStagePips(ctx, me.gun, lx, y); lx += gun.stage * 9 + 4; }
-  const lvPop = popOf(now - vfx.levelAt, 380);
-  setFont(ctx, 700, TYPE.label);
-  const lvW = ctx.measureText(`LV ${lp.displayLevel}`).width;
-  ctx.translate(lx + 4 + lvW / 2, y);
-  const lvS = 1 + 0.45 * lvPop;
-  ctx.scale(lvS, lvS);
-  text(ctx, `LV ${lp.displayLevel}`, -lvW / 2, 0, TYPE.label, lvPop > 0 ? mixHex(on.muted, PALETTE.gold, lvPop) : on.muted, 'left', 700);
-  ctx.scale(1 / lvS, 1 / lvS);
-  ctx.translate(-(lx + 4 + lvW / 2), -y);
-  const barX = lx + 40;
-  if (vfx.levelBurst) { vfx.levelBurst = false; burst(barX + 22, y, 18, PALETTE.gold, 80, now, 5.5); }
-  bar(ctx, barX, y - 1.5, 44, 3, vfx.shownFrac, PALETTE.gold, on.track);
-  glintOn(ctx, barX, y - 1.5, 44 * vfx.shownFrac, 3, now, 2600);
-  text(ctx, String(Math.round(vfx.shownScore)), barX + 52, y, TYPE.label, PALETTE.gold, 'left', 700);
-  y += 26;
-  drawAbility(ctx, x, y, self, on);
-  let px = x + abilityWidth(ctx, self) + 14;
-  for (const perk of owned) {
-    strokeIcon(ctx, PERK_ICONS[perk], px + 7, y, 14, on.glyph, 2.2);
-    px += 22;
-  }
-  drawSparks(ctx, now);
-}
-
-/** SPRINT while the gun is down; then SETTLE with a bar that drains as the aim steadies, so the player sees when the bloom is gone. */
-function drawSprintChip(ctx: CanvasRenderingContext2D, x: number, y: number, sprinting: boolean, settle: number, on: OnWorld) {
-  if (!sprinting && settle <= 0.01) return;
-  const color = sprinting ? '#ff5a1f' : PALETTE.gold;
-  strokeIcon(ctx, PERK_ICONS.marathon, x + 7, y, 14, color, 2.2);
-  text(ctx, sprinting ? 'SPRINT' : 'SETTLE', x + 18, y + 1, TYPE.micro, color, 'left', 800);
-  if (!sprinting) bar(ctx, x + 18, y + 7, 40, 3, settle, color, on.track);
+  ctx.fillStyle = '#3d4450';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 8.5, 0, TAU);
+  ctx.fill();
+  text(ctx, String(level), cx, cy + 1, level > 9 ? 12 : 14, pop > 0 ? mixHex(PANEL_INK, PALETTE.gold, pop) : PANEL_INK, 'center', 800);
 }
 
 type SelfView = Snapshot['self'];
 
-const abilityLabel = (self: SelfView): string =>
-  self.ability ? (self.abilityReadyIn > 0 ? `${(self.abilityReadyIn / 1000).toFixed(1)}s` : touchScreen ? 'READY' : 'READY · SPACE') : abilityHint(self.pending).join(' ');
-
-function abilityWidth(ctx: CanvasRenderingContext2D, self: SelfView): number {
-  setFont(ctx, 700, self.ability ? TYPE.body : TYPE.micro);
-  return 30 + ctx.measureText(abilityLabel(self)).width;
-}
-
-function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, on: OnWorld) {
-  const muted = touchScreen ? on.ink : on.muted;
-  if (!self.ability) {
-    worldText(ctx, on, abilityLabel(self), x, y, TYPE.micro, muted, 600);
-    return;
+/** The ability as a medallion: its icon on a lit face, a radial sweep while it cools, READY with a glow and the key once it is up, a lock before it is earned. */
+function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, self: SelfView, now: number, opts: { side?: boolean; ribbon?: boolean } = {}) {
+  const t = performance.now();
+  const ready = self.ability !== null && self.abilityReadyIn <= 0;
+  const cooling = self.ability !== null && !ready;
+  const pick = self.ability === null && self.pending?.k === 'perk' && self.pending.tier === ABILITY_TIER;
+  const left = cooling ? Math.max(0, Math.min(1, self.abilityReadyIn / abilityCooldownMs(self.ability!, self.perks ?? {}))) : 0;
+  const denied = cooling && t - abilityDeniedAt < ABILITY_CUE.deniedMs;
+  const cx = x + deniedShake(t);
+  const lip = 4;
+  const face = ready ? ACCENT : pick ? PALETTE.gold : denied ? PALETTE.hpBad : '#4c535f';
+  if (ready && !REDUCED) {
+    ctx.globalAlpha = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(now / 420));
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.arc(cx, y + 1, r + 6, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
-  const ready = self.abilityReadyIn <= 0;
-  const left = Math.max(0, Math.min(1, self.abilityReadyIn / abilityCooldownMs(self.ability, self.perks ?? {})));
-  const denied = !ready && performance.now() - abilityDeniedAt < ABILITY_CUE.deniedMs;
-  const cx = x + 12 + deniedShake(performance.now());
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = on.track;
+  if (opts.ribbon) {
+    for (const [sx, ink] of [[-1, '#a63a12'], [1, '#d9d1bd']] as const) {
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * 3, y + r - 4);
+      ctx.lineTo(cx + sx * 14, y + r - 2);
+      ctx.lineTo(cx + sx * 12, y + r + 16);
+      ctx.lineTo(cx + sx * 8, y + r + 11);
+      ctx.lineTo(cx + sx * 2, y + r + 15);
+      ctx.closePath();
+      ctx.fillStyle = ink;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = CEL.ink;
+      ctx.stroke();
+    }
+  }
+  ctx.fillStyle = CEL.shadow;
   ctx.beginPath();
-  ctx.arc(cx, y, 13, 0, TAU);
-  ctx.stroke();
-  ctx.strokeStyle = denied ? PALETTE.hpBad : PALETTE.gold;
+  ctx.arc(cx + 2, y + lip + 3, r + 2, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = CEL.ink;
   ctx.beginPath();
-  ctx.arc(cx, y, 13, -Math.PI / 2, -Math.PI / 2 + (1 - left) * TAU);
-  ctx.stroke();
-  const pulse = (performance.now() - abilityBackAt) / ABILITY_CUE.readyPulseMs;
+  ctx.arc(cx, y + lip, r + 2, 0, TAU);
+  ctx.arc(cx, y, r + 2, 0, TAU);
+  ctx.rect(cx - r - 2, y, (r + 2) * 2, lip);
+  ctx.fill();
+  ctx.fillStyle = mixHex(face, '#000000', 0.4);
+  ctx.beginPath();
+  ctx.arc(cx, y + lip, r, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = face;
+  ctx.beginPath();
+  ctx.arc(cx, y, r, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.26)';
+  ctx.beginPath();
+  ctx.ellipse(cx - 1, y - r * 0.5, r * 0.62, r * 0.32, 0, 0, TAU);
+  ctx.fill();
+  if (self.ability) strokeIcon(ctx, PERK_ICONS[self.ability], cx, y, 20, cooling ? 'rgba(236, 230, 214, 0.5)' : CEL.ink, 2.6);
+  else if (pick) text(ctx, '!', cx, y + 1, 24, CEL.ink, 'center', 800);
+  else strokeIcon(ctx, UI_ICONS.lock, cx, y, 17, PANEL_MUTED, 2.6);
+  if (cooling) {
+    // The wedge still to wait covers the face, shrinking clockwise as the cooldown runs.
+    ctx.fillStyle = 'rgba(14, 16, 21, 0.68)';
+    ctx.beginPath();
+    ctx.moveTo(cx, y);
+    ctx.arc(cx, y, r, -Math.PI / 2 + (1 - left) * TAU, -Math.PI / 2 + TAU);
+    ctx.closePath();
+    ctx.fill();
+    outlined(ctx, (self.abilityReadyIn / 1000).toFixed(self.abilityReadyIn >= 10000 ? 0 : 1), cx, y + 1, TYPE.label, PANEL_INK, 800);
+  }
+  const pulse = (t - abilityBackAt) / ABILITY_CUE.readyPulseMs;
   if (ready && pulse >= 0 && pulse < 1) {
-    if (!REDUCED && vfx.abilitySpark !== abilityBackAt) { vfx.abilitySpark = abilityBackAt; burst(cx, y, 9, PALETTE.gold, 34, performance.now(), 4.5); }
+    if (!REDUCED && vfx.abilitySpark !== abilityBackAt) { vfx.abilitySpark = abilityBackAt; burst(vitalsAt.x + cx, vitalsAt.y + y, 9, PALETTE.gold, 34, t, 4.5); }
     ctx.globalAlpha = 1 - pulse;
     ctx.lineWidth = 3;
     ctx.strokeStyle = PALETTE.gold;
     ctx.beginPath();
-    ctx.arc(cx, y, 13 + pulse * 14, 0, TAU);
+    ctx.arc(cx, y, r + 3 + pulse * 14, 0, TAU);
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  strokeIcon(ctx, PERK_ICONS[self.ability], cx, y, 13, ready ? PALETTE.gold : denied ? PALETTE.hpBad : muted, 2.2);
-  worldText(ctx, on, abilityLabel(self), x + 30, y + 1, TYPE.body, ready ? PALETTE.gold : denied ? PALETTE.hpBad : on.ink, 750);
+  // The label under it: the key when ready (a keycap), a dimmer one while cooling, or the unlock note before it is earned.
+  if (opts.side) {
+    const lx = cx + r + 9;
+    if (self.ability) {
+      const label = touchScreen ? 'READY' : 'SPACE';
+      setFont(ctx, 800, TYPE.micro);
+      const kw = ctx.measureText(label).width + 12;
+      cel(ctx, lx, y - 8, kw, 15, ready ? '#ece6d6' : '#2f343d', 4, 2);
+      text(ctx, label, lx + kw / 2, y, TYPE.micro, ready ? CEL.ink : PANEL_MUTED, 'center', 800);
+    } else inked(ctx, pick ? 'PICK' : abilityHint(self.pending)[1], lx, y + 1, TYPE.micro, pick ? PALETTE.gold : PANEL_INK, 800);
+    return;
+  }
+  const ly = y + r + 12;
+  if (self.ability) {
+    const label = touchScreen ? 'READY' : 'SPACE';
+    setFont(ctx, 800, TYPE.micro);
+    const kw = ctx.measureText(label).width + 12;
+    cel(ctx, cx - kw / 2, ly - 8, kw, 15, ready ? '#ece6d6' : '#2f343d', 4, 2);
+    text(ctx, label, cx, ly, TYPE.micro, ready ? CEL.ink : PANEL_MUTED, 'center', 800);
+  } else {
+    text(ctx, pick ? 'PICK' : abilityHint(self.pending)[1], cx, ly, TYPE.micro, pick ? PALETTE.gold : PANEL_INK, 'center', 800);
+  }
 }
 
 function streakBadgeWidth(ctx: CanvasRenderingContext2D, streak: number): number {
@@ -1496,23 +1578,336 @@ function drawHuntedBadge(ctx: CanvasRenderingContext2D, x: number, y: number): n
   return bw;
 }
 
-function drawStagePips(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {
-  const { stage, look } = GUNS[gun];
-  ctx.fillStyle = look.accent;
-  for (let i = 0; i < stage; i++) {
-    const cx = x + 3.5 + i * 9;
-    ctx.beginPath();
-    ctx.moveTo(cx, y - 3.5);
-    ctx.lineTo(cx + 3.5, y);
-    ctx.lineTo(cx, y + 3.5);
-    ctx.lineTo(cx - 3.5, y);
-    ctx.closePath();
-    ctx.fill();
-  }
-}
-
 const ABILITY_TIER: Tier = 3;
 export const ABILITY_SCORE = LEVELS.find((l) => l.pick?.k === 'perk' && l.pick.tier === ABILITY_TIER)?.score;
 
 export const abilityHint = (pending: PendingPick | null): [string, string] =>
   pending?.k === 'perk' && pending.tier === ABILITY_TIER ? ['Pick an', 'ability'] : ['Ability', `at ${ABILITY_SCORE}`];
+
+/* ---------------------------------------------------------------------------------------------------------------------------
+ * Toy-box vitals: no panel. Each readout is its own drawn object in the game's ink-and-cel style, so the HUD reads as part of the
+ * toy-soldier world yet stays apart from the floor (ink outline, hard down-right shadow, tin and brass colours no floor uses):
+ * a tin dog tag for health, a drawn magazine for ammo, an enamel medal token for the ability and round pins for level and perks.
+ * Health and the corner kit sit top left; the ammo magazine rides beside the reticle (a near-the-gun readout is read fastest),
+ * or beside the tag on a touch screen, where there is no cursor to follow.
+ * ------------------------------------------------------------------------------------------------------------------------- */
+const TAG = { w: 166, h: 68, lip: 4 } as const;
+const TIN = { face: '#aeb6c2', top: '#cdd3dc', lip: '#6c7482', shadow: 'rgba(5, 6, 9, 0.5)' } as const;
+let hudCrosshair: Point = { x: 0, y: 0 };
+
+/** Text over the world: bone (or any colour) with a fat ink stroke, so it holds on a light floor and a dark one. */
+function inked(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, size: number, color: string, weight: number, align: CanvasTextAlign = 'left') {
+  setFont(ctx, weight, size);
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(4, size / 4);
+  ctx.strokeStyle = CEL.ink;
+  ctx.strokeText(s, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(s, x, y);
+}
+
+/** A round enamel pin: ink ring, lip below, lit face, specular dot. */
+function pin(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, face: string) {
+  ctx.fillStyle = CEL.shadow;
+  ctx.beginPath();
+  ctx.arc(cx + 2, cy + 4, r + 2, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.arc(cx, cy + 2, r + 2, 0, TAU);
+  ctx.arc(cx, cy, r + 2, 0, TAU);
+  ctx.rect(cx - r - 2, cy, (r + 2) * 2, 2);
+  ctx.fill();
+  ctx.fillStyle = mixHex(face, '#000000', 0.4);
+  ctx.beginPath();
+  ctx.arc(cx, cy + 2, r, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = face;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.35, cy - r * 0.4, r * 0.22, 0, TAU);
+  ctx.fill();
+}
+
+/** The dog tag: stamped HP figure, a recessed slot of health segments, armor rivets, a ball chain up to the screen corner. Paints toward the health colour when low. */
+function drawDogTag(ctx: CanvasRenderingContext2D, x: number, y: number, me: PlayerView, frac: number, tone: string, now: number, pulse: number): void {
+  const { w, h, lip } = TAG;
+  // The chain: beads from the hole up and out past the corner.
+  for (let i = 5; i >= 0; i--) {
+    const bx = x + 20 - i * 6.5, by = y + 15 - i * 6.5 - Math.sin(i * 0.9) * 2;
+    ctx.fillStyle = CEL.ink;
+    ctx.beginPath();
+    ctx.arc(bx, by, 3.6, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#d9dee6';
+    ctx.beginPath();
+    ctx.arc(bx - 0.5, by - 0.5, 2.2, 0, TAU);
+    ctx.fill();
+  }
+  const low = frac <= 0.35;
+  const paint = low ? 0.5 + 0.12 * pulse : 0;
+  const face = mixHex(TIN.face, tone, paint);
+  const top = mixHex(TIN.top, tone, paint * 0.8);
+  ctx.fillStyle = TIN.shadow;
+  ctx.beginPath();
+  ctx.roundRect(x + 3, y + 4, w, h + lip, 14);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h + lip, 14);
+  ctx.fillStyle = mixHex(TIN.lip, tone, paint * 0.8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 14);
+  ctx.fillStyle = face;
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = top;
+  ctx.fillRect(x, y, w, 20);
+  ctx.restore();
+  ctx.stroke();
+  // The hole.
+  ctx.fillStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.arc(x + 20, y + 15, 6.5, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = '#5b6371';
+  ctx.beginPath();
+  ctx.arc(x + 20, y + 15, 3.4, 0, TAU);
+  ctx.fill();
+  // The stamped figure: a pressed-in highlight under dark ink.
+  const hurtPop = popOf(now - vfx.hurtAt, 220);
+  const size = 40 + Math.round(hurtPop * 3);
+  const figure = String(Math.ceil(vfx.shownHp));
+  setFont(ctx, 800, size);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.fillText(figure, x + 38, y + 28.5);
+  ctx.fillStyle = low ? mixHex('#7a1812', '#3a0d0a', pulse) : popOf(now - vfx.healAt, 420) > 0 ? '#0f7a4d' : CEL.ink;
+  ctx.fillText(figure, x + 38, y + 27);
+  // Armor rivets: dark plates stamped for each tier worn.
+  const tier = ARMOR_IDS.indexOf(me.armorTier);
+  for (let i = 0; i < 3; i++) {
+    const px = x + w - 16 - (3 - i) * 12;
+    cel(ctx, px, y + 11, 10, 8, i < tier ? '#4f5560' : mixHex(face, '#ffffff', 0.25), 2, 1);
+  }
+  // The slot.
+  drawHealthSegs(ctx, x + 14, y + h - 21, w - 28, 11, me.maxHp, frac, tone, now, low ? pulse * 0.6 : 0);
+}
+
+/** The ability as an enamel medal: ribbon tails, a lit face with its icon, the cooldown wedge, READY glow, and its key stamped beside it. */
+function drawMedalToken(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, now: number) {
+  drawAbility(ctx, x, y, 17, self, now, { side: true, ribbon: true });
+}
+
+/** Level as a pin ringed in XP, the XP count beside it, and the perks as small pins. Returns the width used. */
+function drawRankRow(ctx: CanvasRenderingContext2D, x: number, y: number, lp: { displayLevel: number; frac: number }, owned: PerkId[], now: number): number {
+  const lvPop = popOf(now - vfx.levelAt, 380);
+  if (vfx.levelBurst) { vfx.levelBurst = false; burst(x + 13, y, 16, PALETTE.gold, 80, now, 5.5); }
+  drawLevelRing(ctx, x + 13, y, lp.displayLevel, vfx.shownFrac, lvPop);
+  const xp = String(Math.round(vfx.shownScore));
+  inked(ctx, xp, x + 33, y + 1, TYPE.body, PALETTE.gold, 800);
+  setFont(ctx, 800, TYPE.body);
+  let px = x + 33 + ctx.measureText(xp).width + 14;
+  for (const perk of owned) {
+    pin(ctx, px + 11, y - 1, 11, '#4c535f');
+    strokeIcon(ctx, PERK_ICONS[perk], px + 11, y - 1, 14, PANEL_INK, 2.4);
+    px += 28;
+  }
+  return px - x;
+}
+
+/** A drawn magazine: a gunmetal body with a window onto brass rounds (one each for small mags, a ticked column for big ones). */
+function drawMagazine(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ammo: number, mag: number, reload: number, tone: string) {
+  ctx.fillStyle = CEL.shadow;
+  ctx.beginPath();
+  ctx.roundRect(x + 3, y + 4, w, h, 4);
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 4);
+  ctx.fillStyle = '#3d4450';
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#5b6371';
+  ctx.fillRect(x + 1.5, y + 1.5, w - 3, 5);
+  const wx = x + 4, wy = y + 9, ww = w - 8, wh = h - 16;
+  ctx.fillStyle = CEL.well;
+  ctx.fillRect(wx, wy, ww, wh);
+  const reloading = reload >= 0;
+  const color = reloading ? PALETTE.gold : tone;
+  if (mag <= 12) {
+    const gap = 2;
+    const rh = (wh - gap * (mag + 1)) / mag;
+    const lit = reloading ? Math.floor(reload * mag) : ammo;
+    for (let i = 0; i < mag; i++) {
+      if (i >= lit) continue;
+      const ry = wy + wh - gap - (i + 1) * rh - i * gap;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(wx + 2, ry, ww - 4, rh, [rh / 2, rh / 2, 1, 1]);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(wx + 3, ry + 0.5, ww - 6, Math.max(1, rh * 0.28));
+    }
+  } else {
+    const f = reloading ? reload : ammo / mag;
+    const fh = (wh - 4) * f;
+    if (fh > 0) {
+      ctx.fillStyle = color;
+      ctx.fillRect(wx + 2, wy + wh - 2 - fh, ww - 4, fh);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.fillRect(wx + 3, wy + wh - 2 - fh, Math.max(1.5, (ww - 4) * 0.28), fh);
+    }
+    ctx.fillStyle = CEL.ink;
+    const step = mag > 60 ? 20 : 10;
+    for (let r = step; r < mag; r += step) ctx.fillRect(wx, wy + wh - 2 - ((wh - 4) * r) / mag - 1, ww, 2);
+  }
+  ctx.fillStyle = '#272c34';
+  ctx.fillRect(x + 1.5, y + h - 6, w - 3, 4.5);
+}
+
+/** The ammo cluster: the magazine and the count, readable beside the reticle. `left` mirrors it onto the other side. */
+function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, now: number, gun: { id: GunId; skin: string | undefined; golden: boolean } | null, left = false) {
+  const mw = 28, mh = 58;
+  const low = self.ammo <= Math.max(1, Math.round(self.mag * 0.25));
+  const empty = self.ammo === 0;
+  const throb = low && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (empty ? 140 : 240)) : 0;
+  const tone = empty ? AMMO.empty : low ? AMMO.liveLow : AMMO.live;
+  setFont(ctx, 800, 34);
+  const reloading = self.reloading;
+  const label = reloading ? 'RELOAD' : String(self.ammo);
+  const numSize = reloading ? 18 : 40;
+  setFont(ctx, 800, numSize);
+  const numW = ctx.measureText(label).width;
+  const total = mw + 8 + Math.max(numW, 96);
+  const mx = left ? x - total : x;
+  drawMagazine(ctx, mx, y, mw, mh, self.ammo, self.mag, reloading ? self.reloadFrac : -1, tone);
+  const nx = mx + mw + 8;
+  const pop = popOf(now - vfx.ammoAt, 190);
+  const sc = reloading ? 1 : 1 + 0.3 * pop * pop;
+  const ink = reloading ? PALETTE.gold : empty ? mixHex(PALETTE.hpBad, '#ffffff', throb * 0.4) : low ? mixHex(ACCENT, '#ffffff', throb * 0.35) : PANEL_INK;
+  ctx.translate(nx, y + 20);
+  ctx.scale(sc, sc);
+  inked(ctx, label, 0, 0, numSize, ink, 800);
+  ctx.scale(1 / sc, 1 / sc);
+  ctx.translate(-nx, -(y + 20));
+  if (!reloading) inked(ctx, `/ ${self.mag}`, nx + 1, y + 47, TYPE.body, low ? AMMO.liveLow : PANEL_INK, 700);
+  if (gun) {
+    setFont(ctx, 700, TYPE.body);
+    const gx = nx + (reloading ? 0 : ctx.measureText(`/ ${self.mag}`).width + 10);
+    const gy = y + (reloading ? 34 : 37);
+    // No DOM (tests, workers): draw the art straight in rather than through the cached sprite.
+    if (typeof document === 'undefined') drawGunArt(ctx, gun.id, gx, gy, 58, 20, { skin: gun.skin, golden: gun.golden });
+    else ctx.drawImage(gunSprite(ctx, gun.id, gun.skin, gun.golden, 58, 20), gx, gy, 58, 20);
+  }
+}
+
+/** Health as a segmented ring round your soldier (ink-edged so it holds on any floor), the figure under it. */
+function drawHpRing(hud: Hud, me: PlayerView, frac: number, tone: string, pulse: number) {
+  const { ctx, selfAt, cam, now } = hud;
+  const R = WORLD.playerRadius * cam.scale + 11;
+  const n = Math.max(4, Math.min(8, Math.ceil(me.maxHp / 100)));
+  const gap = 0.2, span = TAU / n - gap;
+  const hurt = popOf(now - vfx.hurtAt, 260);
+  const lit = hurt > 0 ? mixHex(tone, '#fff1d2', hurt * 0.8) : tone;
+  ctx.lineCap = 'butt';
+  for (const [width, color] of [[9, CEL.ink], [5, '#262a32']] as const) {
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    for (let i = 0; i < n; i++) {
+      const a0 = -Math.PI / 2 + i * (TAU / n) + gap / 2;
+      ctx.beginPath();
+      ctx.arc(selfAt.x, selfAt.y, R, a0, a0 + span);
+      ctx.stroke();
+    }
+  }
+  ctx.lineWidth = 5;
+  for (let i = 0; i < n; i++) {
+    const a0 = -Math.PI / 2 + i * (TAU / n) + gap / 2;
+    const f = Math.max(0, Math.min(1, frac * n - i)), t = Math.max(0, Math.min(1, vfx.trail * n - i));
+    if (t > f + 0.004) {
+      ctx.strokeStyle = now < vfx.hold || REDUCED ? '#fff1d2' : '#f2c27a';
+      ctx.beginPath();
+      ctx.arc(selfAt.x, selfAt.y, R, a0 + span * f, a0 + span * t);
+      ctx.stroke();
+    }
+    if (f <= 0) continue;
+    ctx.strokeStyle = lit;
+    ctx.beginPath();
+    ctx.arc(selfAt.x, selfAt.y, R, a0, a0 + span * f);
+    ctx.stroke();
+  }
+  const figure = String(Math.ceil(vfx.shownHp));
+  inked(ctx, figure, selfAt.x, selfAt.y + R + 17, 24, frac <= 0.35 ? mixHex(tone, '#ffffff', pulse * 0.4) : PANEL_INK, 800, 'center');
+}
+
+/**
+ * The vitals: a dog tag top left (health is read best from a fixed corner), the ability medal and rank pins under it, the ammo
+ * magazine beside the reticle (ammo is read best next to the gun; your soldier's side on a touch screen, which has no cursor), and a
+ * health ring round your soldier that appears only while hurt or low, where your eyes already are.
+ */
+function drawVitals(hud: Hud, compact: boolean) {
+  const { ctx, snap, me, w, h, now, selfAt, cam } = hud;
+  if (!me) return;
+  const self = snap.self;
+  const ins = inset();
+  const X0 = EDGE + ins.l, Y0 = EDGE + ins.t;
+  vitalsAt.x = X0;
+  vitalsAt.y = Y0;
+  const hpFrac = me.hp / me.maxHp;
+  const lp = levelProgress(me.level, me.score);
+  stepVitals(hud, me, self, lp.displayLevel, lp.frac);
+  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
+  const tone = hpColor(hpFrac);
+  const lowHp = hpFrac <= 0.35;
+  const pulse = lowHp && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (hpFrac <= 0.15 ? 160 : 260)) : 0;
+  // The ring: full while low, otherwise a few seconds after a hit, fading out.
+  const sinceHurt = now - vfx.hurtAt;
+  const ringA = lowHp ? 1 : REDUCED ? (sinceHurt < 2400 ? 1 : 0) : Math.max(0, Math.min(1, (3000 - sinceHurt) / 700));
+  if (ringA > 0.01) {
+    ctx.globalAlpha = ringA;
+    drawHpRing(hud, me, hpFrac, tone, pulse);
+    ctx.globalAlpha = 1;
+  }
+  panels.push({ x: X0, y: Y0, w: TAG.w, h: TAG.h + TAG.lip });
+  drawDogTag(ctx, X0, Y0, me, hpFrac, tone, now, pulse);
+  // The corner kit: ability medal, then level and perks.
+  const rowY = Y0 + TAG.h + TAG.lip + 24;
+  drawMedalToken(ctx, X0 + 18, rowY, self, now);
+  const kitW = drawRankRow(ctx, X0 + 98, rowY, lp, owned, now);
+  panels.push({ x: X0, y: rowY - 20, w: 98 + kitW, h: 52 });
+  // Status tabs beside the tag, only while in effect.
+  let cx = X0 + TAG.w + 14;
+  const sy = Y0 + 20;
+  if (me.spawnShield || me.shield) cx += statusTab(ctx, cx, sy, me.spawnShield ? 'SPAWN' : 'SHIELD', STATUS.shield, PERK_ICONS.shield) + 6;
+  if (me.rush) cx += statusTab(ctx, cx, sy, self.perks[2] === 'secondWind' ? 'WIND' : 'RUSH', STATUS.rush, self.perks[2] === 'secondWind' ? PERK_ICONS.secondWind : PERK_ICONS.adrenaline) + 6;
+  const sprinting = self.sprint === true;
+  const settle = sprinting || !hud.s.firing ? 0 : settleOf(hud.s.firing);
+  if (sprinting) cx += statusTab(ctx, cx, sy, 'SPRINT', STATUS.sprint, PERK_ICONS.marathon) + 6;
+  else if (settle > 0.01) cx += statusTab(ctx, cx, sy, 'SETTLE', STATUS.settle, null, settle) + 6;
+  if (me.hunted) cx += drawHuntedBadge(ctx, cx, sy) + 6;
+  if (self.streak >= 2) drawStreakBadge(ctx, cx, sy, self.streak, now);
+  // Ammo: beside the reticle, or your soldier on a touch screen; mirrored when it would run off the right edge.
+  const gunIcon = { id: me.gun, skin: me.cos?.g, golden: me.golden === true };
+  const near = touchScreen || spreadOff;
+  const reach = WORLD.playerRadius * cam.scale;
+  const gap = Math.max(reticleDrawnGap, 10) + RETICLE.tick;
+  const ax = near ? selfAt.x + reach + 16 : hudCrosshair.x + gap * 0.7 + 14;
+  const ay = near ? selfAt.y - 8 : hudCrosshair.y + gap * 0.5 + 6;
+  const flip = ax + 150 > w - EDGE;
+  const fx = flip ? (near ? selfAt.x - reach - 16 : hudCrosshair.x - gap * 0.7 - 14) : ax;
+  drawAmmoCluster(ctx, fx, Math.min(h - 80, Math.max(EDGE, ay)), self, now, gunIcon, flip);
+  drawSparks(ctx, now);
+}
+let spreadOff = false;

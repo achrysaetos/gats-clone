@@ -1,3 +1,4 @@
+import { marketGeo } from './marketgeo.ts';
 import { MAPS } from '../../shared/maps.ts';
 import { seeded } from '../grain.ts';
 import { setLight } from '../lighting.ts';
@@ -408,6 +409,7 @@ function over(g: G, now: number, view: ThemeView, map: typeof MAPS.market) {
 }
 
 registerTheme('market', {
+  ...marketGeo,
   dusk: 0.2,
   floor: paintMarketFloor,
   walls: { shopfront: paintShopfront, stall: paintStall, stack: paintStack, cart: paintCart, shrine: paintLandmark },

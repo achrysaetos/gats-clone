@@ -3,12 +3,15 @@ import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, Z
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
+import { loadDoors, type DoorState } from './doors.ts';
+import { polyParts } from '../mapgeo.ts';
 import { circleHitsRect, dist2, type Knock, type Rect } from './movement.ts';
 import type { ZAi } from './boids.ts';
 import { newRoyale } from './royale.ts';
 import { newRange, type RangeSim } from './targets.ts';
 
-export type Wall = WallView & { expiresAt: number };
+/** `door` names the door a leaf belongs to; such leaves never go on the wire (see `sim/doors.ts`). */
+export type Wall = WallView & { expiresAt: number; door?: string };
 
 export type Life =
   | {
@@ -262,6 +265,9 @@ export type World = {
   airdrops: Airdrops;
   walls: Wall[];
   wallsVersion: number;
+  /** The map's doors and their state (see `sim/doors.ts`); `doorsVersion` counts changes to the leaves they put in `walls`. */
+  doors: DoorState[];
+  doorsVersion: number;
   thrown: Thrown[];
   zones: Zone[];
   teamScore: { red: number; blue: number };
@@ -310,7 +316,7 @@ export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, thrown: [],
+    players: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, doors: [], doorsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
     zombies: [], buildings: [], floor: [], buildingsVersion: 0, run: null, royale: null,
   };
@@ -333,7 +339,8 @@ export function loadMap(w: World, map: MapId) {
   const def = MAPS[map];
   w.map = map;
   w.mapChangeAt = w.now + MAP_MS[w.mode];
-  w.walls = def.walls.map((r) => ({ ...r, built: false as const, expiresAt: Infinity }));
+  w.walls = [...def.walls, ...polyParts(def)].map((r) => ({ ...r, built: false as const, expiresAt: Infinity }));
+  loadDoors(w);
   w.wallsVersion++;
   w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
   w.barrels = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.barrels.map((b) => ({ id: newId(w), x: b.x, y: b.y, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null })) : [];

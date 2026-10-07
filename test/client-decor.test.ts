@@ -6,7 +6,8 @@ import { BEACON_HZ, DECOR_LIGHT_CAP, DECOR_SHADOW_CAP, fixtureLight, lampColor, 
 import { FACE } from '../src/client/tilt.ts';
 import { EASTER_EGGS, FLOOR_VIGNETTES, LORE } from '../src/client/vignettes.ts';
 
-const YARDS = ['causeway', 'plaza', 'oldtown', 'quarry'] as const;
+// Causeway is a themed harbour now (themes/harbor*.ts) and skips the generic yard decor.
+const YARDS = ['plaza', 'oldtown', 'quarry'] as const;
 const plans = new Map<string, DecorPlan>();
 const planOf = (id: keyof typeof MAPS) => { let p = plans.get(id); if (!p) plans.set(id, (p = planDecor(MAPS[id]))); return p; };
 const night: FxState = { dark: 1, now: 5000, reduced: false, alarm: true };
@@ -89,7 +90,7 @@ test('reduced motion stills the beacons and the flickering tube, and nothing tur
 });
 
 test('each district is its own place, and every map has its own set', () => {
-  const names = ['Causeway', 'Plaza', 'Old Town', 'Quarry'];
+  const names = ['Plaza', 'Old Town', 'Quarry'];
   for (const n of names) {
     const set = regionsFor(n);
     assert.equal(set.length, 9, n);
@@ -98,7 +99,7 @@ test('each district is its own place, and every map has its own set', () => {
     assert.notEqual(set[2]!.lamp, set[6]!.lamp, 'north-east and south-west differ');
   }
   const first = names.map((n) => regionsFor(n).map((r) => r.name).join('|'));
-  assert.equal(new Set(first).size, 4, 'no two maps share a district set');
+  assert.equal(new Set(first).size, names.length, 'no two maps share a district set');
   assert.ok(regionsFor('Plaza').some((r) => r.name === 'BUS DEPOT') && regionsFor('Old Town').some((r) => r.name === 'BAKERY') && regionsFor('Quarry').some((r) => r.name === 'ROCK CRUSHER'));
   for (const id of YARDS) {
     const plan = planOf(id);

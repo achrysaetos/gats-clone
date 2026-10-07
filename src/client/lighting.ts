@@ -1,3 +1,4 @@
+import { pushOutConvex, segmentEntersConvexAt } from '../shared/geom.ts';
 import type { Solid } from './tilt.ts';
 
 /**
@@ -153,7 +154,8 @@ export function selectLights(lights: readonly ResolvedLight[], view: ViewRect, m
 /** A solid that stands tall enough to stop light. Curbs, turret pads and the core's own plinth do not. */
 export const blocksLight = (s: Pick<Solid, 'kind'>): boolean => s.kind !== 'curb' && s.kind !== 'pad' && s.kind !== 'core' && s.kind !== 'water' && s.kind !== 'pond';
 
-export type Occluder = { x: number; y: number; w: number; h: number; face: number };
+/** A box that casts shadow. A polygon part carries its convex `pts` (flat, positive area) as well as its box. */
+export type Occluder = { x: number; y: number; w: number; h: number; face: number; pts?: readonly number[] };
 
 /** The rects that cast shadows and darken floor: in-view solids that stand, each with the height of its front face. */
 export function occludersOf(solids: readonly Solid[], view: ViewRect, faceOf: (kind: Solid['kind']) => number): Occluder[] {
@@ -170,6 +172,10 @@ export function occludersOf(solids: readonly Solid[], view: ViewRect, faceOf: (k
 /** If (x, y) is inside a rect, the nearest point just outside it; otherwise unchanged. A muzzle pressed to a wall then lights the room, not the wall's inside. */
 export function pushOut(x: number, y: number, rects: readonly Occluder[], gap = 3): { x: number; y: number } {
   for (const r of rects) {
+    if (r.pts) {
+      if (x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h || segmentEntersConvexAt(x, y, 0, 0, r.pts) === null) continue;
+      return pushOutConvex(x, y, gap, r.pts) ?? { x, y };
+    }
     if (x <= r.x || x >= r.x + r.w || y <= r.y || y >= r.y + r.h) continue;
     const left = x - r.x, right = r.x + r.w - x, up = y - r.y, down = r.y + r.h - y, m = Math.min(left, right, up, down);
     if (m === left) return { x: r.x - gap, y };
@@ -181,21 +187,34 @@ export function pushOut(x: number, y: number, rects: readonly Occluder[], gap = 
 }
 
 /**
- * Two triangles per rect, as clip-space x, y, then the front-face flag, ready for the occluder mask: front faces first so
+ * Triangles per box, as clip-space x, y, then the front-face flag, ready for the occluder mask: front faces first so
  * a footprint drawn later wins, then footprints. `view` maps world to clip with y flipped (world down is clip down).
+ * A polygon part's footprint is a fan, and its front face hangs below each south-facing edge.
  */
 export function maskTriangles(rects: readonly Occluder[], view: ViewRect): Float32Array {
-  const faces = rects.filter((r) => r.face > 0);
-  const out = new Float32Array((faces.length + rects.length) * 18);
+  const out: number[] = [];
   const sx = 2 / (view.x1 - view.x0), sy = 2 / (view.y1 - view.y0);
-  let n = 0;
+  const clip = (x: number, y: number, flag: number) => { out.push((x - view.x0) * sx - 1, 1 - (y - view.y0) * sy, flag); };
   const quad = (x: number, y: number, w: number, h: number, flag: number) => {
     const l = (x - view.x0) * sx - 1, r = (x + w - view.x0) * sx - 1, t = 1 - (y - view.y0) * sy, b = 1 - (y + h - view.y0) * sy;
-    for (const [px, py] of [[l, t], [r, t], [l, b], [l, b], [r, t], [r, b]] as const) { out[n++] = px; out[n++] = py; out[n++] = flag; }
+    for (const [px, py] of [[l, t], [r, t], [l, b], [l, b], [r, t], [r, b]] as const) out.push(px, py, flag);
   };
-  for (const r of faces) quad(r.x, r.y + r.h, r.w, r.face, 1);
-  for (const r of rects) quad(r.x, r.y, r.w, r.h, 0);
-  return out;
+  for (const r of rects) {
+    if (r.face <= 0) continue;
+    if (!r.pts) { quad(r.x, r.y + r.h, r.w, r.face, 1); continue; }
+    const n = r.pts.length / 2;
+    for (let i = 0; i < n; i++) {
+      const ax = r.pts[2 * i]!, ay = r.pts[2 * i + 1]!, bx = r.pts[2 * ((i + 1) % n)]!, by = r.pts[2 * ((i + 1) % n) + 1]!;
+      if (bx >= ax) continue;
+      for (const [px, py] of [[ax, ay], [bx, by], [ax, ay + r.face], [ax, ay + r.face], [bx, by], [bx, by + r.face]] as const) clip(px, py, 1);
+    }
+  }
+  for (const r of rects) {
+    if (!r.pts) { quad(r.x, r.y, r.w, r.h, 0); continue; }
+    const n = r.pts.length / 2;
+    for (let i = 1; i + 1 < n; i++) for (const k of [0, i, i + 1]) clip(r.pts[2 * k]!, r.pts[2 * k + 1]!, 0);
+  }
+  return Float32Array.from(out);
 }
 
 export type Ambient = {

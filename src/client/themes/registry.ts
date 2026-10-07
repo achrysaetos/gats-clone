@@ -1,5 +1,8 @@
 import { MAPS, type MapDef, type ThemeId } from '../../shared/maps.ts';
+import type { MapDoor, MapPoly, MapRoof } from '../../shared/geom.ts';
+import type { DoorLeaf } from '../../shared/sim/doors.ts';
 import type { FloorPlan } from '../floor.ts';
+import type { GeoInfo } from '../geoart.ts';
 import type { Solid, SolidKind } from '../tilt.ts';
 
 /**
@@ -15,12 +18,23 @@ export type Theme = {
   floor?: (g: CanvasRenderingContext2D, size: number, seed: number, plan: FloorPlan) => void;
   /** Wall kinds this theme owns, each painted whole (front face, top, details, outline) once per solid into the sprite cache. */
   walls?: Partial<Record<SolidKind, (ctx: CanvasRenderingContext2D, s: Solid) => void>>;
+  /** Drawn every frame straight over the baked floor, under every wall, shadow and body: animated water, ship decks. */
+  ground?: (ctx: CanvasRenderingContext2D, now: number, view: ThemeView, map: MapDef) => void;
   /** Drawn every frame right after the walls and before bodies: animated water, lamp pools, steam, drips. */
   under?: (ctx: CanvasRenderingContext2D, now: number, view: ThemeView, map: MapDef) => void;
   /** The least dusk (0..1) this map always wears, so its lamps and cool shade show by day too. */
   dusk?: number;
   /** Drawn every frame over bodies and effects, under the night shade: things hung above the players. */
   over?: (ctx: CanvasRenderingContext2D, now: number, view: ThemeView, map: MapDef, bodies: readonly { x: number; y: number }[]) => void;
+  /** Map geometry (docs/maps/GEOMETRY.md). Each hook returns true when it drew the thing, false or nothing to get the generic extruded look. */
+  /** Paints one polygon of `map.polys` (its footprint, and the front face hanging below its south edges). */
+  drawPoly?: (ctx: CanvasRenderingContext2D, poly: MapPoly, info: GeoInfo) => boolean | void;
+  /** Paints a whole group of polygons (a plane's fuselage, wings and tail) as one object. Runs before `drawPoly`. */
+  drawSetPiece?: (ctx: CanvasRenderingContext2D, group: readonly MapPoly[], info: GeoInfo) => boolean | void;
+  /** Paints a door: `leaves` are its solid pieces right now, `open` is 0 (shut) to 1. */
+  door?: (ctx: CanvasRenderingContext2D, door: MapDoor, leaves: readonly DoorLeaf[], open: number, info: GeoInfo) => boolean | void;
+  /** Paints a roof at `alpha` (already fading); the context's globalAlpha is set to it. */
+  roof?: (ctx: CanvasRenderingContext2D, roof: MapRoof, alpha: number, info: GeoInfo) => boolean | void;
 };
 
 const themes = new Map<ThemeId, Theme>();

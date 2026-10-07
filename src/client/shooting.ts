@@ -1,4 +1,6 @@
 import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
+import { doorsOf } from './predict.ts';
+import { leavesFromViews } from '../shared/sim/doors.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { isSteady, rangeFor, silencedFor, spreadFor } from '../shared/sim/stats.ts';
 import { noteLateShot, noteRejectedShot } from './devprobe.ts';
@@ -30,7 +32,7 @@ export function createShooting(page: Page) {
 
   function showShot(s: Session, shot: Shot, at: Point, angle: number, seen: Snapshot, now: number): number[] {
     const muzzle = muzzleTip(at.x, at.y, angle, shot.gun, WORLD.playerRadius);
-    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextLocalRoundId);
+    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, [...s.walls, ...leavesFromViews(doorsOf(s), seen.doors)], shot.owner), now, nextLocalRoundId);
     nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
     // The flash effect still times the shooter's recoil kick; gunfx draws the flash and ejects the casing.

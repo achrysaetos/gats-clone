@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { GUN_IDS, GUNS, MEDALS, type MedalId } from '../src/shared/defs.ts';
 import { DUCKS, SOUNDS, duckFor, emoteCue, minGapMs, priorityOf, screenCue, soundsFor, varianceOf, type Layer, type SoundId } from '../src/client/sfx.ts';
 import { PLANE_MS } from '../src/client/sfx.ts';
+import { soundTimeline } from '../src/client/reloadbeats.ts';
 import { TICK_MS } from '../src/client/interp.ts';
 import { planeAt } from '../src/shared/protocol.ts';
 import type { AirdropView, BarrelView, BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
@@ -127,9 +128,9 @@ test('a bounty kill plays the bounty cue in place of the plain kill confirm', ()
   assert.deepEqual(ids(snap(), snap({ events: [kill(false)] })), ['kill']);
 });
 
-test('reload plays when reloading starts, not while it continues', () => {
+test('a snapshot does not voice the reload: its foley is stepped on the reload clock beat by beat (reloadsfx.ts)', () => {
   const r = (reloading: boolean) => snap({ self: { reloading } });
-  assert.deepEqual(ids(r(false), r(true)), ['reload:pistol'], 'the reload clicks are the gun class\'s');
+  assert.deepEqual(ids(r(false), r(true)), [], 'no one-shot reload cue on the edge');
   assert.deepEqual(ids(r(true), r(true)), []);
 });
 
@@ -224,11 +225,12 @@ test('hits land with the voice of what they hit: flesh, crate, zombie and wall e
   assert.equal(new Set(all.map((i) => JSON.stringify(SOUNDS[i]))).size, all.length);
 });
 
-test('each weapon class has its own reload clicks, and a respawn does not read as a reload', () => {
+test('a respawn does not read as a reload, and each class\'s reload sounds are distinct foley', () => {
   const classes = ['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const;
-  assert.equal(new Set(classes.map((c) => JSON.stringify(SOUNDS[`reload:${c}`]))).size, classes.length);
+  const seq = (c: (typeof classes)[number]) => JSON.stringify(soundTimeline(c).map((e) => e.id));
+  assert.equal(new Set(classes.map(seq)).size, classes.length);
   const r = (gun: 'pistol' | 'shotgun', reloading: boolean) => snap({ me: { gun }, self: { reloading } });
-  assert.deepEqual(ids(r('shotgun', false), r('shotgun', true)), ['reload:shotgun']);
+  assert.deepEqual(ids(r('shotgun', false), r('shotgun', true)), []);
 });
 
 test('shots are layered click + body + tail, the sniper echoes, and casings only tinkle for your own gun', () => {
@@ -276,7 +278,13 @@ const withWorld = (s: Snapshot, o: { barrels?: BarrelView[]; airdrop?: AirdropVi
 
 test('the mix: reload clicks and the spawn thump sit under your gunshots, footsteps are audible, medals and the fanfare lead', () => {
   const total = (id: SoundId) => SOUNDS[id].reduce((a, l) => a + l.gain, 0);
-  for (const c of ['pistol', 'smg', 'assault', 'lmg', 'shotgun', 'sniper'] as const) assert.ok(total(`reload:${c}`) < total(`shot:${c}`) * 0.4, `${c} reload is well under its shot`);
+  const peak = (id: SoundId) => Math.max(...SOUNDS[id].map((l) => l.gain));
+  for (const c of ['pistol', 'smg', 'assault', 'lmg', 'shotgun', 'sniper'] as const) {
+    for (const e of soundTimeline(c)) {
+      const id = e.id === 'foley:drop' ? 'foley:drop:concrete' : e.id;
+      assert.ok(total(id) < total(`shot:${c}`) * 0.4 && peak(id) < peak(`shot:${c}`) * 0.5, `${c} ${id} is well under its shot`);
+    }
+  }
   assert.ok(total('spawn') < total('shot:pistol'), 'the spawn is a modest thump');
   assert.ok(total('step') > 0.3 && total('step') < total('hit'), 'a footstep is subtle but not inaudible');
   assert.ok(peakGain('hit') > peakGain('hurt') * 0.5);

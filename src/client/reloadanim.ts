@@ -5,6 +5,7 @@ import { drawHeldGun, heldHands, heldPoint, type GunView, type Hand, type Part }
 import { TICK_MS } from './interp.ts';
 import { INK } from './palette.ts';
 import { BEATS, shellCount, shellSeat } from './reloadbeats.ts';
+import { reloadFoley } from './reloadsfx.ts';
 
 /**
  * Reload choreography. A reload is a progress `t` (0..1) through the gun's real reload time, and each class keyframes the
@@ -289,7 +290,7 @@ function lmgScene(rig: Rig, t: number, k: number): ReloadScene {
   const h = hand([
     [0, support], [0.1, lidTip(0, 0.1)], [B.lidUp, lidTip(-1.15, B.lidUp), 'out'],
     [0.27, boxAt(0, 0.27), 'io'], [B.drop, boxAt(1, B.drop), 'io'],
-    [B.pouch, rig.pouch], [B.take, add(rig.pouch, 0.05 * R, 0), 'lin'], [0.58, boxAt(0.5, 0.58), 'io'], [B.seat, boxAt(0, B.seat), 'snap'],
+    [B.pouch, rig.pouch], [B.take, add(rig.pouch, 0.05 * R, 0), 'lin'], [B.near, boxAt(0.5, B.near), 'io'], [B.seat, boxAt(0, B.seat), 'snap'],
     [0.7, lidTip(-1.15, 0.7), 'io'], [B.shut, lidTip(0, B.shut), 'in'], [0.8, add(lidTip(0, 0.8), 0, 0.05 * R * s), 'out'],
     [0.83, handle(0, 0.83), 'io'], [B.rackBack, handle(1, B.rackBack), 'out'], [B.rack, handle(0, B.rack), 'in'], [1, support, 'io'],
   ], t);
@@ -413,7 +414,7 @@ function sniperScene(rig: Rig, t: number, k: number): ReloadScene {
 
 // --- Akimbo: one pistol at a time, the other held out ------------------------------------------------------------
 
-const AK = { pop: 0.32, fresh: 0.4, seat: 0.62 };
+const AK = BEATS.akimbo;
 
 function akimboScene(rig: Rig, t: number, k: number): ReloadScene {
   const { pt, R, s, trigger, support } = rig;
@@ -438,7 +439,7 @@ function akimboScene(rig: Rig, t: number, k: number): ReloadScene {
     [0.68, add(seatHand, 0, s * 0.16 * R), 'out'], [0.73, seatHand, 'in'], [0.8, mixHand(seatHand, grip0, 0.3), 'io'], [1, grip0, 'io'],
   ], u);
   const hands: [Hand, Hand] = second ? [k >= 1 ? hu : mixHand(trigger, hu, k), support] : [trigger, k >= 1 ? hu : mixHand(support, hu, k)];
-  const dip = k * (0.8 * pulse(u, AK.seat, 0.07) + 0.4 * pulse(u, 0.72, 0.06));
+  const dip = k * (0.8 * pulse(u, AK.seat, 0.07) + 0.4 * pulse(u, AK.slap, 0.06));
   const magOut = u >= AK.pop && u < AK.seat;
   const wellNow = (uu: number) => xf(well0, hu, uu);
   const carried = k >= 1 && u >= AK.pop - 0.001 && u < AK.pop + 0.02 ? { at: wellNow(AK.pop), angle: theta(AK.pop), big: false } : undefined;
@@ -545,7 +546,7 @@ export function stepReload(id: number, gun: GunId, rl: readonly [number, number]
 }
 
 /** Forgets every soldier's reload (a new round, a reconnect). */
-export const clearReloads = () => tracks.clear();
+export const clearReloads = () => { tracks.clear(); reloadFoley.clear(); };
 
 /**
  * Your own reload as the page predicts it, so your arms move the instant you press the key: `[elapsedMs, totalMs]` from the

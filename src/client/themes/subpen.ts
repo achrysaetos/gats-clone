@@ -1,10 +1,10 @@
+import { drawSubmarines, subpenGeo } from './subpengeo.ts';
 import { MAPS, type MapDef } from '../../shared/maps.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { stencil, type FloorPlan } from '../floor.ts';
 import { blotch, canvas, paintHazard, seeded } from '../grain.ts';
 import { setLight } from '../lighting.ts';
 import { FLOOR, INK } from '../palette.ts';
-import { reducedMotion } from '../screenfx.ts';
 import type { Solid, SolidKind } from '../tilt.ts';
 import { registerTheme, type ThemeView } from './registry.ts';
 import { districtAt, drawKit, paintDistricts } from './subpenkit.ts';
@@ -20,7 +20,6 @@ const CELL = 50;
 
 const STEEL = { top: '#6d7783', lit: '#929ca8', shade: '#4f5864', face: '#454c57' } as const;
 const HULL = { top: '#5f777c', lit: '#829a9d', shade: '#44585e', face: '#35464c' } as const;
-const TOWER = { top: '#6d868b', lit: '#94aaad', shade: '#4e6368', face: '#3f555b' } as const;
 const RUST = '#a8552e';
 const BEACON = '#ff4d3a';
 const WATER = { deep: '#14242a', mid: '#1d3640', wall: '#2a363d', lip: '#5f6a74', line: '#3f7480' } as const;
@@ -141,113 +140,7 @@ function bevel(g: CanvasRenderingContext2D, s: Solid, e = 4) {
 
 /** Each hull's long axis band, [top, bottom] in world y; the twin is the half turn. */
 const HULL_BANDS: readonly (readonly [number, number])[] = [[1850, 2150], [3850, 4150]];
-const SUB = { ox: 450, oy: 1700, w: 1900, h: 600 };
-
-/** The boat's plan, in world coordinates for the west slip: a pointed bow, a long parallel body, a rounded stern. */
-function subPath(g: CanvasRenderingContext2D) {
-  g.moveTo(500, 2000);
-  g.bezierCurveTo(570, 1935, 650, 1850, 800, 1850);
-  g.lineTo(2120, 1850);
-  g.quadraticCurveTo(2262, 1850, 2300, 1962);
-  g.lineTo(2300, 2038);
-  g.quadraticCurveTo(2262, 2150, 2120, 2150);
-  g.lineTo(800, 2150);
-  g.bezierCurveTo(650, 2150, 570, 2065, 500, 2000);
-  g.closePath();
-}
-
-const subSprites = new Map<boolean, HTMLCanvasElement>();
-/** The whole boat as one picture: waterline lap at both ends, a cylinder in cel bands, plating, the casing strip, dive planes, rudder. `mirror` is the east slip, bow east. */
-function subSprite(mirror: boolean): HTMLCanvasElement {
-  let c = subSprites.get(mirror);
-  if (c) return c;
-  c = document.createElement('canvas');
-  c.width = SUB.w; c.height = SUB.h;
-  const g = c.getContext('2d')!;
-  g.save();
-  if (mirror) { g.translate(SUB.w, 0); g.scale(-1, 1); }
-  g.translate(-SUB.ox, -SUB.oy);
-  // Waterline: a dark lap round the bow and stern only (the sides face the dry deck), with foam dashes.
-  g.save();
-  g.beginPath(); g.rect(450, 1700, 280, 600); g.rect(2080, 1700, 270, 600); g.clip();
-  g.lineJoin = 'round';
-  g.strokeStyle = 'rgba(6, 18, 22, 0.6)'; g.lineWidth = 30; g.beginPath(); subPath(g); g.stroke();
-  g.strokeStyle = 'rgba(190, 232, 230, 0.4)'; g.lineWidth = 20; g.setLineDash([16, 24]); g.beginPath(); subPath(g); g.stroke();
-  g.setLineDash([]);
-  g.restore();
-  // Contact shade where the hull stands over the deck.
-  g.strokeStyle = 'rgba(6, 10, 14, 0.4)'; g.lineWidth = 14; g.beginPath(); subPath(g); g.stroke();
-  // Planes first, so the hull overlaps their roots: forward at the shoulders, aft near the tail.
-  for (const [fx, tipx] of [[800, 790], [1960, 1950]] as const) {
-    for (const s of [-1, 1]) {
-      const y0 = 2000 + s * 150, y1 = 2000 + s * 232;
-      g.fillStyle = HULL.lit;
-      g.beginPath(); g.moveTo(fx - 28, y0); g.lineTo(fx + 36, y0); g.lineTo(tipx + 8, y1); g.lineTo(tipx - 34, y1 - s * 6); g.closePath(); g.fill();
-      g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
-      g.fillStyle = 'rgba(10, 12, 16, 0.28)'; g.beginPath(); g.moveTo(fx + 36, y0); g.lineTo(tipx + 8, y1); g.lineTo(tipx - 8, y1); g.lineTo(fx + 12, y0); g.closePath(); g.fill();
-    }
-  }
-  // Rudder fin on the centreline, aft.
-  g.fillStyle = HULL.shade; g.beginPath(); roundRect(g, 2236, 1990, 74, 20, 8); g.fill(); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
-  // Body.
-  g.fillStyle = HULL.top;
-  g.beginPath(); subPath(g); g.fill();
-  g.save();
-  g.beginPath(); subPath(g); g.clip();
-  g.fillStyle = HULL.lit; g.fillRect(450, 1850, 1900, 90);
-  g.fillStyle = HULL.shade; g.fillRect(450, 2060, 1900, 90);
-  g.fillStyle = 'rgba(14, 20, 24, 0.28)'; g.fillRect(450, 1939, 1900, 2); g.fillRect(450, 2059, 1900, 2);
-  g.strokeStyle = SEAM; g.lineWidth = 2; g.beginPath();
-  const studs: [number, number][] = [];
-  for (let x = 600; x < 2300; x += 100) {
-    g.moveTo(x, 1850); g.lineTo(x, 2150);
-    for (const y of [1866, 1990, 2010, 2134]) studs.push([x - 7, y], [x + 7, y]);
-  }
-  g.stroke();
-  rivets(g, studs, 1.9);
-  for (let x = 700; x < 2200; x += 100) {
-    if (rand01(x, 3, 9) > 0.28) continue;
-    g.fillStyle = 'rgba(168, 85, 46, 0.45)'; g.fillRect(x + 20 + rand01(x, 1) * 40, 2100 + rand01(x, 4) * 18, 6, 12 + rand01(x, 2) * 20);
-  }
-  g.restore();
-  // Deck casing: the lighter, narrower strip along the spine, with limber slots and cleats.
-  g.fillStyle = '#8ea6a9';
-  g.beginPath(); roundRect(g, 700, 1968, 1480, 64, 30); g.fill();
-  g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
-  g.fillStyle = 'rgba(255, 255, 255, 0.28)'; g.fillRect(724, 1972, 1432, 5);
-  g.fillStyle = 'rgba(14, 20, 24, 0.5)';
-  for (let x = 740; x < 2140; x += 34) { g.fillRect(x, 1978, 14, 5); g.fillRect(x, 2017, 14, 5); }
-  g.fillStyle = '#546a70';
-  for (const x of [820, 1000, 1700, 1900, 2060]) { g.beginPath(); g.arc(x, 2000, 5, 0, TAU); g.fill(); g.strokeStyle = INK; g.lineWidth = 1.6; g.stroke(); }
-  g.strokeStyle = INK; g.lineWidth = 3; g.lineJoin = 'round';
-  g.beginPath(); subPath(g); g.stroke();
-  g.restore();
-  // Boat number on the lit shoulder: stencilled the right way round in either slip.
-  g.fillStyle = 'rgba(226, 220, 203, 0.82)';
-  const nx = mirror ? SUB.w - (920 - SUB.ox) - 36 : 920 - SUB.ox;
-  stencil(g, mirror ? '41' : '77', nx, 1866 - SUB.oy, 22);
-  subSprites.set(mirror, c);
-  return c;
-}
-
-function drawSubs(ctx: CanvasRenderingContext2D, now: number, view: ThemeView, size: number) {
-  for (const mirror of [false, true]) {
-    const ox = mirror ? size - SUB.ox - SUB.w : SUB.ox, oy = mirror ? size - SUB.oy - SUB.h : SUB.oy;
-    if (!inView(view, ox + SUB.w / 2, oy + SUB.h / 2, SUB.w / 2 + 100)) continue;
-    ctx.drawImage(subSprite(mirror), ox, oy);
-    // The screw turning slowly under the surface, off the stern.
-    const px = mirror ? size - 2332 : 2332, py = mirror ? size - 2000 : 2000, a = reducedMotion() ? 0 : now * 0.0021;
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(a);
-    ctx.fillStyle = 'rgba(54, 104, 110, 0.78)';
-    for (let k = 0; k < 4; k++) { ctx.rotate(TAU / 4); ctx.beginPath(); ctx.ellipse(18, 0, 18, 7, 0, 0, TAU); ctx.fill(); }
-    ctx.fillStyle = '#2f4a50'; ctx.beginPath(); ctx.arc(0, 0, 7, 0, TAU); ctx.fill();
-    ctx.restore();
-  }
-}
-
-/** The collision pieces of a hull. Those between the bands are the pit under the boat (the overlay draws the boat itself); the rest are the cradle blocks the planes rest on. */
+/** The collision pieces of a hull. Those between the bands are the pit under the boat (the vehicle kit's submarine is drawn over them); the rest are the cradle blocks the planes rest on. */
 function paintHull(g: CanvasRenderingContext2D, s: Solid) {
   if (inBand(s.y)) { paintPit(g, s); return; }
   frontFace(g, s, 14, '#2f353d', (x0, x1, y) => {
@@ -269,95 +162,7 @@ function paintHull(g: CanvasRenderingContext2D, s: Solid) {
  * Conning tower: a taller body with its own face, drawn as an overlay after the walls so it hangs over the hull below it.
  * ------------------------------------------------------------------------------------------------------------------ */
 
-const TOWER_FACE = 24;
-const PAD = 40;
-const towerSprites = new Map<string, HTMLCanvasElement>();
-
-/** The conning tower's plan: a streamlined fin, blunt aft, drawn at `dy` down and shrunk by `inset`; `flip` points the bow east. */
-function finPath(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, flip: boolean, dy = 0, inset = 0) {
-  const X = (u: number) => x + (flip ? 1 - u : u) * w, Y = (v: number) => y + dy + v * h, i = inset;
-  g.moveTo(X(0.03 + i), Y(0.5));
-  g.bezierCurveTo(X(0.03 + i), Y(0.2 + i), X(0.15 + i), Y(0.05 + i), X(0.33 + i), Y(0.05 + i));
-  g.lineTo(X(0.82 - i), Y(0.05 + i));
-  g.bezierCurveTo(X(0.95 - i), Y(0.05 + i), X(0.99 - i), Y(0.3), X(0.99 - i), Y(0.5));
-  g.bezierCurveTo(X(0.99 - i), Y(0.7), X(0.95 - i), Y(0.95 - i), X(0.82 - i), Y(0.95 - i));
-  g.lineTo(X(0.33 + i), Y(0.95 - i));
-  g.bezierCurveTo(X(0.15 + i), Y(0.95 - i), X(0.03 + i), Y(0.8 - i), X(0.03 + i), Y(0.5));
-  g.closePath();
-}
-
-function drawTowerBody(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, flip: boolean) {
-  const X = (u: number) => x + (flip ? 1 - u : u) * w;
-  // The shade it throws down and right across the deck.
-  g.fillStyle = 'rgba(8, 12, 16, 0.34)';
-  g.save(); g.translate(16, 20);
-  g.beginPath(); finPath(g, x, y, w, h, flip, TOWER_FACE * 0.5); g.fill();
-  g.restore();
-  // The side of the fin: the plan shape swept down.
-  g.fillStyle = TOWER.face;
-  for (let k = TOWER_FACE; k >= 0; k -= 2) { g.beginPath(); finPath(g, x, y, w, h, flip, k); g.fill(); }
-  g.save();
-  g.beginPath(); finPath(g, x, y, w, h, flip, TOWER_FACE); g.clip();
-  g.fillStyle = 'rgba(10, 12, 16, 0.34)';
-  g.fillRect(x, y + h * 0.95 + TOWER_FACE - 9, w, 14);
-  g.restore();
-  g.strokeStyle = INK; g.lineWidth = 2.5;
-  g.beginPath(); finPath(g, x, y, w, h, flip, TOWER_FACE); g.stroke();
-  g.beginPath();
-  for (const u of [0.03, 0.99]) { g.moveTo(X(u), y + h * 0.5); g.lineTo(X(u), y + h * 0.5 + TOWER_FACE); }
-  g.stroke();
-  for (let i = 0; i < 4; i++) {
-    const px = X(0.42 + i * 0.1), py = y + h * 0.95 + TOWER_FACE * 0.5 - 1;
-    g.fillStyle = '#10181c'; g.beginPath(); g.arc(px, py, 5.5, 0, TAU); g.fill();
-    g.strokeStyle = '#7a9296'; g.lineWidth = 1.8; g.stroke();
-    g.fillStyle = '#5fa8a4'; g.fillRect(px - 3, py - 3, 2.2, 2.2);
-    g.strokeStyle = INK; g.lineWidth = 1.4; g.beginPath(); g.arc(px, py, 7, 0, TAU); g.stroke();
-  }
-  // The top: lit and shaded cel steps, a raised fairing, the hatch and the masts.
-  g.fillStyle = TOWER.top;
-  g.beginPath(); finPath(g, x, y, w, h, flip); g.fill();
-  g.save();
-  g.beginPath(); finPath(g, x, y, w, h, flip); g.clip();
-  g.fillStyle = TOWER.lit; g.fillRect(x, y, w, h * 0.22);
-  g.fillStyle = TOWER.shade; g.fillRect(x, y + h * 0.74, w, h * 0.26);
-  g.fillStyle = 'rgba(14, 20, 24, 0.3)'; g.fillRect(x, y + h * 0.22 - 1, w, 2); g.fillRect(x, y + h * 0.74 - 1, w, 2);
-  g.restore();
-  g.fillStyle = '#7d9599';
-  g.beginPath(); finPath(g, x, y, w, h, flip, 0, 0.09); g.fill();
-  g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
-  g.fillStyle = 'rgba(255, 255, 255, 0.2)';
-  g.fillRect(Math.min(X(0.4), X(0.75)), y + h * 0.2, w * 0.35, 3);
-  const hx = X(0.3), hy = y + h * 0.5;
-  g.fillStyle = '#3a4a50'; g.beginPath(); g.arc(hx, hy, 24, 0, TAU); g.fill();
-  g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
-  g.fillStyle = '#9ab2b5'; g.beginPath(); g.arc(hx, hy, 16, 0, TAU); g.fill(); g.stroke();
-  g.lineWidth = 3; g.beginPath(); g.moveTo(hx - 10, hy); g.lineTo(hx + 10, hy); g.moveTo(hx, hy - 10); g.lineTo(hx, hy + 10); g.stroke();
-  g.fillStyle = 'rgba(255, 255, 255, 0.55)'; g.fillRect(hx - 9, hy - 11, 3, 3);
-  for (const [fu, fv, len] of [[0.56, 0.38, 24], [0.65, 0.62, 18]] as const) {
-    const mx = X(fu), my = y + h * fv;
-    g.fillStyle = '#546a70'; g.beginPath(); g.arc(mx, my, 7, 0, TAU); g.fill();
-    g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
-    g.fillStyle = '#7d9599'; g.fillRect(mx - 3, my - len, 6, len); g.strokeRect(mx - 3, my - len, 6, len);
-    g.fillStyle = '#10181c'; g.fillRect(mx - 3, my - len, 6, 5);
-  }
-  g.strokeStyle = INK; g.lineWidth = 3;
-  g.beginPath(); finPath(g, x, y, w, h, flip); g.stroke();
-}
-
-function towerSprite(w: number, h: number, flip: boolean): HTMLCanvasElement {
-  const key = `${w}x${h}${flip}`;
-  let c = towerSprites.get(key);
-  if (!c) {
-    c = document.createElement('canvas');
-    c.width = w + PAD * 2;
-    c.height = h + TOWER_FACE + PAD * 2;
-    drawTowerBody(c.getContext('2d')!, PAD, PAD, w, h, flip);
-    towerSprites.set(key, c);
-  }
-  return c;
-}
-
-/** Under the overlay the tower's own cells just carry the deck, so there is never a hole in the hull if the overlay is late. */
+/** The tower's own cells just carry the deck under the submarine, so there is never a hole in the hull while it bakes. */
 function paintTower(g: CanvasRenderingContext2D, s: Solid) {
   g.fillStyle = HULL.top;
   g.fillRect(s.x, s.y, s.w, s.h);
@@ -1064,39 +869,16 @@ function ctx_puff(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
 }
 
-function drawTowers(ctx: CanvasRenderingContext2D, now: number, view: ThemeView, towers: readonly Rect[]) {
-  for (const t of towers) {
-    if (!inView(view, t.x + t.w / 2, t.y + t.h / 2, t.w)) continue;
-    const flip = t.x > 3000;
-    const img = towerSprite(t.w, t.h, flip);
-    ctx.drawImage(img, t.x - PAD, t.y - PAD);
-    // The search radar turns on its mast.
-    const rx = t.x + t.w * (flip ? 0.18 : 0.82), ry = t.y + t.h * 0.46, a = reducedMotion() ? 0 : now * 0.0016;
-    ctx.fillStyle = '#546a70';
-    ctx.beginPath(); ctx.arc(rx, ry, 7, 0, TAU); ctx.fill();
-    ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
-    ctx.save();
-    ctx.translate(rx, ry - 10);
-    ctx.rotate(a);
-    ctx.scale(1, 0.45);
-    ctx.fillStyle = '#9ab2b5';
-    ctx.beginPath(); roundRect(ctx, -26, -5, 52, 10, 5); ctx.fill();
-    ctx.lineWidth = 3; ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillRect(rx - 2, ry - 15, 3, 2.4);
-  }
-}
 
 registerTheme('subpen', {
+  ...subpenGeo({ bulkhead: paintBulkhead }),
   dusk: 0.4,
   floor: paintDeckFloor,
   walls: { hull: paintHull, tower: paintTower, bulkhead: paintBulkhead, rack: paintRack, water: paintWater },
   under(ctx, now, view, map) {
     const s = sites(map);
     drawWater(ctx, now, view, s.water);
-    drawSubs(ctx, now, view, map.size);
-    drawTowers(ctx, now, view, s.towers);
+    drawSubmarines(ctx, now, view, map);
     drawDrips(ctx, now, view, s.drips);
     drawLamps(ctx, now, view, s.lamps);
     drawBeacons(ctx, now, view, s.beacons);

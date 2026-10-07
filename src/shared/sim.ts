@@ -2,6 +2,7 @@ import { AIRDROP, GUNS, SPRINT, SUPPRESSION, WORLD, ZOM, type PlayerKind } from 
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { tickAirdrops } from './sim/airdrop.ts';
+import { tickDoors } from './sim/doors.ts';
 import { tickBarrels } from './sim/barrels.ts';
 import { empMul, tickProps } from './sim/props.ts';
 import { tickRange } from './sim/targets.ts';
@@ -147,13 +148,25 @@ function pingHunted(w: World, p: Player) {
   else if (!p.huntedPing || w.now - p.huntedPing.at >= HUNTED_PING_MS) p.huntedPing = { x: p.x, y: p.y, at: w.now };
 }
 
+/**
+ * Players in the order a tick handles them: the roster turned by the tick count, so no player (or team, which the roster
+ * interleaves by join order) always moves and fires first. The first to fire is first in `w.bullets`, which decides who lands
+ * the round when two would kill each other in one tick. No rng draw, so a replay is exact.
+ */
+export function playersThisTick(w: World): Player[] {
+  const all = [...w.players.values()];
+  const turn = all.length ? w.tick % all.length : 0;
+  return turn === 0 ? all : [...all.slice(turn), ...all.slice(0, turn)];
+}
+
 export function step(w: World, dtMs: number): void {
   w.events = w.queuedEvents;
   w.queuedEvents = [];
   w.now += dtMs;
   w.tick++;
   const dt = dtMs / 1000;
-  for (const p of w.players.values()) tickPlayer(w, p, dtMs);
+  for (const p of playersThisTick(w)) tickPlayer(w, p, dtMs);
+  tickDoors(w, dtMs);
   for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);
   tickThrown(w, dt);

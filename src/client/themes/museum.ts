@@ -4,6 +4,7 @@ import { setLight } from '../lighting.ts';
 import { INK } from '../palette.ts';
 import { paintMuseumFloor } from './museumfloor.ts';
 import { MUSEUM_WALLS, torchSpots } from './museumart.ts';
+import { museumGeo } from './museumgeo.ts';
 import { registerTheme, type ThemeView } from './registry.ts';
 
 /**
@@ -236,6 +237,7 @@ function museumOver(ctx: CanvasRenderingContext2D, now: number, view: ThemeView,
 }
 
 registerTheme('museum', {
+  ...museumGeo,
   floor: paintMuseumFloor,
   walls: MUSEUM_WALLS,
   under: museumUnder,

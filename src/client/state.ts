@@ -1,5 +1,6 @@
 import type { BuildingKind, TurretKind, ZombieKind } from '../shared/defs.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
+import type { MapId } from '../shared/maps.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
 import type { Moments } from './moments.ts';
@@ -49,6 +50,8 @@ export type Session = {
   myId: number;
   worldSize: number;
   walls: WallView[];
+  /** The map in play, so its doors can be rebuilt from the snapshot's door state (set by welcome and walls). */
+  mapId?: MapId;
   snaps: SnapBuffer;
   seq: number;
   shots: number;

@@ -1,4 +1,5 @@
 import { pickOptions, WORLD, ZOM, type BuildingKind, type ModeId } from '../shared/defs.ts';
+import type { MapId } from '../shared/maps.ts';
 import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -28,7 +29,7 @@ import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, rende
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { createDelight } from './delight.ts';
-import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
+import { doorsOf, decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
 import { startEffect } from './effects.ts';
 import { startBoom, startSlash } from './blastfx.ts';
 import { gunFxOf, impact as gunImpact } from './gunfx.ts';
@@ -295,13 +296,13 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; s.mapId = msg.map; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'emote': { noteEmote(msg.pid, msg.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, msg.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); return; }
     case 'badge': if (isCenturion(msg.badge) && aimCamera) { const at = worldToScreen(aimCamera, s.lastSelf); celebrate.puff(at.x, at.y - 30, bodyColor({ color: loadout.color, team: null })); }
       s.moments = addCareerToast(s.moments, msg.badge, msg.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
-    case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; s.mapId = msg.map; return;
   }
 }
 
@@ -312,9 +313,9 @@ function onProgress(msg: Extract<ServerMsg, { t: 'progress' }>) {
   xpCard.onProgress(msg);
 }
 
-function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; walls: WallView[] }): Session {
+function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; map?: MapId; walls: WallView[] }): Session {
   return {
-    ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
+    ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, mapId: welcome.map, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, life: null, bests: loadBests(), feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
     coreHitAt: -Infinity, building: false, buildKind: 'wall', buildTier: 1, buildGhost: null, turretAims: new Map(),
@@ -334,7 +335,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = newestSnap(s.snaps);
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
-  s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
+  s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap, doorsOf(s)), motion.speed, s.worldSize);
   playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now, s.bests.kills);
@@ -465,7 +466,7 @@ setInterval(() => {
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
-  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
+  s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest, doorsOf(s)), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
 }, INPUT_MS);
 
 function pick(slot: number) {

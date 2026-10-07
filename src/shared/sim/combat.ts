@@ -1,4 +1,5 @@
 import { ARMORS, GUNS, HP_MULTIPLIER, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
+import { blastDoors } from './doors.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
@@ -297,11 +298,12 @@ type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[]; /
 const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
 
 const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) =>
-  walls.some((wall) => segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
+  walls.some((wall) => !wall.nb && segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
 
 export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, by: Culprit, view: View = liveView(w)) {
   if (by.attacker && hasPerk(by.attacker, 'demolitions')) { radius *= PERK_RULES.demolitions.radiusMul; maxDamage *= PERK_RULES.demolitions.dealtMul; }
   w.events.push({ e: 'boom', x, y, r: radius });
+  blastDoors(w, x, y, radius);
   for (const p of w.players.values()) {
     const at = view.poseOf(p);
     if (!at) continue;
@@ -375,7 +377,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   const candidates: BulletHit[] = [
-    ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...view.walls.filter((wall) => !wall.nb).map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),

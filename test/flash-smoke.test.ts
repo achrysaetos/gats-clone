@@ -276,7 +276,7 @@ test('a bot that lost its target in smoke holds instead of pushing into it', asy
   const me = snap.players.find((p) => p.id === bot.id)!;
   const aware = { ...freshAwareness(), contacts: [{ id: 99, x: 900, y: 1000, seenTick: snap.tick - 20, gun: 'assault' as const }] };
   const { view } = perceive(snap, arena, me, aware);
-  const ctx = { tick: snap.tick, persona: PERSONALITIES.aggressive, role: null, band: { headOn: 0, ideal: 300, max: 400, rushes: false }, arena, rand: () => 0.1 };
+  const ctx = { tick: snap.tick, persona: PERSONALITIES.aggressive, role: null, band: { headOn: 0, ideal: 300, max: 400, hold: 0, rushes: false }, arena, rand: () => 0.1 };
   const next = nextIntent({ ...startIntent({ k: 'engage', target: 99 }, ctx), holdUntil: 0 }, view, ctx);
   assert.equal(next.k, 'takePosition');
 });

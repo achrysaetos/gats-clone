@@ -2,7 +2,8 @@ import {
   AIRDROP, ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, GUN_IDS, LEVELS, MAX_LEVEL, PERK_TIERS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type PropKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
-import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
+import { MAP_IDS, MAPS, type MapId, type WallMaterial } from './maps.ts';
+import type { DoorView } from './sim/doors.ts';
 import { isEmoteId, type EmoteId } from './emotes.ts';
 import type { RangeView, TargetView } from './range.ts';
 import { isCosmeticId, isSlot, parsePicks, type Cos, type Equipped, type Picks, type ProgressMsg, type Slot } from './cosmetics.ts';
@@ -119,7 +120,8 @@ export const planeAt = (f: Pick<AirdropView, 'x' | 'y' | 'a' | 'dropAt'>, t: num
   return { x: f.x + Math.cos(f.a) * d, y: f.y + Math.sin(f.a) * d };
 };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number; drop?: true };
-export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
+/** A wall as it goes on the wire. A polygon part also carries `pts` (flat, convex; see `Rect`) and `pid`, its polygon's index in the map's `polys`. */
+export type WallView = { x: number; y: number; w: number; h: number; pts?: readonly number[]; nb?: true; ns?: true; pid?: number } & ({ built: false; material: WallMaterial } | { built: true });
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fireSlick' | 'flashbang' | 'smokeGrenade' | 'smokeCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
@@ -286,6 +288,8 @@ export type Snapshot = {
   zombies?: ZombieView[];
   buildings?: BuildingView[];
   run?: RunView;
+  /** Doors in view that are not shut, `[index in the map's doors, open 0..255, swing side]`; present on maps with doors. Sticky. */
+  doors?: DoorView[];
   /** Last Squad only. */
   royale?: RoyaleView;
   /** Range only: each target's health in layout order (`TargetView`), sticky, and the readout for you. */
@@ -294,15 +298,15 @@ export type Snapshot = {
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'airdrop', 'targets'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'airdrop', 'targets', 'doors'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 /** `cos` maps player id to what they wear, sent only when it changes; `fillSnapshot` folds it onto each `PlayerView.cos`. */
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>> & { cos?: Record<number, Cos> };
 
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
-  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[]; account: string | null }
-  | { t: 'walls'; worldSize: number; walls: WallView[] }
+  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; map?: MapId; walls: WallView[]; account: string | null }
+  | { t: 'walls'; worldSize: number; map?: MapId; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
   /** Player `pid` is doing emote `id`. */

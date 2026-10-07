@@ -4,6 +4,9 @@ import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { propViewRect } from '../shared/sim/propview.ts';
 import { knifeLunge, moveStep, startDash, type Motion, type Rect } from '../shared/sim/movement.ts';
 import { sprintWanted } from '../shared/sim/stats.ts';
+import { leavesFromViews } from '../shared/sim/doors.ts';
+import type { MapDoor } from '../shared/geom.ts';
+import { MAPS, type MapId } from '../shared/maps.ts';
 import { lerp } from './interp.ts';
 
 type Point = { x: number; y: number };
@@ -30,9 +33,14 @@ const MAX_PENDING = 90;
 export const SNAP_DIST = 150;
 const SMOOTH_MS = 60;
 
+/** The doors of the map in play, which the snapshot's door state opens and shuts. */
+export const doorsOf = (s: { mapId?: MapId }): readonly MapDoor[] | undefined => (s.mapId ? MAPS[s.mapId]?.doors : undefined);
+
 /** What stops the local player, as the server's solidRects: cover, and in a zombies run the squad's walls and the core. */
-export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crates' | 'buildings' | 'run' | 'props'> | null): Rect[] => [
+export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crates' | 'buildings' | 'run' | 'props' | 'doors'> | null, doors?: readonly MapDoor[]): Rect[] => [
   ...walls,
+  // Door leaves, rebuilt from the map's doors and the snapshot's door state exactly as the server holds them.
+  ...leavesFromViews(doors, snap?.doors),
   ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
   ...(snap?.props ?? []).flatMap((q) => propViewRect(q) ?? []),
   // A spike strip lies on the floor and is walked over.

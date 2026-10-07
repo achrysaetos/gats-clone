@@ -1,4 +1,5 @@
 import type { GunId, WeaponId } from '../shared/defs.ts';
+import { circleHitsConvex } from '../shared/geom.ts';
 import { GUNS, WORLD } from '../shared/defs.ts';
 import type { BuildingView, CrateView, DamageKind, RunView, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
@@ -191,7 +192,7 @@ export type Cover = { walls: readonly WallView[]; crates: readonly CrateView[]; 
 /** The cover a hit at (x, y) landed on, if any. */
 export function coverAt(c: Cover, x: number, y: number, slack = 4): (Rect & { crate?: true }) | null {
   const hit = (r: Rect) => x >= r.x - slack && x <= r.x + r.w + slack && y >= r.y - slack && y <= r.y + r.h + slack;
-  for (const w of c.walls) if (hit(w)) return w;
+  for (const w of c.walls) if (hit(w) && (!w.pts || circleHitsConvex(x, y, slack, w.pts))) return w;
   for (const k of c.crates) { const r = { x: k.x, y: k.y, w: k.size, h: k.size }; if (hit(r)) return { ...r, crate: true }; }
   for (const b of c.buildings ?? []) { if (b.kind === 'spikes') continue; const r = cellRect(b.cx, b.cy); if (hit(r)) return r; }
   if (c.run) { const r = coreRectAt(c.run.core); if (hit(r)) return r; }

@@ -22,6 +22,7 @@ import { drawRangeFloor, drawTargets } from '../src/client/targetart.ts';
 import '../src/client/themes/index.ts';
 import { floorPlan } from '../src/client/floor.ts';
 import { themeOf } from '../src/client/themes/registry.ts';
+import { drawDoors, drawPolys } from '../src/client/geoart.ts';
 
 const GRID = 80;
 const BOX_RADIUS = 3, BOX_PASSES = 2;
@@ -110,6 +111,13 @@ window.renderMap = (id, px, heat) => {
   drawLooseShadows(ctx, crates);
   const theme = themeOf(m.theme), tview = { x0: 0, y0: 0, x1: size, y1: size };
   drawSolids(ctx, [...curbs, ...walls, ...crates]);
+  // Polygon walls and doors (shut), with each roof as a dashed outline so the rooms under it stay readable.
+  const geo = { now: 1000, view: { x0: 0, y0: 0, x1: size, y1: size }, dark: 0, map: m };
+  drawPolys(ctx, geo);
+  drawDoors(ctx, geo, undefined);
+  ctx.save(); ctx.setLineDash([14 / k, 10 / k]); ctx.strokeStyle = 'rgba(255,154,60,0.8)'; ctx.lineWidth = 3 / k;
+  for (const r of m.roofs ?? []) { ctx.beginPath(); r.points.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.stroke(); }
+  ctx.restore();
   if (theme?.under) theme.under(ctx, 1000, tview, m);
   if (theme?.over) theme.over(ctx, 1000, tview, m);
   if (m.range) drawTargets(ctx, { targets: m.range.targets.map(() => 10), match: { map: m.name } }, 0, 1e9, { x0: 0, y0: 0, x1: size, y1: size });

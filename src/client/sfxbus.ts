@@ -19,9 +19,12 @@ export function emitSfx(id: Exclude<SoundId, 'hurt'>, opts: { gain?: number; pan
   sink?.cues([screenCue(id, gain, opts.pan)]);
 }
 
-/** Voices a cue at a place in the world (a magazine hitting the floor), heard from `self`'s own gun a touch louder. */
-export function emitSfxAt(id: Exclude<SoundId, 'hurt'>, x: number, y: number, self: boolean, opts: { gain?: number; delayMs?: number } = {}) {
-  sink?.cues([{ id, x, y, self, gain: opts.gain ?? 1, ...(opts.delayMs ? { delayMs: opts.delayMs } : {}) }]);
+/**
+ * Voices a cue at a place in the world (a magazine hitting the floor, a bolt locking), heard from `self`'s own gun a touch louder.
+ * `pitch` scales its pitch (a heavier gun is lower); `pan` (-1..1) places your own sounds in the stereo field (others' are placed by where they are).
+ */
+export function emitSfxAt(id: Exclude<SoundId, 'hurt'>, x: number, y: number, self: boolean, opts: { gain?: number; delayMs?: number; pitch?: number; pan?: number } = {}) {
+  sink?.cues([{ id, x, y, self, gain: opts.gain ?? 1, ...(opts.delayMs ? { delayMs: opts.delayMs } : {}), ...(opts.pitch && opts.pitch !== 1 ? { pitch: opts.pitch } : {}), ...(opts.pan ? { pan: opts.pan } : {}) }]);
 }
 
 /** Dulls the whole mix (the killcam) or opens it again. */

@@ -1,7 +1,7 @@
 import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
 import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
-import { MAPS, ROTATION } from '../shared/maps.ts';
+import { MAPS, ROTATION, type MapId } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
@@ -52,7 +52,9 @@ export type Room = {
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g]));
 
 export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES): Room {
-  const world = createWorld(mode, seed, ROTATION[mode][0]);
+  // SKIRMISH_MAP=geo-test starts the versus rooms on the geometry test range (dev only; it is in no rotation).
+  const devMap = process.env.SKIRMISH_MAP;
+  const world = createWorld(mode, seed, (devMap && devMap in MAPS && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM') ? devMap : ROTATION[mode][0]) as MapId);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
   const clients = new Map<WebSocket, Client>();
@@ -275,7 +277,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
       balanceBots();
-      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
+      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account });
       profile(p.id, { games: 1 });
       if (key) {
         // Looking is free in practice; changing a profile, or reading its news (which clears it), is not.
@@ -426,7 +428,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;
         const walls = wallViews(world);
-        for (const c of joined()) send(c.ws, { t: 'walls', worldSize: MAPS[world.map].size, walls });
+        for (const c of joined()) send(c.ws, { t: 'walls', worldSize: MAPS[world.map].size, map: world.map, walls });
       }
       for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
     },

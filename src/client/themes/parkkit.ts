@@ -34,7 +34,12 @@ const bkey = (cx: number, cy: number) => cx * 4096 + cy;
 function bucketOf(material: string): Bucket {
   let b = buckets.get(material);
   if (b) return b;
-  const rects = PARK.walls.filter((w) => w.material === material);
+  // Round trunks are polygons now; the canopies and shadows still hang off a box round each.
+  const boxes = material === 'trunk' ? (PARK.polys ?? []).filter((p) => p.shape === 'trunk').map((p) => {
+    const xs = p.points.map((q) => q.x), ys = p.points.map((q) => q.y), x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, material } as MapWall;
+  }) : [];
+  const rects = [...PARK.walls.filter((w) => w.material === material), ...boxes];
   const cells = new Map<number, MapWall[]>();
   for (const r of rects) {
     for (let cy = Math.floor(r.y / BK); cy <= Math.floor((r.y + r.h) / BK); cy++) {

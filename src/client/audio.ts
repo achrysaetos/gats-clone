@@ -159,7 +159,7 @@ export function createEngine(ctx: BaseAudioContext, master: AudioNode, noise: Au
         lastPlayed.set(cue.id, now);
       }
       const vary = varianceOf(cue.id);
-      const pitchK = 1 + (Math.random() * 2 - 1) * vary.pitch;
+      const pitchK = (1 + (Math.random() * 2 - 1) * vary.pitch) * (cue.pitch ?? 1);
       const level = cue.gain * (1 + (Math.random() * 2 - 1) * vary.gain);
       const gain = ctx.createGain();
       const pan = ctx.createStereoPanner();

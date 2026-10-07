@@ -3,7 +3,8 @@ import { MAPS } from '../maps.ts';
 import { damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
 import { knifeTargets } from './targets.ts';
-import { circleHitsRect, clamp, dist2, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
+import { nearestEdge } from '../geom.ts';
+import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
 import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 
 const BUILT_WALL_MS = 12000;
@@ -103,6 +104,21 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   },
 };
 
+/** A grenade that meets a polygon's face glances off it: reflected about the face, losing most of its speed. Flat walls stop it dead. */
+const BOUNCE = { keep: 0.45, slip: 0.85, standoff: 1.5 } as const;
+function bounceOff(t: { x: number; y: number; vx: number; vy: number }, pts: readonly number[], at: number, dx: number, dy: number) {
+  const px = t.x + dx * at, py = t.y + dy * at;
+  const { nx, ny } = nearestEdge(px, py, pts);
+  const vn = t.vx * nx + t.vy * ny;
+  if (vn < 0) {
+    const tx = t.vx - vn * nx, ty = t.vy - vn * ny;
+    t.vx = tx * BOUNCE.slip - vn * nx * BOUNCE.keep;
+    t.vy = ty * BOUNCE.slip - vn * ny * BOUNCE.keep;
+  }
+  t.x = px + nx * BOUNCE.standoff;
+  t.y = py + ny * BOUNCE.standoff;
+}
+
 export function tickThrown(w: World, dt: number) {
   const keep: Thrown[] = [];
   for (const t of w.thrown) {
@@ -115,7 +131,9 @@ export function tickThrown(w: World, dt: number) {
       case 'flashbang':
       case 'smokeGrenade': {
         const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
-        if (coverRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
+        const block = earliestHit(coverRects(w), t.x, t.y, nx - t.x, ny - t.y);
+        if (block?.b.pts) bounceOff(t, block.b.pts, block.t, nx - t.x, ny - t.y);
+        else if (block) { t.vx = 0; t.vy = 0; }
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
         if (t.kind === 'grenade') explode(w, t.x, t.y, BLAST_RADIUS.grenade, 80, { ...by, label: 'Grenade' });

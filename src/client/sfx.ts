@@ -3,10 +3,10 @@ import { planeAt, type Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
 import { ringMoved } from './royale.ts';
-import { SOUND_BEATS, shellCount, shellSeat } from './reloadbeats.ts';
+import { FOLEY, actionCycle, type FoleyId } from './foley.ts';
 
 export type SoundId =
-  | `shot:${GunId}` | 'shot:silenced' | `reload:${WeaponId}`
+  | `shot:${GunId}` | 'shot:silenced' | FoleyId
   | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'fanfare' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'build:wood' | 'build:sandbag' | 'build:steel' | 'build:spikes' | 'upgrade' | 'aid:depot' | 'aid:post'
@@ -14,7 +14,8 @@ export type SoundId =
   | 'barrel:hurt' | 'barrel:fuse' | 'barrel:burst' | 'barrel:chain'
   | 'prop:whoosh' | 'prop:hiss' | 'prop:zap' | 'prop:fire' | 'prop:glass' | 'prop:pickup' | 'prop:splat'
   | 'plane' | 'chute' | 'crate:land' | 'crate:break' | 'crate:gold' | 'crate:supply'
-  | 'flashbang' | 'flashRing' | 'smoke' | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework';
+  | 'flashbang' | 'flashRing' | 'smoke' | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework'
+  | 'amb:flutter' | 'amb:caw' | 'amb:gull';
 
 /** Each kill in a streak sounds two semitones above the last, up to the fifth. */
 export type KillStep = 2 | 3 | 4 | 5;
@@ -76,7 +77,7 @@ const SHOT_SPECS: Record<WeaponId, ShotSpec> = {
   sniper: { crack: [3500, 1.2], body: [85, 34, 270, 0.8], blast: [1000, 150, 210, 1], bark: [850, 350, 130, 0.9], taps: [[150, 450, 0.2], [330, 600, 0.12]], action: [1100, 540, 0.18], brassHz: 2600 },
 };
 
-function gunShot(s: ShotSpec, k: number, w: number): Layer[] {
+function gunShot(s: ShotSpec, k: number, w: number, cycle: Layer[] | null = null): Layer[] {
   const g = w ** 1.5;
   const [cHz, cGain] = s.crack, [b0, b1, bMs, bGain] = s.body, [l0, l1, lMs, lGain] = s.blast, [r0, r1, rMs, rGain] = s.bark;
   return [
@@ -85,7 +86,8 @@ function gunShot(s: ShotSpec, k: number, w: number): Layer[] {
     { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [l0 * k, l1 * k], ms: lMs * w, gain: lGain * g },
     { src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [r0 * k, r1 * k], ms: rMs * w, gain: rGain * g },
     ...s.taps.map(([d, ms, gain]): Layer => ({ src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [650 * k, 170 * k], ms: ms * w, gain: gain * g, delayMs: d })),
-    { src: 'noise', filter: 'bandpass', q: 2, cutoffHz: [s.action[0], s.action[0] * 0.6], ms: 12, gain: s.action[2], delayMs: s.action[1], selfOnly: true },
+    // A bolt-action or a pump works its action by hand (see `actionCycle`); every other gun just clacks.
+    ...(cycle ?? [{ src: 'noise', filter: 'bandpass', q: 2, cutoffHz: [s.action[0], s.action[0] * 0.6], ms: 12, gain: s.action[2], delayMs: s.action[1], selfOnly: true } as Layer]),
     { ...ping(s.brassHz, 230, 70, 0.03), selfOnly: true },
   ];
 }
@@ -114,7 +116,7 @@ function shotRecipe(gun: GunId): Recipe {
   // The branch pitch only nudges (a fifth root-ish): a real gun family sounds like one family.
   const k = pitchOf(gun) ** 0.4 / w;
   if (g.silenced) return silencedShot(k);
-  const layers = gunShot(SHOT_SPECS[g.base], k, w);
+  const layers = gunShot(SHOT_SPECS[g.base], k, w, actionCycle(g.base, g.fireMs, g.mag));
   if (g.blast) layers.push({ src: 'tone', wave: 'sine', pitchHz: [70 * k, 26 * k], ms: 260, gain: 0.5 });
   if (g.pellets > 1 && g.base !== 'shotgun') layers.push({ src: 'tone', wave: 'sine', pitchHz: [120 * k, 50 * k], ms: 70, gain: 0.5, delayMs: 14 });
   return layers;
@@ -145,27 +147,7 @@ function shotSounds(): Record<`shot:${GunId}`, Recipe> {
 const mechClick = (hz: number, delayMs: number, gain = 0.25): Layer[] => [snap(hz, gain, delayMs, 14), { src: 'tone', wave: 'square', pitchHz: [hz / 5, hz / 9], ms: 22, gain: gain * 0.45, delayMs }];
 const thunk = (hz: number, delayMs: number, gain = 0.3): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [hz, hz * 0.5], ms: 70, gain, delayMs });
 
-// Magazine out, then magazine in; each class has its own rhythm, and every click lands on a beat of the reload's arm animation
-// (BEATS in reloadbeats.ts) at the class gun's own reload time.
-const atMs = (base: WeaponId, share: number) => Math.round(share * GUNS[base].reloadMs);
-const SHELLS_BASE = shellCount(GUNS.shotgun.mag);
-const RELOADS: Record<WeaponId, Recipe> = {
-  pistol: [...mechClick(3200, atMs('pistol', SOUND_BEATS.pistol.out!)), thunk(180, atMs('pistol', SOUND_BEATS.pistol.out!)), ...mechClick(2600, atMs('pistol', SOUND_BEATS.pistol.in!)), thunk(240, atMs('pistol', SOUND_BEATS.pistol.in!) + 10, 0.35),
-    snap(3800, 0.14, atMs('pistol', SOUND_BEATS.pistol.slap!), 8), ...mechClick(1900, atMs('pistol', SOUND_BEATS.pistol.rack!), 0.3)],
-  smg: [...mechClick(3600, atMs('smg', SOUND_BEATS.smg.out!)), thunk(210, atMs('smg', SOUND_BEATS.smg.out!)), ...mechClick(3000, atMs('smg', SOUND_BEATS.smg.in!)), thunk(280, atMs('smg', SOUND_BEATS.smg.in!) + 10, 0.35),
-    snap(4000, 0.14, atMs('smg', SOUND_BEATS.smg.slap!), 8), ...mechClick(2200, atMs('smg', SOUND_BEATS.smg.rack!), 0.3)],
-  assault: [...mechClick(2800, atMs('assault', SOUND_BEATS.assault.out!)), thunk(150, atMs('assault', SOUND_BEATS.assault.out!)), { ...air(1400, 600, 60, 0.12, atMs('assault', SOUND_BEATS.assault.swap!)) },
-    ...mechClick(2300, atMs('assault', SOUND_BEATS.assault.in!)), thunk(200, atMs('assault', SOUND_BEATS.assault.in!) + 10, 0.4), ...mechClick(3500, atMs('assault', SOUND_BEATS.assault.slap!), 0.18), ...mechClick(2000, atMs('assault', SOUND_BEATS.assault.rack!), 0.3)],
-  lmg: [...mechClick(2400, atMs('lmg', SOUND_BEATS.lmg.lid!), 0.25), ...mechClick(2200, atMs('lmg', SOUND_BEATS.lmg.out!), 0.3), thunk(110, atMs('lmg', SOUND_BEATS.lmg.out!), 0.4), whoosh(900, 500, 140, 0.1, atMs('lmg', SOUND_BEATS.lmg.swap!)),
-    ...mechClick(1900, atMs('lmg', SOUND_BEATS.lmg.in!), 0.3), thunk(130, atMs('lmg', SOUND_BEATS.lmg.in!) + 20, 0.45), ...mechClick(2800, atMs('lmg', SOUND_BEATS.lmg.shut!), 0.3), ...mechClick(1800, atMs('lmg', SOUND_BEATS.lmg.rack!), 0.3)],
-  shotgun: [...Array.from({ length: SHELLS_BASE }, (_, i) => mechClick(3000 + 120 * i, atMs('shotgun', shellSeat(i, SHELLS_BASE)), 0.22)).flat(),
-    ...mechClick(1500, atMs('shotgun', SOUND_BEATS.shotgun.pump!), 0.35), thunk(90, atMs('shotgun', SOUND_BEATS.shotgun.pump!) + 10, 0.4)],
-  sniper: [...mechClick(2400, atMs('sniper', SOUND_BEATS.sniper.back!), 0.3), thunk(130, atMs('sniper', SOUND_BEATS.sniper.back!), 0.35), ...mechClick(2000, atMs('sniper', SOUND_BEATS.sniper.in!)), thunk(170, atMs('sniper', SOUND_BEATS.sniper.in!) + 10, 0.35),
-    ...mechClick(1400, atMs('sniper', SOUND_BEATS.sniper.fwd!), 0.3), ...mechClick(2600, atMs('sniper', SOUND_BEATS.sniper.latch!), 0.25), thunk(150, atMs('sniper', SOUND_BEATS.sniper.latch!), 0.3)],
-};
-function reloadSounds(): Record<`reload:${WeaponId}`, Recipe> {
-  return Object.fromEntries((Object.keys(RELOADS) as WeaponId[]).map((c) => [`reload:${c}`, louder(RELOADS[c], 0.45)])) as Record<`reload:${WeaponId}`, Recipe>;
-}
+// The reload's own sounds (mag out, rack, bolt, pump...) are `FOLEY` in foley.ts, fired by reloadsfx.ts on the animation's beats.
 
 /** The debris of a blast pattering back down: short filtered bursts, thinning out. */
 const debris = (n: number, fromMs: number, spanMs: number, gain: number): Layer[] => {
@@ -198,7 +180,7 @@ const MEDAL_CHORD = [1568, 1976, 2349, 3136];
 
 const RAW: Record<SoundId, Recipe> = {
   ...shotSounds(),
-  ...reloadSounds(),
+  ...FOLEY,
   'shot:silenced': silencedShot(1),
   // Your own hit: a crunchy tick (click + crunch + glassy ping) over a flesh thock.
   hit: louder([snap(5000, 0.3, 0, 10), { src: 'tone', wave: 'square', pitchHz: [1500, 700], ms: 45, gain: 0.16 }, { src: 'noise', filter: 'bandpass', q: 1.5, cutoffHz: [3800, 1500], ms: 55, gain: 0.3 }, ping(2400, 0, 80, 0.12), thump(210, 70, 0.3)], 2),
@@ -308,6 +290,10 @@ const RAW: Record<SoundId, Recipe> = {
   // Slow motion: a low whoosh and a heartbeat into it; a reverse swell and a tick back out.
   'slowmo:in': [{ src: 'noise', filter: 'bandpass', q: 1.1, cutoffHz: [2400, 160], ms: 700, gain: 0.5, attackMs: 60 }, { src: 'tone', wave: 'sine', pitchHz: [180, 45], ms: 700, gain: 0.45 }],
   'slowmo:out': [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [180, 3200], ms: 420, gain: 0.4, attackMs: 380 }, { src: 'tone', wave: 'sine', pitchHz: [60, 180], ms: 420, gain: 0.3, attackMs: 380 }, snap(4000, 0.2, 400, 10)],
+  // Ambient life (ambient.ts): a flock's wing-claps, a crow's two caws, a gull's cry. Quiet, and the first thing dropped from a busy mix.
+  'amb:flutter': [...[0, 40, 85, 120, 170, 215].map((d, i): Layer => ({ src: 'noise', filter: 'bandpass', q: 1.4, cutoffHz: [2600 - i * 150, 1500], ms: 38, gain: 0.1 - i * 0.01, delayMs: d }))],
+  'amb:caw': [0, 190].map((d, i): Layer => ({ src: 'tone', wave: 'sawtooth', pitchHz: [820 - i * 80, 420], ms: 150, gain: 0.07, delayMs: d, attackMs: 14 })).concat([{ src: 'noise', filter: 'bandpass', q: 3, cutoffHz: [1500, 900], ms: 330, gain: 0.05, delayMs: 0, attackMs: 20 }]),
+  'amb:gull': [{ src: 'tone', wave: 'triangle', pitchHz: [1500, 2300], ms: 200, gain: 0.07, attackMs: 30 }, { src: 'tone', wave: 'triangle', pitchHz: [2300, 1350], ms: 340, gain: 0.07, delayMs: 200, attackMs: 10 }],
   emote: [{ src: 'tone', wave: 'sine', pitchHz: [700, 320], ms: 70, gain: 0.3 }, { src: 'noise', filter: 'bandpass', q: 2, cutoffHz: [1800, 900], ms: 25, gain: 0.2 }, ping(1500, 10, 80, 0.06)],
   // The round-end party: a confetti cannon is a thump, a puff of air and paper; a firework a whistle up, a crack and a crackle.
   confetti: [thump(150, 150, 0.7), crack(2000, 60, 0.5), snap(5000, 0.35, 0, 12), air(3000, 600, 260, 0.45), ...debris(14, 40, 500, 0.12)],
@@ -357,8 +343,8 @@ const RAW: Record<SoundId, Recipe> = {
 const TRIM: Partial<Record<SoundId, number>> = {
   // Own feedback.
   hit: 2.37, hurt: 3.16, 'shot:silenced': 2.4, slash: 1.64, bite: 2.6, splat: 2.45, step: 5.37,
-  // Quieter than the shots: the reload clicks and the spawn thump.
-  'reload:pistol': 0.36, 'reload:smg': 0.38, 'reload:assault': 0.37, 'reload:lmg': 0.29, 'reload:shotgun': 0.3, 'reload:sniper': 0.33, spawn: 0.39, wallUp: 0.47,
+  // Quieter than the shots: the spawn thump (the reload foley is trimmed in foley.ts).
+  spawn: 0.39, wallUp: 0.47,
   // Kills sit under the medals, which sit under the lifetime fanfare and the platinum.
   kill: 0.68, 'kill:2': 0.62, 'kill:3': 0.65, 'kill:4': 0.7, 'kill:5': 0.66, bounty: 0.72, boom: 0.6, flashbang: 0.7, flashRing: 0.5, smoke: 0.6, evolve: 0.81, levelup: 0.88,
   'medal:bronze': 1.72, 'medal:silver': 1.48, 'medal:gold': 1.6, fanfare: 1.15,
@@ -385,7 +371,7 @@ export function varianceOf(id: SoundId): { pitch: number; gain: number } {
   if (id === 'step' || id === 'stepSprint') return { pitch: 0.18, gain: 0.3 };
   if (id === 'hit' || id.startsWith('impact:') || id === 'wallHit' || id === 'bite' || id === 'splat' || id === 'slash') return { pitch: 0.07, gain: 0.12 };
   if (id === 'boom' || id === 'wallDown') return { pitch: 0.04, gain: 0.06 };
-  if (id.startsWith('reload:')) return { pitch: 0.03, gain: 0.08 };
+  if (id.startsWith('foley:')) return { pitch: 0.03, gain: 0.08 };
   if (id.startsWith('build:')) return { pitch: 0.05, gain: 0.08 };
   if (id === 'barrel:hurt') return { pitch: 0.07, gain: 0.12 };
   if (id.startsWith('prop:')) return { pitch: 0.05, gain: 0.08 };
@@ -397,8 +383,10 @@ export function varianceOf(id: SoundId): { pitch: number; gain: number } {
 /** 0 = ambience that may be dropped when the mix is busy, 1 = ordinary, 2 = feedback the player must never miss. */
 export function priorityOf(cue: { id: SoundId; self: boolean }): 0 | 1 | 2 {
   const { id } = cue;
-  if (id === 'step' || id === 'stepSprint' || id === 'emote' || id.startsWith('impact:') || id.startsWith('turret:')) return 0;
+  if (id === 'step' || id === 'stepSprint' || id === 'emote' || id.startsWith('amb:') || id.startsWith('impact:') || id.startsWith('turret:')) return 0;
   if (id.startsWith('shot:')) return cue.self ? 1 : 0;
+  // Your own reload is part of the feel of the gun; another soldier's is the first thing dropped from a full mix.
+  if (id.startsWith('foley:')) return cue.self ? 1 : 0;
   if (id === 'hit' || id === 'hurt' || id === 'death' || id === 'boom' || id === 'fanfare' || id === 'spawn' || id === 'levelup' || id === 'evolve' || id === 'bounty' || id === 'barrel:burst' || id === 'prop:pickup' || id === 'crate:gold' || id === 'crate:supply' || id.startsWith('medal:') || id.startsWith('kill')) return 2;
   return 1;
 }
@@ -408,6 +396,8 @@ export function minGapMs(id: SoundId): number {
   if (id.startsWith('shot:') || id.startsWith('turret:')) return 28;
   if (id.startsWith('impact:') || id === 'barrel:hurt') return 60;
   if (id === 'emote') return 150;
+  // Another soldier's reload clicks: a crowd reloading at once is a murmur, not a machine gun.
+  if (id.startsWith('foley:')) return 40;
   return 0;
 }
 
@@ -428,6 +418,8 @@ const CORE_HIT_STEP = 100;
 /** `r` is a boom's blast radius, which sets how hard it shakes the camera. */
 export type SoundCue = {
   x: number; y: number; self: boolean; gain: number; r?: number;
+  /** Multiplies the cue's pitch (a heavier gun's foley is lower). */
+  pitch?: number;
   /** Starts this long from now, for a ripple of blasts. */
   delayMs?: number;
   /** A fixed stereo position (-1 left, 1 right) at full volume, for sounds that belong to the screen rather than the world. */
@@ -623,7 +615,6 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     }
     if (Object.keys(next.self.perks).length > Object.keys(prev.self.perks).length) mine('perk');
   }
-  if (next.self.reloading && !prev.self.reloading && me) mine(`reload:${GUNS[me.gun].base}`);
   if (me?.alive && was && !was.alive && !was.downed) mine('spawn');
   if (next.self.pending !== null && next.self.pending.level !== prev.self.pending?.level) mine('levelup');
   if (!next.self.alive && prev.self.alive && !me?.downed) mine('death');

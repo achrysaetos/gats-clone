@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { polyParts } from '../src/shared/mapgeo.ts';
 import { test } from 'node:test';
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
 import { MAP_MS, MAP_NOTICE_MS, MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
@@ -45,7 +46,7 @@ for (const [mode, winScore, side] of [['TDM', WORLD.tdmWinScore, 'red'], ['DOM',
     run(w, WORLD.roundRestartMs + 100);
     assert.equal(w.map, second);
     assert.equal(snapshotFor(w, viewer.id).match.map, MAPS[second].name);
-    assert.deepEqual(wallViews(w), MAPS[second].walls.map((r) => ({ ...r, built: false })));
+    assert.deepEqual(wallViews(w), [...MAPS[second].walls, ...polyParts(MAPS[second])].map((r) => ({ ...r, built: false })));
     assert.equal(w.zones.length, mode === 'DOM' ? 3 : 0);
     assertStandingInSpawns(w, second);
   });
@@ -210,12 +211,12 @@ test('a joined client receives the new map\'s walls when the round restarts', ()
   ws.send({ t: 'join', name: 'Tester', loadout: PISTOL, aspect: 1.5 });
   const welcome = ws.sent.find((m) => m.t === 'welcome');
   assert.ok(welcome && welcome.t === 'welcome');
-  assert.deepEqual(welcome.walls, MAPS[first].walls.map((r) => ({ ...r, built: false })));
+  assert.deepEqual(welcome.walls, [...MAPS[first].walls, ...polyParts(MAPS[first])].map((r) => ({ ...r, built: false })));
 
   room.world.teamScore.red = WORLD.tdmWinScore;
   for (let t = 0; t <= WORLD.roundRestartMs + 500; t += TICK_MS) room.tick();
   ws.close();
   const walls = ws.sent.filter((m) => m.t === 'walls');
   assert.equal(walls.length, 1, 'one walls message for the one map change');
-  assert.deepEqual(walls[0].t === 'walls' && walls[0].walls, MAPS[second].walls.map((r) => ({ ...r, built: false })));
+  assert.deepEqual(walls[0].t === 'walls' && walls[0].walls, [...MAPS[second].walls, ...polyParts(MAPS[second])].map((r) => ({ ...r, built: false })));
 });

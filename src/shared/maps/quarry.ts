@@ -1,6 +1,8 @@
 import { gridMap } from '../mapgrid.ts';
+import { withGeometry } from '../mapgeo.ts';
+import { QUARRY_GEO } from './yardgeo.ts';
 
-export const QUARRY = gridMap('Quarry', `
+const QUARRY_GRID = gridMap('Quarry', `
   ............................................................
   ............................................................
   ..FFFFF.....................................................
@@ -122,3 +124,6 @@ export const QUARRY = gridMap('Quarry', `
   ............................................................
   ............................................................
 `);
+
+/** Roofs, doors and the odd round or curved wall come from yardgeo.ts. */
+export const QUARRY = withGeometry(QUARRY_GRID, QUARRY_GEO);

@@ -1,3 +1,4 @@
+import { parkGeo } from './parkgeo.ts';
 import type { FloorPlan } from '../floor.ts';
 import { blotch, canvas, seeded, speckle } from '../grain.ts';
 import { registerTheme } from './registry.ts';
@@ -381,6 +382,7 @@ function edging(g: G, size: number, rand: () => number) {
 }
 
 registerTheme('park', {
+  ...parkGeo,
   floor,
   walls: PARK_WALLS,
   under: parkUnder,
