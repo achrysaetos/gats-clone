@@ -1,5 +1,8 @@
 {
- "atlases": [],
+ "atlases": [
+  "sprites/atlas-0.d703112eb5.json",
+  "sprites/atlas-1.86f4f6eedd.json"
+ ],
  "maps": {},
  "water": "water.b8a9d5793a.webp"
 }

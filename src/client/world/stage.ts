@@ -15,6 +15,8 @@ import { createTextures } from './textures.ts';
 
 const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
+/** The soldier's baked shadow is as dark as a wall's; at full strength it outweighs the soldier, so it is drawn lighter. */
+const SOLDIER_SHADOW = 0.6;
 const RECOIL = R * 0.22;
 const MARK_Y = -R - 8;
 
@@ -61,6 +63,8 @@ type BodyView = { root: Container; ring: Sprite; base: Sprite; team: Sprite; arm
 
 type Decal = { name: string; frame: number; x: number; y: number; rotation: number; born: number };
 const DECALS = { cap: 90, lifeMs: 40_000, fadeMs: 6000 } as const;
+/** How strongly each decal marks the ground; the baked soot is opaque at its heart, which reads as a hole rather than a burn. */
+const DECAL_STRENGTH: Record<string, number> = { 'decal.scorch': 0.55, 'decal.blood': 0.85, 'decal.ichor': 0.85 };
 
 export type World = {
   draw(scene: Scene, cam: Camera, now: number, walls: readonly WallView[]): void;
@@ -222,7 +226,7 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       const s = shadowPool.next();
       const { dir, rest } = facing(b.angle, SPRITES['soldier.shadow']!.dirs);
       place(s, 'soldier.shadow', 'shadow', dir, 0, b.x, b.y, rest);
-      s.alpha = b.light === 1 ? 1 : 0.35;
+      s.alpha = b.light === 1 ? SOLDIER_SHADOW : SOLDIER_SHADOW * 0.35;
     }
     for (const d of scene.downed) mark(shadowPool.next(), tex.disc, d.x + sx * 8, d.y + sy * 8, R * 2.2, 0x141820, 0.35);
     for (const z of scene.zombies) {
@@ -456,7 +460,7 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       if (age >= DECALS.lifeMs) continue;
       const s = decalPool.next();
       place(s, d.name, 'base', 0, d.frame, d.x, d.y, d.rotation);
-      s.alpha = Math.min(1, (DECALS.lifeMs - age) / DECALS.fadeMs);
+      s.alpha = (DECAL_STRENGTH[d.name] ?? 1) * Math.min(1, (DECALS.lifeMs - age) / DECALS.fadeMs);
     }
     while (decals.length && now - decals[0]!.born >= DECALS.lifeMs) decals.shift();
   }
