@@ -161,7 +161,7 @@
 #menu .mode-card:focus-visible, #menu .mode-card:has(.mc-hit:focus-visible) { outline: 3px solid var(--m-accent-text); outline-offset: 5px; }
 #menu .mc-face { display: flex; flex-direction: column; flex: 1; overflow: hidden; border-radius: 7px; }
 #menu .mc-stage { display: block; position: relative; aspect-ratio: 360 / 180; overflow: hidden; background: #1a1d24; border-bottom: 3px solid var(--m-ink); }
-#menu .mc-art { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 62%; }
+#menu .mc-art { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
 /* A warm bloom crosses the diorama window when the card is up (light, drawn over the art; the soldiers react in the canvas). */
 #menu .mc-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255, 214, 150, 0.14), transparent 60%); opacity: 0; transition: opacity 0.2s; }
 #menu .mode-card:hover .mc-stage::after, #menu .mode-card:has(.mc-hit:focus-visible) .mc-stage::after { opacity: 1; }
@@ -177,7 +177,7 @@
 #menu .mode-ffa { color: #ffb48a; } #menu .mode-tdm { color: #ff9aa6; } #menu .mode-dom { color: #a9c0ff; } #menu .mode-zom { color: #bbe685; } #menu .mode-br { color: #dfbdf5; } #menu .mode-rng { color: #96dce6; }
 #menu .mc-hit { position: absolute; inset: 0; z-index: 1; width: 100%; padding: 0; border: 0; background: none; border-radius: 9px; cursor: pointer; box-shadow: none; transform: none; clip-path: none; }
 #menu .mc-hit:hover:not(:disabled) { background: none; }
-#menu .mc-cta { position: absolute; right: 12px; bottom: 14px; z-index: 2; }
+#menu .mc-cta { position: relative; z-index: 2; }
 #menu .mc-actions { position: relative; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 4px; }
 #menu .mc-btn { padding: 10px 16px; font: 800 16px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
 #menu .mc-cta .mc-btn { background: linear-gradient(var(--m-accent-hi) 0 5px, var(--m-accent) 5px) !important; color: #160a04; box-shadow: 0 4px 0 0 var(--m-accent-lip), 0 4px 0 2px var(--m-ink), 5px 9px 0 0 var(--m-shadow) !important; }
@@ -347,6 +347,8 @@
   #menu .step-sub, #menu .steps { display: none; }
   #menu .mode-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 16px; }
   #menu .mc-pitch { display: none; }
+  #menu .mc-live { left: 5px; top: 5px; font-size: 12px; padding: 3px 6px 3px 5px; gap: 5px; }
+  #menu .mc-live i { width: 7px; height: 7px; }
   #menu .mc-name, #menu .range-title b { font-size: 21px; }
   #menu .mc-plate, #menu .range-pitch { padding: 9px 11px 12px; gap: 6px; }
   #menu .gear-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; }

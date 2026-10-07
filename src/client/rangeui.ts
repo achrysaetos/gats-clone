@@ -49,7 +49,7 @@ export function renderRangeCard(root: HTMLElement, state: { busy: boolean }, on:
   const pitch = el('span', 'range-pitch mc-plate',
     el('span', 'range-title mc-head', el('span', 'mode mode-rng', 'RNG'), el('b', 'mc-name', 'Shooting range')),
     el('span', 'mc-pitch', MODE_INFO.RNG.pitch));
-  stage.append(el('span', 'mc-cta', start));
+  pitch.append(el('span', 'mc-actions', el('span', 'mc-cta', start)));
   const hit = el('button', 'mc-hit');
   hit.type = 'button';
   hit.setAttribute('aria-label', 'Shooting range: open a private range');

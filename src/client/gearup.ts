@@ -1,11 +1,11 @@
 import { COLORS, type ArmorId, type GunId } from '../shared/defs.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import type { CosLook } from './cosmeticlook.ts';
-import { barrel, crate, floor, lamp, muzzleFlash, muzzleOf, nightShade, paintEllipse, paintSoldier, pool, TAU } from './menuart.ts';
+import { floor, lamp, muzzleFlash, muzzleOf, nightShade, paintEllipse, paintSoldier, pool, TAU } from './menuart.ts';
 import { INK } from './palette.ts';
 
 /**
- * The gear-up stage: your soldier, big, standing on a lit concrete pad in the diorama's yard: your colour, armor, gun in hand and
+ * The gear-up stage: your soldier, standing on a lit concrete pad in the diorama's yard: your colour, armor, gun in hand and
  * what you have equipped, turning to follow the pointer. A click on the stage fires (a muzzle flash and a kick). Hovering a gun
  * tile puts that gun in the soldier's hands for a look. It paints with the match's own soldier and gun art.
  */
@@ -40,9 +40,9 @@ export function createGearStage(canvas: HTMLCanvasElement, deps: Deps) {
     const look = deps.look();
     const gun = peek ?? l.weapon;
     const W = GEAR_STAGE.w, H = GEAR_STAGE.h;
-    const cx = W * 0.5, cy = H * 0.64;
+    const cx = W * 0.5, cy = H * 0.58;
     // Aim: toward the pointer when it moves, otherwise a slow sweep; never snaps (anticipation, then settle).
-    if (mouse && !calm) target = Math.atan2((mouse.y - rect.top) / rect.height * H - (cy - 70), (mouse.x - rect.left) / rect.width * W - cx);
+    if (mouse && !calm) target = Math.atan2((mouse.y - rect.top) / rect.height * H - (cy - 34), (mouse.x - rect.left) / rect.width * W - cx);
     else target = 0.3 + Math.sin(t / 2300) * 0.35;
     const d = Math.atan2(Math.sin(target - aim), Math.cos(target - aim));
     aim += d * (calm ? 1 : 0.14);
@@ -53,10 +53,8 @@ export function createGearStage(canvas: HTMLCanvasElement, deps: Deps) {
     floor(g, W, H, 96, 21);
     // The yard around the pad.
     lamp(g, 40, 70, 62);
-    barrel(g, 384, 92, 1.1);
-    crate(g, 386, 196, 36);
     // The pad: a podium with a lit top face and a darker front.
-    const pad = { rx: 138, ry: 46, lip: 18 };
+    const pad = { rx: 104, ry: 38, lip: 15 };
     g.fillStyle = 'rgba(10, 12, 18, 0.42)';
     g.beginPath(); g.ellipse(cx + 14, cy + pad.lip + 10, pad.rx + 6, pad.ry + 4, 0, 0, TAU); g.fill();
     g.save();
@@ -76,7 +74,7 @@ export function createGearStage(canvas: HTMLCanvasElement, deps: Deps) {
     paintEllipse(g, 0, 0, pad.rx - 36, pad.ry - 16, 'rgba(210, 202, 180, 0.9)', 3, [3, 12]);
     g.restore();
     // Soldier.
-    const sc = 2.45;
+    const sc = 1.7;
     const recoil = Math.max(0, 1 - (t - flashAt) / 140);
     const spec = { x: cx, y: cy - 4, scale: sc, color: COLORS[l.color], gun, aim, armor: l.armor as ArmorId, now: t, helmet: look.helmet, camo: look.camo, skin: look.skin, recoil: recoil * 3.5, breathe: !calm };
     paintSoldier(g, k, spec);

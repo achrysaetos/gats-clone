@@ -198,10 +198,10 @@ export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): 
     actions.append(room, el('span', { className: 'invite' }, link, copy));
   }
   const { stage, canvas } = cardStage('ZOM', squad.code ? 'private squad' : 'up to 4 players');
-  stage.append(el('span', { className: 'mc-cta' }, start));
+  actions.prepend(el('span', { className: 'mc-cta' }, start));
   const hit = el('button', { type: 'button', className: 'mc-hit', ariaLabel: 'Zombies: choose your gear' });
   hit.onclick = on.choose ?? on.pick;
-  root.replaceChildren(el('span', { className: 'mc-face' }, stage, cardPlate('ZOM', ...(actions.childNodes.length ? [actions] : []))), hit);
+  root.replaceChildren(el('span', { className: 'mc-face' }, stage, cardPlate('ZOM', actions)), hit);
   art?.add(canvas, 'ZOM', root);
   art?.paint();
 }

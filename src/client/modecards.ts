@@ -1,16 +1,16 @@
-import { COLORS, type GunId } from '../shared/defs.ts';
-import { INK } from './palette.ts';
-import {
-  barrel, core, crate, flag, floor, lamp, muzzleFlash, muzzleOf, nightShade, paintEllipse, paintHorde, paintSoldier, pool, sandbags, shambler, supply, target, TAU,
-  type Shambler,
-} from './menuart.ts';
+import { COLORS } from '../shared/defs.ts';
+import { celPart, ellipse, polygon, roundBox } from './cel.ts';
+import { INK, shade, tint } from './palette.ts';
+import { TAU } from './menuart.ts';
 
 /**
- * The mode cards' dioramas (screen one of the menu): each fight is a small lit scene painted with the match's own art: soldiers
- * (`drawSoldier`), guns, zombies and range targets, props with a top face and a front lip, a practical light, a night grade.
- * Hovering a card wakes its scene: the soldiers turn to your pointer, fire a little faster and the light opens up.
+ * The mode cards' art (screen one of the menu): one bold emblem per fight, drawn as flat ink-outlined cel shapes on a medallion
+ * that sits at the same size and the same spot on every card, over a mode-coloured ground (stencil stripes, contour lines, halftone,
+ * grain, a key light from the top left). No scenes and no soldiers: the shooters people like (Call of Duty's tiles, Brawl Stars,
+ * Halo, Apex) all give each mode one icon at one scale and let colour and type do the rest (see docs/art/STYLE.md).
+ * Hovering lifts the emblem, slides a glint across the medallion and shifts the layers a little against the pointer.
  */
-export const STAGE = { w: 360, h: 200 } as const;
+export const STAGE = { w: 360, h: 180 } as const;
 export type SceneId = 'FFA' | 'TDM' | 'DOM' | 'BR' | 'ZOM' | 'RNG';
 
 /** What each mode is called on its card and in one line. (No all-caps codes in the pitch: the chip carries the code.) */
@@ -23,187 +23,338 @@ export const MODE_INFO: Record<SceneId, { name: string; pitch: string; short: st
   RNG: { name: 'Shooting range', pitch: 'Your own private range. Any gun, any perk, nothing counts toward your record.', short: 'Shooting range' },
 };
 
+const BONE = '#e2dccb';
+const GOLD = '#ffd34d';
+const ORANGE = '#ff5a1f';
+const STEEL = '#4f5560';
+/** Where the medallion sits, and its radius: identical on every card. */
+const MED = { x: 180, y: 98, r: 64 } as const;
+
+/** Per mode: the ground (a dark and a darker step), the accent the bezel and stripes lean toward. */
+const LOOK: Record<SceneId, { a: string; b: string; accent: string }> = {
+  FFA: { a: '#8a3414', b: '#6e2810', accent: '#ff8a4f' },
+  TDM: { a: '#2f438f', b: '#8a2a32', accent: '#e2dccb' },
+  DOM: { a: '#2b3f8f', b: '#22336f', accent: '#8fa8ff' },
+  BR: { a: '#512d78', b: '#3f235f', accent: '#c9a2ef' },
+  ZOM: { a: '#43552a', b: '#34431f', accent: '#b6d77e' },
+  RNG: { a: '#256470', b: '#1c5059', accent: '#8fd8e4' },
+};
+
+type Pt = readonly [number, number];
 type Scene = {
   g: CanvasRenderingContext2D; k: number; t: number; hot: number; calm: boolean;
-  /** The pointer in stage units, or null when it is elsewhere. */
-  ptr: { x: number; y: number } | null;
+  /** The pointer, as -1..1 across the stage (0 when it is elsewhere), eased by `hot`. */
+  px: number; py: number;
 };
-type Item = { y: number; draw(): void };
-type Glow = () => void;
-type Light = { x: number; y: number; r: number; k?: number };
-type Painted = { items: Item[]; glows: Glow[]; lights: Light[]; after?: () => void };
 
-const angleLerp = (a: number, b: number, k: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
+const rnd = (seed: number) => { let n = seed * 9301 + 7; return () => { n = (n * 9301 + 49297) % 233280; return n / 233280; }; };
 
-type Actor = { x: number; y: number; color: string; gun: GunId; base: number; phase: number; period?: number; scale?: number; walk?: boolean; armor?: 'none' | 'light' | 'medium' | 'heavy'; sprint?: number };
+/** A flat ink-outlined shape with the two cel steps (2px ink at 1x). */
+const cel = (g: CanvasRenderingContext2D, trace: (g: CanvasRenderingContext2D) => void, base: string, size = 30, ink = 2) => celPart(g, trace, base, 0, size, ink, 0);
 
-/** A soldier of the diorama: idles with a slow sway, turns to the pointer when hot, and fires now and then. Returns its draw call and muzzle light. */
-function actor(s: Scene, o: Actor, out: Painted, onShot?: (power: number) => void) {
-  const sc = o.scale ?? 1.18;
-  let aim = o.base + (s.calm ? 0 : Math.sin(s.t / 1500 + o.phase) * 0.1);
-  if (s.ptr && s.hot > 0.02) aim = angleLerp(aim, Math.atan2(s.ptr.y - o.y, s.ptr.x - o.x), Math.min(1, s.hot * 1.1));
-  const period = (o.period ?? 3900) * (1 - 0.7 * s.hot);
-  const ph = s.calm ? 9999 : (s.t + o.phase * 700) % period;
-  const flash = ph < 120 ? 1 - ph / 120 : 0;
-  if (flash > 0 && onShot) onShot(flash);
-  const spec = { x: o.x, y: o.y, scale: sc, color: o.color, gun: o.gun, aim, armor: o.armor ?? 'medium', now: s.calm ? 0 : s.t, walk: !s.calm && o.walk, recoil: flash * 3, breathe: !s.calm, sprint: o.sprint };
-  out.items.push({ y: o.y, draw: () => paintSoldier(s.g, s.k, spec) });
-  if (flash > 0) {
-    const m = muzzleOf(spec);
-    out.glows.push(() => muzzleFlash(s.g, m.x, m.y, aim, flash, 1.1));
+/** A chunky stroke: ink under, colour over, so the visible outline is 2px. */
+function bar(g: CanvasRenderingContext2D, pts: readonly Pt[], color: string, w = 5, close = false) {
+  g.save();
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(pts[0]![0], pts[0]![1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i]![0], pts[i]![1]);
+  if (close) g.closePath();
+  g.strokeStyle = INK; g.lineWidth = w + 4; g.stroke();
+  g.strokeStyle = color; g.lineWidth = w; g.stroke();
+  g.restore();
+}
+
+function ring(g: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, w = 5, dash: number[] = [], off = 0) {
+  g.save();
+  g.lineCap = 'butt';
+  g.setLineDash([]);
+  if (!dash.length) { g.beginPath(); g.arc(x, y, r, 0, TAU); g.strokeStyle = INK; g.lineWidth = w + 4; g.stroke(); }
+  g.setLineDash(dash); g.lineDashOffset = off;
+  g.beginPath(); g.arc(x, y, r, 0, TAU); g.strokeStyle = color; g.lineWidth = w; g.stroke();
+  g.restore();
+}
+
+const star = (cx: number, cy: number, ro: number, ri: number, n = 5, rot = -Math.PI / 2) => (g: CanvasRenderingContext2D) => {
+  for (let i = 0; i < n * 2; i++) {
+    const a = rot + (i * Math.PI) / n, r = i & 1 ? ri : ro;
+    if (i) g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); else g.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  g.closePath();
+};
+
+// ---- the ground
+
+/** Mode-coloured ground: two flat steps split on a diagonal, stencil stripes, contour lines, halftone, a key light, grain. */
+function ground(s: Scene, id: SceneId) {
+  const { g } = s;
+  const L = LOOK[id];
+  const W = STAGE.w, H = STAGE.h;
+  const ox = -s.px * 3, oy = -s.py * 2;
+  g.fillStyle = L.a; g.fillRect(0, 0, W, H);
+  // Step two: the far (lower right) side, a hard diagonal. TDM splits red and blue across it.
+  g.fillStyle = L.b;
+  g.beginPath(); g.moveTo(W * 0.62 + ox, 0); g.lineTo(W, 0); g.lineTo(W, H); g.lineTo(W * 0.34 + ox, H); g.closePath(); g.fill();
+  // Stencil stripes, running with the split.
+  g.save();
+  g.fillStyle = 'rgba(236, 230, 214, 0.06)';
+  const dx = ox * 1.6;
+  for (let i = -4; i < 16; i++) {
+    const x = i * 38 + dx;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 14, 0); g.lineTo(x - 70 + 14, H); g.lineTo(x - 70, H); g.closePath(); g.fill();
+  }
+  g.restore();
+  // Contour lines: a few wobbly rings round a point low right, like a map's hill.
+  g.save();
+  g.translate(300 + ox * 0.6, 150 + oy * 0.6);
+  g.strokeStyle = 'rgba(236, 230, 214, 0.1)'; g.lineWidth = 2; g.lineJoin = 'round';
+  for (let i = 1; i <= 7; i++) {
+    g.beginPath();
+    for (let a = 0; a <= 48; a++) {
+      const th = (a / 48) * TAU, r = i * 17 * (1 + 0.1 * Math.sin(th * 3 + i * 0.7) + 0.05 * Math.sin(th * 5 + id.length));
+      const x = Math.cos(th) * r * 1.35, y = Math.sin(th) * r * 0.9;
+      if (a) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.stroke();
+  }
+  g.restore();
+  // Halftone fading toward the bottom right.
+  g.fillStyle = 'rgba(10, 12, 18, 0.28)';
+  for (let j = 0; j < 14; j++) {
+    for (let i = 0; i < 28; i++) {
+      const x = 4 + i * 13 + (j & 1) * 6.5 + ox * 0.4, y = 4 + j * 13 + oy * 0.4;
+      const f = ((x / W) * 0.55 + (y / H) * 0.75 - 0.55) * 2.2;
+      if (f <= 0.05) continue;
+      g.beginPath(); g.arc(x, y, Math.min(3.1, f * 3.1), 0, TAU); g.fill();
+    }
+  }
+  // Key light from the top left: light itself, so a gradient is allowed.
+  const gr = g.createRadialGradient(40, -10, 0, 40, -10, 250);
+  gr.addColorStop(0, 'rgba(255, 244, 222, 0.34)');
+  gr.addColorStop(0.5, 'rgba(255, 244, 222, 0.1)');
+  gr.addColorStop(1, 'rgba(255, 244, 222, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // Grain.
+  const r = rnd(id.charCodeAt(0) * 31 + id.length);
+  for (let i = 0; i < 170; i++) {
+    g.fillStyle = r() < 0.5 ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.1)';
+    g.fillRect(Math.floor(r() * W), Math.floor(r() * H), 2, 2);
   }
 }
 
-const item = (out: Painted, y: number, draw: () => void) => out.items.push({ y, draw });
-
-function ffa(s: Scene): Painted {
-  const o: Painted = { items: [], glows: [], lights: [{ x: 70, y: 70, r: 270 }] };
+/** TDM's ground is two sides: blue left, red right, the hard split under the clash. */
+function groundTDM(s: Scene) {
   const { g } = s;
-  item(o, 52, () => lamp(g, 40, 52));
-  item(o, 66, () => barrel(g, 336, 66));
-  item(o, 154, () => crate(g, 188, 156, 42));
-  item(o, 84, () => crate(g, 128, 86, 34, '#6c7356', 13));
-  actor(s, { x: 72, y: 140, color: COLORS.blue, gun: 'assault', base: -0.28, phase: 0 }, o);
-  actor(s, { x: 290, y: 128, color: COLORS.red, gun: 'shotgun', base: Math.PI + 0.32, phase: 1.7 }, o);
-  actor(s, { x: 236, y: 84, color: COLORS.green, gun: 'smg', base: 2.3, phase: 3.1 }, o);
-  return o;
+  const W = STAGE.w, H = STAGE.h, ox = -s.px * 3;
+  ground(s, 'TDM');
+  g.save();
+  g.fillStyle = '#8f2c35';
+  g.beginPath(); g.moveTo(W * 0.56 + ox, 0); g.lineTo(W, 0); g.lineTo(W, H); g.lineTo(W * 0.44 + ox, H); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(10, 12, 18, 0.3)';
+  g.beginPath(); g.moveTo(W * 0.75 + ox, 0); g.lineTo(W, 0); g.lineTo(W, H); g.lineTo(W * 0.62 + ox, H); g.closePath(); g.fill();
+  g.restore();
 }
 
-function tdm(s: Scene): Painted {
-  const o: Painted = { items: [], glows: [], lights: [{ x: 180, y: 60, r: 260 }] };
-  const { g } = s;
-  item(o, 58, () => lamp(g, 180, 58));
-  for (const y of [90, 122, 154]) item(o, y, () => sandbags(g, 166, y, 1, 1));
-  item(o, 154, () => sandbags(g, 194, 154, 1, 1));
-  item(o, 76, () => barrel(g, 28, 80));
-  item(o, 76, () => barrel(g, 336, 84));
-  actor(s, { x: 62, y: 112, color: COLORS.blue, gun: 'assault', base: 0.1, phase: 0.4 }, o);
-  actor(s, { x: 92, y: 168, color: COLORS.blue, gun: 'smg', base: -0.12, phase: 2.2 }, o);
-  actor(s, { x: 300, y: 108, color: COLORS.red, gun: 'smg', base: Math.PI - 0.1, phase: 1.1 }, o);
-  actor(s, { x: 270, y: 164, color: COLORS.red, gun: 'lmg', base: Math.PI + 0.14, phase: 2.9 }, o);
-  return o;
-}
+// ---- the medallion
 
-function dom(s: Scene): Painted {
-  const o: Painted = { items: [], glows: [], lights: [{ x: 190, y: 122, r: 250 }] };
+/** The same bezel on every card: ink ring, gunmetal plate, bone tick marks, and a dark well tinted to the mode. */
+function medallion(s: Scene, id: SceneId) {
   const { g } = s;
-  const spin = s.calm ? 0 : -s.t / 90;
-  // The zone is painted on the floor: bone ring, team fill, a dashed inner ring that turns.
-  o.after = undefined;
-  item(o, 0, () => {
-    g.save();
-    g.fillStyle = 'rgba(62, 99, 221, 0.3)';
-    g.beginPath(); g.ellipse(190, 122, 104, 54, 0, 0, TAU); g.fill();
-    paintEllipse(g, 190, 122, 104, 54, '#b79a4a', 5);
-    paintEllipse(g, 190, 122, 88, 45, 'rgba(210, 202, 180, 0.8)', 4, [4, 16], spin);
+  const L = LOOK[id];
+  const { x, y, r } = MED;
+  g.save();
+  g.translate(x, y);
+  cel(g, ellipse(0, 0, r, r), STEEL, r * 0.9, 2.5);
+  // Tick marks round the bezel, turning a hair when the card is up.
+  const spin = s.calm ? 0 : s.hot * 0.5;
+  g.fillStyle = 'rgba(236, 230, 214, 0.55)';
+  for (let i = 0; i < 36; i++) {
+    const a = (i / 36) * TAU + spin;
+    g.save(); g.rotate(a);
+    g.fillRect(r - 6.5, -1, i % 3 === 0 ? 4.5 : 3, 2);
     g.restore();
-  });
-  item(o, 128, () => flag(g, 190, 130, COLORS.blue, s.calm ? 0 : s.t));
-  item(o, 54, () => lamp(g, 40, 54));
-  item(o, 78, () => crate(g, 330, 168, 38, '#6c7356', 14));
-  item(o, 68, () => barrel(g, 70, 82));
-  actor(s, { x: 138, y: 150, color: COLORS.blue, gun: 'assault', base: 0.25, phase: 0.8 }, o);
-  actor(s, { x: 300, y: 84, color: COLORS.red, gun: 'smg', base: 2.55, phase: 2.0 }, o);
-  actor(s, { x: 250, y: 168, color: COLORS.orange, gun: 'shotgun', base: -2.4, phase: 3.3 }, o);
-  return o;
+  }
+  const well = shade(L.a, 0.5);
+  cel(g, ellipse(0, 0, r - 10, r - 10), well, r * 0.7, 2.5);
+  g.restore();
 }
 
-function br(s: Scene): Painted {
-  const o: Painted = { items: [], glows: [], lights: [{ x: 312, y: 84, r: 210 }, { x: 36, y: 56, r: 200, k: 0.7 }] };
+/** Every emblem is drawn in a box 84 units across, centred on the origin. */
+type Emblem = (s: Scene) => void;
+
+const crosshair: Emblem = (s) => {
   const { g } = s;
-  const drift = s.calm ? 0 : Math.sin(s.t / 2600) * 4;
-  item(o, 56, () => lamp(g, 36, 56));
-  item(o, 84, () => supply(g, 312, 86));
-  o.glows.push(() => pool(g, 312, 90, 80 + (s.hot ? 12 : 0), 0.4, '255, 120, 60'));
-  actor(s, { x: 78 + drift, y: 160, color: COLORS.purple, gun: 'assault', base: -0.05, phase: 0.2, walk: true, sprint: 0, armor: 'light' }, o);
-  actor(s, { x: 148 - drift, y: 106, color: COLORS.purple, gun: 'smg', base: 0.03, phase: 1.4, walk: true, armor: 'light' }, o);
-  actor(s, { x: 214 + drift, y: 158, color: COLORS.purple, gun: 'sniper', base: -0.12, phase: 2.6, walk: true, armor: 'light' }, o);
-  // The storm: the ring's far side is closed in a sick teal-violet haze (light on the edge, not paint on a solid).
-  o.after = () => {
-    g.save();
-    g.globalCompositeOperation = 'source-over';
-    const cx = 250, cy = 100;
-    const gr = g.createRadialGradient(cx, cy, 90, cx, cy, 240);
-    gr.addColorStop(0, 'rgba(124, 70, 200, 0)');
-    gr.addColorStop(0.6, 'rgba(110, 60, 190, 0.14)');
-    gr.addColorStop(1, 'rgba(76, 38, 140, 0.46)');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, STAGE.w, STAGE.h);
-    g.restore();
-    paintEllipse(g, cx, cy, 168, 92, 'rgba(190, 140, 255, 0.85)', 3, [14, 9], s.calm ? 0 : -s.t / 40);
+  g.save();
+  g.rotate(s.calm ? 0 : s.hot * 0.35 + Math.sin(s.t / 2600) * 0.03);
+  ring(g, 0, 0, 30, BONE, 6);
+  for (const [a, b] of [[-42, -20], [20, 42]] as const) {
+    bar(g, [[a, 0], [b, 0]], BONE, 6);
+    bar(g, [[0, a], [0, b]], BONE, 6);
+  }
+  g.restore();
+  cel(g, star(0, 1, 17, 7.5), GOLD, 17);
+};
+
+const chevrons: Emblem = (s) => {
+  const { g } = s;
+  const c = (dx: number, flip: number, col: string) => {
+    const f = (x: number) => x * flip;
+    cel(g, polygon([f(dx - 9), -26], [f(dx), -26], [f(dx + 17), 0], [f(dx), 26], [f(dx - 9), 26], [f(dx + 8), 0]), col, 22);
   };
-  return o;
-}
+  const clash = s.calm ? 0 : s.hot * 3;
+  g.save(); g.translate(clash, 0); c(-34, 1, COLORS.blue); c(-19, 1, COLORS.blue); g.restore();
+  g.save(); g.translate(-clash, 0); c(-34, -1, COLORS.red); c(-19, -1, COLORS.red); g.restore();
+};
 
-function zom(s: Scene): Painted {
-  const o: Painted = { items: [], glows: [], lights: [{ x: 76, y: 112, r: 230 }] };
+const zones: Emblem = (s) => {
   const { g } = s;
-  const t = s.calm ? 0 : s.t;
-  const w1 = shambler('walker', 282 + (s.calm ? 0 : Math.sin(t / 2300) * 30), 120);
-  const w2 = shambler('brute', 322 - (s.calm ? 0 : (Math.sin(t / 3100 + 1) * 0.5 + 0.5) * 22), 70);
-  const w3 = shambler('runner', 312, 168 + (s.calm ? 0 : Math.sin(t / 1900 + 2) * 6));
-  const list: Shambler[] = [w1, w2, w3];
-  item(o, 112, () => core(g, 76, 124, t, 1.1));
-  for (const y of [78, 106, 134, 162]) item(o, y, () => sandbags(g, 214, y, 1, 1));
-  o.items.push({ y: 100, draw: () => paintHorde(g, s.k, list, s.calm ? 1000 : s.t, { x: 140, y: 120 }, 1.0) });
-  actor(s, { x: 142, y: 148, color: COLORS.blue, gun: 'assault', base: 0.06, phase: 0.6, armor: 'heavy' }, o);
-  actor(s, { x: 146, y: 84, color: COLORS.green, gun: 'shotgun', base: 0.28, phase: 2.3 }, o);
-  o.glows.push(() => pool(g, 76, 130, 110, 0.42 + 0.08 * s.hot, '79, 209, 232'));
-  return o;
-}
-
-function rng(s: Scene): Painted {
-  const o: Painted = { items: [], glows: [], lights: [{ x: 40, y: 52, r: 250 }] };
-  const { g } = s;
-  const hit = (n: number) => (s.calm ? 0 : Math.max(0, 1 - (((s.t + n * 900) % (s.hot ? 1700 : 3900)) / 260)));
-  item(o, 0, () => {
+  ring(g, 0, 0, 34, BONE, 5, [], 0);
+  // Pole and pennant.
+  const w = s.calm ? 0 : Math.sin(s.t / 420) * 1.6;
+  bar(g, [[0, 14], [0, -22]], BONE, 4);
+  cel(g, polygon([2, -22], [22, -17 + w], [2, -8]), COLORS.blue, 14);
+  cel(g, ellipse(0, -24, 3.6, 3.6), GOLD, 4, 1.6);
+  const pip = (x: number, y: number, label: string, own: boolean) => {
+    cel(g, ellipse(x, y, 10, 10), own ? COLORS.blue : BONE, 12);
     g.save();
-    g.fillStyle = '#b79a4a';
-    for (const y of [84, 118, 152]) { g.fillRect(14, y, 332, 3); }
-    g.fillStyle = 'rgba(210, 202, 180, 0.85)';
-    g.font = '800 12px "Barlow Condensed", sans-serif';
-    for (const [x, label] of [[160, '300'], [230, '600'], [300, '900']] as const) g.fillText(label, x, 76);
+    g.font = '900 15px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = own ? '#f4f1e6' : INK;
+    g.fillText(label, x, y + 1);
     g.restore();
-  });
-  item(o, 52, () => lamp(g, 40, 52));
-  const hs = [hit(0), hit(1), hit(2)];
-  item(o, 88, () => target(g, 262, 92, 'paper', 0.82, hs[0]! * 0.12, 3, hs[0]! * 0.6));
-  item(o, 122, () => target(g, 300, 124, 'plank', 0.8, hs[1]! * -0.1, 2, hs[1]! * 0.6));
-  item(o, 156, () => target(g, 336, 158, 'paper', 0.82, hs[2]! * 0.12, 1, hs[2]! * 0.6));
-  item(o, 176, () => { barrel(g, 150, 184, 0.9); barrel(g, 176, 186, 0.9, '#6c7356'); });
-  actor(s, { x: 84, y: 128, color: COLORS.blue, gun: 'sniper', base: -0.12, phase: 0, period: 2200 }, o);
-  return o;
-}
+  };
+  pip(-30, 17, 'A', true); pip(0, -34, 'B', false); pip(30, 17, 'C', false);
+};
 
-const SCENES: Record<SceneId, (s: Scene) => Painted> = { FFA: ffa, TDM: tdm, DOM: dom, BR: br, ZOM: zom, RNG: rng };
-const FLOOR_SEED: Record<SceneId, number> = { FFA: 3, TDM: 5, DOM: 7, BR: 11, ZOM: 13, RNG: 17 };
-const EDGE: Record<SceneId, string> = { FFA: '86, 98, 154', TDM: '86, 98, 154', DOM: '86, 98, 154', BR: '72, 80, 146', ZOM: '70, 94, 140', RNG: '90, 100, 150' };
+const storm: Emblem = (s) => {
+  const { g } = s;
+  const safe = 28 + (s.calm ? 0 : Math.sin(s.t / 1700) * 1.5 - s.hot * 3);
+  const cx = -4, cy = 3;
+  // The storm is the shaded ground outside the safe circle (even-odd), the ring marks the edge.
+  g.save();
+  g.beginPath(); g.arc(0, 0, 41, 0, TAU); g.arc(cx, cy, safe, 0, TAU, true);
+  g.fillStyle = '#7a45b4'; g.fill('evenodd');
+  g.restore();
+  ring(g, 0, 0, 41, '#c9a2ef', 4, [10, 7], s.calm ? 0 : -s.t / 70);
+  ring(g, cx, cy, safe, BONE, 4);
+  // Three helmets, one squad.
+  const helm = (x: number, y: number) => {
+    cel(g, (c) => { c.arc(x, y, 9.5, Math.PI, 0); c.lineTo(x + 10.5, y + 4); c.lineTo(x - 10.5, y + 4); c.closePath(); }, COLORS.purple, 10, 1.8);
+    g.fillStyle = INK; g.fillRect(x - 6, y - 1, 12, 3);
+  };
+  helm(cx, cy - 9); helm(cx - 15, cy + 10); helm(cx + 15, cy + 10);
+};
 
-/** Paints one scene into the stage. `k` is canvas pixels per stage unit. */
+const bastion: Emblem = (s) => {
+  const { g } = s;
+  const bob = s.calm ? 0 : Math.sin(s.t / 800) * 1.6;
+  const pulse = s.calm ? 0.5 : 0.5 + 0.5 * Math.sin(s.t / 900);
+  // The core is its own light: a hard cyan disc of glow behind the gem.
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.fillStyle = `rgba(79, 209, 232, ${0.16 + 0.1 * pulse + 0.1 * s.hot})`;
+  g.beginPath(); g.arc(-3, -9, 31, 0, TAU); g.fill();
+  g.restore();
+  // Sandbags, two rows, the front of the wall.
+  const bag = (x: number, y: number) => cel(g, roundBox(x - 11, y - 6, x + 11, y + 6, 5), '#b4a07a', 12, 1.8);
+  bag(-23, 31); bag(0, 31); bag(23, 31); bag(-11, 21); bag(11, 21);
+  g.save();
+  g.translate(-3, -10 + bob);
+  g.scale(0.85, 0.85);
+  cel(g, polygon([0, -28], [16, -9], [12, 17], [0, 26], [-12, 17], [-16, -9]), '#4fd1e8', 26);
+  g.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  g.beginPath(); g.moveTo(-7, -13); g.lineTo(-3, -18); g.lineTo(-2, -7); g.lineTo(-7, -3); g.closePath(); g.fill();
+  g.restore();
+  // Claw marks from the right: three slashes, bone with ink under.
+  for (let i = 0; i < 3; i++) bar(g, [[24 + i * 7, -36 + i * 1.5], [34 + i * 7, -6 + i * 1.5]], BONE, 3.4);
+};
+
+const bullseye: Emblem = (s) => {
+  const { g } = s;
+  g.save();
+  g.translate(0, -5);
+  cel(g, ellipse(0, 0, 33, 33), BONE, 30);
+  cel(g, ellipse(0, 0, 25, 25), '#3d4450', 25, 1.8);
+  cel(g, ellipse(0, 0, 17, 17), BONE, 17, 1.8);
+  cel(g, ellipse(0, 0, 9.5, 9.5), ORANGE, 9, 1.8);
+  // Holes, and a fresh one that kicks when the card is up.
+  g.fillStyle = INK;
+  for (const [x, y] of [[4, -3], [-7, 9], [12, 11]] as const) { g.beginPath(); g.arc(x, y, 2.2, 0, TAU); g.fill(); }
+  const kick = s.calm ? 0 : s.hot * Math.max(0, 1 - ((s.t % 1500) / 300));
+  if (kick > 0) { g.strokeStyle = `rgba(255, 224, 138, ${kick})`; g.lineWidth = 3; g.beginPath(); g.arc(1, 0, 5 + (1 - kick) * 20, 0, TAU); g.stroke(); }
+  g.restore();
+  // Distance ticks under it, long at each hundred.
+  const y = 36;
+  bar(g, [[-34, y], [34, y]], BONE, 3);
+  g.fillStyle = BONE;
+  for (let i = 0; i <= 6; i++) { const x = -30 + i * 10; const long = i % 3 === 0; g.fillRect(x - 1.5, y - (long ? 9 : 5), 3, long ? 9 : 5); }
+};
+
+const EMBLEMS: Record<SceneId, { draw: Emblem; k: number }> = {
+  FFA: { draw: crosshair, k: 1.18 }, TDM: { draw: chevrons, k: 1.12 }, DOM: { draw: zones, k: 1.1 },
+  BR: { draw: storm, k: 1.16 }, ZOM: { draw: bastion, k: 1.1 }, RNG: { draw: bullseye, k: 1.14 },
+};
+
+let scratch: HTMLCanvasElement | null = null;
+
+/** Paints one card's art into the stage. `k` is canvas pixels per stage unit; `ptr` is the pointer in stage units. */
 export function paintScene(id: SceneId, g: CanvasRenderingContext2D, k: number, t: number, hot: number, ptr: { x: number; y: number } | null, calm: boolean) {
+  const px = ptr && hot > 0.02 ? Math.max(-1, Math.min(1, (ptr.x - STAGE.w / 2) / (STAGE.w / 2))) * hot : 0;
+  const py = ptr && hot > 0.02 ? Math.max(-1, Math.min(1, (ptr.y - STAGE.h / 2) / (STAGE.h / 2))) * hot : 0;
+  const s: Scene = { g, k, t, hot: calm ? 0 : hot, calm, px, py };
   g.save();
   g.setTransform(k, 0, 0, k, 0, 0);
   g.lineJoin = 'round';
-  floor(g, STAGE.w, STAGE.h, 84, FLOOR_SEED[id]);
-  const scene: Scene = { g, k, t, hot, calm, ptr };
-  const p = SCENES[id](scene);
-  p.items.sort((a, b) => a.y - b.y);
-  for (const it of p.items) it.draw();
-  const open = 1 + 0.18 * hot;
-  nightShade(g, STAGE.w, STAGE.h, p.lights.map((l) => ({ ...l, r: l.r * open, k: (l.k ?? 1) * (1 + 0.5 * hot) })), EDGE[id]);
-  for (const l of p.lights) pool(g, l.x, l.y + 24, l.r * 0.34 * open, 0.2 + 0.16 * hot);
-  p.after?.();
-  for (const glow of p.glows) glow();
+  if (id === 'TDM') groundTDM(s); else ground(s, id);
+  // The medallion's shadow: a hard shape down and to the right, like every plate in the menu.
+  const lift = s.hot * 4;
+  g.fillStyle = 'rgba(10, 12, 18, 0.38)';
+  g.beginPath(); g.arc(MED.x + 6 + px * 1.5, MED.y + 8 + lift * 0.6, MED.r + 1, 0, TAU); g.fill();
+  g.save(); g.translate(px * 2, py * 1.5); medallion(s, id); g.restore();
+  // The emblem goes on a scratch layer so one hard shadow falls under the whole silhouette, not under every shape.
+  const cw = g.canvas.width, ch = g.canvas.height;
+  const sc = (scratch ??= document.createElement('canvas'));
+  if (sc.width !== cw || sc.height !== ch) { sc.width = cw; sc.height = ch; }
+  const e = sc.getContext('2d')!;
+  e.setTransform(1, 0, 0, 1, 0, 0);
+  e.clearRect(0, 0, cw, ch);
+  e.setTransform(k, 0, 0, k, 0, 0);
+  e.lineJoin = 'round';
+  const em = EMBLEMS[id];
+  e.translate(MED.x + px * 4.5, MED.y - lift + py * 3);
+  const grow = em.k * (1 + 0.06 * s.hot);
+  e.scale(grow, grow);
+  em.draw({ ...s, g: e });
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.shadowColor = 'rgba(10, 12, 18, 0.45)';
+  g.shadowOffsetX = 3 * k; g.shadowOffsetY = (4 + lift * 0.4) * k;
+  g.drawImage(sc, 0, 0);
+  g.restore();
+  // The glint: a skewed band of light across the medallion, a quick pass now and then, a steady one while the card is up.
+  if (!calm) {
+    const cyc = s.hot > 0.05 ? (t / 1100) % 2.2 : (t / 7000) % 1;
+    const f = s.hot > 0.05 ? cyc / 1.2 : cyc / 0.12;
+    if (f >= 0 && f <= 1) {
+      g.save();
+      g.beginPath(); g.arc(MED.x, MED.y, MED.r - 10, 0, TAU); g.clip();
+      g.globalCompositeOperation = 'lighter';
+      g.fillStyle = `rgba(255, 244, 222, ${0.2 * Math.sin(f * Math.PI)})`;
+      const x = MED.x - 90 + f * 180;
+      g.beginPath(); g.moveTo(x, MED.y - 70); g.lineTo(x + 22, MED.y - 70); g.lineTo(x - 18, MED.y + 70); g.lineTo(x - 40, MED.y + 70); g.closePath(); g.fill();
+      g.restore();
+    }
+  }
   // A hard ink frame; the DOM plate adds the bevel.
   g.strokeStyle = INK;
   g.lineWidth = 3;
   g.strokeRect(0, 0, STAGE.w, STAGE.h);
   g.restore();
+  void tint;
 }
 
 type Entry = { canvas: HTMLCanvasElement; id: SceneId; card: HTMLElement; hot: number; target: number; ptr: { x: number; y: number } | null; last: number; seen: boolean };
 
-/** Runs every card's scene on one clock: the hovered card at ~30 fps, the rest slowly; nothing while off screen, hidden or calm. */
+/** Runs every card's art on one clock: the hovered card at ~30 fps, the rest slowly; nothing while off screen, hidden or calm. */
 export function createModeArt(calm: () => boolean) {
   const entries = new Map<HTMLCanvasElement, Entry>();
   let raf = 0;
@@ -248,9 +399,9 @@ export function createModeArt(calm: () => boolean) {
       io?.observe(canvas);
       const place = (ev: PointerEvent) => {
         const r = canvas.getBoundingClientRect();
-        // The canvas is cropped to the card's window (object-fit: cover, 62% down), so map through the same fit.
+        // The canvas may be cropped to the card's window (object-fit: cover, centred), so map through the same fit.
         const k = Math.max(r.width / STAGE.w, r.height / STAGE.h);
-        e.ptr = { x: (ev.clientX - r.left - (r.width - STAGE.w * k) * 0.5) / k, y: (ev.clientY - r.top - (r.height - STAGE.h * k) * 0.62) / k };
+        e.ptr = { x: (ev.clientX - r.left - (r.width - STAGE.w * k) * 0.5) / k, y: (ev.clientY - r.top - (r.height - STAGE.h * k) * 0.5) / k };
       };
       card.addEventListener('pointerenter', (ev) => { if (ev.pointerType === 'touch') return; e.target = 1; place(ev); });
       card.addEventListener('pointermove', (ev) => { if (ev.pointerType !== 'touch') place(ev); });
