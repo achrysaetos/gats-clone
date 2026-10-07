@@ -233,6 +233,8 @@ const lightness = (color: unknown): number => {
 test("by day every gun's round is a solid slug in its own bullet color with a lighter highlight", () => {
   worldStrokes(snap());
   for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
+    // The first frame with a gun paints its cached image; measure from the second.
+    worldStrokes(snap({ players: [player(2, { gun })] }));
     const base = worldStrokes(snap({ players: [player(2, { gun })] }));
     const frame = snap({ players: [player(2, { gun })] });
     frame.bullets = [{ id: 9, x: 140, y: 0, vx: 1500, vy: 0, owner: 2, gun }];

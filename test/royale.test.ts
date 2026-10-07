@@ -41,6 +41,7 @@ test('the ring burns only those outside it, through armor and the spawn shield, 
 
 test('a player with a squadmate standing is knocked, not killed, and the knock pays the kill; enemies can shoot the knocked player to finish them', () => {
   const w = emptyWorld('BR');
+  w.firstBlood = true;
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const victim = spawnAt(w, 1200, 1000, { team: 'red' });
   spawnAt(w, 3000, 3000, { team: 'red' });

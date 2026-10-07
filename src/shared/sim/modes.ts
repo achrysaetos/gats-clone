@@ -151,6 +151,7 @@ export function tickMatch(w: World, dtMs: number) {
 
 function startRound(w: World) {
   w.match = { k: 'playing' };
+  w.firstBlood = false;
   w.teamScore = { red: 0, blue: 0 };
   for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
   for (const p of w.players.values()) {

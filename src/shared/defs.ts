@@ -261,8 +261,10 @@ export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
-  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 200, pick: { k: 'evolve' } },
-  { score: 300, pick: { k: 'perk', tier: 2 } }, { score: 400, pick: { k: 'perk', tier: 3 } }, { score: 550, pick: { k: 'evolve' } },
+  // A tenth higher than before medals past the first rung: over 800 bot lives (`node scripts/level-scale.ts`) medals add
+  // about that much score, so the share of lives reaching each evolve stays where it was. A first kill still opens a perk.
+  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 220, pick: { k: 'evolve' } },
+  { score: 330, pick: { k: 'perk', tier: 2 } }, { score: 440, pick: { k: 'perk', tier: 3 } }, { score: 600, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 type Attachment = (typeof PERK_TIERS)[1][number];
@@ -315,6 +317,41 @@ export const KILL_REWARD = { heal: 0.35, ammo: 0.5 } as const;
  * more earns `shutdownScore`. Whoever killed you last is your nemesis, and killing them pays `revengeScore`.
  */
 export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 100, revengeScore: 50 } as const;
+
+/**
+ * Medals are earned in the moment, Call of Duty style, and each pays its `score` on top of the kill. `tier` sets the
+ * medal's metal on screen. The bounty, shutdown and revenge medals carry the bonuses those rules always paid.
+ */
+export const MEDAL_IDS = [
+  'firstBlood', 'doubleKill', 'tripleKill', 'quadKill', 'massacre', 'longShot', 'pointBlank', 'clutch', 'closeCall',
+  'revenge', 'shutdown', 'bounty', 'onFire', 'rampage', 'unstoppable', 'untouchable', 'legendary',
+] as const;
+export type MedalId = (typeof MEDAL_IDS)[number];
+export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
+export const MEDALS: Record<MedalId, { name: string; desc: string; score: number; tier: MedalTier }> = {
+  firstBlood: { name: 'First Blood', desc: 'The first kill of the round', score: 50, tier: 'silver' },
+  doubleKill: { name: 'Double Kill', desc: 'Two kills within 4 seconds', score: 25, tier: 'bronze' },
+  tripleKill: { name: 'Triple Kill', desc: 'Three kills, each within 4 seconds of the last', score: 50, tier: 'silver' },
+  quadKill: { name: 'Quad Kill', desc: 'Four kills, each within 4 seconds of the last', score: 100, tier: 'gold' },
+  massacre: { name: 'Massacre', desc: 'Five or more kills, each within 4 seconds of the last', score: 150, tier: 'platinum' },
+  longShot: { name: 'Long Shot', desc: 'A kill from 650 px or more away', score: 30, tier: 'bronze' },
+  pointBlank: { name: 'Point Blank', desc: 'A kill from 90 px or closer', score: 20, tier: 'bronze' },
+  clutch: { name: 'Clutch', desc: 'Kill whoever is hurting you, on 20% health or less', score: 50, tier: 'silver' },
+  closeCall: { name: 'Close Call', desc: 'Drop under 10% health and live another 6 seconds', score: 30, tier: 'bronze' },
+  revenge: { name: 'Revenge', desc: 'Kill the player who last killed you', score: STREAK.revengeScore, tier: 'silver' },
+  shutdown: { name: 'Shutdown', desc: 'End a streak of 5 or more', score: STREAK.shutdownScore, tier: 'gold' },
+  bounty: { name: 'Bounty', desc: 'Kill a hunted player', score: 200, tier: 'gold' },
+  onFire: { name: 'On Fire', desc: '3 kills without dying', score: 25, tier: 'bronze' },
+  rampage: { name: 'Rampage', desc: '5 kills without dying', score: 50, tier: 'silver' },
+  unstoppable: { name: 'Unstoppable', desc: '8 kills without dying', score: 100, tier: 'gold' },
+  untouchable: { name: 'Untouchable', desc: '12 kills without dying', score: 150, tier: 'platinum' },
+  legendary: { name: 'Legendary', desc: '20 kills without dying', score: 250, tier: 'platinum' },
+};
+/** The streak at which each streak medal is earned. */
+export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
+/** The chain of kills each multi-kill medal names, from the second kill. */
+export const MULTI_MEDALS: readonly MedalId[] = ['doubleKill', 'tripleKill', 'quadKill', 'massacre'];
+export const MEDAL_RULES = { multiMs: 4000, longShotPx: 650, pointBlankPx: 90, clutchHp: 0.2, clutchMs: 5000, closeCallHp: 0.1, closeCallMs: 6000, closeCallReset: 0.5 } as const;
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
@@ -440,6 +477,8 @@ export const BASTION_GUN: TurretDef = {
 };
 
 export const ZOM = {
+  /** Zombie kill score is scaled by this, matching the versus levels' scale-up for medals (see `LEVELS`). */
+  levelScoreMul: 1.1,
   /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,

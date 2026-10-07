@@ -7,7 +7,7 @@ import { dueAt, nextSprayShot, serverGun, settle, type PredictedShot, type Trigg
 import { newestSnap, renderTime, sampleAt, TICK_MS } from './interp.ts';
 import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
 import { shotCue, type SoundCue } from './sfx.ts';
-import { muzzleTip } from './sprites.ts';
+import { muzzleTip } from './gunart.ts';
 import type { Session } from './state.ts';
 
 type Point = { x: number; y: number };

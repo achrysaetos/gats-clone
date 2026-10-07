@@ -10,7 +10,7 @@ import { drawnTags, shadowBakes } from './render.ts';
 import type { SoundCue } from './sfx.ts';
 import { TRACER } from './rounds.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { muzzleTip } from './sprites.ts';
+import { muzzleTip } from './gunart.ts';
 import { EFFECT_LIFE_MS, type Session } from './state.ts';
 import { useHint, type Ghost } from './zombies.ts';
 

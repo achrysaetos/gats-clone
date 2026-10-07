@@ -1,4 +1,4 @@
-import { ARMORS, GUNS, HP_MULTIPLIER, KILL_REWARD, ROYALE, rulesOf, STREAK, SUPPRESSION, WORLD, ZOMBIES } from '../defs.ts';
+import { ARMORS, GUNS, HP_MULTIPLIER, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WORLD, ZOMBIES, type MedalId } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
@@ -98,8 +98,8 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   credited.kills++;
   credited.lifeKills++;
   if (revenge) credited.nemesis = null;
-  const shutdown = ended >= STREAK.shutdownAt;
-  addScore(w, credited, WORLD.killScore + (bounty ? WORLD.bountyScore : 0) + (shutdown ? STREAK.shutdownScore : 0) + (revenge ? STREAK.revengeScore : 0));
+  addScore(w, credited, WORLD.killScore);
+  for (const medal of killMedals(w, credited, victim, { bounty, revenge, ended })) award(w, credited, medal);
   refuel(credited);
   MODES[w.mode].onKill(w, credited, victim);
 }
@@ -108,6 +108,48 @@ export function die(w: World, victim: Player, respawnAt: number) {
   victim.life = { k: 'dead', respawnAt };
   victim.deaths++;
   w.lifeRecords.push({ id: victim.id, name: victim.name, kills: victim.lifeKills, score: victim.score, died: true });
+}
+
+/** The medals one kill earns its killer, judged before the kill's refuel so a Clutch sees the health it was won on. */
+function killMedals(w: World, killer: Player, victim: Player, kill: { bounty: boolean; revenge: boolean; ended: number }): MedalId[] {
+  const out: MedalId[] = [];
+  if (!w.firstBlood) { w.firstBlood = true; out.push('firstBlood'); }
+  killer.chain = w.now - killer.chain.at <= MEDAL_RULES.multiMs ? { count: killer.chain.count + 1, at: w.now } : { count: 1, at: w.now };
+  const multi = MULTI_MEDALS[Math.min(killer.chain.count, MULTI_MEDALS.length + 1) - 2];
+  if (multi) out.push(multi);
+  const range = Math.hypot(victim.x - killer.x, victim.y - killer.y);
+  if (range >= MEDAL_RULES.longShotPx) out.push('longShot');
+  else if (range <= MEDAL_RULES.pointBlankPx) out.push('pointBlank');
+  const life = killer.life;
+  const hurtByVictim = life.k === 'alive' && life.hits.some((h) => h.by === victim.id && w.now - h.at <= MEDAL_RULES.clutchMs);
+  if (life.k === 'alive' && hurtByVictim && life.hp <= MEDAL_RULES.clutchHp * effectiveStats(killer).maxHp) out.push('clutch');
+  if (kill.revenge) out.push('revenge');
+  if (kill.ended >= STREAK.shutdownAt) out.push('shutdown');
+  if (kill.bounty) out.push('bounty');
+  const streak = STREAK_MEDALS.find(([n]) => n === killer.lifeKills);
+  if (streak) out.push(streak[1]);
+  return out;
+}
+
+/** Pays a medal's score and tells its earner (`MEDALS`). */
+export function award(w: World, p: Player, medal: MedalId) {
+  addScore(w, p, MEDALS[medal].score);
+  w.events.push({ e: 'medal', id: p.id, medal });
+}
+
+/**
+ * A Close Call: a life that falls under `closeCallHp` and lives `closeCallMs` more earns the medal once, and can earn it
+ * again only after healing back past `closeCallReset`.
+ */
+export function watchCloseCalls(w: World) {
+  if (w.run) return;
+  for (const p of w.players.values()) {
+    if (p.life.k !== 'alive') { p.lowAt = null; continue; }
+    const frac = p.life.hp / effectiveStats(p).maxHp;
+    if (p.lowAt === -1) { if (frac >= MEDAL_RULES.closeCallReset) p.lowAt = null; continue; }
+    if (p.lowAt === null) { if (frac <= MEDAL_RULES.closeCallHp) p.lowAt = w.now; continue; }
+    if (w.now - p.lowAt >= MEDAL_RULES.closeCallMs) { p.lowAt = -1; award(w, p, 'closeCall'); }
+  }
 }
 
 /** A kill gives the killer back some health and, unless they are mid-reload, some of their mag (`KILL_REWARD`). */

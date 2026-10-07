@@ -42,10 +42,12 @@ const TAU = Math.PI * 2;
 const HURT_BANDS = 12;
 const HURT_EDGE = { depth: 0.06, alpha: 0.05, alphaPerStrength: 0.12 } as const;
 /**
- * Suppression shades the screen's edges in a soft vignette that starts `clear` of the way out to the corners and is `alpha` dark there at full strength, easing toward
- * the server's value at `ease` per ms. Past `readable` the HUD text takes its night colors so ammo stays legible over the shade.
+ * Suppression closes in on the screen as tunnel vision: a vignette clear for the inner `clear` of the way out, black from `reach`
+ * of the way to the corners (so each edge's middle is in full shade too), `alpha` dark at full strength and rising with the
+ * server's value to the power `curve` so a burst is felt at once, easing toward it at `ease` per ms. Past `readable` the HUD
+ * text takes its night colors so it stays legible over the shade.
  */
-const SUPPRESS_EDGE = { clear: 0.32, alpha: 0.88, ease: 0.008, readable: 0.4 } as const;
+const SUPPRESS_EDGE = { clear: 0.16, alpha: 0.96, ease: 0.008, readable: 0.3, reach: 0.82, curve: 0.65 } as const;
 let shownSuppression = 0;
 let suppressShade: { w: number; h: number; image: HTMLCanvasElement } | null = null;
 
@@ -61,11 +63,13 @@ function vignette(w: number, h: number): HTMLCanvasElement {
   const cx = image.width / 2;
   g.translate(cx, image.height / 2);
   g.scale(1, image.height / image.width);
-  const outer = cx * Math.SQRT2;
+  // Black already at `reach` of the way to the corners, which puts the middle of each edge in full shade: tunnel vision.
+  const outer = cx * Math.SQRT2 * SUPPRESS_EDGE.reach;
   const fill = g.createRadialGradient(0, 0, outer * SUPPRESS_EDGE.clear, 0, 0, outer);
-  fill.addColorStop(0, 'rgba(8, 9, 14, 0)');
-  fill.addColorStop(0.5, 'rgba(8, 9, 14, 0.5)');
-  fill.addColorStop(1, 'rgba(8, 9, 14, 1)');
+  fill.addColorStop(0, 'rgba(6, 7, 10, 0)');
+  fill.addColorStop(0.35, 'rgba(6, 7, 10, 0.45)');
+  fill.addColorStop(0.7, 'rgba(6, 7, 10, 0.88)');
+  fill.addColorStop(1, 'rgba(6, 7, 10, 1)');
   g.fillStyle = fill;
   g.fillRect(-cx, -cx, image.width, image.width);
   suppressShade = { w, h, image };
@@ -182,7 +186,8 @@ function drawSuppression({ ctx, w, h, snap, me, dt }: Hud) {
   const target = me?.alive ? snap.self.suppression : 0;
   shownSuppression += (target - shownSuppression) * Math.min(1, dt * SUPPRESS_EDGE.ease);
   if (shownSuppression < 0.01) return;
-  ctx.globalAlpha = SUPPRESS_EDGE.alpha * shownSuppression;
+  // Rises steeply at first, so even a burst of near misses is felt; full suppression all but blinds the edges.
+  ctx.globalAlpha = SUPPRESS_EDGE.alpha * shownSuppression ** SUPPRESS_EDGE.curve;
   ctx.drawImage(vignette(w, h), 0, 0, w, h);
   ctx.globalAlpha = 1;
 }

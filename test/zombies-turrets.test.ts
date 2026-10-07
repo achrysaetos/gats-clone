@@ -168,7 +168,7 @@ test('a turret\'s kill pays the squad its scrap and the builder its score, and c
   for (let ms = 0; ms < 1000 && !zkill; ms += TICK_MS) { step(w, TICK_MS); zkill = w.events.find((e) => e.e === 'zkill') ?? null; }
   assert.deepEqual(zkill && { ...zkill, x: 0, y: 0, id: 0 }, { e: 'zkill', id: 0, kind: 'brute', x: 0, y: 0, by: null });
   assert.equal(w.run!.scrap - scrap, ZOMBIES.brute.scrap);
-  assert.deepEqual([builder.score, builder.kills, w.run!.stats.get(builder.id)?.kills ?? 0], [ZOMBIES.brute.score, 0, 0]);
+  assert.deepEqual([builder.score, builder.kills, w.run!.stats.get(builder.id)?.kills ?? 0], [Math.round(ZOMBIES.brute.score * ZOM.levelScoreMul), 0, 0]);
   assert.deepEqual(w.run!.turretKills.cannon.brute, 1);
   assert.equal(Object.values(w.run!.turretKills).flatMap((k) => Object.values(k)).reduce((a, b) => a + b), 1, 'and no other');
 
@@ -263,7 +263,7 @@ test('a mortar\'s kill counts as the mortar\'s, not its builder\'s', () => {
   addZombie(w, 'walker', 60, 60);
   run(w, 2500);
   assert.equal(w.run!.turretKills.mortar.plated, 1);
-  assert.deepEqual([builder.kills, builder.score], [0, ZOMBIES.plated.score]);
+  assert.deepEqual([builder.kills, builder.score], [0, Math.round(ZOMBIES.plated.score * ZOM.levelScoreMul)]);
 });
 
 test('the Bastion\'s kills count as the Bastion\'s, and its hits send no hit marker', () => {

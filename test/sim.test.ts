@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITY_COOLDOWN_MS, GUNS, HP_MULTIPLIER, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, HP_MULTIPLIER, MEDALS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -66,6 +66,7 @@ test('walls stop bullets', () => {
 
 test('kills award killScore and open picks at the level thresholds', () => {
   const w = emptyWorld();
+  w.firstBlood = true;
   const a = spawnAt(w, 500, 500);
   const killOne = () => {
     const v = spawnAt(w, 650, 500);
@@ -81,7 +82,7 @@ test('kills award killScore and open picks at the level thresholds', () => {
   assert.equal(self.kills, 1);
 
   killOne();
-  assert.equal(a.score, 2 * WORLD.killScore);
+  assert.equal(a.score, 2 * WORLD.killScore + MEDALS.doubleKill.score, 'a second kill this soon is a double');
   assert.equal(a.level, 2);
   assert.deepEqual(snapshotFor(w, a.id).self.pending, { level: 1, k: 'perk', tier: 1 }, 'the tier 1 perk stays pending until chosen');
 });

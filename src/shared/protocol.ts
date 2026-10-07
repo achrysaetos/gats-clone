@@ -1,6 +1,6 @@
 import {
   ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
-  type AbilityId, type ArmorId, type ColorId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
+  type AbilityId, type ArmorId, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 
@@ -123,6 +123,8 @@ export type GameEvent =
    */
   | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[]; knock?: true; ended: number; revenge: boolean }
   | { e: 'hunted'; id: number; name: string }
+  /** Player `id` earned a medal (`MEDALS`), and its score with it. */
+  | { e: 'medal'; id: number; medal: MedalId }
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
   | { e: 'impact'; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }

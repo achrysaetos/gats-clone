@@ -40,7 +40,7 @@ test('a kill refuels the killer with health and ammo, but never past full', () =
 
 test('ending a long streak pays a shutdown bonus and tells everyone the streak it ended', () => {
   const w = emptyWorld();
-  const hero = spawnAt(w, 100, 100), stopper = spawnAt(w, 600, 600);
+  const hero = spawnAt(w, 100, 100), stopper = spawnAt(w, 100, 400);
   for (let i = 0; i < STREAK.shutdownAt; i++) slay(w, hero, spawnAt(w, 300 + i * 60, 100));
   assert.equal(hero.lifeKills, STREAK.shutdownAt);
   const seen = snapshotFor(w, stopper.id).players.find((p) => p.id === hero.id);
@@ -48,7 +48,7 @@ test('ending a long streak pays a shutdown bonus and tells everyone the streak i
   const before = stopper.score;
   const ev = slay(w, stopper, hero);
   assert.equal(ev.ended, STREAK.shutdownAt);
-  assert.equal(stopper.score - before, WORLD.killScore + STREAK.shutdownScore);
+  assert.equal(stopper.score - before, WORLD.killScore + STREAK.shutdownScore, 'the shutdown medal pays the bonus');
 });
 
 test('your killer becomes your nemesis, and killing them back pays revenge once', () => {

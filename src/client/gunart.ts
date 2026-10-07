@@ -323,39 +323,72 @@ export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number,
 }
 
 /**
- * A dropped gun's length on the ground in world px: `base` plus `perUnit` of its art length, so a pistol (about 37 px) still
- * reads beside its owner while a bolt-action (about 63 px) lies clearly longer.
+ * A gun in the world, held or dropped, is one image: the same side art as the cards, squashed by `squash` so it reads as
+ * seen from above at a slant, as top-down shooters draw guns. Its length in world px is `base` plus `perUnit` of its art
+ * length, so a pistol (about 49 px) reads clearly in its owner's hand while a bolt-action (about 75 px) is plainly longer, and a
+ * gun is exactly as big on the ground as it was in its owner's hands.
  */
-export const DROPPED_SIZE = { base: 18, perUnit: 0.3 } as const;
-const dropped = new Map<GunId, HTMLCanvasElement>();
-/** Pixels per art unit in the cached image of a dropped gun, sharp at the camera's closest zoom on a dense screen. */
-const DROPPED_RES = 4;
+export const WORLD_GUN = { base: 30, perUnit: 0.3, squash: 0.72, res: 3 } as const;
+/** Where the butt of a held gun sits, in body radii ahead of the holder's centre: a pistol is held out, a long gun shouldered. */
+const HOLD_REAR: Record<WeaponId, number> = { pistol: 0.75, smg: 0.5, shotgun: 0.25, assault: 0.3, sniper: 0.2, lmg: 0.3 };
 
-/**
- * A dropped gun as a cached image, dulled as if it lay in the dust, so a field of corpses costs one image draw apiece.
- * Drawn centred on (`x`, `y`) along the context's x axis.
- */
-export function drawDroppedGun(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {
-  let image = dropped.get(gun);
+const images = new Map<string, HTMLCanvasElement>();
+
+function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
+  const key = `${gun}|${dusted}`;
+  let image = images.get(key);
+  if (image) return image;
   const b = build(gun);
-  if (!image) {
-    image = document.createElement('canvas');
-    image.width = Math.ceil((b.maxX - b.minX) * DROPPED_RES) + 4;
-    image.height = Math.ceil((b.maxY - b.minY) * DROPPED_RES) + 4;
-    const g = image.getContext('2d');
-    if (g) {
-      drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4);
+  image = document.createElement('canvas');
+  image.width = Math.ceil((b.maxX - b.minX) * WORLD_GUN.res) + 4;
+  image.height = Math.ceil((b.maxY - b.minY) * WORLD_GUN.res) + 4;
+  const g = image.getContext('2d');
+  if (g) {
+    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4);
+    if (dusted) {
       // Dust settles on it: a flat grey wash over the paint only.
       g.globalCompositeOperation = 'source-atop';
       g.fillStyle = 'rgba(120, 118, 112, 0.35)';
       g.fillRect(0, 0, image.width, image.height);
     }
-    dropped.set(gun, image);
   }
+  images.set(key, image);
+  return image;
+}
+
+/** The world size of a gun's image, and its length. */
+function worldSize(gun: GunId) {
+  const b = build(gun);
   const length = b.maxX - b.minX;
-  const k = (DROPPED_SIZE.base + DROPPED_SIZE.perUnit * length) / length;
-  const w = (image.width / DROPPED_RES) * k, h = (image.height / DROPPED_RES) * k;
-  ctx.drawImage(image, x - w / 2, y - h / 2, w, h);
+  const k = (WORLD_GUN.base + WORLD_GUN.perUnit * length) / length;
+  return { k, length: length * k, w: (((b.maxX - b.minX) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k, h: ((((b.maxY - b.minY) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k) * WORLD_GUN.squash };
+}
+
+/** A dropped gun, dulled as if it lay in the dust, centred on (`x`, `y`) along the context's x axis. */
+export function drawDroppedGun(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {
+  const { w, h } = worldSize(gun);
+  ctx.drawImage(worldImage(gun, true), x - w / 2, y - h / 2, w, h);
+}
+
+/**
+ * A held gun, in the holder's frame (x along the aim, from the body's centre). `flip` mirrors it across the aim line when
+ * the holder faces left, so the grip and magazine always hang below the barrel on screen.
+ */
+export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flip: boolean) {
+  const { w, h } = worldSize(gun);
+  const b = build(gun);
+  const rear = HOLD_REAR[GUNS[gun].base] * radius;
+  // The bore (art y = 0) sits on the aim line.
+  const bore = (2 - b.minY * WORLD_GUN.res) / ((b.maxY - b.minY) * WORLD_GUN.res + 4);
+  ctx.save();
+  if (flip) ctx.scale(1, -1);
+  ctx.drawImage(worldImage(gun, false), rear, -h * bore, w, h);
+  ctx.restore();
+}
+
+/** Where a held gun's muzzle is, `radius` being the holder's body radius. */
+export function heldMuzzleReach(gun: GunId, radius: number): number {
+  return HOLD_REAR[GUNS[gun].base] * radius + worldSize(gun).length;
 }
 
 /**
@@ -376,4 +409,10 @@ export function drawGunCard(canvas: HTMLCanvasElement, gun: GunId, cssW: number,
   }));
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGunArt(ctx, gun, canvas.width * pad, canvas.height * pad, w, h, { scale });
+}
+
+/** Where the muzzle of the gun held by a player at (`x`, `y`) aiming along `angle` is, so a drawn round leaves the barrel. */
+export function muzzleTip(x: number, y: number, angle: number, gun: GunId, radius: number) {
+  const reach = heldMuzzleReach(gun, radius);
+  return { x: x + Math.cos(angle) * reach, y: y + Math.sin(angle) * reach };
 }

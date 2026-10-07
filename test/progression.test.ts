@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, LEVELS, pickOptions, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LEVELS, MEDALS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
@@ -28,7 +28,8 @@ test('four kills and ten crates in one life open the ability pick', () => {
     w.crates.push({ id: 900 + i, x: 600, y: 478, size: 44, hp: 1, respawnAt: null });
     shootOnce(w, a, 0);
   }
-  assert.equal(a.score, 4 * WORLD.killScore + 10 * WORLD.crateScore);
+  const medals = ['firstBlood', 'doubleKill', 'tripleKill', 'onFire', 'quadKill'] as const;
+  assert.equal(a.score, 4 * WORLD.killScore + medals.reduce((s, m) => s + MEDALS[m].score, 0) + 10 * WORLD.crateScore, 'four quick kills earn their medals too');
   assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
@@ -133,6 +134,7 @@ test('score is multiplied while your level trails the other living players\' ave
     });
     const v = spawnAt(w, 650, 500);
     if (v.life.k === 'alive') v.life.hp = 1;
+    w.firstBlood = true;
     shootOnce(w, a, 0);
     return a.score;
   };
@@ -241,6 +243,7 @@ test('another attacker who took 30% of the victim\'s health gets the assist scor
   const chipper = spawnAt(w, 500, 900);
   const killer = spawnAt(w, 900, 500);
   const victim = spawnAt(w, 700, 700);
+  w.firstBlood = true;
   const hit = (p: Player, amount: number) => damagePlayer(w, victim, amount, { attacker: p, team: null, label: 'test', piercing: true, via: 'bullet', fromX: p.x, fromY: p.y });
   hit(helper, 30);
   hit(chipper, 29);

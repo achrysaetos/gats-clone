@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import type { WebSocket } from 'ws';
-import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
+import { EVOLUTIONS, LEVELS, MEDALS, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
-import type { ClientMsg, InputState, Loadout, ServerMsg, Team } from '../src/shared/protocol.ts';
+import type { ClientMsg, GameEvent, InputState, Loadout, ServerMsg, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
@@ -10,6 +10,10 @@ import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/
 
 export const TICK_MS = 1000 / 30;
 export const PISTOL: Loadout = { weapon: 'pistol', armor: 'none', color: 'red' };
+
+/** What the medals among `events` paid player `id` (before any catch-up multiplier). */
+export const medalPay = (events: readonly GameEvent[], id: number): number =>
+  events.reduce((sum, e) => sum + (e.e === 'medal' && e.id === id ? MEDALS[e.medal].score : 0), 0);
 
 export function emptyWorld(mode: ModeId = 'FFA'): World {
   const w = createWorld(mode, 1, ROTATION[mode][0]);

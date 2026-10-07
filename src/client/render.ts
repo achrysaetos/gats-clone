@@ -9,7 +9,7 @@ import { ARMOR_RIM, glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './
 import { serverNow } from './interp.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, faceZombies, wallFlashes } from './siege.ts';
 import { bodySprite, drawBody, drawBodyShadows } from './bodies.ts';
-import { drawGun } from './sprites.ts';
+import { drawHeldGun } from './gunart.ts';
 import { fillIcon, UI_ICONS } from './icons.ts';
 import type { Session } from './state.ts';
 import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
@@ -463,7 +463,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.rotate(p.angle);
   const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
   ctx.translate(-jump, 0);
-  drawGun(ctx, p.gun, R);
+  drawHeldGun(ctx, p.gun, R, Math.cos(p.angle) < 0);
   ctx.translate(jump, 0);
   ctx.rotate(-p.angle);
   drawBody(ctx, bodySprite(color, R, ARMOR_RIM[p.armorTier], look.pxPerUnit), 0, 0, R);

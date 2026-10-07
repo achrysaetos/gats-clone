@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
 import { clock, deathText, feedMentions, killOf, levelProgress, objectiveFor, roundTimeLeft } from '../src/client/derive.ts';
-import { WORLD } from '../src/shared/defs.ts';
+import { LEVELS, WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 
 test('WASD and arrows map to the same movement; unknown and prototype keys map to nothing', () => {
@@ -61,8 +61,8 @@ test('the camera shows the view radius across and only the height the screen sha
 });
 
 test('level progress tracks thresholds and caps at max level', () => {
-  assert.deepEqual(levelProgress(0, 0), { displayLevel: 1, frac: 0, nextAt: 100 });
-  assert.deepEqual(levelProgress(1, 150), { displayLevel: 2, frac: 0.5, nextAt: 200 });
+  assert.deepEqual(levelProgress(0, 0), { displayLevel: 1, frac: 0, nextAt: LEVELS[1].score });
+  assert.deepEqual(levelProgress(1, (LEVELS[1].score + LEVELS[2].score) / 2), { displayLevel: 2, frac: 0.5, nextAt: LEVELS[2].score });
   assert.deepEqual(levelProgress(5, 5000), { displayLevel: 6, frac: 1, nextAt: null });
 });
 

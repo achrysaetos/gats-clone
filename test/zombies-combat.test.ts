@@ -33,7 +33,7 @@ test('shooting a zombie dead pays the shooter its score and kill, and the squad 
   assert.ok(!w.zombies.includes(z), 'the zombie is gone');
   assert.deepEqual(
     { score: p.score, kills: p.kills, scrap: w.run!.scrap - scrap, stats: w.run!.stats.get(p.id)?.kills },
-    { score: ZOMBIES.walker.score, kills: 1, scrap: ZOMBIES.walker.scrap, stats: 1 },
+    { score: Math.round(ZOMBIES.walker.score * ZOM.levelScoreMul), kills: 1, scrap: ZOMBIES.walker.scrap, stats: 1 },
   );
 });
 

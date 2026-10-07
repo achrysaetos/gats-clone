@@ -5,7 +5,7 @@ import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, medalPay, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = GUNS.pistol.damage;
 
@@ -111,7 +111,8 @@ test('a player finished by their own blast gives the kill, bounty and team point
   assert.equal(victim.life.k, 'dead');
   assert.ok(kill?.e === 'kill');
   assert.deepEqual({ killerId: kill.killerId, bounty: kill.bounty }, { killerId: most.id, bounty: true });
-  assert.deepEqual({ kills: most.kills, score: most.score, red: w.teamScore.red }, { kills: 1, score: WORLD.killScore + WORLD.bountyScore, red: 1 });
+  assert.deepEqual({ kills: most.kills, score: most.score, red: w.teamScore.red }, { kills: 1, score: WORLD.killScore + medalPay(w.events, most.id), red: 1 });
+  assert.deepEqual(w.events.flatMap((e) => (e.e === 'medal' ? [e.medal] : [])), ['firstBlood', 'longShot', 'bounty'], 'the bounty is paid as its medal');
   assert.deepEqual({ kills: less.kills, victimKills: victim.kills }, { kills: 0, victimKills: 0 });
 });
 

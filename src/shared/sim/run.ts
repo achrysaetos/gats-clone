@@ -132,7 +132,8 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   if (shooter === 'bastion') run.bastionKills++;
   else if (shooter) run.turretKills[shooter][z.kind]++;
   else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
-  if (attacker) addScore(w, attacker, def.score);
+  // Versus levels are scaled up for the medals a kill pays there; the horde pays no medals, so its score is scaled to match.
+  if (attacker) addScore(w, attacker, def.score * ZOM.levelScoreMul);
   if (def.burst) burst(w, run, z, def.burst);
 }
 

@@ -29,6 +29,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
       });
     }
     case 'shot':
+    case 'medal':
     case 'hunted':
     case 'life':
     case 'wiped': return null;

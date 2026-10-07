@@ -62,6 +62,10 @@ export type Player = {
   lifeKills: number;
   /** Who last killed this player, until this player kills them back. */
   nemesis: number | null;
+  /** This player's run of kills each within `MEDAL_RULES.multiMs` of the last, for the multi-kill medals. */
+  chain: { count: number; at: number };
+  /** When this life fell under `MEDAL_RULES.closeCallHp`, for the Close Call medal; -1 once paid, until it heals back up. */
+  lowAt: number | null;
   revealedUntil: number;
   /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
   huntedPing: (Pose & { at: number }) | null;
@@ -198,6 +202,8 @@ export type World = {
   /** Events raised between ticks, such as by a pick; the next step ships them. */
   queuedEvents: GameEvent[];
   lifeRecords: LifeRecord[];
+  /** Whether this round's first kill, and its medal, has been taken. */
+  firstBlood: boolean;
   /** Recent player positions, oldest first, so a shot can be judged against the world its shooter saw. */
   history: PoseFrame[];
   zombies: Zombie[];
@@ -233,7 +239,7 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
-    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], history: [],
+    zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
     zombies: [], buildings: [], buildingsVersion: 0, run: null, royale: null,
   };
   loadMap(w, map);
