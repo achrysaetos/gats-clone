@@ -1,5 +1,5 @@
 import { EVOLUTIONS, GUN_IDS, GUNS, MEDALS, STREAK, ZOM, type MedalTier, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
-import type { Snapshot } from '../shared/protocol.ts';
+import { planeAt, type Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
 import { ringMoved } from './royale.ts';
@@ -8,7 +8,10 @@ export type SoundId =
   | `shot:${GunId}` | 'shot:silenced' | `reload:${WeaponId}`
   | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'fanfare' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
-  | 'knock' | 'ring' | 'step' | 'spawn' | 'impact:flesh' | 'impact:wall' | 'impact:crate' | 'impact:zombie';
+  | 'knock' | 'ring' | 'step' | 'spawn' | 'impact:flesh' | 'impact:wall' | 'impact:crate' | 'impact:zombie'
+  | 'barrel:hurt' | 'barrel:fuse' | 'barrel:burst' | 'barrel:chain'
+  | 'plane' | 'chute' | 'crate:land' | 'crate:break' | 'crate:gold' | 'crate:supply'
+  | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework';
 
 /** Each kill in a streak sounds two semitones above the last, up to the fifth. */
 export type KillStep = 2 | 3 | 4 | 5;
@@ -144,9 +147,23 @@ const debris = (n: number, fromMs: number, spanMs: number, gain: number): Layer[
 /** Scales a recipe's loudness, for sounds that measured too quiet against the stings. */
 const louder = (recipe: Recipe, k: number): Recipe => recipe.map((l) => ({ ...l, gain: Math.min(1, l.gain * k) }));
 
+/** Bright little ticks at fixed pseudo-random pitches and times: sizzling fuse, firework crackle. */
+function crackle(n: number, fromMs: number, spanMs: number, gain: number, lowHz = 5000): Layer[] {
+  const out: Layer[] = [];
+  for (let i = 0; i < n; i++) {
+    const q = Math.abs((Math.sin(i * 39.346 + lowHz) * 43758.5453) % 1), t = i / n;
+    out.push(snap(lowHz + q * 4000, gain * (1 - 0.65 * t) * (0.6 + 0.4 * q), fromMs + t * spanMs + q * (spanMs / n), 6 + q * 6));
+  }
+  return out;
+}
+
+/** The plane's drone is this long and swells to its peak this far in; the cue is delayed so the peak is the pass over the drop point. */
+export const PLANE_MS = 7000;
+export const PLANE_PEAK_MS = 3000;
+
 const MEDAL_CHORD = [1568, 1976, 2349, 3136];
 
-export const SOUNDS: Record<SoundId, Recipe> = {
+const RAW: Record<SoundId, Recipe> = {
   ...shotSounds(),
   ...reloadSounds(),
   'shot:silenced': [snap(4000, 0.2), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1200, 300], ms: 60, gain: 0.35 }, thump(200, 40, 0.12)],
@@ -216,6 +233,36 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   // Dropping into the world: a whistle falling away, then the landing.
   spawn: louder([{ src: 'tone', wave: 'sine', pitchHz: [1100, 220], ms: 200, gain: 0.07 }, { src: 'tone', wave: 'sine', pitchHz: [150, 38], ms: 420, gain: 0.7, delayMs: 170 },
     air(1000, 100, 260, 0.3, 170), snap(1800, 0.12, 170, 14), ping(1100, 200, 200, 0.04)], 0.6),
+  // Explosive barrels. A hit is a metal tink and a leak of gas; a lit one sizzles; the burst is a clang and a fiery whoomp, never the grenade's boom.
+  'barrel:hurt': [snap(4800, 0.3, 0, 6), ping(1450, 0, 170, 0.2), ping(2210, 0, 110, 0.1), { src: 'noise', filter: 'highpass', q: 0.7, cutoffHz: [6500, 4200], ms: 240, gain: 0.16, delayMs: 15 }],
+  'barrel:fuse': [{ src: 'noise', filter: 'highpass', q: 0.8, cutoffHz: [5000, 8500], ms: 440, gain: 0.2, attackMs: 40 }, { src: 'tone', wave: 'sine', pitchHz: [600, 1900], ms: 420, gain: 0.04 }, ...crackle(7, 10, 380, 0.16)],
+  'barrel:burst': [
+    ping(310, 0, 560, 0.34), ping(467, 0, 460, 0.24), ping(821, 0, 380, 0.18), ping(1366, 0, 280, 0.1), snap(3000, 0.4, 0, 16),
+    { src: 'tone', wave: 'sine', pitchHz: [95, 34], ms: 650, gain: 0.85 },
+    { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [250, 1300], ms: 520, gain: 0.6, attackMs: 70 }, thump(60, 420, 0.7),
+    air(700, 110, 700, 0.2, 90), ...debris(6, 120, 500, 0.12),
+  ],
+  'barrel:chain': [{ src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [600, 110], ms: 950, gain: 0.35, attackMs: 140 }, thump(75, 300, 0.45), { ...thump(68, 300, 0.4), delayMs: 140 }, { ...thump(62, 320, 0.35), delayMs: 290 }, ping(380, 200, 320, 0.08), ping(540, 330, 260, 0.06)],
+  // A supply drop: a plane's drone passing over, the chute's fwump and flutter, the crate's thud and break, then the prize.
+  plane: [
+    { src: 'tone', wave: 'sawtooth', pitchHz: [96, 80], ms: PLANE_MS, gain: 0.075, attackMs: PLANE_PEAK_MS },
+    { src: 'tone', wave: 'sawtooth', pitchHz: [101, 84], ms: PLANE_MS, gain: 0.065, attackMs: PLANE_PEAK_MS },
+    { src: 'tone', wave: 'triangle', pitchHz: [192, 160], ms: PLANE_MS, gain: 0.05, attackMs: PLANE_PEAK_MS },
+    { src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [300, 200], ms: PLANE_MS, gain: 0.12, attackMs: PLANE_PEAK_MS },
+  ],
+  chute: [air(1800, 300, 220, 0.3), ...[180, 300, 430, 570, 730, 910].map((d, i): Layer => ({ src: 'noise', filter: 'bandpass', q: 2, cutoffHz: [1400, 900], ms: 70, gain: 0.12 * (1 - i * 0.12), delayMs: d })), air(1100, 500, 700, 0.06, 200)],
+  'crate:land': [thump(130, 200, 0.8), { src: 'tone', wave: 'triangle', pitchHz: [320, 140], ms: 90, gain: 0.4 }, { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [900, 150], ms: 220, gain: 0.5 }, ...debris(3, 40, 150, 0.1)],
+  'crate:break': [crack(1800, 160, 0.6), snap(3500, 0.4, 0, 10), thump(180, 140, 0.5), ...debris(10, 30, 420, 0.22), { src: 'noise', filter: 'lowpass', q: 0.8, cutoffHz: [1400, 200], ms: 260, gain: 0.35 }],
+  // The golden gun is a blade drawn, a bright metallic shing; a resupply is a softer three-note jingle with coins.
+  'crate:gold': [whoosh(1200, 9000, 160, 0.1), ping(2093, 0, 900, 0.2), ping(3136, 30, 800, 0.16), ping(4186, 60, 700, 0.12), ping(6272, 80, 500, 0.06), shimmer(260, 0.12, 20), bell(1568, 120, 900, 0.15), ...sparkles(6, 150, 500, 3951, 0.05)],
+  'crate:supply': [bell(1319, 0, 260, 0.18), bell(1568, 80, 260, 0.18), bell(1976, 160, 320, 0.18), ...ching(0.8).map((l) => ({ ...l, delayMs: (l.delayMs ?? 0) + 120 }))],
+  // Slow motion: a low whoosh and a heartbeat into it; a reverse swell and a tick back out.
+  'slowmo:in': [{ src: 'noise', filter: 'bandpass', q: 1.1, cutoffHz: [2400, 160], ms: 700, gain: 0.5, attackMs: 60 }, { src: 'tone', wave: 'sine', pitchHz: [180, 45], ms: 700, gain: 0.45 }],
+  'slowmo:out': [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [180, 3200], ms: 420, gain: 0.4, attackMs: 380 }, { src: 'tone', wave: 'sine', pitchHz: [60, 180], ms: 420, gain: 0.3, attackMs: 380 }, snap(4000, 0.2, 400, 10)],
+  emote: [{ src: 'tone', wave: 'sine', pitchHz: [700, 320], ms: 70, gain: 0.3 }, { src: 'noise', filter: 'bandpass', q: 2, cutoffHz: [1800, 900], ms: 25, gain: 0.2 }, ping(1500, 10, 80, 0.06)],
+  // The round-end party: a confetti cannon is a thump, a puff of air and paper; a firework a whistle up, a crack and a crackle.
+  confetti: [thump(150, 150, 0.7), crack(2000, 60, 0.5), snap(5000, 0.35, 0, 12), air(3000, 600, 260, 0.45), ...debris(14, 40, 500, 0.12)],
+  firework: [{ src: 'tone', wave: 'sine', pitchHz: [500, 1900], ms: 260, gain: 0.05, attackMs: 30 }, { ...thump(120, 200, 0.5), delayMs: 260 }, { ...crack(2800, 90, 0.5), delayMs: 260 }, ...crackle(14, 300, 800, 0.18)],
   'turret:sentry': [crack(4200, 35, 0.3), { src: 'tone', wave: 'square', pitchHz: [1400, 900], ms: 25, gain: 0.08 }],
   'turret:cannon': [crack(900, 300, 0.7), thump(70, 380, 0.75), { src: 'noise', filter: 'lowpass', q: 0.7, cutoffHz: [700, 80], ms: 420, gain: 0.35 }],
   'turret:scatter': [crack(2600, 120, 0.45), { src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [2400, 600], ms: 140, gain: 0.3 }],
@@ -245,6 +292,31 @@ export const SOUNDS: Record<SoundId, Recipe> = {
 };
 
 /**
+ * The mix. Your own gunshots and hits are the reference (about -15 dBFS peak through the bus): reload clicks sit well under
+ * them, the spawn is a modest thump, footsteps are subtle but audible, and the medals and fanfare are the loudest moments.
+ * Factors multiply every layer of a cue (unclamped), measured by an offline render (see docs/art/STYLE.md, "Sound and music").
+ */
+const TRIM: Partial<Record<SoundId, number>> = {
+  // Own feedback.
+  hit: 2.37, hurt: 3.16, 'shot:silenced': 2.75, slash: 1.64, bite: 2.6, splat: 2.45, step: 5.37,
+  // Quieter than the shots: the reload clicks and the spawn thump.
+  'reload:pistol': 0.36, 'reload:smg': 0.38, 'reload:assault': 0.37, 'reload:lmg': 0.29, 'reload:shotgun': 0.3, 'reload:sniper': 0.33, spawn: 0.39, wallUp: 0.47,
+  // Kills sit under the medals, which sit under the lifetime fanfare and the platinum.
+  kill: 0.68, 'kill:2': 0.62, 'kill:3': 0.65, 'kill:4': 0.7, 'kill:5': 0.66, bounty: 0.72, boom: 0.6, evolve: 0.81, levelup: 0.88,
+  'medal:bronze': 1.72, 'medal:silver': 1.48, 'medal:gold': 1.6, fanfare: 1.15,
+  // Barrels, airdrops, slow motion, emotes and the round-end party.
+  'barrel:hurt': 0.92, 'barrel:fuse': 0.37, 'barrel:burst': 0.62, 'barrel:chain': 0.45, plane: 0.4, chute: 1.15, 'crate:land': 1.2, 'crate:break': 1.72, 'crate:gold': 1.06, 'crate:supply': 0.62,
+  'slowmo:in': 0.54, 'slowmo:out': 0.3, emote: 3.43, confetti: 1.76, firework: 0.17,
+};
+/** Gunshots are balanced by class: the light guns come up, the shotgun and sniper families (already loud) come down a touch. */
+const SHOT_TRIM: Record<WeaponId, number> = { pistol: 1.64, smg: 1.62, assault: 1.74, lmg: 1.57, shotgun: 0.83, sniper: 1.05 };
+const trimOf = (id: SoundId): number => (id.startsWith('shot:') && id !== 'shot:silenced' ? SHOT_TRIM[GUNS[id.slice(5) as GunId].base] : TRIM[id] ?? 1);
+
+export const SOUNDS: Record<SoundId, Recipe> = Object.fromEntries(
+  (Object.keys(RAW) as SoundId[]).map((id) => [id, trimOf(id) === 1 ? RAW[id] : RAW[id].map((l) => ({ ...l, gain: l.gain * trimOf(id) }))]),
+) as Record<SoundId, Recipe>;
+
+/**
  * How far a cue's pitch and loudness wander each time it plays (a fraction, either way), so a held trigger does not
  * machine-gun one identical sample. Melodic cues stay in tune.
  */
@@ -254,22 +326,26 @@ export function varianceOf(id: SoundId): { pitch: number; gain: number } {
   if (id === 'hit' || id.startsWith('impact:') || id === 'wallHit' || id === 'bite' || id === 'splat' || id === 'slash') return { pitch: 0.07, gain: 0.12 };
   if (id === 'boom' || id === 'wallDown') return { pitch: 0.04, gain: 0.06 };
   if (id.startsWith('reload:')) return { pitch: 0.03, gain: 0.08 };
+  if (id === 'barrel:hurt') return { pitch: 0.07, gain: 0.12 };
+  if (id === 'barrel:burst' || id === 'barrel:chain' || id.startsWith('crate:')) return { pitch: 0.04, gain: 0.06 };
+  if (id === 'emote' || id === 'confetti' || id === 'firework') return { pitch: 0.06, gain: 0.1 };
   return { pitch: 0, gain: 0 };
 }
 
 /** 0 = ambience that may be dropped when the mix is busy, 1 = ordinary, 2 = feedback the player must never miss. */
 export function priorityOf(cue: { id: SoundId; self: boolean }): 0 | 1 | 2 {
   const { id } = cue;
-  if (id === 'step' || id.startsWith('impact:') || id.startsWith('turret:')) return 0;
+  if (id === 'step' || id === 'emote' || id.startsWith('impact:') || id.startsWith('turret:')) return 0;
   if (id.startsWith('shot:')) return cue.self ? 1 : 0;
-  if (id === 'hit' || id === 'hurt' || id === 'death' || id === 'boom' || id === 'fanfare' || id === 'spawn' || id === 'levelup' || id === 'evolve' || id === 'bounty' || id.startsWith('medal:') || id.startsWith('kill')) return 2;
+  if (id === 'hit' || id === 'hurt' || id === 'death' || id === 'boom' || id === 'fanfare' || id === 'spawn' || id === 'levelup' || id === 'evolve' || id === 'bounty' || id === 'barrel:burst' || id === 'crate:gold' || id === 'crate:supply' || id.startsWith('medal:') || id.startsWith('kill')) return 2;
   return 1;
 }
 
 /** The least time between two plays of one cue from other players, so a crowd's gunfire is a roar rather than a buzz. */
 export function minGapMs(id: SoundId): number {
   if (id.startsWith('shot:') || id.startsWith('turret:')) return 28;
-  if (id.startsWith('impact:')) return 60;
+  if (id.startsWith('impact:') || id === 'barrel:hurt') return 60;
+  if (id === 'emote') return 150;
   return 0;
 }
 
@@ -287,11 +363,63 @@ function killSound(ev: Extract<Snapshot['events'][number], { e: 'kill' }>, strea
 const CORE_HIT_STEP = 100;
 
 /** `r` is a boom's blast radius, which sets how hard it shakes the camera. */
-export type SoundCue = { x: number; y: number; self: boolean; gain: number; r?: number }
+export type SoundCue = {
+  x: number; y: number; self: boolean; gain: number; r?: number;
+  /** Starts this long from now, for a ripple of blasts. */
+  delayMs?: number;
+  /** A fixed stereo position (-1 left, 1 right) at full volume, for sounds that belong to the screen rather than the world. */
+  pan?: number;
+  /** The source travels from (`x`, `y`) to this point over `ms`, so a plane's drone pans across the field. */
+  sweep?: { x: number; y: number; ms: number };
+}
   & ({ id: 'hurt'; damageFrac: number } | { id: Exclude<SoundId, 'hurt'> });
+
+/** A screen-space cue (a UI or celebration sound): at the listener, optionally panned. */
+export const screenCue = (id: Exclude<SoundId, 'hurt'>, gain = 1, pan?: number): SoundCue => ({ id, x: 0, y: 0, self: true, gain, ...(pan === undefined ? {} : { pan }) });
+
+/** The pop of an emote bubble over player `pid`: full for your own, quieter and placed in the world for everyone else's. */
+export function emoteCue(snap: Snapshot, pid: number): SoundCue | null {
+  if (pid === snap.self.id) return { id: 'emote', x: 0, y: 0, self: true, gain: 1 };
+  const p = snap.players.find((q) => q.id === pid);
+  return p ? { id: 'emote', x: p.x, y: p.y, self: false, gain: 0.45 } : null;
+}
+
+/** Moments big enough that the score steps back for them; `musicDuck` takes these, so the music and the effects agree on what is big. */
+export const DUCKS: Partial<Record<SoundId, { depth: number; holdMs: number }>> = {
+  boom: { depth: 0.5, holdMs: 300 }, 'barrel:burst': { depth: 0.55, holdMs: 280 },
+  kill: { depth: 0.78, holdMs: 100 }, 'kill:2': { depth: 0.78, holdMs: 100 }, 'kill:3': { depth: 0.78, holdMs: 100 }, 'kill:4': { depth: 0.76, holdMs: 100 }, 'kill:5': { depth: 0.74, holdMs: 120 },
+  bounty: { depth: 0.7, holdMs: 200 }, knock: { depth: 0.78, holdMs: 100 },
+  'medal:silver': { depth: 0.75, holdMs: 250 }, 'medal:gold': { depth: 0.62, holdMs: 450 }, 'medal:platinum': { depth: 0.5, holdMs: 700 }, fanfare: { depth: 0.45, holdMs: 900 },
+  evolve: { depth: 0.7, holdMs: 300 }, 'crate:gold': { depth: 0.7, holdMs: 300 }, 'slowmo:in': { depth: 0.65, holdMs: 500 },
+};
+
+/** How far the score should duck for `cue` heard from `listener`, or null: a far-off blast ducks it less, one out of earshot not at all. */
+export function duckFor(cue: SoundCue, listener: { x: number; y: number }, viewRadius: number): { depth: number; holdMs: number } | null {
+  const d = DUCKS[cue.id];
+  if (!d) return null;
+  if (cue.self || cue.pan !== undefined) return d;
+  const fall = Math.max(0, 1 - Math.hypot(cue.x - listener.x, cue.y - listener.y) / (viewRadius * 1.2)) ** 2;
+  return fall < 0.05 ? null : { depth: 1 - (1 - d.depth) * fall, holdMs: d.holdMs };
+}
 
 export const shotCue = (gun: GunId, silenced: boolean, at: { x: number; y: number }, self: boolean): SoundCue =>
   ({ id: silenced ? 'shot:silenced' : `shot:${gun}`, x: at.x, y: at.y, self, gain: 1 });
+
+const BARREL_RIPPLE_MS = 90;
+
+/** The supply plane's drone panning across the field, the crate landing, and the crate cracked open for its golden gun or a resupply. */
+function airdropCues(ev: Extract<Snapshot['events'][number], { e: 'airdrop' }>, next: Snapshot, myName: string | undefined): SoundCue[] {
+  if (ev.k === 'landed') return [{ id: 'crate:land', x: ev.x, y: ev.y, self: false, gain: 1 }];
+  if (ev.k === 'taken') {
+    const self = ev.by !== undefined && ev.by === myName, gain = self ? 1 : 0.8;
+    return [{ id: 'crate:break', x: ev.x, y: ev.y, self, gain }, { id: ev.gold ? 'crate:gold' : 'crate:supply', x: ev.x, y: ev.y, self, gain }];
+  }
+  const f = next.airdrop, now = next.tick * TICK_MS;
+  if (!f) return [{ id: 'plane', x: ev.x, y: ev.y, self: false, gain: 1 }];
+  const delay = Math.max(0, f.dropAt - now - PLANE_PEAK_MS);
+  const from = planeAt(f, now + delay), to = planeAt(f, now + delay + PLANE_MS);
+  return [{ id: 'plane', x: from.x, y: from.y, self: false, gain: 1, delayMs: delay, sweep: { x: to.x, y: to.y, ms: PLANE_MS } }];
+}
 
 /** The sounds a snapshot's events and changes make. Your own shots are left out: the page voices them as it fires them. */
 export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
@@ -299,6 +427,10 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   const at = { x: me?.x ?? 0, y: me?.y ?? 0 };
   const cues: SoundCue[] = [];
   const mine = (id: Exclude<SoundId, 'hurt'>) => cues.push({ id, ...at, self: true, gain: 1 });
+  // Barrels: ids from either snapshot (a hit one may be gone by the next), and the ones that burst this tick (gone, with a boom on the spot).
+  const barrels = new Map([...(prev?.barrels ?? []), ...(next.barrels ?? [])].map((b) => [b[0], b] as const));
+  const gone = prev?.barrels && next.barrels ? prev.barrels.filter((b) => !next.barrels!.some((n) => n[0] === b[0])) : [];
+  let bursts = 0;
   for (const ev of next.events) {
     switch (ev.e) {
       case 'shot':
@@ -308,11 +440,24 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         const iHitSomeone = (ev.kind === 'player' || ev.kind === 'zombie') && ev.attacker === next.self.id && ev.victim !== next.self.id;
         if (iHitSomeone && !cues.some((c) => c.id === 'hit')) mine('hit');
         // What a hit lands on has its own voice, one per kind a snapshot so a shotgun blast is one thwack.
+        if (ev.kind === 'crate' && barrels.has(ev.victim)) {
+          if ((next.barrels?.find((b) => b[0] === ev.victim)?.[3] ?? 0) > 0 && !cues.some((c) => c.id === 'barrel:hurt')) cues.push({ id: 'barrel:hurt', x: ev.x, y: ev.y, self: false, gain: 0.9 });
+          break;
+        }
         const surface = ev.kind === 'crate' ? 'impact:crate' : ev.kind === 'zombie' ? 'impact:zombie' : ev.kind === 'player' && ev.victim !== next.self.id && ev.attacker !== null ? 'impact:flesh' : null;
         if (surface && !(surface === 'impact:flesh' && iHitSomeone) && !cues.some((c) => c.id === surface)) cues.push({ id: surface, x: ev.x, y: ev.y, self: false, gain: 0.8 });
         break;
       }
-      case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1, r: ev.r }); break;
+      case 'boom': {
+        // A barrel's burst has its own voice: a clang and a whoomp, each further barrel of a chain a beat after the last.
+        const i = gone.findIndex((b) => Math.hypot(b[1] - ev.x, b[2] - ev.y) < 4);
+        if (i < 0) { cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1, r: ev.r }); break; }
+        gone.splice(i, 1);
+        cues.push({ id: 'barrel:burst', x: ev.x, y: ev.y, self: false, gain: 1, r: ev.r, delayMs: bursts++ * BARREL_RIPPLE_MS });
+        if (bursts === 2) cues.push({ id: 'barrel:chain', x: ev.x, y: ev.y, self: false, gain: 1 });
+        break;
+      }
+      case 'airdrop': cues.push(...airdropCues(ev, next, me?.name)); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
       case 'kill':
         if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(killSound(ev, next.self.streak));
@@ -346,6 +491,12 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     if (ev.kind === 'player' && ev.victim === next.self.id && ev.attacker === null && next.run && !cues.some((c) => c.id === 'bite')) mine('bite');
   }
   if (!prev) return cues;
+  // A barrel just lit: it hisses until its fuse runs out.
+  const lit = (next.barrels ?? []).find((b) => b[3] === 0 && (prev.barrels?.find((p) => p[0] === b[0])?.[3] ?? 0) > 0);
+  if (lit) cues.push({ id: 'barrel:fuse', x: lit[1], y: lit[2], self: false, gain: 1 });
+  // The supply crate leaves the plane: its chute opens.
+  const drop = next.airdrop;
+  if (drop && prev.airdrop?.dropAt === drop.dropAt && prev.tick * TICK_MS < drop.dropAt && drop.dropAt <= next.tick * TICK_MS) cues.push({ id: 'chute', x: drop.x, y: drop.y, self: false, gain: 1 });
   if (ringMoved(prev.royale, next.royale, prev.tick * TICK_MS, next.tick * TICK_MS)) mine('ring');
   const run = next.run, ran = prev.run;
   if (run && ran) {

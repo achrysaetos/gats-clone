@@ -391,8 +391,29 @@ function posesOf(zombies: readonly ZombieView[], k: number, flashes: ReadonlyMap
  * shambles; a biter rears back and lunges with its arms swiping across, squashing on the blow; a hit knocks it back and
  * flashes it white.
  */
+/** Where the horde's eyes were last drawn, per colour, for the glow that rides over the night shade (drawHordeEyes). */
+const eyeGlow: { color: string; r: number; xy: number[] }[] = [];
+
+/** At night the horde is drawn under the shade; its eyes shine through it, a faint light each, so the horde still reads in the dark. */
+export function drawHordeEyes(ctx: CanvasRenderingContext2D, dark: number) {
+  if (dark <= 0.02 || !eyeGlow.length) return;
+  for (const g of eyeGlow) {
+    ctx.fillStyle = g.color;
+    ctx.globalAlpha = 0.5 * dark;
+    ctx.beginPath();
+    for (let i = 0; i < g.xy.length; i += 2) addCircle(ctx, g.xy[i]!, g.xy[i + 1]!, g.r * 2.1);
+    ctx.fill();
+    ctx.globalAlpha = Math.min(1, 0.95 * dark + 0.05);
+    ctx.beginPath();
+    for (let i = 0; i < g.xy.length; i += 2) addCircle(ctx, g.xy[i]!, g.xy[i + 1]!, g.r);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 export function drawHorde(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
   const byKind: ZombieView[][] = ZOMBIE_KINDS.map(() => []);
+  eyeGlow.length = 0;
   for (const z of zombies) byKind[z[1]]?.push(z);
   for (let k = 0; k < ZOMBIE_KINDS.length; k++) {
     const kind = ZOMBIE_KINDS[k]!;
@@ -513,6 +534,8 @@ export function drawHorde(ctx: CanvasRenderingContext2D, zombies: readonly Zombi
     ctx.beginPath();
     for (let i = 0; i < eyes.length; i += 2) addCircle(ctx, eyes[i]!, eyes[i + 1]!, eyeR);
     ctx.fill();
+    if (eyes.length) eyeGlow.push({ color: look.eye === '#1b1d22' ? '#8a9a5b' : look.eye, r: eyeR, xy: eyes });
+    if (warn.length) eyeGlow.push({ color: WARN, r: eyeR * 1.2, xy: warn });
     if (warn.length) {
       // The wind-up's telegraph: eyes flare red as it rears back to swing.
       ctx.globalAlpha = 0.45;

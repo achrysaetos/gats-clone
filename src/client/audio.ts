@@ -11,6 +11,10 @@ const VOLUME_KEY = 'skirmish.volume';
 const ATTACK_S = 0.0015;
 /** A far-off sound is dulled as well as quieted: its low-pass cutoff falls from open to this. */
 const FAR_CUTOFF_HZ = 1400;
+const MUFFLE_HZ = 1100;
+const SWEEP_STEPS = 12;
+/** A cue's attack may take up to this much of its length (a reverse swell is nearly all attack). */
+const MAX_ATTACK = 0.92;
 
 type Audio = {
   /** Browsers start an AudioContext suspended until a user gesture, so call this from one. */
@@ -19,6 +23,8 @@ type Audio = {
   toggleMute(): boolean;
   /** The shared context and master bus, for the soundtrack to join once unlocked. */
   bus(): { ctx: AudioContext; out: AudioNode } | null;
+  /** Dulls the whole mix, music included, as through a wall: the killcam. */
+  muffle(on: boolean): void;
 };
 
 export type Engine = {
@@ -55,8 +61,19 @@ export function createBus(ctx: BaseAudioContext, destination: AudioNode, volume 
   limiter.threshold.value = -4; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.06;
   const trim = ctx.createGain();
   trim.gain.value = 0.9;
-  master.connect(glue).connect(limiter).connect(trim).connect(destination);
+  const muffle = ctx.createBiquadFilter();
+  muffle.type = 'lowpass'; muffle.frequency.value = OPEN_HZ; muffle.Q.value = 0.5;
+  muffles.set(master, muffle);
+  master.connect(muffle).connect(glue).connect(limiter).connect(trim).connect(destination);
   return master;
+}
+
+const OPEN_HZ = 20000;
+const muffles = new WeakMap<AudioNode, BiquadFilterNode>();
+
+/** Eases the bus's low-pass shut (a muffled mix) or open again. */
+export function setMuffle(ctx: BaseAudioContext, master: AudioNode, on: boolean) {
+  muffles.get(master)?.frequency.setTargetAtTime(on ? MUFFLE_HZ : OPEN_HZ, ctx.currentTime, 0.08);
 }
 
 export function createNoise(ctx: BaseAudioContext): AudioBuffer {
@@ -71,11 +88,13 @@ export function createEngine(ctx: BaseAudioContext, master: AudioNode, noise: Au
   let voices = 0;
   const lastPlayed = new Map<string, number>();
 
-  function voice(layer: Layer, out: AudioNode, pitchK: number, done: () => void) {
-    const t0 = ctx.currentTime + (layer.delayMs ?? 0) / 1000;
+  function voice(layer: Layer, out: AudioNode, pitchK: number, startS: number, done: () => void) {
+    const t0 = startS + (layer.delayMs ?? 0) / 1000;
     const t1 = t0 + layer.ms / 1000;
     const env = ctx.createGain();
-    const attack = Math.min((layer.attackMs ?? ATTACK_S * 1000) / 1000, (t1 - t0) / 2);
+    const attack = Math.min((layer.attackMs ?? ATTACK_S * 1000) / 1000, (t1 - t0) * (layer.attackMs && layer.attackMs > layer.ms / 2 ? MAX_ATTACK : 0.5));
+    // Silent until t0: a gain node starts at 1, so a delayed layer would otherwise let a few samples of full-scale click through before its first automation event lands.
+    env.gain.value = 0.0001;
     env.gain.setValueAtTime(0.0001, t0);
     env.gain.linearRampToValueAtTime(layer.gain, t0 + attack);
     env.gain.exponentialRampToValueAtTime(0.0001, t1);
@@ -116,10 +135,24 @@ export function createEngine(ctx: BaseAudioContext, master: AudioNode, noise: Au
       const rank = priorityOf(cue);
       const cap = rank === 2 ? VOICE_CAPS.hard : rank === 1 ? VOICE_CAPS.normal : VOICE_CAPS.soft;
       if (voices + recipe.length > cap) continue;
-      const dx = cue.x - listener.x;
-      const dist = cue.self ? 0 : Math.hypot(dx, cue.y - listener.y) / audible;
-      const falloff = cue.self ? 1 : Math.max(0, 1 - dist) ** 2;
-      if (falloff <= 0) continue;
+      const startS = ctx.currentTime + (cue.delayMs ?? 0) / 1000;
+      // Where the cue is heard from at fraction k of its sweep (a still cue has one place): loudness, dullness and stereo position.
+      const hear = (k: number) => {
+        const sw = cue.sweep;
+        const x = sw ? cue.x + (sw.x - cue.x) * k : cue.x, y = sw ? cue.y + (sw.y - cue.y) * k : cue.y;
+        const dx = x - listener.x;
+        const near = cue.self || cue.pan !== undefined;
+        const dist = near ? 0 : Math.hypot(dx, y - listener.y) / audible;
+        return {
+          dist,
+          falloff: near ? 1 : Math.max(0, 1 - dist) ** 2,
+          pan: cue.pan !== undefined ? Math.max(-1, Math.min(1, cue.pan)) * 0.8 : cue.self ? 0 : Math.max(-1, Math.min(1, dx / viewRadius)) * 0.8,
+          dull: 16000 * (FAR_CUTOFF_HZ / 16000) ** Math.min(1, dist),
+        };
+      };
+      const steps = cue.sweep ? SWEEP_STEPS : 0;
+      const spots = Array.from({ length: steps + 1 }, (_, i) => hear(steps ? i / steps : 0));
+      if (spots.every((h) => h.falloff <= 0)) continue;
       if (!cue.self) {
         const gap = minGapMs(cue.id);
         if (gap && now - (lastPlayed.get(cue.id) ?? -1e9) < gap) continue;
@@ -127,22 +160,36 @@ export function createEngine(ctx: BaseAudioContext, master: AudioNode, noise: Au
       }
       const vary = varianceOf(cue.id);
       const pitchK = 1 + (Math.random() * 2 - 1) * vary.pitch;
+      const level = cue.gain * (1 + (Math.random() * 2 - 1) * vary.gain);
       const gain = ctx.createGain();
-      gain.gain.value = falloff * cue.gain * (1 + (Math.random() * 2 - 1) * vary.gain);
       const pan = ctx.createStereoPanner();
-      pan.pan.value = cue.self ? 0 : Math.max(-1, Math.min(1, dx / viewRadius)) * 0.8;
+      const first = spots[0]!;
+      gain.gain.value = first.falloff * level;
+      pan.pan.value = first.pan;
       let tail: AudioNode = gain;
-      if (!cue.self && dist > 0.15) {
+      if (cue.sweep || (!cue.self && cue.pan === undefined && first.dist > 0.15)) {
         const dull = ctx.createBiquadFilter();
         dull.type = 'lowpass';
-        dull.frequency.value = 16000 * (FAR_CUTOFF_HZ / 16000) ** Math.min(1, dist);
+        dull.frequency.value = first.dull;
         gain.connect(dull);
         tail = dull;
+        if (cue.sweep) dull.frequency.setValueAtTime(first.dull, startS);
+        if (cue.sweep) spots.forEach((h, i) => { if (i) dull.frequency.linearRampToValueAtTime(h.dull, startS + (i / steps) * (cue.sweep!.ms / 1000)); });
+      }
+      if (cue.sweep) {
+        gain.gain.setValueAtTime(first.falloff * level, startS);
+        pan.pan.setValueAtTime(first.pan, startS);
+        spots.forEach((h, i) => {
+          if (!i) return;
+          const t = startS + (i / steps) * (cue.sweep!.ms / 1000);
+          gain.gain.linearRampToValueAtTime(h.falloff * level, t);
+          pan.pan.linearRampToValueAtTime(h.pan, t);
+        });
       }
       tail.connect(pan).connect(master);
       const layers = recipe.filter((l) => cue.self || !l.selfOnly);
       let playing = layers.length;
-      for (const layer of layers) voice(layer, gain, pitchK, () => { if (--playing === 0) { pan.disconnect(); gain.disconnect(); } });
+      for (const layer of layers) voice(layer, gain, pitchK, startS, () => { if (--playing === 0) { pan.disconnect(); gain.disconnect(); } });
     }
   }
 
@@ -176,5 +223,5 @@ export function createAudio(): Audio {
     return muted;
   }
 
-  return { unlock, play, toggleMute, bus: () => (ctx && out ? { ctx, out } : null) };
+  return { unlock, play, toggleMute, bus: () => (ctx && out ? { ctx, out } : null), muffle: (on) => { if (ctx && out) setMuffle(ctx, out, on); } };
 }

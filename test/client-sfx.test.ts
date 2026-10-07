@@ -1,9 +1,12 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GUN_IDS, GUNS } from '../src/shared/defs.ts';
-import { SOUNDS, minGapMs, priorityOf, soundsFor, varianceOf, type SoundId } from '../src/client/sfx.ts';
-import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
+import { GUN_IDS, GUNS, MEDALS, type MedalId } from '../src/shared/defs.ts';
+import { DUCKS, SOUNDS, duckFor, emoteCue, minGapMs, priorityOf, screenCue, soundsFor, varianceOf, type SoundId } from '../src/client/sfx.ts';
+import { PLANE_MS } from '../src/client/sfx.ts';
+import { TICK_MS } from '../src/client/interp.ts';
+import { planeAt } from '../src/shared/protocol.ts';
+import type { AirdropView, BarrelView, BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -223,4 +226,130 @@ test('medals ring bigger up the tiers and platinum is the biggest, with a lifeti
 test('a kill\'s ka-ching rides on the climbing sting, and a bounty gets the biggest', () => {
   assert.ok(SOUNDS.kill.length > 3 && SOUNDS['kill:3'].length > SOUNDS.kill.length - 1);
   assert.ok(SOUNDS.bounty.length > SOUNDS.kill.length - 3);
+});
+
+// ---- the final pass: mix balance and the cues other features shipped without ----
+
+const peakGain = (id: SoundId) => Math.max(...SOUNDS[id].map((l) => l.gain));
+const withWorld = (s: Snapshot, o: { barrels?: BarrelView[]; airdrop?: AirdropView | null; tick?: number }): Snapshot => ({ ...s, tick: o.tick ?? s.tick, barrels: o.barrels, airdrop: o.airdrop });
+
+test('the mix: reload clicks and the spawn thump sit under your gunshots, footsteps are audible, medals and the fanfare lead', () => {
+  const total = (id: SoundId) => SOUNDS[id].reduce((a, l) => a + l.gain, 0);
+  for (const c of ['pistol', 'smg', 'assault', 'lmg', 'shotgun', 'sniper'] as const) assert.ok(total(`reload:${c}`) < total(`shot:${c}`) * 0.4, `${c} reload is well under its shot`);
+  assert.ok(total('spawn') < total('shot:pistol'), 'the spawn is a modest thump');
+  assert.ok(total('step') > 0.3 && total('step') < total('hit'), 'a footstep is subtle but not inaudible');
+  assert.ok(peakGain('hit') > peakGain('hurt') * 0.5);
+  for (const quiet of ['kill', 'kill:5', 'bounty'] as SoundId[]) assert.ok(total(quiet) < total('medal:platinum') && total(quiet) < total('fanfare'), `${quiet} is under the big medals`);
+  for (const [lo, hi] of [['medal:bronze', 'medal:silver'], ['medal:silver', 'medal:gold'], ['medal:gold', 'medal:platinum']] as const) assert.ok(total(lo) < total(hi) * 1.2, `${hi} is not quieter than ${lo}`);
+  for (const id of Object.keys(SOUNDS) as SoundId[]) for (const l of SOUNDS[id]) assert.ok(Number.isFinite(l.gain) && l.gain > 0, `${id} has sane layer gains`);
+});
+
+test('every medal, new and old, sounds its tier\'s cue, and the best medal in a snapshot wins', () => {
+  const won = (...medals: MedalId[]) => ids(snap(), snap({ events: medals.map((medal): GameEvent => ({ e: 'medal', id: 1, medal })) }));
+  for (const m of Object.keys(MEDALS) as MedalId[]) assert.deepEqual(won(m), [`medal:${MEDALS[m].tier}`], m);
+  assert.deepEqual(won('kaboom'), ['medal:bronze']);
+  assert.deepEqual(won('specialDelivery'), ['medal:silver']);
+  assert.deepEqual(won('chainReaction'), ['medal:gold']);
+  assert.deepEqual(won('kaboom', 'chainReaction'), ['medal:gold'], 'one sting, the best');
+  assert.deepEqual(ids(snap(), snap({ events: [{ e: 'medal', id: 2, medal: 'chainReaction' }] })), [], 'someone else\'s medal is theirs');
+});
+
+const barrel = (id: number, hp: number, x = 500, y = 0): BarrelView => [id, x, y, hp];
+const boom = (x: number, y: number): GameEvent => ({ e: 'boom', x, y, r: 170 });
+const barrelDmg = (victim: number, x = 500): GameEvent => ({ e: 'dmg', attacker: 1, victim, amount: 5, x, y: 0, kind: 'crate' });
+
+test('a hurt barrel tinks and hisses instead of thudding like a crate, a lit one sizzles', () => {
+  const before = withWorld(snap(), { barrels: [barrel(7, 10)] });
+  assert.deepEqual(ids(before, withWorld(snap({ events: [barrelDmg(7), barrelDmg(7)] }), { barrels: [barrel(7, 6)] })), ['barrel:hurt'], 'one per snapshot, not impact:crate');
+  assert.deepEqual(ids(before, withWorld(snap({ events: [barrelDmg(7)] }), { barrels: [barrel(7, 0)] })), ['barrel:fuse'], 'the hit that lights it sizzles, no separate hurt');
+  assert.deepEqual(ids(withWorld(snap(), { barrels: [barrel(7, 0)] }), withWorld(snap(), { barrels: [barrel(7, 0)] })), [], 'a burning barrel is not re-announced every snapshot');
+  assert.deepEqual(ids(snap(), snap({ events: [{ e: 'dmg', attacker: 1, victim: 40, amount: 5, x: 300, y: 0, kind: 'crate' }] })), ['impact:crate'], 'a plain crate still thuds');
+  const cue = soundsFor(before, withWorld(snap({ events: [barrelDmg(7)] }), { barrels: [barrel(7, 6)] }))[0]!;
+  assert.deepEqual([cue.x, cue.self], [500, false]);
+});
+
+test('a barrel burst is its own clang-and-whoomp, not the grenade boom, and a chain ripples', () => {
+  const lit = withWorld(snap(), { barrels: [barrel(7, 0), barrel(8, 0, 560), barrel(9, 0, 620), barrel(10, 4, 3000)] });
+  const one = soundsFor(lit, withWorld(snap({ events: [boom(500, 0)] }), { barrels: [barrel(8, 0, 560), barrel(9, 0, 620), barrel(10, 4, 3000)] }));
+  assert.deepEqual(one.map((c) => c.id), ['barrel:burst'], 'the boom on a barrel that just vanished is the burst');
+  assert.equal(one[0]!.r, 170, 'it still carries the blast radius for the camera shake');
+  const three = soundsFor(lit, withWorld(snap({ events: [boom(500, 0), boom(560, 0), boom(620, 0)] }), { barrels: [barrel(10, 4, 3000)] }));
+  assert.deepEqual(three.map((c) => c.id), ['barrel:burst', 'barrel:burst', 'barrel:chain', 'barrel:burst']);
+  assert.deepEqual(three.filter((c) => c.id === 'barrel:burst').map((c) => c.delayMs), [0, 90, 180], 'each blast a beat after the last');
+  assert.deepEqual(ids(snap(), snap({ events: [boom(500, 0)] })), ['boom'], 'a grenade is still the boom');
+  assert.deepEqual(ids(lit, withWorld(snap({ events: [boom(2000, 2000)] }), { barrels: [barrel(7, 0)] })), ['boom'], 'a boom nowhere near a lost barrel is a grenade');
+  assert.deepEqual(ids(lit, withWorld(snap(), { barrels: [] })), [], 'barrels vanishing with no blast (a new map) are silent');
+  assert.notDeepEqual(SOUNDS['barrel:burst'], SOUNDS.boom);
+  assert.ok(SOUNDS['barrel:burst'].some((l) => l.src === 'tone' && l.wave === 'sine' && l.pitchHz[0] > 250 && l.pitchHz[0] < 1500 && l.ms >= 400), 'a ringing clang');
+  assert.equal(priorityOf({ id: 'barrel:burst', self: false }), 2);
+});
+
+const flight = (over: Partial<AirdropView> = {}): AirdropView => ({ x: 1000, y: 0, a: 0, dropAt: 10_000, landAt: 15_000, ...over });
+
+test('the supply plane drones across the field, panning with its flight and peaking as it passes the drop point', () => {
+  const t = 4000 / TICK_MS;
+  const inbound: GameEvent = { e: 'airdrop', k: 'inbound', x: 1000, y: 0 };
+  const cues = soundsFor(null, withWorld(snap({ events: [inbound] }), { tick: t, airdrop: flight() }));
+  assert.equal(cues.length, 1);
+  const c = cues[0]!;
+  assert.equal(c.id, 'plane');
+  assert.equal(c.self, false);
+  assert.equal(c.delayMs, 10_000 - 4000 - 3000, 'delayed so the swell peaks over the drop point');
+  assert.ok(c.sweep && c.sweep.ms === PLANE_MS && c.sweep.x > c.x, 'travels along the plane\'s heading');
+  assert.deepEqual([c.x, c.y], [planeAt(flight(), 7000).x, planeAt(flight(), 7000).y], 'starts where the plane is when the cue begins');
+  const bare = soundsFor(null, snap({ events: [inbound] }))[0]!;
+  assert.deepEqual([bare.id, bare.sweep, bare.x], ['plane', undefined, 1000], 'without the flight view it still drones from the drop point');
+  assert.ok(Math.max(...SOUNDS.plane.map((l) => l.attackMs ?? 0)) >= 2500 && SOUNDS.plane.every((l) => l.ms === PLANE_MS));
+});
+
+test('the chute opens as the crate leaves the plane, the crate thuds, and cracking it open shings for gold or jingles for supplies', () => {
+  const at = (ms: number) => withWorld(snap(), { tick: ms / TICK_MS, airdrop: flight() });
+  assert.deepEqual(ids(at(9_900), at(10_100)), ['chute'], 'on the tick the drop time passes');
+  assert.deepEqual(ids(at(10_100), at(10_300)), [], 'not again');
+  assert.deepEqual(ids(at(9_000), at(9_500)), [], 'not before');
+  assert.deepEqual(ids(snap(), at(10_100)), [], 'a first snapshot derives nothing');
+  assert.deepEqual(ids(null, snap({ events: [{ e: 'airdrop', k: 'landed', x: 900, y: 40 }] })), ['crate:land']);
+  const taken = (by: string, gold: boolean): Snapshot => snap({ events: [{ e: 'airdrop', k: 'taken', x: 900, y: 40, by, gold }] });
+  assert.deepEqual(soundsFor(null, taken(ME, true)).map((c) => [c.id, c.self]), [['crate:break', true], ['crate:gold', true]]);
+  assert.deepEqual(soundsFor(null, taken(ME, false)).map((c) => c.id), ['crate:break', 'crate:supply']);
+  const theirs = soundsFor(null, taken('p2', true));
+  assert.deepEqual(theirs.map((c) => [c.self, c.gain, c.x]), [[false, 0.8, 900], [false, 0.8, 900]], 'someone else\'s crate is placed in the world, quieter');
+  assert.notDeepEqual(SOUNDS['crate:gold'], SOUNDS['crate:supply']);
+  assert.ok(Math.max(...SOUNDS['crate:gold'].map((l) => (l.src === 'tone' ? l.pitchHz[0] : 0))) > 3000, 'the shing is bright');
+});
+
+test('emotes pop softly: your own at full, others\' quieter and placed at the player, strangers out of view silent', () => {
+  const s = snap({ players: [player(2, { x: 400, y: 80 })] });
+  assert.deepEqual(emoteCue(s, 1), { id: 'emote', x: 0, y: 0, self: true, gain: 1 });
+  const other = emoteCue(s, 2)!;
+  assert.deepEqual([other.self, other.x, other.y], [false, 400, 80]);
+  assert.ok(other.gain < 0.6);
+  assert.equal(emoteCue(s, 99), null);
+  assert.ok(minGapMs('emote') > 0 && priorityOf({ id: 'emote', self: false }) === 0);
+});
+
+test('slow motion, the killcam and the party have cues, and screen cues sit at the listener and pan by side', () => {
+  for (const id of ['slowmo:in', 'slowmo:out', 'confetti', 'firework', 'emote'] as const) assert.ok(SOUNDS[id].length >= 2, id);
+  const out = SOUNDS['slowmo:out'];
+  assert.ok(out.some((l) => l.src === 'noise' && l.attackMs !== undefined && l.attackMs > l.ms * 0.8), 'the swell out is a reverse swell: nearly all attack');
+  const inn = SOUNDS['slowmo:in'];
+  assert.ok(inn.some((l) => l.src === 'tone' && l.pitchHz[1] < 60), 'a low whoosh into slow motion');
+  assert.deepEqual(screenCue('confetti', 0.9, -0.85), { id: 'confetti', x: 0, y: 0, self: true, gain: 0.9, pan: -0.85 });
+  assert.equal(screenCue('slowmo:in').pan, undefined);
+  assert.ok(priorityOf({ id: 'confetti', self: true }) === 1);
+});
+
+test('the music ducks on the sound effects\' own big-event list, less for a far blast and not at all out of earshot', () => {
+  for (const id of ['boom', 'barrel:burst', 'kill', 'kill:5', 'bounty', 'medal:gold', 'medal:platinum', 'fanfare', 'crate:gold', 'slowmo:in'] as SoundId[]) assert.ok(DUCKS[id], `${id} ducks the score`);
+  assert.equal(DUCKS.step, undefined);
+  assert.equal(DUCKS['shot:pistol'], undefined);
+  const where = { x: 0, y: 0 };
+  const cue = (x: number, self = false) => ({ id: 'boom' as const, x, y: 0, self, gain: 1 });
+  assert.deepEqual(duckFor(cue(0, true), where, 900), DUCKS.boom!);
+  const near = duckFor(cue(100), where, 900)!, far = duckFor(cue(700), where, 900)!;
+  assert.ok(near.depth < far.depth && far.depth < 1 && near.depth >= DUCKS.boom!.depth, 'a nearer blast ducks deeper');
+  assert.equal(duckFor(cue(5000), where, 900), null);
+  assert.equal(duckFor({ id: 'step', x: 0, y: 0, self: true, gain: 1 }, where, 900), null);
+  assert.deepEqual(duckFor(screenCue('fanfare'), where, 900), DUCKS.fanfare!);
+  assert.equal(duckFor(screenCue('confetti'), where, 900), null, 'the celebration never ducks the win cadence');
 });

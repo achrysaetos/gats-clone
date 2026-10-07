@@ -8,7 +8,8 @@ import { advanceHead, clipLongEnough, easeToward, framing, KILLCAM, killcamOver 
 import { medalArt, medalSvg } from './medals.ts';
 import { clipOf, createReplayBuffer, frameAt, recordFrame, serverMs } from './replaybuf.ts';
 import { advanceStage, createStage, drawStage, type Stage } from './replaystage.ts';
-import { dilatedView, IDLE_WARP, intensityAt, requestSlowmo, slowmoTrigger, stepWarp, warping, type Warp } from './slowmo.ts';
+import { dilatedView, IDLE_WARP, intensityAt, requestSlowmo, SLOWMO, slowmoTrigger, stepWarp, warping, type Warp } from './slowmo.ts';
+import { emitSfx, setMuffle } from './sfxbus.ts';
 import type { Session } from './state.ts';
 
 /**
@@ -45,6 +46,8 @@ export function createDelight() {
   let hl: Highlight = NO_HIGHLIGHT;
   let kc: Kc | null = null;
   let forceReel = false;
+  /** Slow-motion sound: 0 idle, 1 the whoosh in has played, 2 the swell out has. */
+  let slowSound = 0;
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
   // --- DOM: letterbox bars and plates, one layer above the page ---------------------------------------------------
@@ -79,6 +82,12 @@ export function createDelight() {
   // --- Slow motion -----------------------------------------------------------------------------------------------
   function paintSlowmo(realNow: number) {
     const t = warp.startedAt === null ? null : realNow - warp.startedAt;
+    if (t === null) slowSound = 0;
+    else {
+      if (slowSound === 0) { slowSound = 1; emitSfx('slowmo:in'); }
+      // The reverse swell builds through the last of the hold and lands as time resumes.
+      if (slowSound === 1 && t >= SLOWMO.durationMs - SLOWMO.rampOutMs - 350) { slowSound = 2; emitSfx('slowmo:out'); }
+    }
     const i = intensityAt(t);
     setBars(kc?.phase === 'play' ? 1 : reduced() ? (i > 0 ? 1 : 0) : i);
     root.classList.toggle('final-on', warp.startedAt !== null && finalText.textContent !== '');
@@ -88,6 +97,8 @@ export function createDelight() {
   // --- Killcam ---------------------------------------------------------------------------------------------------
   const endKillcam = () => {
     if (!kc) return;
+    if (kc.phase === 'play') emitSfx('slowmo:out');
+    setMuffle(false);
     kc = null;
     kcLayer.hidden = true;
     classes({ 'dl-hold': false, 'dl-play': false, 'dl-settle': true });
@@ -116,6 +127,8 @@ export function createDelight() {
     kcGun.textContent = k.weapon;
     kcLayer.hidden = false;
     classes({ 'dl-play': true });
+    emitSfx('slowmo:in');
+    setMuffle(true);
     return true;
   }
 

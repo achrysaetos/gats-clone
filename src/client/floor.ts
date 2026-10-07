@@ -357,11 +357,11 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
 
   // Cracks, long and thin, with the odd branch.
   const cr = seeded(seed ^ 0xc4ac);
-  g.strokeStyle = 'rgba(46, 40, 34, 0.26)';
+  g.strokeStyle = 'rgba(46, 40, 34, 0.15)';
   g.lineWidth = 1.6;
   g.lineJoin = 'round';
   g.beginPath();
-  for (let i = 0; i < 16 * area; i++) crack(g, cr, cr() * size, cr() * size, 60 + cr() * 140, 1);
+  for (let i = 0; i < 8 * area; i++) crack(g, cr, cr() * size, cr() * size, 60 + cr() * 140, 1);
   g.stroke();
   g.strokeStyle = 'rgba(255, 255, 255, 0.28)';
   g.lineWidth = 1;
@@ -400,7 +400,8 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   // Litter: it gathers against walls like it does in real life, and thinly across open ground.
   const lit = seeded(seed ^ 0x1177);
   const heavy = walls.length ? walls : [{ x: 0, y: 0, w: size, h: size }];
-  const total = Math.floor(420 * area);
+  const total = Math.floor(210 * area);
+  g.globalAlpha = 0.6; // quiet: players must pop against the floor
   for (let i = 0; i < total; i++) {
     let x = lit() * size, y = lit() * size;
     if (lit() < 0.5) {
@@ -452,6 +453,7 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
     }
     g.restore();
   }
+  g.globalAlpha = 1;
 
   // The map's edge: grime gathers along the hazard curb, and the ground fades toward it.
   const rim = 150;

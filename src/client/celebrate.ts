@@ -5,6 +5,7 @@ import { celebrationFor, newTracker, trackSnap, type Celebration, type Tracker }
 import { clipped, outlined } from './emotefx.ts';
 import { INK, NIGHT, PALETTE, shade } from './palette.ts';
 import { reducedMotion } from './screenfx.ts';
+import { emitSfx } from './sfxbus.ts';
 
 /**
  * The round-end celebration: a canvas layer over the whole page (the plain winner banner hides under it). Top three stand on a
@@ -121,12 +122,14 @@ export function createCelebration(host: HTMLElement) {
       if (t < at || fired.has(i) || !cel?.confetti) return;
       fired.add(i);
       recoil = [now, now];
+      emitSfx('confetti', { pan: -0.85 });
+      emitSfx('confetti', { pan: 0.85, gain: 0.9 });
       const n = reduced ? 18 : 70;
       confetti(30 * u, h - 40 * u, -1.15, 0.3, 920 * u, n, cel.confetti);
       confetti(w - 30 * u, h - 40 * u, -Math.PI + 1.15, 0.3, 920 * u, n, cel.confetti);
       if (!reduced) for (const x of [30 * u, w - 30 * u]) glows.push({ x, y: h - 50 * u, r: 150 * u, age: 0, life: 0.15, color: '#ffb347', alpha: 0.5 });
     });
-    for (const s of shells) if (!s.fired && t >= s.at) { s.fired = true; burst(s.x * w, s.burstY * h); }
+    for (const s of shells) if (!s.fired && t >= s.at) { s.fired = true; burst(s.x * w, s.burstY * h); emitSfx('firework', { pan: s.x * 2 - 1, gain: 0.7 + 0.3 * (1 - s.burstY) }); }
     if (cel?.kind === 'zomLoss' && Math.random() < dt * 6) sparks.push({ x: rand(0, w), y: h + 6, vx: rand(-12, 12), vy: rand(-70, -40), age: 0, life: 3, size: 2 });
     if (!ended && restartAt && now > restartAt + 400) ended = true;
   }
@@ -363,9 +366,11 @@ export function createCelebration(host: HTMLElement) {
     }
 
     // MVP cards, sliding up one after another.
+    // A card nobody earned (no value, no one to name) is left out, and the rest are centred.
+    const cards = c.cards.filter((card) => card.value !== '-' && card.value !== '0' && card.who !== 'nobody');
     const gap = 12 * u, cw = Math.min(215 * u, (w - 28 - gap * 3) / 4), ch = 76 * u;
-    const cx0 = w / 2 - (cw * 4 + gap * 3) / 2;
-    c.cards.forEach((card, i) => {
+    const cx0 = w / 2 - (cw * cards.length + gap * (cards.length - 1)) / 2;
+    cards.forEach((card, i) => {
       const k = stage(t, 1.9 + i * 0.14, 0.3);
       if (k <= 0) return;
       const x = cx0 + i * (cw + gap), y = h - ch - 14 * u + (1 - k) * 40 * u;

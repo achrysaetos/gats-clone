@@ -83,7 +83,7 @@ export function pickCover(
   if (!main) return null;
   const ranked: { c: CoverPoint; score: number }[] = [];
   for (const c of coverNear(index, me, opts.reach)) {
-    if (!(c.shieldedBearings & (1 << bearingIndex(c, main)))) continue;
+    if (!isOpen(nav, c) || !(c.shieldedBearings & (1 << bearingIndex(c, main)))) continue;
     if (opts.taken?.some((t) => Math.hypot(t.x - c.x, t.y - c.y) < TAKEN_PX)) continue;
     const toMain = Math.hypot(main.x - c.x, main.y - c.y);
     const walk = Math.hypot(c.x - me.x, c.y - me.y);

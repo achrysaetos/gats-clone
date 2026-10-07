@@ -139,14 +139,15 @@ button.primary::after {
 }
 button.primary:hover:not(:disabled) { background: var(--accent-hot); }
 /* A glint crosses the Deploy plate every few seconds; pressing it sinks the plate and flashes it. */
+button.primary { isolation: isolate; }
 button.primary::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 28%; pointer-events: none;
+  content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 28%; pointer-events: none; z-index: -1; /* under the label, so the glint never washes out the letters */
   background: linear-gradient(90deg, transparent, rgba(255, 233, 176, 0.6), transparent); transform: skewX(-20deg);
   animation: deploy-glint 4.5s ease-in-out 1s infinite;
 }
 button.primary:disabled::before { display: none; }
 button.primary { transition: transform 0.08s, background 0.12s, filter 0.12s; }
-button.primary:active:not(:disabled) { transform: translateY(2px) scale(0.985); filter: brightness(1.18); }
+button.primary:active:not(:disabled) { transform: translateY(2px) scale(0.985); filter: brightness(1.1); }
 @keyframes deploy-glint { 0% { left: -40%; } 24%, 100% { left: 125%; } }
 button.primary:hover:not(:disabled)::after { right: 14px; opacity: 0.9; }
 button.secondary { background: transparent; }

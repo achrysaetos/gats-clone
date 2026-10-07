@@ -134,7 +134,10 @@ function duck(depth: number, holdS: number, recoverS = 0.25) {
   rig.duck.gain.setTargetAtTime(1, t + holdS, recoverS);
 }
 
-/** Ducks the score under a big sound effect, for callers that know of one the snapshot reader would miss. */
+/** Whether a win or loss cadence is sounding, so a celebration can stay under it. */
+export const cadencePlaying = () => !!ctx && cadenceUntil > ctx.currentTime;
+
+/** Ducks the score under a big sound effect: the page calls it for every cue on sfx.ts's DUCKS list. */
 export const musicDuck = (depth = 0.5, holdMs = 250) => duck(depth, holdMs / 1000);
 
 function barClockAt(t: number): BarClock | undefined {
@@ -159,13 +162,12 @@ function onCue(cue: MusicCue) {
       const sixteenth = cur ? (cur.spb * 4) / STEPS_PER_BAR : 0.12;
       const t = cur ? now + sixteenth - ((now - cur.t0) % sixteenth) : now + 0.02;
       rig.playSting(chordFor(t), barModes.get(cur?.barNo ?? -1) ?? modeOf(input), cue.streak, t, cue.bounty);
-      duck(0.78, 0.1, 0.2);
       break;
     }
     case 'zkill':
       if (now - lastZkillAt > ZKILL_GAP_S) { lastZkillAt = now; rig.playSting(chordFor(now), modeOf(input), 1, now + 0.02); }
       break;
-    case 'boom': duck(0.5, 0.3, 0.35); break;
+    // Ducking for kills, booms and the other big moments is the page's: it follows the sound effects' own list (sfx.ts DUCKS) through `musicDuck`.
     case 'win': case 'loss': {
       const dur = rig.playCadence(cue.kind, keyOfSeed(seed), now + 0.12);
       cadenceUntil = now + 0.12 + dur;

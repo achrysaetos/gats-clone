@@ -5,7 +5,7 @@ import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout,
 import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
+import { musicDuck, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
 import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
@@ -37,11 +37,12 @@ import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
-import { soundsFor, type SoundCue } from './sfx.ts';
+import { duckFor, emoteCue, soundsFor, type SoundCue } from './sfx.ts';
+import { setSfxSink } from './sfxbus.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
 import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
-import { drawHeartbeat, drawScreenPulse, zoomAt } from './screenfx.ts';
+import { drawHeartbeat, drawScreenPulse, reducedMotion, zoomAt } from './screenfx.ts';
 import { addKick, addTrauma, decay, offset, settleKick, traumaFor, type Kick } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
@@ -98,6 +99,8 @@ const mouse = { x: 0, y: 0 };
 let mouseAiming = false;
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
+// Sounds that do not come from a snapshot (celebration, slow-motion, killcam) arrive here.
+setSfxSink({ cues: (cues) => { if (state.phase !== 'menu') playCues(state.s, cues, WORLD.viewRadius); }, muffle: (on) => audio.muffle(on) });
 const touchScreen = matchMedia('(pointer: coarse)').matches;
 let trauma = 0;
 /** A Space press is sent with the next input even if the key was already let go, so a quick tap is never lost between input ticks. */
@@ -261,7 +264,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     }
     case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
-    case 'emote': noteEmote(msg.pid, msg.id, now); return;
+    case 'emote': { noteEmote(msg.pid, msg.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, msg.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); return; }
     case 'badge': if (isCenturion(msg.badge) && aimCamera) { const at = worldToScreen(aimCamera, s.lastSelf); celebrate.puff(at.x, at.y - 30, bodyColor({ color: loadout.color, team: null })); }
       s.moments = addCareerToast(s.moments, msg.badge, msg.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
@@ -281,7 +284,8 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   noteOwnShotSound(cues);
   audio.play(cues, s.lastSelf, viewRadius);
-  for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
+  for (const cue of cues) { const d = duckFor(cue, s.lastSelf, viewRadius); if (d) musicDuck(d.depth, d.holdMs); }
+  if (!reducedMotion()) for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
 
 const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
@@ -514,7 +518,8 @@ function drawFrame(realNow: number) {
     if (fx.kind === 'boom') { startBoom(fx.x, fx.y, fx.r, now); fxPulse(Math.min(1, 0.25 + fx.r / 260)); }
     else if (fx.kind === 'slash') startSlash(fx.x, fx.y, fx.angle, now);
     else startEffect(s, fx, now, deathTint(s, fx));
-    if (fx.kind === 'impact') gunImpact(gunFxOf(s), fx.surface, fx, { walls: s.walls, crates: latest.crates, buildings: latest.buildings, run: latest.run }, now);
+    // A 'building' hit is only ever a zombie's bite (bullets on cover arrive as 'wall'), so it stamps no bullet hole.
+    if (fx.kind === 'impact' && fx.surface !== 'building') gunImpact(gunFxOf(s), fx.surface, fx, { walls: s.walls, crates: latest.crates, buildings: latest.buildings, run: latest.run }, now);
     if (fx.kind === 'death') { layCorpse(s, latest, fx, now); noteDeath(s, fx, deathTint(s, fx), realNow); }
     if (fx.kind === 'splat') layZombieCorpse(s, fx, now);
   }
@@ -791,7 +796,7 @@ async function checkAnniversary(account: string | null) {
 if (params.has('dev')) {
   void import('./celebratedemo.ts').then((m) => Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { celebrate: (kind: string) => celebrate.demo(m.demoCelebration(kind)) }));
 }
-const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); } });
+const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion()) kick = addKick(kick, gun, angle); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [

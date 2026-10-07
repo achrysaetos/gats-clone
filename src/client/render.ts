@@ -7,6 +7,7 @@ import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kick
 import { drawJuice } from './killfx.ts';
 import { glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
 import { serverNow } from './interp.ts';
+import { drawHordeEyes } from './zombieart.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
@@ -115,7 +116,13 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawGunFloor(ctx, gunFxOf(s), now, view);
   s.corpses = liveCorpses(s.corpses, snap.match.map, now);
   drawCorpses(ctx, s.corpses.filter((c) => inView(view, c.x - R * 3, c.y - R * 3, R * 6, R * 6)), now, k);
-  if (dark > 0) drawNight(ctx, tl, br, dark, nightLights(snap, s.myId, f.selfAngle));
+  // The horde is drawn before the night shade, so it dims outside the light pools; its eyes shine over the shade.
+  const flashes = hitFlashes(s.effects, now);
+  if (zombies.length) drawZombies(ctx, zombies, snap, flashes, now, k);
+  if (dark > 0) {
+    drawNight(ctx, tl, br, dark, nightLights(snap, s.myId, f.selfAngle));
+    if (zombies.length) drawHordeEyes(ctx, dark);
+  }
   drawDust(ctx, tl, br, now, dark);
   drawVignette(ctx, cam.w, cam.h, dpr, 0.36 + 0.2 * dark);
   ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
@@ -131,10 +138,6 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
 
   drawRounds(ctx, snap.bullets, dark > 0.5);
 
-  const flashes = hitFlashes(s.effects, now);
-  if (zombies.length) {
-    drawZombies(ctx, zombies, snap, flashes, now, k);
-  }
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId, now, k);
   drawGunGlints(ctx, s.corpses, now, (x, y) => inView(view, x - R, y - R, R * 2, R * 2));
   drawMotionBelow(ctx, now);
@@ -412,7 +415,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
   const hands = heldHands(p.gun, R, p.angle).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
   drawSoldier(ctx, color, 0, 0, R, {
-    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash,
+    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash, noShadow: pose.lift > 0,
     gun: (g) => {
       g.translate(-jump, 0);
       drawHeldGun(g, p.gun, R, p.angle, p.golden === true);
@@ -470,12 +473,18 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
   ctx.font = '800 15px "Barlow Condensed", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = dark > 0.5 ? NIGHT.label : PALETTE.hunted;
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = 'rgba(19, 21, 25, 0.85)';
-  ctx.strokeText(`${label} · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
-  ctx.fillText(`${label} · ${p.name}`, p.x, p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6));
+  // The callout sits on the same clipped gunmetal plate as a name tag, never loose on the floor.
+  const text = `${label} \u00b7 ${p.name}`, ty = p.y + MARK_Y - (GUNS[p.gun].stage ? 12 + 6 * GUNS[p.gun].stage : 6);
+  const w = ctx.measureText(text).width + 12, h = 20, x = p.x - w / 2, y = ty - 15, c = 4;
+  ctx.fillStyle = TAG.plate;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w - c, y); ctx.lineTo(x + w, y + c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + c, y + h); ctx.lineTo(x, y + h - c);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = PALETTE.hunted;
+  ctx.fillText(text, p.x, ty);
 }
 
 const HURT_SHOW_MS = 1800;

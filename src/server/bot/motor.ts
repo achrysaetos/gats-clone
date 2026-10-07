@@ -4,6 +4,7 @@ import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
 import { takeReplan, type BotArena } from './arena.ts';
+import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
@@ -91,7 +92,7 @@ function retreatHeading(me: Point, away: number, arena: BotArena): number {
     const dx = Math.cos(h) * RETREAT_STEP, dy = Math.sin(h) * RETREAT_STEP;
     const ex = me.x + dx, ey = me.y + dy, r = WORLD.playerRadius;
     if (ex < r || ey < r || ex > arena.size - r || ey > arena.size - r) return false;
-    return !arena.walls.some((w) => segmentEntersRectAt(me.x, me.y, dx, dy, w) !== null);
+    return ![...arena.walls, ...arena.barrels].some((w) => segmentEntersRectAt(me.x, me.y, dx, dy, w) !== null);
   });
   return clear ?? headings[0] ?? away;
 }
@@ -287,6 +288,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const mine = m.aim ? { x: (me.x - m.last.x) * WORLD.tickHz, y: (me.y - m.last.y) * WORLD.tickHz } : { x: 0, y: 0 };
   const idle = lookAt(s.face ?? v.lastSeen ?? v.lead ?? routeAhead(me, way.route), me, mine);
   let look: Look = { ...(idle ?? { want: before.want, spin: 0, d: 300 }), hand: HANDS.calm, err: before.err };
+  const barrels = seenBarrels(snap.barrels);
   let wantsFire = false;
   let threat: Situation['threat'] = null;
   let throwAt: { x: number; y: number; err: number } | null = null;
@@ -301,12 +303,18 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
       const rx = meet.x - me.x, ry = meet.y - me.y;
       look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx - mine.x, engaged.vy - mine.y), hand: handFor(sharp), d: t.d, err };
       wantsFire = t.d < gun.range * 0.95;
+      const shot = barrelToShoot(me, barrels, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range);
+      if (shot) {
+        const bx = shot.x - me.x, by = shot.y - me.y;
+        look = { want: Math.atan2(by, bx) + err, spin: bearingSpin(bx, by, -mine.x, -mine.y), hand: handFor(sharp), d: Math.hypot(bx, by), err };
+        wantsFire = true;
+      } else if (wantsFire && shotWouldBurnMe(barrels, me, t.p)) wantsFire = false;
       threat = { d: t.d };
       const fuse = GRENADE_FUSE_MS / 1000;
       throwAt = { x: t.p.x + engaged.vx * fuse, y: t.p.y + engaged.vy * fuse, err };
     }
   } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
-    const crate = crateInSight(me, snap.crates, c.arena.walls, gun.range * 0.95, viewExtents(snap.self.viewRadius, VIEW_ASPECT.max));
+    const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, viewExtents(snap.self.viewRadius, VIEW_ASPECT.max));
     if (crate) {
       look = { ...look, ...lookAt(crate, me, mine, 0) };
       wantsFire = true;

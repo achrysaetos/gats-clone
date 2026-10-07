@@ -371,13 +371,14 @@ export function drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, r:
 
 /** The shadow on the floor while a body is dropping in: small and faint far up, full and dark at landing. */
 function drawDropShadows(ctx: CanvasRenderingContext2D, now: number) {
+  if (reduced()) return; // calm drop-ins keep the body on the floor, with its own shadow
   for (const t of bodies.values()) {
     const age = now - t.dropAt;
     if (!(age >= 0 && age < MOTION.dropMs) || !t.alive) continue;
     const k = age / MOTION.dropMs;
     ctx.fillStyle = `rgba(${TONE.shadow}, ${0.1 + 0.2 * k})`;
     ctx.beginPath();
-    ctx.ellipse(t.x + R * 0.12 * (1 - k * 0.5), t.y + R * 0.3, R * (0.3 + 0.75 * k * k), R * (0.17 + 0.42 * k * k), 0, 0, TAU);
+    ctx.ellipse(t.x + R * 0.12 * (1 - k * 0.5), t.y + R * 0.3, R * (0.3 + 0.52 * k * k), R * (0.17 + 0.29 * k * k), 0, 0, TAU);
     ctx.fill();
   }
 }

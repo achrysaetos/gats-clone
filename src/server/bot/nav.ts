@@ -48,15 +48,21 @@ const cellOf = (nav: NavGrid, p: Point) => {
 };
 const centreOf = (nav: NavGrid, c: number): Point => ({ x: ((c % nav.n) + 0.5) * nav.cell, y: (Math.floor(c / nav.n) + 0.5) * nav.cell });
 
+/** The centre of the open cell nearest `p` within `px`, or null if everything that close is solid. */
+export function nearestOpenPoint(nav: NavGrid, p: Point, px: number): Point | null {
+  const c = nearestOpen(nav, p, Math.ceil(px / nav.cell));
+  return c === null ? null : centreOf(nav, c);
+}
+
 export const isOpen = (nav: NavGrid, p: Point) => nav.open[cellOf(nav, p)] === 1;
 
-function nearestOpen(nav: NavGrid, p: Point): number | null {
+function nearestOpen(nav: NavGrid, p: Point, reach = SNAP_CELLS): number | null {
   const c = cellOf(nav, p);
   if (nav.open[c]) return c;
   const cx = c % nav.n, cy = Math.floor(c / nav.n);
   let best: number | null = null, bestD = Infinity;
-  for (let dy = -SNAP_CELLS; dy <= SNAP_CELLS; dy++) {
-    for (let dx = -SNAP_CELLS; dx <= SNAP_CELLS; dx++) {
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
       const x = cx + dx, y = cy + dy;
       if (x < 0 || y < 0 || x >= nav.n || y >= nav.n || !nav.open[y * nav.n + x]) continue;
       const d = dx * dx + dy * dy;

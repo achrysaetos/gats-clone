@@ -69,7 +69,7 @@ export function traumaFor(cue: SoundCue, listener: Point, viewRadius: number): n
   if (cue.id === 'kill') return KILL_PUNCH.base;
   if (cue.id.startsWith('kill:')) return KILL_PUNCH.base + KILL_PUNCH.perStep * (Number(cue.id.slice(5)) - 1);
   if (cue.id === 'bounty') return KILL_PUNCH.big;
-  if (cue.id === 'boom') return boomTrauma(cue, listener, viewRadius);
+  if (cue.id === 'boom' || cue.id === 'barrel:burst') return boomTrauma(cue, listener, viewRadius);
   const gun = cue.self ? GUN_IDS.find((g) => cue.id === `shot:${g}`) : undefined;
   if (gun) return shotTrauma(gun);
   if (cue.self && cue.id === 'shot:silenced') return 0.1;

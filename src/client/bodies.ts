@@ -373,6 +373,8 @@ export type SoldierLook = {
   gun?: (ctx: CanvasRenderingContext2D) => void;
   /** 0..1 white hit flash over the body. */
   flash: number;
+  /** Skip the contact shadow, when the caller keeps one on the floor itself (a body falling in from above). */
+  noShadow?: boolean;
 };
 
 /** Draws a soldier at (`x`, `y`): boots, arms, torso, gun, gloves, helmet, in that order from the ground up. */
@@ -382,10 +384,12 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   ctx.save();
   ctx.translate(x, y);
   // A crisp contact shadow where the boots meet the floor, a little down-screen.
-  ctx.fillStyle = CONTACT;
-  ctx.beginPath();
-  ctx.ellipse(LIGHT.x * R * 0.12, R * 0.3, R * 0.82, R * 0.46, 0, 0, TAU);
-  ctx.fill();
+  if (!look.noShadow) {
+    ctx.fillStyle = CONTACT;
+    ctx.beginPath();
+    ctx.ellipse(LIGHT.x * R * 0.12, R * 0.3, R * 0.82, R * 0.46, 0, 0, TAU);
+    ctx.fill();
+  }
   if (pose.amount > 0.04 && look.gait) {
     // Boots step out fore and aft along the way the body is going.
     const h = look.gait.heading, hc = Math.cos(h), hs = Math.sin(h);
@@ -412,32 +416,36 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   };
   const [trigger, support] = look.hands;
   const arms = [[shoulder(1), trigger], [shoulder(-1), support]] as const;
+  // A long reach (a rifle held out ahead, aimed up- or down-screen) would draw as a thin wedge, so the elbow bows out and the
+  // sleeve thickens with the reach: every aim keeps a chunky, bent arm.
+  const reach = (from: { x: number; y: number }, to: { x: number; y: number }) => Math.max(0, Math.min(1, (Math.hypot(to.x - from.x, to.y - from.y) / R - 1.1) / 1.0));
+  const elbow = (from: { x: number; y: number }, to: { x: number; y: number }) =>
+    ({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 + (from.y >= 0 ? 1 : -1) * R * (0.08 + 0.12 * reach(from, to)) });
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const [width, style] of [[SOLDIER.arm * R + ink * 2, INK], [SOLDIER.arm * R, shade(color, 0.86)]] as const) {
-    ctx.lineWidth = width;
-    ctx.strokeStyle = style;
-    ctx.beginPath();
     for (const [from, to] of arms) {
+      const m = elbow(from, to);
+      ctx.lineWidth = width * (1 + 0.8 * reach(from, to));
+      ctx.strokeStyle = style;
+      ctx.beginPath();
       ctx.moveTo(from.x, from.y);
-      // The elbow bends out a little, away from the body's midline.
-      const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2 + Math.sign(from.y) * R * 0.08;
-      ctx.quadraticCurveTo(mx, my, to.x, to.y);
+      ctx.quadraticCurveTo(m.x, m.y, to.x, to.y);
+      ctx.stroke();
     }
-    ctx.stroke();
   }
   // A shade along each sleeve's far side from the light, as on every other part.
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.16)';
-  ctx.lineWidth = SOLDIER.arm * R * 0.35;
   const lx = LIGHT.x * Math.cos(look.angle) + LIGHT.y * Math.sin(look.angle), ly = -LIGHT.x * Math.sin(look.angle) + LIGHT.y * Math.cos(look.angle);
   const off = SOLDIER.arm * R * 0.3;
-  ctx.beginPath();
   for (const [from, to] of arms) {
-    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2 + Math.sign(from.y) * R * 0.08;
+    const m = elbow(from, to);
+    ctx.lineWidth = SOLDIER.arm * R * 0.35 * (1 + 0.8 * reach(from, to));
+    ctx.beginPath();
     ctx.moveTo(from.x + lx * off, from.y + ly * off);
-    ctx.quadraticCurveTo(mx + lx * off, my + ly * off, to.x + lx * off, to.y + ly * off);
+    ctx.quadraticCurveTo(m.x + lx * off, m.y + ly * off, to.x + lx * off, to.y + ly * off);
+    ctx.stroke();
   }
-  ctx.stroke();
 
   // The cached sprites face their bucket's angle in the world's frame; turn them by the rest of the aim and the twist.
   const { index, rest } = angleBucket(look.angle);
