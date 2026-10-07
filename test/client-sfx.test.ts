@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GUN_IDS, GUNS } from '../src/shared/defs.ts';
-import { SOUNDS, soundsFor } from '../src/client/sfx.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS } from '../src/shared/defs.ts';
+import { placeCue, RATE_JITTER, SAMPLE_IDS, SAMPLES, SOUNDS, soundsFor, voiceFor, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
 import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
@@ -157,4 +157,63 @@ test('a zombie bite crunches, your own zombie kills splat, and going down or get
   assert.deepEqual(ids(null, squad(run(), { events: [life('revived', 2, 1)] })), ['revived'], 'you got a squadmate up');
   assert.deepEqual(ids(null, squad(run(), { events: [life('revived', 3, 2)] })), [], 'someone else\'s revive');
   assert.deepEqual(ids(squad(run(), { me: down }), squad(run(), { me: { alive: false, hp: 0 }, events: [life('bledOut', 1)] })), ['death']);
+});
+
+const ALL = () => true;
+const MID = () => 0.5;
+const sampleOf = (id: SoundId, decoded: (s: SampleId) => boolean = ALL, random = MID) => {
+  const v = voiceFor(id, decoded, random);
+  assert.equal(v.kind, 'sample', `${id} plays a recording once it has decoded`);
+  return v.kind === 'sample' ? v.layers : [];
+};
+
+test('a cue plays its synth recipe until every recording it needs has decoded', () => {
+  assert.deepEqual(voiceFor('shot:pistol', () => false, MID), { kind: 'synth', recipe: SOUNDS['shot:pistol'] });
+  assert.deepEqual(sampleOf('shot:pistol', (s) => s === 'pistol').map((l) => l.sample), ['pistol']);
+  const blast = GUN_IDS.find((g) => GUNS[g].blast)!;
+  assert.equal(voiceFor(`shot:${blast}`, (s) => s !== 'launcher', MID).kind, 'synth', 'half a layered sound is not played');
+});
+
+test('every cue has a recording, and every shipped recording is used by some cue', () => {
+  const used = new Set(Object.values(SAMPLES).flatMap((layers) => layers.map((l) => l.sample)));
+  assert.deepEqual([...used].sort(), [...SAMPLE_IDS].sort());
+  for (const id of Object.keys(SOUNDS) as SoundId[]) assert.ok(SAMPLES[id].length > 0, `${id} has sample layers`);
+});
+
+test('each gun plays its class recording, evolved guns pitch it up or down by branch, and no two guns sound alike', () => {
+  const shot = (g: (typeof GUN_IDS)[number]) => sampleOf(`shot:${g}`)[0]!;
+  for (const g of GUN_IDS) assert.equal(shot(g).sample, GUNS[g].base);
+  for (const g of GUN_IDS.filter((id) => !GUNS[id].from)) assert.equal(shot(g).rate, 1, `${g} plays its recording as recorded`);
+  for (const g of GUN_IDS) {
+    const [low, high] = EVOLUTIONS[g];
+    if (low && high) assert.ok(shot(low).rate < shot(g).rate && shot(g).rate < shot(high).rate, `${g}'s branches sit either side of it`);
+  }
+  const keys = GUN_IDS.map((g) => JSON.stringify(sampleOf(`shot:${g}`)));
+  assert.equal(new Set(keys).size, GUN_IDS.length);
+  for (const g of GUN_IDS.filter((id) => GUNS[id].blast)) assert.ok(sampleOf(`shot:${g}`).some((l) => l.sample === 'launcher'), `${g} adds the launcher thump`);
+  assert.deepEqual(sampleOf('shot:silenced').map((l) => l.sample), ['silenced']);
+});
+
+test('each play nudges the pitch by at most the jitter, the same for every layer of a cue', () => {
+  const blast = GUN_IDS.find((g) => GUNS[g].blast)!;
+  const at = (r: number) => sampleOf(`shot:${blast}`, ALL, () => r);
+  const mid = at(0.5);
+  for (const r of [0, 0.999]) {
+    const nudged = at(r);
+    const k = nudged[0]!.rate / mid[0]!.rate;
+    assert.ok(Math.abs(k - 1) > RATE_JITTER * 0.9 && Math.abs(k - 1) <= RATE_JITTER + 1e-9, `random ${r} moves the rate by ~${RATE_JITTER}`);
+    nudged.forEach((l, i) => assert.ok(Math.abs(l.rate / mid[i]!.rate - k) < 1e-9, 'layers move together'));
+  }
+});
+
+test('a cue is louder near you, panned to its side, silent past earshot, and centred at full volume when it is yours', () => {
+  const me = { x: 0, y: 0 };
+  const cue = (x: number, self = false): SoundCue => ({ id: 'boom', x, y: 0, self, gain: 1 });
+  const near = placeCue(cue(100), me, 900)!, far = placeCue(cue(600), me, 900)!;
+  assert.ok(near.gain > far.gain);
+  assert.ok(near.pan > 0 && far.pan > near.pan, 'to the right');
+  assert.ok(placeCue(cue(-300), me, 900)!.pan < 0, 'to the left');
+  assert.equal(placeCue(cue(2000), me, 900), null);
+  assert.deepEqual(placeCue({ ...cue(2000, true), gain: 0.7 }, me, 900), { gain: 0.7, pan: 0 });
+  assert.ok(placeCue(cue(1000), me, 1200) !== null, 'a wider view hears further');
 });
