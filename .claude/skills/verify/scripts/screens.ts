@@ -92,6 +92,7 @@ for (const view of VIEWS) {
     case 'menu': await openMenu(); await sleep(1500); await shot('menu'); break;
     case 'ffa': await enter(serverOf('ffa')); await fightShot('ffa', 30_000, null); break;
     case 'tdm': await enter(serverOf('tdm')); await fightShot('tdm', 30_000, null); break;
+    case 'br': await enter(serverOf('br')); await fightShot('br', 60_000, null); break;
     case 'board': {
       await enter(serverOf('tdm'));
       await play(3000, null, enemies, false);
