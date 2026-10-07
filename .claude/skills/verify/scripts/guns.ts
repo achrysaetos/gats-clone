@@ -146,8 +146,8 @@ await shot(sniper, 'guns-sniper-walking.png');
 await dirKey(sniper, 'keyUp', 'up');
 sniper.close();
 const scope = rulesOf(GUNS.sniper).viewMul;
-check(Math.abs(plantedZoom - scope) < 0.01, `a planted sniper's camera takes in ${scope}x the pistol's view (${plantedZoom.toFixed(3)}x)`);
-check(Math.abs(walkingZoom - 1) < 0.01, `walking, it sees what the pistol sees (${walkingZoom.toFixed(3)}x)`);
+check(Math.abs(plantedZoom - scope) < 0.01, `a standing sniper's camera takes in ${scope}x the pistol's view (${plantedZoom.toFixed(3)}x)`);
+check(Math.abs(walkingZoom - scope) < 0.01, `walking, it keeps the same view, so the camera never zooms (${walkingZoom.toFixed(3)}x)`);
 
 const exceptions = [...rifle.exceptions, ...mini.exceptions, ...pistol.exceptions, ...sniper.exceptions];
 for (const e of exceptions) log(`page exception: ${e}`);

@@ -6,7 +6,7 @@ import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../prot
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, isHunted, pendingPick, viewRadiusOf } from './stats.ts';
+import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
@@ -65,7 +65,7 @@ function selfView(w: World, p: Player): SelfView {
     respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,
     deaths: p.deaths,
-    viewRadius: viewRadiusOf(p, w.now),
+    viewRadius: effectiveStats(p).viewRadius,
   };
 }
 
@@ -91,7 +91,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const me = w.players.get(id);
   if (!me) throw new Error(`no player ${id}`);
   const stats = effectiveStats(me);
-  const visible = viewExtents(viewRadiusOf(me, w.now), aspect);
+  const visible = viewExtents(stats.viewRadius, aspect);
   const halfW = visible.halfW + VIEW_PRELOAD_MARGIN, halfH = visible.halfH + VIEW_PRELOAD_MARGIN;
   const eye = w.players.get(w.royale?.watching.get(me.id) ?? -1) ?? me;
   const inView = (x: number, y: number, pad = 0) => Math.abs(x - eye.x) <= halfW + pad && Math.abs(y - eye.y) <= halfH + pad;

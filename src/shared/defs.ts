@@ -50,7 +50,7 @@ export type GunDef = {
  * How a class handles beyond its numbers. `movingSpreadMul` scales spread while walking. Under `bloom` each shot of a spray
  * after the first `free` widens spread by `perShot` of itself, up to `maxMul`, and letting go of the trigger takes it back to
  * nothing within `recoverMs`. Under `spinUp` holding the trigger takes the shot interval from `startMul` times `fireMs` down to
- * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see once steady.
+ * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see.
  */
 /**
  * Moving spread is `spread * movingSpreadMul + movingSpreadAdd`; the added part keeps a tight sniper cone from staying a sure hit on the run.

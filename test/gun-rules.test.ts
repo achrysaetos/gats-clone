@@ -123,7 +123,7 @@ test('a minigun spins up: its first shots come slowly and the held rate climbs t
   assert.ok(gaps(light.w, light.p, 10)[0]! * TICK_MS < GUNS.lightMg.fireMs + TICK_MS, 'a light MG does not spin up');
 });
 
-test('a sniper\'s scope stretches its view 15% only once it is steady, and the server sends what that view holds', () => {
+test('a sniper\'s scope stretches its view 15% whether it walks or stands, so the camera never breathes, and the server sends what that view holds', () => {
   const w = emptyWorld();
   const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
   const pistol = spawnAt(w, 1000, 1400);
@@ -133,16 +133,16 @@ test('a sniper\'s scope stretches its view 15% only once it is steady, and the s
   run(w, 400);
   assert.equal(view(sniper), WORLD.viewRadius * 1.15);
   assert.equal(view(pistol), WORLD.viewRadius);
-  assert.ok(sees(sniper), 'the planted sniper sees past the pistol\'s view');
+  assert.ok(sees(sniper), 'the sniper sees past the pistol\'s view');
+  assert.ok(!sees(pistol), 'the pistol does not');
   press(w, sniper, { up: true });
-  step(w, TICK_MS);
-  assert.equal(view(sniper), WORLD.viewRadius, 'walking drops the scope');
-  assert.ok(!sees(sniper), 'and what only it showed');
+  for (let i = 0; i < 10; i++) {
+    step(w, TICK_MS);
+    assert.equal(view(sniper), WORLD.viewRadius * 1.15, 'walking keeps the scope');
+  }
   press(w, sniper, {});
-  run(w, 300);
-  assert.equal(view(sniper), WORLD.viewRadius, 'still settling');
-  run(w, 100);
-  assert.equal(view(sniper), WORLD.viewRadius * 1.15, 'steady again');
+  step(w, TICK_MS);
+  assert.equal(view(sniper), WORLD.viewRadius * 1.15, 'stopping keeps it too');
 });
 
 test('each class is offered its own five attachments', () => {

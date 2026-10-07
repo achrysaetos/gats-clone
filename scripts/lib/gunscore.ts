@@ -1,6 +1,6 @@
 import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, HP_MULTIPLIER, rulesOf, WEAPON_IDS, WORLD, type ArmorId, type GunId, type WeaponId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
-import { effectiveStats, spreadFor, viewRadiusOf } from '../../src/shared/sim/stats.ts';
+import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 import { median } from './stats.ts';
@@ -74,8 +74,7 @@ export function rangeBeyondView(): { id: GunId; range: number; view: number }[] 
   return GUN_IDS.flatMap((id) => {
     const p = addPlayer(w, id, { weapon: GUNS[id].base, armor: 'none', color: 'red' });
     p.gun = id;
-    if (p.life.k === 'alive') p.life.lastMoveAt = -Infinity;
-    const range = effectiveStats(p).range, view = viewRadiusOf(p, w.now);
+    const { range, viewRadius: view } = effectiveStats(p);
     return range > view ? [{ id, range, view }] : [];
   });
 }
