@@ -5,7 +5,7 @@ import { emptiestSquad, royaleKill, royaleWinner, startRoyale, tickRoyale } from
 import { tickRun } from './run.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
-import { loadMap, spawnPoint, type Player, type World, type Zone } from './world.ts';
+import { loadMap, moveTo, spawnPoint, type Player, type World, type Zone } from './world.ts';
 
 const ZONE_CAPTURE_MS = 3000;
 const ZONE_POINTS_PER_SEC = 5;
@@ -124,9 +124,7 @@ function changeMap(w: World) {
   const alive = [...w.players.values()].filter((p) => p.life.k === 'alive');
   for (const p of alive) { p.x = -Infinity; p.y = -Infinity; }
   for (const p of alive) {
-    const at = spawnPoint(w, p.team);
-    p.x = at.x;
-    p.y = at.y;
+    moveTo(p, spawnPoint(w, p.team));
     if (p.life.k === 'alive') p.life.dash = null;
   }
 }

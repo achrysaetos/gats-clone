@@ -4,8 +4,9 @@ import { worldToScreen, type Camera } from './camera.ts';
 import { kicks } from './effects.ts';
 import { NUMBER_MS, numberHeight } from './feedback.ts';
 import { drawnBuildChips, drawnPanels, drawnReticleGap } from './hud.ts';
-import { newestSnap } from './interp.ts';
+import { newestSnap, serverNow } from './interp.ts';
 import { CALLOUT_MS } from './moments.ts';
+import { spectateLines, trackerLabel } from './royale.ts';
 import { drawnTags, shadowBakes } from './render.ts';
 import type { SoundCue } from './sfx.ts';
 import { CORE_ALERT_MS } from './siege.ts';
@@ -95,6 +96,13 @@ export function installDevProbe(page: Page) {
       callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => `${c.title} · ${c.line}`),
     };
   };
+  const royale = () => {
+    const s = page.session();
+    const snap = s && newestSnap(s.snaps);
+    const at = s && serverNow(s.snaps, performance.now());
+    if (!snap?.royale || at === null || at === undefined) return null;
+    return { spectate: spectateLines(snap, snap.royale, at), tracker: snap.royale.squads.map((sq) => ({ team: sq.team, label: trackerLabel(sq, at) })) };
+  };
   const benchFrames = (n: number): number[] => {
     const now = performance.now();
     return Array.from({ length: n }, () => {
@@ -113,5 +121,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
 }

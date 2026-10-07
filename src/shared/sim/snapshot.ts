@@ -1,4 +1,4 @@
-import { byTurret, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { byTurret, CRATE_TIERS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
   BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
@@ -110,7 +110,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
-    .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size, ...(c.drop && { drop: true as const }) }));
+    .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size, ...(c.tier && { tier: c.tier }) }));
   const thrown: ThrownView[] = w.thrown
     .filter((t) => inView(t.x, t.y, THROWN_RADIUS[t.kind]))
     .filter((t) => {
@@ -143,15 +143,15 @@ const pipOf = (p: Player): Pip => (p.life.k === 'alive' ? 'up' : p.life.k === 'd
 
 function royaleView(w: World, r: Royale, me: Player): RoyaleView {
   const players = [...w.players.values()];
-  const half = ROYALE.dropSize / 2;
+  const half = CRATE_TIERS.drop.size / 2;
   return {
     ring: ringView(r.ring),
     redeploys: redeploysOpen(r),
-    squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team) })),
-    redeployAt: r.redeployAt.get(me.id) ?? null,
+    squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team), regroupAt: r.regroupAt.get(team) ?? null })),
+    redeployAt: r.redeployAt.get(me.id) ?? (me.team && me.life.k === 'dead' ? r.regroupAt.get(me.team) : undefined) ?? null,
     drops: [
       ...r.drops.filter((d) => d.landsAt - w.now <= ROYALE.dropNoticeMs),
-      ...w.crates.filter((c) => c.drop && c.respawnAt === null).map((c) => ({ x: c.x + half, y: c.y + half, landsAt: 0 })),
+      ...w.crates.filter((c) => c.tier === 'drop' && c.respawnAt === null).map((c) => ({ x: c.x + half, y: c.y + half, landsAt: 0 })),
     ],
     watch: r.watching.get(me.id) ?? null,
     result: resultFor(w, r, me),

@@ -1,4 +1,4 @@
-import { ARMORS, HP_MULTIPLIER, ROYALE, WORLD, ZOMBIES } from '../defs.ts';
+import { ARMORS, CRATE_TIERS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
@@ -124,8 +124,8 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   c.respawnAt = w.royale ? Infinity : w.now + CRATE_RESPAWN_MS;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (!attacker) return;
-  addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
-  if (c.drop) openDrop(w, attacker);
+  addScore(w, attacker, c.tier ? CRATE_TIERS[c.tier].score : WORLD.crateScore);
+  if (c.tier === 'drop') openDrop(w, attacker);
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */

@@ -1,9 +1,9 @@
-import { byTurret, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { byTurret, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type CrateTier, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
-import { newRoyale } from './royale.ts';
+import { newRoyale, farthestEdgeSlot } from './royale.ts';
 
 export type Wall = WallView & { expiresAt: number };
 
@@ -83,7 +83,7 @@ export type Bullet = {
 /** What fires at the horde for the squad besides its players. */
 export type Shooter = TurretKind | 'bastion';
 
-export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null; drop?: true };
+export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null; tier?: CrateTier };
 
 export type Thrown =
   | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
@@ -152,20 +152,30 @@ export type RoyaleStats = { name: string; kills: number; knocks: number; revives
 
 /**
  * `squads` are those that have fielded a player this match and `out` the ones with nobody left standing, first out first.
- * `redeployAt` holds each dead player still coming back; `killers` who took each player's life, so a wiped squad can watch them; `watching` whom each dead player's camera follows.
+ * `redeployAt` holds each dead player still coming back beside a squadmate, `regroupAt` each wiped squad coming back together; `killers` who took each player's life, so a wiped squad can watch them; `watching` whom each dead player's camera follows.
  */
 export type Royale = {
   ring: Ring;
   squads: ColorId[];
   out: ColorId[];
   redeployAt: Map<number, number>;
+  regroupAt: Map<ColorId, number>;
   drops: Drop[];
   stats: Map<number, RoyaleStats>;
   killers: Map<number, number>;
   watching: Map<number, number>;
+  /** Turns the squads' starting bearings and the caches round the map's centre, fresh each match. */
+  spin: number;
 };
 
 export type Pose = { x: number; y: number };
+type Spot = Pose & { angle?: number };
+
+export function moveTo(p: Player, at: Spot) {
+  p.x = at.x;
+  p.y = at.y;
+  if (at.angle !== undefined) p.angle = at.angle;
+}
 type PoseFrame = { at: number; poses: ReadonlyMap<number, Pose>; walls: readonly Wall[] };
 
 export type World = {
@@ -282,35 +292,25 @@ const SPAWN_CANDIDATES = 12;
 const SPAWN_EDGE = 100;
 
 const SQUAD_GAP = { min: 70, max: 160 } as const;
-const SQUAD_CANDIDATES = 24;
 
-function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number): Pose {
+function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number): Spot {
   const r = WORLD.playerRadius + SPAWN_CLEARANCE;
   const clear = (x: number, y: number) => x >= r && y >= r && x <= size - r && y <= size - r && !solids.some((b) => circleHitsRect(x, y, r, b));
-  const standing = [...w.players.values()].filter((p) => p.life.k === 'alive' && Number.isFinite(p.x));
-  const mates = standing.filter((p) => p.team === team);
-  if (mates.length) {
-    const m = mates[Math.floor(rand(w) * mates.length)]!;
+  const mates = [...w.players.values()].filter((p) => p.team === team && p.life.k === 'alive' && Number.isFinite(p.x));
+  const beside = (m: Player): Pose => {
     for (let i = 0; i < 20; i++) {
       const a = rand(w) * 2 * Math.PI, d = SQUAD_GAP.min + rand(w) * (SQUAD_GAP.max - SQUAD_GAP.min);
       const x = m.x + Math.cos(a) * d, y = m.y + Math.sin(a) * d;
       if (clear(x, y)) return { x, y };
     }
     return clearPointNear(solids, m.x, m.y, r, size);
-  }
-  const rivals = standing.filter((p) => p.team !== team);
-  let best: (Pose & { safety: number }) | null = null;
-  for (let i = 0, found = 0; i < 400 && found < SQUAD_CANDIDATES; i++) {
-    const x = SPAWN_EDGE + rand(w) * (size - 2 * SPAWN_EDGE), y = SPAWN_EDGE + rand(w) * (size - 2 * SPAWN_EDGE);
-    if (!clear(x, y)) continue;
-    found++;
-    const safety = Math.min(Infinity, ...rivals.map((p) => dist2(p.x, p.y, x, y)));
-    if (!best || safety > best.safety) best = { x, y, safety };
-  }
-  return best ? { x: best.x, y: best.y } : clearPointNear(solids, size / 2, size / 2, r, size);
+  };
+  const edge = farthestEdgeSlot(w, team);
+  const at = mates.length ? beside(mates[Math.floor(rand(w) * mates.length)]!) : clearPointNear(solids, edge.x, edge.y, r, size);
+  return { ...at, angle: Math.atan2(edge.centre.y - at.y, edge.centre.x - at.x) };
 }
 
-export function spawnPoint(w: World, team: Team): Pose {
+export function spawnPoint(w: World, team: Team): Spot {
   const { spawns, siege, size } = MAPS[w.map];
   const solids = solidRects(w);
   if (w.royale) return squadSpawn(w, team, solids, size);
@@ -370,7 +370,7 @@ function defendedPoints(solids: readonly Rect[], core: Center, size: number): Po
 }
 
 /** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */
-function clearPointNear(solids: readonly Rect[], x: number, y: number, r: number, size: number): Pose {
+export function clearPointNear(solids: readonly Rect[], x: number, y: number, r: number, size: number): Pose {
   const clear = (px: number, py: number) => px >= r && py >= r && px <= size - r && py <= size - r && !solids.some((b) => circleHitsRect(px, py, r, b));
   for (let ring = 0; ring * ZOM.cell < size; ring++) {
     const points: Pose[] = [];

@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RING, ZOM } from '../src/shared/defs.ts';
+import { COLOR_IDS, CRATE_TIERS, RING, ROYALE, WORLD, ZOM } from '../src/shared/defs.ts';
+import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
+import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import { addPlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import type { Player, World } from '../src/shared/sim/world.ts';
+import { createWorld, type Player, type World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
 import { createRoom } from '../src/server/room.ts';
 import { emptyWorld, fakeSocket, hpOf, PISTOL, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
 /** Reads the life afresh, past what an earlier assertion narrowed it to. */
 const lifeOf = (p: Player) => p.life;
+const ringOf = (w: World) => w.royale!.ring;
 
 function holdRing(w: World, circle: Circle, phase = 1) {
   w.royale!.ring = { k: 'waiting', phase, circle, next: circle, shrinkAt: Infinity };
@@ -53,8 +56,12 @@ test('a player with a squadmate standing is knocked, not killed, and the knock p
   assert.equal(shooter.kills, 1, 'the finish pays no second kill');
 });
 
-test('a squad is out once nobody in it stands: its knocked players die with it and it places below the squads still in', () => {
+const LAST_LIVES = RING.findIndex((row) => row.lives === 'last');
+const WHOLE_MAP = { x: 3000, y: 3000, r: 4300 };
+
+test('once lives are last a squad is out when nobody in it stands: its knocked players die with it and it places below the squads still in', () => {
   const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES);
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const first = spawnAt(w, 1200, 1000, { team: 'red' });
   const last = spawnAt(w, 1000, 1200, { team: 'red' });
@@ -73,6 +80,7 @@ test('a squad is out once nobody in it stands: its knocked players die with it a
 
 test('the last squad standing wins, and every squad reads back the place it went out in', () => {
   const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES);
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const green = spawnAt(w, 1200, 1000, { team: 'green' });
   const red = spawnAt(w, 1000, 1200, { team: 'red' });
@@ -103,7 +111,7 @@ function finish(w: World, shooter: Player, victim: Player, angle = 0) {
   assert.equal(lifeOf(victim).k, 'dead');
 }
 
-test('a dead player redeploys beside a standing squadmate, later each death, with the class gun and a spawn shield', () => {
+test('a dead player redeploys beside a standing squadmate 15 seconds after each death, with the class gun and a spawn shield', () => {
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const victim = spawnAt(w, 1200, 1000, { team: 'red', loadout: { weapon: 'smg' } });
@@ -122,28 +130,84 @@ test('a dead player redeploys beside a standing squadmate, later each death, wit
   victim.y = 1000;
   if (victim.life.k === 'alive') victim.life.shieldUntil = -Infinity;
   finish(w, shooter, victim);
-  run(w, 20_000);
-  assert.equal(lifeOf(victim).k, 'dead', 'the second wait is longer');
-  run(w, 6000);
-  assert.equal(lifeOf(victim).k, 'alive');
+  run(w, ROYALE.redeployMs - 1000);
+  assert.equal(lifeOf(victim).k, 'dead');
+  run(w, 1500);
+  assert.equal(lifeOf(victim).k, 'alive', 'the second wait is no longer');
 });
 
-test('once the third ring phase closes nobody redeploys: last lives', () => {
+test('once lives turn last whoever falls stays dead, while those who fell before still come back', () => {
   const w = emptyWorld('BR');
-  holdRing(w, { x: 3000, y: 3000, r: 3000 }, 2);
+  holdRing(w, WHOLE_MAP, LAST_LIVES - 1);
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const before = spawnAt(w, 1200, 1000, { team: 'red' });
+  const after = spawnAt(w, 1000, 1200, { team: 'red' });
+  spawnAt(w, 3000, 3000, { team: 'red' });
+  finish(w, shooter, before);
+  assert.equal(snapshotFor(w, before.id).royale!.redeploys, true);
+  w.royale!.ring = { k: 'shrinking', phase: LAST_LIVES - 1, from: WHOLE_MAP, to: WHOLE_MAP, startAt: w.now, closeAt: w.now + 100 };
+  run(w, 200);
+  const view = snapshotFor(w, before.id).royale!;
+  assert.equal(view.ring.phase, LAST_LIVES);
+  assert.equal(view.redeploys, false);
+  assert.ok(view.redeployAt! > w.now, 'fell before, so still coming back');
+  finish(w, shooter, after, Math.PI / 2);
+  assert.equal(snapshotFor(w, after.id).royale!.redeployAt, null);
+  run(w, ROYALE.redeployMs);
+  assert.equal(lifeOf(before).k, 'alive');
+  assert.equal(lifeOf(after).k, 'dead');
+});
+
+test('a squad wiped while lives are many regroups together on the edge, away from its killers, with class guns', () => {
+  const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES - 1);
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const first = spawnAt(w, 1200, 1000, { team: 'red', loadout: { weapon: 'smg' } });
+  const last = spawnAt(w, 1000, 1200, { team: 'red' });
+  first.gun = 'heavySmg';
+  first.score = 250;
+  finish(w, shooter, first);
+  const events: GameEvent[] = [];
+  for (let i = 0; i < 40 && lifeOf(last).k === 'alive'; i++) { shootOnce(w, shooter, Math.PI / 2, 0); events.push(...w.events, ...collect(w, 300)); }
+  assert.deepEqual(events.filter((e) => e.e === 'wiped'), [{ e: 'wiped', team: 'red', place: null }]);
+  const view = snapshotFor(w, first.id).royale!;
+  const red = view.squads.find((sq) => sq.team === 'red')!;
+  assert.equal(red.place, null, 'not out');
+  assert.ok(red.regroupAt! > w.now);
+  assert.equal(view.redeployAt, red.regroupAt);
+  assert.equal(snapshotFor(w, last.id).royale!.redeployAt, red.regroupAt, 'the whole squad comes back at once');
+  run(w, red.regroupAt! - w.now - 500);
+  assert.equal(lifeOf(first).k, 'dead');
+  assert.equal(w.match.k, 'playing');
+  run(w, 600);
+  assert.equal(lifeOf(first).k, 'alive');
+  assert.equal(lifeOf(last).k, 'alive');
+  assert.ok(Math.hypot(first.x - last.x, first.y - last.y) < 250, 'together');
+  const out = Math.hypot(first.x - WHOLE_MAP.x, first.y - WHOLE_MAP.y);
+  assert.ok(Math.abs(out - ROYALE.edgeR) < 250, `on the edge, ${out.toFixed(0)} px out`);
+  assert.ok(Math.hypot(first.x - shooter.x, first.y - shooter.y) > ROYALE.edgeR, 'away from the squad that wiped them');
+  assert.equal(first.gun, 'smg');
+  assert.equal(first.score, 0);
+  assert.equal(snapshotFor(w, first.id).royale!.squads.find((sq) => sq.team === 'red')!.regroupAt, null);
+});
+
+test('a squad wiped before lives turn last still regroups; one wiped after is out', () => {
+  const w = emptyWorld('BR');
+  holdRing(w, WHOLE_MAP, LAST_LIVES - 1);
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   const victim = spawnAt(w, 1200, 1000, { team: 'red' });
-  spawnAt(w, 3000, 3000, { team: 'red' });
+  const green = spawnAt(w, 1000, 1200, { team: 'green' });
+  spawnAt(w, 4000, 4000, { team: 'yellow' });
   finish(w, shooter, victim);
-  assert.equal(snapshotFor(w, victim.id).royale!.redeploys, true);
-  w.royale!.ring = { k: 'shrinking', phase: 2, from: { x: 3000, y: 3000, r: 3000 }, to: { x: 3000, y: 3000, r: 2900 }, startAt: w.now, closeAt: w.now + 100 };
+  step(w, TICK_MS);
+  assert.ok(w.royale!.regroupAt.has('red'));
+  w.royale!.ring = { k: 'shrinking', phase: LAST_LIVES - 1, from: WHOLE_MAP, to: WHOLE_MAP, startAt: w.now, closeAt: w.now + 100 };
   run(w, 200);
-  const view = snapshotFor(w, victim.id).royale!;
-  assert.equal(view.ring.phase, 3);
-  assert.equal(view.redeploys, false);
-  assert.equal(view.redeployAt, null);
-  run(w, 25_000);
-  assert.equal(lifeOf(victim).k, 'dead');
+  finish(w, shooter, green, Math.PI / 2);
+  run(w, ROYALE.redeployMs);
+  assert.deepEqual(snapshotFor(w, shooter.id).royale!.squads.map((sq) => [sq.team, sq.place]), [['blue', null], ['red', null], ['green', 4], ['yellow', null]]);
+  assert.equal(lifeOf(victim).k, 'alive');
+  assert.equal(lifeOf(green).k, 'dead');
 });
 
 test('a dead player watches a squadmate still up, and the snapshot centres on them', () => {
@@ -182,9 +246,9 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
   spawnAt(w, 4000, 4000, { team: 'red' });
   w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now + 5000 }];
   assert.deepEqual(snapshotFor(w, shooter.id).royale!.drops, [{ x: 1300, y: 1000, landsAt: w.now + 5000 }]);
-  assert.ok(!w.crates.some((c) => c.drop));
+  assert.ok(!w.crates.some((c) => c.tier === 'drop'));
   run(w, 5100);
-  const drop = w.crates.find((c) => c.drop)!;
+  const drop = w.crates.find((c) => c.tier === 'drop')!;
   assert.ok(drop && Math.abs(drop.x + drop.size / 2 - 1300) < 1, 'lands where it was shown');
   for (let i = 0; i < 40 && drop.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.notEqual(drop.respawnAt, null);
@@ -198,17 +262,104 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
   if (shooter.life.k === 'alive') shooter.life.hp = 10;
   w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now }];
   run(w, 100);
-  const second = w.crates.find((c) => c.drop && c.respawnAt === null)!;
+  const second = w.crates.find((c) => c.tier === 'drop' && c.respawnAt === null)!;
   for (let i = 0; i < 40 && second.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.level, 5);
   assert.ok(hpOf(shooter) >= 140, `healed to ${hpOf(shooter)}`);
+});
+
+function fullMatch(map = ROTATION.BR[0]!, seed = 7): World {
+  const w = createWorld('BR', seed, map);
+  for (const team of COLOR_IDS) for (let i = 0; i < ROYALE.squadSize; i++) addPlayer(w, `${team}${i}`, PISTOL, { team });
+  return w;
+}
+
+const bearing = (w: World, p: { x: number; y: number }) => Math.atan2(p.y - MAPS[w.map].size / 2, p.x - MAPS[w.map].size / 2);
+
+test('squads start together, evenly spaced on a circle round the map\'s centre, facing in', () => {
+  for (const map of ROTATION.BR) {
+    const w = fullMatch(map);
+    const centre = MAPS[map].size / 2;
+    const bearings = COLOR_IDS.map((team) => {
+      const squad = [...w.players.values()].filter((p) => p.team === team);
+      const at = { x: squad.reduce((s, p) => s + p.x, 0) / squad.length, y: squad.reduce((s, p) => s + p.y, 0) / squad.length };
+      for (const p of squad) {
+        assert.ok(Math.hypot(p.x - at.x, p.y - at.y) < 250, `${map} ${p.name} is with their squad`);
+        assert.ok(Math.cos(p.angle - Math.atan2(centre - p.y, centre - p.x)) > 0.95, `${map} ${p.name} faces the centre`);
+      }
+      assert.ok(Math.abs(Math.hypot(at.x - centre, at.y - centre) - ROYALE.edgeR) < 200, `${map} ${team} starts ${Math.hypot(at.x - centre, at.y - centre).toFixed(0)} px out`);
+      return bearing(w, at);
+    }).sort((a, b) => a - b);
+    const gaps = bearings.map((b, i) => (i ? b - bearings[i - 1]! : b + 2 * Math.PI - bearings.at(-1)!));
+    for (const gap of gaps) assert.ok(Math.abs(gap - Math.PI / 3) < 0.2, `${map} squads ${(gap * 180 / Math.PI).toFixed(0)} degrees apart`);
+  }
+});
+
+test('rich caches sit round each map\'s centre and pay a level step', () => {
+  for (const map of ROTATION.BR) {
+    const w = fullMatch(map);
+    const centre = MAPS[map].size / 2;
+    const caches = w.crates.filter((c) => c.tier === 'cache');
+    assert.equal(caches.length, ROYALE.caches, map);
+    for (const c of caches) assert.ok(Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.cacheR + 150, `${map} cache near the centre`);
+    const own = new Set(MAPS[map].crates.map((c) => `${c.x},${c.y}`));
+    assert.ok(w.crates.filter((c) => own.has(`${c.x + c.size / 2},${c.y + c.size / 2}`)).every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
+  }
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  spawnAt(w, 4000, 4000, { team: 'red' });
+  w.crates = [{ id: 999_999, x: 1150, y: 970, size: CRATE_TIERS.cache.size, hp: CRATE_TIERS.cache.hp, respawnAt: null, tier: 'cache' }];
+  w.wallsVersion++;
+  for (let i = 0; i < 30 && w.crates[0]!.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
+  assert.equal(shooter.score, 100);
+  assert.equal(shooter.level, 1);
+});
+
+test('each match scatters crates on open ground, and those near the centre pay more', () => {
+  for (const map of ROTATION.BR) {
+    const w = fullMatch(map);
+    const centre = MAPS[map].size / 2;
+    const own = new Set(MAPS[map].crates.map((c) => `${c.x},${c.y}`));
+    const scattered = w.crates.filter((c) => c.tier !== 'cache' && !own.has(`${c.x + c.size / 2},${c.y + c.size / 2}`));
+    assert.equal(scattered.length, ROYALE.scatter, map);
+    for (const c of scattered) {
+      const room = (b: Rect) => circleHitsRect(c.x + c.size / 2, c.y + c.size / 2, c.size / 2 + 2 * WORLD.playerRadius, b);
+      assert.ok(!w.walls.some(room), `${map} crate at ${c.x},${c.y} leaves room to walk past`);
+      assert.ok(!w.crates.some((o) => o !== c && room({ x: o.x, y: o.y, w: o.size, h: o.size })), `${map} crates stand apart`);
+      const near = Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.richR;
+      assert.equal(c.tier, near ? 'rich' : 'loot', `${map} crate ${near ? 'inside' : 'outside'} the rich ring`);
+    }
+    assert.ok(scattered.some((c) => c.tier === 'rich'), map);
+  }
+  assert.ok(CRATE_TIERS.rich.score > CRATE_TIERS.loot.score);
+});
+
+test('each new circle brings a wave of crates inside it, clear of the players', () => {
+  const w = fullMatch();
+  const before = new Set(w.crates.map((c) => c.id));
+  const next = { x: 3000, y: 3000, r: RING[1]!.radius };
+  for (let x = next.x - next.r; x <= next.x + next.r; x += 200) for (let y = next.y - next.r; y <= next.y + next.r; y += 200) {
+    if (Math.hypot(x - next.x, y - next.y) < next.r) spawnAt(w, x, y, { team: 'red' });
+  }
+  w.royale!.ring = { k: 'shrinking', phase: 0, from: next, to: next, startAt: w.now, closeAt: w.now + 50 };
+  run(w, 100);
+  const now = ringOf(w);
+  assert.ok(now.k === 'waiting' && now.phase === 1);
+  const drawn = now.next;
+  const wave = w.crates.filter((c) => !before.has(c.id));
+  assert.equal(wave.length, ROYALE.wave);
+  for (const c of wave) {
+    const at = { x: c.x + c.size / 2, y: c.y + c.size / 2 };
+    assert.ok(Math.hypot(at.x - drawn.x, at.y - drawn.y) <= drawn.r, 'inside the circle it was drawn for');
+    assert.ok([...w.players.values()].every((p) => Math.hypot(p.x - at.x, p.y - at.y) > c.size / 2 + WORLD.playerRadius), 'on nobody');
+  }
 });
 
 test('crates pay 25 and stay broken for the match', () => {
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   spawnAt(w, 4000, 4000, { team: 'red' });
-  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null }];
+  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null, tier: 'loot' }];
   w.wallsVersion++;
   for (let i = 0; i < 6; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.score, 25);

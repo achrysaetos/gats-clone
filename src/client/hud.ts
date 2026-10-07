@@ -388,7 +388,7 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
       return;
     }
     if (f.e === 'wiped') {
-      const line = `${squadLabel(f.team)} is out · #${f.place}`;
+      const line = f.place === null ? `${squadLabel(f.team)} wiped · regrouping` : `${squadLabel(f.team)} is out · #${f.place}`;
       const pw = ctx.measureText(line).width + SPACE.md * 2 + 8;
       feedRow(ctx, right - pw, y, pw, hud.me?.team === f.team);
       ctx.fillStyle = TEAM_COLORS[f.team];
@@ -745,12 +745,12 @@ function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: numb
   const x = w / 2 - box.w / 2 - 6, y = top + 6;
   panel(ctx, x, y, box.w + 12, box.h + 8);
   panels.push({ x, y, w: box.w + 12, h: box.h + 8 });
-  drawTracker(ctx, royale, mine, x + 6, y + 4);
+  const clockNow = serverNow(s.snaps, now);
+  drawTracker(ctx, royale, mine, x + 6, y + 4, clockNow);
   if (me?.downed) { drawDownedSelf(hud, me.downed); return; }
   const revive = reviveHint(snap, me);
   if (revive) outlined(ctx, revive, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750);
   if (me?.alive) return;
-  const clockNow = serverNow(s.snaps, now);
   if (clockNow === null) return;
   const lines = spectateLines(snap, royale, clockNow);
   outlined(ctx, lines.title, w / 2, h - 96, 18, '#ffffff', 800);

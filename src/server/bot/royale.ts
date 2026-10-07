@@ -1,10 +1,11 @@
-import { COLOR_IDS, ZOM } from '../../shared/defs.ts';
+import { CRATE_TIERS, RING, ZOM } from '../../shared/defs.ts';
 import { ringAt, type Circle, type InputState, type PlayerView, type RingView, type RoyaleView, type Snapshot } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
-import { perceive } from './awareness.ts';
-import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx } from './intent.ts';
+import { coverNear } from './cover.ts';
+import { perceive, type Perception } from './awareness.ts';
+import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx, type Plan } from './intent.ts';
 import { act } from './motor.ts';
 import { dist, isOpen, type Point } from './nav.ts';
 
@@ -13,12 +14,16 @@ const WALK_DETOUR = 1.4;
 const EDGE_PX = 120;
 const ANCHOR_EDGE_PX = 400;
 const ANCHOR_REACH = 0.6;
-const HOME_R = 220;
 const REVIVE_REACH_PX = 900;
 const REVIVE_STOP_PX = ZOM.reviveRange - 20;
 const MATE_DEAD_ZONE = 30;
-const DROP_ODDS = 0.5;
-const DROP_REACH_PX = 1800;
+const STRAY_PX = 450;
+const LAG_PX = 450;
+const FOLLOW_PX = 70;
+const HOLD_PX = 220;
+const HUNT_PX = 2000;
+const LOOT_DIST_PX = 400;
+const DROP_WORTH = 150;
 
 const inside = (p: Point, c: Circle, margin: number) => dist(p, c) <= Math.max(c.r - margin, c.r / 2);
 
@@ -28,15 +33,7 @@ function goalCircle(ring: RingView, me: Point, speed: number, now: number): { ci
   return ring.shrinkAt - now < walkMs + LEAVE_MARGIN_MS ? { circle: ring.to, urgent: true } : { circle: ringAt(ring, now), urgent: false };
 }
 
-const goesForDrop = (squad: number, phase: number, drop: Point) => ((squad * 7 + phase * 3 + Math.floor(drop.x + drop.y)) % 10) / 10 < DROP_ODDS;
-
-function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: Circle, arena: BotArena): Point {
-  const team = me.team!;
-  const mates = [me, ...snap.minimap.filter((m) => m.team === team && m.pingAge === null)];
-  const at = { x: mates.reduce((s, m) => s + m.x, 0) / mates.length, y: mates.reduce((s, m) => s + m.y, 0) / mates.length };
-  const squad = COLOR_IDS.indexOf(team);
-  const drop = royale.drops.find((d) => inside(d, circle, 0) && dist(d, at) < DROP_REACH_PX && goesForDrop(squad, royale.ring.phase, d));
-  if (drop) return drop;
+function inward(at: Point, circle: Circle, arena: BotArena): Point {
   const d = dist(at, circle);
   const reach = Math.max(circle.r - ANCHOR_EDGE_PX, circle.r * ANCHOR_REACH);
   const k = d > reach ? reach / d : 1;
@@ -47,20 +44,82 @@ function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
   return circle;
 }
 
+const nearestOf = (me: Point, xs: readonly PlayerView[]) => xs.reduce<PlayerView | null>((b, p) => (b && dist(b, me) <= dist(p, me) ? b : p), null);
+const mean = (xs: readonly number[]) => xs.reduce((s, x) => s + x, 0) / Math.max(1, xs.length);
+const short = (from: Point, to: Point, by: number): Point => {
+  const d = dist(from, to);
+  return d <= by ? from : { x: to.x + ((from.x - to.x) / d) * by, y: to.y + ((from.y - to.y) / d) * by };
+};
+
+type Pack =
+  | { k: 'ring'; at: Point }
+  | { k: 'revive'; at: Point }
+  | { k: 'gather'; at: Point }
+  | { k: 'follow'; at: Point }
+  | { k: 'loot'; at: Point }
+  | { k: 'hunt'; at: Point }
+  | { k: 'hold'; at: Point };
+
+type PackCtx = { snap: Snapshot; royale: RoyaleView; me: PlayerView; view: Perception; arena: BotArena; circle: Circle; now: number };
+
+function bestLoot({ snap, royale, me, circle }: PackCtx): Point | null {
+  const crates = snap.crates.map((c) => ({ at: { x: c.x + c.size / 2, y: c.y + c.size / 2 }, score: c.tier === 'drop' ? DROP_WORTH : CRATE_TIERS[c.tier ?? 'loot'].score }));
+  const drops = royale.drops.filter((d) => d.landsAt > 0).map((d) => ({ at: d, score: DROP_WORTH }));
+  let best: Point | null = null, bestWorth = 0;
+  for (const c of [...crates, ...drops]) {
+    const worth = inside(c.at, circle, EDGE_PX) ? c.score / (dist(c.at, me) + LOOT_DIST_PX) : 0;
+    if (worth > bestWorth) { best = c.at; bestWorth = worth; }
+  }
+  return best && short(me, best, FOLLOW_PX);
+}
+
+function packFor(c: PackCtx, outside: boolean, downed: PlayerView | null): Pack {
+  const { snap, me, view, circle } = c;
+  if (outside) return { k: 'ring', at: inward(me, circle, c.arena) };
+  if (downed && !view.threats.some((t) => t.p.alive)) return { k: 'revive', at: downed };
+  const team = me.team!;
+  const marks = [me, ...snap.minimap.filter((m) => m.team === team && m.pingAge === null)];
+  const centroid = { x: mean(marks.map((m) => m.x)), y: mean(marks.map((m) => m.y)) };
+  const mates = snap.players.filter((p) => p.id !== me.id && p.team === team && p.alive);
+  if (!mates.length && dist(me, centroid) > STRAY_PX) return { k: 'gather', at: centroid };
+  const { ring, redeploys } = c.royale;
+  const closingOnLastLives = RING[ring.phase + 1]?.lives === 'last' && c.now >= ring.shrinkAt;
+  if (!redeploys || closingOnLastLives) return { k: 'hold', at: inward(centroid, circle, c.arena) };
+  const leader = [me, ...mates].reduce((a, b) => (b.id < a.id ? b : a));
+  if (leader.id !== me.id) return { k: 'follow', at: short(me, leader, FOLLOW_PX) };
+  const mine = mean(snap.leaderboard.filter((r) => r.team === team).map((r) => r.score));
+  const theirs = mean(snap.leaderboard.filter((r) => r.team !== team).map((r) => r.score));
+  const lead = view.lead && dist(view.lead, me) < HUNT_PX && inside(view.lead, circle, EDGE_PX) ? view.lead : null;
+  if (lead && mine >= theirs) return { k: 'hunt', at: lead };
+  const loot = bestLoot(c);
+  return loot ? { k: 'loot', at: loot } : lead ? { k: 'hunt', at: lead } : { k: 'loot', at: inward(circle, circle, c.arena) };
+}
+
 const goalOf = (i: Intent): Point | null => {
   switch (i.k) {
     case 'patrol': return i.goal;
     case 'takePosition': case 'peekAndHide': case 'reloadInCover': case 'retreatAndHeal': return i.spot;
-    case 'search': case 'flank': case 'engage': return null;
+    case 'search': return i.at;
+    case 'flank': return i.via;
+    case 'engage': return null;
   }
 };
 
-const leavesSquadCover = (intent: Intent, circle: Circle, home: Point) => {
+function strays(intent: Intent, pack: Pack, me: Point, circle: Circle): boolean {
   const goal = goalOf(intent);
-  return intent.k === 'search' || intent.k === 'flank' || (goal !== null && (!inside(goal, circle, EDGE_PX) || dist(goal, home) > HOME_R));
-};
+  if (goal && !inside(goal, circle, EDGE_PX)) return true;
+  if (pack.k === 'hold') return intent.k === 'search' || intent.k === 'flank' || (goal !== null && dist(goal, pack.at) > HOLD_PX);
+  switch (intent.k) {
+    case 'patrol': case 'takePosition': return true;
+    case 'search': case 'flank': return pack.k === 'loot' || pack.k === 'gather' || (pack.k === 'follow' && dist(me, pack.at) > LAG_PX);
+    default: return false;
+  }
+}
 
-const nearestOf = (me: Point, xs: readonly PlayerView[]) => xs.reduce<PlayerView | null>((b, p) => (b && dist(b, me) <= dist(p, me) ? b : p), null);
+function holdAt(at: Point, circle: Circle, arena: BotArena, rand: () => number): Plan {
+  const spots = coverNear(arena.cover, at, HOLD_PX);
+  return spots.length ? { k: 'takePosition', spot: spots[Math.floor(rand() * spots.length)]!, facing: circle } : { k: 'patrol', goal: openSpot(arena, rand, { at, r: HOLD_PX }) };
+}
 
 export function crawlThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, mem: BotMemory): Omit<BotDecision, 'pick'> {
   const mate = nearestOf(me, snap.players.filter((p) => p.id !== me.id && p.team === me.team && p.alive));
@@ -78,23 +137,22 @@ export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
   const { circle, urgent } = goalCircle(royale.ring, me, snap.self.speed, now);
-  const home = { at: anchorFor(snap, royale, me, circle, arena), r: HOME_R, face: { x: circle.x, y: circle.y } };
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand, home };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand };
   const current = ringAt(royale.ring, now);
   const outside = !inside(me, circle, EDGE_PX) && (urgent || dist(me, current) > current.r);
-  const fighting = view.threats.some((t) => t.p.alive);
   const downed = nearestOf(me, snap.players.filter((p) => p.id !== me.id && p.team === me.team && p.downed && dist(p, me) < REVIVE_REACH_PX));
-  const prev = mem.intent ?? startIntent({ k: 'patrol', goal: home.at }, ctx);
+  const pack = packFor({ snap, royale, me, view, arena, circle, now }, outside, downed);
+  const prev = mem.intent ?? startIntent({ k: 'patrol', goal: pack.at }, ctx);
   const walkTo = (goal: Point, slack: number) => (prev.k === 'patrol' && dist(prev.goal, goal) < slack ? prev : startIntent({ k: 'patrol', goal }, ctx));
   let intent: Intent;
-  if (outside) intent = walkTo(home.at, 60);
-  else if (downed && !fighting) intent = walkTo(downed, 30);
+  if (pack.k === 'ring') intent = walkTo(pack.at, 60);
+  else if (pack.k === 'revive') intent = walkTo(pack.at, 30);
   else {
     intent = nextIntent(prev, view, ctx);
-    if (leavesSquadCover(intent, circle, home.at)) intent = startIntent({ k: 'patrol', goal: openSpot(arena, rand, home) }, ctx);
+    if (strays(intent, pack, me, circle)) intent = pack.k === 'hold' ? startIntent(holdAt(pack.at, circle, arena, rand), ctx) : walkTo(pack.at, 60);
   }
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
-  const reviving = !outside && !fighting && downed !== null && dist(me, downed) <= REVIVE_STOP_PX;
+  const reviving = pack.k === 'revive' && dist(me, pack.at) <= REVIVE_STOP_PX;
   return {
     input: reviving ? { ...input, up: false, down: false, left: false, right: false, use: true } : input,
     mem: { ...mem, intent, awareness, motor },

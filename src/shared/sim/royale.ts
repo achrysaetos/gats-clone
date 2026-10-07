@@ -1,18 +1,18 @@
-import { COLOR_IDS, LEVELS, RING, ROYALE, WORLD, type ColorId } from '../defs.ts';
+import { COLOR_IDS, CRATE_TIERS, LEVELS, RING, ROYALE, WORLD, type ColorId, type CrateTier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult, type Team } from '../protocol.ts';
 import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
-import { coverRects, crateRect, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
+import { clearPointNear, coverRects, crateRect, moveTo, newId, rand, spawnPoint, type Crate, type Player, type Ring, type Royale, type Pose, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
 const standing = (w: World, team: Team) => [...w.players.values()].some((p) => p.team === team && p.life.k === 'alive');
 
 export const closedPhases = (ring: Ring) => (ring.k === 'closed' ? RING.length : ring.phase);
-export const redeploysOpen = (r: Royale) => closedPhases(r.ring) < ROYALE.redeployPhases;
+export const redeploysOpen = (r: Royale) => RING[closedPhases(r.ring)]?.lives === 'many';
 
 export function ringView(ring: Ring): RingView {
   switch (ring.k) {
@@ -46,13 +46,65 @@ function scheduleDrop(w: World, r: Royale, into: Circle) {
   r.drops.push({ ...at, landsAt: w.now + ROYALE.dropLandMs });
 }
 
+const SCATTER_CLEAR = 90;
+
+function crateAt(w: World, x: number, y: number, tier: CrateTier): Crate {
+  const { size, hp } = CRATE_TIERS[tier];
+  return { id: newId(w), x: x - size / 2, y: y - size / 2, size, hp, respawnAt: null, tier };
+}
+
+function stockCrates(w: World, spin: number) {
+  const size = MAPS[w.map].size, centre = size / 2;
+  w.crates = w.crates.map((c) => ({ ...c, tier: 'loot' }));
+  for (let i = 0; i < ROYALE.caches; i++) {
+    const a = spin + ((i + 0.5) / ROYALE.caches) * 2 * Math.PI;
+    const at = clearPointNear(coverRects(w), centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, CRATE_TIERS.cache.size, size);
+    w.crates.push(crateAt(w, at.x, at.y, 'cache'));
+  }
+  scatter(w, { x: centre, y: centre, r: size }, ROYALE.scatter);
+}
+
+function scatter(w: World, within: Circle, count: number) {
+  const size = MAPS[w.map].size, centre = size / 2;
+  const solids = coverRects(w);
+  const crates = [...w.crates];
+  const bodies = [...w.players.values()].filter((p) => p.life.k !== 'dead');
+  const lo = (c: number) => Math.max(SCATTER_CLEAR, c - within.r), hi = (c: number) => Math.min(size - SCATTER_CLEAR, c + within.r);
+  for (let i = 0, placed = 0; i < count * 20 && placed < count; i++) {
+    const x = lo(within.x) + rand(w) * (hi(within.x) - lo(within.x)), y = lo(within.y) + rand(w) * (hi(within.y) - lo(within.y));
+    if (dist2(x, y, within.x, within.y) > within.r * within.r || solids.some((b) => circleHitsRect(x, y, SCATTER_CLEAR, b))) continue;
+    if (bodies.some((p) => dist2(p.x, p.y, x, y) < SCATTER_CLEAR * SCATTER_CLEAR)) continue;
+    const crate = crateAt(w, x, y, Math.hypot(x - centre, y - centre) < ROYALE.richR ? 'rich' : 'loot');
+    crates.push(crate);
+    solids.push(crateRect(crate));
+    placed++;
+  }
+  w.crates = crates;
+  w.wallsVersion++;
+}
+
+export function farthestEdgeSlot(w: World, team: Team): Pose & { centre: Pose } {
+  const r = w.royale!;
+  const to = ringView(r.ring).to;
+  const reach = Math.max(0, Math.min(ROYALE.edgeR, to.r - ROYALE.cacheR));
+  const rivals = [...w.players.values()].filter((p) => p.team !== team && p.life.k !== 'dead' && Number.isFinite(p.x));
+  const slots = COLOR_IDS.map((_, i) => {
+    const a = r.spin + (i / COLOR_IDS.length) * 2 * Math.PI;
+    return { x: to.x + Math.cos(a) * reach, y: to.y + Math.sin(a) * reach, centre: to };
+  });
+  const room = (s: Pose) => Math.min(Infinity, ...rivals.map((p) => dist2(p.x, p.y, s.x, s.y)));
+  return slots.reduce((best, s) => (room(s) > room(best) ? s : best), slots[COLOR_IDS.findIndex((c) => c === team)] ?? slots[0]!);
+}
+
 export function newRoyale(w: World): Royale {
   const size = MAPS[w.map].size;
   const circle = { x: size / 2, y: size / 2, r: Math.hypot(size, size) / 2 + WORLD.playerRadius * 4 };
-  const next = nextCircle(w, circle, RING[0]!.radius);
+  const next = { x: size / 2, y: size / 2, r: RING[0]!.radius };
+  const spin = rand(w) * 2 * Math.PI;
+  stockCrates(w, spin);
   const r: Royale = {
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
-    squads: [], out: [], redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
+    squads: [], out: [], redeployAt: new Map(), regroupAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(), spin,
   };
   scheduleDrop(w, r, next);
   return r;
@@ -72,7 +124,7 @@ export function emptiestSquad(w: World, weigh: (p: Player) => number = () => 1):
 function perish(w: World, r: Royale, p: Player, by: Player | null) {
   die(w, p, Infinity);
   if (by && by.id !== p.id) r.killers.set(p.id, by.id);
-  if (redeploysOpen(r)) r.redeployAt.set(p.id, w.now + ROYALE.redeployMs(p.deaths));
+  if (redeploysOpen(r)) r.redeployAt.set(p.id, w.now + ROYALE.redeployMs);
 }
 
 export function fall(w: World, r: Royale, victim: Player, by: Player | null): boolean {
@@ -123,17 +175,17 @@ function advanceRing(w: World, r: Royale) {
       const next = nextCircle(w, ring.to, row.radius);
       r.ring = { k: 'waiting', phase, circle: ring.to, next, shrinkAt: w.now + row.waitMs };
       scheduleDrop(w, r, next);
+      scatter(w, next, ROYALE.wave);
     }
-    if (!redeploysOpen(r)) r.redeployAt.clear();
   }
 }
 
 function landDrops(w: World, r: Royale) {
-  const half = ROYALE.dropSize / 2;
   r.drops = r.drops.filter((d) => {
-    const crate = { id: 0, x: d.x - half, y: d.y - half, size: ROYALE.dropSize, hp: ROYALE.dropHp, respawnAt: null, drop: true as const };
-    if (w.now < d.landsAt || [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(crateRect(crate), { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius))) return true;
-    w.crates = [...w.crates, { ...crate, id: newId(w) }];
+    const half = CRATE_TIERS.drop.size / 2;
+    const footprint = { x: d.x - half, y: d.y - half, w: half * 2, h: half * 2 };
+    if (w.now < d.landsAt || [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(footprint, { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius))) return true;
+    w.crates = [...w.crates, crateAt(w, d.x, d.y, 'drop')];
     w.wallsVersion++;
     return false;
   });
@@ -164,19 +216,26 @@ function tickKnocked(w: World, r: Royale, dtMs: number) {
   }
 }
 
+function bringBack(w: World, p: Player) {
+  resetProgress(p);
+  p.lifeKills = 0;
+  moveTo(p, spawnPoint(w, p.team));
+  p.life = freshLife(p, w.now);
+  w.events.push({ e: 'life', id: p.id, name: p.name, k: 'redeployed', by: null });
+}
+
 function redeploy(w: World, r: Royale) {
+  for (const [team, at] of r.regroupAt) {
+    if (w.now < at) continue;
+    r.regroupAt.delete(team);
+    for (const p of w.players.values()) if (p.team === team && p.life.k === 'dead') bringBack(w, p);
+  }
   for (const [id, at] of r.redeployAt) {
     const p = w.players.get(id);
     if (!p || p.life.k !== 'dead') { r.redeployAt.delete(id); continue; }
     if (w.now < at || !standing(w, p.team)) continue;
     r.redeployAt.delete(id);
-    resetProgress(p);
-    p.lifeKills = 0;
-    const spot = spawnPoint(w, p.team);
-    p.x = spot.x;
-    p.y = spot.y;
-    p.life = freshLife(p, w.now);
-    w.events.push({ e: 'life', id: p.id, name: p.name, k: 'redeployed', by: null });
+    bringBack(w, p);
   }
 }
 
@@ -184,15 +243,17 @@ const teamKills = (w: World, team: ColorId) => [...w.players.values()].reduce((n
 
 function eliminate(w: World, r: Royale) {
   for (const p of w.players.values()) if (p.team && !r.squads.includes(p.team)) r.squads.push(p.team);
-  const fallen = r.squads.filter((s) => !r.out.includes(s) && !standing(w, s))
+  const regroups = redeploysOpen(r);
+  const fallen = r.squads.filter((s) => !r.out.includes(s) && !r.regroupAt.has(s) && !standing(w, s))
     .sort((a, b) => teamKills(w, a) - teamKills(w, b) || COLOR_IDS.indexOf(b) - COLOR_IDS.indexOf(a));
   for (const team of fallen) {
-    const place = r.squads.length - r.out.length;
-    r.out.push(team);
+    const place = regroups ? null : r.squads.length - r.out.length;
+    if (regroups) r.regroupAt.set(team, w.now + ROYALE.redeployMs);
+    else r.out.push(team);
     for (const p of w.players.values()) {
       if (p.team !== team) continue;
-      r.redeployAt.delete(p.id);
       if (p.life.k === 'downed') perish(w, r, p, null);
+      r.redeployAt.delete(p.id);
     }
     w.events.push({ e: 'wiped', team, place });
   }

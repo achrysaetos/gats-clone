@@ -7,7 +7,7 @@ import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
@@ -30,9 +30,7 @@ function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: numbe
   p.loadout = loadout;
   resetProgress(p);
   p.lifeKills = 0;
-  const pos = at ?? spawnPoint(w, p.team);
-  p.x = pos.x;
-  p.y = pos.y;
+  moveTo(p, at ?? spawnPoint(w, p.team));
   p.life = freshLife(p, w.now);
 }
 
