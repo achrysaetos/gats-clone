@@ -211,7 +211,6 @@ kbd {
 .servers { display: grid; gap: var(--s2); }
 .server { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; text-align: left; }
 .server .count { color: var(--muted); font-size: var(--t-label); }
-.server .count small { font-size: 11px; }
 .mode { font-size: var(--t-micro); font-weight: 900; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.08em; }
 .mode-ffa { background: #4f4a3a; color: #ffd86a; }
 .mode-tdm { background: #4f4045; color: #ffadb0; }
@@ -219,9 +218,8 @@ kbd {
 .mode-zom { background: #43503d; color: #c3e392; }
 .mode-br { background: #523f5c; color: #dcbcf2; }
 
-.squad { display: grid; gap: var(--s2); }
-.squad-pitch { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); align-items: center; font-size: var(--t-label); color: var(--muted); }
-.invite { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); }
+.squad { display: grid; gap: var(--s2); margin-top: var(--s2); }
+.invite { display: grid; grid-template-columns: 1fr auto auto; gap: var(--s2); }
 .invite input { font-size: var(--t-label); padding: 8px var(--s3); }
 .squad-chip { position: absolute; top: 132px; left: 16px; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px 12px; border-radius: var(--radius); background: var(--panel); font-size: var(--t-label); font-weight: 700; }
 .squad-chip button { padding: 4px 10px; font-size: var(--t-label); }

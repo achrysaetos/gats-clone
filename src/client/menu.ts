@@ -73,6 +73,8 @@ export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name:
   })));
 }
 
+const MODE_NAMES: Record<ServerInfo['mode'], string> = { FFA: 'Free-for-all', TDM: 'Team deathmatch', DOM: 'Domination', BR: 'Last Squad', ZOM: 'Zombies' };
+
 export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string) => void) {
   if (servers === null) {
     root.replaceChildren(el('p', { className: 'muted' }, 'Could not load servers. Retrying…'));
@@ -85,8 +87,8 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   root.replaceChildren(...servers.map((s) => {
     const b = el('button', { type: 'button', className: 'server' },
       el('span', { className: `mode mode-${s.mode.toLowerCase()}` }, s.mode),
-      el('span', { className: 'server-name' }, `Room ${s.id}`),
-      el('span', { className: 'count' }, `${s.players} players`, el('small', {}, ` · ${s.humans} human`)));
+      el('span', { className: 'server-name' }, MODE_NAMES[s.mode]),
+      el('span', { className: 'count' }, `${s.humans} online`));
     b.ariaPressed = String(s.id === selected);
     b.onclick = () => pick(s.id);
     return b;
@@ -97,20 +99,26 @@ type SquadMenu = { code: string | null; selected: boolean; link: string | null; 
 
 /** Starting a squad joins it at once; a squad from an invite link waits to be picked like any room. */
 export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): void; pick(): void }) {
-  const start = el('button', { type: 'button', id: 'squad-start', className: 'secondary', disabled: squad.busy }, squad.busy ? 'Starting…' : squad.code ? 'New squad' : 'Start a squad');
-  start.onclick = on.start;
-  const pitch = el('div', { className: 'squad-pitch' }, el('span', {}, 'Hold the core against the horde with up to three friends.'), start);
-  if (!squad.code || !squad.link) { root.replaceChildren(pitch); return; }
-  const room = el('button', { type: 'button', className: 'server', id: 'squad-room' },
+  const zombies = (id: string, right: string) => el('button', { type: 'button', className: 'server', id },
     el('span', { className: 'mode mode-zom' }, 'ZOM'),
-    el('span', { className: 'server-name' }, `Squad ${squad.code}`),
-    el('span', { className: 'count' }, 'private'));
+    el('span', { className: 'server-name' }, 'Zombies'),
+    el('span', { className: 'count' }, right));
+  if (!squad.code || !squad.link) {
+    const start = zombies('squad-start', squad.busy ? 'Starting…' : 'Start a squad');
+    start.disabled = squad.busy;
+    start.onclick = on.start;
+    root.replaceChildren(start);
+    return;
+  }
+  const room = zombies('squad-room', `Squad ${squad.code}`);
   room.ariaPressed = String(squad.selected);
   room.onclick = on.pick;
   const link = el('input', { id: 'squad-link', readOnly: true, value: squad.link, ariaLabel: 'Invite link' });
-  const copy = el('button', { type: 'button', id: 'squad-copy' }, 'Copy link');
+  const copy = el('button', { type: 'button', id: 'squad-copy' }, 'Copy invite');
   copy.onclick = () => void copyText(link.value, copy);
-  root.replaceChildren(room, el('div', { className: 'invite' }, link, copy), pitch);
+  const fresh = el('button', { type: 'button', id: 'squad-new', disabled: squad.busy }, squad.busy ? 'Starting…' : 'New squad');
+  fresh.onclick = on.start;
+  root.replaceChildren(room, el('div', { className: 'invite' }, link, copy, fresh));
 }
 
 async function copyText(text: string, button: HTMLButtonElement) {
