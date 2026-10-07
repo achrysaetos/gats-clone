@@ -37,7 +37,7 @@ test('the run view times the night by its wave and reports the run once the core
   assert.equal(night.waveLeft, Math.round(NIGHTS[0]!.horde.walker! * ZOM.hordeShare({ humans: 0, bots: 2 })));
   w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
   const none = { walker: 0, brute: 0, runner: 0, plated: 0, bloater: 0, colossus: 0 };
-  w.run!.turretKills = { sentry: { ...none, walker: 7, brute: 1 }, cannon: { ...none, brute: 2 }, scatter: { ...none, runner: 3 }, mortar: none };
+  w.run!.turretKills = { sentry: { ...none, walker: 7, brute: 1 }, cannon: { ...none, brute: 2 }, scatter: { ...none, runner: 3 }, mortar: none, tesla: none };
   w.run!.bastionKills = 5;
   w.run!.core.hp = 0;
   step(w, TICK_MS);
@@ -46,7 +46,7 @@ test('the run view times the night by its wave and reports the run once the core
   assert.equal(over.phaseEndsAt, w.now + ZOM.restartMs);
   assert.deepEqual(over.report, {
     night: 1, won: false, survivors: 0, durationMs: w.now, players: [{ name: p.name, kills: 4, revives: 1, built: 2 }, { name: idle.name, kills: 0, revives: 0, built: 0 }],
-    turretKills: { sentry: 8, cannon: 2, scatter: 3, mortar: 0 }, bastionKills: 5,
+    turretKills: { sentry: 8, cannon: 2, scatter: 3, mortar: 0, tesla: 0 }, bastionKills: 5,
   });
 });
 

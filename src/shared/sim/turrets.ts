@@ -1,14 +1,16 @@
-import { BASTION_GUN, BUILDINGS, ZOM, ZOMBIES, type TurretDef } from '../defs.ts';
+import { BASTION_GUN, BUILDINGS, ZOM, ZOMBIES, type TurretDef, type TurretKind } from '../defs.ts';
+import { levelOf, turretDef } from './build.ts';
 import { MODES } from './modes.ts';
 import { dist2, segmentEntersRectAt, type Rect } from './movement.ts';
+import { damageZombie } from './run.ts';
 import { coverRects, newId, rand, type Run, type Shooter, type World, type Zombie } from './world.ts';
 
-const plateTooThick = (def: TurretDef, z: Zombie) => !def.lobbed && ZOMBIES[z.kind].plate > def.damage / 2;
+const plateTooThick = (def: TurretDef, z: Zombie) => !def.lobbed && !def.arc && ZOMBIES[z.kind].plate > def.damage / 2;
 
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
   const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : 1);
   const inRange = zombies.filter((z) => !plateTooThick(def, z)).map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
-  return inRange.find(({ z }) => def.lobbed || !cover.some((r) => segmentEntersRectAt(x, y, z.x - x, z.y - y, r) !== null))?.z ?? null;
+  return inRange.find(({ z }) => def.lobbed || def.arc || !cover.some((r) => segmentEntersRectAt(x, y, z.x - x, z.y - y, r) !== null))?.z ?? null;
 }
 
 function leadFor(def: TurretDef, target: Zombie, x: number, y: number) {
@@ -36,6 +38,30 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
   if (by.turret !== 'bastion') w.events.push({ e: 'turret', kind: by.turret, x, y, angle: Math.round(aim * 100) / 100, ...(def.lobbed && { reach: Math.round(reach) }) });
 }
 
+/** A coil's arc: from the coil to its target, then on to the nearest zombie within the arc's reach of the last, each jump hitting `falloff` as hard. Cover does not stop it, and plate does not blunt it. */
+function zap(w: World, def: TurretDef & { arc: NonNullable<TurretDef['arc']> }, by: { owner: number; turret: TurretKind }, target: Zombie, x: number, y: number) {
+  const attacker = w.players.get(by.owner) ?? null;
+  const pts = [x, y, target.x, target.y];
+  const hit = new Set<Zombie>([target]);
+  const struck: [Zombie, number][] = [[target, def.damage]];
+  let from = target, damage = def.damage;
+  for (let jump = 0; jump < def.arc.jumps; jump++) {
+    let next: Zombie | null = null, best = def.arc.reach ** 2;
+    for (const z of w.zombies) {
+      const d = dist2(from.x, from.y, z.x, z.y);
+      if (!hit.has(z) && d <= best) { next = z; best = d; }
+    }
+    if (!next) break;
+    damage *= def.arc.falloff;
+    hit.add(next);
+    struck.push([next, damage]);
+    pts.push(next.x, next.y);
+    from = next;
+  }
+  w.events.push({ e: 'coil', x, y, p: pts.map(Math.round) });
+  for (const [z, dmg] of struck) damageZombie(w, z, dmg, attacker, by.turret);
+}
+
 const nextShot = (at: number, now: number, dtMs: number, gapMs: number) => (now - at < dtMs ? at : now) + gapMs;
 
 
@@ -50,12 +76,13 @@ export function tickTurrets(w: World, run: Run, core: { x: number; y: number }, 
     run.bastionFireAt = nextShot(run.bastionFireAt, w.now, dtMs, (BASTION_GUN.fireMs * ZOM.survivors) / run.survivors);
   }
   for (const t of w.buildings) {
-    if (t.kind === 'wall' || t.ammo < 1 || w.now < t.nextFireAt) continue;
-    const def = BUILDINGS[t.kind].turret;
+    if (!('ammo' in t) || t.ammo < 1 || w.now < t.nextFireAt) continue;
+    const def = turretDef(t.kind, levelOf(t));
     const x = (t.cx + 0.5) * ZOM.cell, y = (t.cy + 0.5) * ZOM.cell;
     const target = targetOf(w.zombies, cover, x, y, def);
     if (!target) continue;
-    fire(w, def, { owner: t.owner, label: BUILDINGS[t.kind].name, turret: t.kind }, target, x, y);
+    if (def.arc) zap(w, { ...def, arc: def.arc }, { owner: t.owner, turret: t.kind }, target, x, y);
+    else fire(w, def, { owner: t.owner, label: BUILDINGS[t.kind].name, turret: t.kind }, target, x, y);
     t.ammo--;
     t.nextFireAt = nextShot(t.nextFireAt, w.now, dtMs, def.fireMs);
   }

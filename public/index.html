@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="delight.css">
   <link rel="stylesheet" href="replay.css">
+  <link rel="stylesheet" href="range.css">
 </head>
 <body>
   <canvas id="fx" hidden aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;display:block;pointer-events:none"></canvas>
@@ -27,17 +28,25 @@
         </div>
         <p class="tagline">Top-down arena shooter</p>
       </header>
-      <div class="menu-grid">
+      <nav id="menu-tabs" class="menu-tabs" role="tablist" aria-label="Menu">
+        <button id="tab-deploy" type="button" role="tab" aria-selected="true">Deploy</button>
+        <button id="tab-armory" type="button" role="tab" aria-selected="false">Armory</button>
+        <button id="tab-challenges" type="button" role="tab" aria-selected="false">Challenges <i id="chal-badge" class="tab-badge" hidden></i></button>
+      </nav>
+      <div id="deploy-panel" class="menu-grid">
         <form id="play-form" class="panel play">
           <label class="field">
             <span>Name <a id="my-profile" class="field-link" href="profile.html">Your service record ›</a></span>
             <input id="name" maxlength="16" autocomplete="nickname" placeholder="Unnamed" spellcheck="false">
           </label>
+          <div id="level-card" class="level-card" aria-label="Account level"></div>
           <div id="loadout-menu" class="loadout"></div>
           <h2>Server</h2>
           <div id="servers" class="servers"></div>
           <h2>Zombies</h2>
           <div id="squad" class="squad"></div>
+          <h2>Shooting range</h2>
+          <div id="range-card" class="range-card"></div>
           <div class="play-actions">
             <p id="menu-status" class="status" role="status"></p>
             <button id="play" type="submit" class="primary">Deploy</button>
@@ -52,6 +61,8 @@
           </section>
         </aside>
       </div>
+      <section id="armory" class="panel armory" hidden aria-label="Armory"></section>
+      <section id="challenges" class="panel challenges" hidden aria-label="Challenges"></section>
       <footer class="menu-footer"><a href="profile.html">Look up a player</a> · <a href="privacy.html">Privacy</a></footer>
     </div>
   </main>
@@ -71,6 +82,7 @@
     <div class="rotate-hint" role="status"><span aria-hidden="true">&#8635;</span>Turn your phone sideways to play</div>
     <div id="banner" class="banner" hidden></div>
     <div id="report" class="banner report" hidden></div>
+    <aside id="xp-card" class="xp-card" hidden aria-live="polite"></aside>
     <div id="objective" class="objective" role="status" hidden></div>
     <div id="reconnect" class="reconnect" role="status" hidden></div>
     <div id="death" class="death" hidden>

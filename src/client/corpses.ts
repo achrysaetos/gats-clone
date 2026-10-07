@@ -1,7 +1,11 @@
-import { GUNS, WORLD, ZOMBIE_KINDS, ZOMBIES, type GunId, type ZombieKind } from '../shared/defs.ts';
-import { INK, shade, ZOMBIE_LOOK } from './palette.ts';
+import { GUNS, WORLD, ZOMBIES, type GunId, type ZombieKind } from '../shared/defs.ts';
+import { INK } from './palette.ts';
 import { drawDroppedGun } from './gunart.ts';
 import { drawFallenSoldier } from './bodies.ts';
+import type { Cos } from '../shared/cosmetics.ts';
+import { cosLook } from './cosmeticlook.ts';
+import { drawZombieRemains } from './zombieart.ts';
+import { newSpriteFrame } from './zombiekit.ts';
 
 /**
  * A fallen player left where they died, on the map they died on, drawn as plainly dead until it fades.
@@ -10,6 +14,8 @@ import { drawFallenSoldier } from './bodies.ts';
 export type Corpse = {
   victim: number; x: number; y: number; angle: number; color: string; gun: GunId; map: string; born: number;
   blow: number | null; blast: boolean;
+  /** What the fallen wore (helmet, camo, gun skin), so the dead keep their look and their gun's finish. */
+  cos?: Cos;
 };
 
 /**
@@ -129,7 +135,7 @@ function drawGunAt(ctx: CanvasRenderingContext2D, c: Corpse, gun: { x: number; y
   ctx.save();
   ctx.translate(gun.x, gun.y);
   ctx.rotate(gun.angle);
-  drawDroppedGun(ctx, c.gun, 0, 0);
+  drawDroppedGun(ctx, c.gun, 0, 0, cosLook(c.cos).skin);
   ctx.restore();
 }
 
@@ -137,7 +143,7 @@ function drawBody(ctx: CanvasRenderingContext2D, c: Corpse, at: { x: number; y: 
   const fall = c.angle + (seeded(c, 14) - 0.5) * 1.2;
   // The soldier lies where they fell, greyed out, arms flung wide and the head lolled, then crossed out.
   drawFallenSoldier(ctx, deadHex(c.color, c.blast), at.x, at.y, R, {
-    angle: fall, splay: [(seeded(c, 17) - 0.3) * 1.1, (seeded(c, 18) - 0.3) * 1.1], loll: (seeded(c, 19) - 0.5) * 0.3, scale: 1 + 0.12 * (1 - drop),
+    angle: fall, splay: [(seeded(c, 17) - 0.3) * 1.1, (seeded(c, 18) - 0.3) * 1.1], loll: (seeded(c, 19) - 0.5) * 0.3, scale: 1 + 0.12 * (1 - drop), helmet: cosLook(c.cos).helmet, camo: cosLook(c.cos).camo,
   }, pxPerUnit);
   const arm = R * (0.32 + seeded(c, 16) * 0.06);
   ctx.save();
@@ -191,7 +197,6 @@ export const ZOMBIE_CORPSE = { cap: 600, poolMs: 900, dawnFadeMs: 2_500 } as con
 /** Zombie corpses only lie at night, so they are drawn over the night shade in tones that read on the dark floor. */
 const ICHOR = 'rgba(96, 138, 44, 0.72)';
 const ICHOR_DARK = 'rgba(58, 88, 26, 0.8)';
-const DEAD_EYE = 'rgba(236, 240, 226, 0.92)';
 
 export const addZombieCorpse = (corpses: readonly ZombieCorpse[], c: ZombieCorpse): ZombieCorpse[] => [...corpses, c].slice(-ZOMBIE_CORPSE.cap);
 
@@ -216,7 +221,7 @@ const zSeeded = (c: ZombieCorpse, k: number) => {
  * Dead zombies lie in dark ichor sprayed away from the hit that killed them, limbs splayed, eyes crossed out. Drawn in a few
  * batched passes per kind, since a night leaves hundreds.
  */
-export function drawZombieCorpses(ctx: CanvasRenderingContext2D, corpses: readonly ZombieCorpse[], alpha: number, now: number) {
+export function drawZombieCorpses(ctx: CanvasRenderingContext2D, corpses: readonly ZombieCorpse[], alpha: number, now: number, pxPerUnit = 1) {
   if (!corpses.length || alpha <= 0) return;
   const grow = (c: ZombieCorpse) => 0.4 + 0.6 * Math.min(1, Math.max(0, now - c.born) / ZOMBIE_CORPSE.poolMs);
   ctx.globalAlpha = alpha;
@@ -238,78 +243,8 @@ export function drawZombieCorpses(ctx: CanvasRenderingContext2D, corpses: readon
     }
     ctx.fill();
   }
-  // Limbs first, then every body's outline, then every body's fill over all the outlines: a pile of the dead merges into one
-  // blob with a single outline instead of overlapping rings.
-  const kinds = ZOMBIE_KINDS.map((kind) => ({ kind, mine: corpses.filter((c) => c.kind === kind) })).filter((k) => k.mine.length);
-  for (const { kind, mine } of kinds) {
-    const r = ZOMBIES[kind].radius;
-    ctx.fillStyle = shade(ZOMBIE_LOOK[kind].arm, 0.7);
-    ctx.beginPath();
-    for (const c of mine) {
-      // Limbs splayed at random, one sometimes torn off and lying apart.
-      for (let i = 0; i < 2; i++) {
-        const a = zSeeded(c, 40 + i) * Math.PI * 2, d = r * (i === 1 && zSeeded(c, 44) < 0.3 ? 1.9 : 1.05), lr = r * 0.36;
-        ctx.moveTo(c.x + Math.cos(a) * d + lr, c.y + Math.sin(a) * d);
-        ctx.arc(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, lr, 0, Math.PI * 2);
-      }
-    }
-    ctx.fill();
-  }
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  for (const c of corpses) {
-    const r = ZOMBIES[c.kind].radius;
-    ctx.moveTo(c.x + r, c.y);
-    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-  }
-  ctx.stroke();
-  for (const { kind, mine } of kinds) {
-    const r = ZOMBIES[kind].radius;
-    ctx.fillStyle = shade(ZOMBIE_LOOK[kind].body, 0.72);
-    ctx.beginPath();
-    for (const c of mine) {
-      ctx.moveTo(c.x + r, c.y);
-      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-    }
-    ctx.fill();
-  }
-  // Eyes only where no later corpse lies over them.
-  ctx.strokeStyle = DEAD_EYE;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  // Corpses bucketed in a coarse grid, so each eye is checked only against its neighbours.
-  const cell = 2 * ZOMBIES.colossus.radius;
-  const grid = new Map<string, number[]>();
-  corpses.forEach((c, n) => {
-    const key = `${Math.floor(c.x / cell)},${Math.floor(c.y / cell)}`;
-    const bucket = grid.get(key);
-    if (bucket) bucket.push(n);
-    else grid.set(key, [n]);
-  });
-  const coveredLater = (n: number, ex: number, ey: number) => {
-    const gx = Math.floor(ex / cell), gy = Math.floor(ey / cell);
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const m of grid.get(`${gx + dx},${gy + dy}`) ?? []) {
-        const o = corpses[m]!;
-        if (m > n && (o.x - ex) ** 2 + (o.y - ey) ** 2 < ZOMBIES[o.kind].radius ** 2) return true;
-      }
-    }
-    return false;
-  };
-  corpses.forEach((c, n) => {
-    const r = ZOMBIES[c.kind].radius;
-    const face = zSeeded(c, 50) * Math.PI * 2, e = r * 0.16;
-    for (const side of [-1, 1]) {
-      const ex = c.x + Math.cos(face + side * 0.45) * r * 0.5, ey = c.y + Math.sin(face + side * 0.45) * r * 0.5;
-      if (coveredLater(n, ex, ey)) continue;
-      ctx.moveTo(ex - e, ey - e);
-      ctx.lineTo(ex + e, ey + e);
-      ctx.moveTo(ex + e, ey - e);
-      ctx.lineTo(ex - e, ey + e);
-    }
-  });
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  // The dead themselves: each toppled along its killing blow in its own torn kit (zombieart.ts), oldest first so a pile layers.
+  newSpriteFrame();
+  for (const c of corpses) drawZombieRemains(ctx, c.kind, c.id, c.x, c.y, c.blow, now - c.born, pxPerUnit);
   ctx.globalAlpha = 1;
 }

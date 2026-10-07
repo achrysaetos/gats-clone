@@ -1,4 +1,4 @@
-import { WORLD } from '../defs.ts';
+import { KNOCK, WORLD } from '../defs.ts';
 import type { Dash, InputState } from '../protocol.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -76,7 +76,25 @@ function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: numbe
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
-export type Motion = { x: number; y: number; dash: Dash | null };
+/** A shove still bleeding off, in px/s (see `KNOCK`). */
+export type Knock = { vx: number; vy: number };
+export type Motion = { x: number; y: number; dash: Dash | null; knock?: Knock | null };
+
+/** Adds a shove of `mag` px/s along (dirX, dirY) to whatever one is running, the sum held to `cap`. */
+export function addKnock(k: Knock | null | undefined, dirX: number, dirY: number, mag: number, cap: number): Knock {
+  const len = Math.hypot(dirX, dirY);
+  let vx = (k?.vx ?? 0) + (len > 0 ? (dirX / len) * mag : 0), vy = (k?.vy ?? 0) + (len > 0 ? (dirY / len) * mag : 0);
+  const speed = Math.hypot(vx, vy);
+  if (speed > cap) { vx = (vx / speed) * cap; vy = (vy / speed) * cap; }
+  return { vx, vy };
+}
+
+/** A shove after `dtMs` of bleeding off, or null once it is too slow to matter. */
+export function decayKnock(k: Knock, dtMs: number): Knock | null {
+  const f = Math.exp(-dtMs / KNOCK.tauMs);
+  const vx = k.vx * f, vy = k.vy * f;
+  return Math.hypot(vx, vy) < KNOCK.floor ? null : { vx, vy };
+}
 
 const keyAxes = (keys: MoveKeys) => ({ mx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0), my: (keys.down ? 1 : 0) - (keys.up ? 1 : 0) });
 
@@ -132,7 +150,16 @@ export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point
   return { x, y, victim };
 }
 
+/** Walking, dashing and being shoved: the shove slides through the same collision as a step, so nobody is pushed into a wall. */
 export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number, size: number): Motion {
+  const walked = walkStep(solids, from, keys, speed, dtMs, size);
+  const k = from.knock;
+  if (!k) return walked;
+  const at = slide(solids, walked.x, walked.y, (k.vx * dtMs) / 1000, (k.vy * dtMs) / 1000, WORLD.playerRadius, size);
+  return { ...walked, x: at.x, y: at.y, knock: decayKnock(k, dtMs) };
+}
+
+function walkStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number, size: number): Motion {
   const { dash } = from;
   if (dash) {
     const d = (DASH_DISTANCE * Math.min(dtMs, dash.leftMs)) / DASH_MS;

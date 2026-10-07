@@ -6,7 +6,7 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, hpOf, offerPerks, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
 const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
@@ -35,6 +35,7 @@ test('four kills and ten crates in one life open the ability pick', () => {
   assert.deepEqual(pendingOf(w, a), { level: 5, k: 'evolve' }, 'the score is past the last level, and its evolve comes before the unchosen perks');
   assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
   assert.ok(choosePick(w, a.id, 2, 'lightweight'));
+  offerPerks(a, 'thickSkin');
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
   assert.deepEqual(pendingOf(w, a), { level: 4, k: 'perk', tier: 3 }, 'the ability pick is open');
 });
@@ -52,7 +53,7 @@ test('picks open in ladder order: evolve, perk, perk, ability, evolve', () => {
     assert.equal(pendingOf(w, a), null, 'one pick per level');
   }
   assert.deepEqual(seen, [
-    { level: 1, k: 'evolve' }, { level: 2, k: 'perk', tier: 1 }, { level: 3, k: 'perk', tier: 2 }, { level: 4, k: 'perk', tier: 3 }, { level: 5, k: 'evolve' },
+    { level: 1, k: 'evolve' }, { level: 2, k: 'perk', tier: 1 }, { level: 3, k: 'perk', tier: 2, offer: a.tier2Offer }, { level: 4, k: 'perk', tier: 3 }, { level: 5, k: 'evolve' },
   ]);
   assert.equal(gunOf(w, a), 'hailstorm', 'pistol, then machine pistol, then its second branch');
 });
@@ -81,6 +82,7 @@ test('a stale, duplicate or foreign pick changes nothing', () => {
   assert.ok(choosePick(w, a.id, 1, 'machinePistol'));
   assert.equal(choosePick(w, a.id, 1, 'handCannon'), false, 'a second evolve for the same level');
   assert.equal(gunOf(w, a), 'machinePistol');
+  offerPerks(a, 'shield');
   assert.equal(choosePick(w, a.id, 2, 'shield'), false, 'a tier 2 perk does not fill tier 1');
   assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'a gun does not fill a perk pick');
   assert.ok(choosePick(w, a.id, 2, 'lightweight'));
@@ -91,7 +93,7 @@ test('a stale, duplicate or foreign pick changes nothing', () => {
   assert.deepEqual(pendingOf(w, a), { level: 5, k: 'evolve' }, 'an evolve reached while perks are still unchosen is offered first');
   assert.equal(choosePick(w, a.id, 3, 'shield'), false, 'the perk waits behind it');
   assert.ok(choosePick(w, a.id, 5, 'hailstorm'));
-  assert.deepEqual(pendingOf(w, a), { level: 3, k: 'perk', tier: 2 }, 'then the perks, in ladder order');
+  assert.deepEqual(pendingOf(w, a), { level: 3, k: 'perk', tier: 2, offer: a.tier2Offer }, 'then the perks, in ladder order');
 });
 
 test('evolving swaps in the new gun with its own stats and keeps the loaded share of the magazine', () => {
@@ -127,6 +129,7 @@ test('a max-health perk keeps the share of health you had, not a free heal', () 
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   a.level = 3;
+  offerPerks(a, 'thickSkin');
   assert.ok(choosePick(w, a.id, 1, 'handCannon'));
   assert.ok(choosePick(w, a.id, 2, 'lightweight'));
   if (a.life.k === 'alive') a.life.hp = WORLD.baseHp / 2;

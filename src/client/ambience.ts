@@ -78,6 +78,9 @@ let shade: HTMLCanvasElement | null = null;
  * Night: the world under a cold blue shade with soft holes cut where light falls. The shade is painted at 1/4 scale on a
  * small canvas and stretched over the view, which also softens every edge for free. Players carry a lamp and a wider
  * beam toward their aim, turrets glow amber, and the core is a hearth.
+ *
+ * This is the fallback path. When the shader pass runs its lighting (lighting.ts, lightgl.ts), drawWorld skips this shade
+ * and lightfeed.ts feeds the same lamps, with shadows, to the GL light buffer instead; the vignette is likewise the shaders'.
  */
 export function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, dark: number, lights: readonly Light[]) {
   const vw = br.x - tl.x, vh = br.y - tl.y;
@@ -140,7 +143,7 @@ export function drawNight(ctx: CanvasRenderingContext2D, tl: Point, br: Point, d
 export function nightLights(snap: Snapshot, selfId: number, selfAngle: number | null): Light[] {
   const lights: Light[] = [];
   for (const p of snap.players) if (p.alive && !p.hidden) lights.push({ x: p.x, y: p.y, r: 210, angle: p.id === selfId && selfAngle !== null ? selfAngle : p.angle });
-  for (const b of snap.buildings ?? []) if (b.kind !== 'wall') lights.push({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell, r: 190, warm: true });
+  for (const b of snap.buildings ?? []) if ('ammo' in b) lights.push({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell, r: 190, warm: true });
   if (snap.run) lights.push({ x: snap.run.core.x, y: snap.run.core.y, r: 380, warm: true });
   return lights;
 }

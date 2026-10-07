@@ -1,7 +1,8 @@
-import { WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
+import { PROP_FX, WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
+import { knifeTargets } from './targets.ts';
 import { circleHitsRect, clamp, dist2, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
 import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 
@@ -11,13 +12,45 @@ export const GRENADE_FUSE_MS = 900;
 export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
 const THROW_SPEED = 700;
 
-function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade') {
+/** A flashbang: blinds up to `maxMs` anyone within `radius` with a clear line, less with distance and when facing away. */
+export const FLASH = { fuseMs: 700, radius: 360, maxMs: 3000, farMul: 0.2, awayMul: 0.35, whiteMs: 1500 } as const;
+/** A smoke grenade: a cloud of `radius` that blooms over `bloomMs`, lasts `lifeMs` and thins over its last `thinMs`; inside it you see `sightPx`. */
+export const SMOKE = { fuseMs: 800, radius: 180, lifeMs: 10000, bloomMs: 700, thinMs: 2500, sightPx: 110, driftPx: 7 } as const;
+
+/** 0..1 how blinded `p` is: full while more than `FLASH.whiteMs` of it remains, then fading out. */
+export function flashAmount(p: Player, now: number): number {
+  if (!p.flash || p.life.k !== 'alive') return 0;
+  return Math.min(1, Math.max(0, p.flash.until - now) / FLASH.whiteMs);
+}
+
+/** How long a burst at (x, y) blinds `p`, in ms: 0 outside `FLASH.radius` or with a wall between. */
+export function flashMs(w: World, p: Player, x: number, y: number): number {
+  const d = Math.hypot(p.x - x, p.y - y);
+  if (d > FLASH.radius) return 0;
+  if (solidRects(w).some((b) => segmentEntersRectAt(x, y, p.x - x, p.y - y, b) !== null)) return 0;
+  const toward = d < 1 ? p.angle : Math.atan2(y - p.y, x - p.x);
+  const facing = FLASH.awayMul + (1 - FLASH.awayMul) * (1 + Math.cos(toward - p.angle)) / 2;
+  return FLASH.maxMs * (1 - (1 - FLASH.farMul) * (d / FLASH.radius)) * facing;
+}
+
+function flashPlayers(w: World, x: number, y: number) {
+  for (const p of w.players.values()) {
+    if (p.life.k !== 'alive') continue;
+    const ms = flashMs(w, p, x, y);
+    if (ms <= 0) continue;
+    const until = Math.max(p.flash?.until ?? 0, w.now + ms);
+    p.flash = { until, ms: until - w.now };
+  }
+  w.events.push({ e: 'flashburst', x, y, r: FLASH.radius });
+}
+
+function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade' | 'flashbang' | 'smokeGrenade', fuseMs = GRENADE_FUSE_MS) {
   return (w: World, p: Player) => {
-    const travel = clamp(p.input.aimDist, 60, THROW_SPEED * (GRENADE_FUSE_MS / 1000));
-    const speed = travel / (GRENADE_FUSE_MS / 1000);
+    const travel = clamp(p.input.aimDist, 60, THROW_SPEED * (fuseMs / 1000));
+    const speed = travel / (fuseMs / 1000);
     w.thrown.push({
       id: newId(w), kind, owner: p.id, team: p.team, x: p.x, y: p.y,
-      vx: Math.cos(p.angle) * speed, vy: Math.sin(p.angle) * speed, explodeAt: w.now + GRENADE_FUSE_MS,
+      vx: Math.cos(p.angle) * speed, vy: Math.sin(p.angle) * speed, explodeAt: w.now + fuseMs,
     });
     return true;
   };
@@ -30,6 +63,8 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
   gasGrenade: throwGrenade('gasGrenade'),
+  flashbang: throwGrenade('flashbang', FLASH.fuseMs),
+  smokeGrenade: throwGrenade('smokeGrenade', SMOKE.fuseMs),
   landMine: (w, p) => {
     const mines = w.thrown.filter((t) => t.kind === 'landMine' && t.owner === p.id);
     if (mines.length >= MAX_MINES) w.thrown = w.thrown.filter((t) => t !== mines[0]);
@@ -42,6 +77,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
         x: v.x, y: v.y, strike: () => damagePlayer(w, v, KNIFE_DAMAGE, { attacker: p, team: p.team, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y }),
       })),
       ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => damageZombie(w, z, KNIFE_DAMAGE, p) })),
+      ...knifeTargets(w, p, KNIFE_DAMAGE),
     ];
     const { x, y, victim } = knifeLunge(solidRects(w), p, p.angle, targets, MAPS[w.map].size);
     p.x = x;
@@ -75,13 +111,19 @@ export function tickThrown(w: World, dt: number) {
     switch (t.kind) {
       case 'grenade':
       case 'fragGrenade':
-      case 'gasGrenade': {
+      case 'gasGrenade':
+      case 'flashbang':
+      case 'smokeGrenade': {
         const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
         if (coverRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.vx = 0; t.vy = 0; }
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
         if (t.kind === 'grenade') explode(w, t.x, t.y, BLAST_RADIUS.grenade, 80, { ...by, label: 'Grenade' });
-        else if (t.kind === 'fragGrenade') {
+        else if (t.kind === 'flashbang') flashPlayers(w, t.x, t.y);
+        else if (t.kind === 'smokeGrenade') {
+          const a = t.id * 2.399, drift = SMOKE.driftPx * (0.6 + 0.4 * Math.sin(t.id * 1.7));
+          keep.push({ id: t.id, kind: 'smokeCloud', owner: t.owner, team: t.team, x: t.x, y: t.y, vx: Math.cos(a) * drift, vy: Math.sin(a) * drift, bornAt: w.now, expiresAt: w.now + SMOKE.lifeMs });
+        } else if (t.kind === 'fragGrenade') {
           explode(w, t.x, t.y, BLAST_RADIUS.fragGrenade, 40, { ...by, label: 'Frag' });
           for (let i = 0; i < 16; i++) {
             const a = (i / 16) * Math.PI * 2;
@@ -105,6 +147,13 @@ export function tickThrown(w: World, dt: number) {
         else keep.push(t);
         break;
       }
+      case 'smokeCloud': {
+        if (w.now >= t.expiresAt) break;
+        const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
+        if (!coverRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.x = nx; t.y = ny; }
+        keep.push(t);
+        break;
+      }
       case 'gasCloud': {
         if (w.now >= t.expiresAt) break;
         for (const p of w.players.values()) {
@@ -113,6 +162,16 @@ export function tickThrown(w: World, dt: number) {
           }
         }
         for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < GAS_RADIUS ** 2) damageZombie(w, z, 14 * dt, owner);
+        keep.push(t);
+        break;
+      }
+      case 'fireSlick': {
+        if (w.now >= t.expiresAt) break;
+        const r2 = PROP_FX.oil.radius ** 2;
+        for (const p of w.players.values()) {
+          if (dist2(p.x, p.y, t.x, t.y) < r2) damagePlayer(w, p, PROP_FX.oil.dps * dt, { ...by, label: 'Fire', piercing: true, via: 'gas', medal: 'arsonist', fromX: t.x, fromY: t.y });
+        }
+        for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < r2) damageZombie(w, z, PROP_FX.oil.dps * dt, owner);
         keep.push(t);
         break;
       }

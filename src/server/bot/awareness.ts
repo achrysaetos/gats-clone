@@ -3,6 +3,8 @@ import { VIEW_ASPECT, viewExtents, type PlayerView, type SelfView, type Snapshot
 import type { Rect } from '../../shared/sim/movement.ts';
 import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
+import { FLASH } from '../../shared/sim/abilities.ts';
+import { sightBlocked, type Smoke } from '../../shared/sim/vision.ts';
 import { clearShot, dist, type Point } from './nav.ts';
 
 type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
@@ -14,9 +16,11 @@ export type Awareness = {
   heard: readonly Lead[];
   mates: readonly { id: number; x: number; y: number }[];
   hitTick: number;
+  /** Flashbangs this bot has had in sight, and when each first came into view, so it can "notice" one after a reaction delay. */
+  nades?: readonly { id: number; tick: number }[];
 };
 
-export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity });
+export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity, nades: [] });
 
 export type Threat = { p: PlayerView; d: number };
 
@@ -34,6 +38,23 @@ export type Perception = {
   zones: readonly ZoneView[];
   solids: readonly Rect[];
   allies: readonly Point[];
+  /** How flashed the bot is, from the same server flash state a human's screen shows (0 clear, 1 whiteout). */
+  flash: number;
+  /** Smoke clouds in sight, as `snap.thrown` shows them. */
+  smokes: readonly Smoke[];
+  /** A flashbang it has noticed in the air and has a line to, which it should look away from. */
+  incomingFlash: Point | null;
+};
+
+/** At this much flash a bot sees nothing at all: no new sightings, no minimap, no ears. Below it vision is back but its aim is still ruined. */
+export const BLIND_AT = 0.2;
+const NOTICE_ODDS = 0.6;
+const NOTICE_MS = 250;
+
+/** Whether this bot spots this throw at all: hashed from the grenade and the bot, so it leaves the random stream alone. A thrower always knows. */
+const noticesThrow = (id: number, me: number) => {
+  const v = Math.sin(id * 12.9898 + me * 78.233) * 43758.5453;
+  return v - Math.floor(v) < NOTICE_ODDS;
 };
 
 const FORGET_MS = 8000;
@@ -60,8 +81,11 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const sight = viewExtents(snap.self.viewRadius, VIEW_ASPECT.max);
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
   const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH && clearShot(solids, me, p);
-  const standing = snap.players.filter((p) => p.alive && inSight(p));
-  const threats = (standing.length || !snap.royale ? standing : snap.players.filter((p) => p.downed && inSight(p)))
+  // A flashed bot is blind: whatever the snapshot holds, it takes in no new sighting. Only stale memory (`prev.contacts`) is left.
+  const flash = snap.self.flash ?? 0;
+  const blind = flash > BLIND_AT;
+  const standing = blind ? [] : snap.players.filter((p) => p.alive && inSight(p));
+  const threats = (standing.length || !snap.royale || blind ? standing : snap.players.filter((p) => p.downed && inSight(p)))
     .map((p) => ({ p, d: dist(p, me) }))
     .sort((a, b) => danger(b.p) - danger(a.p) || a.d - b.d);
 
@@ -85,7 +109,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const heardNow: Lead[] = [];
   let hitTick = prev.hitTick;
   for (const e of snap.events) {
-    if (e.e === 'shot' && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= SILENCED_HEARING_PX)) heardNow.push({ x: e.x, y: e.y, tick, hunted: false });
+    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= SILENCED_HEARING_PX)) heardNow.push({ x: e.x, y: e.y, tick, hunted: false });
     else if (e.e === 'dmg' && e.kind === 'player' && e.victim === me.id) hitTick = tick;
     else if (e.e === 'kill') {
       const mate = prev.mates.find((m) => m.id === e.victimId);
@@ -93,19 +117,24 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     }
   }
   const heard = [...heardNow, ...prev.heard.filter((h) => (tick - h.tick) * TICK_MS < HEARD_MS && !heardNow.some((n) => dist(n, h) < 100))];
-  const marks: Lead[] = snap.minimap
+  const marks: Lead[] = blind ? [] : snap.minimap
     .filter((m) => me.team === null || m.team !== me.team)
     .map((m) => ({ x: m.x, y: m.y, tick, hunted: m.pingAge !== null }));
   const leads = [...marks, ...heard];
   const nearest = (xs: readonly Lead[]) => xs.reduce<Lead | null>((best, l) => (best && dist(best, me) <= dist(l, me) ? best : l), null);
   const lead = nearest(leads.filter((l) => l.hunted)) ?? nearest(leads);
 
+  const flashes = snap.thrown.filter((t) => t.kind === 'flashbang' && dist(t, me) <= FLASH.radius + 120 && clearShot(solids, me, t));
+  const nades = flashes.map((t) => ({ id: t.id, tick: prev.nades?.find((n) => n.id === t.id)?.tick ?? tick }));
+  const noticed = flashes.find((t) => (t.owner === me.id || noticesThrow(t.id, me.id)) && (tick - (nades.find((n) => n.id === t.id)?.tick ?? tick)) * TICK_MS >= (t.owner === me.id ? 0 : NOTICE_MS));
   const lastSeen = live.filter((c) => !seen.has(c.id)).reduce<Contact | null>((best, c) => (best && best.seenTick >= c.seenTick ? best : c), null);
   return {
-    awareness: { contacts: live, heard, mates, hitTick },
+    awareness: { contacts: live, heard, mates, hitTick, nades },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
       threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS || snap.self.suppression >= SUPPRESSED_UNDER_FIRE, zones: snap.zones, solids, allies: mates,
+      flash, incomingFlash: noticed ? { x: noticed.x, y: noticed.y } : null,
+      smokes: snap.thrown.filter((t) => t.kind === 'smokeCloud').map((t) => ({ x: t.x, y: t.y, r: t.r })),
     },
   };
 }

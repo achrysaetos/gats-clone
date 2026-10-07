@@ -110,6 +110,13 @@ export const MODES: Record<ModeId, ModeRules> = {
     tick: tickRun,
     winner: () => null,
   },
+  // A private practice room: one player, no teams, no score, no end. The targets live in sim/targets.ts.
+  RNG: {
+    assignTeam: () => null,
+    onKill: () => {},
+    tick: () => {},
+    winner: () => null,
+  },
   BR: {
     assignTeam: (w) => emptiestSquad(w),
     onKill: royaleKill,
@@ -128,7 +135,7 @@ function changeMap(w: World) {
     const at = spawnPoint(w, p.team);
     p.x = at.x;
     p.y = at.y;
-    if (p.life.k === 'alive') p.life.dash = null;
+    if (p.life.k === 'alive') { p.life.dash = null; p.life.knock = null; }
   }
 }
 
@@ -159,7 +166,7 @@ function startRound(w: World) {
     if (p.life.k === 'alive') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
     p.lifeKills = 0;
     p.feats = freshFeats();
-    resetProgress(p);
+    resetProgress(p, w);
     p.kills = 0;
     p.deaths = 0;
     if (p.life.k === 'alive') p.life = freshLife(p, w.now);

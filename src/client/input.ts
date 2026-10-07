@@ -1,6 +1,6 @@
 import type { InputState } from '../shared/protocol.ts';
 
-export type Action = 'up' | 'down' | 'left' | 'right' | 'reload' | 'ability' | 'use';
+export type Action = 'up' | 'down' | 'left' | 'right' | 'reload' | 'ability' | 'use' | 'sprint';
 
 /** KeyboardEvent.code -> held action. Layout-independent so WASD stays in place on AZERTY. */
 const KEY_BINDINGS: Readonly<Record<string, Action>> = {
@@ -11,6 +11,7 @@ const KEY_BINDINGS: Readonly<Record<string, Action>> = {
   KeyR: 'reload',
   Space: 'ability',
   KeyE: 'use',
+  ShiftLeft: 'sprint', ShiftRight: 'sprint',
 };
 
 export const actionForKey = (code: string): Action | null => (Object.hasOwn(KEY_BINDINGS, code) ? KEY_BINDINGS[code]! : null);
@@ -26,13 +27,16 @@ export const perkKeyLabel = (slot: number) => PERK_KEYS[slot]?.slice(5) ?? '';
 
 export const CONTROLS: readonly [string, string][] = [
   ['WASD', 'Move'],
+  ['Shift', 'Hold to sprint, about 35% faster; the gun is lowered, so a click ends the sprint, and your aim takes about 2s to settle (touch: push the move stick out to its outer ring)'],
   ['Mouse', 'Aim'],
   ['Left click', 'Fire'],
   ['R', 'Reload'],
   ['Space', 'Ability'],
   ['1-9, 0', 'Pick perk or evolution'],
-  ['B', 'Zombies: build walls and turrets by day, 1-3 to pick'],
+  ['B', 'Zombies: build by day; 1-9 pick (1 again, Q or the wheel steps wall tiers), right click takes down'],
+  ['U', 'Zombies: upgrade the wall, turret or utility under the cursor (or nearest, outside build mode)'],
   ['E', 'Zombies: hold to revive, repair or reload'],
+  ['L', 'Shooting range: open the loadout panel (any gun, evolution, armor and perk)'],
   ['Tab', 'Hold for the whole leaderboard'],
   ['Enter', 'Chat'],
   ['T', 'Hold for the emote wheel, flick toward a plate, let go'],
@@ -56,5 +60,6 @@ export function assembleInput(held: ReadonlySet<Action>, firing: boolean, shots:
     reload: held.has('reload'),
     ability: held.has('ability'),
     use: held.has('use'),
+    sprint: held.has('sprint'),
   };
 }

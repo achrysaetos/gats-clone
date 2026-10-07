@@ -47,6 +47,8 @@ function humanInput(w: World, h: Player, phase: number): InputState {
     ability: (w.tick + phase) % 37 === 0,
     aimDist: Math.min(dist, 500),
     use: false,
+    // Far from any enemy the scripted players sprint in bursts, so the replay covers sprint speed, the lowered gun and the settle.
+    sprint: dist > 500 && Math.floor((w.tick + phase) / 40) % 2 === 0,
   };
 }
 

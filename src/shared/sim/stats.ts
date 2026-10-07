@@ -1,11 +1,13 @@
 import {
-  ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SUPPRESSION, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
-import type { Life, PerkOfTier, Player, World } from './world.ts';
+import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
 type PerkMods = {
   spreadMul?: number; pelletSpreadMul?: number; reloadMul?: number; magMul?: number; rangeMul?: number; speedMul?: number;
   maxHpAdd?: number; regenMul?: number; regenDelayMul?: number; viewMul?: number;
+  /** Sprint speed, post-sprint settle length, spray bloom build and recovery rate, ability cooldown, all as multipliers. */
+  sprintMul?: number; settleMul?: number; bloomBuildMul?: number; bloomRecoverMul?: number; cooldownMul?: number;
   piercing?: true; silenced?: true; shield?: true; thermal?: true; ghillie?: true;
 };
 
@@ -24,28 +26,54 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   shield: { shield: true },
   thickSkin: { maxHpAdd: 40 },
   firstAid: { regenMul: 3, regenDelayMul: 0.4 },
-  grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {},
+  marathon: { sprintMul: 1.15, settleMul: 0.5 },
+  steadyHands: { bloomBuildMul: 0.6, bloomRecoverMul: 1.6, settleMul: 0.75 },
+  secondWind: {}, adrenaline: {}, bloodlust: {}, ninja: {}, demolitions: {}, tracker: {}, brace: {},
+  recon: { viewMul: 1.15 },
+  overclock: { cooldownMul: 0.7 },
+  fastHands: { reloadMul: 0.75 },
+  grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {}, flashbang: {}, smokeGrenade: {},
 };
 
+/** Tuning for the perks that act on events rather than stats. */
+export const PERK_RULES = {
+  adrenaline: { speedMul: 1.2, ms: 3000 },
+  secondWind: { belowHp: 0.25, speedMul: 1.3, ms: 2000, damageMul: 0.5 },
+  bloodlust: { healShare: 0.15 },
+  ninja: { revealMul: 0.5 },
+  demolitions: { dealtMul: 1.3, radiusMul: 1.3, takenMul: 0.7 },
+  tracker: { ms: 4000 },
+  brace: { takenMul: 0.4, dealtMul: 1.15 },
+} as const;
+
+export const hasPerk = (p: Pick<Player, 'perks'>, perk: PerkId): boolean => Object.values(p.perks).includes(perk);
+
 type Stats = {
-  speed: number; maxHp: number; mag: number; range: number; reloadMs: number; regenPerSec: number; regenDelayMs: number;
+  speed: number; sprintSpeed: number; settleMs: number; maxHp: number; mag: number; range: number; reloadMs: number; regenPerSec: number; regenDelayMs: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
 /** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. */
-export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0): number {
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0): number {
   const rules = rulesOf(GUNS[gun]);
-  if (still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint) return 0;
-  let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot);
+  if (still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05) return 0;
+  const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
+  let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot, bloomBuild) * settleSpreadMul(settle);
   for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
   return spread * suppressionMul(suppression);
 }
 
+/** How much the post-sprint settle widens spread, `settle` being the share (0..1) still to ease out: `SPRINT.settleMul` at 1, easing out quadratically to 1 at 0. */
+export const settleSpreadMul = (settle: number): number => 1 + (SPRINT.settleMul - 1) * Math.max(0, Math.min(1, settle)) ** 2;
+
+/** How fast spray bloom recovers, as a multiplier (Steady Hands). */
+export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number => Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomRecoverMul ?? 1), 1);
+
 /** How much `suppression` (0..1) widens spread. */
 export const suppressionMul = (suppression: number): number => 1 + suppression * SUPPRESSION.spread;
 
-function bloomMul({ bloom }: GunRules, sprayShot: number): number {
-  return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * Math.max(0, sprayShot - bloom.free)) : 1;
+function bloomMul({ bloom }: GunRules, sprayShot: number, build = 1): number {
+  return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * build * Math.max(0, sprayShot - bloom.free)) : 1;
 }
 
 /** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */
@@ -63,11 +91,28 @@ export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): numb
 export const silencedFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): boolean =>
   (GUNS[gun].silenced ?? false) || Object.values(perks).some((perk) => PERK_MODS[perk].silenced ?? false);
 
+/** Ability cooldown after perks (Overclock). */
+export const abilityCooldownMs = (ability: AbilityId, perks: Partial<Record<Tier, PerkId>>): number =>
+  Object.values(perks).reduce((ms, perk) => ms * (PERK_MODS[perk].cooldownMul ?? 1), ABILITY_COOLDOWN_MS[ability]);
+
+/** The speed boost Adrenaline (after a kill) and Second Wind (under 25% health) are giving `p` now. */
+export function rushMul(w: Pick<World, 'now'>, p: Player): number {
+  const life = p.life;
+  if (life.k !== 'alive') return 1;
+  return (w.now < life.rushUntil ? PERK_RULES.adrenaline.speedMul : 1) * (w.now < life.windUntil ? PERK_RULES.secondWind.speedMul : 1);
+}
+
+/** Whether `input` sprints: held, moving and not firing. A press this tick also ends it (see `tickPlayer`). */
+export const sprintWanted = (i: { sprint?: boolean; fire?: boolean; up?: boolean; down?: boolean; left?: boolean; right?: boolean }): boolean =>
+  i.sprint === true && !i.fire && (!!i.right !== !!i.left || !!i.down !== !!i.up);
+
 export function effectiveStats(p: Player): Stats {
   const weapon = GUNS[p.gun];
   const armor = ARMORS[p.loadout.armor];
   const s: Stats = {
     speed: WORLD.baseSpeed * Math.max(LOAD_SPEED_FLOOR, weapon.moveMul * armor.speedMul),
+    sprintSpeed: 0,
+    settleMs: SPRINT.settleMs,
     maxHp: WORLD.baseHp,
     mag: weapon.mag,
     range: rangeFor(p.gun, p.perks),
@@ -77,10 +122,13 @@ export function effectiveStats(p: Player): Stats {
     viewRadius: WORLD.viewRadius * rulesOf(weapon).viewMul,
     piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
+  let sprintMul = SPRINT.speedMul;
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
     s.mag = Math.floor(s.mag * (m.magMul ?? 1));
     s.speed *= m.speedMul ?? 1;
+    sprintMul *= m.sprintMul ?? 1;
+    s.settleMs *= m.settleMul ?? 1;
     s.maxHp += m.maxHpAdd ?? 0;
     s.regenPerSec *= m.regenMul ?? 1;
     s.regenDelayMs *= m.regenDelayMul ?? 1;
@@ -90,6 +138,7 @@ export function effectiveStats(p: Player): Stats {
     s.thermal ||= m.thermal ?? false;
     s.ghillie ||= m.ghillie ?? false;
   }
+  s.sprintSpeed = s.speed * sprintMul;
   s.maxHp *= HP_MULTIPLIER[p.kind];
   s.regenPerSec *= HP_MULTIPLIER[p.kind];
   return s;
@@ -99,8 +148,9 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, pressUntil: -Infinity, hits: [],
+    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, knock: null, pressUntil: -Infinity, hits: [],
     suppression: 0, suppressedAt: -Infinity, golden: false,
+    sprint: false, settleLeft: 0, raiseUntil: -Infinity, rushUntil: -Infinity, windUntil: -Infinity, windUsed: false, tracks: {},
   };
 }
 
@@ -118,19 +168,31 @@ export function pendingPick(p: Player): PendingPick | null {
     const pick = LEVELS[level]?.pick;
     if (!pick) continue;
     if (pick.k === 'evolve') { if (GUNS[p.gun].stage < ++evolves) return { level, ...pick }; }
-    else if (!p.perks[pick.tier]) perk ??= { level, ...pick };
+    else if (!p.perks[pick.tier]) perk ??= { level, ...pick, ...(pick.tier === 2 && p.tier2Offer.length > 0 && { offer: p.tier2Offer }) };
   }
   return perk;
 }
 
 /** The hunt is a PvP pressure valve; a co-op squad has no one to hunt its own. */
-export const isHunted = (w: World, p: Player): boolean => w.mode !== 'ZOM' && GUNS[p.gun].stage === 2;
+export const isHunted = (w: World, p: Player): boolean => w.mode !== 'ZOM' && w.mode !== 'RNG' && GUNS[p.gun].stage === 2;
 
 export function abilityOf(p: Player): AbilityId | null {
   return p.perks[3] ?? null;
 }
 
-export function resetProgress(p: Player) {
+/** `TIER2_OFFER` of the tier-2 pool, drawn with the world's rng so a replay offers the same perks, listed in pool order. */
+export function drawTier2Offer(w: World): PerkId[] {
+  const pool = [...PERK_TIERS[2]] as PerkId[];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand(w) * (i + 1));
+    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+  }
+  const keep = new Set(pool.slice(0, TIER2_OFFER));
+  return PERK_TIERS[2].filter((perk) => keep.has(perk));
+}
+
+export function resetProgress(p: Player, w: World) {
+  p.tier2Offer = drawTier2Offer(w);
   p.score = 0;
   p.level = 0;
   p.perks = {};
@@ -161,7 +223,7 @@ export function choosePick(w: World, id: number, level: number, option: PickOpti
   const oldMag = effectiveStats(p).mag;
   p.gun = gun;
   reopenUselessAttachment(p);
-  p.life.ammo = Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
+  p.life.ammo = hasPerk(p, 'fastHands') ? effectiveStats(p).mag : Math.round((effectiveStats(p).mag * p.life.ammo) / oldMag);
   p.life.burstLeft = 0;
   p.life.spray = 0;
   p.life.spin = 0;

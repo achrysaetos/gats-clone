@@ -6,7 +6,7 @@ import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick, isSteady, pendingPick, spreadFor } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, offerPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const TIER_1 = { k: 'perk', tier: 1 } as const;
 
@@ -182,6 +182,7 @@ test('evolving into a gun an attachment does nothing for hands the attachment pi
   assert.ok(choosePick(w, p.id, 1, 'skirmisher'));
   assert.ok(choosePick(w, p.id, 2, 'silencer'));
   assert.equal(p.perks[1], 'silencer', 'the Skirmisher still uses its silencer');
+  offerPerks(p, 'shield');
   for (const [level, option] of [[3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, p.id, level, option));
   p.level = 5;
   assert.ok(choosePick(w, p.id, 5, 'phantom'));

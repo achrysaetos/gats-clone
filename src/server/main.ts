@@ -87,8 +87,9 @@ type AuthLimiter = (key: string, now: number) => boolean;
 
 const SQUAD_CODE_CHARS = 'abcdefghijklmnopqrstuvwxyz234567';
 const squadCode = () => `z-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
+const rangeCode = () => `r-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
 
-type Rooms = { all: Map<string, Room>; openSquad(): string | null };
+type Rooms = { all: Map<string, Room>; openSquad(): string | null; openRange(): string | null };
 type IpOf = (req: IncomingMessage) => string;
 
 const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
@@ -103,11 +104,17 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size });
-  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM'));
+  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM' && info.mode !== 'RNG'));
   if (req.method === 'POST' && path === '/api/squads') {
     if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many squads. Try again in a minute.' });
     const room = rooms.openSquad();
     return room ? json(res, 200, { room }) : json(res, 503, { error: 'Every squad slot is taken. Try again soon.' });
+  }
+  // Each player's own shooting range: a private room, nothing in it counts toward a record.
+  if (req.method === 'POST' && path === '/api/range') {
+    if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many ranges. Try again in a minute.' });
+    const room = rooms.openRange();
+    return room ? json(res, 200, { room }) : json(res, 503, { error: 'Every range lane is taken. Try again soon.' });
   }
   if (req.method === 'GET' && path === '/api/leaderboard') return json(res, 200, accounts.leaderboard(20));
   if (req.method === 'GET' && path.startsWith('/api/stats/')) {
@@ -178,7 +185,26 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     squadSeenAt.set(id, Date.now());
     return id;
   };
+  /** When each range room last had a player in it; one empty for `rangeIdleMs` closes. */
+  const rangeSeenAt = new Map<string, number>();
+  const openRange = (): string | null => {
+    if (rangeSeenAt.size >= limits.rangeRooms) return null;
+    let id = rangeCode();
+    while (rooms.has(id)) id = rangeCode();
+    rooms.set(id, newRoom(id, 'RNG', randomInt(2 ** 31)));
+    rangeSeenAt.set(id, Date.now());
+    return id;
+  };
   const closeIdleSquads = (now: number) => {
+    for (const [id, seenAt] of rangeSeenAt) {
+      const room = rooms.get(id)!;
+      if (room.info().humans > 0) rangeSeenAt.set(id, now);
+      else if (now - seenAt >= limits.rangeIdleMs) {
+        room.close();
+        rooms.delete(id);
+        rangeSeenAt.delete(id);
+      }
+    }
     for (const [id, seenAt] of squadSeenAt) {
       const room = rooms.get(id)!;
       if (room.info().humans > 0) squadSeenAt.set(id, now);
@@ -191,7 +217,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const http = createServer((req, res) => {
-    route(req, res, { all: rooms, openSquad }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad, openRange }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });

@@ -93,7 +93,7 @@ export function installDevProbe(page: Page) {
     const now = performance.now();
     const snap = s && newestSnap(s.snaps);
     return s && {
-      building: s.building, buildKind: s.buildKind, chips: drawnBuildChips(), use: snap && useHint(snap, s.lastSelf), ghost: page.ghost(), coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
+      building: s.building, buildKind: s.buildKind, buildTier: s.buildTier, chips: drawnBuildChips(), use: snap && useHint(snap, s.lastSelf), ghost: page.ghost(), coreAlert: now - s.coreHitAt < CORE_ALERT_MS,
       callouts: s.moments.callouts.filter((c) => c.born <= now && now - c.born < CALLOUT_MS).map((c) => `${c.title} · ${c.line}`),
     };
   };

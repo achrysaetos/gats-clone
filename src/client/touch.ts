@@ -35,6 +35,12 @@ export function stickVector(st: Stick): { x: number; y: number; mag: number } {
   return len === 0 ? { x: 0, y: 0, mag: 0 } : { x: (dx / len) * mag, y: (dy / len) * mag, mag };
 }
 
+/** The move stick's outer, sprint ring: well past the walking ring, so an ordinary full push never sprints by accident. */
+export const SPRINT_RING = STICK_RADIUS * 1.6;
+
+/** Whether the move thumb is pushed out to the outer ring, which sprints. */
+export const sticksSprint = (st: Stick | null): boolean => !!st && Math.hypot(st.x - st.ox, st.y - st.oy) >= SPRINT_RING;
+
 export function touchMoves(s: Sticks): Action[] {
   if (!s.move) return [];
   const v = stickVector(s.move);
@@ -44,6 +50,7 @@ export function touchMoves(s: Sticks): Action[] {
   if (v.x < -AXIS_THRESHOLD) out.push('left');
   if (v.y > AXIS_THRESHOLD) out.push('down');
   if (v.y < -AXIS_THRESHOLD) out.push('up');
+  if (out.length > 0 && sticksSprint(s.move)) out.push('sprint');
   return out;
 }
 

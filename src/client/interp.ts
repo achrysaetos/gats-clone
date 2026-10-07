@@ -1,5 +1,5 @@
 import { WORLD } from '../shared/defs.ts';
-import { INTERP_DELAY_MS, type Snapshot, type ZombieView } from '../shared/protocol.ts';
+import { INTERP_DELAY_MS, type PlayerView, type Snapshot, type ZombieView } from '../shared/protocol.ts';
 
 export const TICK_MS = 1000 / WORLD.tickHz;
 export const MAX_EXTRAPOLATE_MS = 100;
@@ -55,6 +55,16 @@ function interpolateById<T extends Positioned>(
   });
 }
 
+/**
+ * A reload's `[elapsed, total]` ms at fraction `t` of the `span` ms between two snapshots, so the arms move smoothly and finish
+ * on the very ms the reload does: counted from the newer snapshot back, or from the older one forward when it finished between them.
+ */
+export function reloadAt(a: PlayerView['rl'], b: PlayerView['rl'], t: number, span: number): { rl?: [number, number] } {
+  if (b) return { rl: [Math.max(0, b[0] - (1 - t) * span), b[1]] };
+  if (a && a[0] + t * span < a[1]) return { rl: [a[0] + t * span, a[1]] };
+  return {};
+}
+
 function interpolateZombies(prev: ZombieView[] | undefined, next: ZombieView[] | undefined, t: number): ZombieView[] | undefined {
   if (!prev || !next) return next;
   const before = new Map(prev.map((z) => [z[0], z]));
@@ -75,7 +85,7 @@ export function sampleAt(snaps: readonly Snapshot[], at: number): Snapshot | nul
   if (!a) return newest;
   const span = serverTime(b) - serverTime(a);
   const t = Math.min((at - serverTime(a)) / span, 1 + MAX_EXTRAPOLATE_MS / span);
-  const players = interpolateById(a.players, b.players, t, (pa, pb, k) => ({ angle: lerpAngle(pa.angle, pb.angle, Math.min(k, 1)) }));
+  const players = interpolateById(a.players, b.players, t, (pa, pb, k) => ({ angle: lerpAngle(pa.angle, pb.angle, Math.min(k, 1)), ...reloadAt(pa.rl, pb.rl, k, span) }));
   return {
     ...withSelf(newest, players, b),
     bullets: interpolateById(a.bullets, b.bullets, t),

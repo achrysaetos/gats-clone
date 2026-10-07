@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, LEVELS, ZOM } from '../src/shared/defs.ts';
+import { BUILDINGS, LEVELS, WALL_TIERS, ZOM } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { canRespawn, step } from '../src/shared/sim.ts';
 import { repairScrapPerHp } from '../src/shared/sim/build.ts';
@@ -124,7 +124,8 @@ test('holding use beside a damaged wall mends it for scrap, and stops when the s
   press(w, p, { use: true });
   run(w, 1000);
   const mended = wall.hp - 100;
-  assert.ok(Math.abs(mended - ZOM.repairHpPerSec) <= ZOM.repairHpPerSec * TICK_MS / 1000 + 0.01, `mended ${mended}`);
+  const rate = ZOM.repairHpPerSec * WALL_TIERS[0].repairMul;
+  assert.ok(Math.abs(mended - rate) <= rate * TICK_MS / 1000 + 0.01, `mended ${mended}`);
   assert.ok(Math.abs(10 - w.run!.scrap - mended * repairScrapPerHp('wall')) < 1e-6);
 
   w.run!.scrap = 0;

@@ -1,4 +1,4 @@
-import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
+import { pickOptions, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -19,6 +19,9 @@ import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
+import { notePropEvents } from './propfx.ts';
+import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
+import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
@@ -28,6 +31,7 @@ import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictI
 import { startEffect } from './effects.ts';
 import { startBoom, startSlash } from './blastfx.ts';
 import { gunFxOf, impact as gunImpact } from './gunfx.ts';
+import { flinchOf, noteFlinch } from './flinch.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
@@ -39,7 +43,7 @@ import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
 import { duckFor, emoteCue, soundsFor, type SoundCue } from './sfx.ts';
 import { setSfxSink } from './sfxbus.ts';
-import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
+import { committed, nextSprayShot, NO_FIRING, sendInput, settleOf } from './fire.ts';
 import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
 import { drawHeartbeat, drawScreenPulse, reducedMotion, setPulseHook, zoomAt } from './screenfx.ts';
@@ -48,7 +52,7 @@ import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } fro
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
-import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
+import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
 import { createCelebration } from './celebrate.ts';
 import { resetEmotes, noteEmote, setParty } from './emotefx.ts';
@@ -56,6 +60,15 @@ import { chatter, toggleChatter } from './chatter.ts';
 import { createEmoteWheel } from './emotewheel.ts';
 import { isAnniversary, isCenturion } from './friendly.ts';
 import { EMOTES } from '../shared/emotes.ts';
+import { COSMETIC_BY_ID, type Slot } from '../shared/cosmetics.ts';
+import { cosLook } from './cosmeticlook.ts';
+import { createWardrobe } from './wardrobe.ts';
+import { createArmory } from './armory.ts';
+import { renderLevelCard } from './levelcard.ts';
+import { createChallengePanel } from './challengepanel.ts';
+import { createXpCard } from './xpcard.ts';
+import { createChallengeToasts } from './challengetoast.ts';
+import { newlyDone, openChallenges } from './progression.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -65,7 +78,7 @@ const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
-const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'badge', 'error']);
+const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'badge', 'error', 'progress', 'equipped']);
 
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
@@ -89,6 +102,7 @@ let servers: ServerInfo[] | null = [];
 let selectedRoom: string | null = null;
 let squad: string | null = null;
 let squadBusy = false;
+let rangeBusy = false;
 let revealSquad = false;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
@@ -143,6 +157,11 @@ function setState(next: ClientState) {
   }
   if (next.phase === 'menu') {
     overlays.reset();
+    rangeUi.hide();
+    resetTargetArt();
+    xpCard.reset();
+    if (was.phase !== 'menu') void wardrobe.refresh(nameInput.value);
+    if (chatterOpenArmory) { const slot = chatterOpenArmory; chatterOpenArmory = null; queueMicrotask(() => { showTab('tab-armory'); armory.open(slot); }); }
     delight.reset();
     celebrate.reset();
     resetEmotes();
@@ -188,7 +207,7 @@ function dial(rejoin: Rejoin): WebSocket {
   const { room, name, token } = rejoin;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?room=${encodeURIComponent(room)}`);
-  ws.onopen = () => send(ws, { t: 'join', name, loadout: rejoin.loadout, token, aspect: viewAspect(view.w, view.h) });
+  ws.onopen = () => send(ws, { t: 'join', name, loadout: rejoin.loadout, token, aspect: viewAspect(view.w, view.h), cosmetics: wardrobe.joinPicks() });
   ws.onmessage = (ev) => delayRecv(() => {
     const msg = parseServerMsg(ev.data);
     if (!msg) return;
@@ -276,12 +295,19 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   }
 }
 
+/** Account progress: the new totals reach the menu's cards, the XP card waits to be shown, a completed challenge toasts. */
+function onProgress(msg: Extract<ServerMsg, { t: 'progress' }>) {
+  for (const c of newlyDone(wardrobe.state().challenges, msg.challenges)) challengeToast(c);
+  wardrobe.onProgress(msg);
+  xpCard.onProgress(msg);
+}
+
 function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; walls: WallView[] }): Session {
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, life: null, bests: loadBests(), feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, building: false, buildKind: 'wall', buildTier: 1, buildGhost: null, turretAims: new Map(),
   };
 }
 
@@ -308,6 +334,9 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   celebrate.onSnap(snap, now);
   chatter.onSnap(snap, s.myId, now);
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
+  notePropEvents(snap, now);
+  noteTargetEvents(snap, snap.tick * TICK_MS);
+  rangeUi.update(snap, s.myId);
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
   shooting.settleShots(s, snap, now);
   for (const ev of snap.events) {
@@ -349,7 +378,7 @@ function layCorpse(s: Session, snap: Snapshot, fx: Extract<EffectSpec, { kind: '
   const blow = killer && Math.hypot(fx.x - killer.x, fx.y - killer.y) > 1 ? Math.atan2(fx.y - killer.y, fx.x - killer.x) : null;
   s.corpses = addCorpse(s.corpses, {
     victim: victim.id, x: fx.x, y: fx.y, angle: victim.angle, color: bodyColor(victim), gun: victim.gun, map: snap.match.map, born: now,
-    blow, blast: explosiveDeath(fx.weapon),
+    blow, blast: explosiveDeath(fx.weapon), ...(victim.cos && { cos: victim.cos }),
   });
 }
 
@@ -371,7 +400,7 @@ function deathTint(s: Session, spec: EffectSpec): string | undefined {
 function noteDeath(s: Session, fx: Extract<EffectSpec, { kind: 'death' }>, color: string | undefined, realNow: number) {
   const killer = fx.by === null || fx.by === fx.victim ? undefined : [...s.snaps.snaps].reverse().flatMap((sn) => sn.players.filter((p) => p.id === fx.by))[0];
   const dir = killer && Math.hypot(fx.x - killer.x, fx.y - killer.y) > 1 ? Math.atan2(fx.y - killer.y, fx.x - killer.x) : null;
-  onDeath({ x: fx.x, y: fx.y, color: color ?? '#7a808b', dir, mine: fx.by === s.myId && fx.victim !== s.myId, self: fx.victim === s.myId }, realNow);
+  onDeath({ x: fx.x, y: fx.y, color: color ?? '#7a808b', dir, mine: fx.by === s.myId && fx.victim !== s.myId, self: fx.victim === s.myId, ...(killer?.cos?.k && { fx: killer.cos.k }) }, realNow);
 }
 
 /** The enemies drawn this frame with their velocity from the two newest snapshots, for the touch aim assist. */
@@ -453,17 +482,40 @@ function toggleBuild(s: Session) {
   playClick(s);
 }
 
-function pickBuildKind(s: Session, kind: BuildingKind) {
-  if (s.buildKind === kind) return;
+/** Picks what build mode puts up; a wall's `lv` is its tier, and its key again steps to the next tier. */
+function pickBuildKind(s: Session, kind: BuildingKind, lv?: number) {
+  const tier = kind === 'wall' ? (lv ?? (s.buildKind === 'wall' ? nextTier(s.buildTier) : s.buildTier)) : s.buildTier;
+  if (s.buildKind === kind && s.buildTier === tier) return;
   s.buildKind = kind;
+  s.buildTier = tier;
   playClick(s);
 }
 
+/** The wheel steps through everything build mode can put up, walls by tier first. */
+function stepBuildItem(s: Session, step: number) {
+  const next = stepItem({ kind: s.buildKind, lv: s.buildTier }, step);
+  s.buildKind = next.kind;
+  s.buildTier = next.lv;
+  playClick(s);
+}
+
+function sendUpgrade(s: Session, cx: number, cy: number) {
+  send(s.ws, { t: 'upgrade', cx, cy });
+  playClick(s);
+}
+
+/** A click or tap on a chip of the build bar: it picks what to build, or upgrades the building last hovered. */
+function pressBuildChip(s: Session, chip: BuildChip) {
+  if ('upgrade' in chip) { if (ghost?.hover && ghost.upgrade === null) sendUpgrade(s, ghost.cx, ghost.cy); return; }
+  pickBuildKind(s, chip.kind, chip.lv);
+}
+
 function buildClick(s: Session, e: MouseEvent) {
-  const chip = e.button === 0 ? buildChipAt(e.clientX, e.clientY) : null;
-  if (chip) return pickBuildKind(s, chip);
+  const chip: BuildChip | null = e.button === 0 ? buildChipAt(e.clientX, e.clientY) : null;
+  if (chip) return pressBuildChip(s, chip);
   if (!ghost) return;
-  if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy });
+  if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }) });
+  else if (e.button === 0 && ghost.refusal === 'taken' && ghost.upgrade === null) send(s.ws, { t: 'upgrade', cx: ghost.cx, cy: ghost.cy });
   else if (e.button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
   else return;
   playClick(s);
@@ -520,15 +572,17 @@ function drawFrame(realNow: number) {
   const released = releaseDue(s.pendingFx, rt);
   s.pendingFx = released.rest;
   for (const { fx } of released.due) {
-    if (fx.kind === 'boom') { startBoom(fx.x, fx.y, fx.r, now); fxPulse(Math.min(1, 0.25 + fx.r / 260)); }
+    if (fx.kind === 'boom') { startBoom(fx.x, fx.y, fx.r, now); const near = 1 - Math.hypot(fx.x - s.lastSelf.x, fx.y - s.lastSelf.y) / 900; if (near > 0) fxPulse(Math.min(1, 0.25 + fx.r / 260) * near); }
     else if (fx.kind === 'slash') startSlash(fx.x, fx.y, fx.angle, now);
     else startEffect(s, fx, now, deathTint(s, fx));
     // A 'building' hit is only ever a zombie's bite (bullets on cover arrive as 'wall'), so it stamps no bullet hole.
-    if (fx.kind === 'impact' && fx.surface !== 'building') gunImpact(gunFxOf(s), fx.surface, fx, { walls: s.walls, crates: latest.crates, buildings: latest.buildings, run: latest.run }, now);
+    if (fx.kind === 'impact' && fx.surface !== 'building') gunImpact(gunFxOf(s), fx.surface, fx, { walls: s.walls, crates: latest.crates, buildings: latest.buildings, run: latest.run }, now, Math.random, fx);
+    if (fx.kind === 'impact' && fx.surface === 'player' && fx.victim !== null && fx.push !== undefined) noteFlinch(flinchOf(s), fx.victim, fx.push, fx.amount ?? 0, now);
     if (fx.kind === 'death') { layCorpse(s, latest, fx, now); noteDeath(s, fx, deathTint(s, fx), realNow); }
     if (fx.kind === 'splat') layZombieCorpse(s, fx, now);
   }
   releaseQueued(rt, realNow);
+  releaseTargetFx(rt, now, layoutOf(latest.match.map));
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = delight.lag > 0.5 ? null : drawnPosition(s.predict, now, INPUT_MS);
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
@@ -556,7 +610,11 @@ function drawFrame(realNow: number) {
   noteFrame(s, snap, aimCamera, selfAngle, now);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
-  ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
+  ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier);
+  // With the cursor on the build bar, the cell last hovered stays judged (and shown), so the bar's upgrade chip has a building to act on.
+  const held = s.buildGhost;
+  if (site && held && buildChipAt(mouse.x, mouse.y) !== null) ghost = ghostAt(site, s.buildKind, { x: (held.cx + 0.5) * ZOM.cell, y: (held.cy + 0.5) * ZOM.cell }, s.worldSize, s.buildTier);
+  s.buildGhost = ghost;
   if (delight.drawKillcam(ctx, s, state.phase === 'dead', view, realNow)) {
     overlays.update(state, s, latest, now, muted);
     return;
@@ -565,7 +623,7 @@ function drawFrame(realNow: number) {
   // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
   const glWorld = processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr);
   if (glWorld) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression, settleOf(s.firing)) : null;
   drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow, !glWorld);
   if (me?.alive) drawHeartbeat(ctx, view.w, view.h, view.dpr, now, me.hp / me.maxHp);
   // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.
@@ -576,6 +634,7 @@ function drawFrame(realNow: number) {
   if (state.phase === 'playing') drawHitMarker(ctx, mouse, fb.hitmarker, realNow);
   if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
   medalToasts(state.phase === 'menu' ? [] : s.moments.medals, now);
+  xpCard.update(realNow);
   touchButtons(buttonFaces(snap.self, abilityHint(snap.self.pending)[0] === 'Ability' ? ABILITY_SCORE : undefined));
   overlays.update(state, s, latest, now, muted);
   delight.drawReel(s, latest, realNow);
@@ -610,6 +669,16 @@ function onKeyDown(e: KeyboardEvent) {
     if (!e.repeat) wheel.openWheel();
     return;
   }
+  if (e.code === 'KeyL' && !e.repeat && state.phase === 'playing' && rangeUi.active()) {
+    e.preventDefault();
+    playClick(s);
+    rangeUi.toggle();
+    return;
+  }
+  if (e.code === 'Escape' && rangeUi.isOpen()) {
+    rangeUi.close();
+    return;
+  }
   if (e.code === 'KeyB') {
     toggleBuild(s);
     return;
@@ -634,6 +703,20 @@ function onKeyDown(e: KeyboardEvent) {
     setSoundMuted(muted);
     s.chat.push({ from: '', text: muted ? 'Sound off (M to turn on)' : 'Sound on', team: null, at: performance.now() });
     if (!muted) playClick(s);
+    return;
+  }
+  if (e.code === 'KeyU' && !e.repeat && state.phase === 'playing') {
+    const snap = newestSnap(s.snaps);
+    // In build mode U upgrades what the cursor is over; outside it, the nearest building in reach.
+    if (s.building) { if (ghost?.hover && ghost.upgrade === null) sendUpgrade(s, ghost.cx, ghost.cy); }
+    else {
+      const near = snap && upgradeTarget(snap, s.lastSelf);
+      if (near && snap.run && snap.run.scrap >= near.cost) sendUpgrade(s, near.b.cx, near.b.cy);
+    }
+    return;
+  }
+  if (e.code === 'KeyQ' && !e.repeat && state.phase === 'playing' && s.building) {
+    pickBuildKind(s, 'wall', s.buildKind === 'wall' ? nextTier(s.buildTier) : s.buildTier);
     return;
   }
   const slot = perkSlotForKey(e.code);
@@ -674,6 +757,10 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   // Suppresses the emulated mousedown so a thumb on the move stick does not also fire.
   e.preventDefault();
+  // In build mode a tap on one of the build bar's chips presses it instead of starting a stick.
+  const building = state.phase === 'playing' && state.s.building ? state.s : null;
+  const chip = building && buildChipAt(e.clientX, e.clientY);
+  if (building && chip) { pressBuildChip(building, chip); return; }
   sticks = pressStick(sticks, e.pointerId, e.clientX, e.clientY, view.w);
 });
 window.addEventListener('pointermove', (e) => {
@@ -687,6 +774,7 @@ for (const type of ['pointerup', 'pointercancel'] as const) {
 }
 const touchButtons = createTouchButtons($('touch-reload'), $('touch-ability'));
 const medalToasts = createMedalToasts($('medals'));
+const challengeToast = createChallengeToasts($('medals'));
 for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'reload']] as const) {
   const button = $(id);
   button.addEventListener('pointerdown', (e) => {
@@ -714,6 +802,12 @@ canvas.addEventListener('mousedown', (e) => {
 });
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// In build mode the wheel steps through what can be built instead of zooming or scrolling.
+canvas.addEventListener('wheel', (e) => {
+  if (state.phase !== 'playing' || !state.s.building || e.deltaY === 0) return;
+  e.preventDefault();
+  stepBuildItem(state.s, e.deltaY > 0 ? 1 : -1);
+}, { passive: false });
 window.addEventListener('resize', resize);
 
 async function pollServers() {
@@ -732,6 +826,7 @@ async function pollServers() {
 }
 
 let squadKey = '';
+let rangeKey = '';
 
 function showServers() {
   renderServers(serversEl, servers, selectedRoom, (id) => { selectedRoom = id; showServers(); });
@@ -742,6 +837,10 @@ function showServers() {
       start: () => void startSquad(),
       pick: () => { selectedRoom = squad; showServers(); },
     });
+  }
+  if (rangeKey !== String(rangeBusy)) {
+    rangeKey = String(rangeBusy);
+    renderRangeCard($('range-card'), { busy: rangeBusy }, { start: () => void startRange() });
   }
   refreshPlayButton();
 }
@@ -770,6 +869,21 @@ async function startSquad() {
   play(opened.room);
 }
 
+/** Opens a private shooting range and deploys into it at once. */
+async function startRange() {
+  if (rangeBusy || state.phase !== 'menu' || state.status.kind === 'connecting') return;
+  rangeBusy = true;
+  showServers();
+  const opened = await openRangeRoom();
+  rangeBusy = false;
+  showServers();
+  if ('error' in opened) {
+    if (state.phase === 'menu') setState({ phase: 'menu', status: { kind: 'error', message: opened.error } });
+    return;
+  }
+  play(opened.room);
+}
+
 function toggleMuted(name: string) {
   muted = toggleMute(muted, name);
   saveMuted(muted);
@@ -778,6 +892,7 @@ function toggleMuted(name: string) {
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
 const delight = createDelight();
+const rangeUi = createRangeUi(hudEl, (msg) => { const s = sessionOf(state); if (s) send(s.ws, msg); }, () => { const s = sessionOf(state); if (s) playClick(s); });
 const celebrate = createCelebration(document.body);
 const wheel = createEmoteWheel(hudEl, (id) => {
   const s = sessionOf(state);
@@ -805,6 +920,8 @@ async function checkAnniversary(account: string | null) {
   } catch { /* the hat is a nicety */ }
 }
 if (params.has('dev')) {
+  /** `skirmishUi.progress({...})` feeds a fake `progress` message through the real handler, for looking at the XP card. */
+  Object.assign(window, { skirmishUi: { progress: (m: Parameters<typeof onProgress>[0]) => onProgress(m), wardrobe: () => wardrobe.state(), showTab: (t: string) => showTab(t) } });
   Object.assign(((window as unknown as { skirmishChatter?: object }).skirmishChatter ??= {}), {
     chatter,
     /** Forces a line from soldier `pid` (default: you): `say(undefined, { personality: 'poet', tag: 'justKilled' })`. */
@@ -815,11 +932,17 @@ if (params.has('dev')) {
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion()) kick = addKick(kick, gun, angle); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);
+const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; void wardrobe.refresh(nameInput.value); });
+/** The wardrobe: level, XP, what you own and wear. A change goes down the socket too, so the room sees it at once. */
+const wardrobe = createWardrobe({
+  account: () => account.current(),
+  sendEquip: (slot, id) => { const s = sessionOf(state); if (s) send(s.ws, { t: 'equip', slot, id }); },
+});
+const skinNow = () => cosLook({ g: wardrobe.state().equipped.gunSkin }).skin;
 const pickers = [
-  mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),
-  mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout),
+  mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow),
+  mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout, skinNow),
 ];
-const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; });
 nameInput.value = loadName() || account.current()?.name || '';
 /** The menu's link to your own service record follows the name you will play as. */
 const myProfile = $<HTMLAnchorElement>('my-profile');
@@ -831,6 +954,41 @@ const linkMyProfile = () => {
 nameInput.addEventListener('input', linkMyProfile);
 linkMyProfile();
 renderControls($('controls'));
+
+// ---- Progression: the armory, level card and challenges in the menu, and the XP card after a life or a round.
+const levelCard = $('level-card');
+const challengePanel = createChallengePanel($('challenges'));
+const armory = createArmory($('armory'), { wardrobe, loadout: () => loadout });
+const chalBadge = $('chal-badge');
+const MENU_TABS = [['tab-deploy', 'deploy-panel'], ['tab-armory', 'armory'], ['tab-challenges', 'challenges']] as const;
+function showTab(tab: string) {
+  for (const [btn, panel] of MENU_TABS) { $(btn).setAttribute('aria-selected', String(btn === tab)); $(panel).hidden = btn !== tab; }
+  if (tab === 'tab-armory') armory.show(); else armory.hide();
+  if (tab === 'tab-challenges') challengePanel.render(wardrobe.state().challenges);
+}
+for (const [btn] of MENU_TABS) $(btn).addEventListener('click', () => showTab(btn));
+wardrobe.subscribe(() => {
+  const st = wardrobe.state();
+  renderLevelCard(levelCard, st);
+  const open = openChallenges(st.challenges);
+  chalBadge.hidden = open === 0;
+  chalBadge.textContent = String(open);
+  if (!$('challenges').hidden) challengePanel.render(st.challenges);
+  for (const p of pickers) p.refresh();
+});
+setInterval(() => challengePanel.tick(), 30_000);
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+const refreshWardrobe = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => void wardrobe.refresh(nameInput.value), 350); };
+nameInput.addEventListener('input', refreshWardrobe);
+void wardrobe.refresh(nameInput.value);
+renderLevelCard(levelCard, wardrobe.state());
+const xpCard = createXpCard($('xp-card'), {
+  blocked: () => ['celebrating', 'dl-slowmo', 'dl-hold', 'dl-play', 'dl-settle'].some((c) => document.body.classList.contains(c)),
+  equip: (slot: Slot, id: string) => wardrobe.equip(slot, id),
+  openArmory: (slot: Slot) => { const s = sessionOf(state); if (s) { chatterOpenArmory = slot; leave(); } else { showTab('tab-armory'); armory.open(slot); } },
+});
+let chatterOpenArmory: Slot | null = null;
+void COSMETIC_BY_ID;
 /**
  * On a phone, Play also asks for fullscreen and a landscape lock, inside the tap that allows them. Browsers that refuse (an
  * iPhone has no page fullscreen) keep the page as it is, and the rotate hint asks the player to turn the phone instead.

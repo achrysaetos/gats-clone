@@ -1,14 +1,16 @@
-import { ABILITY_COOLDOWN_MS, AIRDROP, GUNS, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { AIRDROP, GUNS, SPRINT, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { tickAirdrops } from './sim/airdrop.ts';
 import { tickBarrels } from './sim/barrels.ts';
+import { empMul, tickProps } from './sim/props.ts';
+import { tickRange } from './sim/targets.ts';
 import { MUZZLE_PX } from './sim/ballistics.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCalls } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
+import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -22,7 +24,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
-    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, cos: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, feats: freshFeats(), revealedUntil: 0, huntedPing: null, abilityReadyAt: 0,
+    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, cos: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, feats: freshFeats(), revealedUntil: 0, huntedPing: null, abilityReadyAt: 0, tier2Offer: [],
   };
   w.players.set(p.id, p);
   spawn(w, p, loadout, opts.at);
@@ -31,7 +33,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
 
 function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: number }) {
   p.loadout = loadout;
-  resetProgress(p);
+  resetProgress(p, w);
   p.lifeKills = 0;
   p.feats = freshFeats();
   const pos = at ?? spawnPoint(w, p.team);
@@ -85,24 +87,32 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   p.angle = inp.angle;
   const moving = walks(inp) || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
+  const shoved = life.knock !== null;
   if (w.now - life.suppressedAt >= SUPPRESSION.holdMs) life.suppression = Math.max(0, life.suppression - SUPPRESSION.decayPerSec * dt);
   const stats = effectiveStats(p);
-  if (moving) {
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs, MAPS[w.map].size);
+  // Sprint is held while moving and not firing; a click ends it. Leaving it raises the gun and starts the bloom settle.
+  const sprinting = life.dash === null && sprintWanted(inp) && !pressed;
+  if (sprinting !== life.sprint) {
+    life.sprint = sprinting;
+    if (!sprinting) { life.settleLeft = stats.settleMs; life.raiseUntil = w.now + SPRINT.raiseMs; }
+  } else if (!sprinting) life.settleLeft = Math.max(0, life.settleLeft - dtMs);
+  if (moving || shoved) {
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, knock: life.knock }, inp, (sprinting ? stats.sprintSpeed : stats.speed) * empMul(w, p) * rushMul(w, p), dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     life.dash = m.dash;
+    life.knock = m.knock ?? null;
   }
 
   const armed = w.match.k === 'playing';
   const wasReloading = life.reloadUntil !== null;
-  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
+  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, holdUntil: life.raiseUntil, bloomRecover: bloomRecoverMul(p.perks) }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
   // A fresh magazine starts the count of kills from one mag again.
   if (!wasReloading && life.reloadUntil !== null) p.feats.magKills = 0;
   if (fired) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
-    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray, life.suppression);
+    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray, life.suppression, life.settleLeft / stats.settleMs);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;
@@ -115,7 +125,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }
     if (!stats.silenced) {
-      p.revealedUntil = w.now + REVEAL_MS;
+      p.revealedUntil = w.now + REVEAL_MS * (hasPerk(p, 'ninja') ? PERK_RULES.ninja.revealMul : 1);
       if (isHunted(w, p)) p.huntedPing = { x: p.x, y: p.y, at: w.now };
     }
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
@@ -123,7 +133,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   const ability = abilityOf(p);
   if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
-    p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
+    p.abilityReadyAt = w.now + abilityCooldownMs(ability, p.perks);
     if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
   }
 
@@ -148,6 +158,8 @@ export function step(w: World, dtMs: number): void {
   tickBullets(w, dt);
   tickThrown(w, dt);
   tickBarrels(w);
+  tickProps(w, dt);
+  if (w.range) tickRange(w, dt);
   tickAirdrops(w);
   watchCloseCalls(w);
   for (const c of w.crates) {

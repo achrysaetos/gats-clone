@@ -1,4 +1,4 @@
-import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../shared/defs.ts';
+import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
@@ -7,31 +7,42 @@ import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kick
 import { drawJuice } from './killfx.ts';
 import { glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts';
 import { serverNow } from './interp.ts';
+import { INTERP_DELAY_MS } from '../shared/protocol.ts';
 import { drawHordeEyes } from './zombieart.ts';
-import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
+import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
+import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
+import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
 import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
+import { cosLook, RARITY_INK } from './cosmeticlook.ts';
+import { nameInk } from './nametag.ts';
+import { COSMETIC_BY_ID, DEFAULTS } from '../shared/cosmetics.ts';
 import { drawEmoteBubbles, drawEmoteGestures, emoteOf, partyOn } from './emotefx.ts';
 import { chatter, drawChatter } from './chatter.ts';
 import { uiScaleFor } from './uiscale.ts';
 import { reducedMotion } from './screenfx.ts';
-import { fillIcon, UI_ICONS } from './icons.ts';
+import { fillIcon, strokeIcon, UI_ICONS } from './icons.ts';
 import { careerImage } from './medals.ts';
 import type { Session } from './state.ts';
-import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, FOOT, LIP, wallSolids, type Solid } from './tilt.ts';
+import { buildingSolid, standsUp, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, FOOT, LIP, wallSolids, type Solid } from './tilt.ts';
 import { drawDust, drawNight, drawVignette, nightLights } from './ambience.ts';
+import { lightBackdrop, lightWorld } from './lightfeed.ts';
 import { floorPlanOf } from './floor.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
 import { heftOf } from './shake.ts';
 import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corpses.ts';
+import { flinchOf, flinchOffset } from './flinch.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
-import { drawBlastFx, drawBlastRing, drawDashTrails, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
+import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
+import { dropCarried, reloadScene, selfReload, stepReload, type ReloadFrame } from './reloadanim.ts';
+import { emitSfxAt } from './sfxbus.ts';
+import { drawFlashSmokeBody, drawFlashSmokeFx, isFlashSmoke } from './flashsmoke.ts';
 import { applyPose, bodyPose, drawGunGlints, drawMotionAbove, drawMotionBelow, drawShieldShimmer, noteStride, observeMotion } from './motionfx.ts';
 
 const TAU = Math.PI * 2;
@@ -78,15 +89,17 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
   const dark = easeNight(snap.run, now);
-  const siege = snap.run ? [...(snap.buildings ?? []).map(buildingSolid), coreSolid(snap.run)] : 'static';
+  const siege = snap.run ? [...(snap.buildings ?? []).filter(standsUp).map(buildingSolid), coreSolid(snap.run)] : 'static';
   drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
 
+  if (snap.targets) { const layout = layoutOf(snap.match.map); if (layout) drawRangeFloor(ctx, layout, s.worldSize, view); }
   const mine = snap.players.find((p) => p.id === s.myId);
   // The squad shares one team, so each squadmate wears their own color instead.
   const colorOf = (p: PlayerView) => (snap.run ? COLORS[p.color] : bodyColor(p));
   for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
+  if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
   drawTrails(ctx, s.trails, now);
   drawScorches(ctx, now, view);
 
@@ -108,10 +121,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
   const airClock = snap.airdrop ? serverNow(s.snaps, now) : null;
   drawBarrels(ctx, snap, now, view);
+  drawProps(ctx, snap, now, view);
+  if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);
   drawPlaneShadow(ctx, snap.airdrop, airClock, view);
   if (snap.buildings && snap.run) {
-    drawSiegeTops(ctx, snap.buildings.filter((b) => inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
+    drawSiegeTops(ctx, snap.buildings.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
   }
   if (snap.run) drawCoreTop(ctx, snap.run, now, s.coreHitAt, k);
   noteGunMap(gunFxOf(s), snap.match.map);
@@ -121,8 +136,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   // The horde is drawn before the night shade, so it dims outside the light pools; its eyes shine over the shade.
   const flashes = hitFlashes(s.effects, now);
   if (zombies.length) drawZombies(ctx, zombies, snap, flashes, now, k);
+  // With the shader pass on, the world so far is handed to it to be lit (shadows, lamps, night); the rest of the frame is its overlay.
+  const lit = lightWorld(ctx, { snap, selfId: s.myId, selfAngle: f.selfAngle, tl, br, dark, now, airLanded: !!snap.airdrop && airClock !== null && airClock >= snap.airdrop.landAt, solids: [...walls, ...standing, ...crates] });
   if (dark > 0) {
-    drawNight(ctx, tl, br, dark, nightLights(snap, s.myId, f.selfAngle));
+    if (!lit) drawNight(ctx, tl, br, dark, nightLights(snap, s.myId, f.selfAngle));
     if (zombies.length) drawHordeEyes(ctx, dark);
   }
   drawDust(ctx, tl, br, now, dark);
@@ -136,16 +153,18 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   // Tonight's dead lie over the night shade, so the horde's toll stays readable in the dark.
   const field = zombieField(s.zombieCorpses, snap.run?.phase === 'night', now);
   s.zombieCorpses = { list: field.list, dawnAt: field.dawnAt };
-  drawZombieCorpses(ctx, field.list.filter((c) => inView(view, c.x - R * 4, c.y - R * 4, R * 8, R * 8)), field.alpha, now);
+  drawZombieCorpses(ctx, field.list.filter((c) => inView(view, c.x - R * 4, c.y - R * 4, R * 8, R * 8)), field.alpha, now, k);
 
   drawRounds(ctx, snap.bullets, dark > 0.5);
+  drawExplosiveRounds(ctx, snap.bullets, now);
 
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId, now, k);
   drawGunGlints(ctx, s.corpses, now, (x, y) => inView(view, x - R, y - R, R * 2, R * 2));
   drawMotionBelow(ctx, now);
   const tags = bodyTags(alive, s, now);
-  drawNamesUnderBodies(ctx, tags, dark);
+  drawNamesUnderBodies(ctx, tags, dark, now);
   const recoil = kicks(s.effects, now);
+  const flinches = flinchOf(s);
   trackDash(snap.players, now);
   drawDashTrails(ctx, (id) => { const p = snap.players.find((q) => q.id === id); return p ? colorOf(p) : null; }, now, view);
   for (const p of alive) {
@@ -153,9 +172,13 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
     const flash = flashes.get(p.id);
     const kick = recoil.get(p.id);
-    drawPlayer(ctx, { ...p, angle }, colorOf(p), {
+    const jolt = flinchOffset(flinches, p.id, now);
+    // Everyone's reload arms follow their reload clock; yours is the predicted one, so the hands move the instant you press the key.
+    const reload = stepReload(p.id, p.gun, self && s.firing?.trigger.alive ? selfReload(s.firing, now) : p.rl, now);
+    if (reload?.drops.length) dropMags(gunFxOf(s), p, angle, reload, now, self);
+    drawPlayer(ctx, { ...p, angle, x: p.x + jolt.x, y: p.y + jolt.y }, colorOf(p), {
       self, rival: !self && p.team === null && p.color === mine?.color,
-      flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k,
+      flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k, reload,
     });
     if (p.golden) drawGoldShine(ctx, p.x, p.y, muzzleTip(p.x, p.y, angle, p.gun, R), p.id, now);
   }
@@ -164,7 +187,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects.filter((e) => e.kind !== 'flash' && e.kind !== 'boom' && e.kind !== 'slash'), now);
   drawBlastFx(ctx, now, view);
+  drawFlashSmokeFx(ctx, snap, s.myId, now, view);
   drawArenaLight(ctx, snap, now, view);
+  drawPropTops(ctx, snap, now, view);
   drawParachute(ctx, snap.airdrop, airClock, now, view);
   drawParticles(ctx, s.particles, now);
   drawMotionAbove(ctx, now);
@@ -203,6 +228,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   drawGround(ctx, ground.get(BACKDROP_MAP, size, () => backdropSolids, 'static', floorPlanOf('plaza')), x, y, x + viewW, y + viewH);
   drawLooseShadows(ctx, backdropCrates);
   drawSolids(ctx, [...backdropSolids, ...backdropCrates]);
+  lightBackdrop(ctx, { x, y }, { x: x + viewW, y: y + viewH }, [...backdropSolids, ...backdropCrates], now);
   drawDust(ctx, { x, y }, { x: x + viewW, y: y + viewH }, now, 0);
   drawVignette(ctx, w, h, dpr, 0.38);
 }
@@ -262,7 +288,9 @@ function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
 
 function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   if (t.kind === 'gasCloud') return drawGasCloud(ctx, t, now);
+  if (t.kind === 'fireSlick') return drawFireSlick(ctx, t, now);
   if (t.kind === 'grenade' || t.kind === 'fragGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
+  if (isFlashSmoke(t.kind)) return drawFlashSmokeBody(ctx, t, now);
   drawThrownBody(ctx, t, now);
 }
 
@@ -290,31 +318,36 @@ function drawTrails(ctx: CanvasRenderingContext2D, trails: ReadonlyMap<number, r
   ctx.globalAlpha = 1;
 }
 
-type RoundLook = { r: number; body: string; shine: string };
+type RoundLook = { r: number; heft: number; tail: string; body: string; core: string };
 
 /**
- * A round is a short solid slug in its gun's bullet color with a thin highlight down its middle and a faint trail behind it:
- * dark on the pale day floor, and the same slug washed light at night so it reads on the dark floor.
+ * A round is a lit slug: a warm tracer, a lamp-amber body and a hot white-yellow core, sized by what one round does (a pistol round is
+ * modest, a slug, a sniper round or a hand cannon is fat) and leaving a longer, brighter streak the heavier it is. Rounds are light, so no ink outline;
+ * at night the same layers glow additively and pick up a faint halo that blooms.
  */
-/** `trailSlugs`: the faint trail never runs past this many slug lengths, so a fast round reads as a slug, not a long line. */
-const ROUND = { minR: 1.9, rMul: 1.2, slugLen: 4.5, trailAlpha: 0.22, trailSlugs: 2.2 } as const;
+const ROUND = { minR: 3.1, maxR: 7, slugLen: 3.8, trailAlpha: 0.4, trailSlugs: 2.6, heavyTrailSlugs: 6 } as const;
+const ROUND_COLORS = { tail: '#ff8a2a', body: '#ffc247', core: '#fff6c8', nightTail: '#ffa84d' } as const;
 
-function roundLook(b: BulletView, night: boolean): RoundLook {
-  const { r, color } = b.gun ? GUNS[b.gun].look.bullet : { r: 1.6, color: '#25211c' };
-  const size = Math.max(ROUND.minR, r) * ROUND.rMul;
-  return night ? { r: size, body: glow(color, 0.82), shine: '#ffffff' } : { r: size, body: color, shine: glow(color, 0.78) };
+/** 0..1 how heavy one round is, from its own damage: a 25 pistol round ~0.2, a 70 slug ~0.55, a 135 bolt-action round 1. */
+export const roundHeft = (gun: GunId | null): number => (gun ? Math.min(1, (GUNS[gun].damage / 135) ** 0.75) : 0.15);
+
+function roundLook(gun: GunId | null, night: boolean): RoundLook {
+  const heft = roundHeft(gun);
+  const pellet = gun && GUNS[gun].pellets > 1;
+  const r = ROUND.minR + (ROUND.maxR - ROUND.minR) * heft + (pellet ? 0.5 : 0);
+  return { r, heft, tail: night ? ROUND_COLORS.nightTail : ROUND_COLORS.tail, body: ROUND_COLORS.body, core: ROUND_COLORS.core };
 }
 
 function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[], night: boolean) {
   ctx.lineCap = 'round';
-  const groups = new Map<string, { look: RoundLook; bullets: BulletView[] }>();
+  const groups = new Map<GunId | 'none', { look: RoundLook; bullets: BulletView[] }>();
   for (const b of bullets) {
-    const look = roundLook(b, night);
-    const key = `${look.body}|${look.r}`;
+    const key = b.gun ?? 'none';
     const group = groups.get(key);
     if (group) group.bullets.push(b);
-    else groups.set(key, { look, bullets: [b] });
+    else groups.set(key, { look: roundLook(b.gun, night), bullets: [b] });
   }
+  const prev = ctx.globalCompositeOperation;
   for (const { look, bullets: group } of groups.values()) {
     const dirs = group.map((b) => { const v = Math.hypot(b.vx, b.vy) || 1; return { b, ux: b.vx / v, uy: b.vy / v }; });
     const stroke = (color: string, width: number, alpha: number, from: (d: (typeof dirs)[number]) => number, to: (d: (typeof dirs)[number]) => number) => {
@@ -329,18 +362,25 @@ function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[
       ctx.stroke();
     };
     const slug = look.r * ROUND.slugLen;
-    stroke(look.body, look.r * 1.3, ROUND.trailAlpha, (d) => Math.min(slug * ROUND.trailSlugs, Math.max(slug, Math.hypot(d.b.vx, d.b.vy) * TRACER.tail)), () => slug * 0.5);
-    stroke(look.body, look.r * 2, 1, () => slug, () => 0);
-    stroke(look.shine, Math.max(0.8, look.r * 0.55), 0.9, () => slug * 0.75, () => slug * 0.2);
+    const streak = ROUND.trailSlugs + (ROUND.heavyTrailSlugs - ROUND.trailSlugs) * look.heft ** 2;
+    if (night) {
+      ctx.globalCompositeOperation = 'lighter';
+      stroke(look.tail, look.r * 4, 0.1 + 0.08 * look.heft, (d) => slug * streak * 0.8 + Math.hypot(d.b.vx, d.b.vy) * TRACER.tail * 0.5, () => 0);
+    }
+    // The warm tracer, then the slug body, then the hot core down its middle.
+    stroke(look.tail, look.r * 1.5, ROUND.trailAlpha + 0.2 * look.heft, (d) => Math.min(slug * streak, Math.max(slug, Math.hypot(d.b.vx, d.b.vy) * TRACER.tail * 1.4)), () => slug * 0.5);
+    stroke(look.body, look.r * 2.3, 1, () => slug, () => 0);
+    stroke(look.core, Math.max(1.4, look.r * 1.2), 1, () => slug * 0.85, () => slug * 0.1);
+    ctx.globalCompositeOperation = prev;
   }
   ctx.globalAlpha = 1;
 }
 
-type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number };
+type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number; reload: ReloadFrame | null };
 const TIER_COLORS = { 1: '#c9ced8', 2: PALETTE.gold } as const;
 /** How far a gun jumps back in the hands when fired; a heavy gun (see `heftOf`) jumps up to `RECOIL_HEAVY` times as far. */
-const RECOIL = 3;
-const RECOIL_HEAVY = 2.6;
+const RECOIL = 4.5;
+const RECOIL_HEAVY = 3.4;
 const MARK_Y = -R - 8;
 const RING = R + 5;
 
@@ -385,12 +425,64 @@ let gaitsPrunedAt = 0;
 function gaitOf(p: PlayerView, now: number): Gait {
   const g = stepGait(gaits.get(p.id), p.x, p.y, now);
   gaits.set(p.id, g);
-  if (!p.hidden) noteStride(p.id, g, p.x, p.y, now);
+  if (!p.hidden) noteStride(p.id, g, p.x, p.y, now, p.sprint === true);
   if (now - gaitsPrunedAt > 5000) {
     gaitsPrunedAt = now;
     for (const [id, o] of gaits) if (now - o.t > 5000) gaits.delete(id);
   }
   return g;
+}
+
+/** Each body's sprint pose, eased 0..1 so the gun swings down and back instead of snapping. */
+const sprints = new Map<number, { amount: number; t: number }>();
+const SPRINT_EASE_MS = 140;
+
+function sprintOf(p: PlayerView, now: number): number {
+  const prev = sprints.get(p.id);
+  const dt = prev ? Math.min(100, Math.max(0, now - prev.t)) : 0;
+  const target = p.sprint ? 1 : 0;
+  const amount = reducedMotion() ? target : prev ? prev.amount + Math.sign(target - prev.amount) * Math.min(Math.abs(target - prev.amount), dt / SPRINT_EASE_MS) : target;
+  sprints.set(p.id, { amount, t: now });
+  return amount;
+}
+
+/** Adrenaline and Second Wind: a few short streaks trail behind a body that is running on a boost. */
+function drawSpeedLines(ctx: CanvasRenderingContext2D, heading: number, now: number) {
+  const back = heading + Math.PI;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#ffe08a';
+  for (let i = 0; i < 4; i++) {
+    const side = (i - 1.5) * R * 0.5;
+    const flick = reducedMotion() ? 0.5 : (now / 90 + i * 0.37) % 1;
+    const start = R * (0.9 + 0.5 * flick), len = R * (0.7 + 0.5 * ((i * 7) % 3) / 2);
+    ctx.globalAlpha = 0.75 * (1 - flick);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(back) * start - Math.sin(back) * side, Math.sin(back) * start + Math.cos(back) * side);
+    ctx.lineTo(Math.cos(back) * (start + len) - Math.sin(back) * side, Math.sin(back) * (start + len) + Math.cos(back) * side);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Recon: a small reload arrow over an enemy mid-reload, the moment to push. */
+function drawReloadMark(ctx: CanvasRenderingContext2D) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(28, 31, 38, 0.8)';
+  ctx.beginPath();
+  ctx.arc(0, -R - 20, 9, 0, TAU);
+  ctx.fill();
+  strokeIcon(ctx, UI_ICONS.reload, 0, -R - 20, 12, PALETTE.gold, 2.4);
+  ctx.restore();
+}
+
+/** The magazines a reload lets go of this frame fall to the floor from the hand that held them, each with a tiny tink. */
+function dropMags(fx: ReturnType<typeof gunFxOf>, p: PlayerView, angle: number, frame: ReloadFrame, now: number, self: boolean) {
+  for (const beat of frame.drops) {
+    const spot = dropCarried(fx, p.x, p.y, angle, reloadScene(p.gun, R, angle, beat, 1), now);
+    if (spot) emitSfxAt('tink', spot.x, spot.y, self, { delayMs: 110 });
+  }
 }
 
 function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string, look: PlayerLook) {
@@ -419,16 +511,24 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   const pose = bodyPose(p.id, look.now, gaitAmount(gait));
   ctx.save();
   applyPose(ctx, pose);
-  const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
-  const hands = heldHands(p.gun, R, p.angle).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
+  // A reload moves the support hand, tilts the gun and dips the shoulders a hair at each snap (see reloadanim.ts).
+  const scene = look.reload ? reloadScene(p.gun, R, p.angle, look.reload.t, look.reload.k) : null;
+  const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick) + (scene && !reducedMotion() ? scene.dip : 0);
+  const hands = (scene?.hands ?? heldHands(p.gun, R, p.angle)).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
+  const cos = cosLook(p.cos);
   drawSoldier(ctx, color, 0, 0, R, {
-    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash, noShadow: pose.lift > 0,
+    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash, noShadow: pose.lift > 0, sprint: sprintOf(p, look.now) * (1 - (look.reload?.k ?? 0)),
+    helmet: cos.helmet, camo: cos.camo, spin: (gait.phase * 3) + (reducedMotion() ? 0 : look.now / 900),
     gun: (g) => {
       g.translate(-jump, 0);
-      drawHeldGun(g, p.gun, R, p.angle, p.golden === true);
+      if (scene) scene.draw(g, p.golden === true, cos.skin);
+      else drawHeldGun(g, p.gun, R, p.angle, p.golden === true, cos.skin);
       g.translate(jump, 0);
     },
   }, look.pxPerUnit);
+  ctx.globalAlpha = alpha;
+  if (p.rush && gait.speed > 30) drawSpeedLines(ctx, gait.heading, look.now);
+  if (p.reloading && !look.self) drawReloadMark(ctx);
   ctx.globalAlpha = alpha;
   const { stage } = GUNS[p.gun];
   if (p.hunted && !look.self) drawHuntedMark(ctx, look.now);
@@ -512,34 +612,110 @@ function bodyTags(bodies: readonly PlayerView[], s: Session, now: number): Tag[]
   return tags;
 }
 
-function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number) {
-  ctx.font = `700 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
+/** A clipped plate (the field kit's corners: top right and bottom left cut) at (`x`, `y`), `w` by `h`. */
+function plate(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, c = 4) {
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w - c, y); ctx.lineTo(x + w, y + c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + c, y + h); ctx.lineTo(x, y + h - c);
+  ctx.closePath();
+}
+
+/** A five-point star of radius `r` at (`x`, `y`), for prestige. */
+function starPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+
+const CHIP_FONT = `800 ${TAG.font - 3}px "Barlow Condensed", system-ui, sans-serif`;
+const TITLE_FONT = `600 ${TAG.font - 3}px "Barlow Condensed", system-ui, sans-serif`;
+
+/** The width the account level chip takes before a name: "34" with the stars of prestige, 0 for a bot or a player without one. */
+export function levelChipWidth(ctx: CanvasRenderingContext2D, level: number, prestige: number): number {
+  if (level <= 0) return 0;
+  ctx.font = CHIP_FONT;
+  return ctx.measureText(String(level)).width + (prestige > 0 ? 9 + (prestige > 1 ? ctx.measureText(String(prestige)).width + 1 : 0) : 0) + 9;
+}
+
+function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[], dark: number, now = 0) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
+  const plateAlpha = TAG.plateAlpha * (dark > 0.5 ? 0.8 : 1);
   // Each name sits on a small gunmetal plate with clipped corners, the HUD's field kit, so it reads on the bone floor by day.
-  ctx.fillStyle = TAG.plate;
-  ctx.globalAlpha = TAG.plateAlpha * (dark > 0.5 ? 0.8 : 1);
+  // A human's account level rides on the plate before the name, and a title under it on a plate of its own.
+  const looks = new Map<number, { look: ReturnType<typeof cosLook>; nameW: number; chipW: number }>();
   for (const { p, name } of tags) {
     if (!name) continue;
-    const w = ctx.measureText(p.name).width + 10, h = TAG.font + 5, x = p.x - w / 2, y = p.y + TAG.name - TAG.font + 1, c = 4;
-    ctx.beginPath();
-    ctx.moveTo(x, y); ctx.lineTo(x + w - c, y); ctx.lineTo(x + w, y + c); ctx.lineTo(x + w, y + h); ctx.lineTo(x + c, y + h); ctx.lineTo(x, y + h - c);
-    ctx.closePath();
+    const look = cosLook(p.cos);
+    ctx.font = `700 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
+    const nameW = ctx.measureText(p.name).width;
+    looks.set(p.id, { look, nameW, chipW: levelChipWidth(ctx, look.level, look.prestige) });
+  }
+  ctx.fillStyle = TAG.plate;
+  ctx.globalAlpha = plateAlpha;
+  for (const { p, name } of tags) {
+    const l = looks.get(p.id);
+    if (!name || !l) continue;
+    const w = l.nameW + 10 + l.chipW, h = TAG.font + 5, x = p.x + l.nameW / 2 + 5 - w, y = p.y + TAG.name - TAG.font + 1;
+    plate(ctx, x, y, w, h);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-  ctx.fillStyle = TAG.ink;
-  for (const { p, name } of tags) if (name) ctx.fillText(p.name, p.x, p.y + TAG.name);
+  for (const { p, name } of tags) {
+    const l = looks.get(p.id);
+    if (!name || !l) continue;
+    const baseline = p.y + TAG.name;
+    ctx.font = `700 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
+    ctx.fillStyle = l.look.nameColor === DEFAULTS.nameColor ? TAG.ink : nameInk(ctx, l.look.nameColor, p.x - l.nameW / 2, l.nameW, now);
+    ctx.fillText(p.name, p.x, baseline);
+    if (l.chipW > 0) {
+      // The chip: a darker well at the plate's left end holding the level in bone, and a gold star for each prestige.
+      const cx = p.x - l.nameW / 2 - 5 - l.chipW, h = TAG.font + 5, y = p.y + TAG.name - TAG.font + 1;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      plate(ctx, cx, y, l.chipW, h);
+      ctx.fill();
+      ctx.font = CHIP_FONT;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#c9c4b4';
+      ctx.fillText(String(l.look.level), cx + 4.5, baseline - 1);
+      if (l.look.prestige > 0) {
+        const sx = cx + 4.5 + ctx.measureText(String(l.look.level)).width + 5.5;
+        ctx.fillStyle = PALETTE.gold;
+        starPath(ctx, sx, baseline - 5.5, 4.2);
+        ctx.fill();
+        if (l.look.prestige > 1) { ctx.fillStyle = PALETTE.gold; ctx.fillText(String(l.look.prestige), sx + 5, baseline - 1); }
+      }
+      ctx.textAlign = 'center';
+    }
+    if (l.look.title !== DEFAULTS.title) {
+      const t = COSMETIC_BY_ID.get(l.look.title);
+      if (t) {
+        ctx.font = TITLE_FONT;
+        const tw = ctx.measureText(t.name).width + 10, th = TAG.font - 1, tx = p.x - tw / 2, ty = baseline + 5;
+        ctx.fillStyle = TAG.plate;
+        ctx.globalAlpha = plateAlpha;
+        plate(ctx, tx, ty, tw, th, 3);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = RARITY_INK[t.rarity];
+        ctx.fillText(t.name, p.x, ty + th - 3.5);
+      }
+    }
+  }
   // The rarest lifetime medal a player holds rides before their name, so a decorated veteran is plain to see.
+  ctx.font = `700 ${TAG.font}px "Barlow Condensed", system-ui, sans-serif`;
   for (const { p, name } of tags) {
     if (!name || !p.badge) continue;
     const img = careerImage(p.badge);
-    if (!img) continue;
-    const x = p.x - ctx.measureText(p.name).width / 2 - TAG.badge - 8;
+    const l = looks.get(p.id);
+    if (!img || !l) continue;
+    const x = p.x - l.nameW / 2 - l.chipW - TAG.badge - 8;
     ctx.drawImage(img, x, p.y + TAG.name - TAG.badge * 0.78, TAG.badge, TAG.badge);
   }
   // A player on a streak wears a flame and their kill count beside their name: a target worth a shutdown.
-  const hot = tags.filter((t) => t.name && t.p.streak).map((t) => ({ p: t.p, x: t.p.x + ctx.measureText(t.p.name).width / 2 + 9 }));
+  const hot = tags.filter((t) => t.name && t.p.streak).map((t) => ({ p: t.p, x: t.p.x + (looks.get(t.p.id)?.nameW ?? 0) / 2 + 9 }));
   if (!hot.length) return;
   ctx.font = `800 ${TAG.font + 1}px "Barlow Condensed", system-ui, sans-serif`;
   ctx.textAlign = 'left';

@@ -28,7 +28,7 @@ test('input carries held actions, fire, and aim angle/distance', () => {
   const input = assembleInput(held, true, 4, { dx: 0, dy: 300 });
   assert.deepEqual(input, {
     up: true, down: false, left: false, right: true,
-    angle: Math.PI / 2, aimDist: 300, fire: true, shots: 4, reload: true, ability: false, use: false,
+    angle: Math.PI / 2, aimDist: 300, fire: true, shots: 4, reload: true, ability: false, use: false, sprint: false,
   });
 });
 

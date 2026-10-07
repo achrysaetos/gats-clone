@@ -1,10 +1,12 @@
 import type { Cos } from '../cosmetics.ts';
-import { AIRDROP, BARREL, byTurret, PERK_TIERS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
-import { circleHitsRect, dist2, type Rect } from './movement.ts';
+import { circleHitsRect, dist2, type Knock, type Rect } from './movement.ts';
+import type { ZAi } from './boids.ts';
 import { newRoyale } from './royale.ts';
+import { newRange, type RangeSim } from './targets.ts';
 
 export type Wall = WallView & { expiresAt: number };
 
@@ -24,6 +26,8 @@ export type Life =
     lastMoveAt: number;
     shieldUntil: number;
     dash: Dash | null;
+    /** A shove from a hit still bleeding off, in px/s (see `KNOCK`); moves the body through the same collision as a step. */
+    knock: Knock | null;
     pressUntil: number;
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];
@@ -32,6 +36,16 @@ export type Life =
     suppressedAt: number;
     /** Holds an airdrop's golden gun for this life: its rounds hit `AIRDROP.goldMul` as hard. */
     golden: boolean;
+    /** Sprinting this tick (see `SPRINT`); `settleLeft` ms of post-sprint bloom still to ease out, and the gun is down until `raiseUntil`. */
+    sprint: boolean;
+    settleLeft: number;
+    raiseUntil: number;
+    /** Perk timers: Adrenaline's kill rush and Second Wind (used once a life) run to these server times. */
+    rushUntil: number;
+    windUntil: number;
+    windUsed: boolean;
+    /** Tracker: the server time each enemy this life damaged stays marked on the minimap until, by player id. */
+    tracks: Record<number, number>;
   }
   /** Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
   | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number }
@@ -81,6 +95,10 @@ export type Player = {
   /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
   huntedPing: (Pose & { at: number }) | null;
   abilityReadyAt: number;
+  /** A flashbang's blinding: gone at `until`, `ms` long in all (see `flashAmount`). Set by `flashPlayers`. */
+  flash?: { until: number; ms: number };
+  /** The tier-2 perks this life's pick offers, drawn from the world's rng at spawn. */
+  tier2Offer: readonly PerkId[];
 };
 
 export type PerkOfTier<T extends Tier> = (typeof PERK_TIERS)[T][number];
@@ -119,6 +137,15 @@ export type Crate = { id: number; x: number; y: number; size: number; hp: number
  * `by` is whoever lit it, with the `chain` (the id of the barrel that began it) it belongs to.
  */
 export type Barrel = { id: number; x: number; y: number; hp: number; fuseAt: number | null; respawnAt: number | null; by: { attacker: number | null; team: Team; chain: number } | null };
+/**
+ * A prop (center `x`, `y`; see `PROPS` and `sim/props.ts`). `stand` until shot to zero; then `active` (a propane tank in flight with
+ * velocity `vx`, `vy`, or a generator arcing) until `at`, or `spent` (a broken lamp until it relights, a cabinet's pack until it is taken or expires) until `at`.
+ * `respawnAt` is set while it is gone. `by` is whoever set it off.
+ */
+export type Prop = {
+  id: number; kind: PropKind; x: number; y: number; hp: number; phase: 'stand' | 'active' | 'spent'; at: number; respawnAt: number | null;
+  vx: number; vy: number; by: { attacker: number | null; team: Team } | null;
+};
 /** Barrels that burst one after another from one spark, and the kills they made, so a chain of two or more barrels that kills two or more earns Chain Reaction. */
 export type Chain = { by: number | null; barrels: number; kills: number; paid: boolean; at: number };
 /** A supply plane on its way: it passes (`x`, `y`) at `dropAt`, the crate lands at `landAt` and, once landed, stands as crate `crateId` until `expiresAt`. */
@@ -127,8 +154,13 @@ export type Airdrops = { due: number[]; flight: Flight | null };
 
 export type Thrown =
   | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
+  | { id: number; kind: 'flashbang' | 'smokeGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
+  /** A smoke cloud: it blooms, drifts at (vx, vy) and thins away (see `smokeShape`). */
+  | { id: number; kind: 'smokeCloud'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; bornAt: number; expiresAt: number }
   | { id: number; kind: 'landMine'; owner: number; team: Team; x: number; y: number; armedAt: number; expiresAt: number }
-  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; expiresAt: number };
+  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; expiresAt: number }
+  /** An oil drum's burning slick: it burns whoever stands in it but its spiller (see `PROP_FX.oil`). */
+  | { id: number; kind: 'fireSlick'; owner: number; team: Team; x: number; y: number; expiresAt: number };
 
 export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
@@ -137,12 +169,15 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restart
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
 /** `vx`, `vy` is how fast it moved last tick, in px a second. */
-export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number };
+export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number; /** A shove from a hit, in px/s (see `KNOCK`); brutes and the colossus take none. */ knock?: Knock | null; /** The pack it walked in with, and its steering and target state (see `boids.ts`); neither goes on the wire. */ pack?: number; ai?: ZAi };
 
-type Cell = { id: number; cx: number; cy: number; hp: number };
+/** `lv` is the upgrade level, 1 to `MAX_LEVEL`; a building without one is level 1 (a wall's tier, a turret's or utility's level). */
+type Cell = { id: number; cx: number; cy: number; hp: number; lv?: number };
 /** A turret fires for `owner`, its builder, who gets the score for its kills. */
 export type Turret = Cell & { kind: TurretKind; owner: number; ammo: number; nextFireAt: number };
-export type Building = (Cell & { kind: 'wall' }) | Turret;
+/** What stands on a cell and blocks the way: a wall, a turret, a depot or a post. Spike strips are floor, in `World.floor`, and are walked over. */
+export type Building = (Cell & { kind: 'wall' | 'depot' | 'post' }) | Turret;
+export type FloorItem = Cell & { kind: 'spikes' };
 
 /** `n` zombies of one kind that walk in together from one side. */
 export type HordeUnit = { kind: ZombieKind; side: Side; n: number };
@@ -220,6 +255,9 @@ export type World = {
   bullets: Bullet[];
   crates: Crate[];
   barrels: Barrel[];
+  props: Prop[];
+  /** Players an EMP has slowed, until when, and the player whose generator did it. */
+  emps: Map<number, { until: number; by: number | null }>;
   chains: Map<number, Chain>;
   airdrops: Airdrops;
   walls: Wall[];
@@ -238,13 +276,17 @@ export type World = {
   history: PoseFrame[];
   zombies: Zombie[];
   buildings: Building[];
+  /** Spike strips: built like a building but not solid, and not on the horde's flow field. */
+  floor: FloorItem[];
   buildingsVersion: number;
   run: Run | null;
   royale: Royale | null;
+  /** The shooting range's targets and readout; only a Range world has one (see `sim/targets.ts`). */
+  range?: RangeSim;
 };
 
 export const IDLE_INPUT: InputState = {
-  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false,
+  up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false, sprint: false,
 };
 
 function mulberry32(state: number): number {
@@ -268,12 +310,13 @@ export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], barrels: [], chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, thrown: [],
+    players: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
-    zombies: [], buildings: [], buildingsVersion: 0, run: null, royale: null,
+    zombies: [], buildings: [], floor: [], buildingsVersion: 0, run: null, royale: null,
   };
   loadMap(w, map);
   if (mode === 'ZOM') w.run = newRun(w.now);
+  if (mode === 'RNG') w.range = newRange(w);
   return w;
 }
 
@@ -293,7 +336,9 @@ export function loadMap(w: World, map: MapId) {
   w.walls = def.walls.map((r) => ({ ...r, built: false as const, expiresAt: Infinity }));
   w.wallsVersion++;
   w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
-  w.barrels = hasArenaSurprises(w.mode) ? def.barrels.map((b) => ({ id: newId(w), x: b.x, y: b.y, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null })) : [];
+  w.barrels = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.barrels.map((b) => ({ id: newId(w), x: b.x, y: b.y, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null })) : [];
+  w.props = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.props.map((q) => ({ id: newId(w), kind: q.kind, x: q.x, y: q.y, hp: PROPS[q.kind].hp, phase: 'stand' as const, at: 0, respawnAt: null, vx: 0, vy: 0, by: null })) : [];
+  w.emps = new Map();
   w.chains = new Map();
   w.airdrops = { due: hasArenaSurprises(w.mode) ? planAirdrops(w) : [], flight: null };
   w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0 })) : [];
@@ -302,6 +347,7 @@ export function loadMap(w: World, map: MapId) {
   w.history = [];
   w.zombies = [];
   w.buildings = [];
+  w.floor = [];
   w.buildingsVersion++;
   if (w.mode === 'BR') w.royale = newRoyale(w);
 }
@@ -326,6 +372,9 @@ function planAirdrops(w: World): number[] {
 }
 
 export const barrelRect = (b: Barrel): Rect => ({ x: b.x - BARREL.size / 2, y: b.y - BARREL.size / 2, w: BARREL.size, h: BARREL.size });
+export const propRect = (q: Prop): Rect => { const h = PROPS[q.kind].size / 2; return { x: q.x - h, y: q.y - h, w: 2 * h, h: 2 * h }; };
+/** A prop blocks bodies and rounds while it stands or arcs, and a dark lamp keeps its post; a flying tank and a lying pack do not block. */
+export const propSolid = (q: Prop): boolean => q.respawnAt === null && !(q.kind === 'propane' && q.phase === 'active') && !((q.kind === 'medic' || q.kind === 'ammo') && q.phase === 'spent');
 export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 export function coreRect(w: World): Rect | null {
   const core = MAPS[w.map].siege?.core;
@@ -333,7 +382,7 @@ export function coreRect(w: World): Rect | null {
 }
 
 /** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. */
-export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect), ...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect)];
+export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect), ...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect), ...w.props.filter(propSolid).map(propRect)];
 
 /** What stops bodies: cover, plus the squad's walls and the core in a zombies run. */
 export function solidRects(w: World): Rect[] {

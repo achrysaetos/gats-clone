@@ -2,7 +2,7 @@ import { WORLD } from '../../shared/defs.ts';
 import { MAPS } from '../../shared/maps.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
-import { barrelRect, crateRect, type Crate, type Wall, type World } from '../../shared/sim/world.ts';
+import { barrelRect, crateRect, propRect, propSolid, type Crate, type Wall, type World } from '../../shared/sim/world.ts';
 import { wallViews } from '../../shared/sim/snapshot.ts';
 import { coverIndex, type CoverIndex } from './cover.ts';
 import { isOpen, navGrid, nearestOpenPoint, withSolids, type NavGrid, type Point } from './nav.ts';
@@ -11,7 +11,7 @@ export type BotArena = {
   size: number;
   version: number;
   walls: readonly WallView[];
-  /** Barrels standing now: solid to bodies and bullets, and in `nav`. */
+  /** Barrels and props standing now: solid to bodies and bullets, and in `nav`. */
   barrels: readonly Rect[];
   nav: NavGrid;
   cover: CoverIndex;
@@ -40,7 +40,7 @@ export function arenaFor(w: World): BotArena {
   const size = MAPS[w.map].size;
   const mapWalls = w.walls.filter((wall) => !wall.built);
   const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : buildLayout(size, mapWalls, w.crates);
-  const barrels = w.barrels.filter((b) => b.respawnAt === null).map(barrelRect);
+  const barrels = [...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect), ...w.props.filter(propSolid).map(propRect)];
   const solids: Rect[] = [...w.walls.filter((wall) => wall.built), ...barrels];
   const arena: BotArena = {
     size, version: w.wallsVersion, walls: wallViews(w), barrels, cover: layout.cover, replans: { tick: -1, left: 0 },

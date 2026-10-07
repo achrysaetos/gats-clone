@@ -36,14 +36,15 @@ function gunStats(id: WeaponId): HTMLElement {
   }));
 }
 
-export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void): LoadoutPicker {
+export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void, skin: () => string = () => ''): LoadoutPicker {
+  let paintedSkin = skin();
   const weaponButtons = WEAPON_IDS.map((id) => {
     const w = GUNS[id];
     const art = el('canvas', { className: 'gun-art' });
     const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${w.desc}` },
       art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id));
     b.onclick = () => set({ ...get(), weapon: id });
-    drawGunCard(art, id, 150, 56);
+    drawGunCard(art, id, 150, 56, [id], paintedSkin);
     return [id, b] as const;
   });
   const colorButtons = COLOR_IDS.map((id) => {
@@ -72,6 +73,11 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
   const refresh = () => {
     const l = get();
     for (const [id, b] of weaponButtons) b.ariaPressed = String(id === l.weapon);
+    if (skin() !== paintedSkin) {
+      // The gun cards wear the skin you have equipped.
+      paintedSkin = skin();
+      for (const [id, b] of weaponButtons) { const art = b.querySelector('canvas'); if (art) drawGunCard(art, id, 150, 56, [id], paintedSkin); }
+    }
     for (const [id, b] of colorButtons) b.ariaPressed = String(id === l.color);
     for (const [id, b] of armorButtons) b.ariaPressed = String(id === l.armor);
   };

@@ -1,4 +1,5 @@
 import { BUILDINGS, WORLD, ZOMBIES, type TurretKind } from '../shared/defs.ts';
+import { markBlast, startShell } from './blastfx.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { INK, PALETTE, tint, ZOMBIE_LOOK } from './palette.ts';
 import { LIGHT } from './tilt.ts';
@@ -28,7 +29,10 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].arm, 0.5 * big);
       burst(s.particles, 'bone', spec.x, spec.y, angle, now, Math.random, undefined, big);
       burst(s.particles, 'dust', spec.x, spec.y, angle, now, Math.random, undefined, big);
-      if (spec.zombie === 'bloater') burst(s.particles, 'smoke', spec.x, spec.y, angle, now, Math.random, '#9aa860');
+      if (spec.zombie === 'bloater') {
+        burst(s.particles, 'smoke', spec.x, spec.y, angle, now, Math.random, '#9aa860');
+        markBlast('bloater', spec.x, spec.y, now);
+      }
       return;
     }
     case 'flash': {
@@ -37,6 +41,8 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       return;
     }
     case 'tracer':
+      // A lobbed round is a mortar shell on a high arc, drawn and landed by blastdraw.ts.
+      if (BUILDINGS[spec.turret].turret.lobbed) startShell(spec.x, spec.y, spec.angle, spec.reach, BUILDINGS[spec.turret].turret.bulletSpeed, now);
       // Only the first pellet of a spread puffs, so a scatter's seven rounds leave one cloud.
       if (!s.effects.some((o) => o !== s.effects.at(-1) && o.kind === 'tracer' && o.born === now && Math.abs(o.x - spec.x) < 12 && Math.abs(o.y - spec.y) < 12)) {
         burst(s.particles, 'muzzleSmoke', spec.x, spec.y, spec.angle, now);
@@ -81,7 +87,71 @@ export function drawEffects(ctx: CanvasRenderingContext2D, effects: readonly Eff
       case 'death': drawDeathRing(ctx, fx.x, fx.y, k); break;
       case 'splat': drawSplat(ctx, fx.x, fx.y, ZOMBIE_LOOK[fx.zombie].arm, ZOMBIES[fx.zombie].radius, k); break;
       case 'tracer': drawTurretRound(ctx, fx.turret, fx.x, fx.y, fx.angle, fx.reach, now - fx.born); break;
+      case 'coil': drawArc(ctx, fx.p, fx.born, k, now); break;
+      case 'aid': drawAid(ctx, fx.of, fx.x, fx.y, k); break;
     }
+  }
+  ctx.globalAlpha = 1;
+}
+
+const ARC = { glow: '#8fb8ff', core: '#f4fbff' } as const;
+
+/** A coil's arc: a jagged bolt from point to point, re-jagged every few frames so it crackles, a wide pale glow under a white core, gone in a blink. */
+function drawArc(ctx: CanvasRenderingContext2D, p: readonly number[], born: number, k: number, now: number) {
+  const flick = Math.floor((now - born) / 55);
+  let seed = (Math.round(born) ^ (flick * 7919) ^ (Math.round(p[0] ?? 0) * 31)) >>> 0;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const bolt: number[] = [];
+  for (let i = 0; i + 3 < p.length; i += 2) {
+    const x0 = p[i]!, y0 = p[i + 1]!, x1 = p[i + 2]!, y1 = p[i + 3]!, len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(2, Math.round(len / 16));
+    const nx = len > 0 ? -(y1 - y0) / len : 0, ny = len > 0 ? (x1 - x0) / len : 0;
+    for (let j = i === 0 ? 0 : 1; j <= n; j++) {
+      const t = j / n, jag = j === 0 || j === n ? 0 : (rnd() - 0.5) * 14;
+      bolt.push(x0 + (x1 - x0) * t + nx * jag, y0 + (y1 - y0) * t + ny * jag);
+    }
+  }
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const [color, width, alpha] of [[ARC.glow, 9, 0.28], [ARC.glow, 4, 0.75], [ARC.core, 1.8, 1]] as const) {
+    ctx.globalAlpha = alpha * (1 - k);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(bolt[0]!, bolt[1]!);
+    for (let i = 2; i < bolt.length; i += 2) ctx.lineTo(bolt[i]!, bolt[i + 1]!);
+    ctx.stroke();
+  }
+  // A white flash at each stop, where the arc lands.
+  ctx.fillStyle = ARC.core;
+  ctx.globalAlpha = 0.9 * (1 - k);
+  for (let i = 2; i < p.length; i += 2) { ctx.beginPath(); ctx.arc(p[i]!, p[i + 1]!, 5 * (1 - k) + 2, 0, TAU); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  ctx.lineJoin = 'miter';
+  ctx.lineCap = 'butt';
+}
+
+/** A depot's round or a post's cross rising off the building and fading, ink-edged so it reads on any floor. */
+function drawAid(ctx: CanvasRenderingContext2D, of: 'depot' | 'post', x: number, y: number, k: number) {
+  const rise = 10 + 26 * (1 - (1 - k) * (1 - k)), at = y - rise;
+  ctx.globalAlpha = Math.min(1, 2.2 * (1 - k));
+  if (of === 'post') {
+    ctx.fillStyle = INK;
+    ctx.fillRect(x - 7, at - 3.5, 14, 7);
+    ctx.fillRect(x - 3.5, at - 7, 7, 14);
+    ctx.fillStyle = '#8ff0c4';
+    ctx.fillRect(x - 5.5, at - 2, 11, 4);
+    ctx.fillRect(x - 2, at - 5.5, 4, 11);
+  } else {
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    ctx.roundRect(x - 4.5, at - 8, 9, 16, 4);
+    ctx.fill();
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.roundRect(x - 3, at - 6.5, 6, 6, 2.5);
+    ctx.fill();
+    ctx.fillStyle = '#d9a441';
+    ctx.fillRect(x - 3, at - 0.5, 6, 6);
   }
   ctx.globalAlpha = 1;
 }
@@ -92,6 +162,7 @@ const TRAIL_S = 0.03;
 /** The muzzle flash, then the round flying out along its line until it stops `reach` px out. */
 function drawTurretRound(ctx: CanvasRenderingContext2D, kind: TurretKind, x: number, y: number, angle: number, reach: number, ms: number) {
   if (ms < FLASH_MS) drawMuzzleFlash(ctx, x, y, angle, ms / FLASH_MS);
+  if (BUILDINGS[kind].turret.lobbed) return;
   const { bulletSpeed, bullet } = BUILDINGS[kind].turret;
   const head = (bulletSpeed * ms) / 1000;
   if (head > reach) return;

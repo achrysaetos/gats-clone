@@ -13,7 +13,7 @@ export function seeded(seed: number): () => number {
  * A material's surface: faint specks, soft blotches and scratches for wear, and optional seams. `rivets` studs each panel
  * corner. The kit's look is flat and graphic, so every one of these stays quiet: a surface reads by its colour and edges.
  */
-export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | 'bags' | null; tile: number; rivets?: boolean };
+export type Grain = { specks: number; blotches: number; scratches: number; seams: 'brick' | 'panel' | 'bags' | 'planks' | null; tile: number; rivets?: boolean };
 
 export function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
@@ -78,6 +78,7 @@ export function paintGrain(top: string, grain: Grain, seed: number): HTMLCanvasE
   for (let i = 0; i < grain.scratches * area; i++) scratch(g, rand, rand() * tile, rand() * tile, 6 + rand() * 14);
   g.stroke();
   if (grain.seams === 'bags') paintBags(g, tile, rand);
+  else if (grain.seams === 'planks') paintPlanks(g, tile, rand);
   else if (grain.seams) {
     g.strokeStyle = 'rgba(30, 28, 26, 0.28)';
     g.lineWidth = 1;
@@ -149,6 +150,31 @@ function paintBags(g: CanvasRenderingContext2D, tile: number, rand: () => number
         g.stroke();
       }
     }
+  }
+}
+
+/** Boards laid side by side seen from above: each its own tone, a dark gap between, a lit upper edge, a few grain streaks and a nail at each end. */
+function paintPlanks(g: CanvasRenderingContext2D, tile: number, rand: () => number) {
+  const rows = 4, h = tile / rows;
+  for (let row = 0; row < rows; row++) {
+    const y0 = row * h, k = (rand() - 0.5) * 0.16;
+    g.fillStyle = k > 0 ? `rgba(255, 232, 190, ${k.toFixed(3)})` : `rgba(40, 24, 8, ${(-k).toFixed(3)})`;
+    g.fillRect(0, y0, tile, h);
+    g.fillStyle = 'rgba(255, 240, 210, 0.2)';
+    g.fillRect(0, y0 + 1, tile, 2);
+    g.fillStyle = 'rgba(20, 12, 4, 0.62)';
+    g.fillRect(0, y0 + h - 3, tile, 3);
+    g.strokeStyle = 'rgba(46, 28, 10, 0.3)';
+    g.lineWidth = 0.8;
+    g.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const x = rand() * tile, y = y0 + 4 + rand() * (h - 8);
+      g.moveTo(x, y);
+      g.lineTo(x + 8 + rand() * 18, y + (rand() - 0.5) * 2);
+    }
+    g.stroke();
+    g.fillStyle = 'rgba(20, 14, 8, 0.55)';
+    for (const x of [4, tile - 4]) { g.beginPath(); g.arc(x, y0 + h / 2, 1.3, 0, Math.PI * 2); g.fill(); }
   }
 }
 

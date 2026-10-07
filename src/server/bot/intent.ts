@@ -2,7 +2,8 @@ import { GUNS, type GunId, type WeaponId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
-import type { Perception, Threat } from './awareness.ts';
+import { BLIND_AT, type Perception, type Threat } from './awareness.ts';
+import { sightBlocked } from '../../shared/sim/vision.ts';
 import { coverNear, pickCover } from './cover.ts';
 import { between, dist, type Point } from './nav.ts';
 
@@ -57,7 +58,9 @@ export type Plan =
   | { k: 'reloadInCover'; spot: Point; threat: Point }
   | { k: 'retreatAndHeal'; spot: Point | null; threat: Point }
   | { k: 'flank'; target: number; via: Point; lastKnown: Point }
-  | { k: 'search'; at: Point; giveUpAt: number };
+  | { k: 'search'; at: Point; giveUpAt: number }
+  /** Flashed: blind until it wears off. `spray` fires at where the enemy last was, `fallBack` backs away from it, `hold` stands its ground. */
+  | { k: 'blinded'; mode: 'spray' | 'fallBack' | 'hold'; at: Point };
 
 export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
@@ -66,7 +69,7 @@ type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
 export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point } };
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
-  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500,
+  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0,
 };
 const SEARCH_MS = 5000;
 const GUNFIRE_PULL_PX = 2500;
@@ -140,6 +143,8 @@ function idlePlan(v: Perception, c: IntentCtx): Plan {
 function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
   const last = v.lastSeen;
   if (!last) return idlePlan(v, c);
+  // It lost him in smoke: he is still there, but pushing into a cloud is walking blind, so it holds and waits for him to come out.
+  if (sightBlocked(v.smokes, v.me.x, v.me.y, last.x, last.y)) return { k: 'takePosition', spot: v.me, facing: last };
   if (c.rand() < c.persona.flankOdds) return flankPlan(v, c, target, last);
   if (c.rand() < c.persona.pushOdds) return searchPlan(v, c, last);
   const spot = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [last], { reach: COVER_REACH_PX, range: c.band.ideal, peek: false })?.spot ?? v.me;
@@ -198,7 +203,16 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   return searchPlan(v, c, v.lead);
 };
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
+/** Flashed: what a person does with a white screen, by temperament: the aggressive spray where the enemy was, the careful back off, anyone with nothing to go on stands still. */
+const goBlind: Interrupt = (cur, v, c) => {
+  if (v.flash <= BLIND_AT || cur.k === 'blinded') return null;
+  const known = v.lastSeen && v.tick - v.lastSeen.seenTick < ticks(4000) ? v.lastSeen : null;
+  if (!known) return { k: 'blinded', mode: 'hold', at: v.me };
+  const spray = c.rand() < (c.persona.pushOdds >= 1 ? 0.7 : c.persona.peekOdds >= 0.5 ? 0.15 : 0.35);
+  return { k: 'blinded', mode: spray ? 'spray' : 'fallBack', at: known };
+};
+
+const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -234,6 +248,10 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   flank: (cur, v, c) => {
     if (v.tick - cur.since > ticks(FLANK_MS) || dist(v.me, cur.via) < ARRIVED_PX) return searchPlan(v, c, cur.lastKnown);
     return null;
+  },
+  blinded: (cur, v, c) => {
+    if (v.flash > BLIND_AT) return null;
+    return cur.mode === 'spray' ? searchPlan(v, c, cur.at) : idlePlan(v, c);
   },
   search: (cur, v, c) => {
     if (v.lead && dist(v.lead, cur.at) > 300 && v.lead.tick === v.tick) return searchPlan(v, c, v.lead);

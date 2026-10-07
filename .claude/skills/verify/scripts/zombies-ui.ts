@@ -1,14 +1,15 @@
 /// <reference types="node" />
-// Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build turrets night (default, in order), plus downed and report on request.
+// Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build turrets night (default, in order), plus variety, downed and report on request.
 // Drives the zombies client in headless Chrome through real input. downed and report need a scratch copy with fragile humans and a weak core, and turrets builds a cannon
-// only on a scratch copy with more starting scrap (see features/zombies.md).
+// only on a scratch copy with more starting scrap, and variety (tiers, upgrades, every kind) needs about 3000 (see features/zombies.md).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import type { BuildingView, RunView, Snapshot, ZombieView } from '../../../../src/shared/protocol.ts';
 import type { BuildingKind, TurretKind } from '../../../../src/shared/defs.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { BUILDINGS, byTurret, nightOf, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../../../../src/shared/defs.ts';
+import { BUILDINGS, byTurret, nightOf, WALL_TIERS, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../../../../src/shared/defs.ts';
+import { costOf } from '../../../../src/shared/sim/build.ts';
 import { forecast, squadShare } from '../../../../src/client/zombies.ts';
 import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
@@ -27,7 +28,7 @@ const expect = (label: string, ok: boolean, detail = '') => { log(`${ok ? 'ok  '
 
 const frames = {
   welcome: null as null | { id: number; mode: string }, snap: null as Snapshot | null,
-  turretShots: byTurret(() => 0), turretKills: 0, lowestAmmo: byTurret(() => 10), scrapEarned: 0,
+  turretShots: byTurret(() => 0), turretKills: 0, lowestAmmo: byTurret(() => 10), scrapEarned: 0, coils: 0, aids: 0,
 };
 const page = await openPage({
   profile: 'skirmish-zombies-',
@@ -40,10 +41,12 @@ const page = await openPage({
       frames.snap = fillSnapshot(msg, frames.snap) ?? frames.snap;
       for (const e of frames.snap?.events ?? []) {
         if (e.e === 'turret') frames.turretShots[e.kind]++;
+        if (e.e === 'coil') frames.coils++;
+        if (e.e === 'aid') frames.aids++;
         if (e.e === 'zkill' && e.by === null) frames.turretKills++;
         if (e.e === 'zkill') frames.scrapEarned += ZOMBIES[e.kind].scrap;
       }
-      for (const b of frames.snap?.buildings ?? []) if (b.kind !== 'wall') frames.lowestAmmo[b.kind] = Math.min(frames.lowestAmmo[b.kind], b.ammo);
+      for (const b of frames.snap?.buildings ?? []) if ('ammo' in b) frames.lowestAmmo[b.kind] = Math.min(frames.lowestAmmo[b.kind], b.ammo);
     }
   },
   onProblem: (kind, detail) => problems.push(`${kind}: ${detail}`),
@@ -68,8 +71,9 @@ const status = () => js(`document.getElementById('menu-status').textContent`) as
 const me = () => frames.snap?.players.find((p) => p.id === frames.welcome?.id);
 const run = (): RunView | undefined => frames.snap?.run;
 type ZombiesDev = {
-  building: boolean; buildKind: BuildingKind; chips: { kind: BuildingKind; x: number; y: number; w: number; h: number }[]; use: string | null;
-  ghost: { kind: BuildingKind; cx: number; cy: number; refusal: string | null; label: string } | null; coreAlert: boolean; callouts: string[];
+  building: boolean; buildKind: BuildingKind; buildTier: number; chips: { pick: { kind?: BuildingKind; lv?: number; upgrade?: true }; x: number; y: number; w: number; h: number }[]; use: string | null;
+  ghost: { kind: BuildingKind; lv: number; cx: number; cy: number; refusal: string | null; label: string; detail: string | null; upgrade: string | null; hover: { name: string; lv: number; top: number; hpPct: number; next: { name: string; cost: number } | null } | null } | null;
+  coreAlert: boolean; callouts: string[];
 };
 const zdev = () => js(`skirmishDev.zombies()`) as Promise<ZombiesDev | null>;
 const toScreen = (x: number, y: number) => js(`skirmishDev.toScreen(${x}, ${y})`) as Promise<{ x: number; y: number } | null>;
@@ -77,16 +81,30 @@ const aimAtWorld = async (x: number, y: number) => { const at = await toScreen(x
 const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
 const hasWall = (b: readonly BuildingView[] | undefined, cx: number, cy: number) => !!b?.some((w) => w.cx === cx && w.cy === cy);
 const turretAt = (cell: { cx: number; cy: number }) =>
-  frames.snap?.buildings?.find((b): b is Extract<BuildingView, { ammo: number }> => b.cx === cell.cx && b.cy === cell.cy && b.kind !== 'wall');
+  frames.snap?.buildings?.find((b): b is Extract<BuildingView, { ammo: number }> => b.cx === cell.cx && b.cy === cell.cy && 'ammo' in b);
 let squad = '';
-/** A magnified shot of the screen round a world point, for detail the full view draws too small to judge. */
+/**
+ * A magnified shot of the screen round a world point, for detail the full view draws too small to judge. The page is redrawn at 3x device pixels for it,
+ * so the detail is drawn, not stretched, and put back to 1x after.
+ */
 async function closeUp(name: string, x: number, y: number) {
   const at = await toScreen(x, y);
-  if (at) await shot(name, { x: Math.max(0, at.x - 120), y: Math.max(0, at.y - 80), width: 240, height: 160, scale: 3 });
+  if (!at) return;
+  const view = (deviceScaleFactor: number) => cdp('Emulation.setDeviceMetricsOverride', { ...VIEW, deviceScaleFactor, mobile: false, width: VIEW.w, height: VIEW.h });
+  await view(3);
+  await js(`window.dispatchEvent(new Event('resize'))`);
+  await sleep(450);
+  const crisp = await toScreen(x, y);
+  await shot(name, { x: Math.max(0, (crisp ?? at).x - 120), y: Math.max(0, (crisp ?? at).y - 80), width: 240, height: 160, scale: 1 });
+  await view(1);
+  await js(`window.dispatchEvent(new Event('resize'))`);
+  await sleep(200);
 }
 
 /** The turrets the turrets step put up, for the night to watch. */
 const turrets: { kind: TurretKind; cx: number; cy: number }[] = [];
+/** What the variety step put up, by label, for the night to look at. */
+const gallery = new Map<string, { cx: number; cy: number }>();
 
 /** Points the ghost at cells around the player until it shows one the picked kind may go up on. */
 async function buildableCell(): Promise<{ cx: number; cy: number } | null> {
@@ -261,13 +279,118 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('the wall goes back up', await until(() => hasWall(frames.snap?.buildings, cell!.cx, cell!.cy)));
     await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
   },
+  /** Tiers, upgrades and every kind: needs a scratch copy with about 3000 starting scrap and a long day (see features/zombies.md). */
+  async variety() {
+    await until(() => run()?.phase === 'day' && me()?.alive, 60_000);
+    if ((await zdev())?.building !== true) await tap('KeyB', 'b');
+    expect('B turns build mode on by day', await until(async () => (await zdev())?.building === true));
+    if (!expect('there is scrap to spend on the variety', run()!.scrap >= 1500, `${run()!.scrap} scrap`)) return;
+    const wheel = (deltaY: number) => cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: VIEW.w / 2, y: VIEW.h / 2, deltaX: 0, deltaY });
+    const tier = async () => (await zdev())?.buildTier;
+    // Keys: 1 picks the wall, 1 again and Q step its tier, the wheel steps through everything.
+    await tap('Digit1', '1');
+    await until(async () => (await zdev())?.buildKind === 'wall');
+    const first = await tier();
+    await tap('Digit1', '1');
+    expect('1 again steps the wall to its next tier', await until(async () => (await tier()) === (first! % 3) + 1), `tier ${first} -> ${await tier()}`);
+    const before = await tier();
+    await tap('KeyQ', 'q');
+    expect('Q steps the wall tier', await until(async () => (await tier()) === (before! % 3) + 1), `tier ${before} -> ${await tier()}`);
+    while ((await tier()) !== 1) { await tap('KeyQ', 'q'); await sleep(60); }
+    await wheel(100);
+    expect('the wheel steps to the next tier', await until(async () => (await tier()) === 2));
+    await wheel(-100);
+    expect('and back', await until(async () => (await tier()) === 1));
+    await tap('Digit6', '6');
+    expect('6 picks the tesla coil, 7 the depot, 8 the post, 9 the spikes', await until(async () => (await zdev())?.buildKind === 'tesla'));
+    for (const [code, kind] of [['Digit7', 'depot'], ['Digit8', 'post'], ['Digit9', 'spikes']] as const) {
+      await tap(code, code.slice(5));
+      expect(`${code.slice(5)} picks the ${kind}`, await until(async () => (await zdev())?.buildKind === kind));
+    }
+    const rows = (await zdev())?.chips ?? [];
+    expect('the build bar has a chip for each wall tier, five turrets, three utilities and the upgrade', rows.length === 3 + 5 + 3 + 1, `${rows.length} chips`);
+    // Build one of each, in rows north and south of the player, each at the next free cell.
+    const self = me()!, base = { cx: Math.floor(self.x / ZOM.cell), cy: Math.floor(self.y / ZOM.cell) };
+    const spots = [-3, 3, -2, 2].flatMap((dy) => [-4, -3, -2, -1, 1, 2, 3, 4, 5].map((dx) => ({ cx: base.cx + dx, cy: base.cy + dy })));
+    const placed = gallery;
+    const place = async (label: string, pick: () => Promise<void>, kind: BuildingKind, lv = 1) => {
+      await pick();
+      for (const spot of spots) {
+        if ([...placed.values()].some((c) => c.cx === spot.cx && c.cy === spot.cy)) continue;
+        await aimAtWorld(cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y);
+        await sleep(70);
+        const g = (await zdev())?.ghost;
+        if (g?.cx !== spot.cx || g.cy !== spot.cy || g.refusal !== null) continue;
+        const scrap = run()!.scrap;
+        const at = await toScreen(cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y);
+        await click(at!.x, at!.y);
+        const up = await until(() => frames.snap?.buildings?.some((b) => b.cx === spot.cx && b.cy === spot.cy && b.kind === kind && (b.lv ?? 1) === lv));
+        if (!expect(`a left click puts up the ${label}`, up, `cell ${spot.cx},${spot.cy}`)) return null;
+        expect(`the ${label} cost ${costOf(kind, lv)}`, await until(() => Math.abs(scrap - run()!.scrap - costOf(kind, lv)) < 5), `${scrap} -> ${run()!.scrap}`);
+        placed.set(label, spot);
+        return spot;
+      }
+      expect(`a free cell for the ${label}`, false);
+      return null;
+    };
+    const pickTier = (lv: number) => async () => { await tap('Digit1', '1'); while ((await tier()) !== lv) { await tap('KeyQ', 'q'); await sleep(60); } };
+    for (const lv of [1, 2, 3]) {
+      const spot = await place(`${WALL_TIERS[lv - 1]!.name}`, pickTier(lv), 'wall', lv);
+      if (spot) { await mouse('mouseMoved', VIEW.w / 2 + 200, 40); await closeUp(`zom-tier-${lv}-${WALL_TIERS[lv - 1]!.name.toLowerCase().replace(/ /g, '-')}`, cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y); }
+    }
+    const kinds: [string, string, BuildingKind][] = [['Digit2', 'sentry', 'sentry'], ['Digit3', 'cannon', 'cannon'], ['Digit4', 'scatter', 'scatter'], ['Digit5', 'mortar', 'mortar'], ['Digit6', 'tesla coil', 'tesla'], ['Digit7', 'ammo depot', 'depot'], ['Digit8', 'repair post', 'post'], ['Digit9', 'spike strip', 'spikes']];
+    for (const [code, label, kind] of kinds) await place(label, () => tap(code, code.slice(5)), kind);
+    await mouse('mouseMoved', VIEW.w / 2 + 200, 40);
+    await sleep(400);
+    await shot('zom-variety-gallery');
+    // Hovering a building shows its level, health and upgrade cost; U or the upgrade chip or a click steps it up.
+    const stepUp = async (label: string, how: 'U' | 'chip' | 'click', toLv: number) => {
+      const spot = placed.get(label);
+      if (!spot) return;
+      const at = await aimAtWorld(cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y);
+      await sleep(120);
+      const hover = (await zdev())?.ghost?.hover;
+      expect(`hovering the ${label} names its level and the next step`, !!hover && hover.lv === toLv - 1 && hover.next !== null, JSON.stringify(hover));
+      const scrap = run()!.scrap;
+      if (how === 'U') await tap('KeyU', 'u');
+      else if (how === 'chip') { const chip = (await zdev())?.chips.find((c) => c.pick.upgrade); if (chip) await click(chip.x + chip.w / 2, chip.y + chip.h / 2); await aimAtWorld(cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y); }
+      else await click(at!.x, at!.y);
+      const got = await until(() => frames.snap?.buildings?.some((b) => b.cx === spot.cx && b.cy === spot.cy && (b.lv ?? 1) === toLv));
+      expect(`${how === 'U' ? 'U' : how === 'chip' ? 'the upgrade chip' : 'a left click'} upgrades the ${label} to level ${toLv}`, got, `${scrap} -> ${run()!.scrap}`);
+    };
+    const sentry = placed.get('sentry'), barricade = placed.get('Barricade');
+    if (barricade) {
+      await aimAtWorld(cellCenter(barricade.cx, barricade.cy).x, cellCenter(barricade.cx, barricade.cy).y);
+      await sleep(150);
+      await shot('zom-hover-wall');
+    }
+    await stepUp('Barricade', 'U', 2);
+    await stepUp('Barricade', 'chip', 3);
+    if (sentry) {
+      await closeUp('zom-sentry-lv1', cellCenter(sentry.cx, sentry.cy).x, cellCenter(sentry.cx, sentry.cy).y);
+      await stepUp('sentry', 'click', 2);
+      await closeUp('zom-sentry-lv2', cellCenter(sentry.cx, sentry.cy).x, cellCenter(sentry.cx, sentry.cy).y);
+      await stepUp('sentry', 'U', 3);
+      await mouse('mouseMoved', VIEW.w / 2 + 200, 40);
+      await sleep(300);
+      await closeUp('zom-sentry-lv3', cellCenter(sentry.cx, sentry.cy).x, cellCenter(sentry.cx, sentry.cy).y);
+    }
+    for (const label of ['cannon', 'scatter', 'mortar', 'tesla coil', 'ammo depot', 'repair post']) { await stepUp(label, 'U', 2); await stepUp(label, 'U', 3); }
+    await mouse('mouseMoved', VIEW.w / 2 + 200, 40);
+    await sleep(400);
+    await shot('zom-variety-upgraded');
+    for (const [label, spot] of placed) if (label !== 'sentry') await closeUp(`zom-variety-${label.replace(/ /g, '-').toLowerCase()}`, cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y);
+    const hp = (label: string) => { const spot = placed.get(label); return spot ? frames.snap?.buildings?.find((b) => b.cx === spot.cx && b.cy === spot.cy) : undefined; };
+    expect('the tiers and levels reached the snapshot', hp('Barricade')?.lv === 3 && hp('Steel wall')?.lv === 3 && hp('Sandbag wall')?.lv === 2, JSON.stringify([hp('Barricade'), hp('Sandbag wall'), hp('Steel wall')]));
+    for (const [label, spot] of placed) { const b = hp(label); if (b && 'ammo' in b) turrets.push({ kind: b.kind, ...spot }); }
+  },
   async turrets() {
     if ((await zdev())?.building !== true) await tap('KeyB', 'b');
     await tap('Digit2', '2');
     expect('2 picks the sentry in build mode', await until(async () => (await zdev())?.buildKind === 'sentry'));
     for (const kind of ['sentry', 'cannon'] as const) {
       if (kind === 'cannon') {
-        const chip = (await zdev())?.chips.find((c) => c.kind === 'cannon');
+        const chip = (await zdev())?.chips.find((c) => c.pick.kind === 'cannon');
         if (chip) await click(chip.x + chip.w / 2, chip.y + chip.h / 2);
         expect('a click on the hint bar\'s cannon chip picks the cannon', await until(async () => (await zdev())?.buildKind === 'cannon'));
       }
@@ -308,15 +431,24 @@ const STEPS: Record<string, () => Promise<void>> = {
     const seen = new Map<number, { x: number; y: number }>();
     const watchSides = setInterval(() => { for (const [id, , x, y] of frames.snap?.zombies ?? []) if (!seen.has(id)) seen.set(id, { x, y }); }, 100);
     expect('night falls', await until(() => run()?.phase === 'night', 15_000));
+    const fellAt = Date.now();
     expect('night turns build mode off', await until(async () => (await zdev())?.building === false));
     expect('a Night callout announces the wave', await until(callout('Night 1'), 3000));
     await sleep(300);
     await shot('zom-night-callout');
-    let crowd = false, alerted = false, firing = false, reload: 'waiting' | 'done' = 'waiting', beaten = 0;
+    let crowd = false, alerted = false, firing = false, reload: 'waiting' | 'done' = 'waiting', beaten = 0, arcs = 0, coilsSeen = 0, lit = false;
     const shotsAtNight = { ...frames.turretShots };
+    const coilsAtNight = frames.coils;
     await fight(() => run()?.phase === 'day' && run()!.night === 2, 150_000, async () => {
       if (!crowd && (frames.snap?.zombies?.length ?? 0) >= 4 && me()?.alive) { crowd = true; await shot('zom-night'); }
       if (!alerted && (await zdev())?.coreAlert) { alerted = true; await shot('zom-core-alert'); }
+      // A coil's arc lasts a fifth of a second, so each new one is shot as it is seen, up to three.
+      if (frames.coils > coilsSeen && arcs < 3) { coilsSeen = frames.coils; arcs++; await shot(`zom-tesla-arc-${arcs}`); }
+      // Dusk takes a few seconds to turn to night, so the gallery is looked at once it has.
+      if (!lit && gallery.size && Date.now() - fellAt > 12_000 && (frames.snap?.zombies?.length ?? 0) >= 1) {
+        lit = true;
+        for (const [label, spot] of gallery) await closeUp(`zom-night-${label.replace(/ /g, '-').toLowerCase()}`, cellCenter(spot.cx, spot.cy).x, cellCenter(spot.cx, spot.cy).y);
+      }
       if (!firing && turrets.length && frames.turretKills > 0 && (frames.snap?.zombies?.length ?? 0) >= 2) {
         firing = true;
         await shot('zom-turrets-firing');
@@ -344,8 +476,9 @@ const STEPS: Record<string, () => Promise<void>> = {
       }
     });
     for (const t of turrets) {
-      const fired = frames.turretShots[t.kind] - shotsAtNight[t.kind];
-      expect(`the ${t.kind} fired at the horde`, fired > 0, `${fired} rounds`);
+      // A coil sends arcs, not rounds: each `coil` event is one zap.
+      const fired = t.kind === 'tesla' ? frames.coils - coilsAtNight : frames.turretShots[t.kind] - shotsAtNight[t.kind];
+      expect(`the ${t.kind} fired at the horde`, fired > 0, `${fired} ${t.kind === 'tesla' ? 'arcs' : 'rounds'}`);
       // Squad bots reload a turret faster than it fires while the horde is far from them, so its bar may never move.
       log(`note the ${t.kind}'s ammo bar went as low as ${frames.lowestAmmo[t.kind]}/10`);
     }

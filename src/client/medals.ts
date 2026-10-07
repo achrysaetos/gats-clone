@@ -43,6 +43,9 @@ export const GLYPHS = {
   eye: 'M12 5c5.2 0 9 4.4 10.5 7-1.5 2.6-5.3 7-10.5 7S3 14.6 1.5 12C3 9.4 6.8 5 12 5zm0 2.6a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8zm0 2.6a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z',
   dash: 'M2 10.5h11.5L9.8 6.8 11.4 5.2 18.2 12l-6.8 6.8-1.6-1.6 3.7-3.7H2zM19.5 5h2.5v14h-2.5z',
   pinned: 'M3 3h18v3H3zM12 7l6 6h-4v8h-4v-8H6z',
+  rocket: 'M12 1.5c3.2 2.6 4.6 6 4.6 9.5v4.2l2.4 3.3v2.5l-4-1.7H9l-4 1.7v-2.5l2.4-3.3V11c0-3.5 1.4-6.9 4.6-9.5zM12 7a1.9 1.9 0 1 0 0 3.8A1.9 1.9 0 0 0 12 7zM10.2 19.5h3.6L12 23z',
+  plug: 'M8 1.5h2.2v5h3.6v-5H16v5h1.5v4.2a5.5 5.5 0 0 1-4.4 5.4V19h-2.2v-2.9a5.5 5.5 0 0 1-4.4-5.4V6.5H8zM11 20.5h2V23h-2z',
+  brush: 'M17.8 1.8l4.4 4.4-8.3 9.6-2.7-2.7zM9.7 14.5c1.8 0 3.2 1.4 3.2 3.2 0 2.5-2.6 4.6-6.4 4.6 1-1.2 1.2-2 1.2-3.2 0-2.5 0-4.6 2-4.6z',
   ghost: 'M12 2.5c-4.7 0-7.5 3.4-7.5 8v10.5l2.5-2 2.5 2 2.5-2 2.5 2 2.5-2 2.5 2V10.5c0-4.6-2.8-8-7.5-8zM9 8.5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4z',
 } as const;
 
@@ -80,6 +83,10 @@ const ART: Record<MedalId, MedalArt> = {
   kaboom: { tier: 'bronze', ...FAMILY.streak, glyph: GLYPHS.blast },
   chainReaction: { tier: 'gold', ...FAMILY.chain, glyph: GLYPHS.bolt },
   specialDelivery: { tier: 'silver', ...FAMILY.hunt, glyph: GLYPHS.pinned },
+  liftoff: { tier: 'silver', ...FAMILY.arms, glyph: GLYPHS.rocket },
+  shockTherapy: { tier: 'silver', ...FAMILY.range, glyph: GLYPHS.plug },
+  arsonist: { tier: 'bronze', ...FAMILY.streak, glyph: GLYPHS.flame },
+  picasso: { tier: 'bronze', ...FAMILY.survive, glyph: GLYPHS.brush },
 };
 
 export const medalArt = (id: MedalId): MedalArt => ART[id];

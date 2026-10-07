@@ -14,6 +14,8 @@ export type FloorPlan = {
   zones: readonly { x: number; y: number }[];
   zoneRadius: number;
   core?: { x: number; y: number };
+  /** A quiet floor: no scattered arrows or drains, for a map that paints its own markings (the range). */
+  calm?: true;
 };
 
 export function floorPlan(map: MapDef): FloorPlan {
@@ -27,7 +29,7 @@ export function floorPlan(map: MapDef): FloorPlan {
       pads.push({ ...r, team });
     }
   }
-  return { walls: map.walls, pads, zones: map.zones, zoneRadius: 180, core: map.siege?.core };
+  return { walls: map.walls, pads: map.range ? [] : pads, zones: map.zones, zoneRadius: 180, core: map.siege?.core, ...(map.range && { calm: true as const }) };
 }
 
 const plans = new Map<string, FloorPlan>();
@@ -342,7 +344,7 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   const arr = seeded(seed ^ 0x999);
   g.fillStyle = white;
   g.globalAlpha = 0.5;
-  for (let i = 0; i < 4 * area; i++) {
+  for (let i = 0; i < (plan.calm ? 0 : 4 * area); i++) {
     const x = arr() * size, y = arr() * size, a = Math.floor(arr() * 4) * (Math.PI / 2);
     g.save();
     g.translate(x, y);
@@ -369,7 +371,7 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
 
   // Drains and manholes, rusting stains beneath them.
   const dr = seeded(seed ^ 0xd2a1);
-  for (let i = 0; i < 3 * area; i++) {
+  for (let i = 0; i < (plan.calm ? 0 : 3 * area); i++) {
     const x = Math.round((dr() * size) / 50) * 50, y = Math.round((dr() * size) / 50) * 50 + 0.5, grate = dr() < 0.55;
     g.fillStyle = 'rgba(138, 90, 56, 0.1)';
     blob(g, dr, x + 14, y + 30, 38);

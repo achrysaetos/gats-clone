@@ -14,6 +14,9 @@ export const LIMITS = {
   squadRooms: 20,
   squadsPerMin: 6,
   squadIdleMs: 30_000,
+  /** Private shooting ranges (one player each): how many may run at once, how fast one address may open them, and how long one may sit empty. */
+  rangeRooms: 40,
+  rangeIdleMs: 30_000,
   sessionMs: 30 * 24 * 60 * 60 * 1000,
 };
 export type Limits = typeof LIMITS;

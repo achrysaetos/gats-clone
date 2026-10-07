@@ -3,6 +3,7 @@ import { GUNS, WORLD } from '../shared/defs.ts';
 import type { BuildingView, CrateView, DamageKind, RunView, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { LIGHT } from './tilt.ts';
+import { addLight, muzzleLight } from './lighting.ts';
 
 /**
  * Gunfire and impact effects, kept in their own capped, preallocated storage: muzzle flashes per weapon class, ejected
@@ -20,10 +21,10 @@ export const HOLE = { lifeMs: 240_000, fadeMs: 20_000 } as const;
 export type Point = { x: number; y: number };
 export type View = { x0: number; y0: number; x1: number; y1: number };
 
-type Flash = { x: number; y: number; angle: number; born: number; life: number; base: WeaponId; seed: number; quiet: boolean };
+type Flash = { x: number; y: number; angle: number; born: number; life: number; base: WeaponId; seed: number; quiet: boolean; /** 1 for a plain gun, more for one whose shot throws a lot (see `flashPower`). */ power: number };
 type Shape = 'spark' | 'chip' | 'puff' | 'ring';
 type Particle = { x: number; y: number; vx: number; vy: number; drag: number; born: number; life: number; size: number; grow: number; color: number; alpha: number; shape: Shape };
-type Casing = { x: number; y: number; vx: number; vy: number; a0: number; spin: number; vz: number; born: number; len: number; wid: number; hull: boolean };
+type Casing = { x: number; y: number; vx: number; vy: number; a0: number; spin: number; vz: number; born: number; len: number; wid: number; hull: boolean; mag?: boolean };
 type Mark = { x: number; y: number; r: number; born: number; life: number; color: number; kind: 'hole' | 'stain' };
 /** A punched hole in cover: `host` is the face it is clipped to, `crate` marks splintering cover. */
 type Hole = { x: number; y: number; r: number; born: number; seed: number; crate: boolean; hx: number; hy: number; hw: number; hh: number };
@@ -41,9 +42,9 @@ export const FX_COLORS = [
 const SPARKS = [0, 1, 2], DUST = [3, 4, 5], BLOOD = [6, 7, 8], ICHOR = [9, 10, 11], SMOKE = [12, 13];
 
 const dead = { born: -Infinity, life: 0 };
-const mkFlash = (): Flash => ({ x: 0, y: 0, angle: 0, ...dead, base: 'pistol', seed: 0, quiet: false });
+const mkFlash = (): Flash => ({ x: 0, y: 0, angle: 0, ...dead, base: 'pistol', seed: 0, quiet: false, power: 1 });
 const mkParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 1, ...dead, size: 0, grow: 0, color: 0, alpha: 1, shape: 'chip' });
-const mkCasing = (): Casing => ({ x: 0, y: 0, vx: 0, vy: 0, a0: 0, spin: 0, vz: 0, born: -Infinity, len: 0, wid: 0, hull: false });
+const mkCasing = (): Casing => ({ x: 0, y: 0, vx: 0, vy: 0, a0: 0, spin: 0, vz: 0, born: -Infinity, len: 0, wid: 0, hull: false, mag: false });
 const mkMark = (): Mark => ({ x: 0, y: 0, r: 0, ...dead, color: 0, kind: 'hole' });
 
 const mkHole = (): Hole => ({ x: 0, y: 0, r: 0, born: -Infinity, seed: 0, crate: false, hx: 0, hy: 0, hw: 0, hh: 0 });
@@ -90,21 +91,28 @@ export function noteMap(fx: GunFx, map: string) {
 type FlashLook = { life: number; len: number; spread: number; star: number; points: number; glow: number; fan: boolean };
 /** One look per weapon class: the pistol a small star, the shotgun a wide fan, the belt guns a long flicker, the sniper a burst. */
 export const FLASH_LOOK: Record<WeaponId, FlashLook> = {
-  pistol: { life: 70, len: 20, spread: 0.3, star: 11, points: 4, glow: 18, fan: false },
-  smg: { life: 55, len: 24, spread: 0.26, star: 9, points: 5, glow: 16, fan: false },
-  assault: { life: 60, len: 30, spread: 0.24, star: 11, points: 6, glow: 20, fan: false },
-  shotgun: { life: 95, len: 38, spread: 0.62, star: 13, points: 7, glow: 30, fan: true },
-  lmg: { life: 62, len: 40, spread: 0.2, star: 13, points: 6, glow: 26, fan: false },
-  sniper: { life: 110, len: 62, spread: 0.12, star: 24, points: 8, glow: 38, fan: false },
+  pistol: { life: 80, len: 28, spread: 0.32, star: 15, points: 4, glow: 26, fan: false },
+  smg: { life: 60, len: 30, spread: 0.28, star: 12, points: 5, glow: 22, fan: false },
+  assault: { life: 66, len: 40, spread: 0.26, star: 15, points: 6, glow: 28, fan: false },
+  shotgun: { life: 110, len: 64, spread: 0.7, star: 20, points: 8, glow: 52, fan: true },
+  lmg: { life: 66, len: 52, spread: 0.22, star: 17, points: 6, glow: 34, fan: false },
+  sniper: { life: 130, len: 92, spread: 0.14, star: 34, points: 8, glow: 64, fan: false },
 };
+
+/** How much a gun's shot throws, 1 to 1.4: a heavier hitter (a hand cannon over a pistol, a slug over a pellet spray) flashes bigger within its class. */
+export const flashPower = (gun: GunId): number => 1 + 0.4 * Math.min(1, (GUNS[gun].damage * Math.min(GUNS[gun].pellets, 3)) / 140);
+
+/** Rounds the flash's light pool on the floor shines for: the first frame or two, so it reads as a pulse of light, not a stain. */
+export const FLASH_POOL_MS = 60;
 
 export function muzzleFlash(fx: GunFx, at: Point, angle: number, gun: GunId, now: number, rand: () => number = Math.random) {
   const def = GUNS[gun];
   const f = fx.flashes[fx.fn]!;
   fx.fn = (fx.fn + 1) % fx.flashes.length;
-  Object.assign(f, { x: at.x, y: at.y, angle, born: now, life: FLASH_LOOK[def.base].life * (def.silenced ? 0.6 : 1), base: def.base, seed: rand(), quiet: !!def.silenced });
+  Object.assign(f, { x: at.x, y: at.y, angle, born: now, life: FLASH_LOOK[def.base].life * (def.silenced ? 0.6 : 1), base: def.base, seed: rand(), quiet: !!def.silenced, power: flashPower(gun) });
+  addLight(muzzleLight(at, angle, def.base, !!def.silenced));
   const c = Math.cos(angle), s = Math.sin(angle);
-  const smoke = def.base === 'sniper' ? 3 : def.base === 'shotgun' ? 4 : def.base === 'lmg' ? 1 : def.base === 'pistol' ? 1 : 1;
+  const smoke = def.base === 'sniper' ? 5 : def.base === 'shotgun' ? 6 : def.base === 'lmg' ? 1 : def.base === 'pistol' ? 1 : 1;
   const rate = def.base === 'lmg' || def.base === 'smg' ? 0.35 : 1;
   for (let i = 0; i < smoke; i++) {
     if (rand() > rate) continue;
@@ -140,7 +148,17 @@ export function ejectCasing(fx: GunFx, muzzle: Point, angle: number, base: Weapo
   Object.assign(c, {
     x: muzzle.x - Math.cos(angle) * back + Math.cos(angle + Math.PI / 2) * 4, y: muzzle.y - Math.sin(angle) * back + Math.sin(angle + Math.PI / 2) * 4,
     vx: Math.cos(side) * speed, vy: Math.sin(side) * speed, a0: rand() * TAU, spin: (rand() < 0.5 ? -1 : 1) * between(14, 30, rand()),
-    vz: between(150, 230, rand()), born: now + look.eject, len: look.len, wid: look.wid, hull: look.hull,
+    vz: between(150, 230, rand()), born: now + look.eject, len: look.len, wid: look.wid, hull: look.hull, mag: false,
+  });
+}
+
+/** A spent magazine (or an LMG's box, `big`) let go in a reload at (`x`, `y`): it tumbles, bounces and lies like a casing, then fades. */
+export function dropMag(fx: GunFx, x: number, y: number, vx: number, vy: number, now: number, big = false, rand: () => number = Math.random) {
+  const c = fx.casings[fx.cn]!;
+  fx.cn = (fx.cn + 1) % fx.casings.length;
+  Object.assign(c, {
+    x, y, vx, vy, a0: rand() * TAU, spin: (rand() < 0.5 ? -1 : 1) * between(6, 14, rand()),
+    vz: between(70, 130, rand()), born: now, len: big ? 11 : 7.5, wid: big ? 6.5 : 3.8, hull: false, mag: true,
   });
 }
 
@@ -174,7 +192,7 @@ export function coverAt(c: Cover, x: number, y: number, slack = 4): (Rect & { cr
   const hit = (r: Rect) => x >= r.x - slack && x <= r.x + r.w + slack && y >= r.y - slack && y <= r.y + r.h + slack;
   for (const w of c.walls) if (hit(w)) return w;
   for (const k of c.crates) { const r = { x: k.x, y: k.y, w: k.size, h: k.size }; if (hit(r)) return { ...r, crate: true }; }
-  for (const b of c.buildings ?? []) { const r = cellRect(b.cx, b.cy); if (hit(r)) return r; }
+  for (const b of c.buildings ?? []) { if (b.kind === 'spikes') continue; const r = cellRect(b.cx, b.cy); if (hit(r)) return r; }
   if (c.run) { const r = coreRectAt(c.run.core); if (hit(r)) return r; }
   return null;
 }
@@ -194,6 +212,7 @@ export function hitCover(fx: GunFx, host: (Rect & { crate?: true }) | null, x: n
   const away = host ? outward(host, x, y) : rand() * TAU;
   const px = host ? Math.min(host.x + host.w, Math.max(host.x, x)) : x, py = host ? Math.min(host.y + host.h, Math.max(host.y, y)) : y;
   const nx = Math.cos(away), ny = Math.sin(away);
+  addLight({ x: px + nx * 3, y: py + ny * 3, radius: 62, color: '#ffd27a', intensity: 0.55, life: 90, size: 2, inside: 4, shadows: false });
   for (let i = 0; i < 5; i++) {
     const a = away + (rand() * 2 - 1) * 1.05, v = between(170, 440, rand());
     emit(fx, { x: px + nx * 1.5, y: py + ny * 1.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 8, born: now, life: between(110, 240, rand()), size: between(1.3, 2.1, rand()), grow: 0, color: SPARKS[i % 3]!, alpha: 1, shape: 'spark' });
@@ -214,25 +233,44 @@ export function hitCover(fx: GunFx, host: (Rect & { crate?: true }) | null, x: n
   }
 }
 
-export function hitFlesh(fx: GunFx, x: number, y: number, now: number, ichor: boolean, rand: () => number = Math.random) {
+/** What a landed hit was: its health `amount`, and the heading in radians it shoved the victim. Bigger hits throw more, faster. */
+export type HitInfo = { amount?: number; push?: number };
+/** 0.4 to 1.6: how much a hit of `amount` throws. */
+export const hitPower = (amount: number | undefined): number => (amount === undefined ? 0.8 : Math.min(1.6, Math.max(0.4, (amount / 50) ** 0.6)));
+
+export function hitFlesh(fx: GunFx, x: number, y: number, now: number, ichor: boolean, rand: () => number = Math.random, hit: HitInfo = {}) {
   const pal = ichor ? ICHOR : BLOOD;
   const base = rand() * TAU;
-  for (let i = 0; i < 6; i++) {
-    const a = base + (i / 6) * TAU + (rand() - 0.5) * 0.9, v = between(60, 210, rand());
+  const power = hitPower(hit.amount);
+  const n = 6 + Math.round(power * 5);
+  for (let i = 0; i < n; i++) {
+    const a = base + (i / n) * TAU + (rand() - 0.5) * 0.9, v = between(60, 210, rand()) * (0.8 + 0.4 * power);
     emit(fx, { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 6, born: now, life: between(240, 460, rand()), size: between(1.8, 3.4, rand()), grow: 0, color: pal[i % 3]!, alpha: 1, shape: 'chip' });
   }
   for (let i = 0; i < 2; i++) {
     const a = rand() * TAU, v = between(14, 50, rand());
-    emit(fx, { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 3, born: now, life: between(260, 420, rand()), size: between(4, 6, rand()), grow: 1.2, color: pal[i]!, alpha: 0.6, shape: 'puff' });
+    emit(fx, { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 3, born: now, life: between(260, 420, rand()), size: between(4, 6, rand()) * (0.8 + 0.4 * power), grow: 1.2, color: pal[i]!, alpha: 0.6, shape: 'puff' });
+  }
+  // A hit with a heading sprays out the far side along it, and a hard one flashes hot sparks where it lands.
+  if (hit.push !== undefined) {
+    const spray = Math.round(power * 4);
+    for (let i = 0; i < spray; i++) {
+      const a = hit.push + (rand() - 0.5) * 0.7, v = between(160, 320, rand()) * (0.8 + 0.3 * power);
+      emit(fx, { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 5, born: now, life: between(200, 380, rand()), size: between(1.8, 3.2, rand()) * (0.8 + 0.3 * power), grow: 0, color: pal[i % 3]!, alpha: 1, shape: 'chip' });
+    }
+    if (power > 0.9) for (let i = 0; i < 3; i++) {
+      const a = hit.push + Math.PI + (rand() - 0.5) * 1.6, v = between(220, 420, rand());
+      emit(fx, { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 8, born: now, life: between(110, 200, rand()), size: 2, grow: 0, color: SPARKS[i % 3]!, alpha: 1, shape: 'spark' });
+    }
   }
   const a = rand() * TAU, d = between(5, 15, rand());
   mark(fx, { x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, r: between(1.8, 3.4, rand()), born: now, life: 3200, color: pal[1]!, kind: 'stain' });
 }
 
 /** What a landed hit does at (x, y): `surface` is `'wall'` for the map's own cover. */
-export function impact(fx: GunFx, surface: 'wall' | DamageKind, at: Point, cover: Cover, now: number, rand: () => number = Math.random) {
-  if (surface === 'player') hitFlesh(fx, at.x, at.y, now, false, rand);
-  else if (surface === 'zombie') hitFlesh(fx, at.x, at.y, now, true, rand);
+export function impact(fx: GunFx, surface: 'wall' | DamageKind, at: Point, cover: Cover, now: number, rand: () => number = Math.random, hit: HitInfo = {}) {
+  if (surface === 'player') hitFlesh(fx, at.x, at.y, now, false, rand, hit);
+  else if (surface === 'zombie') hitFlesh(fx, at.x, at.y, now, true, rand, hit);
   else hitCover(fx, coverAt(cover, at.x, at.y), at.x, at.y, now, rand);
 }
 
@@ -243,6 +281,7 @@ const seen = (v: View, x: number, y: number, pad = 40) => x >= v.x0 - pad && x <
 /** The floor layer: stains, bullet holes and the casings that lie there. Draw it over cover tops, under bodies. */
 export function drawFloor(ctx: CanvasRenderingContext2D, fx: GunFx, now: number, view: View) {
   drawHoles(ctx, fx, now, view);
+  drawFlashPools(ctx, fx, now, view);
   for (const m of fx.marks) {
     const age = now - m.born;
     if (age < 0 || age >= m.life || !seen(view, m.x, m.y)) continue;
@@ -255,6 +294,29 @@ export function drawFloor(ctx: CanvasRenderingContext2D, fx: GunFx, now: number,
   }
   ctx.globalAlpha = 1;
   drawCasings(ctx, fx, now, view);
+}
+
+/** Each fresh flash lights the floor around the muzzle for a frame or two: a warm radial pool, bigger for a heavier gun. */
+function drawFlashPools(ctx: CanvasRenderingContext2D, fx: GunFx, now: number, view: View) {
+  const prev = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  for (const f of fx.flashes) {
+    const age = now - f.born;
+    if (age < 0 || age >= FLASH_POOL_MS || f.quiet || !seen(view, f.x, f.y, 140)) continue;
+    const look = FLASH_LOOK[f.base];
+    const r = look.glow * 3.2 * f.power * (1 - 0.25 * (age / FLASH_POOL_MS));
+    const cx = f.x + Math.cos(f.angle) * look.len * 0.4, cy = f.y + Math.sin(f.angle) * look.len * 0.4;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, 'rgba(255, 190, 90, 0.5)');
+    g.addColorStop(1, 'rgba(255, 150, 50, 0)');
+    ctx.globalAlpha = 1 - age / FLASH_POOL_MS;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = prev;
+  ctx.globalAlpha = 1;
 }
 
 /** A ragged disc: `n` points around (x, y) at radius `r` jittered by the seed, so no two holes match. */
@@ -334,14 +396,14 @@ function casingPath(ctx: CanvasRenderingContext2D, x: number, y: number, a: numb
 
 function drawCasings(ctx: CanvasRenderingContext2D, fx: GunFx, now: number, view: View) {
   const shadows: { x: number; y: number; a: number; len: number; wid: number; alpha: number }[] = [];
-  const batches: Record<'brass' | 'hull', { x: number; y: number; a: number; len: number; wid: number; alpha: number }[]> = { brass: [], hull: [] };
+  const batches: Record<'brass' | 'hull' | 'mag', { x: number; y: number; a: number; len: number; wid: number; alpha: number }[]> = { brass: [], hull: [], mag: [] };
   for (const c of fx.casings) {
     const age = now - c.born;
     if (age < 0 || age >= CASING.lifeMs) continue;
     const p = casingAt(c, now);
     if (!seen(view, p.x, p.y)) continue;
     shadows.push({ x: p.x + LIGHT.x * 1.6, y: p.y + LIGHT.y * 1.6, a: p.a, len: c.len, wid: c.wid, alpha: Math.min(1, Math.max(0, p.alpha)) });
-    batches[c.hull ? 'hull' : 'brass'].push({ x: p.x, y: p.y - p.z * 0.5, a: p.a, len: c.len, wid: c.wid, alpha: Math.min(1, Math.max(0, p.alpha)) });
+    batches[c.mag ? 'mag' : c.hull ? 'hull' : 'brass'].push({ x: p.x, y: p.y - p.z * 0.5, a: p.a, len: c.len, wid: c.wid, alpha: Math.min(1, Math.max(0, p.alpha)) });
   }
   const run = (list: typeof shadows, fill: string, outline: boolean, solidAlpha: number) => {
     // Casings still solid share one path; a fading one is drawn alone so its alpha can differ.
@@ -360,6 +422,7 @@ function drawCasings(ctx: CanvasRenderingContext2D, fx: GunFx, now: number, view
   run(shadows, INK_EDGE, false, 0.3);
   run(batches.brass, '#d1a94c', true, 1);
   run(batches.hull, '#c0492f', true, 1);
+  run(batches.mag, '#4f5560', true, 1);
   ctx.globalAlpha = 1;
 }
 
@@ -402,13 +465,27 @@ function drawFlash(ctx: CanvasRenderingContext2D, f: Flash, k: number) {
   const fade = 1 - k;
   // The belt guns flicker: each flash is longer or shorter and burns a different side.
   const flick = f.base === 'lmg' || f.base === 'smg' ? 0.75 + 0.35 * Math.sin(f.seed * 97) : 1;
-  const scale = 1.35 * (f.quiet ? 0.5 : 1) * flick * (1 - k * 0.35);
+  const scale = 1.35 * f.power * (f.quiet ? 0.5 : 1) * flick * (1 - k * 0.35);
   const len = look.len * scale;
-  ctx.globalAlpha = 0.22 * fade;
+  ctx.globalAlpha = 0.28 * fade;
   ctx.fillStyle = '#ffa42e';
   ctx.beginPath();
-  ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * (0.8 + 0.2 * fade), 0, TAU);
+  ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * f.power * (0.8 + 0.2 * fade), 0, TAU);
   ctx.fill();
+  if (f.base === 'sniper' || f.base === 'shotgun') {
+    // A big bloom: a wide pale halo and a white-hot heart that outlast the flame itself.
+    const bx = f.x + Math.cos(f.angle) * look.len * 0.35 * scale, by = f.y + Math.sin(f.angle) * look.len * 0.35 * scale;
+    ctx.globalAlpha = 0.2 * fade;
+    ctx.fillStyle = '#ffe08a';
+    ctx.beginPath();
+    ctx.arc(bx, by, look.glow * 1.9 * f.power, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 0.5 * fade;
+    ctx.fillStyle = '#fff6c8';
+    ctx.beginPath();
+    ctx.arc(f.x + Math.cos(f.angle) * 6, f.y + Math.sin(f.angle) * 6, look.glow * 0.55 * f.power, 0, TAU);
+    ctx.fill();
+  }
   ctx.globalAlpha = Math.min(1, fade * 1.6);
   const layers = [['#ff8a24', 1], ['#ffd45a', 0.72], ['#fffbe8', 0.42]] as const;
   for (const [color, m] of layers) {

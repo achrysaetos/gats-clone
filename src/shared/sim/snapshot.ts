@@ -1,13 +1,16 @@
-import { BARREL, byTurret, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { BARREL, byTurret, PROP_FX, PROP_KINDS, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  AirdropView, BarrelView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
-import { GAS_RADIUS } from './abilities.ts';
+import { flashAmount, GAS_RADIUS, SMOKE } from './abilities.ts';
+import { sightBlocked, smokeDisks, smokeRadius } from './vision.ts';
+import { empMul, propState } from './props.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
+import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, rushMul } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
+import { rangeView, targetViews } from './targets.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
 import { isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
@@ -26,6 +29,12 @@ function isHidden(w: World, p: Player): boolean {
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
 const huntedFor = (w: World, me: Player, p: Player) => isHunted(w, p) && (p.id === me.id || isEnemy(me, p));
 
+/** `[elapsedMs, totalMs]` through a reload that ends at `until`, whole ms, clamped into the reload. */
+export function reloadClock(until: number, now: number, total: number): [number, number] {
+  const t = Math.max(1, Math.round(total));
+  return [Math.min(t, Math.max(0, Math.round(t - (until - now)))), t];
+}
+
 function playerView(w: World, p: Player, me: Player): PlayerView {
   const life = p.life;
   const stats = effectiveStats(p);
@@ -39,6 +48,11 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
     ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
     ...(alive && life.golden && { golden: true as const }),
+    ...(alive && empMul(w, p) < 1 && { emp: true as const }),
+    ...(alive && life.sprint && !hasPerk(p, 'ninja') && { sprint: true as const }),
+    ...(alive && rushMul(w, p) > 1 && { rush: true as const }),
+    ...(alive && life.reloadUntil !== null && isEnemy(me, p) && hasPerk(me, 'recon') && { reloading: true as const }),
+    ...(alive && life.reloadUntil !== null && { rl: reloadClock(life.reloadUntil, w.now, stats.reloadMs) }),
     ...(p.badge && { badge: p.badge }),
     ...(p.cos && { cos: p.cos }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
@@ -53,7 +67,11 @@ function selfView(w: World, p: Player): SelfView {
     id: p.id,
     ammo: life.k === 'alive' ? life.ammo : 0,
     mag: stats.mag,
-    speed: stats.speed,
+    speed: stats.speed * empMul(w, p) * rushMul(w, p),
+    sprint: life.k === 'alive' && life.sprint,
+    sprintSpeed: stats.sprintSpeed * empMul(w, p) * rushMul(w, p),
+    settle: life.k === 'alive' ? Math.round(Math.min(1, life.settleLeft / stats.settleMs) * 100) / 100 : 0,
+    settleMs: Math.round(stats.settleMs),
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
       ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs))
@@ -65,12 +83,14 @@ function selfView(w: World, p: Player): SelfView {
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
     dash: life.k === 'alive' ? life.dash : null,
+    knock: life.k === 'alive' ? life.knock : null,
     // A squad player who bled out waits for dawn, which the run view times.
     respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,
     deaths: p.deaths,
     viewRadius: stats.viewRadius,
     suppression: life.k === 'alive' ? Math.round(life.suppression * 100) / 100 : 0,
+    ...(flashAmount(p, w.now) > 0 && { flash: Math.round(flashAmount(p, w.now) * 100) / 100 }),
     streak: p.lifeKills,
     nemesis: p.nemesis,
   };
@@ -94,12 +114,14 @@ function matchView(w: World): MatchView {
 
 const barrelViews = (w: World): BarrelView[] => w.barrels.filter((b) => b.respawnAt === null).map((b) => [b.id, Math.round(b.x), Math.round(b.y), b.fuseAt !== null ? 0 : Math.max(1, Math.ceil((b.hp / BARREL.hp) * 10))]);
 
+const propViews = (w: World): PropView[] => w.props.filter((q) => q.respawnAt === null).map((q) => [q.id, PROP_KINDS.indexOf(q.kind), Math.round(q.x), Math.round(q.y), propState(q)]);
+
 const airdropView = (w: World): AirdropView | null => {
   const f = w.airdrops.flight;
   return f && { x: Math.round(f.x), y: Math.round(f.y), a: Math.round(f.a * 100) / 100, dropAt: Math.round(f.dropAt), landAt: Math.round(f.landAt) };
 };
 
-const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
+const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS, fireSlick: PROP_FX.oil.radius, flashbang: 10, smokeGrenade: 10, smokeCloud: SMOKE.radius };
 
 export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = VIEW_ASPECT.max): Snapshot {
   const me = w.players.get(id);
@@ -110,17 +132,21 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const eye = w.players.get(w.royale?.watching.get(me.id) ?? -1) ?? me;
   const inView = (x: number, y: number, pad = 0) => Math.abs(x - eye.x) <= halfW + pad && Math.abs(y - eye.y) <= halfH + pad;
 
+  // Smoke stops sight, not bullets: an enemy whose line from the eye crosses a cloud is not sent at all, so nothing on the wire sees through it.
+  const smoke = smokeDisks(w.thrown, w.now);
   const players: PlayerView[] = [];
   for (const p of w.players.values()) {
     if (p.id !== me.id) {
       if (p.life.k === 'dead' || !inView(p.x, p.y, WORLD.playerRadius)) continue;
       const seesHidden = !isEnemy(me, p) || stats.thermal || dist2(p.x, p.y, me.x, me.y) < HIDDEN_REVEAL_DIST ** 2;
       if (isHidden(w, p) && !seesHidden) continue;
+      if (smoke.length && isEnemy(me, p) && sightBlocked(smoke, eye.x, eye.y, p.x, p.y)) continue;
     }
     players.push(playerView(w, p, me));
   }
   const bullets: BulletView[] = w.bullets
     .filter((b) => (b.turret === null || b.turret === 'bastion') && inView(b.x, b.y, 100))
+    .filter((b) => b.owner === me.id || !smoke.length || !sightBlocked(smoke, eye.x, eye.y, b.x, b.y))
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
@@ -132,12 +158,14 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
       const owner = w.players.get(t.owner);
       return !!owner && !isEnemy(me, owner);
     })
-    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
+    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: t.kind === 'smokeCloud' ? Math.round(smokeRadius(w.now, t.bornAt, t.expiresAt)) : THROWN_RADIUS[t.kind], owner: t.owner }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress }));
   const minimap: MinimapMark[] = [];
   for (const p of w.players.values()) {
     if (p.id === me.id || p.life.k !== 'alive') continue;
-    if (huntedFor(w, me, p)) {
+    const marked = me.life.k === 'alive' && w.now < (me.life.tracks[p.id] ?? -Infinity);
+    if (marked) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, marked: true });
+    else if (huntedFor(w, me, p)) {
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
@@ -149,9 +177,10 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
-    barrels: barrelViews(w), airdrop: airdropView(w),
+    barrels: barrelViews(w), props: propViews(w), airdrop: airdropView(w),
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
+    ...(w.range && { targets: targetViews(w), range: rangeView(w, me.id) }),
   };
 }
 
@@ -203,6 +232,6 @@ function siegeViews(w: World, run: Run, inView: (x: number, y: number, pad?: num
     if (!inView(z.x, z.y, ZOMBIES[z.kind].radius)) continue;
     zombies.push([z.id, ZOMBIE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), tenths(z.hp, zombieMaxHp(z.kind, run.night, run.share))]);
   }
-  const buildings = w.buildings.map(buildingView);
+  const buildings = [...w.buildings, ...w.floor].map(buildingView);
   return { zombies, buildings, run: runView(w, run) };
 }

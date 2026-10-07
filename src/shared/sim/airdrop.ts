@@ -1,4 +1,4 @@
-import { AIRDROP, WORLD } from '../defs.ts';
+import { AIRDROP, PROPS, WORLD } from '../defs.ts';
 import { MAPS, type MapId } from '../maps.ts';
 export { planeAt } from '../protocol.ts';
 import { award } from './combat.ts';
@@ -27,6 +27,7 @@ export function dropSpots(map: MapId): readonly Pose[] {
     ...def.walls,
     ...def.crates.map((c) => ({ x: c.x - 22, y: c.y - 22, w: 44, h: 44 })),
     ...def.barrels.map((b) => ({ x: b.x - 18, y: b.y - 18, w: 36, h: 36 })),
+    ...def.props.map((q) => { const h = PROPS[q.kind].size / 2; return { x: q.x - h, y: q.y - h, w: 2 * h, h: 2 * h }; }),
   ];
   const blocked = (r: number): Uint8Array => {
     const out = new Uint8Array(n * n);

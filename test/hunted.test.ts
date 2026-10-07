@@ -6,7 +6,7 @@ import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import { createWorld } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, grantPerks, medalPay, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, medalPay, offerPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 test('killing a hunted player pays the bounty on top of the kill score, and the kill says so', () => {
   const w = emptyWorld();
@@ -87,6 +87,7 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
   const a = spawnAt(w, 300, 300, { name: 'Kestrel' });
   const far = spawnAt(w, 2700, 2700);
   a.level = 4;
+  offerPerks(a, 'shield');
   for (const [level, option] of [[1, 'handCannon'], [2, 'lightweight'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   const shipped = () => { step(w, TICK_MS); return snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'); };
   assert.deepEqual(shipped(), [], 'stage 1 is not hunted');
@@ -113,6 +114,7 @@ test('a squadmate on a stage-2 gun in a zombies run is never hunted: no announce
   const a = spawnAt(w, 1400, 1400, { name: 'Bramble' });
   const mate = spawnAt(w, 1600, 1400);
   a.level = 4;
+  offerPerks(a, 'shield');
   for (const [level, option] of [[1, 'handCannon'], [2, 'lightweight'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   a.level = 5;
   assert.ok(choosePick(w, a.id, 5, 'gunslinger'));

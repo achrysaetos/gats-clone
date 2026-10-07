@@ -1,6 +1,6 @@
-import { BUILDING_KINDS, BUILDINGS, GUNS, rulesOf, WORLD, ZOM, type BuildingKind } from '../../shared/defs.ts';
+import { BUILDING_KINDS, GUNS, nightOf, rulesOf, SIDES, WORLD, ZOM, type BuildingKind, type Side } from '../../shared/defs.ts';
 import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
-import { cellOf, cellRect, coreRectAt } from '../../shared/sim/build.ts';
+import { cellOf, cellRect, coreRectAt, costOf, levelOf, maxLevelOf, upgradeCost } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, intercept, MUZZLE_PX, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
@@ -32,7 +32,7 @@ type Watch = {
   /** Where the bot was backing off to, if it was. */
   kiteTo: { x: number; y: number } | null;
   coreMendable: boolean;
-  next: { kind: BuildingKind; cx: number; cy: number; x: number; y: number } | null;
+  next: { act: 'build' | 'upgrade'; kind: BuildingKind; lv: number; cx: number; cy: number; x: number; y: number } | null;
 };
 
 type Errand = { x: number; y: number; use: boolean };
@@ -43,7 +43,7 @@ const DRY_TENTHS = 2;
 /** A turret is topped up once it is down to this, not after every shot, so a squadmate's top-up never flips a bot between the turret and its post. */
 const LOW_TENTHS = 7;
 const CORE_EMERGENCY_FRAC = 0.5;
-const HUMANS_RESERVE = Math.max(...BUILDING_KINDS.map((k) => BUILDINGS[k].cost));
+const HUMANS_RESERVE = Math.max(...BUILDING_KINDS.map((k) => costOf(k)));
 const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
 const KITE_PX = 140;
@@ -112,24 +112,77 @@ const BASTION_PLAN: readonly { kind: BuildingKind; dx: number; dy: number }[] = 
 
 const BUILD_STANDOFF = 2 * ZOM.cell;
 
-function nextBuild(run: RunView, buildings: readonly BuildingView[]) {
-  const fromCoreEdge = (d: number) => (d + Math.sign(d) / 2) * ZOM.cell;
-  const todo = BASTION_PLAN.map((p) => ({ kind: p.kind, ...cellOf(run.core.x + fromCoreEdge(p.dx), run.core.y + fromCoreEdge(p.dy)) }))
-    .find((p) => !buildings.some((b) => b.cx === p.cx && b.cy === p.cy));
-  if (!todo) return null;
-  const x = (todo.cx + 0.5) * ZOM.cell, y = (todo.cy + 0.5) * ZOM.cell, d = Math.hypot(x - run.core.x, y - run.core.y);
-  return { ...todo, x: x - ((y - run.core.y) / d) * BUILD_STANDOFF, y: y + ((x - run.core.x) / d) * BUILD_STANDOFF, cost: BUILDINGS[todo.kind].cost };
+/** The way each side's horde comes from, as a unit step out from the core. */
+const OUT: Record<Side, { x: number; y: number }> = { north: { x: 0, y: -1 }, east: { x: 1, y: 0 }, south: { x: 0, y: 1 }, west: { x: -1, y: 0 } };
+type Cell = { cx: number; cy: number };
+type Wish = { kind: BuildingKind; cell: Cell; lv: number };
+type Step = Wish & { act: 'build' | 'upgrade' };
+
+/** The cell `out` cells beyond the core's edge on `side` and `along` cells across it, counted from the core's first cell on that edge. */
+function onSide(core: { x: number; y: number }, side: Side, out: number, along: number): Cell {
+  const lo = cellOf(core.x - ZOM.coreHalf + 1, core.y - ZOM.coreHalf + 1), hi = cellOf(core.x + ZOM.coreHalf - 1, core.y + ZOM.coreHalf - 1);
+  switch (side) {
+    case 'north': return { cx: lo.cx + along, cy: lo.cy - out };
+    case 'south': return { cx: lo.cx + along, cy: hi.cy + out };
+    case 'west': return { cx: lo.cx - out, cy: lo.cy + along };
+    case 'east': return { cx: hi.cx + out, cy: lo.cy + along };
+  }
 }
 
+/**
+ * What a squad bot would do next by day, in order, from what stands and what the coming night brings (the forecast every squad sees): a ring of turrets round the Bastion,
+ * the turret nearest the side the horde comes from stepping up once nine stand; the rest of the ring, then an ammo depot and a repair post behind that side's guns; a line of sandbags across its way, later
+ * steel; spike strips ahead of the line and a tesla coil beside it; and every turret a level, the ones facing the horde first, and again.
+ */
+export function nextBuildStep(night: number, buildings: readonly BuildingView[], core: { x: number; y: number }): Step | null {
+  const sides = nightOf(night).from;
+  const side = sides[0] ?? SIDES[0]!;
+  const fromEdge = (d: number) => (d + Math.sign(d) / 2) * ZOM.cell;
+  const turrets = BASTION_PLAN.map((p) => ({ kind: p.kind, cell: cellOf(core.x + fromEdge(p.dx), core.y + fromEdge(p.dy)) }));
+  const facing = (c: Cell) => Math.min(...sides.map((s) => Math.hypot((c.cx + 0.5) * ZOM.cell - core.x - OUT[s].x * 175, (c.cy + 0.5) * ZOM.cell - core.y - OUT[s].y * 175)));
+  const byFacing = [...turrets].sort((a, b) => facing(a.cell) - facing(b.cell));
+  const todo = (wish: Wish): Step | null => {
+    const there = buildings.find((b) => b.cx === wish.cell.cx && b.cy === wish.cell.cy);
+    if (!there) return { ...wish, act: 'build', lv: wish.kind === 'wall' ? Math.min(wish.lv, 2) : 1 };
+    if (there.kind !== wish.kind || levelOf(there) >= Math.min(wish.lv, maxLevelOf(wish.kind))) return null;
+    return { ...wish, act: 'upgrade', lv: levelOf(there) + 1 };
+  };
+  const first = (wishes: readonly Wish[]) => { for (const w of wishes) { const s = todo(w); if (s) return s; } return null; };
+  const ring = (from: number, to: number): Wish[] => turrets.slice(from, to).map((t) => ({ ...t, lv: 1 }));
+  const faced = (lv: number): Wish[] => byFacing.map((t) => ({ ...t, lv }));
+  const line = (lv: number): Wish[] => [0, 1, -1, 2].map((along) => ({ kind: 'wall' as const, cell: onSide(core, side, 5, along), lv }));
+  const strips: Wish[] = [0, 1, -1, 2].map((along) => ({ kind: 'spikes' as const, cell: onSide(core, side, 7, along), lv: 1 }));
+  const depot: Wish = { kind: 'depot', cell: onSide(core, side, 3, 2), lv: 1 }, post: Wish = { kind: 'post', cell: onSide(core, side, 3, -1), lv: 1 };
+  const coil: Wish = { kind: 'tesla', cell: onSide(core, side, 4, -2), lv: 1 };
+  return first(ring(0, 9)) ?? first(faced(2).slice(0, 1)) ?? first(ring(9, 12)) ?? first([depot]) ?? first([post]) ?? first(line(2)) ?? first(faced(2)) ?? first(strips) ?? first([coil])
+    ?? first(line(3)) ?? first(faced(3));
+}
+
+function nextBuild(run: RunView, buildings: readonly BuildingView[]): NonNullable<Watch['next']> & { cost: number } | null {
+  const step = nextBuildStep(run.night, buildings, run.core);
+  if (!step) return null;
+  const { cx, cy } = step.cell;
+  const x = (cx + 0.5) * ZOM.cell, y = (cy + 0.5) * ZOM.cell, d = Math.hypot(x - run.core.x, y - run.core.y);
+  const cost = step.act === 'upgrade' ? upgradeCost(step.kind, step.lv - 1) ?? Infinity : costOf(step.kind, step.lv);
+  // The bot stands to the side of the cell, round the core, or failing that behind it or ahead of it: a spot with a building on it would never be reached.
+  const rx = (x - run.core.x) / d, ry = (y - run.core.y) / d;
+  const solids = [coreRectAt(run.core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))];
+  const spots = [[-ry, rx], [ry, -rx], [-rx, -ry], [rx, ry]].map(([ux, uy]) => ({ x: x + ux! * BUILD_STANDOFF, y: y + uy! * BUILD_STANDOFF }));
+  const stand = spots.find((p) => !solids.some((r) => circleHitsRect(p.x, p.y, WORLD.playerRadius, r))) ?? spots[0]!;
+  return { act: step.act, kind: step.kind, lv: step.lv, cx, cy, x: stand.x, y: stand.y, cost };
+}
+
+/** A spike strip lies on the floor: a bot walks over it. */
+const solid = (b: BuildingView) => b.kind !== 'spikes';
 const SQUAD_NAV = new WeakMap<BotArena, { key: string; nav: NavGrid }>();
 const MAX_EXPANSIONS = 4000;
 const NAV_SLACK = 8;
 
 function wayTo(arena: BotArena, core: { x: number; y: number }, buildings: readonly BuildingView[], me: { x: number; y: number }, to: { x: number; y: number }) {
-  const key = buildings.map((b) => `${b.cx},${b.cy}`).join(' ');
+  const key = buildings.filter(solid).map((b) => `${b.cx},${b.cy}`).join(' ');
   let cached = SQUAD_NAV.get(arena);
   if (cached?.key !== key) {
-    cached = { key, nav: withSolids(arena.nav, [coreRectAt(core), ...buildings.map((b) => cellRect(b.cx, b.cy))], WORLD.playerRadius - NAV_SLACK) };
+    cached = { key, nav: withSolids(arena.nav, [coreRectAt(core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))], WORLD.playerRadius - NAV_SLACK) };
     SQUAD_NAV.set(arena, cached);
   }
   const path = findPath(cached.nav, me, to, MAX_EXPANSIONS);
@@ -141,7 +194,7 @@ function postFor(core: { x: number; y: number }, bearing: number, buildings: rea
   const innermost = ZOM.coreHalf + WORLD.playerRadius + 1;
   for (let d = innermost; d <= POST_RADIUS; d += 5) {
     const { x, y } = at(d);
-    if (buildings.some((b) => circleHitsRect(x, y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return at(Math.max(innermost, d - 5));
+    if (buildings.some((b) => solid(b) && circleHitsRect(x, y, WORLD.playerRadius, cellRect(b.cx, b.cy)))) return at(Math.max(innermost, d - 5));
   }
   return at(POST_RADIUS);
 }
@@ -169,8 +222,8 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const tending = mem.motor.tending;
   const started = (b: BuildingView) => tending?.x === at(b).x && tending.y === at(b).y;
   const worn = !spare ? [] : (snap.buildings ?? [])
-    .filter((b) => guarded(b) && (b.hp < WHOLE_TENTHS || (b.kind !== 'wall' && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS) && run.scrap > 0))).map(at);
-  const dry = run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && b.kind !== 'wall' && b.ammo <= DRY_TENTHS).map(at) : [];
+    .filter((b) => solid(b) && guarded(b) && (b.hp < WHOLE_TENTHS || ('ammo' in b && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS) && run.scrap > 0))).map(at);
+  const dry = run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && 'ammo' in b && b.ammo <= DRY_TENTHS).map(at) : [];
   const plan = humansBank ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
@@ -222,5 +275,5 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,
   };
   const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots, siegeStep, tending: tended ? { x: tended.x, y: tended.y } : null } };
-  return { input, mem: next, ...(builds && { build: { kind: buildable.kind, cx: buildable.cx, cy: buildable.cy } }) };
+  return { input, mem: next, ...(builds && (buildable.act === 'upgrade' ? { upgrade: { cx: buildable.cx, cy: buildable.cy } } : { build: { kind: buildable.kind, cx: buildable.cx, cy: buildable.cy, lv: buildable.lv } })) };
 }

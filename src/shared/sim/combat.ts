@@ -1,4 +1,4 @@
-import { ARMORS, GUNS, HP_MULTIPLIER, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
+import { ARMORS, GUNS, HP_MULTIPLIER, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
@@ -7,9 +7,12 @@ import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
 import { barrelsInBlast, damageBarrel, payChain } from './barrels.ts';
 import { openAirdrop } from './airdrop.ts';
+import { damageProp, propMedals, propsInBlast } from './props.ts';
+import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
-import { addScore, effectiveStats, isHunted } from './stats.ts';
-import { barrelRect, crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
+import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
+import { addScore, effectiveStats, hasPerk, isHunted, PERK_RULES } from './stats.ts';
+import { barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.33;
@@ -28,14 +31,14 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 const SELF_KILL_CREDIT_MS = 10_000;
 
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
-type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null; /** Set when a barrel's burst made the blast: the chain it belongs to. */ chain?: number };
+type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null; /** Set when a barrel's burst made the blast: the chain it belongs to. */ chain?: number; /** A prop's medal for a kill this damage makes (Liftoff, Arsonist). */ medal?: MedalId };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
-type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number; gun?: GunId | null; volley?: number };
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number; gun?: GunId | null; volley?: number; /** The heading of the round that landed, which a bullet's shove follows; a blast shoves away from where it burst. */ dirX?: number; dirY?: number };
 /** How a kill was made, for the weapon feats: the gun whose round landed it, whether it took one hit from full health, and how pinned the victim was. */
-type KillHow = { gun: GunId | null; oneHit: boolean; pinned: number; chain?: number };
+type KillHow = { gun: GunId | null; oneHit: boolean; pinned: number; chain?: number; medal?: MedalId };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
-  if (victim.life.k === 'dead' || w.match.k === 'over') return;
+  if (victim.life.k === 'dead' || w.match.k === 'over' || w.mode === 'RNG') return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
   if (victim.life.k === 'downed') {
@@ -51,6 +54,9 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
     const incoming = Math.atan2(src.fromY - victim.y, src.fromX - victim.x);
     if (angleDiff(incoming, victim.angle) <= SHIELD_ARC) amount *= 1 - SHIELD_BLOCK;
   }
+  if (src.via === 'blast' && hasPerk(victim, 'demolitions')) amount *= PERK_RULES.demolitions.takenMul;
+  if (w.now < life.windUntil) amount *= PERK_RULES.secondWind.damageMul;
+  const felt = amount;
   // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace.
   if (a?.kind === 'human') amount *= HP_MULTIPLIER[victim.kind];
   if (!src.piercing) amount *= 1 - ARMORS[victim.loadout.armor].blockFrac;
@@ -59,10 +65,35 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   life.hp -= amount;
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp);
-  if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
-  w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player' });
+  if (a && a.id !== victim.id) {
+    life.hits.push({ by: a.id, at: w.now, dealt });
+    perkOnHit(w, a, felt, amount > 0 ? dealt / amount : 0, victim);
+  }
+  if (life.hp > 0 && !life.windUsed && hasPerk(victim, 'secondWind') && life.hp < PERK_RULES.secondWind.belowHp * stats.maxHp) {
+    life.windUsed = true;
+    life.windUntil = w.now + PERK_RULES.secondWind.ms;
+  }
+  const shove = life.hp > 0 ? shoveFor(victim, felt, src) : null;
+  w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player', ...(shove !== null && { push: shove }) });
   if (a && src.via === 'bullet' && src.volley !== undefined) noteVolley(w, a, victim, src.gun ?? null, src.volley);
-  if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned, ...(src.chain !== undefined && { chain: src.chain }) });
+  if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned, ...(src.chain !== undefined && { chain: src.chain }), ...(src.medal && { medal: src.medal }) });
+}
+
+/** Bloodlust heals the attacker by a share of the damage that landed (in the attacker's own health scale), and Tracker marks the victim on their minimap. */
+function perkOnHit(w: World, a: Player, felt: number, landed: number, victim: Player) {
+  if (a.life.k !== 'alive') return;
+  if (hasPerk(a, 'bloodlust')) a.life.hp = Math.min(effectiveStats(a).maxHp, a.life.hp + PERK_RULES.bloodlust.healShare * felt * landed * HP_MULTIPLIER[a.kind]);
+  if (hasPerk(a, 'tracker')) a.life.tracks[victim.id] = w.now + PERK_RULES.tracker.ms;
+}
+
+/** Shoves `victim` by what a bullet or blast of `felt` damage lands with, and returns the shove's heading in radians (for the hit's flinch), or null when it moved nothing. */
+function shoveFor(victim: Player, felt: number, src: DamageSource): number | null {
+  const blast = src.via === 'blast';
+  if (!blast && !(src.via === 'bullet' && src.gun)) return null;
+  const dx = blast ? victim.x - src.fromX : src.dirX ?? 0, dy = blast ? victim.y - src.fromY : src.dirY ?? 0;
+  if (dx === 0 && dy === 0) return null;
+  shovePlayer(victim, dx, dy, (blast ? blastShove(felt) : bulletShove(src.gun!, felt)) * (src.attacker && hasPerk(src.attacker, 'brace') ? PERK_RULES.brace.dealtMul : 1), blast);
+  return Math.round(Math.atan2(dy, dx) * 100) / 100;
 }
 
 /** A shotgun blast whose pellets land on `WEAPON_MEDALS.twoBirdsHits` enemies earns Two Birds the moment the second is hit. */
@@ -118,10 +149,11 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   addScore(w, credited, WORLD.killScore);
   // Every medal one kill earns is paid and announced, however many there are.
   const barrel = how.chain !== undefined && credited.id !== victim.id;
-  for (const medal of [...killMedals(w, credited, victim, { bounty, revenge, ended }), ...weaponMedals(w, credited, victim, how, credited === killer), ...(barrel ? ['kaboom' as const] : [])]) award(w, credited, medal);
+  for (const medal of [...killMedals(w, credited, victim, { bounty, revenge, ended }), ...weaponMedals(w, credited, victim, how, credited === killer), ...(barrel ? ['kaboom' as const] : []), ...propMedals(w, credited, victim, how.medal, credited === killer)]) award(w, credited, medal);
   const chain = barrel ? w.chains.get(how.chain!) : undefined;
   if (chain) { chain.kills++; payChain(w, chain); }
   refuel(credited);
+  if (credited.life.k === 'alive' && hasPerk(credited, 'adrenaline')) credited.life.rushUntil = w.now + PERK_RULES.adrenaline.ms;
   MODES[w.mode].onKill(w, credited, victim);
 }
 
@@ -261,13 +293,14 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
-type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[] };
+type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[]; /** The server time a rewound shot is judged at, for targets that slide; absent for a live view. */ at?: number };
 const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
 
 const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) =>
   walls.some((wall) => segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
 
 export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, by: Culprit, view: View = liveView(w)) {
+  if (by.attacker && hasPerk(by.attacker, 'demolitions')) { radius *= PERK_RULES.demolitions.radiusMul; maxDamage *= PERK_RULES.demolitions.dealtMul; }
   w.events.push({ e: 'boom', x, y, r: radius });
   for (const p of w.players.values()) {
     const at = view.poseOf(p);
@@ -288,11 +321,18 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     if (sheltered(view.walls, x, y, b.x, b.y)) continue;
     damageBarrel(w, b, maxDamage * (1 - d / radius), { attacker: by.attacker, team: by.team, ...(by.chain !== undefined && { chain: by.chain }) }, d);
   }
+  for (const { q, d } of propsInBlast(w, x, y, radius)) {
+    if (sheltered(view.walls, x, y, q.x, q.y)) continue;
+    damageProp(w, q, maxDamage * (1 - d / radius), { attacker: by.attacker, team: by.team }, { x: q.x - x, y: q.y - y });
+  }
+  blastTargets(w, x, y, radius, maxDamage, by.attacker, by.label, (tx, ty) => sheltered(view.walls, x, y, tx, ty));
   for (const z of w.zombies) {
     const r = ZOMBIES[z.kind].radius;
     const d = Math.sqrt(dist2(z.x, z.y, x, y));
     if (d > radius + r || sheltered(view.walls, x, y, z.x, z.y)) continue;
-    damageZombie(w, z, maxDamage * (1 - Math.max(0, d - r) / radius), by.attacker, by.turret ?? 'blast');
+    const dmg = maxDamage * (1 - Math.max(0, d - r) / radius);
+    damageZombie(w, z, dmg, by.attacker, by.turret ?? 'blast');
+    shoveZombie(z, z.x - x, z.y - y, blastShove(dmg), true);
   }
 }
 
@@ -342,6 +382,9 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...w.barrels.filter((o) => o.respawnAt === null).map((o) => ({
       t: segmentEntersRectAt(b.x, b.y, dx, dy, barrelRect(o)), victim: null, apply: () => damageBarrel(w, o, b.damage, { attacker: owner, team: b.team }),
     })),
+    ...w.props.filter(propSolid).map((q) => ({
+      t: segmentEntersRectAt(b.x, b.y, dx, dy, propRect(q)), victim: null, apply: () => damageProp(w, q, b.damage, { attacker: owner, team: b.team }, { x: b.vx, y: b.vy }),
+    })),
     ...[...w.players.values()]
       .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !b.passed.includes(p.id))
       .flatMap((p) => {
@@ -349,15 +392,19 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley }),
+          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley, dirX: b.vx, dirY: b.vy }),
         }] : [];
       }),
+    ...targetHits(w, b, dx, dy, owner, view.at),
     // Zombies are judged where they stand now, even for a rewound shot: they are slow, and they keep no pose history.
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
         t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
-        apply: () => damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit'),
+        apply: () => {
+          damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit');
+          shoveZombie(z, b.vx, b.vy, b.gun ? bulletShove(b.gun, b.damage) : b.damage * KNOCK.perDamage.assault, false);
+        },
       })),
   ];
   const hits = b.lobbed ? [] : candidates.filter((c): c is BulletHit & { t: number } => c.t !== null).sort((a, c) => a.t - c.t);
@@ -400,7 +447,7 @@ export function flyThroughPast(w: World, b: Bullet, rewindMs: number): boolean {
     const dtMs = Math.min(TICK_MS, w.now - t);
     t += dtMs;
     const poses = posesAt(w, t);
-    if (!moveBullet(w, b, dtMs / 1000, { poseOf: (p) => poses.get(p.id), walls })) return false;
+    if (!moveBullet(w, b, dtMs / 1000, { poseOf: (p) => poses.get(p.id), walls, at: t })) return false;
   }
   return true;
 }

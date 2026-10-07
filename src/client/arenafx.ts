@@ -1,5 +1,6 @@
 import { AIRDROP, BARREL } from '../shared/defs.ts';
 import { planeAt, type AirdropView, type BarrelView, type Snapshot } from '../shared/protocol.ts';
+import { markBlast } from './blastfx.ts';
 import { seeded } from './grain.ts';
 import { INK } from './palette.ts';
 import { LIGHT } from './tilt.ts';
@@ -7,8 +8,8 @@ import { LIGHT } from './tilt.ts';
 /**
  * The arena's surprises, drawn in the toy-soldier kit (docs/art/STYLE.md): rust explosive barrels with a bold ink outline, two hard cel
  * steps and a hanging front face; a supply plane's crisp shadow crossing the map; a parachute crate floating down on signal-orange silk;
- * and the gold sheen on a golden gun. Every blast here is a light source first (a white-hot core and a warm pool on the floor), then
- * a shape, then debris, then a scorch that stays until the barrel stands again.
+ * and the gold sheen on a golden gun. A barrel's burst is a blast like any other (blastfx.ts, blastdraw.ts); what stays here is the scorch that
+ * holds until the barrel stands again.
  */
 
 const TAU = Math.PI * 2;
@@ -31,19 +32,16 @@ const visible = (v: View, x: number, y: number, pad: number) => x > v.x0 - pad &
 // ---------------------------------------------------------------------------------------------------------------- barrels
 
 type Seen = { x: number; y: number; hp: number; litAt: number | null; hurtAt: number };
-type Burst = { x: number; y: number; born: number; seed: number };
 type Scorch = { x: number; y: number; seed: number; born: number };
-type Mem = { map: string; seen: Map<number, Seen>; bursts: Burst[]; scorches: Map<number, Scorch>; landed: Set<number>; dusts: { x: number; y: number; born: number }[] };
+type Mem = { map: string; seen: Map<number, Seen>; scorches: Map<number, Scorch>; landed: Set<number>; dusts: { x: number; y: number; born: number }[] };
 
-const mem: Mem = { map: '', seen: new Map(), bursts: [], scorches: new Map(), landed: new Set(), dusts: [] };
-const BURST_CAP = 8;
+const mem: Mem = { map: '', seen: new Map(), scorches: new Map(), landed: new Set(), dusts: [] };
 const FLASH_MS = 130;
 
 /** The bits of the client's world this module remembers between frames: which barrels stood, so one that vanishes bursts, and where scorch lies. */
 export function resetArenaFx() {
   mem.map = '';
   mem.seen.clear();
-  mem.bursts.length = 0;
   mem.scorches.clear();
   mem.landed.clear();
   mem.dusts.length = 0;
@@ -55,7 +53,8 @@ function observe(snap: Pick<Snapshot, 'barrels' | 'match'>, now: number) {
   for (const [id, was] of mem.seen) {
     if (here.has(id)) continue;
     mem.seen.delete(id);
-    mem.bursts = [...mem.bursts, { x: was.x, y: was.y, born: now, seed: id * 7919 + Math.round(now) }].slice(-BURST_CAP);
+    // The burst itself (flash, fireball, staves, smoke, light) is the blast's: it learns here that a barrel went.
+    markBlast('barrel', was.x, was.y, now);
     mem.scorches.set(id, { x: was.x, y: was.y, seed: id, born: now });
   }
   for (const [id, x, y, hp] of here.values()) {
@@ -279,7 +278,7 @@ export function drawBarrels(ctx: CanvasRenderingContext2D, snap: Pick<Snapshot, 
   }
 }
 
-/** The warm light of every lit barrel and every burst, over the floor. */
+/** The warm light of every lit barrel, over the floor (a burst is the blast's, in blastdraw.ts). */
 export function drawArenaLight(ctx: CanvasRenderingContext2D, snap: Pick<Snapshot, 'barrels'>, now: number, view: View) {
   for (const [id, x, y, hp] of snap.barrels ?? []) {
     if (hp !== 0 || !visible(view, x, y, 160)) continue;
@@ -287,93 +286,8 @@ export function drawArenaLight(ctx: CanvasRenderingContext2D, snap: Pick<Snapsho
     const t = clamp01(((was?.litAt != null ? now - was.litAt : 0)) / BARREL.fuseMs);
     pool(ctx, x, y, 84 + 40 * t, 0.2 + 0.4 * t * (0.7 + 0.3 * Math.sin(now / 40)));
   }
-  mem.bursts = mem.bursts.filter((b) => now - b.born < BURST_MS);
-  for (const b of mem.bursts) if (visible(view, b.x, b.y, 360)) drawBurst(ctx, b, now);
   mem.dusts = mem.dusts.filter((d) => now - d.born < 700);
   for (const d of mem.dusts) if (visible(view, d.x, d.y, 160)) drawDust(ctx, d, now);
-}
-
-const BURST_MS = 1100;
-
-/** A barrel's burst: a white-hot core and a warm pool (light first), the fireball and shockwave, then staves, sparks and smoke. */
-function drawBurst(ctx: CanvasRenderingContext2D, b: Burst, now: number) {
-  const age = now - b.born;
-  const rand = seeded(b.seed);
-  // Light: a white-hot core that blooms, then a pool that lingers.
-  const core = clamp01(1 - age / 190);
-  if (core > 0) {
-    const r = 70 + 90 * ease(age / 190);
-    const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
-    g.addColorStop(0, '#ffffff');
-    g.addColorStop(0.3, '#ffe08a');
-    g.addColorStop(0.65, '#ff9a3c');
-    g.addColorStop(1, 'rgba(217, 84, 31, 0)');
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = core;
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, r, 0, TAU);
-    ctx.fill();
-    ctx.restore();
-  }
-  pool(ctx, b.x, b.y, 250, 0.3 * clamp01(1 - age / 720), '#ffe9a8');
-  // Shape: the shockwave ring, thick and quick.
-  const wave = age / 320;
-  if (wave < 1) {
-    ctx.save();
-    ctx.globalAlpha = (1 - wave) * 0.6;
-    ctx.strokeStyle = '#ffe08a';
-    ctx.lineWidth = 8 * (1 - wave) + 2;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 24 + ease(wave) * (BARREL.radius - 24), 0, TAU);
-    ctx.stroke();
-    ctx.restore();
-  }
-  // Debris: rust staves tumble out on an arc and settle, ink-edged like every prop.
-  for (let i = 0; i < 7; i++) {
-    const a = rand() * TAU, d = 50 + rand() * 90, spin = (rand() - 0.5) * 14, w = 7 + rand() * 6;
-    const t = clamp01(age / 700);
-    const dist = d * ease(t);
-    const hop = -Math.sin(t * Math.PI) * 34;
-    const px = b.x + Math.cos(a) * dist, py = b.y + Math.sin(a) * dist * 0.8 + hop;
-    ctx.save();
-    ctx.globalAlpha = clamp01((BURST_MS - age) / 350);
-    ctx.translate(px, py);
-    ctx.rotate(spin * t + a);
-    ctx.fillStyle = i % 3 === 0 ? '#c9bfa6' : RUST;
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.rect(-w / 2, -2.5, w, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
-  // Sparks.
-  ctx.fillStyle = SPARK;
-  for (let i = 0; i < 16; i++) {
-    const a = rand() * TAU, d = 40 + rand() * 150, life = 280 + rand() * 260;
-    if (age > life) continue;
-    const t = age / life;
-    ctx.globalAlpha = 1 - t;
-    ctx.fillRect(b.x + Math.cos(a) * d * ease(t) - 1.5, b.y + Math.sin(a) * d * ease(t) - 1.5 + 18 * t * t, 3, 3);
-  }
-  // Smoke, last, in the fire's smoke ramp: one flat shape, so overlapping puffs do not stack into blotches.
-  const t = clamp01((age - 120) / (BURST_MS - 120));
-  if (t > 0) {
-    ctx.globalAlpha = (1 - t) * 0.5;
-    ctx.fillStyle = SMOKE;
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = rand() * TAU, d = 10 + rand() * 40, r = 14 + t * 22;
-      const px = b.x + Math.cos(a) * d, py = b.y + Math.sin(a) * d * 0.7 - t * 50;
-      ctx.moveTo(px + r, py);
-      ctx.arc(px, py, r, 0, TAU);
-    }
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
 }
 
 function drawDust(ctx: CanvasRenderingContext2D, d: { x: number; y: number; born: number }, now: number) {

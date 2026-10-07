@@ -1,7 +1,7 @@
 import type { Cos } from './cosmetics.ts';
 import { STICKY_KEYS, type PlayerView, type Snapshot, type SnapshotWire } from './protocol.ts';
 
-const DECIMALS: Readonly<Record<string, number>> = { angle: 2, progress: 2, reloadFrac: 2, suppression: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
+const DECIMALS: Readonly<Record<string, number>> = { angle: 2, push: 2, progress: 2, reloadFrac: 2, suppression: 2, settle: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
 
 const round = (key: string, v: unknown) => {
   if (typeof v !== 'number' || Number.isInteger(v)) return v;
@@ -38,10 +38,10 @@ export function fillSnapshot(wire: SnapshotWire, last: Snapshot | null): Snapsho
   const match = wire.match ?? last?.match;
   if (!crates || !leaderboard || !zones || !match) return null;
   const buildings = wire.buildings ?? last?.buildings, run = wire.run ?? last?.run, royale = wire.royale ?? last?.royale;
-  const barrels = wire.barrels ?? last?.barrels;
+  const barrels = wire.barrels ?? last?.barrels, props = wire.props ?? last?.props, targets = wire.targets ?? last?.targets;
   const airdrop = wire.airdrop !== undefined ? wire.airdrop : last?.airdrop;
   const { cos: sentCos, ...rest } = wire;
   const known: Record<number, Cos> = sentCos ?? Object.fromEntries((last?.players ?? []).filter((p) => p.cos).map((p) => [p.id, p.cos!]));
   const players = Object.keys(known).length ? wire.players.map((p) => (known[p.id] ? { ...p, cos: known[p.id] } : p)) : wire.players;
-  return { ...rest, players, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(barrels && { barrels }), ...(airdrop !== undefined && { airdrop }) };
+  return { ...rest, players, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(barrels && { barrels }), ...(props && { props }), ...(targets && { targets }), ...(airdrop !== undefined && { airdrop }) };
 }

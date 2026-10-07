@@ -170,7 +170,7 @@ function redeploy(w: World, r: Royale) {
     if (!p || p.life.k !== 'dead') { r.redeployAt.delete(id); continue; }
     if (w.now < at || !standing(w, p.team)) continue;
     r.redeployAt.delete(id);
-    resetProgress(p);
+    resetProgress(p, w);
     p.lifeKills = 0;
     p.feats = freshFeats();
     const spot = spawnPoint(w, p.team);

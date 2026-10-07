@@ -7,6 +7,7 @@ import { MAPS } from '../src/shared/maps.ts';
 import type { InputState, Snapshot } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
+import { applyKnock } from '../src/shared/sim/knock.ts';
 import { goDown } from '../src/shared/sim/downed.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, IDLE_INPUT, newId } from '../src/shared/sim/world.ts';
@@ -18,6 +19,8 @@ const LATENCY_TICKS = 3;
 type Lockstep = {
   clientSolids?: (snap: Snapshot) => Rect[]; ability?: 'dash' | 'knife'; enemyAt?: { x: number; y: number };
   squad?: { walls: [number, number][]; downed?: boolean };
+  /** A hit shoves the player on this tick, `mag` px/s along (dirX, dirY). */
+  shove?: { at: number; dirX: number; dirY: number; mag: number };
 };
 
 function lockstepWorld(squad: Lockstep['squad']) {
@@ -33,7 +36,7 @@ function lockstepWorld(squad: Lockstep['squad']) {
   return { w, p };
 }
 
-function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability, enemyAt, squad }: Lockstep = {}) {
+function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability, enemyAt, squad, shove }: Lockstep = {}) {
   const { w, p } = lockstepWorld(squad);
   if (ability) grantPerks(w, p, ['extended', 'thickSkin', ability]);
   if (enemyAt) spawnAt(w, enemyAt.x, enemyAt.y);
@@ -52,6 +55,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
     pred = predictInput(pred, { seq, input, dtMs: TICK_MS, ability: predictAbility(pred, input, latest) }, solidsFor(latest), selfMotion(latest).speed, seq * TICK_MS, MAPS[w.map].size);
     toServer.push({ at: seq + LATENCY_TICKS, seq, input });
     for (const m of toServer.filter((m) => m.at === seq)) setInput(w, p.id, m.seq, m.input);
+    if (shove && i === shove.at) applyKnock(w, p, shove.dirX, shove.dirY, shove.mag);
     step(w, TICK_MS);
     toClient.push({ at: seq + LATENCY_TICKS, snap: snapshotFor(w, p.id) });
     for (const m of toClient.filter((m) => m.at === seq)) {
@@ -77,6 +81,23 @@ test('prediction with a wall in the way matches the server every snapshot and en
   assert.ok(maxCorrection < 1e-9, `no correction was ever needed (max ${maxCorrection})`);
   assert.deepEqual(pred.afterNewest, server);
   assert.equal(pred.pending.length, LATENCY_TICKS * 2, 'acknowledged inputs are dropped; only the round trip in flight remains');
+});
+
+test('prediction with sprint bursts and stops matches the server every snapshot', () => {
+  const sprinting: Partial<InputState>[] = [
+    ...Array(20).fill({ right: true }),
+    ...Array(25).fill({ right: true, sprint: true }),
+    ...Array(10).fill({ down: true, sprint: true }),
+    ...Array(8).fill({ down: true, sprint: true, fire: true }),
+    ...Array(15).fill({ up: true, left: true, sprint: true }),
+    ...Array(10).fill({ sprint: true }),
+  ];
+  const { server, pred, maxCorrection } = playOutLockstep(sprinting);
+  assert.ok(maxCorrection < 1e-9, `sprint never needed a correction (max ${maxCorrection})`);
+  assert.deepEqual(pred.afterNewest, server);
+  const walked = playOutLockstep(route.map((i) => ({ ...i, sprint: false })));
+  const ran = playOutLockstep(route.map((i) => ({ ...i, sprint: true })));
+  assert.ok(ran.maxCorrection < 1e-9 && Math.hypot(ran.server.x - 500, ran.server.y - 500) > Math.hypot(walked.server.x - 500, walked.server.y - 500) * 0.99, 'a sprint along the wall route still reconciles');
 });
 
 test('a misprediction converges to the server position and the drawn player glides there', () => {
@@ -167,4 +188,21 @@ test('the local player walks up to the edge of the map in play, however big it i
   const walkRight = (size: number) => predictInput(at(size - 30, 100), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: TICK_MS, ability: null }, [], 300, 0, size).afterNewest!.x;
   assert.equal(walkRight(3000), 3000 - WORLD.playerRadius);
   assert.equal(walkRight(6000), 6000 - WORLD.playerRadius);
+});
+
+test('a hit that shoves the local player is replayed by prediction, so the view glides and ends exactly on the server', () => {
+  const idle = Array<Partial<InputState>>(40).fill({});
+  const plain = playOutLockstep(idle);
+  const shoved = playOutLockstep(idle, { shove: { at: 10, dirX: 1, dirY: 0, mag: 120 } });
+  assert.ok(shoved.server.x - plain.server.x > 5, `the shove moved the server body (${shoved.server.x - plain.server.x}px)`);
+  assert.ok(Math.abs(shoved.pred.afterNewest!.x - shoved.server.x) < 1e-6 && Math.abs(shoved.pred.afterNewest!.y - shoved.server.y) < 1e-6, 'prediction ends on the server');
+  assert.ok(shoved.maxCorrection < 15, `no rubber-band: the largest correction was ${shoved.maxCorrection}px`);
+  assert.ok(shoved.maxCorrection > 0, 'the client could not know of the hit before its snapshot');
+});
+
+test('the shove rides the self snapshot and its replay matches the server while the client is also walking', () => {
+  const walk = Array<Partial<InputState>>(30).fill({ down: true });
+  const r = playOutLockstep(walk, { shove: { at: 8, dirX: 0, dirY: 1, mag: 100 } });
+  assert.ok(Math.abs(r.pred.afterNewest!.y - r.server.y) < 1e-6);
+  assert.ok(r.maxCorrection < 15);
 });

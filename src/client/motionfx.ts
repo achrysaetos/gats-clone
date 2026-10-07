@@ -273,7 +273,7 @@ type GaitLike = { phase: number; speed: number; heading: number };
  * Called each frame a body is drawn with its walk-cycle state. A boot lands each half stride, kicking a small puff out behind
  * it; reversing or planting hard at a run skids with a fan of larger ones.
  */
-export function noteStride(id: number, g: GaitLike, x: number, y: number, now: number) {
+export function noteStride(id: number, g: GaitLike, x: number, y: number, now: number, sprint = false) {
   const t = bodies.get(id);
   if (!t) return;
   const amount = Math.min(1, g.speed / 220);
@@ -284,8 +284,9 @@ export function noteStride(id: number, g: GaitLike, x: number, y: number, now: n
       const side = f % 2 ? 1 : -1, h = g.heading;
       const bx = x - Math.cos(h) * R * 0.5 + Math.cos(h + Math.PI / 2) * side * R * 0.34;
       const by = y + R * 0.3 - Math.sin(h) * R * 0.5 + Math.sin(h + Math.PI / 2) * side * R * 0.34;
-      const n = reduced() ? 1 : amount > 0.8 ? 2 : 1;
-      for (let i = 0; i < n; i++) puff(bx, by, now, between(3, 4.6) * (0.8 + amount * 0.5), -Math.cos(h) * between(14, 40) + between(-10, 10), -Math.sin(h) * between(8, 24) + between(-8, 8), between(260, 380), 1.1);
+      // A sprint kicks up a bigger, longer-thrown cloud with every boot.
+      const n = reduced() ? 1 : sprint ? 3 : amount > 0.8 ? 2 : 1;
+      for (let i = 0; i < n; i++) puff(bx, by, now, between(3, 4.6) * (0.8 + amount * 0.5) * (sprint ? 1.35 : 1), -Math.cos(h) * between(14, 40) + between(-10, 10), -Math.sin(h) * between(8, 24) + between(-8, 8), between(260, 380), 1.1);
     }
   }
   const skidding = now - t.lastSkid > MOTION.skidGapMs;

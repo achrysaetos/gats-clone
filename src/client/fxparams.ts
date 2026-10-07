@@ -102,3 +102,20 @@ export function decayPulse(current: number, dtMs: number): number {
 export function vignetteReach(cssW: number, cssH: number): [number, number] {
   return [Math.min(0.26, 320 / cssW), Math.min(0.26, 230 / cssH)];
 }
+
+/**
+ * Steps the lighting quality down when lit frames arrive slowly. Feed it each lit frame's interval; every `frames` frames it
+ * looks at the average and, over `limitMs`, returns the next tier (cheaper), or -1 once there is no cheaper tier left.
+ * Otherwise returns the tier it was given. It never steps back up, so quality cannot flap.
+ */
+export function tierGovernor(limitMs = 21, frames = 75) {
+  let n = 0, sum = 0;
+  return (dtMs: number, tier: number, lastTier: number): number => {
+    n++; sum += dtMs;
+    if (n < frames) return tier;
+    const slow = sum / n > limitMs;
+    n = 0; sum = 0;
+    if (!slow) return tier;
+    return tier >= lastTier ? -1 : tier + 1;
+  };
+}

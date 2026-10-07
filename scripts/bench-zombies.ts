@@ -1,17 +1,20 @@
 /// <reference types="node" />
-// Usage: node scripts/bench-zombies.ts [seeds] [squad] [runs]
+// Usage: [WALLS=<tier>[:<gap>]] node scripts/bench-zombies.ts [seeds] [squad] [runs]
 //   runs: skip the full-horde cost samples.
+//   WALLS: a stress test of the walls, not play: each day the squad's spare scrap (above 70) also buys a closed ring of walls of that tier (1 to 3), `gap` cells (default 5)
+//   beyond the core's edge, the side tonight's horde comes from first, to see whether a human spamming steel walls trivialises the nights.
 //   seeds: comma-separated, default 1,2,3. squad: 4 runs four bots; 1 runs one bot-brained player with a human's health, alone;
 //   mixed runs the common real squad, one bot-brained player flagged human (who follows the build plan) and three bots.
 // Plays zombies runs to the core's fall or the Tide's dawn and prints the nights reached and how each night went (seconds it lasted, core health lost,
 // survivors at dawn, turrets standing), then the win rate and the mean core health bitten off on each night across the seeds.
 // Then holds a full horde of ZOM.maxAlive on the squad with an unbreakable core and prints server step cost and snapshot size under it,
 // first with no buildings, then with a ring of a dozen always-loaded sentries and cannons round the core, then with two full rings of them, then with those rings a quarter each of every turret kind.
-import { BUILDINGS, TURRET_KINDS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
+import { BUILDINGS, nightOf, SIDES, TURRET_KINDS, WORLD, ZOM, type TurretKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import type { Snapshot } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { costOf, levelOf, maxHpOf, turretDef } from '../src/shared/sim/build.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
 import { createWorld, newId, rand, type World } from '../src/shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../src/shared/wire.ts';
@@ -26,6 +29,26 @@ const TICK_MS = 1000 / WORLD.tickHz;
 const MAX_NIGHTS = 40;
 
 const ms = (v: number) => v.toFixed(2);
+
+const [wallTier, wallGap] = (process.env.WALLS ?? '').split(':').map(Number) as [number | undefined, number | undefined];
+
+/** The WALLS stress test: one wall of the ring a tick while the day lasts and the bank is above the reserve, the horde's side first. */
+function wallRing(w: World) {
+  const run = w.run!;
+  if (!wallTier || run.phase.k !== 'day') return;
+  const gap = wallGap || 5, lo = 29 - gap, hi = 30 + gap, side = nightOf(run.night).from[0] ?? SIDES[0]!;
+  const toward = { north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] }[side];
+  const cells: [number, number][] = [];
+  for (let c = lo; c <= hi; c++) for (const [cx, cy] of [[c, lo], [c, hi], [lo, c], [hi, c]] as const) if (!cells.some(([x, y]) => x === cx && y === cy)) cells.push([cx, cy]);
+  cells.sort((a, b) => (b[0] - 29.5) * toward![0]! + (b[1] - 29.5) * toward![1]! - ((a[0] - 29.5) * toward![0]! + (a[1] - 29.5) * toward![1]!));
+  const cost = costOf('wall', wallTier);
+  if (run.scrap < cost + ZOM.startScrap * 0.7) return;
+  const free = cells.find(([cx, cy]) => !w.buildings.some((b) => b.cx === cx && b.cy === cy) && ![...w.players.values()].some((p) => Math.abs(p.x - (cx + 0.5) * ZOM.cell) < 40 && Math.abs(p.y - (cy + 0.5) * ZOM.cell) < 40));
+  if (!free) return;
+  run.scrap -= cost;
+  w.buildings.push({ id: newId(w), kind: 'wall', cx: free[0], cy: free[1], hp: maxHpOf('wall', wallTier), ...(wallTier > 1 && { lv: wallTier }) });
+  w.buildingsVersion++;
+}
 
 type Squad = { w: World; bots: Map<number, BotMemory>; encoders: Map<number, (snap: Snapshot) => string>; r: () => number };
 
@@ -68,6 +91,7 @@ for (const seed of seeds) {
   const started = performance.now();
   for (let night = w.run!.night; w.run!.phase.k !== 'over' && w.run!.night <= MAX_NIGHTS;) {
     tick(sq);
+    wallRing(w);
     const run = w.run!;
     peak = Math.max(peak, w.zombies.length);
     for (const e of w.events) if (e.e === 'life') { if (e.k === 'downed') { downs++; nightDowns[night - 1] = (nightDowns[night - 1] ?? 0) + 1; } if (e.k === 'revived') revives++; }
@@ -108,7 +132,7 @@ let shots = 0, kills = 0, turretShots = 0;
 const horde = Object.values(MAPS.outpost.siege!.horde);
 const holdOut = () => {
   for (const p of sq.w.players.values()) if (p.life.k === 'alive') p.life.hp = 1e9;
-  for (const b of sq.w.buildings) if (b.kind !== 'wall') b.ammo = BUILDINGS[b.kind].turret.ammo;
+  for (const b of sq.w.buildings) if ('ammo' in b) b.ammo = turretDef(b.kind, levelOf(b)).ammo;
   while (sq.w.zombies.length < ZOM.maxAlive) {
     const edge = horde[Math.floor(sq.r() * horde.length)]!;
     sq.w.zombies.push({ id: newId(sq.w), kind: 'walker', x: edge.x + sq.r() * edge.w, y: edge.y + sq.r() * edge.h, hp: zombieMaxHp('walker', run.night, 1), attackAt: 0, vx: 0, vy: 0 });

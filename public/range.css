@@ -1,0 +1,124 @@
+/*
+ * The shooting range (mode RNG): its menu card, the readout plate and the loadout panel. Field kit per docs/art/STYLE.md:
+ * matte gunmetal plates with clipped top-right and bottom-left corners, an orange corner bracket, bone Barlow Condensed,
+ * orange for what you can act on. Inside #hud, which --ui already scales.
+ */
+.mode-rng { color: #8fd6e0; background: rgba(90, 190, 210, 0.1); }
+
+/* The menu card. */
+.range-card { display: grid; }
+.range-pitch {
+  position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: var(--s4); align-items: center; padding: var(--s3) var(--s4) var(--s3) var(--s3);
+  background: var(--panel-2); border: 1px solid var(--line);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+.range-pitch::before { content: ""; position: absolute; top: 0; left: 0; width: 14px; height: 14px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); pointer-events: none; }
+.range-art { width: 64px; height: 64px; display: block; }
+.range-art svg { width: 100%; height: 100%; display: block; }
+.range-copy { display: grid; gap: 6px; min-width: 0; }
+.range-title { display: flex; align-items: center; gap: var(--s3); }
+.range-title b { font: 800 20px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
+.range-copy p { color: var(--muted); font-size: var(--t-label); line-height: 1.35; }
+.range-start { white-space: nowrap; font: 800 16px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; padding: 12px 18px; }
+@media (max-width: 640px) {
+  .range-pitch { grid-template-columns: auto 1fr; }
+  .range-start { grid-column: 1 / -1; }
+}
+
+/* The readout: the loadout button on top, then the last hit, damage per second, accuracy and the last time to kill. */
+.range-hud {
+  position: absolute; z-index: 3; top: 152px; left: 16px; width: 236px; pointer-events: auto; background: var(--panel);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  font-family: var(--display);
+}
+.rs-body { padding: 8px 10px 10px; border-top: 2px solid var(--accent); }
+.rs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.rs-head > span { font: 800 13px/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+.rs-reset { padding: 3px 10px; font: 700 12px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; }
+.rs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.rs { display: grid; gap: 1px; min-width: 0; }
+.rs span { font: 700 11px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+.rs b { font: 800 26px/1.05 var(--display); letter-spacing: 0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.rs small { font: 500 11px/1.2 var(--text); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The loadout button, and the key that opens it. */
+.range-open {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 12px 8px 14px; border: 0; border-radius: 0;
+  background: var(--accent); color: var(--accent-ink); font: 800 15px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase;
+}
+.range-open:hover:not(:disabled) { background: var(--accent-hot); }
+.range-open[aria-pressed="true"] { background: var(--ink); }
+.range-open kbd, .rp-actions kbd { font: 800 12px/1 var(--display); padding: 3px 6px; background: rgba(0, 0, 0, 0.22); border: 1px solid rgba(0, 0, 0, 0.3); }
+.rp-actions kbd { background: rgba(236, 230, 214, 0.12); border-color: var(--line); color: var(--muted); }
+
+/* The loadout panel. */
+.range-panel {
+  position: absolute; z-index: 6; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(1240px, calc((100vw - 24px) / var(--ui, 1)));
+  max-height: calc((100vh - 24px) / var(--ui, 1)); display: grid; grid-template-rows: auto minmax(0, 1fr); pointer-events: auto;
+  background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--accent); box-shadow: var(--lift);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  animation: rp-in 0.2s cubic-bezier(.2, 1.2, .4, 1) both;
+}
+@keyframes rp-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 14px)); } }
+.range-panel[hidden] { display: none; }
+.rp-head { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 12px 16px 10px; border-bottom: 1px solid var(--line); }
+.rp-head h2 { margin: 0; color: var(--ink); font-size: 18px; }
+.rp-head p { color: var(--muted); font-size: 13px; line-height: 1.3; }
+.rp-actions { display: flex; gap: 8px; }
+.rp-action { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font: 800 14px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); border: 0; }
+.rp-action:hover:not(:disabled) { background: var(--accent-hot); }
+.rp-action.ghost { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line-strong); }
+.rp-action.ghost:hover:not(:disabled) { background: var(--panel-3); }
+.rp-body { overflow-y: auto; padding: 4px 16px 16px; scrollbar-width: thin; scrollbar-color: var(--panel-3) transparent; }
+.rp-label, .rp-tier h3 { margin: 14px 0 8px; display: flex; align-items: center; gap: 8px; font: 700 13px/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+.rp-label::before, .rp-tier h3::before { content: ""; width: 14px; height: 2px; background: var(--accent); }
+
+.rp-guns { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.rp-col { display: grid; gap: 3px; }
+.rp-col h3 { margin: 0 0 2px; font: 800 15px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); padding-bottom: 5px; border-bottom: 1px solid var(--line); }
+.rp-tile {
+  display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 0 7px; padding: 3px 5px 3px 4px; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+.rp-tile[data-stage="1"] { margin-left: 5px; border-left-color: #8a8f99; }
+.rp-tile[data-stage="2"] { margin-left: 10px; border-left-color: var(--gold); }
+.rp-tile .rp-art { grid-row: 1 / span 2; }
+.rp-tile b { font: 800 13px/1.1 var(--display); letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: end; }
+.rp-tile small { font: 500 10.5px/1.2 var(--text); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: start; }
+.rp-art { width: 62px; height: auto; aspect-ratio: 112 / 40; }
+.rp-tile[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); }
+.rp-tile[aria-pressed="true"] b { color: var(--accent); }
+
+.rp-armors { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; max-width: 520px; }
+.rp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rp-chip {
+  display: flex; align-items: center; gap: 7px; padding: 6px 10px 6px 8px; background: var(--panel-2); border: 1px solid var(--line);
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+.rp-chip b { font: 700 14px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.rp-chip small { font: 500 11px/1 var(--text); color: var(--muted); }
+.rp-chip.armor { display: grid; gap: 2px; justify-items: start; padding: 7px 10px; }
+.rp-chip.none b { color: var(--muted); }
+.rp-icon { width: 20px; height: 20px; flex: none; }
+.rp-chip[aria-pressed="true"] { background: var(--accent-wash); border-color: var(--accent); }
+.rp-chip[aria-pressed="true"] b { color: var(--accent); }
+
+@media (max-width: 900px) {
+  .rp-guns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rp-head { grid-template-columns: 1fr auto; }
+  .rp-head p { display: none; }
+}
+/* On a short screen or a phone the readout is one slim strip under the pill, the button on its left, clear of the sticks and buttons. */
+@media (max-height: 520px), (pointer: coarse) {
+  .range-hud { top: 46px; left: 50%; right: auto; transform: translateX(-50%); width: auto; display: flex; align-items: stretch; }
+  .range-open { width: auto; padding: 6px 10px 6px 12px; font-size: 13px; }
+  .range-open kbd { display: none; }
+  .rs-body { display: flex; align-items: center; gap: 14px; padding: 4px 12px; border-top: 0; border-left: 2px solid var(--accent); }
+  .rs-head { margin: 0; }
+  .rs-head > span { display: none; }
+  .rs-grid { grid-template-columns: repeat(4, auto); gap: 0 14px; }
+  .rs b { font-size: 19px; }
+  .rs small { display: none; }
+  .rs span { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .range-panel { animation: none; } }

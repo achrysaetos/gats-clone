@@ -1,8 +1,10 @@
-import { SIDES, type ModeId, type Side } from './defs.ts';
+import { SIDES, type ModeId, type PropKind, type Side } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 import { CAUSEWAY } from './maps/causeway.ts';
 import { OLDTOWN } from './maps/oldtown.ts';
 import { PLAZA } from './maps/plaza.ts';
+import { RANGE_MAP } from './maps/range.ts';
+import type { RangeLayout } from './range.ts';
 import { QUARRY } from './maps/quarry.ts';
 
 export type Center = { x: number; y: number };
@@ -23,8 +25,12 @@ export type MapDef = {
   crates: readonly Center[];
   /** Explosive barrels (versus modes), centers; half-turn twins like the crates. */
   barrels: readonly Center[];
+  /** The other shootable props (versus modes), centers; half-turn twins of the same kind. */
+  props: readonly (Center & { kind: PropKind })[];
   /** Zombies only: the core the squad defends and the edge strips the horde walks in from. */
   siege?: { core: Center; horde: Readonly<Record<Side, Rect>> };
+  /** The shooting range only (mode RNG): where its targets stand and what the floor paints. */
+  range?: RangeLayout;
 };
 
 const BLOCKY = 1.6;
@@ -48,11 +54,12 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
     spawns: { red: squad, blue: squad, ffa: squad },
     crates: [],
     barrels: [],
+    props: [],
     siege: { core: { x: size / 2, y: size / 2 }, horde: Object.fromEntries(fourWays([quarter.horde], size).map((r, i) => [SIDES[i], r])) as Record<Side, Rect> },
   };
 }
 
-export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'outpost'] as const;
+export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'outpost', 'range'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
@@ -60,6 +67,7 @@ export const MAPS: Record<MapId, MapDef> = {
   plaza: PLAZA,
   oldtown: OLDTOWN,
   quarry: QUARRY,
+  range: RANGE_MAP,
   outpost: siegeMap('Outpost', 3000, {
     walls: [
       { x: 600, y: 600, w: 150, h: 50 }, { x: 600, y: 650, w: 50, h: 100 }, { x: 1000, y: 300, w: 50, h: 200 },
@@ -76,10 +84,11 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
   DOM: ['quarry', 'causeway', 'oldtown', 'plaza'],
   ZOM: ['outpost'],
   BR: ['oldtown', 'quarry', 'plaza', 'causeway'],
+  RNG: ['range'],
 };
 
 /** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
-export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity };
+export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity, RNG: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
 export function nextMap(mode: ModeId, current: MapId): MapId {

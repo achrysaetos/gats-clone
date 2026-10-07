@@ -1,9 +1,10 @@
 import {
-  AIRDROP, ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
-  type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
+  AIRDROP, ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, GUN_IDS, LEVELS, MAX_LEVEL, PERK_TIERS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
+  type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type PropKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 import { isEmoteId, type EmoteId } from './emotes.ts';
+import type { RangeView, TargetView } from './range.ts';
 import { isCosmeticId, isSlot, parsePicks, type Cos, type Equipped, type Picks, type ProgressMsg, type Slot } from './cosmetics.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
@@ -20,6 +21,8 @@ export type InputState = {
   aimDist: number;
   /** Zombies: held to revive a downed squadmate nearby, or else to repair the nearest damaged wall in reach. */
   use: boolean;
+  /** Held to sprint (`SPRINT`); only moving, not firing, counts. Optional so older senders and bots may omit it. */
+  sprint?: boolean;
 };
 
 /** How far behind the newest snapshot a client draws the world; the server allows for it when judging a lagged shot. */
@@ -43,12 +46,17 @@ export type ClientMsg =
   /** A cosmetic quick emote; the server rate-limits it and fans it out to nearby players and the emoter's team. */
   | { t: 'emote'; id: EmoteId }
   | { t: 'respawn'; loadout: Loadout }
-  /** Zombies: put a wall on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. */
-  | { t: 'build'; kind: BuildingKind; cx: number; cy: number }
+  /** Zombies: put a building on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. A wall's `lv` is its tier (1 when absent). */
+  | { t: 'build'; kind: BuildingKind; cx: number; cy: number; lv?: number }
   | { t: 'demolish'; cx: number; cy: number }
+  /** Zombies: upgrade the wall, turret or utility on the cell one level, by day. */
+  | { t: 'upgrade'; cx: number; cy: number }
   | { t: 'ready' }
   /** Wear catalog item `id` in `slot`; the server answers `equipped`. */
-  | { t: 'equip'; slot: Slot; id: string };
+  | { t: 'equip'; slot: Slot; id: string }
+  /** Range rooms only: put any gun, armor and perk on at once (a tier left out stays, `null` clears it), or start the readout over and stand everything up. */
+  | { t: 'range'; a: 'loadout'; gun?: GunId; armor?: ArmorId; perks?: { [T in Tier]?: PerkId | null } }
+  | { t: 'range'; a: 'reset' };
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
@@ -70,6 +78,16 @@ export type PlayerView = {
   cos?: Cos;
   /** Holds an airdrop's golden gun for this life. */
   golden?: true;
+  /** Sprinting: the gun is lowered and the stride long. Hidden from others by Ninja. */
+  sprint?: true;
+  /** Adrenaline or Second Wind is lifting this player's speed. */
+  rush?: true;
+  /** Recon only: this enemy is mid-reload. */
+  reloading?: true;
+  /** Mid-reload (anyone in view, for the arm animation): `[elapsedMs, totalMs]` whole ms, the reload's real length with perks; absent otherwise. */
+  rl?: [elapsedMs: number, totalMs: number];
+  /** Shocked by a generator's EMP: slowed, abilities locked. */
+  emp?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
@@ -81,6 +99,11 @@ export type BulletView = { id: number; x: number; y: number; vx: number; vy: num
  * Whole px, and none while a burst barrel waits to stand again; the list changes only when one is hurt, so it rides as a sticky field.
  */
 export type BarrelView = [id: number, x: number, y: number, hp: number];
+/**
+ * A prop (`PROPS`): `[id, kind, x, y, state]`, `kind` indexing `PROP_KINDS`, whole px, none while it is gone. `state` is tenths of full
+ * health 1..10 standing, 0 while a propane tank flies or a generator arcs, 11 once spent (a dark lamp, a cabinet's pack on the floor). Sticky.
+ */
+export type PropView = [id: number, kind: number, x: number, y: number, state: number];
 /** A supply plane in flight over (`x`, `y`) heading `a` radians, there at `dropAt`; its crate lands at `landAt` and stands until broken. Server times. */
 export type AirdropView = { x: number; y: number; a: number; dropAt: number; landAt: number };
 /** Where the supply plane is at server time `t`: a straight line at `AIRDROP.planeSpeed`, over (`x`, `y`) at `dropAt`. */
@@ -90,7 +113,7 @@ export const planeAt = (f: Pick<AirdropView, 'x' | 'y' | 'a' | 'dropAt'>, t: num
 };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number; drop?: true };
 export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
-export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
+export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fireSlick' | 'flashbang' | 'smokeGrenade' | 'smokeCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
@@ -102,7 +125,7 @@ export type ZombieView = [id: number, kind: number, x: number, y: number, hp: nu
  * `hp` is tenths of full health, 1..10, and a turret's `ammo` tenths of a full load, 0 once it cannot fire.
  * A turret's aim is not here: it turns only to fire, and each `turret` event carries its angle, so this sticky field stays unchanged while it fires.
  */
-export type BuildingView = { cx: number; cy: number; hp: number } & ({ kind: 'wall' } | { kind: TurretKind; ammo: number });
+export type BuildingView = { cx: number; cy: number; hp: number; /** The upgrade level (a wall's tier), 2 or 3; absent at level 1. */ lv?: number } & ({ kind: Exclude<BuildingKind, TurretKind> } | { kind: TurretKind; ammo: number });
 /** `turretKills` counts the squad's turrets' kills by turret kind; a player's `kills` are their own. `won` once the Bastion held through the Tide. */
 export type RunReport = {
   night: number; won: boolean; survivors: number; durationMs: number; players: { name: string; kills: number; revives: number; built: number }[]; turretKills: Record<TurretKind, number>; bastionKills: number;
@@ -123,22 +146,30 @@ export type SelfView = {
   reloadFrac: number;
   /** Move speed without a dash, for predicting the local player's movement. */
   speed: number;
+  /** Sprinting this tick; `sprintSpeed` is the speed it moves at (`speed` times `SPRINT.speedMul`, with Marathon). */
+  sprint?: boolean; sprintSpeed?: number;
+  /** 0..1, the share of the post-sprint settle still to ease out (spread is `SPRINT.settleMul` at 1), and its full length in ms. */
+  settle?: number; settleMs?: number;
   perks: Partial<Record<Tier, PerkId>>;
   pending: PendingPick | null;
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
+  /** A shove from a hit still bleeding off, px/s, so the local player's prediction replays it instead of snapping back. */
+  knock?: { vx: number; vy: number } | null;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;
   /** 0..1, how suppressed you are by rounds passing close; it widens your reticle and shades the screen's edges. */
   suppression: number;
+  /** 0..1, how blinded you are by a flashbang: 1 is a full whiteout, easing to 0 as it wears off (absent when clear). */
+  flash?: number;
   /** Kills this life, and the player who last killed you until you take your revenge. */
   streak: number; nemesis: number | null;
 };
 
 /** `victim` is the id of the player, crate, zombie or squad wall hit; all come from the world's one id sequence. */
-export type DamageKind = 'player' | 'crate' | 'zombie' | 'building';
+export type DamageKind = 'player' | 'crate' | 'zombie' | 'building' | 'target';
 
 export type GameEvent =
   /**
@@ -150,9 +181,13 @@ export type GameEvent =
   | { e: 'hunted'; id: number; name: string }
   /** Player `id` earned a medal (`MEDALS`), and its score with it. */
   | { e: 'medal'; id: number; medal: MedalId }
-  | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
+  | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind; /** Heading, in radians, a gun round or blast shoved a player. */ push?: number }
   | { e: 'impact'; x: number; y: number }
+  /** Range only: target number `i` of the layout fell (`by` the shooter who dropped it) or stood up again, at (`x`, `y`). */
+  | { e: 'target'; i: number; k: 'down' | 'up'; by: number | null; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
+  /** A flashbang burst: everyone near looks away. */
+  | { e: 'flashburst'; x: number; y: number; r: number }
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
   /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
@@ -160,12 +195,18 @@ export type GameEvent =
   /** A turret at cell center (`x`, `y`) fired toward `angle`, to 0.01 rad. Its rounds stay off `bullets`: the client draws each from this. */
   /** `reach` is how far a lobbed round flies before it bursts. */
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }
+  /** A tesla coil at (`x`, `y`) arced: `p` is the arc's points, x then y, from the coil to each zombie it jumped to. */
+  | { e: 'coil'; x: number; y: number; p: number[] }
+  /** A depot topped up a turret or a post mended someone at (`x`, `y`), at most once a second each. */
+  | { e: 'aid'; kind: 'depot' | 'post'; x: number; y: number }
   /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */
   | { e: 'wiped'; team: ColorId; place: number }
   /** A supply plane is `inbound` for (`x`, `y`); its crate `landed`; or `by` cracked it open and took a golden gun (`gold`) or a resupply. */
-  | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean };
+  | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean }
+  /** A prop (`PROPS`) did its thing: `pop` (shattered, burst, spilled), `launch` a tank at heading `a`, `arc` a generator shorting, `emp` its pulse of radius `r`, `pick` a pack taken, `relight` a lamp. `c` is the colour a paint can splatters. */
+  | { e: 'prop'; kind: PropKind; k: 'pop' | 'launch' | 'arc' | 'emp' | 'pick' | 'relight'; x: number; y: number; a?: number; r?: number; c?: ColorId };
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -195,7 +236,8 @@ export type RoyaleView = {
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
-export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
+/** `marked` is a Tracker mark on an enemy you hurt. */
+export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true };
 
 /** `kills` and `deaths` count this round only and every mode ranks on them; `score` is the current life's, which a death resets. */
 export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team };
@@ -229,6 +271,8 @@ export type Snapshot = {
   events: GameEvent[];
   /** Explosive barrels still standing, versus modes. Sticky. */
   barrels?: BarrelView[];
+  /** The other props standing, versus modes. Sticky. */
+  props?: PropView[];
   /** The supply plane in flight or the landed crate not yet opened, or null. Sticky. */
   airdrop?: AirdropView | null;
   /** Zombies only: the horde in view, the squad's walls and the run. */
@@ -237,10 +281,13 @@ export type Snapshot = {
   run?: RunView;
   /** Last Squad only. */
   royale?: RoyaleView;
+  /** Range only: each target's health in layout order (`TargetView`), sticky, and the readout for you. */
+  targets?: TargetView[];
+  range?: RangeView;
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'airdrop'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'airdrop', 'targets'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 /** `cos` maps player id to what they wear, sent only when it changes; `fillSnapshot` folds it onto each `PlayerView.cos`. */
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>> & { cos?: Record<number, Cos> };
@@ -292,7 +339,7 @@ function parseInput(v: unknown): InputState | null {
   const b = (k: string) => v[k] === true;
   return {
     up: b('up'), down: b('down'), left: b('left'), right: b('right'), angle, aimDist,
-    fire: b('fire'), shots: Math.floor(shots), reload: b('reload'), ability: b('ability'), use: b('use'),
+    fire: b('fire'), shots: Math.floor(shots), reload: b('reload'), ability: b('ability'), use: b('use'), sprint: b('sprint'),
   };
 }
 
@@ -330,13 +377,39 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     }
     case 'build': {
       const cx = gridCell(v.cx), cy = gridCell(v.cy);
-      return cx === null || cy === null || !oneOf(BUILDING_KINDS, v.kind) ? null : { t: 'build', kind: v.kind, cx, cy };
+      if (cx === null || cy === null || !oneOf(BUILDING_KINDS, v.kind)) return null;
+      if (v.lv === undefined) return { t: 'build', kind: v.kind, cx, cy };
+      return Number.isInteger(v.lv) && (v.lv as number) >= 1 && (v.lv as number) <= MAX_LEVEL ? { t: 'build', kind: v.kind, cx, cy, lv: v.lv as number } : null;
+    }
+    case 'upgrade': {
+      const cx = gridCell(v.cx), cy = gridCell(v.cy);
+      return cx === null || cy === null ? null : { t: 'upgrade', cx, cy };
     }
     case 'demolish': {
       const cx = gridCell(v.cx), cy = gridCell(v.cy);
       return cx === null || cy === null ? null : { t: 'demolish', cx, cy };
     }
     case 'ready': return { t: 'ready' };
+    case 'range': {
+      if (v.a === 'reset') return { t: 'range', a: 'reset' };
+      if (v.a !== 'loadout') return null;
+      const msg: Extract<ClientMsg, { t: 'range'; a: 'loadout' }> = { t: 'range', a: 'loadout' };
+      if (v.gun !== undefined) { if (!oneOf(GUN_IDS, v.gun)) return null; msg.gun = v.gun; }
+      if (v.armor !== undefined) { if (!oneOf(ARMOR_IDS, v.armor)) return null; msg.armor = v.armor; }
+      if (v.perks !== undefined) {
+        if (!isObj(v.perks)) return null;
+        const perks: NonNullable<typeof msg.perks> = {};
+        for (const tier of [1, 2, 3] as const) {
+          const perk = v.perks[tier];
+          if (perk === undefined) continue;
+          if (perk === null) { perks[tier] = null; continue; }
+          if (!oneOf(PERK_TIERS[tier] as readonly PerkId[], perk)) return null;
+          (perks as Record<number, PerkId>)[tier] = perk;
+        }
+        msg.perks = perks;
+      }
+      return msg;
+    }
     case 'equip':
       return isSlot(v.slot) && isCosmeticId(v.slot, v.id) ? { t: 'equip', slot: v.slot, id: v.id } : null;
     default:
