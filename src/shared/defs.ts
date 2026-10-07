@@ -502,7 +502,7 @@ export const ROYALE = {
 /** What each kind of Last Squad crate pays, how much it takes to break and how big it stands. A drop also jumps its breaker to their next level pick. */
 export const CRATE_TIERS = {
   loot: { score: 25, hp: 40, size: 44 },
-  rich: { score: 50, hp: 60, size: 44 },
+  rich: { score: 60, hp: 60, size: 44 },
   cache: { score: 100, hp: 160, size: 60 },
   drop: { score: 25, hp: 300, size: 64 },
 } as const satisfies Record<string, { score: number; hp: number; size: number }>;
