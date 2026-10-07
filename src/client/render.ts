@@ -464,7 +464,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.rotate(p.angle);
   const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick);
   ctx.translate(-jump, 0);
-  drawHeldGun(ctx, p.gun, R, Math.cos(p.angle) < 0);
+  drawHeldGun(ctx, p.gun, R);
   ctx.translate(jump, 0);
   ctx.rotate(-p.angle);
   drawBody(ctx, bodySprite(color, R, ARMOR_RIM[p.armorTier], look.pxPerUnit), 0, 0, R);

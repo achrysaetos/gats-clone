@@ -21,7 +21,8 @@ const TONES: Record<Tone, string> = {
 };
 const SHINE = 'rgba(255, 255, 255, 0.28)';
 const SEAM = 'rgba(0, 0, 0, 0.55)';
-const EDGE = 'rgba(8, 9, 11, 0.75)';
+const EDGE = 'rgba(8, 9, 11, 0.6)';
+const OUTLINE = { color: '#1c1f26', width: 3 } as const;
 
 const poly = (tone: Tone, ...pts: Pt[]): Shape => ({ kind: 'poly', pts, tone });
 const rect = (tone: Tone, x: number, y: number, w: number, h: number): Shape => poly(tone, [x, y], [x + w, y], [x + w, y + h], [x, y + h]);
@@ -29,198 +30,213 @@ const barrel = (s: Shape): Shape => ({ ...s, barrel: true });
 const line = (tone: Tone | 'shine' | 'seam', w: number, ...pts: Pt[]): Shape => ({ kind: 'line', pts, tone, w });
 const solid = (tone: Tone, w: number, ...pts: Pt[]): Shape => ({ kind: 'line', pts, tone, w, solid: true });
 const dot = (tone: Tone, x: number, y: number, r: number): Shape => ({ kind: 'dot', at: [x, y], r, tone });
-const teeth = (x0: number, x1: number, step: number, y0: number, y1: number): Shape[] => {
-  const out: Shape[] = [];
-  for (let x = x0; x <= x1; x += step) out.push(line('seam', 0.6, [x, y0], [x, y1]));
-  return out;
-};
-const slots = (xs: number[], y: number, w: number, h: number): Shape[] => xs.map((x) => rect('dark', x, y, w, h));
-
+/**
+ * The art is stylized, not a replica: each class is a few chunky, exaggerated shapes with a bold silhouette (stubby
+ * pistol, boxy SMG with a long mag, fat-barrelled shotgun with a wooden pump, rifle with a red-dot and a curved mag, long
+ * bolt-action under a big scope, LMG with a drum box), so each reads at a glance from across the map.
+ */
 const ART: Record<WeaponId, Art> = {
   pistol: {
     pivot: 44,
-    accent: [24, -7.6, 18, 1.8],
+    accent: [20, -7.5, 22, 3],
     shapes: [
-      poly('poly', [13, 1], [27, 1], [23, 27], [9, 27], [7, 24], [10, 12]),
-      ...[9, 13, 17, 21].map((y) => line('seam', 0.5, [11.5 - y * 0.12, y], [24.5 - y * 0.14, y])),
-      rect('dark', 7.5, 27, 16.5, 3),
-      poly('poly', [12, -1], [58, -1], [58, 3], [30, 3], [28, 5], [16, 5], [12, 2]),
-      solid('dark', 1.6, [27, 3], [27, 9], [30, 11], [40, 11], [42, 8], [42, 3]),
-      line('dark', 1.4, [32, 3], [33.5, 7], [32.5, 9]),
-      poly('metal', [10, -9], [60, -9], [62, -7], [62, -1], [10, -1]),
-      ...teeth(13, 21, 2, -8, -2.5),
-      rect('dark', 34, -8, 10, 3),
-      line('shine', 0.8, [11, -8.4], [59, -8.4]),
-      rect('dark', 11, -11, 4, 2),
-      rect('dark', 57, -10.5, 2, 1.5),
-      barrel(rect('dark', 61.5, -5.5, 1, 3)),
+      poly('poly', [14, 1], [29, 1], [27, 25], [11, 25]),
+      solid('dark', 2.6, [29, 2], [29, 9], [40, 9], [42, 2]),
+      rect('metal', 9, -10, 53, 12),
+      line('shine', 1.4, [11, -8], [60, -8]),
+      barrel(rect('dark', 59, -7, 5, 7)),
     ],
   },
   smg: {
     pivot: 64,
-    accent: [30, -6.8, 22, 2],
+    accent: [26, -9, 26, 3.4],
     shapes: [
-      solid('metal', 2.2, [0, -6], [22, -4]),
-      solid('metal', 2.2, [0, 6], [22, 2]),
-      rect('poly', -2.5, -9, 4.5, 18),
-      poly('poly', [30, 6], [39, 6], [37, 24], [28, 24], [27, 20]),
-      ...[11, 15, 19].map((y) => line('seam', 0.5, [29, y], [37.5, y])),
-      poly('dark', [50, 5], [57, 5], [61, 32], [54, 33]),
-      ...[12, 18, 24].map((y) => line('seam', 0.5, [51 + y * 0.12, y], [57.5 + y * 0.13, y])),
-      solid('dark', 1.6, [39, 6], [39, 11], [42, 13], [48, 13], [50, 10], [50, 6]),
-      poly('metal', [20, -8], [62, -8], [64, -6], [64, 4], [56, 6], [20, 6]),
-      line('shine', 0.8, [21, -7.4], [62, -7.4]),
-      line('seam', 0.6, [20, 1], [56, 1]),
-      rect('dark', 26, -11, 26, 3),
-      ...teeth(28, 50, 3, -11, -9),
-      rect('dark', 23, -13.5, 4, 5.5),
-      rect('dark', 56, -5.5, 5, 2.5),
-      rect('poly', 64, -5, 14, 8),
-      ...slots([66.5, 71], -3, 2.2, 4),
-      rect('dark', 74, -9.5, 2, 4.5),
-      barrel(rect('dark', 78, -2.5, 8, 3)),
+      poly('poly', [0, -6], [20, -4], [20, 4], [0, 9]),
+      poly('dark', [37, 5], [47, 5], [49, 29], [39, 29]),
+      poly('poly', [23, 5], [33, 5], [31, 22], [21, 22]),
+      rect('metal', 18, -11, 48, 17),
+      line('shine', 1.4, [20, -9], [64, -9]),
+      rect('poly', 66, -8, 14, 12),
+      barrel(rect('dark', 79, -5, 7, 7)),
     ],
   },
   shotgun: {
     pivot: 60,
-    accent: [39, -5.5, 16, 2],
+    accent: [36, -7, 18, 3.4],
     shapes: [
-      poly('wood', [0, -6], [30, -5], [36, -2], [40, 4], [36, 8], [30, 7], [18, 10], [0, 14], [-1, 4]),
-      line('shine', 0.7, [1, -5.4], [30, -4.4]),
-      rect('dark', -3, -6, 3, 20.5),
-      solid('dark', 1.6, [42, 4], [42, 9], [45, 11], [52, 11], [54, 8], [54, 4]),
-      line('dark', 1.4, [47, 4], [48.5, 8]),
-      poly('metal', [36, -7], [58, -7], [58, 4], [40, 4], [36, 0]),
-      line('shine', 0.8, [37, -6.4], [57, -6.4]),
-      rect('dark', 42, 0.5, 12, 2.2),
-      rect('metal', 58, -1.5, 46, 4.5),
-      line('seam', 0.5, [58, 0.8], [104, 0.8]),
-      barrel(rect('metal', 58, -6.5, 60, 4)),
-      barrel(line('shine', 0.7, [59, -6], [117, -6])),
-      barrel(line('seam', 0.6, [58, -7.1], [117, -7.1])),
-      barrel(rect('dark', 115.5, -7, 2.5, 5)),
-      barrel(dot('bead', 116, -7.8, 0.9)),
-      poly('wood', [66, -2.5], [88, -2.5], [90, 0], [88, 5.5], [66, 5.5], [64, 3]),
-      ...[70, 73, 76, 79, 82, 85].map((x) => line('seam', 0.6, [x, -1.5], [x, 4.5])),
+      poly('wood', [-3, -6], [30, -6], [34, -2], [34, 6], [24, 7], [-3, 15]),
+      rect('metal', 32, -9, 28, 16),
+      barrel(rect('metal', 60, -8, 56, 8)),
+      rect('dark', 60, 0, 44, 6),
+      rect('wood', 70, -1, 26, 10),
+      barrel(line('shine', 1.4, [62, -6], [114, -6])),
+      barrel(rect('dark', 113, -9.5, 6, 10)),
     ],
   },
   assault: {
     pivot: 94,
-    accent: [32, -7.5, 14, 2.2],
+    accent: [26, -9, 20, 3.4],
     shapes: [
-      poly('poly', [0, -5], [20, -4], [26, -3], [26, 5], [16, 6], [0, 12]),
-      rect('dark', -2.5, -5.5, 2.5, 18),
-      ...[6, 11, 16].map((x) => line('seam', 0.5, [x, -3.8], [x, 9.5 - x * 0.2])),
-      rect('metal', 24, -3, 8, 4),
-      poly('poly', [38, 4], [46, 4], [43, 22], [35, 21], [34, 17]),
-      ...[10, 14, 18].map((y) => line('seam', 0.5, [37 - y * 0.12, y], [44.5 - y * 0.15, y])),
-      poly('dark', [56, 5], [64, 5], [68, 30], [60, 32]),
-      ...[11, 17, 23].map((y) => line('seam', 0.5, [57 + y * 0.13, y], [64.5 + y * 0.14, y])),
-      solid('dark', 1.6, [46, 6], [46, 10], [49, 12], [55, 12], [56, 6]),
-      poly('metal', [32, -2], [62, -2], [62, 4], [56, 6], [32, 6]),
-      rect('metal', 30, -8, 36, 6),
-      line('shine', 0.8, [31, -7.4], [65, -7.4]),
-      line('seam', 0.6, [30, -2], [66, -2]),
-      rect('dark', 46, -6, 9, 3),
-      rect('dark', 32, -11, 32, 3),
-      ...teeth(34, 62, 3, -11, -9),
-      poly('dark', [40, -17], [52, -17], [54, -15], [54, -11], [40, -11], [38, -13]),
-      dot('glass', 53, -14, 1.3),
-      rect('poly', 66, -7, 28, 10),
-      ...slots([70, 76, 82, 88], -5, 3, 5),
-      line('shine', 0.7, [67, -6.4], [93, -6.4]),
-      rect('dark', 91, -13, 2, 6),
-      barrel(rect('metal', 94, -3.5, 20, 3)),
-      barrel(rect('dark', 112, -4.8, 8, 5.6)),
-      barrel(line('seam', 0.6, [115, -4.6], [115, 0.6])),
-      barrel(line('seam', 0.6, [117.5, -4.6], [117.5, 0.6])),
+      poly('poly', [-2, -8], [24, -6], [24, 4], [-2, 13]),
+      poly('dark', [52, 5], [62, 5], [68, 27], [58, 29]),
+      poly('poly', [31, 5], [40, 5], [38, 22], [29, 22]),
+      rect('metal', 22, -11, 48, 17),
+      line('shine', 1.4, [24, -9], [68, -9]),
+      rect('dark', 40, -19, 17, 8),
+      dot('glass', 55, -15, 2.4),
+      rect('poly', 70, -8, 28, 13),
+      barrel(rect('dark', 97, -4.5, 16, 6)),
+      barrel(rect('dark', 111, -7, 9, 10)),
     ],
   },
   sniper: {
     pivot: 80,
-    accent: [48, -5.2, 26, 2],
+    accent: [50, -7, 22, 3],
     shapes: [
-      poly('tan', [0, -5], [14, -4], [40, -1], [48, 0], [56, 0], [106, 0], [110, 2], [110, 6], [56, 7], [48, 12], [40, 8], [30, 9], [14, 12], [0, 15]),
-      poly('tan', [10, -8], [34, -6], [34, -2.5], [10, -4]),
-      line('seam', 0.6, [10, -4], [34, -2.5]),
-      line('shine', 0.7, [1, -4.4], [40, -0.6]),
-      line('seam', 0.6, [58, 3.5], [108, 3.5]),
-      rect('dark', -3, -5.5, 3, 21),
-      solid('dark', 1.5, [46, 9], [47, 13], [53, 13], [56, 8]),
-      rect('dark', 60, 4, 10, 5),
-      poly('metal', [46, -6], [78, -6], [78, 0], [46, 0]),
-      line('shine', 0.8, [47, -5.4], [77, -5.4]),
-      solid('metal', 1.6, [57, -2], [55, 5]),
-      dot('dark', 55, 6, 1.9),
-      rect('metal', 50, -9, 4, 3),
-      rect('metal', 72, -9, 4, 3),
-      rect('dark', 44, -13, 42, 4),
-      line('shine', 0.6, [45, -12.4], [85, -12.4]),
-      poly('dark', [36, -15], [44, -14], [44, -8], [36, -7]),
-      poly('dark', [84, -14], [88, -16.5], [96, -16.5], [96, -5.5], [88, -5.5], [84, -8]),
-      rect('dark', 62, -17, 4, 4),
-      dot('glass', 95.6, -11, 1.4),
-      solid('dark', 1.4, [100, 4.6], [124, 3.2]),
-      barrel(poly('metal', [78, -4.5], [146, -3.6], [146, -0.6], [78, -0.5])),
-      barrel(line('shine', 0.6, [79, -4], [145, -3.2])),
-      barrel(rect('dark', 142, -5, 8, 6)),
-      barrel(line('seam', 0.6, [145, -4.8], [145, 0.8])),
+      poly('tan', [-3, -6], [40, -5], [50, -1], [98, -3], [100, 4], [50, 6], [38, 13], [-3, 15]),
+      rect('metal', 46, -7, 32, 8),
+      dot('dark', 62, 7, 3.2),
+      rect('dark', 46, -18, 38, 8),
+      rect('dark', 40, -21, 8, 13),
+      rect('dark', 82, -21, 10, 14),
+      dot('glass', 89, -14, 3),
+      barrel(rect('metal', 96, -4, 47, 6)),
+      barrel(line('shine', 1.2, [98, -2.6], [141, -2.6])),
+      barrel(rect('dark', 141, -6.5, 10, 10)),
     ],
   },
   lmg: {
     pivot: 92,
-    accent: [26, -3.2, 34, 2.2],
+    accent: [26, -10, 28, 3.4],
     shapes: [
-      poly('poly', [0, -6], [22, -5], [24, -2], [24, 6], [14, 7], [0, 12]),
-      rect('dark', -2.5, -6.5, 2.5, 19),
-      poly('olive', [42, 7], [64, 7], [64, 30], [42, 30]),
-      line('seam', 0.6, [42, 12], [64, 12]),
-      line('seam', 0.6, [53, 14], [53, 28]),
-      line('shine', 0.6, [43, 7.6], [63, 7.6]),
-      poly('poly', [28, 7], [36, 7], [34, 24], [26, 23], [25, 19]),
-      solid('dark', 1.6, [36, 7], [36, 11], [39, 13], [42, 13]),
-      poly('metal', [24, -9], [70, -9], [70, 5], [62, 7], [24, 7]),
-      line('shine', 0.8, [25, -8.4], [69, -8.4]),
-      line('seam', 0.6, [24, -1], [70, -1]),
-      poly('dark', [32, -13], [66, -13], [68, -9], [30, -9]),
-      ...teeth(34, 64, 3, -13, -11),
-      solid('dark', 2.2, [70, -9], [72, -17], [88, -17], [90, -7]),
-      rect('poly', 70, -7, 22, 10),
-      ...slots([73, 79, 85], -5, 3, 5),
-      solid('dark', 1.5, [96, 1.2], [120, 2.2]),
-      solid('dark', 1.5, [96, 3.4], [119, 5]),
-      barrel(rect('metal', 92, -3.5, 32, 3)),
-      barrel(rect('dark', 118, -10, 2, 6.5)),
-      barrel(rect('dark', 122, -4.5, 8, 5.5)),
-      barrel(line('seam', 0.6, [125, -4.3], [125, 0.8])),
+      poly('poly', [-2, -8], [24, -7], [24, 6], [-2, 13]),
+      rect('olive', 38, 7, 28, 24),
+      line('shine', 1.2, [40, 9.5], [64, 9.5]),
+      poly('poly', [26, 8], [35, 8], [33, 23], [24, 23]),
+      rect('metal', 22, -12, 50, 20),
+      rect('dark', 28, -16, 40, 5),
+      line('shine', 1.4, [24, -9.5], [70, -9.5]),
+      rect('poly', 72, -9, 22, 14),
+      barrel(rect('metal', 92, -4, 31, 6)),
+      barrel(rect('dark', 121, -7, 9, 11)),
+    ],
+  },
+};
+
+/**
+ * The same guns seen from above, for the world: held in a player's hands and lying beside a corpse. Same chunky parts and
+ * tones as the side art, laid out in plan: x runs butt to muzzle as before (same `pivot`), y is across the gun, centred on
+ * the bore. Extra barrels sit side by side, and Akimbo is a pistol in each hand.
+ */
+const sym = (tone: Tone, x0: number, x1: number, half0: number, half1 = half0): Shape => poly(tone, [x0, -half0], [x1, -half1], [x1, half1], [x0, half0]);
+
+const TOP_ART: Record<WeaponId, Art> = {
+  pistol: {
+    pivot: 44,
+    accent: [22, -1.6, 18, 3.2],
+    shapes: [
+      sym('poly', 8, 14, 4.4, 5),
+      sym('metal', 12, 62, 5.5),
+      line('shine', 1.2, [14, -3], [60, -3]),
+      barrel(sym('dark', 59, 64, 3)),
+    ],
+  },
+  smg: {
+    pivot: 64,
+    accent: [30, -1.7, 22, 3.4],
+    shapes: [
+      sym('poly', 0, 20, 4.6, 4),
+      sym('metal', 18, 66, 6.5),
+      line('shine', 1.2, [20, -3.8], [64, -3.8]),
+      sym('poly', 66, 80, 5.5),
+      barrel(sym('dark', 79, 86, 3.2)),
+    ],
+  },
+  shotgun: {
+    pivot: 60,
+    accent: [36, -1.7, 18, 3.4],
+    shapes: [
+      poly('wood', [-3, -7.5], [32, -4.6], [32, 4.6], [-3, 7.5]),
+      sym('metal', 32, 60, 6.5),
+      barrel(sym('metal', 60, 116, 4)),
+      barrel(line('shine', 1.2, [62, -1.6], [114, -1.6])),
+      sym('wood', 70, 96, 6.5),
+      barrel(sym('dark', 113, 119, 5)),
+    ],
+  },
+  assault: {
+    pivot: 94,
+    accent: [26, -1.7, 12, 3.4],
+    shapes: [
+      poly('poly', [-2, -7.5], [24, -5], [24, 5], [-2, 7.5]),
+      sym('metal', 22, 70, 6.5),
+      line('shine', 1.2, [24, -3.8], [68, -3.8]),
+      sym('dark', 40, 57, 4.4),
+      dot('glass', 55, 0, 2.4),
+      sym('poly', 70, 98, 5.5),
+      barrel(sym('dark', 97, 113, 3)),
+      barrel(sym('dark', 111, 120, 4.6)),
+    ],
+  },
+  sniper: {
+    pivot: 80,
+    accent: [52, -1.5, 20, 3],
+    shapes: [
+      poly('tan', [-3, -7.5], [40, -4.4], [100, -5], [100, 5], [40, 4.4], [-3, 7.5]),
+      solid('dark', 2.6, [62, 3], [64, 11]),
+      dot('dark', 64, 12, 3.2),
+      sym('metal', 46, 78, 4.4),
+      sym('dark', 46, 84, 3.6),
+      sym('dark', 40, 48, 6),
+      sym('dark', 82, 92, 6.5),
+      dot('glass', 89, 0, 3),
+      barrel(sym('metal', 96, 143, 3)),
+      barrel(sym('dark', 141, 151, 5)),
+    ],
+  },
+  lmg: {
+    pivot: 92,
+    accent: [26, -1.7, 10, 3.4],
+    shapes: [
+      poly('poly', [-2, -8], [24, -5.5], [24, 5.5], [-2, 8]),
+      rect('olive', 38, 6, 28, 13),
+      sym('metal', 22, 72, 8),
+      sym('dark', 28, 68, 5.4),
+      line('shine', 1.2, [24, -6.6], [70, -6.6]),
+      sym('poly', 72, 94, 6),
+      barrel(sym('metal', 92, 123, 3)),
+      barrel(sym('dark', 121, 130, 5)),
     ],
   },
 };
 
 /** What a gun's art becomes once its look is applied: parts in final units, and their bounds. */
 type Built = { shapes: Shape[]; accent: readonly Pt[] | null; minX: number; maxX: number; minY: number; maxY: number };
-const built = new Map<GunId, Built>();
+type View = 'side' | 'top';
+const built = new Map<string, Built>();
 
-function build(gun: GunId): Built {
-  const hit = built.get(gun);
+function build(gun: GunId, view: View = 'side'): Built {
+  const hit = built.get(`${gun}|${view}`);
   if (hit) return hit;
   const { base, look, stage } = GUNS[gun];
-  const art = ART[base];
+  const art = view === 'side' ? ART[base] : TOP_ART[base];
   const map = ([x, y]: Pt, dy = 0): Pt => [x <= art.pivot ? x : art.pivot + (x - art.pivot) * look.length, y * look.width + dy];
   const moved = (s: Shape, dy: number): Shape =>
     s.kind === 'dot' ? { ...s, at: map(s.at, dy), r: s.r * look.width } : { ...s, pts: s.pts.map((p) => map(p, dy)) } as Shape;
-  // Extra barrels stack over-under, each a bore's depth above the last.
+  // Extra barrels stack over-under in profile, a bore's depth apart; from above they sit side by side about the bore.
   const bore = 5 * look.width;
   let shapes: Shape[] = [];
   for (const s of art.shapes) {
     if (!s.barrel || look.barrels === 1) { shapes.push(moved(s, 0)); continue; }
-    for (let i = look.barrels - 1; i >= 0; i--) shapes.push(moved(s, -i * bore));
+    for (let i = look.barrels - 1; i >= 0; i--) shapes.push(moved(s, view === 'side' ? -i * bore : (i - (look.barrels - 1) / 2) * bore));
   }
   const [ax, ay, aw, ah] = art.accent;
   const accent: Pt[] | null = stage > 0 ? [map([ax, ay]), map([ax + aw, ay]), map([ax + aw, ay + ah]), map([ax, ay + ah])] : null;
   if (look.hands === 2) {
-    // Akimbo: a second gun drawn behind the first, peeking out above and ahead of it.
-    shapes = [...shapes.map((s) => shift(s, 16, -13 * look.width)), ...shapes];
+    // Akimbo: in profile a second gun peeks out above and ahead of the first; from above, one in each hand.
+    shapes = view === 'side'
+      ? [...shapes.map((s) => shift(s, 16, -13 * look.width)), ...shapes]
+      : [...shapes.map((s) => shift(s, 0, -6 * look.width)), ...shapes.map((s) => shift(s, 0, 6 * look.width))];
   }
   const pts = shapes.flatMap((s) => (s.kind === 'dot' ? [s.at] : s.pts));
   const out: Built = {
@@ -228,7 +244,7 @@ function build(gun: GunId): Built {
     minX: Math.min(...pts.map((p) => p[0])), maxX: Math.max(...pts.map((p) => p[0])),
     minY: Math.min(...pts.map((p) => p[1])) - 1, maxY: Math.max(...pts.map((p) => p[1])) + 1,
   };
-  built.set(gun, out);
+  built.set(`${gun}|${view}`, out);
   return out;
 }
 
@@ -255,10 +271,27 @@ function trace(ctx: CanvasRenderingContext2D, pts: readonly Pt[], close: boolean
  * Draws the gun's art in its own units (call after scaling the context). `flat` fills every solid part in one colour, for
  * the kill feed's small glyphs; otherwise each part is shaded top to bottom and edged, with seams and highlights on top.
  */
-function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string) {
-  const b = build(gun);
+function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, view: View = 'side') {
+  const b = build(gun, view);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+  if (!flat) {
+    // A bold ink outline round the whole silhouette first, so the gun reads like a sticker against any floor.
+    ctx.strokeStyle = OUTLINE.color;
+    ctx.fillStyle = OUTLINE.color;
+    for (const s of b.shapes) {
+      if (s.kind === 'line' && !s.solid) continue;
+      if (s.kind === 'dot') {
+        ctx.beginPath();
+        ctx.arc(s.at[0], s.at[1], s.r + OUTLINE.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      ctx.lineWidth = s.kind === 'line' ? s.w + OUTLINE.width : OUTLINE.width;
+      trace(ctx, s.pts, s.kind === 'poly');
+      ctx.stroke();
+    }
+  }
   for (const s of b.shapes) {
     if (s.kind === 'dot') {
       ctx.fillStyle = flat ?? TONES[s.tone];
@@ -295,7 +328,7 @@ function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string) {
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = EDGE;
-    ctx.lineWidth = 0.55;
+    ctx.lineWidth = 0.9;
     ctx.stroke();
   }
   if (b.accent && !flat) {
@@ -311,24 +344,24 @@ export const artBounds = (gun: GunId) => {
 };
 
 /** Fits the gun's art into the box at (`x`, `y`) of `w` by `h`, centred, at `scale` units per px if given (so siblings compare true size). */
-export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left' } = {}) {
-  const b = build(gun);
+export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left'; view?: View } = {}) {
+  const b = build(gun, opts.view);
   const k = opts.scale ?? Math.min(w / (b.maxX - b.minX), h / (b.maxY - b.minY));
   const left = opts.align === 'left' ? x : x + (w - (b.maxX - b.minX) * k) / 2;
   ctx.save();
   ctx.translate(left - b.minX * k, y + h / 2 - ((b.minY + b.maxY) / 2) * k);
   ctx.scale(k, k);
-  paint(ctx, gun, opts.flat);
+  paint(ctx, gun, opts.flat, opts.view);
   ctx.restore();
 }
 
 /**
- * A gun in the world, held or dropped, is one image: the same side art as the cards, squashed by `squash` so it reads as
- * seen from above at a slant, as top-down shooters draw guns. Its length in world px is `base` plus `perUnit` of its art
- * length, so a pistol (about 49 px) reads clearly in its owner's hand while a bolt-action (about 75 px) is plainly longer, and a
- * gun is exactly as big on the ground as it was in its owner's hands.
+ * A gun in the world, held or dropped, is one image: its top-down art, seen from above like everything else in the world.
+ * Its length in world px is `base` plus `perUnit` of its art length, so a pistol (about 47 px) reads clearly in its owner's
+ * hand while a bolt-action (about 76 px) is plainly longer, and a gun is exactly as big on the ground as in its owner's hands.
+ * `thicken` widens it across a little past true scale, so a rifle seen from above still reads at play zoom.
  */
-export const WORLD_GUN = { base: 30, perUnit: 0.3, squash: 0.72, res: 3 } as const;
+export const WORLD_GUN = { base: 30, perUnit: 0.3, thicken: 1.7, res: 3 } as const;
 /** Where the butt of a held gun sits, in body radii ahead of the holder's centre: a pistol is held out, a long gun shouldered. */
 const HOLD_REAR: Record<WeaponId, number> = { pistol: 0.75, smg: 0.5, shotgun: 0.25, assault: 0.3, sniper: 0.2, lmg: 0.3 };
 
@@ -338,13 +371,13 @@ function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
   const key = `${gun}|${dusted}`;
   let image = images.get(key);
   if (image) return image;
-  const b = build(gun);
+  const b = build(gun, 'top');
   image = document.createElement('canvas');
   image.width = Math.ceil((b.maxX - b.minX) * WORLD_GUN.res) + 4;
   image.height = Math.ceil((b.maxY - b.minY) * WORLD_GUN.res) + 4;
   const g = image.getContext('2d');
   if (g) {
-    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4);
+    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4, { view: 'top' });
     if (dusted) {
       // Dust settles on it: a flat grey wash over the paint only.
       g.globalCompositeOperation = 'source-atop';
@@ -358,10 +391,10 @@ function worldImage(gun: GunId, dusted: boolean): HTMLCanvasElement {
 
 /** The world size of a gun's image, and its length. */
 function worldSize(gun: GunId) {
-  const b = build(gun);
+  const b = build(gun, 'top');
   const length = b.maxX - b.minX;
   const k = (WORLD_GUN.base + WORLD_GUN.perUnit * length) / length;
-  return { k, length: length * k, w: (((b.maxX - b.minX) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k, h: ((((b.maxY - b.minY) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k) * WORLD_GUN.squash };
+  return { k, length: length * k, w: (((b.maxX - b.minX) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k, h: ((((b.maxY - b.minY) * WORLD_GUN.res + 4) / WORLD_GUN.res) * k) * WORLD_GUN.thicken };
 }
 
 /** A dropped gun, dulled as if it lay in the dust, centred on (`x`, `y`) along the context's x axis. */
@@ -370,20 +403,13 @@ export function drawDroppedGun(ctx: CanvasRenderingContext2D, gun: GunId, x: num
   ctx.drawImage(worldImage(gun, true), x - w / 2, y - h / 2, w, h);
 }
 
-/**
- * A held gun, in the holder's frame (x along the aim, from the body's centre). `flip` mirrors it across the aim line when
- * the holder faces left, so the grip and magazine always hang below the barrel on screen.
- */
-export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flip: boolean) {
+/** A held gun, in the holder's frame (x along the aim, from the body's centre), its bore on the aim line. */
+export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number) {
   const { w, h } = worldSize(gun);
-  const b = build(gun);
+  const b = build(gun, 'top');
   const rear = HOLD_REAR[GUNS[gun].base] * radius;
-  // The bore (art y = 0) sits on the aim line.
   const bore = (2 - b.minY * WORLD_GUN.res) / ((b.maxY - b.minY) * WORLD_GUN.res + 4);
-  ctx.save();
-  if (flip) ctx.scale(1, -1);
   ctx.drawImage(worldImage(gun, false), rear, -h * bore, w, h);
-  ctx.restore();
 }
 
 /** Where a held gun's muzzle is, `radius` being the holder's body radius. */
