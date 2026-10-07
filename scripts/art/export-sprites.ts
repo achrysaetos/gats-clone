@@ -13,7 +13,7 @@ const out = process.argv[2];
 if (!out) { console.error('usage: node scripts/art/export-sprites.ts <out.json>'); process.exit(2); }
 
 const spec = {
-  camera: ART.camera, sun: ART.sun, sky: ART.sky, render: ART.render,
+  camera: ART.camera, sun: ART.sun, sky: ART.sky, render: ART.render, heights: ART.heights,
   pxPerUnit: PX_PER_UNIT,
   playerRadius: WORLD.playerRadius,
   teamColors: COLORS,
