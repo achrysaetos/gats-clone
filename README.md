@@ -98,6 +98,12 @@ Bots move as a pack. The squadmate with the lowest id leads and the others trail
   - `royale.ts` holds a Last Squad bot to its squad's anchor inside the ring, and has it revive and crawl.
   - `motor.ts` turns the intent into keys, aim and fire. No bot turns back within 400 ms of its last turn back. `aim.ts` holds the reaction and aim model: the gun turns toward where the bot wants it on a capped spring, the aim error drifts with a 400 ms time constant, and a bot fires only once its gun is on target.
 - `src/client/` contains the browser client.
+  - PixiJS (WebGL2) draws the world on `#world`; the HUD, names and bars stay on the Canvas2D `#game` above it. `render.ts` is the seam: `drawWorld(ctx, Frame)` turns the frame into a plain `Scene` (`world/scene.ts`, no GPU, which the tests read), hands it to the painter (`world/stage.ts`), and draws the labels on the HUD canvas (`world/labels.ts`).
+  - The painter streams the map's baked ground tiles near the camera (`world/ground.ts`), draws everything that moves from the sprite atlas (`world/catalog.ts` names every sprite), adds a quarter-resolution bloom from an emissive layer, and multiplies a light map over the world at night. `?bloom=0` turns bloom off.
+
+## Art
+
+`npm run art` rebuilds every committed image and sound under `public/assets/`: it exports the maps and the sprite catalog to JSON, bakes each map's ground in Blender (`art/blender/bake_map.py`) and cuts it into 1024 px WebP tiles, bakes every sprite (`art/blender/bake_sprites.py`), checks their sizes and muzzle points, packs them into 2048 px atlas pages, makes the water, and fetches and encodes the sounds. File names carry a content hash, so the server marks them immutable, and `public/assets/manifest.json` names the current set. Bakes are cached under `art/build/` by their inputs, so a rerun redoes only what changed; `--only maps|sprites|water|sounds` and `--maps plaza,outpost` narrow it. It needs Blender 4.5 (set `BLENDER` to its binary). A full rebuild takes several hours on four CPU cores, nearly all of it Cycles rendering the 425 ground tiles. The art direction and what changed from its plan are in `docs/art/README.md`; sources and licences are in `docs/art/CREDITS.md` and `public/assets/CREDITS.md`.
 
 ## Verify
 
