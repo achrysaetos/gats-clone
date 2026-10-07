@@ -259,7 +259,7 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       mark(solidGlowPool.next(), tex.glow, core.x, core.y, 200 + 12 * pulse, core.hp > 0.35 ? 0x4fd1e8 : hex(PALETTE.hpBad), 0.25 + 0.1 * pulse);
       if (core.hit > 0) over.rect(core.x - ZOM.coreHalf, core.y - ZOM.coreHalf, ZOM.coreHalf * 2, ZOM.coreHalf * 2).fill({ color: 0xffffff, alpha: 0.6 * core.hit });
       over.circle(core.x, core.y, 84).stroke({ width: 7, color: 0x1c1f26, alpha: 0.3 });
-      over.arc(core.x, core.y, 84, -Math.PI / 2, -Math.PI / 2 + core.hp * TAU).stroke({ width: 5, color: core.hp > 0.5 ? PALETTE.hpGood : core.hp > 0.25 ? PALETTE.gold : PALETTE.hpBad, cap: 'round' });
+      arcFrom(over, core.x, core.y, 84, -Math.PI / 2, -Math.PI / 2 + core.hp * TAU).stroke({ width: 5, color: core.hp > 0.5 ? PALETTE.hpGood : core.hp > 0.25 ? PALETTE.gold : PALETTE.hpBad, cap: 'round' });
     }
   }
 
@@ -285,7 +285,7 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
     for (const z of scene.zones) {
       under.circle(z.x, z.y, z.r).fill({ color: z.color, alpha: 0.1 }).circle(z.x, z.y, z.r).stroke({ width: 4, color: z.color, alpha: 0.6 });
       dashedCircle(under, z.x, z.y, z.r - 14, 3, 18, 0, { width: 6, color: z.color, alpha: 0.35 });
-      if (z.progress > 0) under.arc(z.x, z.y, z.r - 14, -Math.PI / 2, -Math.PI / 2 + z.progress * TAU).stroke({ width: 8, color: z.progressColor, alpha: 0.9 });
+      if (z.progress > 0) arcFrom(under, z.x, z.y, z.r - 14, -Math.PI / 2, -Math.PI / 2 + z.progress * TAU).stroke({ width: 8, color: z.progressColor, alpha: 0.9 });
     }
     for (const d of scene.trails) under.moveTo(d.x0, d.y0).lineTo(d.x1, d.y1).stroke({ width: d.dashing ? R * 0.42 : R * 0.19, color: 0xffffff, alpha: 0.9 * d.fade, cap: 'round' });
     const pulse = 0.5 + 0.5 * Math.sin(now / 90);
@@ -311,7 +311,7 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
     }
     for (const d of scene.downed) {
       over.circle(d.x, d.y, R + 10).stroke({ width: 3, color: d.self ? d.color : 'rgba(28, 31, 38, 0.25)' });
-      if (d.revive > 0) over.arc(d.x, d.y, R + 10, -Math.PI / 2, -Math.PI / 2 + d.revive * TAU).stroke({ width: 3, color: PALETTE.hpGood, cap: 'round' });
+      if (d.revive > 0) arcFrom(over, d.x, d.y, R + 10, -Math.PI / 2, -Math.PI / 2 + d.revive * TAU).stroke({ width: 3, color: PALETTE.hpGood, cap: 'round' });
     }
     if (scene.ring) {
       const { x, y, r, next } = scene.ring;
@@ -418,8 +418,8 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
         }
         case 'slash': {
           const from = fx.angle - 1.1, to = from + 2.2 * Math.min(1, k * 3);
-          over.arc(fx.x, fx.y, R + 34, from, to).stroke({ width: 12 * (1 - k * 0.5), color: 'rgb(28, 31, 38)', alpha: 0.35 * (1 - k), cap: 'round' });
-          over.arc(fx.x, fx.y, R + 32, from, to).stroke({ width: 5 * (1 - k * 0.5), color: 0xffffff, alpha: 1 - k, cap: 'round' });
+          arcFrom(over, fx.x, fx.y, R + 34, from, to).stroke({ width: 12 * (1 - k * 0.5), color: 'rgb(28, 31, 38)', alpha: 0.35 * (1 - k), cap: 'round' });
+          arcFrom(over, fx.x, fx.y, R + 32, from, to).stroke({ width: 5 * (1 - k * 0.5), color: 0xffffff, alpha: 1 - k, cap: 'round' });
           break;
         }
         case 'death':
@@ -611,6 +611,11 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       drawn++;
     },
   };
+}
+
+/** An arc as its own stroke: `Graphics.arc` alone joins the arc to wherever the last path ended with a straight line. */
+function arcFrom(g: Graphics, x: number, y: number, r: number, from: number, to: number): Graphics {
+  return g.moveTo(x + Math.cos(from) * r, y + Math.sin(from) * r).arc(x, y, r, from, to);
 }
 
 /** A tint for a color in shadow: each channel scaled by the light. */

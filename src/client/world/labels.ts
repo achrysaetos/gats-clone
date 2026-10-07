@@ -8,7 +8,7 @@ import type { Scene } from './scene.ts';
 /** Words and bars the world carries, drawn crisp on the HUD canvas over the WebGL world in the same camera. */
 const R = WORLD.playerRadius;
 const MARK_Y = -R - 8;
-const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 21, font: 11, nameAlpha: 0.6 } as const;
+const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 21, font: 11, nameAlpha: 0.85 } as const;
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
 export function drawLabels(ctx: CanvasRenderingContext2D, scene: Scene, cam: Camera, dpr: number, now: number) {
@@ -36,9 +36,13 @@ export function drawLabels(ctx: CanvasRenderingContext2D, scene: Scene, cam: Cam
 
   ctx.font = `600 ${TAG.font}px ${FONT}`;
   ctx.textBaseline = 'alphabetic';
+  // Light names on a dark halo read on sunlit concrete and in shadow alike.
   ctx.globalAlpha = TAG.nameAlpha;
-  ctx.fillStyle = ink;
-  for (const t of scene.tags) if (t.name !== null) ctx.fillText(t.name, t.x, t.y + TAG.name);
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(20, 22, 28, 0.75)';
+  ctx.fillStyle = '#f2f4f8';
+  for (const t of scene.tags) if (t.name !== null) { ctx.strokeText(t.name, t.x, t.y + TAG.name); ctx.fillText(t.name, t.x, t.y + TAG.name); }
   ctx.globalAlpha = 1;
 
   for (const t of scene.tags) {
