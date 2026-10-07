@@ -14,7 +14,8 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
 import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
-import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied } from './hud.ts';
+import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied, setHudInsets } from './hud.ts';
+import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
@@ -526,10 +527,14 @@ function respawn() {
 }
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  view = { w: window.innerWidth, h: window.innerHeight, dpr };
-  canvas.width = Math.round(view.w * dpr);
-  canvas.height = Math.round(view.h * dpr);
+  const { w, h, dpr, safe } = measureLayout();
+  view = { w, h, dpr };
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  // Sized in CSS px from the visual viewport, so iOS Safari's moving toolbars never leave a strip the canvas does not cover.
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  setHudInsets(safe);
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
     const s = sessionOf(state);
@@ -809,6 +814,9 @@ canvas.addEventListener('wheel', (e) => {
   stepBuildItem(state.s, e.deltaY > 0 ? 1 : -1);
 }, { passive: false });
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => { resize(); setTimeout(resize, 250); });
+window.visualViewport?.addEventListener('resize', resize);
+installTouchGuards(canvas);
 
 async function pollServers() {
   if (state.phase !== 'menu') return;
@@ -1000,6 +1008,10 @@ function fullLandscape() {
   if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen({ navigationUI: 'hide' }).then(lock, () => {});
   else void lock();
 }
+
+const a2hs = $('a2hs');
+a2hs.hidden = !shouldShowHomeScreenHint();
+$('a2hs-close').addEventListener('click', () => { dismissHomeScreenHint(); a2hs.hidden = true; });
 
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();

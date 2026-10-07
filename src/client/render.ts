@@ -208,7 +208,6 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const nemesis = killer || snap.self.nemesis === null ? undefined : alive.find((p) => p.id === snap.self.nemesis && !p.hidden);
   if (nemesis) drawKillerMark(ctx, nemesis, now, dark, 'NEMESIS');
   drawJuice(ctx, f.fxNow ?? now, MARK_Y - 10);
-  drawLetterbox(ctx, cam, dpr);
 }
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
@@ -231,14 +230,6 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   lightBackdrop(ctx, { x, y }, { x: x + viewW, y: y + viewH }, [...backdropSolids, ...backdropCrates], now);
   drawDust(ctx, { x, y }, { x: x + viewW, y: y + viewH }, now, 0);
   drawVignette(ctx, w, h, dpr, 0.38);
-}
-
-function drawLetterbox(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
-  const barW = cam.w / 2 - cam.viewHalfW * cam.scale, barH = cam.h / 2 - cam.viewHalfH * cam.scale;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = PALETTE.letterbox;
-  if (barW >= 1) { ctx.fillRect(0, 0, barW, cam.h); ctx.fillRect(cam.w - barW, 0, barW, cam.h); }
-  if (barH >= 1) { ctx.fillRect(0, 0, cam.w, barH); ctx.fillRect(0, cam.h - barH, cam.w, barH); }
 }
 
 function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
