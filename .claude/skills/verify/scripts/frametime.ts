@@ -90,7 +90,7 @@ sampling = true;
 await fightFor(SECONDS * 1000);
 sampling = false;
 const costs: number[] = await js(`skirmishDev.takeFrameCosts()`);
-const world: { tiles: number; atlas: boolean } | null = await js(`skirmishDev.world()`);
+const world: { tiles: number; atlas: boolean } | null = await js(`skirmishDev.world?.() ?? null`);
 const stamps: number[] = await js(`window.__raf`);
 const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
 writeFileSync(join(EV, 'frametime-view.png'), Buffer.from(data, 'base64'));
