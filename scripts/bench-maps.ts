@@ -68,7 +68,7 @@ const emptyTally = (): Tally => ({
 const addTally = (into: Tally, t: Tally) => {
   for (const k of Object.keys(t) as (keyof Tally)[]) {
     const v = t[k];
-    if (Array.isArray(v)) (into[k] as number[]).push(...v); else (into[k] as number) += v;
+    if (Array.isArray(v)) { const dst = into[k] as number[]; for (const x of v as number[]) dst.push(x); } else (into[k] as number) += v;
   }
 };
 const freshLife = (bornAt: number): Life => ({ bornAt, lastFightAt: null, pulses: [] });
