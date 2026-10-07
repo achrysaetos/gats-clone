@@ -3,7 +3,7 @@ import type { GameEvent, PlayerView, Snapshot } from '../shared/protocol.ts';
 import { PERSONALITY_IDS, personalityById, type PersonalityId, type Tag } from './chatterlines.ts';
 import { clipped, outlined, popScale } from './emotefx.ts';
 import { TICK_MS } from './interp.ts';
-import { NIGHT } from './palette.ts';
+import { INK, NIGHT } from './palette.ts';
 
 /**
  * Soldier chatter: little speech bubbles with a personality, said when nothing is going on. All of it is local to the drawing
@@ -344,18 +344,20 @@ export function drawChatter(ctx: CanvasRenderingContext2D, players: readonly Pla
     ctx.translate(p.x, p.y + tailOffset(GUNS[p.gun].stage));
     ctx.scale(k, k);
     ctx.globalAlpha = Math.max(0, fade) * (b.own ? 1 : 0.94);
-    const plate = b.own ? PLATE_LIT : PLATE;
+    // A comic speech bubble in the house ink: bone paper, a 2.5 px ink edge, a hard shadow down and right, a tail to the head.
+    const top = -h - 4, face = b.own ? '#fff0d2' : '#f3eedf';
+    ctx.lineJoin = 'round';
     ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
-    clipped(ctx, -w / 2 + 3, -h - 4 + 3, w, h, cut); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(-6, -6); ctx.lineTo(0, 3); ctx.lineTo(6, -6); ctx.closePath(); outlined(ctx, plate);
-    clipped(ctx, -w / 2, -h - 4, w, h, cut); outlined(ctx, plate);
-    ctx.save();
-    clipped(ctx, -w / 2, -h - 4, w, h, cut); ctx.clip();
-    ctx.fillStyle = b.own ? '#6a7482' : '#4f5560'; ctx.fillRect(-w / 2, -h - 4, w, 6);
-    ctx.restore();
-    ctx.beginPath(); ctx.moveTo(-w / 2 + 3, -h + 4); ctx.lineTo(-w / 2 + 3, -h - 1); ctx.lineTo(-w / 2 + 8, -h - 1);
-    ctx.lineWidth = 2.5; ctx.strokeStyle = ORANGE; ctx.lineCap = 'butt'; ctx.stroke();
-    ctx.fillStyle = dark > 0.5 ? NIGHT.label : BONE;
+    ctx.beginPath(); ctx.roundRect(-w / 2 + 3, top + 4, w, h, 9); ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = INK;
+    ctx.beginPath(); ctx.moveTo(-6, -4.5); ctx.quadraticCurveTo(-3, 0, 2, 6); ctx.quadraticCurveTo(3, 0, 6, -4.5); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(-w / 2, top, w, h, 9); ctx.stroke();
+    ctx.fillStyle = face;
+    ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-6, -4.5); ctx.quadraticCurveTo(-3, 0, 2, 6); ctx.quadraticCurveTo(3, 0, 6, -4.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(-w / 2, top, w, h, 9); ctx.fill();
+    ctx.fillRect(-5, -5.6, 10, 2.8);
+    ctx.fillStyle = INK;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     b.lines.forEach((t, i) => ctx.fillText(t, 0, -h - 4 + 6 + lh / 2 + 3 + i * lh));
     ctx.restore();

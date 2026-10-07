@@ -132,24 +132,22 @@ function drawBubble(ctx: CanvasRenderingContext2D, id: EmoteId, x: number, y: nu
   ctx.translate(x, y);
   ctx.scale(scale, scale);
   ctx.globalAlpha = alpha;
-  // The tail points down at the head; the contact shadow keeps the plate in the key light's direction.
+  // A comic bubble in the house ink: bone paper, ink edge, a hard shadow down and right (the key light), a tail to the head.
+  ctx.lineJoin = 'round';
   ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
-  clipped(ctx, -w / 2 + 3, -h + 3, w, h, cut);
+  ctx.beginPath(); ctx.roundRect(-w / 2 + 3, -h + 4, w, h, 10); ctx.fill();
+  const tail = () => { ctx.beginPath(); ctx.moveTo(-6, -1.5); ctx.quadraticCurveTo(-3, 3, 2, 9); ctx.quadraticCurveTo(3, 3, 6, -1.5); ctx.closePath(); };
+  ctx.lineWidth = 2.5; ctx.strokeStyle = INK;
+  tail(); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(-w / 2, -h, w, h, 10); ctx.stroke();
+  ctx.fillStyle = '#f3eedf';
   ctx.fill();
-  ctx.beginPath(); ctx.moveTo(-6, -2); ctx.lineTo(0, 7); ctx.lineTo(6, -2); ctx.closePath(); outlined(ctx, PLATE);
-  clipped(ctx, -w / 2, -h, w, h, cut);
-  outlined(ctx, PLATE);
-  // Cel step: a lit band along the top.
-  ctx.save();
-  clipped(ctx, -w / 2, -h, w, h, cut); ctx.clip();
-  ctx.fillStyle = PLATE_LIT; ctx.fillRect(-w / 2, -h, w, 8);
-  ctx.restore();
-  ctx.beginPath(); ctx.moveTo(-w / 2 + 3, -h + 11); ctx.lineTo(-w / 2 + 3, -h + 3); ctx.lineTo(-w / 2 + 11, -h + 3);
-  ctx.lineWidth = 2.5; ctx.strokeStyle = ORANGE; ctx.lineCap = 'butt'; ctx.stroke();
+  tail(); ctx.fill();
+  ctx.fillRect(-5, -2.7, 10, 2.8);
   drawEmoteIcon(ctx, id, -w / 2 + 21, -h / 2 + 1, 24);
   if (label) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = dark > 0.5 ? NIGHT.label : BONE;
+    ctx.fillStyle = INK;
     ctx.fillText(label, -w / 2 + 36, -h / 2 + 2);
   }
   ctx.restore();

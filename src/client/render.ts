@@ -564,8 +564,12 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     ctx.fillStyle = PALETTE.shield;
     ctx.globalAlpha = alpha * (0.1 + 0.05 * pulse);
     ctx.fill();
-    ctx.globalAlpha = alpha * (0.55 + 0.3 * pulse);
-    ctx.lineWidth = 2;
+    ctx.globalAlpha = alpha * (0.5 + 0.3 * pulse);
+    ctx.lineWidth = 5.5;
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.globalAlpha = alpha * (0.75 + 0.25 * pulse);
+    ctx.lineWidth = 3;
     ctx.strokeStyle = PALETTE.shield;
     ctx.stroke();
     ctx.globalAlpha = alpha * 0.7;
@@ -580,8 +584,11 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   if (p.shield) {
     ctx.beginPath();
     ctx.arc(0, 0, R + 6, p.angle - 1.05, p.angle + 1.05);
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 6.5;
     ctx.lineCap = 'round';
+    ctx.strokeStyle = INK;
+    ctx.stroke();
+    ctx.lineWidth = 3.5;
     ctx.strokeStyle = PALETTE.shield;
     ctx.stroke();
   }
@@ -618,6 +625,7 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
 
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
+const TAG_PIP = 11;
 const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 22, font: 15, plate: '#131519', plateAlpha: 0.78, ink: '#ece6d6', badge: 20 } as const;
 
 type Tag = { p: PlayerView; bar: number; name: boolean };
@@ -680,11 +688,27 @@ function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[
   for (const { p, name } of tags) {
     const l = looks.get(p.id);
     if (!name || !l) continue;
-    const w = l.nameW + 10 + l.chipW, h = TAG.font + 5, x = p.x + l.nameW / 2 + 5 - w, y = p.y + TAG.name - TAG.font + 1;
+    const w = l.nameW + 10 + l.chipW + TAG_PIP, h = TAG.font + 5, x = p.x + l.nameW / 2 + 5 - w, y = p.y + TAG.name - TAG.font + 1;
     plate(ctx, x, y, w, h);
     ctx.fill();
+    // An ink edge keeps the plate apart from the floor; the colour pip says whose soldier it is.
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = INK;
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  for (const { p, name } of tags) {
+    const l = looks.get(p.id);
+    if (!name || !l) continue;
+    const px = p.x - l.nameW / 2 - 5 - l.chipW - TAG_PIP + 7, py = p.y + TAG.name - TAG.font / 2 + 2.5;
+    ctx.fillStyle = INK;
+    ctx.beginPath(); ctx.arc(px, py, 4.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = p.team ? TEAM_COLORS[p.team] : COLORS[p.color];
+    ctx.beginPath(); ctx.arc(px - 0.3, py - 0.3, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.beginPath(); ctx.arc(px - 1.3, py - 1.4, 0.9, 0, Math.PI * 2); ctx.fill();
+  }
   for (const { p, name } of tags) {
     const l = looks.get(p.id);
     if (!name || !l) continue;
@@ -733,7 +757,7 @@ function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[
     const img = careerImage(p.badge);
     const l = looks.get(p.id);
     if (!img || !l) continue;
-    const x = p.x - l.nameW / 2 - l.chipW - TAG.badge - 8;
+    const x = p.x - l.nameW / 2 - l.chipW - TAG_PIP - TAG.badge - 8;
     ctx.drawImage(img, x, p.y + TAG.name - TAG.badge * 0.78, TAG.badge, TAG.badge);
   }
   // A player on a streak wears a flame and their kill count beside their name: a target worth a shutdown.
