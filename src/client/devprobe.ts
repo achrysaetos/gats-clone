@@ -1,5 +1,6 @@
 import { WORLD, type GunId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
+import type { AudioStats } from './audio.ts';
 import { worldToScreen, type Camera } from './camera.ts';
 import { kicks } from './effects.ts';
 import { NUMBER_MS, numberHeight } from './feedback.ts';
@@ -85,6 +86,7 @@ type Page = {
   session: () => Session | null;
   camera: () => Camera | null;
   ghost: () => Ghost | null;
+  audio: () => AudioStats;
 };
 
 export function installDevProbe(page: Page) {
@@ -129,5 +131,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), juice: () => juice.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, world: worldProbe, toScreen, trigger } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), juice: () => juice.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, world: worldProbe, toScreen, trigger, audio: page.audio } });
 }
