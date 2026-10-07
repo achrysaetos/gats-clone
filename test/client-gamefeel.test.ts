@@ -57,7 +57,7 @@ test('your kill floats the score you actually earned at the victim, catch-up inc
 test('a bounty kill gets its gold medal, and moments expire', () => {
   const prev = snap({ me: { score: 0 }, players: [player(7, { x: 300, y: 200 })] });
   const m = moments(prev, snap({ me: { score: 300 }, events: [kill({ killer: 'p1', killerId: 1, victim: 'Atlas', victimId: 7, bounty: true }), { e: 'medal', id: 1, medal: 'bounty' }] }));
-  assert.deepEqual(m.medals.map((t) => t.medal), ['bounty']);
+  assert.deepEqual(m.medals.map((t) => (t.k === 'medal' ? t.medal : null)), ['bounty']);
   assert.deepEqual(m.popups.map((p) => [p.x, p.y]), [[300, 200]], 'without a blow this snapshot, the victim\'s last position');
   const later = addMoments(m, prev, prev, 1000 + Math.max(CALLOUT_MS, MEDAL_MS));
   assert.deepEqual([later.callouts, later.popups, later.medals], [[], [], []]);

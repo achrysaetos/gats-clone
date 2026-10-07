@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121419">
+  <title>Profile · Skirmish</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page">
+  <main class="menu">
+    <div class="menu-card profile-card">
+      <header class="brand">
+        <a class="wordmark" href="/"><h1 class="logo"><em>S</em>KIRMISH</h1></a>
+        <p class="tagline">Service record</p>
+      </header>
+      <form id="profile-search" class="profile-search">
+        <input id="profile-name-input" maxlength="16" placeholder="Player name" autocomplete="off" spellcheck="false" aria-label="Player name">
+        <button type="submit">Look up</button>
+      </form>
+      <p id="profile-status" class="status" role="status"></p>
+      <div id="profile-body" hidden>
+        <section class="panel profile-top">
+          <div id="profile-head" class="profile-head"></div>
+          <dl id="profile-stats" class="stats profile-stats"></dl>
+        </section>
+        <section class="panel">
+          <h2>Lifetime medals <span id="career-count" class="muted"></span></h2>
+          <div id="career" class="career-grid"></div>
+        </section>
+        <section class="panel">
+          <h2>Medals earned</h2>
+          <div id="medal-grid" class="medal-grid"></div>
+        </section>
+      </div>
+      <footer class="menu-footer"><a href="/">Back to the game</a></footer>
+    </div>
+  </main>
+  <script type="module" src="profile.js"></script>
+</body>
+</html>

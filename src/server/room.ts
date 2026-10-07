@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { COLOR_IDS, ROYALE, WORLD, ZOM, type ModeId, type PlayerKind } from '../shared/defs.ts';
+import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, ROYALE, WORLD, ZOM, type MedalId, type ModeId, type PlayerKind } from '../shared/defs.ts';
 import { MAPS, ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
@@ -7,11 +7,12 @@ import { rewindCapFor } from '../shared/sim/combat.ts';
 import { benchUntilNextMatch, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
 import { build, demolish, toggleReady } from '../shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
-import { choosePick } from '../shared/sim/stats.ts';
+import { addScore, choosePick } from '../shared/sim/stats.ts';
 import { MODES } from '../shared/sim/modes.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import type { Accounts } from './accounts.ts';
+import { NO_PROFILES, type Profiles } from './profiles.ts';
 import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { thinkBots } from './bot/tick.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
@@ -43,7 +44,7 @@ export type Room = {
   close(): void;
 };
 
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator()): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES): Room {
   const world = createWorld(mode, seed, ROTATION[mode][0]);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
@@ -105,12 +106,58 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     return count('red') <= count('blue') ? 'red' : 'blue';
   }
 
+  /** Where each human stood last tick and how far they have walked since their profile last heard, for the Marathon track. */
+  const walked = new Map<number, { x: number; y: number; px: number }>();
+  const WALK_FLUSH_PX = 2000;
+  /** Folds a change into a human's profile, and pays, announces and puts on any lifetime medal it earned. */
+  function profile(playerId: number, name: string, delta: Parameters<Profiles['record']>[1]) {
+    const earned = profiles.record(name, delta);
+    const p = world.players.get(playerId);
+    const c = joined().find((j) => j.playerId === playerId);
+    for (const badge of earned) {
+      const score = CAREER_PAY[CAREER_TIERS[badge.tier]!];
+      if (p) addScore(world, p, score);
+      if (c) send(c.ws, { t: 'badge', badge, score });
+    }
+    if (p && earned.length) p.badge = profiles.featured(name);
+  }
+
   function creditLives(departed?: Extract<Client, { k: 'joined' }>) {
     const accountOf = new Map<number, string>();
     for (const c of departed ? [...joined(), departed] : joined()) if (c.account) accountOf.set(c.playerId, c.account);
     for (const r of world.lifeRecords.splice(0)) {
       const account = accountOf.get(r.id);
       if (account) accounts.credit(account, { kills: r.kills, deaths: r.died ? 1 : 0, score: r.score, games: 0 });
+    }
+  }
+
+  /**
+   * Each human's kills, deaths, medals and ground covered this step go to their profile as they happen, so a lifetime
+   * medal lands the moment it is earned rather than when the life ends.
+   */
+  function creditProfiles(events: readonly GameEvent[]) {
+    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[] }>();
+    const delta = (id: number) => {
+      let d = deltas.get(id);
+      if (!d) deltas.set(id, (d = { kills: 0, deaths: 0, medals: [] }));
+      return d;
+    };
+    for (const e of events) {
+      if (e.e === 'medal') delta(e.id).medals.push(e.medal);
+      if (e.e === 'kill' && e.killerId !== null && e.killerId !== e.victimId) delta(e.killerId).kills++;
+      if (e.e === 'kill' && !e.knock) delta(e.victimId).deaths++;
+    }
+    for (const c of joined()) {
+      const p = world.players.get(c.playerId);
+      if (!p) continue;
+      const d = deltas.get(c.playerId);
+      if (d) profile(p.id, p.name, { ...d, streak: p.lifeKills });
+      const w = walked.get(p.id);
+      const step = w ? Math.hypot(p.x - w.x, p.y - w.y) : 0;
+      // A respawn's jump is not a walk.
+      const px = (w?.px ?? 0) + (p.life.k === 'alive' && step < WORLD.baseSpeed ? step : 0);
+      if (px >= WALK_FLUSH_PX) { profile(p.id, p.name, { distance: px }); walked.set(p.id, { x: p.x, y: p.y, px: 0 }); }
+      else walked.set(p.id, { x: p.x, y: p.y, px });
     }
   }
 
@@ -129,9 +176,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
+      p.badge = profiles.featured(name);
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() });
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
+      profile(p.id, name, { games: 1 });
       return;
     }
     const id = client.playerId;
@@ -163,6 +212,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (c?.k !== 'joined') return;
     const left = world.players.get(c.playerId);
     if (mode === 'BR' && left?.team && seatOpen(left.team)) takeSeat(world, addBot(left.team), left);
+    const walk = walked.get(c.playerId);
+    if (left && walk?.px) profiles.record(left.name, { distance: walk.px });
+    walked.delete(c.playerId);
     removePlayer(world, c.playerId);
     creditLives(c);
     balanceBots();
@@ -182,6 +234,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       thinkBots(world, bots, botRand);
       step(world, TICK_MS);
       events.push(...world.events);
+      creditProfiles(world.events);
       creditLives();
     }
     return events;

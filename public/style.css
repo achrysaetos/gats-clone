@@ -241,7 +241,9 @@ kbd {
 .play-actions .status:empty { display: none; }
 
 .field { display: grid; gap: var(--s2); }
-.field span { font: 700 var(--t-label)/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+.field span { display: flex; justify-content: space-between; font: 700 var(--t-label)/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+.field-link { color: var(--accent); text-decoration: none; letter-spacing: 0.08em; }
+.field-link:hover { text-decoration: underline; }
 
 .weapons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
 .tile { display: grid; gap: var(--s1); justify-items: center; text-align: center; padding: 12px var(--s2) 10px; --cut: var(--cut-sm); }
@@ -678,6 +680,10 @@ a.wordmark { text-decoration: none; }
   font: italic 900 24px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink);
   text-shadow: 0 2px 0 #0b0c0f, 0 0 10px rgba(0, 0, 0, 0.8); white-space: nowrap;
 }
+.medal-toast.career { width: 200px; }
+.medal-toast.career .medal-art { width: 140px; height: 140px; }
+.medal-toast.career .medal-name { font-size: 28px; }
+.medal-banner { font: 800 13px/1 var(--display); letter-spacing: 0.3em; text-transform: uppercase; color: #0d0e11; background: var(--gold); padding: 4px 10px; }
 .medal-score { font: 800 18px/1 var(--display); color: var(--gold); text-shadow: 0 2px 0 #0b0c0f, 0 0 8px rgba(0, 0, 0, 0.8); }
 .tier-bronze .medal-name { color: #f2c08a; }
 .tier-silver .medal-name { color: #eef2f7; }
@@ -695,4 +701,29 @@ a.wordmark { text-decoration: none; }
   .medal-art { width: 64px; height: 64px; }
   .medal-art svg { width: 64px; height: 64px; }
   .medal-name { font-size: 15px; }
+}
+
+/* The profile page (profile.html): a service record of career numbers, lifetime medals and match medals. */
+.page .menu { overflow-y: auto; }
+.profile-card { max-width: 980px; }
+.profile-search { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); max-width: 420px; margin: 0 auto var(--s3); }
+.profile-body > .panel, #profile-body > .panel { margin-bottom: var(--s4); }
+.profile-head { display: flex; align-items: center; gap: var(--s5); }
+.profile-worn:empty { display: none; }
+.profile-name { font: italic 900 52px/1 var(--display); letter-spacing: 0.02em; text-transform: uppercase; }
+.profile-sub { margin-top: 6px; font: 700 var(--t-label) var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); }
+.profile-stats { grid-template-columns: repeat(6, 1fr); margin-top: var(--s4); }
+.career-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s3); }
+.career-card, .medal-card { display: grid; justify-items: center; gap: 4px; padding: var(--s3) var(--s2); background: var(--well); border: 1px solid var(--line); text-align: center; }
+.career-card b, .medal-card b { font: 800 16px/1.1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.career-line { font-size: 12px; color: var(--muted); }
+.career-bar { display: block; width: 100%; height: 5px; background: linear-gradient(90deg, var(--accent) var(--v), rgba(236, 230, 214, 0.1) var(--v)); }
+.medal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: var(--s2); }
+.medal-count { font: 800 18px/1 var(--display); color: var(--gold); }
+.locked svg { filter: grayscale(1) brightness(0.45); opacity: 0.7; }
+.locked b { color: var(--faint); }
+@media (max-width: 760px) {
+  .profile-stats { grid-template-columns: repeat(3, 1fr); }
+  .profile-name { font-size: 36px; }
+  .profile-head { gap: var(--s3); }
 }

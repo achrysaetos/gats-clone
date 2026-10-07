@@ -1,6 +1,7 @@
 import { MEDALS } from '../shared/defs.ts';
-import { medalArt, medalSvg } from './medals.ts';
-import { MEDAL_MS, type MedalToast } from './moments.ts';
+import { badgeKey } from '../shared/defs.ts';
+import { careerArt, careerName, medalArt, medalSvg } from './medals.ts';
+import { CAREER_TOAST_MS, MEDAL_MS, type MedalToast } from './moments.ts';
 
 /**
  * Medal toasts in the manner of Call of Duty: each medal you earn punches onto the screen above centre, metal flashing and a
@@ -9,7 +10,7 @@ import { MEDAL_MS, type MedalToast } from './moments.ts';
  */
 export function createMedalToasts(root: HTMLElement) {
   const shown = new Map<string, HTMLElement>();
-  const keyOf = (t: MedalToast) => `${t.medal}|${t.born}`;
+  const keyOf = (t: MedalToast) => `${t.k === 'medal' ? t.medal : badgeKey(t.badge)}|${t.born}`;
   return (toasts: readonly MedalToast[], now: number) => {
     const live = new Set<string>();
     for (const t of toasts) {
@@ -18,13 +19,17 @@ export function createMedalToasts(root: HTMLElement) {
       live.add(key);
       let el = shown.get(key);
       if (!el) {
-        const def = MEDALS[t.medal];
+        const art = t.k === 'medal' ? medalArt(t.medal) : careerArt(t.badge);
+        const name = t.k === 'medal' ? MEDALS[t.medal].name : careerName(t.badge);
+        const score = t.k === 'medal' ? MEDALS[t.medal].score : t.score;
         el = document.createElement('div');
-        el.className = `medal-toast tier-${def.tier}`;
-        el.style.setProperty('--life', `${MEDAL_MS}ms`);
-        el.innerHTML = `<div class="medal-art">${medalSvg(medalArt(t.medal), 108, def.name)}<i class="medal-shine"></i></div>`
-          + `<b class="medal-name"></b><span class="medal-score">+${def.score}</span>`;
-        el.querySelector('.medal-name')!.textContent = def.name;
+        // A lifetime medal lands bigger, longer and under its own banner: it is for good.
+        el.className = `medal-toast tier-${art.tier}${t.k === 'career' ? ' career' : ''}`;
+        el.style.setProperty('--life', `${t.k === 'career' ? CAREER_TOAST_MS : MEDAL_MS}ms`);
+        el.innerHTML = (t.k === 'career' ? '<small class="medal-banner">Lifetime medal</small>' : '')
+          + `<div class="medal-art">${medalSvg(art, t.k === 'career' ? 140 : 108, name)}<i class="medal-shine"></i></div>`
+          + `<b class="medal-name"></b><span class="medal-score">+${score}</span>`;
+        el.querySelector('.medal-name')!.textContent = name;
         root.append(el);
         shown.set(key, el);
       }

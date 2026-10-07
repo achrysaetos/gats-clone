@@ -11,6 +11,7 @@ import { drawCoreGlow, drawCoreTop, drawDowned, drawGhost, drawSiegeTops, drawZo
 import { bodySprite, drawBody, drawBodyShadows } from './bodies.ts';
 import { drawHeldGun } from './gunart.ts';
 import { fillIcon, UI_ICONS } from './icons.ts';
+import { careerImage } from './medals.ts';
 import type { Session } from './state.ts';
 import { buildingSolid, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, LIP, wallSolids, type Solid } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
@@ -518,7 +519,7 @@ function drawKillerMark(ctx: CanvasRenderingContext2D, p: PlayerView, now: numbe
 
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
-const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 22, font: 14, nameAlpha: 0.7 } as const;
+const TAG = { bar: R + 7, barW: 36, barH: 3.5, name: R + 22, font: 14, nameAlpha: 0.7, badge: 20 } as const;
 
 type Tag = { p: PlayerView; bar: number; name: boolean };
 let tagsDrawn: { id: number; bar: boolean; name: boolean }[] = [];
@@ -542,6 +543,14 @@ function drawNamesUnderBodies(ctx: CanvasRenderingContext2D, tags: readonly Tag[
   ctx.globalAlpha = TAG.nameAlpha;
   for (const { p, name } of tags) if (name) ctx.fillText(p.name, p.x, p.y + TAG.name);
   ctx.globalAlpha = 1;
+  // The rarest lifetime medal a player holds rides before their name, so a decorated veteran is plain to see.
+  for (const { p, name } of tags) {
+    if (!name || !p.badge) continue;
+    const img = careerImage(p.badge);
+    if (!img) continue;
+    const x = p.x - ctx.measureText(p.name).width / 2 - TAG.badge - 3;
+    ctx.drawImage(img, x, p.y + TAG.name - TAG.badge * 0.78, TAG.badge, TAG.badge);
+  }
   // A player on a streak wears a flame and their kill count beside their name: a target worth a shutdown.
   const hot = tags.filter((t) => t.name && t.p.streak).map((t) => ({ p: t.p, x: t.p.x + ctx.measureText(t.p.name).width / 2 + 6 }));
   if (!hot.length) return;

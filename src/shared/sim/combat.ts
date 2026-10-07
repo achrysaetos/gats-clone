@@ -144,12 +144,25 @@ export function award(w: World, p: Player, medal: MedalId) {
 export function watchCloseCalls(w: World) {
   if (w.run) return;
   for (const p of w.players.values()) {
+    watchGhost(w, p);
     if (p.life.k !== 'alive') { p.lowAt = null; continue; }
     const frac = p.life.hp / effectiveStats(p).maxHp;
     if (p.lowAt === -1) { if (frac >= MEDAL_RULES.closeCallReset) p.lowAt = null; continue; }
     if (p.lowAt === null) { if (frac <= MEDAL_RULES.closeCallHp) p.lowAt = w.now; continue; }
     if (w.now - p.lowAt >= MEDAL_RULES.closeCallMs) { p.lowAt = -1; award(w, p, 'closeCall'); }
   }
+}
+
+/** A Ghost: `MEDAL_RULES.ghostPx` of ground covered in one life without firing a shot, paid each time it is covered again. */
+function watchGhost(w: World, p: Player) {
+  const q = p.quiet;
+  if (p.life.k !== 'alive') { p.quiet = { px: 0, x: p.x, y: p.y, firedAt: -Infinity }; return; }
+  const step = Math.hypot(p.x - q.x, p.y - q.y);
+  // A shot, or a jump such as a respawn's, starts the count again.
+  const fired = p.life.firedAt !== q.firedAt;
+  q.px = fired || step > WORLD.baseSpeed ? 0 : q.px + step;
+  q.x = p.x; q.y = p.y; q.firedAt = p.life.firedAt;
+  if (q.px >= MEDAL_RULES.ghostPx) { q.px = 0; award(w, p, 'ghost'); }
 }
 
 /** A kill gives the killer back some health and, unless they are mid-reload, some of their mag (`KILL_REWARD`). */

@@ -1,11 +1,12 @@
-import { MEDALS, type MedalId, type MedalTier } from '../shared/defs.ts';
+import { CAREER, CAREER_TIERS, MEDALS, type Badge, type CareerId, type MedalId, type MedalTier } from '../shared/defs.ts';
 
 /**
  * Medal art as SVG, so a medal is as crisp in a toast as on a profile page. A medal's metal and outline come from its tier:
  * bronze is a notched coin, silver an eight-point star, gold a shield in a laurel, platinum a winged star burst. Its enamel
  * face is coloured by family and carries the medal's own glyph, and ribbon tails hang behind it.
  */
-export type MedalArt = { tier: MedalTier; enamel: string; ribbon: string; glyph: string };
+/** `stars` marks a lifetime medal's rung on its track, one to four. */
+export type MedalArt = { tier: MedalTier; enamel: string; ribbon: string; glyph: string; stars?: number };
 
 const FAMILY = {
   chain: { enamel: '#a3302a', ribbon: '#d9541f' },
@@ -33,6 +34,7 @@ export const GLYPHS = {
   flame: 'M12 22.5c-4.4 0-7.5-3-7.5-7.2 0-3.6 2.4-5.6 3.9-8.8.9 1.9 1.9 3 3.1 3.3-.2-2.8.9-5.7 3.3-8.3.6 4.1 5.2 7 5.2 13 0 4.8-3.4 8-8 8zm0-2.4c1.9 0 3.2-1.3 3.2-3.2 0-2.2-1.6-3.4-2.4-5.3-.9 1.4-2.6 2.4-3.6 4.2-.6 2.2.8 4.3 2.8 4.3z',
   crown: 'M3 7.5l4.6 3.6L12 4l4.4 7.1L21 7.5l-1.8 10.5H4.8zM4.8 19.5h14.4V22H4.8z',
   bolt: 'M13.5 1.5L4.5 13.5h6l-1.5 9 9-12h-6z',
+  ghost: 'M12 2.5c-4.7 0-7.5 3.4-7.5 8v10.5l2.5-2 2.5 2 2.5-2 2.5 2 2.5-2 2.5 2V10.5c0-4.6-2.8-8-7.5-8zM9 8.5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4z',
 } as const;
 
 const ART: Record<MedalId, MedalArt> = {
@@ -53,9 +55,33 @@ const ART: Record<MedalId, MedalArt> = {
   unstoppable: { tier: 'gold', ...FAMILY.streak, glyph: GLYPHS.bolt },
   untouchable: { tier: 'platinum', ...FAMILY.streak, glyph: GLYPHS.shieldCrack },
   legendary: { tier: 'platinum', ...FAMILY.streak, glyph: GLYPHS.crown },
+  ghost: { tier: 'bronze', ...FAMILY.survive, glyph: GLYPHS.ghost },
 };
 
 export const medalArt = (id: MedalId): MedalArt => ART[id];
+
+/** Each lifetime track wears the glyph of what it counts, in its family's colours. */
+const CAREER_ART: Record<CareerId, Omit<MedalArt, 'tier'>> = {
+  kills: { ...FAMILY.chain, glyph: GLYPHS.skull },
+  games: { ...FAMILY.hunt, glyph: GLYPHS.bounty },
+  streak: { ...FAMILY.streak, glyph: GLYPHS.flame },
+  longShot: { ...FAMILY.range, glyph: GLYPHS.scope },
+  pointBlank: { ...FAMILY.range, glyph: GLYPHS.blast },
+  multiKill: { ...FAMILY.chain, glyph: GLYPHS.chevrons2 },
+  tripleKill: { ...FAMILY.chain, glyph: GLYPHS.chevrons3 },
+  massacre: { ...FAMILY.chain, glyph: GLYPHS.chevrons4 },
+  clutch: { ...FAMILY.survive, glyph: GLYPHS.heart },
+  closeCall: { ...FAMILY.survive, glyph: GLYPHS.shieldCrack },
+  revenge: { ...FAMILY.grudge, glyph: GLYPHS.revenge },
+  shutdown: { ...FAMILY.hunt, glyph: GLYPHS.power },
+  bounty: { ...FAMILY.hunt, glyph: GLYPHS.crown },
+  firstBlood: { ...FAMILY.grudge, glyph: GLYPHS.drop },
+  distance: { ...FAMILY.survive, glyph: GLYPHS.bolt },
+  ghost: { ...FAMILY.survive, glyph: GLYPHS.ghost },
+};
+
+export const careerArt = (b: Badge): MedalArt => ({ ...CAREER_ART[b.track], tier: CAREER_TIERS[b.tier]!, stars: b.tier + 1 });
+export const careerName = (b: Badge) => `${CAREER[b.track].name} ${['I', 'II', 'III', 'IV'][b.tier]}`;
 // Each medal's tier on screen is the one its rules give it.
 for (const id of Object.keys(ART) as MedalId[]) ART[id] = { ...ART[id], tier: MEDALS[id].tier };
 
@@ -102,6 +128,15 @@ function behind(tier: MedalTier, ribbon: string, metal: readonly [string, string
   return tails;
 }
 
+/** Small stars along the medal's foot, one per rung of a lifetime track. */
+function starRow(n: number, metal: readonly [string, string, string]): string {
+  const pts = (cx: number, cy: number) => Array.from({ length: 10 }, (_, i) => {
+    const r = i % 2 ? 2.6 : 6, a = -Math.PI / 2 + (i * Math.PI) / 5;
+    return `${(cx + Math.cos(a) * r).toFixed(1)},${(cy + Math.sin(a) * r).toFixed(1)}`;
+  }).join(' ');
+  return Array.from({ length: n }, (_, i) => `<polygon points="${pts(50 + (i - (n - 1) / 2) * 13, 88)}" fill="${metal[0]}" stroke="#14161a" stroke-width="1.4"/>`).join('');
+}
+
 let uids = 0;
 
 /** A medal as an SVG string, `size` px square. */
@@ -124,6 +159,22 @@ export function medalSvg(art: MedalArt, size: number, title?: string): string {
   <g clip-path="url(#c${uid})"><path d="M0 0 L100 0 L0 100 Z" fill="rgba(255,255,255,0.18)"/></g>
   <circle cx="50" cy="50" r="27" fill="url(#e${uid})" stroke="${metal[2]}" stroke-width="3"/>
   <circle cx="50" cy="50" r="27" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-dasharray="40 200" transform="rotate(-140 50 50)"/>
+  ${art.stars ? starRow(art.stars, metal) : ''}
   <g transform="translate(30.8 30.8) scale(1.6)"><path d="${art.glyph}" fill="#ece6d6" stroke="#14161a" stroke-width="0.8" stroke-linejoin="round" fill-rule="evenodd"/></g>
 </svg>`;
+}
+
+const images = new Map<string, HTMLImageElement>();
+
+/** A lifetime medal as an image for the canvas, made once per medal; null until it has loaded. */
+export function careerImage(b: Badge): HTMLImageElement | null {
+  const key = `${b.track}:${b.tier}`;
+  let img = images.get(key);
+  if (!img) {
+    if (typeof Image === 'undefined') return null;
+    img = new Image();
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(medalSvg(careerArt(b), 64))}`;
+    images.set(key, img);
+  }
+  return img.complete && img.naturalWidth ? img : null;
 }

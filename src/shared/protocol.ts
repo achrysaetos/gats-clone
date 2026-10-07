@@ -1,6 +1,6 @@
 import {
   ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
-  type AbilityId, type ArmorId, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
+  type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
 import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
 
@@ -57,6 +57,8 @@ export type PlayerView = {
   spawnShield?: true;
   /** Kills this life, sent once it reaches `STREAK.showAt`. */
   streak?: number;
+  /** The rarest lifetime medal on this player's profile, worn by their name. */
+  badge?: Badge;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
@@ -219,6 +221,8 @@ export type ServerMsg =
   | { t: 'walls'; worldSize: number; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
+  /** You just earned a lifetime medal (`CAREER`), and the score it paid. */
+  | { t: 'badge'; badge: Badge; score: number }
   | { t: 'error'; message: string };
 
 const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof v === 'string' && (xs as readonly string[]).includes(v);

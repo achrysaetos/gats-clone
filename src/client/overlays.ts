@@ -289,7 +289,9 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     }
     if (state.recap !== recapShown) {
       recapShown = state.recap;
-      renderRecap(deathRecap, state.recap, state.kill?.killerId !== null && state.kill?.killerId !== state.s.myId ? state.kill?.killer ?? null : null);
+      const killer = state.kill?.killerId !== null && state.kill?.killerId !== state.s.myId ? state.kill?.killer ?? null : null;
+      const human = snap.players.find((p) => p.id === state.kill?.killerId)?.kind === 'human';
+      renderRecap(deathRecap, state.recap, killer, human);
     }
     const text = deathText(state.kill, state.loss);
     deathTitle.textContent = text.title;
@@ -340,7 +342,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
 }
 
 /** The life just lost as a row of stat tiles, each stamped when it set a record, then the records and who to take revenge on. */
-function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null) {
+function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null, nemesisHuman: boolean) {
   el.hidden = !recap;
   if (!recap) return;
   const tiles = recap.stats.map((s) => {
@@ -361,7 +363,10 @@ function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | nul
   });
   const lines: HTMLElement[] = [row, best];
   if (nemesis) {
-    lines.push(Object.assign(document.createElement('p'), { className: 'recap-nemesis', textContent: `${nemesis} is your nemesis now. Kill them for +${STREAK.revengeScore}.` }));
+    const line = Object.assign(document.createElement('p'), { className: 'recap-nemesis', textContent: `${nemesis} is your nemesis now. Kill them for +${STREAK.revengeScore}. ` });
+    // A human killer has a service record worth a look; bots keep none.
+    if (nemesisHuman) line.append(Object.assign(document.createElement('a'), { href: `profile.html?name=${encodeURIComponent(nemesis)}`, target: '_blank', rel: 'noopener', textContent: 'Their record ›' }));
+    lines.push(line);
   }
   el.replaceChildren(...lines);
 }

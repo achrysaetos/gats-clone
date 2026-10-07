@@ -261,10 +261,11 @@ export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
-  // A tenth higher than before medals past the first rung: over 800 bot lives (`node scripts/level-scale.ts`) medals add
-  // about that much score, so the share of lives reaching each evolve stays where it was. A first kill still opens a perk.
-  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 220, pick: { k: 'evolve' } },
-  { score: 330, pick: { k: 'perk', tier: 2 } }, { score: 440, pick: { k: 'perk', tier: 3 } }, { score: 600, pick: { k: 'evolve' } },
+  // Medals pay a large share of score, more the hotter a life runs, so the ladder steepens toward the top: set from 800 bot
+  // lives (`node scripts/level-scale.ts`, and test/balance.test.ts holds it) so about as many lives reach each evolve and the
+  // ability as before medals. A first kill still opens a perk.
+  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 250, pick: { k: 'evolve' } },
+  { score: 420, pick: { k: 'perk', tier: 2 } }, { score: 620, pick: { k: 'perk', tier: 3 } }, { score: 1000, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 type Attachment = (typeof PERK_TIERS)[1][number];
@@ -316,7 +317,7 @@ export const KILL_REWARD = { heal: 0.35, ammo: 0.5 } as const;
  * Kills in one life make a streak. Others see it beside your name from `showAt`; whoever ends a streak of `shutdownAt` or
  * more earns `shutdownScore`. Whoever killed you last is your nemesis, and killing them pays `revengeScore`.
  */
-export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 100, revengeScore: 50 } as const;
+export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 250, revengeScore: 125 } as const;
 
 /**
  * Medals are earned in the moment, Call of Duty style, and each pays its `score` on top of the kill. `tier` sets the
@@ -324,34 +325,73 @@ export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 100, revengeSco
  */
 export const MEDAL_IDS = [
   'firstBlood', 'doubleKill', 'tripleKill', 'quadKill', 'massacre', 'longShot', 'pointBlank', 'clutch', 'closeCall',
-  'revenge', 'shutdown', 'bounty', 'onFire', 'rampage', 'unstoppable', 'untouchable', 'legendary',
+  'revenge', 'shutdown', 'bounty', 'onFire', 'rampage', 'unstoppable', 'untouchable', 'legendary', 'ghost',
 ] as const;
 export type MedalId = (typeof MEDAL_IDS)[number];
 export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 export const MEDALS: Record<MedalId, { name: string; desc: string; score: number; tier: MedalTier }> = {
-  firstBlood: { name: 'First Blood', desc: 'The first kill of the round', score: 50, tier: 'silver' },
-  doubleKill: { name: 'Double Kill', desc: 'Two kills within 4 seconds', score: 25, tier: 'bronze' },
-  tripleKill: { name: 'Triple Kill', desc: 'Three kills, each within 4 seconds of the last', score: 50, tier: 'silver' },
-  quadKill: { name: 'Quad Kill', desc: 'Four kills, each within 4 seconds of the last', score: 100, tier: 'gold' },
-  massacre: { name: 'Massacre', desc: 'Five or more kills, each within 4 seconds of the last', score: 150, tier: 'platinum' },
-  longShot: { name: 'Long Shot', desc: 'A kill from 650 px or more away', score: 30, tier: 'bronze' },
-  pointBlank: { name: 'Point Blank', desc: 'A kill from 90 px or closer', score: 20, tier: 'bronze' },
-  clutch: { name: 'Clutch', desc: 'Kill whoever is hurting you, on 20% health or less', score: 50, tier: 'silver' },
-  closeCall: { name: 'Close Call', desc: 'Drop under 10% health and live another 6 seconds', score: 30, tier: 'bronze' },
+  firstBlood: { name: 'First Blood', desc: 'The first kill of the round', score: 125, tier: 'silver' },
+  doubleKill: { name: 'Double Kill', desc: 'Two kills within 4 seconds', score: 60, tier: 'bronze' },
+  tripleKill: { name: 'Triple Kill', desc: 'Three kills, each within 4 seconds of the last', score: 125, tier: 'silver' },
+  quadKill: { name: 'Quad Kill', desc: 'Four kills, each within 4 seconds of the last', score: 250, tier: 'gold' },
+  massacre: { name: 'Massacre', desc: 'Five or more kills, each within 4 seconds of the last', score: 400, tier: 'platinum' },
+  longShot: { name: 'Long Shot', desc: 'A kill from 650 px or more away', score: 75, tier: 'bronze' },
+  pointBlank: { name: 'Point Blank', desc: 'A kill from 90 px or closer', score: 50, tier: 'bronze' },
+  clutch: { name: 'Clutch', desc: 'Kill whoever is hurting you, on 20% health or less', score: 125, tier: 'silver' },
+  closeCall: { name: 'Close Call', desc: 'Drop under 10% health and live another 6 seconds', score: 75, tier: 'bronze' },
   revenge: { name: 'Revenge', desc: 'Kill the player who last killed you', score: STREAK.revengeScore, tier: 'silver' },
   shutdown: { name: 'Shutdown', desc: 'End a streak of 5 or more', score: STREAK.shutdownScore, tier: 'gold' },
-  bounty: { name: 'Bounty', desc: 'Kill a hunted player', score: 200, tier: 'gold' },
-  onFire: { name: 'On Fire', desc: '3 kills without dying', score: 25, tier: 'bronze' },
-  rampage: { name: 'Rampage', desc: '5 kills without dying', score: 50, tier: 'silver' },
-  unstoppable: { name: 'Unstoppable', desc: '8 kills without dying', score: 100, tier: 'gold' },
-  untouchable: { name: 'Untouchable', desc: '12 kills without dying', score: 150, tier: 'platinum' },
-  legendary: { name: 'Legendary', desc: '20 kills without dying', score: 250, tier: 'platinum' },
+  bounty: { name: 'Bounty', desc: 'Kill a hunted player', score: 300, tier: 'gold' },
+  onFire: { name: 'On Fire', desc: '3 kills without dying', score: 60, tier: 'bronze' },
+  rampage: { name: 'Rampage', desc: '5 kills without dying', score: 125, tier: 'silver' },
+  unstoppable: { name: 'Unstoppable', desc: '8 kills without dying', score: 250, tier: 'gold' },
+  untouchable: { name: 'Untouchable', desc: '12 kills without dying', score: 400, tier: 'platinum' },
+  legendary: { name: 'Legendary', desc: '20 kills without dying', score: 600, tier: 'platinum' },
+  ghost: { name: 'Ghost', desc: 'Cover 3000 px in one life without firing a shot', score: 75, tier: 'bronze' },
 };
 /** The streak at which each streak medal is earned. */
 export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
 /** The chain of kills each multi-kill medal names, from the second kill. */
 export const MULTI_MEDALS: readonly MedalId[] = ['doubleKill', 'tripleKill', 'quadKill', 'massacre'];
-export const MEDAL_RULES = { multiMs: 4000, longShotPx: 650, pointBlankPx: 90, clutchHp: 0.2, clutchMs: 5000, closeCallHp: 0.1, closeCallMs: 6000, closeCallReset: 0.5 } as const;
+export const MEDAL_RULES = { multiMs: 4000, longShotPx: 650, pointBlankPx: 90, clutchHp: 0.2, clutchMs: 5000, closeCallHp: 0.1, closeCallMs: 6000, closeCallReset: 0.5, ghostPx: 3000 } as const;
+
+/**
+ * Lifetime medals: career tracks kept on a player's profile for good, each with a bronze, silver, gold and platinum
+ * medal at the counts in `at`. Every rung pays `CAREER_PAY` of its tier on the spot and gets its own unlock, and the
+ * rarest one a player holds is worn by their name in every match. A track counts a career stat or one of the medals.
+ */
+export const CAREER_IDS = [
+  'kills', 'games', 'streak', 'longShot', 'pointBlank', 'multiKill', 'tripleKill', 'massacre', 'clutch', 'closeCall',
+  'revenge', 'shutdown', 'bounty', 'firstBlood', 'distance', 'ghost',
+] as const;
+export type CareerId = (typeof CAREER_IDS)[number];
+/** `km` is career distance walked, at `KM_PX` px to the km: a body is about a metre across, so a km is some 3 minutes on foot. */
+export type CareerStat = 'kills' | 'games' | 'bestStreak' | 'km';
+export const KM_PX = 48_000;
+export const CAREER_TIERS: readonly MedalTier[] = ['bronze', 'silver', 'gold', 'platinum'];
+export const CAREER: Record<CareerId, { name: string; unit: string; needs: CareerStat | MedalId; at: readonly [number, number, number, number] }> = {
+  kills: { name: 'Centurion', unit: 'career kills', needs: 'kills', at: [100, 500, 1500, 5000] },
+  games: { name: 'Veteran', unit: 'matches played', needs: 'games', at: [10, 50, 150, 500] },
+  streak: { name: 'Iron Will', unit: 'kills in one life', needs: 'bestStreak', at: [5, 10, 15, 25] },
+  longShot: { name: 'Marksman', unit: 'Long Shots', needs: 'longShot', at: [10, 50, 150, 400] },
+  pointBlank: { name: 'Brawler', unit: 'Point Blank kills', needs: 'pointBlank', at: [10, 50, 150, 400] },
+  multiKill: { name: 'Double Trouble', unit: 'Double Kills', needs: 'doubleKill', at: [10, 50, 150, 400] },
+  tripleKill: { name: 'Chain Reaction', unit: 'Triple Kills', needs: 'tripleKill', at: [3, 15, 50, 150] },
+  massacre: { name: 'Butcher', unit: 'Massacres', needs: 'massacre', at: [1, 5, 15, 50] },
+  clutch: { name: 'Clutch Master', unit: 'Clutches', needs: 'clutch', at: [5, 25, 75, 200] },
+  closeCall: { name: 'Survivor', unit: 'Close Calls', needs: 'closeCall', at: [5, 25, 75, 200] },
+  revenge: { name: 'Avenger', unit: 'Revenges', needs: 'revenge', at: [5, 25, 75, 200] },
+  shutdown: { name: 'Giant Slayer', unit: 'Shutdowns', needs: 'shutdown', at: [3, 15, 50, 150] },
+  bounty: { name: 'Headhunter', unit: 'Bounties claimed', needs: 'bounty', at: [3, 15, 50, 150] },
+  firstBlood: { name: 'Opener', unit: 'First Bloods', needs: 'firstBlood', at: [3, 15, 50, 150] },
+  distance: { name: 'Marathon', unit: 'km walked', needs: 'km', at: [10, 50, 200, 800] },
+  ghost: { name: 'Phantom', unit: 'Ghost medals', needs: 'ghost', at: [5, 25, 75, 200] },
+};
+/** Score a lifetime medal pays the moment it is earned, by tier. */
+export const CAREER_PAY: Record<MedalTier, number> = { bronze: 100, silver: 200, gold: 400, platinum: 800 };
+/** One rung of a career track: which track, and which tier of it (0 bronze to 3 platinum). */
+export type Badge = { track: CareerId; tier: 0 | 1 | 2 | 3 };
+export const badgeKey = (b: Badge) => `${b.track}:${b.tier}`;
 
 export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
@@ -367,7 +407,7 @@ export const WORLD = {
   crateHp: 40,
   crateScore: 10,
   killScore: 100,
-  bountyScore: 200,
+  bountyScore: 300,
   assistScore: 50,
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,
@@ -478,7 +518,7 @@ export const BASTION_GUN: TurretDef = {
 
 export const ZOM = {
   /** Zombie kill score is scaled by this, matching the versus levels' scale-up for medals (see `LEVELS`). */
-  levelScoreMul: 1.1,
+  levelScoreMul: 1.6,
   /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,
   coreHp: 4000,

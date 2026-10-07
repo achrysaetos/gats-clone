@@ -38,6 +38,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
     ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
+    ...(p.badge && { badge: p.badge }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
 }

@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
+import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
@@ -97,7 +98,7 @@ const forwardedIp: IpOf = (req) => {
   return last || socketIp(req);
 };
 
-async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
+async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, profiles: Profiles, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size });
@@ -113,6 +114,12 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
     try { name = decodeURIComponent(path.slice('/api/stats/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
     const stats = accounts.stats(name);
     return stats ? json(res, 200, stats) : json(res, 404, { error: 'No such player' });
+  }
+  if (req.method === 'GET' && path.startsWith('/api/profile/')) {
+    let name: string;
+    try { name = decodeURIComponent(path.slice('/api/profile/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
+    const p = profiles.get(name);
+    return p ? json(res, 200, profileView(p)) : json(res, 404, { error: 'No such player' });
   }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {
     if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
@@ -136,10 +143,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const allowAuth = makeKeyedLimiter(limits.authPerMin / 60, limits.authPerMin);
   const socketsByIp = new Map<string, number>();
   const accounts = await openAccounts(opts.dataDir, limits.sessionMs);
+  const profiles = await openProfiles(opts.dataDir);
   const moderator = await loadModerator(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const allowSquad = makeKeyedLimiter(limits.squadsPerMin / 60, limits.squadsPerMin);
-  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator);
+  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles);
   const rooms = new Map<string, Room>(ROOM_MODES.map(([id, mode], i) => [id, newRoom(id, mode, 1000 + i)]));
   /** When each squad room last had a human in it; one empty for `squadIdleMs` closes. */
   const squadSeenAt = new Map<string, number>();
@@ -164,7 +172,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const http = createServer((req, res) => {
-    route(req, res, { all: rooms, openSquad }, accounts, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -217,6 +225,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       http.closeAllConnections();
       await new Promise<void>((done) => http.close(() => done()));
       await accounts.flush();
+      await profiles.flush();
     },
   };
 }

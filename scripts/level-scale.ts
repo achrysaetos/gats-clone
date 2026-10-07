@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: node scripts/level-scale.ts
-// Plays ten 2-minute FFA rooms of bots and prints the share of lives whose score reaches each level the evolve and ability
-// tiers sit at, under the pre-medal ladder scaled by each factor, and how often each medal was earned.
+// Plays ten 2-minute FFA rooms of bots and prints the share of lives whose score reaches each threshold, and how often each
+// medal was earned, so the level ladder (LEVELS in defs.ts) can be set to keep progression where it should be.
 import { WORLD } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
@@ -22,7 +22,6 @@ for (let i = 0; i < 10; i++) {
     for (const rec of w.lifeRecords.splice(0)) scores.push(rec.score);
   }
 }
-// The pre-medal ladder: first evolve at 200, ability at 400, hunted evolve at 550.
 const reach = (s: number) => (scores.filter((x) => x >= s).length / scores.length * 100).toFixed(1);
-for (const k of [1, 1.1, 1.25, 1.5]) console.log(`x${k}: evolve ${reach(200 * k)}%  ability ${reach(400 * k)}%  hunted ${reach(550 * k)}%`);
+for (const at of [100, 150, 200, 250, 280, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 900, 1000, 1100, 1200, 1400]) console.log(`${String(at).padStart(5)} ${reach(at)}%`);
 console.log(scores.length, 'lives', JSON.stringify(Object.fromEntries(medals)));

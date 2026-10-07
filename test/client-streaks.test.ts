@@ -39,7 +39,7 @@ const medal = (medal: MedalId, id = 1) => ({ e: 'medal' as const, id, medal });
 
 test('medals you earn become toasts, biggest first, each a beat after the last; nobody else\'s do', () => {
   const m = addMoments(NO_MOMENTS, snap(), snap({ self: { streak: 3 }, events: [myKill(9), medal('onFire'), medal('quadKill'), medal('longShot'), medal('bounty', 7)] }), 1000);
-  assert.deepEqual(m.medals.map((t) => t.medal), ['quadKill', 'longShot', 'onFire'].sort((a, b) => MEDALS[b as MedalId].score - MEDALS[a as MedalId].score));
+  assert.deepEqual(m.medals.map((t) => (t.k === 'medal' ? t.medal : null)), ['quadKill', 'longShot', 'onFire'].sort((a, b) => MEDALS[b as MedalId].score - MEDALS[a as MedalId].score));
   assert.deepEqual(m.medals.map((t) => t.born), [1000, 1000 + MEDAL_STAGGER_MS, 1000 + 2 * MEDAL_STAGGER_MS]);
   assert.deepEqual(m.callouts, [], 'medals take the place of text callouts');
 });

@@ -1,4 +1,4 @@
-import { byTurret, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { byTurret, PERK_TIERS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -62,10 +62,14 @@ export type Player = {
   lifeKills: number;
   /** Who last killed this player, until this player kills them back. */
   nemesis: number | null;
+  /** The lifetime medal this player wears, set by the server from their profile; the simulation never reads it. */
+  badge: Badge | null;
   /** This player's run of kills each within `MEDAL_RULES.multiMs` of the last, for the multi-kill medals. */
   chain: { count: number; at: number };
   /** When this life fell under `MEDAL_RULES.closeCallHp`, for the Close Call medal; -1 once paid, until it heals back up. */
   lowAt: number | null;
+  /** Ground covered since this life last fired (or began), from where it stood last tick, for the Ghost medal. */
+  quiet: { px: number; x: number; y: number; firedAt: number };
   revealedUntil: number;
   /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
   huntedPing: (Pose & { at: number }) | null;

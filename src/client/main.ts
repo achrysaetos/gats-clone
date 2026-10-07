@@ -10,7 +10,7 @@ import { walks } from '../shared/sim/movement.ts';
 import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
 import { assistAngle, type AssistTarget } from './aimassist.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
-import { addMoments, NO_MOMENTS } from './moments.ts';
+import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
 import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
 import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied } from './hud.ts';
@@ -240,6 +240,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     }
     case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
+    case 'badge': s.moments = addCareerToast(s.moments, msg.badge, msg.score, now); playCues(s, [{ id: 'medal:platinum', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
     case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
   }
@@ -695,6 +696,15 @@ const pickers = [
 ];
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; });
 nameInput.value = loadName() || account.current()?.name || '';
+/** The menu's link to your own service record follows the name you will play as. */
+const myProfile = $<HTMLAnchorElement>('my-profile');
+const linkMyProfile = () => {
+  const name = cleanName(nameInput.value);
+  myProfile.hidden = !nameInput.value.trim();
+  myProfile.href = `profile.html?name=${encodeURIComponent(name)}`;
+};
+nameInput.addEventListener('input', linkMyProfile);
+linkMyProfile();
 renderControls($('controls'));
 /**
  * On a phone, Play also asks for fullscreen and a landscape lock, inside the tap that allows them. Browsers that refuse (an
