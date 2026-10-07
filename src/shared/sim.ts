@@ -96,7 +96,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
     // Bloom is a duel rule, so short bursts beat long sprays between players; against the horde a held trigger stays steady.
-    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), w.run ? 0 : life.spray, life.suppression);
+    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, moving ? 0 : w.now - life.lastMoveAt), life.spray, life.suppression);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

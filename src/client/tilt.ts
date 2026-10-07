@@ -25,7 +25,8 @@ export const MATERIALS: Record<SolidKind, Material> = {
   curb: { top: '#2b2e34', grain: GRAIN, height: 20 },
   planter: { top: '#6c7356', grain: GRAIN, height: 26, bed: { inset: 6, ground: '#252b1d', leaves: [['#3a4429', 0.45], ['#4d5934', 0.35], ['#66744a', 0.2]] } },
   slate: { top: '#4f5560', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 36 },
-  brick: { top: '#a8946b', grain: { ...GRAIN, seams: 'brick', tile: 50 }, height: 28 },
+  // A squad's own wall: riveted khaki plate, a shade darker than the map's sandstone so it reads as built, not found.
+  brick: { top: '#978562', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 28 },
   pad: { top: '#454a53', grain: GRAIN, height: 14 },
   core: { top: '#3c414b', grain: GRAIN, height: 56 },
 };

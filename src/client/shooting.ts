@@ -39,7 +39,7 @@ export function createShooting(page: Page) {
 
   function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
     const { aim, sinceMove } = page.hands(s);
-    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(gun, sinceMove), snap.run ? 0 : nextSprayShot(s.firing), snap.self.suppression) };
+    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(gun, sinceMove), nextSprayShot(s.firing), snap.self.suppression) };
     page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
     const angle = Math.atan2(aim.dy, aim.dx);
     page.recoil(gun, angle);

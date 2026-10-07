@@ -3,7 +3,7 @@ import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '..
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 import { HIT_FLASH_MS } from './effects.ts';
-import { INK, PALETTE, shade, ZOMBIE_LOOK } from './palette.ts';
+import { INK, PALETTE, shade, tint, ZOMBIE_LOOK } from './palette.ts';
 import { bodySprite, drawBody } from './bodies.ts';
 import type { Effect } from './state.ts';
 import { LIGHT } from './tilt.ts';
@@ -59,50 +59,129 @@ function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: numb
   return { angle: aim.drawn, recoil: Math.max(0, 1 - (now - aim.firedAt) / RECOIL_MS) };
 }
 
-const TURRET_LOOK: Record<TurretKind, { head: string; barrel: string; accent: string; ammo: string }> = {
-  sentry: { head: '#7a8291', barrel: '#2c313b', accent: '#f5c400', ammo: '#f5c400' },
-  cannon: { head: '#6e6052', barrel: '#22262d', accent: '#e5484d', ammo: '#ff9f43' },
-  scatter: { head: '#5f7f7a', barrel: '#262c30', accent: '#3fd1b8', ammo: '#3fd1b8' },
-  mortar: { head: '#5a5f4a', barrel: '#1f2326', accent: '#b98cff', ammo: '#b98cff' },
+/**
+ * A turret wears the world's kit: a gunmetal mount on its pad, outlined in ink and cel-shaded in two hard steps toward the
+ * world's light, with a gun on top in the guns' own tones (gunart.ts) that turns to aim. The kind's accent is a muted
+ * stripe on the gun and its ammo gauge, one colour per kind so the four read apart at a glance.
+ */
+const TURRET_LOOK: Record<TurretKind, { gun: string; accent: string }> = {
+  sentry: { gun: '#555c67', accent: '#e0a43a' },
+  cannon: { gun: '#6a7255', accent: '#d0573a' },
+  scatter: { gun: '#666b74', accent: '#5fa595' },
+  mortar: { gun: '#b19d72', accent: '#9a86c4' },
 };
+const MOUNT = { top: '#4f5560', dark: '#2c3037', r: 15 } as const;
+const BARREL = '#2c3037';
+const TURRET_SHINE = 'rgba(255, 255, 255, 0.28)';
 
-function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, pxPerUnit: number) {
+/** An octagon, the clipped-corner plate of the interface turned into a mount. */
+function octagon(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  const c = r * 0.42;
+  ctx.beginPath();
+  ctx.moveTo(cx - r + c, cy - r); ctx.lineTo(cx + r - c, cy - r); ctx.lineTo(cx + r, cy - r + c); ctx.lineTo(cx + r, cy + r - c);
+  ctx.lineTo(cx + r - c, cy + r); ctx.lineTo(cx - r + c, cy + r); ctx.lineTo(cx - r, cy + r - c); ctx.lineTo(cx - r, cy - r + c);
+  ctx.closePath();
+}
+
+/** One gun part in the turret's turning frame: base tone, a light band on the side toward the light, a dark band away, ink edge. */
+function turretPart(ctx: CanvasRenderingContext2D, base: string, x: number, y: number, w: number, h: number, angle: number) {
+  // Which local side faces the world's light, so the bands stay put as the gun turns.
+  const lit = Math.sin(angle) * LIGHT.x - Math.cos(angle) * LIGHT.y < 0 ? -1 : 1;
+  ctx.fillStyle = base;
+  ctx.fillRect(x, y, w, h);
+  const band = Math.max(1.2, h * 0.28);
+  ctx.fillStyle = tint(base, 0.24);
+  ctx.fillRect(x, lit < 0 ? y : y + h - band, w, band);
+  ctx.fillStyle = tint(base, -0.3);
+  ctx.fillRect(x, lit < 0 ? y + h - band : y, w, band);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(x, y, w, h);
+}
+
+function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number) {
   const look = TURRET_LOOK[kind];
+  const r = MOUNT.r;
+  // The mount: a crisp drop shadow, the plate, its two cel steps and an ink outline.
+  ctx.fillStyle = 'rgba(20, 22, 28, 0.35)';
+  octagon(ctx, cx + LIGHT.x * 4, cy + LIGHT.y * 4, r);
+  ctx.fill();
+  octagon(ctx, cx, cy, r);
+  ctx.fillStyle = MOUNT.top;
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  ctx.fillStyle = tint(MOUNT.top, 0.2);
+  ctx.fillRect(cx - r, cy - r, r * 2, 3);
+  ctx.fillRect(cx - r, cy - r, 3, r * 2);
+  ctx.fillStyle = tint(MOUNT.top, -0.3);
+  ctx.fillRect(cx - r, cy + r - 3, r * 2, 3);
+  ctx.fillRect(cx + r - 3, cy - r, 3, r * 2);
+  ctx.restore();
+  octagon(ctx, cx, cy, r);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // The gun, in its own turning frame.
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
   ctx.translate(-recoil * 5, 0);
-  ctx.fillStyle = look.barrel;
-  ctx.beginPath();
   const reach = BUILDINGS[kind].turret.muzzle;
   switch (kind) {
-    case 'sentry': for (const side of [-1, 1]) ctx.roundRect(4, side * 5 - 2.5, reach - 4, 5, 1.5); break;
-    case 'cannon': ctx.roundRect(2, -6.5, reach - 8, 13, 2); ctx.roundRect(reach - 9, -9, 9, 18, 2); break;
-    case 'scatter': ctx.moveTo(4, -4); ctx.lineTo(reach, -9); ctx.lineTo(reach, 9); ctx.lineTo(4, 4); ctx.closePath(); break;
-    case 'mortar': ctx.roundRect(0, -9, reach, 18, 4); break;
+    case 'sentry':
+      for (const side of [-1, 1]) turretPart(ctx, BARREL, 6, side * 4.5 - 2, reach - 6, 4, angle);
+      turretPart(ctx, look.gun, -9, -8, 17, 16, angle);
+      break;
+    case 'cannon':
+      turretPart(ctx, BARREL, 6, -4, reach - 12, 8, angle);
+      turretPart(ctx, BARREL, reach - 9, -6, 9, 12, angle);
+      turretPart(ctx, look.gun, -10, -9, 19, 18, angle);
+      break;
+    case 'scatter':
+      ctx.beginPath();
+      ctx.moveTo(6, -4); ctx.lineTo(reach, -8.5); ctx.lineTo(reach, 8.5); ctx.lineTo(6, 4); ctx.closePath();
+      ctx.fillStyle = BARREL;
+      ctx.fill();
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = TURRET_SHINE;
+      ctx.fillRect(9, -1, reach - 11, 1.4);
+      turretPart(ctx, look.gun, -8, -8, 16, 16, angle);
+      break;
+    case 'mortar':
+      turretPart(ctx, look.gun, -9, -10, 16, 20, angle);
+      turretPart(ctx, BARREL, 0, -7, reach, 14, angle);
+      ctx.fillStyle = INK;
+      ctx.beginPath();
+      ctx.arc(reach - 3.5, 0, 4.5, 0, TAU);
+      ctx.fill();
+      break;
   }
-  ctx.fill();
-  ctx.restore();
-  const r = kind === 'sentry' || kind === 'scatter' ? 11 : 14;
-  drawBody(ctx, bodySprite(look.head, r, 0, pxPerUnit), cx, cy, r);
+  // The kind's accent stripe across the gun's back.
   ctx.fillStyle = look.accent;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 3.5, 0, TAU);
-  ctx.fill();
+  ctx.fillRect(-6, -5, 3, 10);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(-6, -5, 3, 10);
+  ctx.restore();
 }
 
+/** The ammo gauge: an ink-edged slot under the mount, filled in the kind's accent, flashing red when dry. */
 function drawAmmo(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind }, now: number) {
   const { x, y, w, h } = cellRect(b.cx, b.cy);
   const empty = b.ammo === 0;
-  ctx.fillStyle = 'rgba(28, 31, 38, 0.7)';
-  ctx.beginPath();
-  ctx.roundRect(x + 7, y + h - 9, w - 14, 5, 2.5);
-  ctx.fill();
-  if (empty && Math.floor(now / 250) % 2) return;
-  ctx.fillStyle = empty ? PALETTE.hpBad : TURRET_LOOK[b.kind].ammo;
-  ctx.beginPath();
-  ctx.roundRect(x + 8, y + h - 8, empty ? w - 16 : Math.max(3, ((w - 16) * b.ammo) / 10), 3, 1.5);
-  ctx.fill();
+  const gx = x + 8, gy = y + h - 9, gw = w - 16, gh = 5;
+  ctx.fillStyle = 'rgba(20, 22, 28, 0.8)';
+  ctx.fillRect(gx, gy, gw, gh);
+  if (!(empty && Math.floor(now / 250) % 2)) {
+    ctx.fillStyle = empty ? PALETTE.hpBad : TURRET_LOOK[b.kind].accent;
+    ctx.fillRect(gx + 1, gy + 1, empty ? gw - 2 : Math.max(2, ((gw - 2) * b.ammo) / 10), gh - 2);
+  }
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(gx, gy, gw, gh);
 }
 
 export function drawSiegeTops(
@@ -112,7 +191,7 @@ export function drawSiegeTops(
     const { x, y, w, h } = cellRect(b.cx, b.cy);
     if (b.kind !== 'wall') {
       const barrel = barrelOf(aims, b, core, now);
-      drawTurretHead(ctx, b.kind, x + w / 2, y + h / 2, barrel.angle, barrel.recoil, pxPerUnit);
+      drawTurretHead(ctx, b.kind, x + w / 2, y + h / 2 - 2, barrel.angle, barrel.recoil);
       drawAmmo(ctx, b, now);
     }
     const hit = flashes.get(`${b.cx},${b.cy}`);
@@ -324,7 +403,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   ctx.setLineDash([12, 10]);
   ctx.lineDashOffset = -now / 60;
   ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(214, 160, 20, 0.75)';
+  ctx.strokeStyle = 'rgba(255, 90, 31, 0.7)';
   ctx.beginPath();
   ctx.arc(core.x, core.y, ZOM.buildRadius, 0, TAU);
   ctx.stroke();
@@ -337,7 +416,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   const color = ghost.refusal === null ? GHOST_LOOK.ok : ghost.refusal === 'taken' ? GHOST_LOOK.down : GHOST_LOOK.no;
   if (ghost.kind !== 'wall' && ghost.refusal !== 'taken') {
     ctx.globalAlpha = 0.6;
-    drawTurretHead(ctx, ghost.kind, x + w / 2, y + h / 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, pxPerUnit);
+    drawTurretHead(ctx, ghost.kind, x + w / 2, y + h / 2 - 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0);
   }
   ctx.globalAlpha = 0.3 + 0.1 * Math.sin(now / 160);
   ctx.fillStyle = color;
@@ -351,9 +430,12 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lw = ctx.measureText(ghost.label).width + 16;
-  ctx.fillStyle = 'rgba(28, 32, 40, 0.82)';
+  // The interface's plate: gunmetal with its top-right and bottom-left corners clipped.
+  const lx = x + w / 2 - lw / 2, ly = y - 34, c = 6;
+  ctx.fillStyle = 'rgba(30, 33, 40, 0.9)';
   ctx.beginPath();
-  ctx.roundRect(x + w / 2 - lw / 2, y - 34, lw, 24, 7);
+  ctx.moveTo(lx, ly); ctx.lineTo(lx + lw - c, ly); ctx.lineTo(lx + lw, ly + c); ctx.lineTo(lx + lw, ly + 24); ctx.lineTo(lx + c, ly + 24); ctx.lineTo(lx, ly + 24 - c);
+  ctx.closePath();
   ctx.fill();
   ctx.fillStyle = color === GHOST_LOOK.ok ? '#ffffff' : color;
   ctx.fillText(ghost.label, x + w / 2, y - 21);

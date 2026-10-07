@@ -10,8 +10,8 @@ import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './h
 
 const TIER_1 = { k: 'perk', tier: 1 } as const;
 
-function shooter(gun: GunId): { w: World; p: Player } {
-  const w = emptyWorld();
+function shooter(gun: GunId, mode: 'FFA' | 'ZOM' = 'FFA'): { w: World; p: Player } {
+  const w = emptyWorld(mode);
   const p = spawnAt(w, 2000, 2000, { loadout: { weapon: GUNS[gun].base } });
   equip(p, gun);
   return { w, p };
@@ -87,6 +87,20 @@ test('an assault rifle held down blooms after its first shots, up to double, and
     for (let i = 0; i < 6; i++) tapped.push(...tick(t.w, t.p, {}));
   }
   assert.ok(widest(tapped) <= GUNS.assault.spread, 'four taps a second never bloom');
+});
+
+test('guns handle the same in Zombies as between players: a held trigger blooms just as far', () => {
+  const spreads = (['FFA', 'ZOM'] as const).map((mode) => {
+    const { w, p } = shooter('assault', mode);
+    const rounds: number[][] = [];
+    while (rounds.length < 25) {
+      const out = tick(w, p, { fire: true, shots: 1 });
+      if (out.length) rounds.push(out);
+    }
+    return widest(rounds.slice(10).flat());
+  });
+  assert.ok(spreads[1]! > GUNS.assault.spread, 'a long spray at the horde strays past the still cone');
+  assert.ok(spreads[1]! <= 2 * GUNS.assault.spread + 1e-9);
 });
 
 test('assault bloom is gone a quarter second after letting go, and a reload clears it', () => {
