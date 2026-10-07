@@ -4,8 +4,9 @@ import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, type Badge, type MedalI
 
 /**
  * Every human name has a profile, signed in or not: career kills and deaths, matches, best streak, distance walked, every
- * medal earned, and every lifetime medal (a rung of a `CAREER` track) with when it was earned. A registered account owns its name (`uniqueName` keeps guests off it), so its profile is
- * its own; guests sharing a name share a profile. Bots keep none.
+ * medal earned, and every lifetime medal (a rung of a `CAREER` track) with when it was earned. A registered account owns its
+ * name: registering wipes whatever guests left under it, and from then on only the signed-in account writes to it (see
+ * `profileKey` in room.ts). Guests sharing an unregistered name share a profile. Bots keep none.
  */
 export type Profile = {
   name: string;
@@ -30,6 +31,8 @@ export type Profiles = {
   record(name: string, delta: ProfileDelta, now?: number): Badge[];
   /** The rarest lifetime medal a name holds, the one it wears in matches. */
   featured(name: string): Badge | null;
+  /** Wipes a name's profile, when an account is registered under it, so nobody inherits what guests did under that name. */
+  reset(name: string): void;
   flush(): Promise<void>;
 };
 
@@ -133,6 +136,9 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
       const p = byKey.get(key(name));
       return p ? featuredBadge(p) : null;
     },
+    reset(name) {
+      if (byKey.delete(key(name))) saveSoon();
+    },
     flush() {
       if (pending) { clearTimeout(pending); pending = null; void save(); }
       return saveQueue;
@@ -144,4 +150,4 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
 export const profileView = (p: Profile) => ({ ...p, featured: featuredBadge(p) });
 
 /** A profile store that keeps nothing, for rooms and tests that need none. */
-export const NO_PROFILES: Profiles = { get: () => null, record: () => [], featured: () => null, flush: () => Promise.resolve() };
+export const NO_PROFILES: Profiles = { get: () => null, record: () => [], featured: () => null, reset: () => {}, flush: () => Promise.resolve() };

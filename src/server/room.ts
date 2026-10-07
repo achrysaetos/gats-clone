@@ -87,6 +87,18 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
+  /**
+   * An account plays under its own name: a bot, or a guest seated before the name was registered, holding it is renamed.
+   * A second session of the same account keeps the suffix `uniqueName` gives it, and its play still goes to the account.
+   */
+  function freeName(account: string) {
+    const holder = [...world.players.values()].find((pl) => pl.name.toLowerCase() === account.toLowerCase());
+    if (!holder) return;
+    const signedIn = joined().find((c) => c.playerId === holder.id)?.account;
+    if (signedIn?.toLowerCase() === account.toLowerCase()) return;
+    holder.name = uniqueName(holder.name, names(), registered);
+  }
+
   function seatHuman(name: string, loadout: Loadout) {
     const seat = seatFor(world);
     const p = addPlayer(world, name, loadout, { kind: 'human', team: seat?.team ?? null, ...(seat && { at: seat }) });
@@ -109,11 +121,21 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   /** Where each human stood last tick and how far they have walked since their profile last heard, for the Marathon track. */
   const walked = new Map<number, { x: number; y: number; px: number }>();
   const WALK_FLUSH_PX = 2000;
+  /**
+   * Whose profile a human's play goes to: a signed-in player's account, whatever name they are seated under, or a guest's
+   * own name, unless that name has since been registered by someone else, which a guest seated before the registration
+   * still holds; such a guest keeps no profile.
+   */
+  function profileKey(c: Extract<Client, { k: 'joined' }>, name: string): string | null {
+    return c.account ?? (registered(name) ? null : name);
+  }
   /** Folds a change into a human's profile, and pays, announces and puts on any lifetime medal it earned. */
-  function profile(playerId: number, name: string, delta: Parameters<Profiles['record']>[1]) {
-    const earned = profiles.record(name, delta);
+  function profile(playerId: number, delta: Parameters<Profiles['record']>[1]) {
     const p = world.players.get(playerId);
     const c = joined().find((j) => j.playerId === playerId);
+    const name = c && p ? profileKey(c, p.name) : null;
+    if (!name) return;
+    const earned = profiles.record(name, delta);
     for (const badge of earned) {
       const score = CAREER_PAY[CAREER_TIERS[badge.tier]!];
       if (p) addScore(world, p, score);
@@ -151,12 +173,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const p = world.players.get(c.playerId);
       if (!p) continue;
       const d = deltas.get(c.playerId);
-      if (d) profile(p.id, p.name, { ...d, streak: p.lifeKills });
+      if (d) profile(p.id, { ...d, streak: p.lifeKills });
       const w = walked.get(p.id);
       const step = w ? Math.hypot(p.x - w.x, p.y - w.y) : 0;
       // A respawn's jump is not a walk.
       const px = (w?.px ?? 0) + (p.life.k === 'alive' && step < WORLD.baseSpeed ? step : 0);
-      if (px >= WALK_FLUSH_PX) { profile(p.id, p.name, { distance: px }); walked.set(p.id, { x: p.x, y: p.y, px: 0 }); }
+      if (px >= WALK_FLUSH_PX) { profile(p.id, { distance: px }); walked.set(p.id, { x: p.x, y: p.y, px: 0 }); }
       else walked.set(p.id, { x: p.x, y: p.y, px });
     }
   }
@@ -170,17 +192,20 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         return;
       }
       const account = msg.token ? accounts.nameForToken(msg.token) : null;
+      if (account) freeName(account);
       const takenByAnotherAccount = (n: string) => registered(n) && n.toLowerCase() !== account?.toLowerCase();
       const name = uniqueName(account ?? (moderator.isClean(msg.name) ? msg.name : 'Player'), names(), takenByAnotherAccount);
       const p = mode === 'BR' ? seatHuman(name, msg.loadout) : addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      p.badge = profiles.featured(name);
-      clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() });
+      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
+      const key = profileKey(joinedClient, name);
+      p.badge = key ? profiles.featured(key) : null;
+      clients.set(client.ws, joinedClient);
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
-      profile(p.id, name, { games: 1 });
+      profile(p.id, { games: 1 });
       return;
     }
     const id = client.playerId;
@@ -213,7 +238,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const left = world.players.get(c.playerId);
     if (mode === 'BR' && left?.team && seatOpen(left.team)) takeSeat(world, addBot(left.team), left);
     const walk = walked.get(c.playerId);
-    if (left && walk?.px) profiles.record(left.name, { distance: walk.px });
+    const key = left ? profileKey(c, left.name) : null;
+    if (key && walk?.px) profiles.record(key, { distance: walk.px });
     walked.delete(c.playerId);
     removePlayer(world, c.playerId);
     creditLives(c);

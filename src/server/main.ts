@@ -127,6 +127,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
     if (!creds) return json(res, 400, { error: 'Name must be 3-16 letters/digits and password at least 4 characters' });
     if (path === '/api/register') {
       const session = await accounts.register(creds.name, creds.password);
+      if (session) profiles.reset(creds.name);
       return session ? json(res, 200, session) : json(res, 409, { error: 'Name taken' });
     }
     const session = await accounts.login(creds.name, creds.password);
