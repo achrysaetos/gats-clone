@@ -156,7 +156,7 @@ export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
   splat: [layer('splat')],
   wallHit: [layer('wallHit')],
   wallUp: [layer('wallUp')],
-  wallDown: [layer('wallDown')],
+  wallDown: [layer('wallDown', 0.75)],
   coreHit: [layer('coreHit')],
   horn: [layer('horn')],
   chime: [layer('chime')],

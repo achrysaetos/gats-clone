@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { EVOLUTIONS, GUN_IDS, GUNS } from '../src/shared/defs.ts';
 import { placeCue, RATE_JITTER, SAMPLE_IDS, SAMPLES, SOUNDS, soundsFor, voiceFor, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
 import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
@@ -216,4 +217,14 @@ test('a cue is louder near you, panned to its side, silent past earshot, and cen
   assert.equal(placeCue(cue(2000), me, 900), null);
   assert.deepEqual(placeCue({ ...cue(2000, true), gain: 0.7 }, me, 900), { gain: 0.7, pan: 0 });
   assert.ok(placeCue(cue(1000), me, 1200) !== null, 'a wider view hears further');
+});
+
+test('the shipped sample manifest names one existing file for exactly the recordings the game asks for', () => {
+  const dir = new URL('../public/assets/sfx/', import.meta.url);
+  const files = JSON.parse(readFileSync(new URL('manifest.json', dir), 'utf8')) as Record<string, string>;
+  assert.deepEqual(Object.keys(files).sort(), [...SAMPLE_IDS].sort());
+  for (const [id, file] of Object.entries(files)) {
+    assert.match(file, new RegExp(`^${id}\\.[0-9a-f]{8,}\\.mp3$`), 'content-hashed so it can be cached forever');
+    assert.ok(existsSync(new URL(file, dir)), `${file} exists`);
+  }
 });
