@@ -77,9 +77,35 @@ export function botSeats(humans: TeamCounts, minPlayers: number, botsPerHuman: n
   return { red: best, blue: total - best };
 }
 
+/** Bots go by everyday gamertags, so a room reads like a lobby of real players. */
 const BOT_NAMES = [
-  'Kestrel', 'Juno', 'Pike', 'Wren', 'Atlas', 'Moss', 'Echo', 'Rook', 'Sable', 'Quill', 'Bramble', 'Nova',
-  'Flint', 'Ivy', 'Onyx', 'Tansy', 'Vale', 'Cobalt', 'Lark', 'Ember', 'Rune', 'Thistle', 'Gale', 'Pip',
+  'mariah_27', 'TheoPlays', 'robby500', 'KayOnXbox', 'HassanK9', 'livin4games', 'BigAl1978', 'sandybeach88',
+  'Jules_404', 'FrancoPlays', 'nickatnite22', 'MindyMoo', 'rajplaysgames', 'benji2k', 'ItsMeTori', 'DustyController',
+  'cameron_17', 'lizzieQ', 'MoRunsMid', 'JakeFromIT', 'paulieB', 'KeishaPlays', 'ArcticMikey', 'Nando_6',
+  'amberwaves', 'GabiOnTheGo', 'trevorD93', 'yusuf_13', 'JessPlaysLate', 'chuckwagon7', 'DeejayRico', 'MarnieMae',
+  'leodotexe', 'tonybologna', 'kimchiKris', 'birdwatcher84', 'Maxine_5', 'MikeLikesTacos', 'danielpdx',
+  'shortstack42', 'ChrisWithThePlan', 'wendyw', 'OmarWasTaken', 'RonnieRae', 'JaeTheGreat', 'dani_plays',
+  'HeatherB33', 'chillinwithphil', 'BigMoe77', 'SofiaSaysHi', 'nicknackpaddy', 'justincredible', 'ElizaBee9',
+  'jojo_lefty', 'larsen_21', 'VeeDubJay', 'HannahBanana', 'FrankieFourEyes', 'malikonline', 'StevieNicksFan',
+  'gabe_plays', 'PriyankaP', 'Scotty2Hotty', 'BonnieOnBreak', 'JordanWasHere', 'DonnyD35', 'Akiro88', 'HayleyK',
+  'papabear101', 'LozzaB', 'CharliPlays', 'mrbiggles', 'ErinGoBragh', 'RudyRuiz', 'debs_17', 'SamwiseNot',
+  'lilacsky9', 'JamalFromWork', 'dougieFresh', 'MsBeccaB', 'MannyTheMan', 'KaylaKay', 'marcoPolo88', 'audrey_3',
+  'TimFromOhio', 'vinnyb', 'zainplays', 'kelleyokeefe', 'PattyCakes7', 'ReeceTheBeast', 'justmaddie', 'ZedIsDead',
+  'harperjune', 'DevWithTheMoves', 'MaureenM', 'rayray_22', 'RandySavageish', 'ShilohB', 'lancealot', 'abbycadabby',
+  'Chuy_64', 'ItsProbablyDan', 'monicagellerish', 'JonoPlays', 'OldSchoolKev', 'NiaNiaNia', 'ShaneTrain9',
+  'boba_fettish', 'YukiOnXbox', 'TrentB', 'frankthetank', 'MaddogMaddie', 'drewdrew', 'TheRealTerry', 'AnaBanana',
+  'TimoTime', 'wildbill83', 'RachelFromHR', 'BigPermEnergy', 'SaltyGary', 'matthewcooks', 'jessicah_8',
+  'ZekeTheGeek', 'LouieLouie', 'CarlaConQueso', 'AaronAtHome', 'pinksocks', 'DarnellDidIt', 'noahisland', 'bethanyK',
+  'jaybird_6', 'CassieCakes', 'MohanPlays', 'RoxyRocks', 'jimmyjam21', 'CelesteOnMic', 'AlFromAccounting',
+  'Bradster', 'lucasM45', 'ImNotYourDad', 'TaraTastic', 'GhostedByWifi', 'NikoWithThePlan', 'lil_miss_mayhem',
+  'frankie2phones', 'CurtisB', 'SkaterJay', 'MitskiFan99', 'DevonDoesStuff', 'SantiPlays', 'janetjacksonfan',
+  'Theo_77', 'ShrekIsLove', 'AdilKhanish', 'tori_rocks', 'CoachMiller', 'maxxpower', 'WandaAtLarge', 'RenPlaysCoop',
+  'thatsmydog', 'ClaudiaC', 'PeanutButterDan', 'karlwithak', 'amirthegamer', 'nancyb_12', 'BigDaleEnergy',
+  'mitchyRich', 'LoloOnXbox', 'EugeneKrabsish', 'JessFromPayroll', 'simbaFan23', 'RobynHood', 'dylan_d',
+  'onewheelmike', 'raeofsunshine', 'ArchieBunkerish', 'clarkkentish', 'BenThereDoneThat', 'Kiki_88', 'SoCalManny',
+  'mariachiMike', 'DeannaRose', 'TboneSteak', 'HikeAndSeek', 'Finnigan_7', 'poormanspro', 'MegInAccounting',
+  'QuentinQ', 'ShabazPlays', 'bertandernie', 'LaurenSaysGG', 'treefrogTom', 'StefanTheMan', 'KrispyKremeKid',
+  'Amal_5', 'PapaMoose', 'samwisegamer', 'KariOn', 'MackenzieM', 'olliepop',
 ];
 
 export function botName(taken: ReadonlySet<string>, rand: () => number): string {
