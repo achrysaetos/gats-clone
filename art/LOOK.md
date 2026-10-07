@@ -20,4 +20,24 @@ Render times on this machine are noisy, because other jobs share its 4 cores. Ea
 7. **Darker cover.** Darkened the cover albedo and made the rails thicker. The lifting eyes are now slots. An AO debug render showed that the grime term works, so it was simply too weak; it now starts closer to the wall and goes darker. Result: albedo 0.5 to 0.38 only moved the cap from 206 to 193. AgX squeezes the highlights, so cover and floor stay too close in tone.
 8. **Tone mapping A/B.** Rendered one Oldtown crop under AgX High Contrast, AgX Punchy, Khronos PBR Neutral and Filmic High Contrast (`tools/variants.py` in the scratchpad). Khronos PBR Neutral keeps the highlights apart and the hazard yellow saturated, as in the reference. Switched to it, and moved the view transform into `ART.render.view`. Result: warmer and punchier, but the floor came out tan (187/176/163), and WebP grew to 53 to 70 KB.
 9. **Rebalanced for Khronos.** Raised the exposure to 0.3, made the sun less orange (1, 0.9, 0.78), lowered the sky to 0.42, and turned down the floor grain and pits. Result: WebP is 45 to 61 KB. The stone blocks still read as flat tan squares.
-10. **Stone coping.** Stone tops are now a grid of 50-unit coping stones in two tones, and the roof seams are softer.
+10. **Stone coping.** Stone tops are now a grid of 50-unit coping stones in two tones, and the roof seams are softer. Result: Causeway 4,4 grew to 73 KB. Its planters cost about 2.6 times as many bytes per pixel as plain floor.
+11. **WebP budget.** Made the floor pits sparser, the photo grain larger and the leaf cells larger. A 0.7 px blur cut the WebP size by 20% with no visible change at game zoom, because tiles are drawn at two thirds of their size. So the Cycles pixel filter went from 1.5 to 2.2 px. Result: Causeway 4,4 is 58 KB and Plaza 3,5 is 48 KB.
+12. **Rooftops against the reference at equal scale.** Our roofs were large and empty. The reference roofs carry trims, frames and rails. Added a dark metal trim along the coping's inner edge, steel frames under the AC units, and a safety rail around the hatch. The floor paint is a duller ochre, because Khronos had pushed it to lemon. Roof slabs are 110 units.
+13. **One big shape per roof.** Roofs over 60k square units get a stair and plant housing that rises 10 units above the parapet, with its own coping and vent. They also get 1 to 3 AC units, including a long three-fan unit. Result: the roofs read as composed, not as crowded or empty. Tiles are 40 to 48 KB.
+14. **Collision check.** `art/blender/check_map.py` builds a map without rendering. It flags any point more than 1 unit above the floor that falls outside its wall rect, allowing for how far the shear moves a low point south. It found three faults: 2-unit downpipes on the floor south of buildings, roof foot bands 1 unit wider than the rect, and shrubs spilling past planter edges. All three are fixed, and every map now reports 0 uncovered points.
+15. **Contract checks and final numbers.** Two separate bakes of Plaza 2,1 match pixel for pixel. Across the edge between Plaza 2,1 and 3,1, the mean step is 2.4 per channel, against 2.0 to 2.2 between neighbouring columns inside each tile, so the seam does not show. Plaza 9,9 is fully transparent past the margin (last opaque column 590, against 589 expected). In two interleaved runs under the same load (about 6), the old bake took 55 and 64 s per tile and the new one 31 and 28 s. The final check set, with the load at about 4, came out like this:
+
+| Tile | Render | WebP q80 |
+| --- | --- | --- |
+| Plaza 2,1 | 30.3 s | 40 KB |
+| Plaza 6,2 | 27.2 s | 42 KB |
+| Plaza 3,5 | 27.3 s | 47 KB |
+| Oldtown 1,2 | 28.6 s | 45 KB |
+| Causeway 4,4 | 29.0 s | 56 KB |
+
+## Still different from the reference
+
+- The reference is busier everywhere: rubble, casings, scorch marks and broken walls. Those are live sprites and effects, not the bake. Without them our floor is calmer, which is intended.
+- Reference cover has more modelled detail on every face: bolted plates, diamond-plate metal, stairs and catwalks. Ours has a few pieces per wall plus texture.
+- Stone (sandstone) cover stays warmer and plainer than anything in the reference, which has no stone. We kept it distinct so the two materials still read apart.
+- South faces are short (shear 0.3), so walls look lower than the reference's. Taller faces would hide floor behind them, and the shear is part of the contract.

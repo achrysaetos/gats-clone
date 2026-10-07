@@ -114,7 +114,7 @@ def barrier(x, y, w, h, r):
         if sw >= 40:
             for px in (sx + sw * 0.25 - 3, sx + sw * 0.75 - 3):
                 south_face(px, 6, ys, top - 18, top - 11, 'metal_dark', top)
-        # Lifting eyes on top.
+        # Lifting slots on top.
         if along_x and sw >= 60:
             for px in (sx + sw * 0.3, sx + sw * 0.7):
                 S.box(px - 1.5, sy + sh / 2 - 4, 3, 8, top, top + 0.3, 'metal_dark', top)
