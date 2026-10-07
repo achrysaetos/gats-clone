@@ -41,6 +41,10 @@ const ON_WORLD = {
 } as const;
 type OnWorld = { ink: string; muted: string; track: string; glyph: string; halo: string };
 const EDGE = 16;
+/** Notch and home-bar insets in screen px (set on every resize); `inset()` gives them in HUD units, so each corner panel sits inside them. */
+let safe = { l: 0, t: 0, r: 0, b: 0 };
+export const setHudInsets = (i: { l: number; t: number; r: number; b: number }): void => { safe = i; };
+const inset = () => ({ l: safe.l / hudScale, t: safe.t / hudScale, r: safe.r / hudScale, b: safe.b / hudScale });
 const FEED_ROW = 24;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
@@ -97,12 +101,12 @@ const sticksUsed = { move: false, aim: false };
 /** Touch screens draw a faint ring where each stick goes while no thumb is on it, so players know the sticks are there. */
 function drawStickGuides(ctx: CanvasRenderingContext2D, sticks: Sticks, w: number, h: number) {
   const guides = [
-    { key: 'move', active: sticks.move, x: STICK_GUIDE.inset, label: 'MOVE' },
-    { key: 'aim', active: sticks.aim, x: w - STICK_GUIDE.aimRight, label: 'AIM · FIRE' },
+    { key: 'move', active: sticks.move, x: STICK_GUIDE.inset + safe.l, label: 'MOVE' },
+    { key: 'aim', active: sticks.aim, x: w - STICK_GUIDE.aimRight - safe.r, label: 'AIM · FIRE' },
   ] as const;
   for (const g of guides) {
     if (g.active) { sticksUsed[g.key] = true; continue; }
-    const y = h - STICK_GUIDE.inset;
+    const y = h - STICK_GUIDE.inset - safe.b;
     ctx.globalAlpha = sticksUsed[g.key] ? STICK_GUIDE.usedAlpha : STICK_GUIDE.alpha;
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
@@ -163,9 +167,11 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   drawHurtVignette(hud);
   drawHurtArcs(hud);
   const boardBottom = drawLeaderboard(hud, compact, fullBoard);
-  drawKillFeed(hud, boardBottom + SPACE.sm, touchScreen && k < 1 ? 2 : compact ? 3 : 5);
   drawMinimap(hud, compact ? 96 : 160);
   const below = drawPill(hud, compact);
+  // On a phone the right column is the leaderboard above the thumbs' buttons, so a short feed (two rows) goes top centre under the timer.
+  if (touchScreen && compact) drawKillFeed(hud, below + SPACE.sm, 2, w / 2 + 120);
+  else drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
   ctx.globalAlpha = 1;
   const siegeTop = drawObjectiveLine(hud, below, fullBoard);
   if (me?.alive) drawVitals(hud, compact);
@@ -567,10 +573,11 @@ function lifeLine(f: Extract<Snapshot['events'][number], { e: 'life' }>, by: str
   }
 }
 
-function drawKillFeed(hud: Hud, top: number, rows: number) {
+/** `rightEdge` is where each row ends; rows right-align there (the screen's right edge by default). */
+function drawKillFeed(hud: Hud, top: number, rows: number, rightEdge?: number) {
   const { ctx, w, s, now } = hud;
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
-  const right = w - EDGE;
+  const right = rightEdge ?? w - EDGE - inset().r;
   const drawRow = (f: (typeof lines)[number], i: number) => {
     const y = top + i * FEED_ROW + 10;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600) * 0.95;
@@ -693,7 +700,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
   const pw = compact ? BOARD.compactW : BOARD.w;
-  const x = w - pw - EDGE, top = EDGE;
+  const x = w - pw - EDGE - inset().r, top = EDGE + inset().t;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
   const head = full ? 22 : 0;
   const ph = BOARD.pad * 2 + rows.length * BOARD.row + head + (split ? 5 : 0);
@@ -790,7 +797,7 @@ function drawMinimap(hud: Hud, size: number) {
   const k = size / s.worldSize;
   const pad = 8;
   // On a touch screen the bottom right is the aiming thumb's, so the minimap sits top left under the vitals, as in mobile shooters.
-  const x0 = touchScreen ? EDGE : w - EDGE - size - pad * 2, y0 = touchScreen ? EDGE + VITALS.height + 8 : h - EDGE - size - pad * 2;
+  const x0 = touchScreen ? EDGE + inset().l : w - EDGE - inset().r - size - pad * 2, y0 = touchScreen ? EDGE + inset().t + VITALS.height + 8 : h - EDGE - inset().b - size - pad * 2;
   const base = fadePanel(hud, 'minimap', x0, y0, size + pad * 2, size + pad * 2);
   panel(ctx, x0, y0, size + pad * 2, size + pad * 2, MINIMAP.bg);
   const x = x0 + pad, y = y0 + pad;
@@ -878,7 +885,7 @@ function drawMinimap(hud: Hud, size: number) {
 
 function drawPill(hud: Hud, compact: boolean): number {
   const { ctx, w, snap, me, s, now } = hud;
-  const ph = compact ? 24 : 28, y = EDGE;
+  const ph = compact ? 24 : 28, y = EDGE + inset().t;
   const side = compact ? 40 : 48, mid = compact ? 56 : 66;
   const big = compact ? 14 : 16;
   const left = timeLeft(hud);
@@ -1240,8 +1247,9 @@ function drawVitals(hud: Hud, compact: boolean) {
   if (!me) return;
   const on = ON_PANEL;
   const self = snap.self;
-  const x = EDGE + VITALS.pad;
-  let y = EDGE + VITALS.pad + 6;
+  const ins = inset();
+  const x = EDGE + ins.l + VITALS.pad;
+  let y = EDGE + ins.t + VITALS.pad + 6;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
   const hpFrac = me.hp / me.maxHp;
   const hpText = `${Math.ceil(vfx.shownHp)} / ${me.maxHp}`;
@@ -1255,7 +1263,7 @@ function drawVitals(hud: Hud, compact: boolean) {
   setFont(ctx, 700, TYPE.label);
   const gunRow = ctx.measureText(gunName).width + gun.stage * 9 + 148;
   const abilityRow = abilityWidth(ctx, self) + 14 + owned.length * 22;
-  panel(ctx, EDGE, EDGE, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
+  panel(ctx, EDGE + ins.l, EDGE + ins.t, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
   fill.addColorStop(0, HP_FILL[0]);
   fill.addColorStop(1, HP_FILL[1]);

@@ -2,7 +2,7 @@ import { BARREL, byTurret, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } f
 import type {
   AirdropView, BarrelView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
-import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
@@ -101,7 +101,7 @@ const airdropView = (w: World): AirdropView | null => {
 
 const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
 
-export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = VIEW_ASPECT.max): Snapshot {
+export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = DEFAULT_VIEW_ASPECT): Snapshot {
   const me = w.players.get(id);
   if (!me) throw new Error(`no player ${id}`);
   const stats = effectiveStats(me);
