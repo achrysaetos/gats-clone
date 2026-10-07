@@ -46,18 +46,15 @@ test('pistol, SMG and shotgun are as accurate on the move as standing; assault a
   }
 });
 
-test('a sniper settles a third of a second after its last step, an LMG a fifth, and every other class at once', () => {
-  assert.equal(isSteady('sniper', 0), false, 'walking');
-  assert.equal(isSteady('sniper', 300), false, 'just stopped');
-  assert.equal(isSteady('sniper', 350), true);
-  assert.equal(isSteady('lmg', 150), false);
-  assert.equal(isSteady('lmg', 200), true);
-  assert.equal(isSteady('assault', 1), true);
-  assert.equal(isSteady('assault', 0), false);
-  const { w, p } = shooter('sniper');
-  for (let i = 0; i < 5; i++) tick(w, p, { right: true });
-  const flick = tick(w, p, { fire: true, shots: p.input.shots + 1 });
-  assert.ok(flick.length === 1 && Math.abs(flick[0]!) <= spreadFor('sniper', {}, false), 'a shot the tick after stopping flies with the walking cone');
+test('every gun tightens to its still spread the tick its owner stops, with no wait to settle', () => {
+  assert.equal(isSteady(0), false, 'walking');
+  assert.equal(isSteady(1), true, 'just stopped');
+  for (const gun of ['sniper', 'lmg'] as const) {
+    const { w, p } = shooter(gun);
+    for (let i = 0; i < 5; i++) tick(w, p, { right: true });
+    const stopped = tick(w, p, { fire: true, shots: p.input.shots + 1 });
+    assert.ok(stopped.length === 1 && Math.abs(stopped[0]!) <= spreadFor(gun, {}, true), `a ${gun} shot the tick it stops flies with the still cone`);
+  }
 });
 
 test('a sniper\'s rounds stay inside its still cone standing and stray far past it walking', () => {

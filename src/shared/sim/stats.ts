@@ -44,8 +44,8 @@ function bloomMul({ bloom }: GunRules, sprayShot: number): number {
   return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * Math.max(0, sprayShot - bloom.free)) : 1;
 }
 
-/** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */
-export const isSteady = (gun: GunId, sinceMoveMs: number): boolean => sinceMoveMs > 0 && sinceMoveMs >= rulesOf(GUNS[gun]).steadyMs;
+/** Whether a gun has its still spread, `sinceMoveMs` after the last step (0 while walking): at once, the first tick its owner stands. */
+export const isSteady = (sinceMoveMs: number): boolean => sinceMoveMs > 0;
 
 export const reloadMsFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((ms, perk) => ms * (PERK_MODS[perk].reloadMul ?? 1), GUNS[gun].reloadMs);

@@ -55,27 +55,25 @@ export type GunDef = {
 /**
  * Moving spread is `spread * movingSpreadMul + movingSpreadAdd`; the added part keeps a tight sniper cone from staying a sure hit on the run.
  * Bloom grows a shot past the first `free` of a spray and cools once no shot has left for `settleMs`, so tapping or bursting stays tight whatever the button does.
- * `steadyMs`: how long after the last step the still spread takes hold, so planting your feet is a commitment rather than a flick.
  * `plant`: when a bot stands still to shoot.
  */
 export type GunRules = {
   movingSpreadMul: number;
   movingSpreadAdd: number;
-  steadyMs: number;
   plant: 'never' | 'atRange' | 'always';
   bloom: { free: number; perShot: number; maxMul: number; settleMs: number; recoverMs: number } | null;
   spinUp: { startMul: number; upMs: number; downMs: number } | null;
   viewMul: number;
 };
 
-const STEADY: GunRules = { movingSpreadMul: 1, movingSpreadAdd: 0, steadyMs: 0, plant: 'never', bloom: null, spinUp: null, viewMul: 1 };
+const STEADY: GunRules = { movingSpreadMul: 1, movingSpreadAdd: 0, plant: 'never', bloom: null, spinUp: null, viewMul: 1 };
 export const GUN_RULES: Record<WeaponId, GunRules> = {
   pistol: STEADY,
   smg: STEADY,
   shotgun: STEADY,
   assault: { ...STEADY, movingSpreadMul: 1.3, bloom: { free: 3, perShot: 0.12, maxMul: 1.5, settleMs: 150, recoverMs: 250 } },
-  sniper: { ...STEADY, movingSpreadAdd: 0.2, steadyMs: 350, plant: 'always', viewMul: 1.15 },
-  lmg: { ...STEADY, movingSpreadMul: 3, steadyMs: 200, plant: 'atRange' },
+  sniper: { ...STEADY, movingSpreadAdd: 0.2, plant: 'always', viewMul: 1.15 },
+  lmg: { ...STEADY, movingSpreadMul: 3, plant: 'atRange' },
 };
 
 
