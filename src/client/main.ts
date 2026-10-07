@@ -1,4 +1,4 @@
-import { pickOptions, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
+import { pickOptions, WORLD, ZOM, type BuildingKind, type ModeId } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
@@ -62,7 +62,11 @@ import { createEmoteWheel } from './emotewheel.ts';
 import { isAnniversary, isCenturion } from './friendly.ts';
 import { EMOTES } from '../shared/emotes.ts';
 import { COSMETIC_BY_ID, type Slot } from '../shared/cosmetics.ts';
-import { cosLook } from './cosmeticlook.ts';
+import { cosLook, lookOfEquipped } from './cosmeticlook.ts';
+import { createModeArt, type SceneId } from './modecards.ts';
+import { createMenuScene } from './menuscene.ts';
+import { createGearStage } from './gearup.ts';
+import { createMenuFlow } from './menuflow.ts';
 import { createWardrobe } from './wardrobe.ts';
 import { createArmory } from './armory.ts';
 import { renderLevelCard } from './levelcard.ts';
@@ -104,6 +108,9 @@ let selectedRoom: string | null = null;
 let squad: string | null = null;
 let squadBusy = false;
 let rangeBusy = false;
+/** The mode picked on the first menu step, and whether one has been picked (the cards only show a pick once you made it). */
+let mission: SceneId = 'FFA';
+let chosen = false;
 let revealSquad = false;
 let view = { w: 0, h: 0, dpr: 1 };
 let aimCamera: Camera | null = null;
@@ -144,6 +151,7 @@ function setState(next: ClientState) {
   const was = state;
   state = next;
   menuEl.hidden = next.phase !== 'menu';
+  flow.setVisible(next.phase === 'menu');
   if (next.phase !== was.phase) {
     const room = next.phase === 'menu' ? null : next.s.rejoin.room;
     renderSquadChip(squadChip, room === squad ? squad : null, squad && inviteLink(location.href, squad));
@@ -161,7 +169,7 @@ function setState(next: ClientState) {
     rangeUi.hide();
     resetTargetArt();
     xpCard.reset();
-    if (was.phase !== 'menu') void wardrobe.refresh(nameInput.value);
+    if (was.phase !== 'menu') { void wardrobe.refresh(nameInput.value); flow.go('modes', { focus: false }); }
     if (chatterOpenArmory) { const slot = chatterOpenArmory; chatterOpenArmory = null; queueMicrotask(() => { showTab('tab-armory'); armory.open(slot); }); }
     delight.reset();
     celebrate.reset();
@@ -181,7 +189,7 @@ function setState(next: ClientState) {
 
 function refreshPlayButton() {
   const connecting = state.phase === 'menu' && state.status.kind === 'connecting';
-  playBtn.disabled = connecting || selectedRoom === null;
+  playBtn.disabled = connecting || (selectedRoom === null && mission !== 'ZOM');
   playBtn.textContent = connecting ? 'Connecting…' : 'Deploy';
 }
 
@@ -189,6 +197,7 @@ function setLoadout(next: Loadout) {
   loadout = next;
   saveLoadout(next);
   for (const p of pickers) p.refresh();
+  gearStage.paint();
 }
 
 function play(room: string) {
@@ -569,6 +578,8 @@ function drawFrame(realNow: number) {
   const rt = s ? delight.drawnTime(s.snaps, now, realNow) : 0;
   const interpolated = s && sampleAt(s.snaps.snaps, rt);
   if (!s || !interpolated || !latest) {
+    // The menu's own diorama covers the screen, so the world's backdrop is not drawn under it.
+    if (state.phase === 'menu' && !menuEl.hidden && menuScene.running) return;
     drawBackdrop(ctx, view.w, view.h, view.dpr, now);
     if (processFrame(canvas, { night: 0, storm: false }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
     return;
@@ -827,30 +838,60 @@ async function pollServers() {
   }
   if (servers && selectedRoom !== squad && !servers.some((sv) => sv.id === selectedRoom)) selectedRoom = servers[0]?.id ?? null;
   showServers();
-  if (revealSquad && state.phase === 'menu') {
-    revealSquad = false;
-    squadEl.scrollIntoView({ block: 'center' });
+  if (pendingMode && servers) {
+    const want = pendingMode;
+    pendingMode = null;
+    const sv = servers.find((x) => x.mode === want);
+    if (sv) chooseRoom(sv.id, sv.mode);
   }
+  if (revealSquad && state.phase === 'menu') revealSquad = false;
 }
 
 let squadKey = '';
 let rangeKey = '';
 
 function showServers() {
-  renderServers(serversEl, servers, selectedRoom, (id) => { selectedRoom = id; showServers(); });
-  const key = `${squad}|${selectedRoom === squad}|${squadBusy}`;
+  const picked = chosen ? selectedRoom : null;
+  renderServers(serversEl, servers, picked, chooseRoom, modeArt);
+  const key = `${squad}|${picked === squad}|${squadBusy}`;
   if (key !== squadKey) {
     squadKey = key;
-    renderSquad(squadEl, { code: squad, selected: squad !== null && selectedRoom === squad, link: squad && inviteLink(location.href, squad), busy: squadBusy }, {
+    renderSquad(squadEl, { code: squad, selected: squad !== null && picked === squad, link: squad && inviteLink(location.href, squad), busy: squadBusy }, {
       start: () => void startSquad(),
-      pick: () => { selectedRoom = squad; showServers(); },
-    });
+      pick: chooseZombies,
+      choose: chooseZombies,
+    }, modeArt);
   }
   if (rangeKey !== String(rangeBusy)) {
     rangeKey = String(rangeBusy);
-    renderRangeCard($('range-card'), { busy: rangeBusy }, { start: () => void startRange() });
+    renderRangeCard($('range-card'), { busy: rangeBusy }, { start: () => void startRange() }, modeArt);
   }
+  refreshMission();
   refreshPlayButton();
+}
+
+/** A room card was chosen: the gear-up step follows, with that room to deploy into. */
+function chooseRoom(id: string, mode: ModeId) {
+  selectedRoom = id;
+  mission = mode as SceneId;
+  chosen = true;
+  showServers();
+  flow.go('gear');
+}
+
+/** The Zombies card was chosen: gear up, then Deploy joins the squad from an invite link or starts a new one. */
+function chooseZombies() {
+  mission = 'ZOM';
+  chosen = true;
+  if (squad) selectedRoom = squad;
+  showServers();
+  flow.go('gear');
+}
+
+/** The gear step's header: which fight you are gearing up for. */
+function refreshMission() {
+  const sv = servers?.find((x) => x.id === selectedRoom);
+  flow.setMission({ mode: mission, detail: mission === 'ZOM' ? (squad ? `Squad ${squad}` : 'New squad on Deploy') : sv ? `${sv.players} ${sv.players === 1 ? 'player' : 'players'}` : undefined });
 }
 
 function setSquad(code: string | null) {
@@ -940,15 +981,22 @@ if (params.has('dev')) {
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion()) kick = addKick(kick, gun, angle); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
 renderMuted($('muted'), muted, toggleMuted);
-const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; void wardrobe.refresh(nameInput.value); });
+const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; void wardrobe.refresh(nameInput.value); syncAcct(); });
 /** The wardrobe: level, XP, what you own and wear. A change goes down the socket too, so the room sees it at once. */
 const wardrobe = createWardrobe({
   account: () => account.current(),
   sendEquip: (slot, id) => { const s = sessionOf(state); if (s) send(s.ws, { t: 'equip', slot, id }); },
 });
 const skinNow = () => cosLook({ g: wardrobe.state().equipped.gunSkin }).skin;
+// The menu's art: the dioramas on the mode cards, the backdrop yard, and the gear-up stage, run by the flow (menuflow.ts) only while seen.
+const modeArt = createModeArt(reducedMotion);
+const menuScene = createMenuScene($<HTMLCanvasElement>('menu-scene'), reducedMotion);
+const gearStage = createGearStage($<HTMLCanvasElement>('gear-view'), { loadout: () => loadout, look: () => lookOfEquipped(wardrobe.state().equipped), calm: reducedMotion });
+const flow = createMenuFlow({ menu: menuEl, art: modeArt, stage: gearStage, scene: menuScene });
+/** The account chip in the menu's top bar follows who is signed in and their level. */
+const syncAcct = () => flow.setAccount(account.current()?.name ?? null, wardrobe.state().level.level);
 const pickers = [
-  mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow),
+  mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow, { gear: true, peek: (g) => gearStage.peek(g), colorRoot: $('gear-colors') }),
   mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout, skinNow),
 ];
 nameInput.value = loadName() || account.current()?.name || '';
@@ -960,6 +1008,10 @@ const linkMyProfile = () => {
   myProfile.href = `profile.html?name=${encodeURIComponent(name)}`;
 };
 nameInput.addEventListener('input', linkMyProfile);
+const gearTag = $('gear-tag');
+const tagName = () => { gearTag.textContent = cleanName(nameInput.value) || 'Unnamed'; };
+nameInput.addEventListener('input', tagName);
+tagName();
 linkMyProfile();
 renderControls($('controls'));
 
@@ -973,6 +1025,7 @@ function showTab(tab: string) {
   for (const [btn, panel] of MENU_TABS) { $(btn).setAttribute('aria-selected', String(btn === tab)); $(panel).hidden = btn !== tab; }
   if (tab === 'tab-armory') armory.show(); else armory.hide();
   if (tab === 'tab-challenges') challengePanel.render(wardrobe.state().challenges);
+  flow.setTab(tab);
 }
 for (const [btn] of MENU_TABS) $(btn).addEventListener('click', () => showTab(btn));
 wardrobe.subscribe(() => {
@@ -983,6 +1036,8 @@ wardrobe.subscribe(() => {
   chalBadge.textContent = String(open);
   if (!$('challenges').hidden) challengePanel.render(st.challenges);
   for (const p of pickers) p.refresh();
+  syncAcct();
+  gearStage.paint();
 });
 setInterval(() => challengePanel.tick(), 30_000);
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -990,6 +1045,7 @@ const refreshWardrobe = () => { clearTimeout(refreshTimer); refreshTimer = setTi
 nameInput.addEventListener('input', refreshWardrobe);
 void wardrobe.refresh(nameInput.value);
 renderLevelCard(levelCard, wardrobe.state());
+syncAcct();
 const xpCard = createXpCard($('xp-card'), {
   blocked: () => ['celebrating', 'dl-slowmo', 'dl-hold', 'dl-play', 'dl-settle'].some((c) => document.body.classList.contains(c)),
   equip: (slot: Slot, id: string) => wardrobe.equip(slot, id),
@@ -1016,6 +1072,7 @@ $('a2hs-close').addEventListener('click', () => { dismissHomeScreenHint(); a2hs.
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
   fullLandscape();
+  if (mission === 'ZOM' && squad === null) { void startSquad(); return; }
   if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
 });
 window.addEventListener('pagehide', leave);
@@ -1031,8 +1088,20 @@ if (invited === 'bad') {
 } else if (invited) {
   squad = selectedRoom = invited;
   revealSquad = true;
+  mission = 'ZOM';
+  chosen = true;
+}
+// A deep link names its fight: ?mode=ffa|tdm|dom|br goes to gear up once the rooms are listed, ?mode=zom goes at once, ?mode=range stops on the range card.
+const MODE_PARAM: Record<string, SceneId> = { ffa: 'FFA', tdm: 'TDM', dom: 'DOM', br: 'BR', zom: 'ZOM', zombies: 'ZOM', range: 'RNG' };
+let pendingMode: SceneId | null = null;
+{
+  const want = MODE_PARAM[(params.get('mode') ?? '').toLowerCase()];
+  if (want === 'ZOM') { mission = 'ZOM'; chosen = true; }
+  else if (want === 'RNG') queueMicrotask(() => { $('range-card').scrollIntoView({ block: 'center' }); $('range-card').querySelector<HTMLElement>('.mc-hit')?.focus({ preventScroll: true }); });
+  else if (want) pendingMode = want;
 }
 resize();
 setState(state);
+if (chosen) { flow.reachable(); flow.go('gear', { focus: false }); }
 requestAnimationFrame(frame);
 trackRootScale();

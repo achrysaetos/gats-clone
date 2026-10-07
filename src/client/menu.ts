@@ -1,9 +1,10 @@
-import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type WeaponId } from '../shared/defs.ts';
+import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, type WeaponId } from '../shared/defs.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
 import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
 import { drawGunCard } from './gunart.ts';
+import { MODE_INFO, type ModeArt, type SceneId } from './modecards.ts';
 
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -36,15 +37,25 @@ function gunStats(id: WeaponId): HTMLElement {
   }));
 }
 
-export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void, skin: () => string = () => ''): LoadoutPicker {
+/** `gear` is the menu's gear-up screen: bigger gun art, paint pots for colours, and `peek` hears which gun the pointer is on. */
+export type PickerOpts = { gear?: boolean; peek?: (gun: WeaponId | null) => void; /** Where the colour pots go, when they sit apart from the guns and armor. */ colorRoot?: HTMLElement };
+
+export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void, skin: () => string = () => '', opts: PickerOpts = {}): LoadoutPicker {
   let paintedSkin = skin();
+  const size = opts.gear ? { w: 190, h: 64 } : { w: 150, h: 56 };
   const weaponButtons = WEAPON_IDS.map((id) => {
     const w = GUNS[id];
     const art = el('canvas', { className: 'gun-art' });
     const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${w.desc}` },
       art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id));
     b.onclick = () => set({ ...get(), weapon: id });
-    drawGunCard(art, id, 150, 56, [id], paintedSkin);
+    if (opts.peek) {
+      b.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') opts.peek!(id); });
+      b.addEventListener('pointerleave', () => opts.peek!(null));
+      b.addEventListener('focus', () => opts.peek!(id));
+      b.addEventListener('blur', () => opts.peek!(null));
+    }
+    drawGunCard(art, id, size.w, size.h, [id], paintedSkin);
     return [id, b] as const;
   });
   const colorButtons = COLOR_IDS.map((id) => {
@@ -59,24 +70,26 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
     const tier = ARMOR_IDS.indexOf(id);
     const meter = el('span', { className: 'meter' }, ...[1, 2, 3].map((n) => el('i', { className: n <= tier ? 'on' : '' })));
     const cost = a.blockFrac
-      ? [el('small', {}, `+${Math.round(a.blockFrac * 100)}% dmg blocked`), el('small', {}, `−${speed}% speed`)]
+      ? [el('small', {}, `+${Math.round(a.blockFrac * 100)}% ${opts.gear ? 'block' : 'dmg blocked'}`), el('small', {}, `−${speed}% speed`)]
       : [el('small', {}, 'Full speed')];
-    const b = el('button', { type: 'button', className: 'tile armor' }, el('b', {}, a.name), meter, ...cost);
+    const b = el('button', { type: 'button', className: 'tile armor', title: a.blockFrac ? `${a.name}: blocks ${Math.round(a.blockFrac * 100)}% of damage, ${speed}% slower` : `${a.name}: no armor, full speed` }, el('b', {}, a.name), meter, ...cost);
     b.onclick = () => set({ ...get(), armor: id });
     return [id, b] as const;
   });
+  const colors = [el('h2', {}, 'Color'), el('div', { className: 'swatches' }, ...colorButtons.map(([, b]) => b))];
   root.replaceChildren(
     el('h2', {}, 'Weapon'), el('div', { className: 'weapons' }, ...weaponButtons.map(([, b]) => b)),
-    el('h2', {}, 'Color'), el('div', { className: 'swatches' }, ...colorButtons.map(([, b]) => b)),
+    ...(opts.colorRoot ? [] : colors),
     el('h2', {}, 'Armor'), el('div', { className: 'armors' }, ...armorButtons.map(([, b]) => b)),
   );
+  opts.colorRoot?.replaceChildren(...colors);
   const refresh = () => {
     const l = get();
     for (const [id, b] of weaponButtons) b.ariaPressed = String(id === l.weapon);
     if (skin() !== paintedSkin) {
       // The gun cards wear the skin you have equipped.
       paintedSkin = skin();
-      for (const [id, b] of weaponButtons) { const art = b.querySelector('canvas'); if (art) drawGunCard(art, id, 150, 56, [id], paintedSkin); }
+      for (const [id, b] of weaponButtons) { const art = b.querySelector('canvas'); if (art) drawGunCard(art, id, size.w, size.h, [id], paintedSkin); }
     }
     for (const [id, b] of colorButtons) b.ariaPressed = String(id === l.color);
     for (const [id, b] of armorButtons) b.ariaPressed = String(id === l.armor);
@@ -98,44 +111,99 @@ export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name:
   })));
 }
 
-export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string) => void) {
-  if (servers === null) {
-    root.replaceChildren(el('p', { className: 'muted' }, 'Could not load servers. Retrying…'));
+type CardRefs = { wrap: HTMLElement; btn: HTMLButtonElement; live: HTMLElement; canvas: HTMLCanvasElement };
+const cardCache = new WeakMap<HTMLElement, { key: string; cards: Map<string, CardRefs> }>();
+
+/** The diorama stage of a mode card: its canvas, and the live pill laid over a corner of it. */
+export function cardStage(mode: SceneId, live: string): { stage: HTMLElement; canvas: HTMLCanvasElement; live: HTMLElement } {
+  const canvas = el('canvas', { className: 'mc-art' });
+  canvas.setAttribute('aria-hidden', 'true');
+  const n = el('span', { className: 'n' }, live);
+  const pill = el('span', { className: 'mc-live' }, el('i'), n);
+  return { stage: el('span', { className: 'mc-stage' }, canvas, pill), canvas, live: n };
+}
+
+/** The plate under a stage: the mode's chip and name, then its one-line pitch. */
+export function cardPlate(mode: SceneId, ...more: (Node | string)[]): HTMLElement {
+  const info = MODE_INFO[mode];
+  return el('span', { className: 'mc-plate' },
+    el('span', { className: 'mc-head' }, el('span', { className: `mode mode-${mode.toLowerCase()}` }, mode), el('b', { className: 'mc-name' }, info.name)),
+    el('span', { className: 'mc-pitch' }, info.pitch), ...more);
+}
+
+/**
+ * The public rooms as mode cards (screen one): a lit diorama, the mode's name and pitch, and who is in. The cards stay put between
+ * polls (their scenes keep running), and only the live counts and the picked state change.
+ */
+export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string, mode: ModeId) => void, art?: ModeArt) {
+  const old = cardCache.get(root);
+  if (servers === null || !servers.length) {
+    old?.cards.forEach((c) => art?.remove(c.canvas));
+    cardCache.delete(root);
+    root.replaceChildren(el('p', { className: 'muted mc-empty' }, servers === null ? 'Could not load servers. Retrying…' : 'No servers running.'));
     return;
   }
-  if (!servers.length) {
-    root.replaceChildren(el('p', { className: 'muted' }, 'No servers running.'));
-    return;
+  const key = servers.map((sv) => `${sv.id}:${sv.mode}`).join('|');
+  let entry = old;
+  if (!entry || entry.key !== key) {
+    old?.cards.forEach((c) => art?.remove(c.canvas));
+    const cards = new Map<string, CardRefs>();
+    root.replaceChildren(...servers.map((sv) => {
+      const { stage, canvas, live } = cardStage(sv.mode as SceneId, '');
+      const btn = el('button', { type: 'button', className: `server mode-card plate mc-${sv.mode.toLowerCase()}` },
+        el('span', { className: 'mc-face' }, stage, cardPlate(sv.mode as SceneId)));
+      btn.dataset.room = sv.id;
+      btn.onclick = () => pick(sv.id, sv.mode);
+      const wrap = el('div', { className: 'mc-wrap' }, btn);
+      cards.set(sv.id, { wrap, btn, live, canvas });
+      art?.add(canvas, sv.mode as SceneId, btn);
+      return wrap;
+    }));
+    entry = { key, cards };
+    cardCache.set(root, entry);
+    art?.paint();
   }
-  root.replaceChildren(...servers.map((s) => {
-    const b = el('button', { type: 'button', className: 'server' },
-      el('span', { className: `mode mode-${s.mode.toLowerCase()}` }, s.mode),
-      el('span', { className: 'server-name' }, `Room ${s.id}`),
-      el('span', { className: 'count' }, `${s.players} players`, el('small', {}, ` · ${s.humans} human`)));
-    b.ariaPressed = String(s.id === selected);
-    b.onclick = () => pick(s.id);
-    return b;
-  }));
+  for (const sv of servers) {
+    const c = entry.cards.get(sv.id);
+    if (!c) continue;
+    const text = `${sv.players} ${sv.players === 1 ? 'player' : 'players'}${sv.humans ? ` · ${sv.humans} human` : ''}`;
+    if (c.live.textContent !== text) c.live.textContent = text;
+    c.btn.ariaPressed = String(sv.id === selected);
+  }
 }
 
 type SquadMenu = { code: string | null; selected: boolean; link: string | null; busy: boolean };
 
-/** Starting a squad joins it at once; a squad from an invite link waits to be picked like any room. */
-export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): void; pick(): void }) {
-  const start = el('button', { type: 'button', id: 'squad-start', className: 'secondary', disabled: squad.busy }, squad.busy ? 'Starting…' : squad.code ? 'New squad' : 'Start a squad');
+/**
+ * The Zombies card: the Bastion squad's diorama and pitch, with a button that starts a squad at once (a shortcut that deploys with
+ * the loadout you last picked) and, once a squad exists, its room chip and invite link. The rest of the card chooses Zombies and
+ * goes on to the gear screen, where Deploy starts the squad (or joins the one from an invite link).
+ */
+export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): void; pick(): void; choose?(): void }, art?: ModeArt) {
+  const oldArt = root.querySelector('canvas');
+  if (oldArt) art?.remove(oldArt);
+  const start = el('button', { type: 'button', id: 'squad-start', className: 'mc-btn', disabled: squad.busy }, squad.busy ? 'Starting…' : squad.code ? 'New squad' : 'Start a squad');
   start.onclick = on.start;
-  const pitch = el('div', { className: 'squad-pitch' }, el('span', {}, 'Hold the core against the horde with up to three friends.'), start);
-  if (!squad.code || !squad.link) { root.replaceChildren(pitch); return; }
-  const room = el('button', { type: 'button', className: 'server', id: 'squad-room' },
-    el('span', { className: 'mode mode-zom' }, 'ZOM'),
-    el('span', { className: 'server-name' }, `Squad ${squad.code}`),
-    el('span', { className: 'count' }, 'private'));
-  room.ariaPressed = String(squad.selected);
-  room.onclick = on.pick;
-  const link = el('input', { id: 'squad-link', readOnly: true, value: squad.link, ariaLabel: 'Invite link' });
-  const copy = el('button', { type: 'button', id: 'squad-copy' }, 'Copy link');
-  copy.onclick = () => void copyText(link.value, copy);
-  root.replaceChildren(room, el('div', { className: 'invite' }, link, copy), pitch);
+  const actions = el('span', { className: 'mc-actions' });
+  if (squad.code && squad.link) {
+    const room = el('button', { type: 'button', className: 'server mc-room', id: 'squad-room' },
+      el('span', { className: 'mode mode-zom' }, 'ZOM'),
+      el('span', { className: 'server-name' }, `Squad ${squad.code}`),
+      el('span', { className: 'count' }, 'private'));
+    room.ariaPressed = String(squad.selected);
+    room.onclick = on.pick;
+    const link = el('input', { id: 'squad-link', readOnly: true, value: squad.link, ariaLabel: 'Invite link' });
+    const copy = el('button', { type: 'button', id: 'squad-copy', className: 'mc-btn' }, 'Copy link');
+    copy.onclick = () => void copyText(link.value, copy);
+    actions.append(room, el('span', { className: 'invite' }, link, copy));
+  }
+  const { stage, canvas } = cardStage('ZOM', squad.code ? 'private squad' : 'up to 4 players');
+  stage.append(el('span', { className: 'mc-cta' }, start));
+  const hit = el('button', { type: 'button', className: 'mc-hit', ariaLabel: 'Zombies: choose your gear' });
+  hit.onclick = on.choose ?? on.pick;
+  root.replaceChildren(el('span', { className: 'mc-face' }, stage, cardPlate('ZOM', ...(actions.childNodes.length ? [actions] : []))), hit);
+  art?.add(canvas, 'ZOM', root);
+  art?.paint();
 }
 
 async function copyText(text: string, button: HTMLButtonElement) {

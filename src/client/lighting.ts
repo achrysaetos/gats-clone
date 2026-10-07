@@ -151,7 +151,7 @@ export function selectLights(lights: readonly ResolvedLight[], view: ViewRect, m
 }
 
 /** A solid that stands tall enough to stop light. Curbs, turret pads and the core's own plinth do not. */
-export const blocksLight = (s: Pick<Solid, 'kind'>): boolean => s.kind !== 'curb' && s.kind !== 'pad' && s.kind !== 'core';
+export const blocksLight = (s: Pick<Solid, 'kind'>): boolean => s.kind !== 'curb' && s.kind !== 'pad' && s.kind !== 'core' && s.kind !== 'water' && s.kind !== 'pond';
 
 export type Occluder = { x: number; y: number; w: number; h: number; face: number };
 
@@ -209,7 +209,7 @@ export type Ambient = {
   shafts: number;
 };
 
-const NIGHT_AMBIENT: RGB = [0.2, 0.26, 0.47];
+const NIGHT_AMBIENT: RGB = [0.28, 0.34, 0.62];
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** The ambient for a moment. `night` is the renderer's eased 0..1 dusk, so lighting fades in step with it and never pops. */
@@ -255,12 +255,12 @@ export const TIERS: readonly Tier[] = [
 ];
 
 const MUZZLE: Record<string, { radius: number; life: number; intensity: number }> = {
-  pistol: { radius: 120, life: 80, intensity: 0.8 },
-  smg: { radius: 130, life: 70, intensity: 0.7 },
-  assault: { radius: 150, life: 75, intensity: 0.85 },
-  shotgun: { radius: 215, life: 120, intensity: 1.05 },
-  lmg: { radius: 160, life: 75, intensity: 0.85 },
-  sniper: { radius: 250, life: 130, intensity: 1.15 },
+  pistol: { radius: 85, life: 70, intensity: 0.45 },
+  smg: { radius: 90, life: 60, intensity: 0.38 },
+  assault: { radius: 105, life: 65, intensity: 0.5 },
+  shotgun: { radius: 150, life: 100, intensity: 0.65 },
+  lmg: { radius: 110, life: 65, intensity: 0.5 },
+  sniper: { radius: 175, life: 110, intensity: 0.7 },
 };
 
 /** The light a muzzle flash throws: bigger and longer for a heavier gun, a third as bright when silenced. */

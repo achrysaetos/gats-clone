@@ -29,7 +29,10 @@ import type { Session } from './state.ts';
 import { buildingSolid, standsUp, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, FOOT, LIP, wallSolids, type Solid } from './tilt.ts';
 import { drawDust, drawNight, drawVignette, nightLights } from './ambience.ts';
 import { lightBackdrop, lightWorld } from './lightfeed.ts';
+import { decorNightLights, drawFixtures } from './fixtures.ts';
 import { floorPlanOf } from './floor.ts';
+import './themes/index.ts';
+import { mapOf, themeOf } from './themes/registry.ts';
 import type { Ghost } from './zombies.ts';
 import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
@@ -73,8 +76,8 @@ const NIGHT_FADE_MS = 1500;
 
 export const nightAmount = () => night;
 
-function easeNight(run: RunView | undefined, now: number): number {
-  const target = run?.phase === 'night' ? 1 : 0;
+function easeNight(run: RunView | undefined, now: number, dusk = 0): number {
+  const target = Math.max(dusk, run?.phase === 'night' ? 1 : 0);
   const step = Math.min(1, Math.max(0, now - nightAt) / NIGHT_FADE_MS);
   nightAt = now;
   night = night < target ? Math.min(target, night + step) : Math.max(target, night - step);
@@ -88,7 +91,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const tl = screenToWorld(cam, { x: 0, y: 0 });
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
-  const dark = easeNight(snap.run, now);
+  const dark = easeNight(snap.run, now, themeOf(mapOf(snap.match.map)?.theme)?.dusk);
   const siege = snap.run ? [...(snap.buildings ?? []).filter(standsUp).map(buildingSolid), coreSolid(snap.run)] : 'static';
   drawGround(ctx, ground.get(mapWallsKey(s.walls), s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
 
@@ -119,7 +122,13 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const walls = wallSolids(s.walls).filter((w) => solidInView(view, w));
   const standing = (siege === 'static' ? [] : siege).filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
+  // The yard's practical lights and wall fittings (decor.ts): drawn over the walls, under every body.
+  const decor = floorPlanOf(snap.match.map)?.decor;
+  const fx = { dark, now, reduced: reducedMotion(), alarm: !!snap.run && snap.run.core.hp > 0 && snap.run.core.hp <= snap.run.core.maxHp * 0.35 };
+  if (decor) drawFixtures(ctx, decor, view, fx);
   const airClock = snap.airdrop ? serverNow(s.snaps, now) : null;
+  const theme = themeOf(mapOf(snap.match.map)?.theme), themeMap = mapOf(snap.match.map);
+  if (theme?.under && themeMap) theme.under(ctx, now, view, themeMap);
   drawBarrels(ctx, snap, now, view);
   drawProps(ctx, snap, now, view);
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
@@ -137,9 +146,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const flashes = hitFlashes(s.effects, now);
   if (zombies.length) drawZombies(ctx, zombies, snap, flashes, now, k);
   // With the shader pass on, the world so far is handed to it to be lit (shadows, lamps, night); the rest of the frame is its overlay.
-  const lit = lightWorld(ctx, { snap, selfId: s.myId, selfAngle: f.selfAngle, tl, br, dark, now, airLanded: !!snap.airdrop && airClock !== null && airClock >= snap.airdrop.landAt, solids: [...walls, ...standing, ...crates] });
+  const lit = lightWorld(ctx, { snap, selfId: s.myId, selfAngle: f.selfAngle, tl, br, dark, now, airLanded: !!snap.airdrop && airClock !== null && airClock >= snap.airdrop.landAt, solids: [...walls, ...standing, ...crates], decor, fx });
   if (dark > 0) {
-    if (!lit) drawNight(ctx, tl, br, dark, nightLights(snap, s.myId, f.selfAngle));
+    if (!lit) drawNight(ctx, tl, br, dark, [...nightLights(snap, s.myId, f.selfAngle), ...(decor ? decorNightLights(decor, view, fx) : [])]);
     if (zombies.length) drawHordeEyes(ctx, dark);
   }
   drawDust(ctx, tl, br, now, dark);
@@ -192,6 +201,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawPropTops(ctx, snap, now, view);
   drawParachute(ctx, snap.airdrop, airClock, now, view);
   drawParticles(ctx, s.particles, now);
+  if (theme?.over && themeMap) theme.over(ctx, now, view, themeMap, alive);
   drawMotionAbove(ctx, now);
   drawSiegeFx(ctx, snap, view, now, dark, k, s.coreHitAt);
   drawGunTop(ctx, gunFxOf(s), now, view);

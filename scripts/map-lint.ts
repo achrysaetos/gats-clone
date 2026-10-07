@@ -69,7 +69,7 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   const edges = [...new Set(rects.flatMap(({ r }) => [r.x, r.x + r.w, r.y, r.y + r.h]).flatMap((v) => [v, size - v]).concat(0, size))].sort((a, b) => a - b);
   const index = new Map(edges.map((v, i) => [v, i]));
   const k = edges.length - 1;
-  const cover = new Uint8Array(k * k);
+  const cover = new Uint32Array(k * k);
   for (const { r, key } of rects) {
     for (let j = index.get(r.y)!; j < index.get(r.y + r.h)!; j++) for (let i = index.get(r.x)!; i < index.get(r.x + r.w)!; i++) cover[j * k + i]! |= key;
   }
@@ -79,7 +79,7 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   return null;
 }
 
-const MATERIAL_KEY = { concrete: 1, sandstone: 2, planter: 4 } as const;
+const MATERIAL_KEY = { concrete: 1, gallery: 1 << 10, marble: 1 << 11, vitrine: 1 << 12, plinth: 1 << 13, counter: 1 << 14, sandstone: 2, planter: 4, stall: 8, shopfront: 16, stack: 32, cart: 64, shrine: 128, hull: 1 << 20, tower: 1 << 21, bulkhead: 1 << 22, rack: 1 << 23, water: 1 << 24, hedge: 1 << 26, pond: 1 << 27, parkstone: 1 << 28, trunk: 1 << 29, bench: 1 << 30, play: 2 ** 31 } as const;
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
 

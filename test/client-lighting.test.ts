@@ -155,7 +155,7 @@ test('shadow mask geometry: front faces first, then footprints, in clip space wi
 test('ambient: day is neutral and bright, night is dark steel blue, and it eases between', () => {
   const day = ambientFor(0), night = ambientFor(1), dusk = ambientFor(0.5);
   assert.deepEqual(day.rgb, [1, 1, 1]);
-  assert.ok(night.rgb[2] > night.rgb[0] && night.rgb[2] < 0.6 && night.rgb[0] < 0.3, 'cool and dark, never black');
+  assert.ok(night.rgb[2] > night.rgb[0] && night.rgb[2] < 0.7 && night.rgb[0] < 0.35, 'cool and dark, never black');
   assert.ok(night.rgb.every((c) => c > 0.1), 'never black');
   assert.ok(dusk.rgb[0] < day.rgb[0] && dusk.rgb[0] > night.rgb[0]);
   assert.ok(night.gain > day.gain, 'lights matter more at night');

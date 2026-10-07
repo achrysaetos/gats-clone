@@ -3,7 +3,7 @@ import { RANGE, TARGETS, targetPos, type RangeLayout, type TargetDef, type Targe
 import type { GameEvent, Snapshot } from '../shared/protocol.ts';
 import { celPart, ellipse, polygon, roundBox, TAU, type Trace } from './cel.ts';
 import { stencil } from './floor.ts';
-import { INK, PALETTE, shade } from './palette.ts';
+import { FLOOR, INK, PALETTE, shade } from './palette.ts';
 import { reducedMotion } from './screenfx.ts';
 import { LIGHT } from './tilt.ts';
 
@@ -14,7 +14,7 @@ import { LIGHT } from './tilt.ts';
  * regenerates it springs up with a stretch and settles. Where a target stands is a pure function of the server clock, so a
  * slider costs the wire nothing (shared/range.ts); everything here is timed on the same render clock as the other effects.
  */
-const BONE = '#e9e2cc', KHAKI = '#b4a07a', KHAKI_D = '#978562', GUNMETAL = '#4f5560', OLIVE = '#6c7356', ORANGE = '#ff5a1f', RUST = '#a8552e', MUSTARD = '#c9a23c';
+const BONE = '#e9e2cc', KHAKI = '#b4a07a', KHAKI_D = '#978562', GUNMETAL = '#4f5560', OLIVE = '#6c7356', ORANGE = '#ff5a1f', RUST = '#a8552e', MUSTARD = FLOOR.paint;
 
 const FALL_MS = 300, UP_MS = 420, HIT_MS = 300, FLASH_MS = 110;
 /** How far a target tips: the board's height is squashed by the cosine of this, and it never quite vanishes. */
@@ -204,13 +204,20 @@ const HEIGHT: Record<TargetKind, number> = { paper: 72, rail: 72, plank: 76, dum
 
 type View = { x0: number; y0: number; x1: number; y1: number };
 
+/** A target standing at the origin, for the menu's range diorama: shadow, base plate and board, in the same art as the range. */
+export function drawTargetProp(g: CanvasRenderingContext2D, kind: TargetKind, holes: [number, number][] = [], flash = 0) {
+  drawShadow(g, kind, 1);
+  drawBase(g, kind);
+  drawBoard(g, kind, holes, flash);
+}
+
 function drawShadow(g: CanvasRenderingContext2D, kind: TargetKind, rise: number) {
   const r = TARGETS[kind].r;
   g.fillStyle = PALETTE.contact;
   g.beginPath(); g.ellipse(r * 0.28, r * 0.12, r * 1.05, r * 0.5, 0, 0, TAU); g.fill();
   // The board's own shadow falls down and to the right, away from the key light.
   const h = HEIGHT[kind] * rise * 0.42, w = r * 0.85;
-  g.fillStyle = 'rgba(20, 24, 32, 0.16)';
+  g.fillStyle = 'rgba(10, 12, 18, 0.28)';
   g.beginPath();
   g.moveTo(-w, 0); g.lineTo(w, 0); g.lineTo(w + h * LIGHT.x, h * LIGHT.y * 0.55); g.lineTo(-w + h * LIGHT.x, h * LIGHT.y * 0.55);
   g.closePath(); g.fill();
@@ -315,7 +322,8 @@ function hazardPattern(g: CanvasRenderingContext2D): CanvasPattern {
   return hazard;
 }
 
-const PAINT = '#3d4450';
+/** Stencil paint on the range floor: pale bone, so numbers read on the dark concrete. */
+const PAINT = '#d2cab4';
 
 /** The painted range: lane bands, the firing line and its hazard strip, each distance in stencilled digits, a bay number and name at each booth, and the rails the sliders ride. */
 export function drawRangeFloor(g: CanvasRenderingContext2D, layout: RangeLayout, size: number, view: View) {
@@ -323,7 +331,7 @@ export function drawRangeFloor(g: CanvasRenderingContext2D, layout: RangeLayout,
   const inX = (x: number, w = 0) => x + w >= view.x0 && x <= view.x1;
   g.save();
   // Alternate lanes sit a shade darker, like swept and unswept slabs.
-  g.fillStyle = 'rgba(70, 60, 44, 0.05)';
+  g.fillStyle = 'rgba(20, 18, 14, 0.12)';
   for (const [i, l] of lanes.entries()) if (i % 2 === 0 && l.y1 >= view.y0 && l.y0 <= view.y1) g.fillRect(line, l.y0, size - line - 60, l.y1 - l.y0);
   // Lane edges: a dashed mustard line each.
   g.strokeStyle = MUSTARD;

@@ -358,7 +358,7 @@ function drawChunks(ctx: CanvasRenderingContext2D, now: number) {
       byTone[p.tone]!.push(i);
     }
   }
-  discs(ctx, 'rgba(20, 24, 32, 0.3)', 1, shadowBuf, 0.7);
+  discs(ctx, 'rgba(10, 12, 18, 0.42)', 1, shadowBuf, 0.7);
   ctx.strokeStyle = INK;
   ctx.lineJoin = 'round';
   for (let t = 0; t < byTone.length; t++) {

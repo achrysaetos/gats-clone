@@ -5,26 +5,6 @@
  */
 .mode-rng { color: #8fd6e0; background: rgba(90, 190, 210, 0.1); }
 
-/* The menu card. */
-.range-card { display: grid; }
-.range-pitch {
-  position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: var(--s4); align-items: center; padding: var(--s3) var(--s4) var(--s3) var(--s3);
-  background: var(--panel-2); border: 1px solid var(--line);
-  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
-}
-.range-pitch::before { content: ""; position: absolute; top: 0; left: 0; width: 14px; height: 14px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); pointer-events: none; }
-.range-art { width: 64px; height: 64px; display: block; }
-.range-art svg { width: 100%; height: 100%; display: block; }
-.range-copy { display: grid; gap: 6px; min-width: 0; }
-.range-title { display: flex; align-items: center; gap: var(--s3); }
-.range-title b { font: 800 20px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
-.range-copy p { color: var(--muted); font-size: var(--t-label); line-height: 1.35; }
-.range-start { white-space: nowrap; font: 800 16px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; padding: 12px 18px; }
-@media (max-width: 640px) {
-  .range-pitch { grid-template-columns: auto 1fr; }
-  .range-start { grid-column: 1 / -1; }
-}
-
 /* The readout: the loadout button on top, then the last hit, damage per second, accuracy and the last time to kill. */
 .range-hud {
   position: absolute; z-index: 3; top: 152px; left: 16px; width: 236px; pointer-events: auto; background: var(--panel);

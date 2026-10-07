@@ -6,9 +6,15 @@ import { PLAZA } from './maps/plaza.ts';
 import { RANGE_MAP } from './maps/range.ts';
 import type { RangeLayout } from './range.ts';
 import { QUARRY } from './maps/quarry.ts';
+import { MARKET } from './maps/market.ts';
+import { MUSEUM } from './maps/museum.ts';
+import { SUBPEN } from './maps/subpen.ts';
+import { PARK } from './maps/park.ts';
 
 export type Center = { x: number; y: number };
-export type WallMaterial = 'concrete' | 'sandstone' | 'planter';
+export type WallMaterial = 'concrete' | 'sandstone' | 'planter' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play';
+/** A map's own look (src/client/themes): its floor, wall art, decor and lights. */
+export type ThemeId = 'market' | 'museum' | 'subpen' | 'park';
 export type MapWall = Rect & { material: WallMaterial };
 
 export const ZONE_RADIUS = 180;
@@ -16,6 +22,8 @@ export const CRATE_SIZE = 44;
 
 export type MapDef = {
   name: string;
+  /** The visual theme this map wears; omitted for the plain yard look. */
+  theme?: ThemeId;
   size: number;
   walls: readonly MapWall[];
   /** DOM capture points A, B and C. */
@@ -59,7 +67,7 @@ function siegeMap(name: string, size: number, quarter: { walls: Rect[]; squad: R
   };
 }
 
-export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'outpost', 'range'] as const;
+export const MAP_IDS = ['causeway', 'plaza', 'oldtown', 'quarry', 'market', 'museum', 'subpen', 'park', 'outpost', 'range'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
@@ -67,6 +75,10 @@ export const MAPS: Record<MapId, MapDef> = {
   plaza: PLAZA,
   oldtown: OLDTOWN,
   quarry: QUARRY,
+  market: MARKET,
+  museum: MUSEUM,
+  subpen: SUBPEN,
+  park: PARK,
   range: RANGE_MAP,
   outpost: siegeMap('Outpost', 3000, {
     walls: [
@@ -79,11 +91,11 @@ export const MAPS: Record<MapId, MapDef> = {
 };
 
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
-  FFA: ['plaza', 'oldtown', 'causeway', 'quarry'],
-  TDM: ['causeway', 'plaza', 'quarry', 'oldtown'],
-  DOM: ['quarry', 'causeway', 'oldtown', 'plaza'],
+  FFA: ['plaza', 'oldtown', 'museum', 'subpen', 'causeway', 'market', 'quarry', 'park'],
+  TDM: ['causeway', 'plaza', 'market', 'museum', 'subpen', 'quarry', 'oldtown', 'park'],
+  DOM: ['quarry', 'causeway', 'market', 'oldtown', 'museum', 'subpen', 'plaza', 'park'],
   ZOM: ['outpost'],
-  BR: ['oldtown', 'quarry', 'plaza', 'causeway'],
+  BR: ['oldtown', 'quarry', 'plaza', 'causeway', 'park', 'subpen', 'museum', 'market'],
   RNG: ['range'],
 };
 

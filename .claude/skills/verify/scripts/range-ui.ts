@@ -75,7 +75,7 @@ async function goTo(x: number, y: number, tol = 14) {
 // ---- the menu card
 await cdp('Page.navigate', { url: `${BASE}/?dev` });
 await serversListed(page, 8000);
-check(!!(await js(`!!document.querySelector('#range-card .range-pitch #range-start')`)), 'the menu has a Shooting range card with a button');
+check(!!(await js(`!!document.querySelector('#range-card #range-start')`)), 'the menu has a Shooting range card with a button');
 check((await js(`document.querySelector('#range-card .range-title b')?.textContent`)) === 'Shooting range', 'the card is titled');
 check(!(await js(`[...document.querySelectorAll('#servers .server')].some((s) => s.textContent.includes('RNG'))`)), 'ranges stay off the public server list');
 await js(`document.getElementById('range-card').scrollIntoView({ block: 'center' })`);

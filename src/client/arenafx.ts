@@ -16,7 +16,7 @@ const TAU = Math.PI * 2;
 const RUST = '#a8552e', RUST_FACE = '#7f3d20', RUST_DARK = '#5e2b16';
 const BONE = '#ece6d6', AMBER = '#ffb347', SPARK = '#ffd27a', SMOKE = '#5a5550';
 const SIGNAL = '#ff5a1f', GOLD = '#ffd34d';
-const SHADOW = 'rgba(20, 24, 32, 0.28)', CONTACT = 'rgba(20, 24, 32, 0.3)';
+const SHADOW = 'rgba(10, 12, 18, 0.4)', CONTACT = 'rgba(10, 12, 18, 0.42)';
 const HIGHLIGHT = 'rgba(255, 255, 255, 0.24)', SHADE = 'rgba(10, 12, 16, 0.3)';
 
 /** A barrel's top is a circle of this radius (its footprint is `BARREL.size` square) and its front face hangs `FACE` below its south edge. */
@@ -189,7 +189,7 @@ const SCORCH_MS = BARREL.respawnMs;
 function scorchMarks(ctx: CanvasRenderingContext2D, list: readonly Scorch[], now: number) {
   for (const s of list) {
     const rand = seeded(s.seed);
-    ctx.fillStyle = `rgba(28, 26, 24, ${0.34 * clamp01(1 - (now - s.born) / SCORCH_MS)})`;
+    ctx.fillStyle = `rgba(6, 6, 8, ${0.6 * clamp01(1 - (now - s.born) / SCORCH_MS)})`;
     ctx.beginPath();
     for (let i = 0; i < 11; i++) {
       const a = (i / 11) * TAU, r = 26 + rand() * 12;
@@ -338,7 +338,7 @@ export function drawPlaneShadow(ctx: CanvasRenderingContext2D, air: AirdropView 
   ctx.translate(x, y);
   ctx.rotate(air.a);
   planePath(ctx);
-  ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+  ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
   ctx.fill();
   // Two propeller discs, faint and hard-edged.
   ctx.fillStyle = 'rgba(20, 24, 32, 0.12)';

@@ -29,7 +29,7 @@ const CANS = {
 export function drawFlashSmokeBody(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   if (t.kind !== 'flashbang' && t.kind !== 'smokeGrenade') return;
   const look = CANS[t.kind];
-  ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+  ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
   ctx.beginPath();
   ctx.ellipse(t.x + 3, t.y + 5, 10, 5, 0, 0, TAU);
   ctx.fill();

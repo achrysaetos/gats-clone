@@ -321,7 +321,7 @@ function addCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
   ctx.arc(x, y, r, 0, TAU);
 }
 
-const CONTACT = 'rgba(20, 24, 32, 0.3)';
+const CONTACT = 'rgba(10, 12, 18, 0.42)';
 const eyeRadius = (kind: ZombieKind) => Math.max(1.5, ZOMBIES[kind].radius * BUILD[kind].head * 0.2);
 
 export function drawHorde(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {

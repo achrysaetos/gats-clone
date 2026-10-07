@@ -450,7 +450,7 @@ function drawGlint(ctx: CanvasRenderingContext2D, b: Bit, k: number) {
 }
 
 function shadow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, z: number) {
-  ctx.fillStyle = 'rgba(20, 24, 32, 0.18)';
+  ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
   ctx.beginPath();
   ctx.ellipse(x + 1, y + 2, r / (1 + z / 60), (r * 0.55) / (1 + z / 60), 0, 0, TAU);
   ctx.fill();

@@ -129,7 +129,7 @@ export const GEAR = {
 } as const;
 
 type ArmorTier = 'none' | 'light' | 'medium' | 'heavy';
-const CONTACT = 'rgba(20, 24, 32, 0.2)';
+const CONTACT = 'rgba(10, 12, 18, 0.32)';
 const BUCKETS = 32;
 /** How much of the torso's top face a camo may cover; the rest is a rim of the player's colour. */
 const CAMO_FACE = 0.86;

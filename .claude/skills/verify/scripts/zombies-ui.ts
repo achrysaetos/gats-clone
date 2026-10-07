@@ -191,8 +191,13 @@ const STEPS: Record<string, () => Promise<void>> = {
   async menu() {
     await openMenu();
     expect('menu offers to start a zombies squad', await js(`!!document.getElementById('squad-start')`));
+    expect('the Zombies card is a mode card', await clickEl('#squad .mc-hit'));
+    expect('choosing it opens the gear-up step', await until(() => js(`!document.getElementById('play-form').hidden`)));
     await clickEl('#loadout-menu .weapon:nth-child(6)');
     expect('the shared loadout picker takes the LMG', await js(`document.querySelector('#loadout-menu .weapon:nth-child(6)').getAttribute('aria-pressed') === 'true'`));
+    await shot('zom-gear');
+    await js(`document.getElementById('gear-back').click()`);
+    await sleep(300);
     await showSquadMenu();
     await shot('zom-menu');
   },
@@ -209,8 +214,10 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async squad() {
     await openMenu();
+    await clickEl('#squad .mc-hit');
+    await sleep(300);
     await clickEl('#loadout-menu .weapon:nth-child(6)');
-    await clickEl('#squad-start');
+    await clickEl('#play');
     expect('Start a squad joins a zombies room', await until(() => frames.welcome?.mode === 'ZOM', 8000), `mode ${frames.welcome?.mode}`);
     squad = new URLSearchParams(await js(`location.search`)).get('squad') ?? '';
     expect('the address bar carries the squad code', /^z-[a-z2-7]{6}$/.test(squad), squad);

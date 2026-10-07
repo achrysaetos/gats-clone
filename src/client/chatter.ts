@@ -345,7 +345,7 @@ export function drawChatter(ctx: CanvasRenderingContext2D, players: readonly Pla
     ctx.scale(k, k);
     ctx.globalAlpha = Math.max(0, fade) * (b.own ? 1 : 0.94);
     const plate = b.own ? PLATE_LIT : PLATE;
-    ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+    ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
     clipped(ctx, -w / 2 + 3, -h - 4 + 3, w, h, cut); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-6, -6); ctx.lineTo(0, 3); ctx.lineTo(6, -6); ctx.closePath(); outlined(ctx, plate);
     clipped(ctx, -w / 2, -h - 4, w, h, cut); outlined(ctx, plate);

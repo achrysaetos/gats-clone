@@ -3,6 +3,8 @@ import type { ClientMsg, Snapshot } from '../shared/protocol.ts';
 import { TARGETS } from '../shared/range.ts';
 import { drawGunCard } from './gunart.ts';
 import { iconSvg, PERK_ICONS } from './icons.ts';
+import { cardStage } from './menu.ts';
+import { MODE_INFO, type ModeArt } from './modecards.ts';
 
 /**
  * The shooting range's own interface (mode `RNG`): the menu card that opens a private range, the readout plate (last hit, DPS over
@@ -24,16 +26,6 @@ const plate = (className: string, ...kids: (Node | string)[]): HTMLButtonElement
   return b;
 };
 
-const TARGET_ART = `<svg viewBox="0 0 64 64" aria-hidden="true">
-  <path d="M10 56h44v-5H10z" fill="#4f5560" stroke="#1c1f26" stroke-width="2.2" stroke-linejoin="round"/>
-  <rect x="29.5" y="38" width="5" height="14" fill="#978562" stroke="#1c1f26" stroke-width="1.8"/>
-  <path d="M32 6a6.4 6.4 0 1 0 .01 0zM23.5 18.5c3-1.8 6-2.6 8.5-2.6s5.5.8 8.5 2.6l2.2 22.4H21.3z" fill="#e9e2cc" stroke="#1c1f26" stroke-width="2.4" stroke-linejoin="round"/>
-  <circle cx="32" cy="30" r="9.5" fill="none" stroke="#ff5a1f" stroke-width="2.6"/>
-  <circle cx="32" cy="30" r="5.2" fill="none" stroke="#ff5a1f" stroke-width="2.6"/>
-  <circle cx="32" cy="30" r="2.4" fill="#ff5a1f"/>
-  <circle cx="38" cy="25" r="1.8" fill="#1c1f26"/><circle cx="27.5" cy="35" r="1.8" fill="#1c1f26"/>
-</svg>`;
-
 export async function openRangeRoom(): Promise<{ room: string } | { error: string }> {
   try {
     const res = await fetch('/api/range', { method: 'POST' });
@@ -45,21 +37,27 @@ export async function openRangeRoom(): Promise<{ room: string } | { error: strin
   }
 }
 
-/** The menu card: what the range is, in one line, and a button that opens one for you alone. */
-export function renderRangeCard(root: HTMLElement, state: { busy: boolean }, on: { start(): void }) {
-  const art = el('span', 'range-art');
-  art.innerHTML = TARGET_ART;
-  const start = plate('secondary range-start', state.busy ? 'Opening…' : 'Open the range');
+/** The menu card: a lit range diorama, what the range is in one line, and a button (or the whole card) that opens one for you alone. */
+export function renderRangeCard(root: HTMLElement, state: { busy: boolean }, on: { start(): void }, art?: ModeArt) {
+  const oldArt = root.querySelector('canvas');
+  if (oldArt) art?.remove(oldArt);
+  const start = plate('mc-btn range-start', state.busy ? 'Opening…' : 'Open the range');
   start.id = 'range-start';
   start.disabled = state.busy;
   start.addEventListener('click', on.start);
-  root.replaceChildren(el('div', 'range-pitch',
-    art,
-    el('div', 'range-copy',
-      el('div', 'range-title', el('span', 'mode mode-rng', 'RNG'), el('b', '', 'Shooting range')),
-      el('p', '', 'Your own private range. Targets from 100 to 1500 px, some sliding, a barrel row for blasts. Pick any gun, evolution, armor and perk, then test freely. Nothing here counts toward your record.'),
-    ),
-    start));
+  const { stage, canvas } = cardStage('RNG', 'private · just you');
+  const pitch = el('span', 'range-pitch mc-plate',
+    el('span', 'range-title mc-head', el('span', 'mode mode-rng', 'RNG'), el('b', 'mc-name', 'Shooting range')),
+    el('span', 'mc-pitch', MODE_INFO.RNG.pitch));
+  stage.append(el('span', 'mc-cta', start));
+  const hit = el('button', 'mc-hit');
+  hit.type = 'button';
+  hit.setAttribute('aria-label', 'Shooting range: open a private range');
+  hit.disabled = state.busy;
+  hit.addEventListener('click', on.start);
+  root.replaceChildren(el('span', 'mc-face', stage, pitch), hit);
+  art?.add(canvas, 'RNG', root);
+  art?.paint();
 }
 
 type Send = (msg: ClientMsg) => void;

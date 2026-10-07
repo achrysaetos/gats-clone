@@ -16,7 +16,7 @@ import { LIGHT } from './tilt.ts';
 const TAU = Math.PI * 2;
 const BONE = '#ece6d6', AMBER = '#ffb347', SPARK = '#ffd27a', SMOKE = '#5a5550', SIGNAL = '#ff5a1f', HEAL = '#8ff0c4', TOXIC = '#c7d84a', EMP = '#bfe6ff';
 const GUNMETAL = '#4f5560', GUNMETAL_DARK = '#3d4450', OLIVE = '#6c7356', OLIVE_DARK = '#4e543c', RUST = '#a8552e';
-const SHADOW = 'rgba(20, 24, 32, 0.28)', CONTACT = 'rgba(20, 24, 32, 0.3)';
+const SHADOW = 'rgba(10, 12, 18, 0.4)', CONTACT = 'rgba(10, 12, 18, 0.42)';
 const HIGHLIGHT = 'rgba(255, 255, 255, 0.24)', SHADE = 'rgba(10, 12, 16, 0.3)';
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 

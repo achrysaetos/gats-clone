@@ -19,6 +19,9 @@ import { CRATE_SIZE, MAPS, ZONE_RADIUS } from '../src/shared/maps.ts';
 import { createGroundCache, crateSolid, curbSolids, drawLooseShadows, drawGround, drawSolids, wallSolids } from '../src/client/tilt.ts';
 import { PALETTE, TEAM_COLORS } from '../src/client/palette.ts';
 import { drawRangeFloor, drawTargets } from '../src/client/targetart.ts';
+import '../src/client/themes/index.ts';
+import { floorPlan } from '../src/client/floor.ts';
+import { themeOf } from '../src/client/themes/registry.ts';
 
 const GRID = 80;
 const BOX_RADIUS = 3, BOX_PASSES = 2;
@@ -73,7 +76,7 @@ window.renderMap = (id, px, heat) => {
   ctx.setTransform(k, 0, 0, k, 0, 0);
   const walls = wallSolids(m.walls.map((w) => ({ ...w, built: false })));
   const curbs = curbSolids(size);
-  drawGround(ctx, createGroundCache().get(m, size, () => [...curbs, ...walls], 'static'), 0, 0, size, size);
+  drawGround(ctx, createGroundCache().get(m, size, () => [...curbs, ...walls], 'static', floorPlan(m)), 0, 0, size, size);
   if (m.range) drawRangeFloor(ctx, m.range, size, { x0: 0, y0: 0, x1: size, y1: size });
   ctx.fillStyle = PALETTE.grid;
   for (let x = GRID; x < size; x += GRID) ctx.fillRect(x - 0.5 / k, 0, 1 / k, size);
@@ -105,7 +108,10 @@ window.renderMap = (id, px, heat) => {
   }
   const crates = m.crates.map((c, i) => crateSolid({ id: i, x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp }));
   drawLooseShadows(ctx, crates);
+  const theme = themeOf(m.theme), tview = { x0: 0, y0: 0, x1: size, y1: size };
   drawSolids(ctx, [...curbs, ...walls, ...crates]);
+  if (theme?.under) theme.under(ctx, 1000, tview, m);
+  if (theme?.over) theme.over(ctx, 1000, tview, m);
   if (m.range) drawTargets(ctx, { targets: m.range.targets.map(() => 10), match: { map: m.name } }, 0, 1e9, { x0: 0, y0: 0, x1: size, y1: size });
   if (heat) {
     ctx.fillStyle = 'rgba(28, 31, 38, 0.55)';

@@ -133,7 +133,7 @@ function drawBubble(ctx: CanvasRenderingContext2D, id: EmoteId, x: number, y: nu
   ctx.scale(scale, scale);
   ctx.globalAlpha = alpha;
   // The tail points down at the head; the contact shadow keeps the plate in the key light's direction.
-  ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+  ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
   clipped(ctx, -w / 2 + 3, -h + 3, w, h, cut);
   ctx.fill();
   ctx.beginPath(); ctx.moveTo(-6, -2); ctx.lineTo(0, 7); ctx.lineTo(6, -2); ctx.closePath(); outlined(ctx, PLATE);

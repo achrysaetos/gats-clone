@@ -5,12 +5,12 @@ export const INK = '#1c1f26';
 
 export const PALETTE = {
   outside: '#2b2e34',
-  grid: 'rgba(60, 54, 44, 0.07)',
-  contact: 'rgba(20, 24, 32, 0.3)',
+  grid: 'rgba(20, 18, 14, 0.1)',
+  contact: 'rgba(10, 12, 18, 0.42)',
   tracerGlow: '#ffc65a',
   tracer: '#ffe6a6',
   tracerHot: '#fffcf0',
-  casing: '#5d616a',
+  casing: '#b8a070',
   label: '#24272e',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
@@ -22,6 +22,20 @@ export const PALETTE = {
   gold: '#ffd34d',
   hunted: '#ff3b30',
   rival: '#f2555a',
+} as const;
+
+/**
+ * The floor: warm night-op concrete, mid-dark so every figure, round and light pops against it (docs/art/STYLE.md).
+ * Rules: top faces of walls and crates are lighter than `base`; decals (holes, scorch, blood) are darker than `base`;
+ * dust and chalk are lighter. Decor and props read these tokens, so they sit on the floor and not in front of it.
+ */
+export const FLOOR = {
+  base: '#615d54', slabA: '#6a655b', slabB: '#58544c', seam: '#3b3833', wear: '#7d776a', paint: '#b79a4a', grime: '#2e2b27',
+  /** Slab edge length and the lighten/darken step between slabs, for the baked ground layer. */
+  slab: 250, slabShift: 0.05,
+  ink: '#1c1f26', orange: '#d9541f', red: '#b4524a', blue: '#4f7fbf', rust: '#8a5a38',
+  /** Light mote/dust colour that reads on the floor. */
+  dust: '#c9c1ad',
 } as const;
 
 export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as const;

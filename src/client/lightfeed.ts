@@ -4,6 +4,8 @@ import type { Point } from './camera.ts';
 import { CORE_GLOW } from './coreart.ts';
 import { occludersOf, setLight, setLightClock } from './lighting.ts';
 import { setPropLightSink } from './propfx.ts';
+import type { DecorPlan } from './decor.ts';
+import { pickDecorLights, type FxState } from './fixturelight.ts';
 import { captureBase, lightingActive } from './postfx.ts';
 import { FACE, type Solid } from './tilt.ts';
 
@@ -33,6 +35,9 @@ export type LitWorld = {
   airLanded?: boolean;
   /** Solids standing in view (walls, built walls, crates, siege buildings); non-blocking kinds are dropped. */
   solids: readonly Solid[];
+  /** The map's practical fixtures (decor.ts) and this frame's state for them; their lights come from the nearest few in view. */
+  decor?: DecorPlan;
+  fx?: FxState;
 };
 
 /** Tonight's lamps: each player a lamp and a beam along their aim, each turret an amber lamp, and the core a hearth. */
@@ -88,6 +93,7 @@ export function lightWorld(ctx: CanvasRenderingContext2D, w: LitWorld): boolean 
   setLightClock(w.now);
   feedNight(w);
   feedAlways(w);
+  if (w.decor && w.fx) for (const { key, spec } of pickDecorLights(w.decor, { x0: w.tl.x, y0: w.tl.y, x1: w.br.x, y1: w.br.y }, w.fx)) setLight(key, spec);
   const view = { x0: w.tl.x, y0: w.tl.y, x1: w.br.x, y1: w.br.y };
   if (!captureBase(ctx.canvas, view, occludersOf(w.solids, view, (k) => FACE[k]))) return false;
   ctx.save();

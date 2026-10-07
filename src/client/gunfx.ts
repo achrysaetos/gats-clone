@@ -4,6 +4,7 @@ import type { BuildingView, CrateView, DamageKind, RunView, WallView } from '../
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { LIGHT } from './tilt.ts';
 import { addLight, muzzleLight } from './lighting.ts';
+import { lightingActive } from './postfx.ts';
 
 /**
  * Gunfire and impact effects, kept in their own capped, preallocated storage: muzzle flashes per weapon class, ejected
@@ -35,7 +36,7 @@ export type GunFx = { flashes: Flash[]; fn: number; particles: Particle[]; pn: n
 export const FX_COLORS = [
   '#fff6c8', '#ffd45a', '#ff9a2e', // 0-2 sparks: hot white, yellow, orange
   '#b6ac98', '#8e8878', '#cfc6b0', // 3-5 dust: khaki greys
-  '#a32f2f', '#7a1f24', '#c9473f', // 6-8 blood
+  '#7e1d22', '#5a1317', '#9a2a2a', // 6-8 blood (darker than the floor, so it reads as a stain)
   '#8fc43f', '#4c6e22', '#c6e87a', // 9-11 ichor
   '#d9d6cf', '#a8a69f', // 12-13 gun smoke
 ] as const;
@@ -212,7 +213,7 @@ export function hitCover(fx: GunFx, host: (Rect & { crate?: true }) | null, x: n
   const away = host ? outward(host, x, y) : rand() * TAU;
   const px = host ? Math.min(host.x + host.w, Math.max(host.x, x)) : x, py = host ? Math.min(host.y + host.h, Math.max(host.y, y)) : y;
   const nx = Math.cos(away), ny = Math.sin(away);
-  addLight({ x: px + nx * 3, y: py + ny * 3, radius: 62, color: '#ffd27a', intensity: 0.55, life: 90, size: 2, inside: 4, shadows: false });
+  addLight({ x: px + nx * 3, y: py + ny * 3, radius: 44, color: '#ffd27a', intensity: 0.32, life: 90, size: 2, inside: 4, shadows: false });
   for (let i = 0; i < 5; i++) {
     const a = away + (rand() * 2 - 1) * 1.05, v = between(170, 440, rand());
     emit(fx, { x: px + nx * 1.5, y: py + ny * 1.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 8, born: now, life: between(110, 240, rand()), size: between(1.3, 2.1, rand()), grow: 0, color: SPARKS[i % 3]!, alpha: 1, shape: 'spark' });
@@ -286,7 +287,7 @@ export function drawFloor(ctx: CanvasRenderingContext2D, fx: GunFx, now: number,
     const age = now - m.born;
     if (age < 0 || age >= m.life || !seen(view, m.x, m.y)) continue;
     const fade = Math.min(1, (m.life - age) / 1400);
-    ctx.globalAlpha = fade * 0.55;
+    ctx.globalAlpha = fade * 0.72;
     ctx.fillStyle = FX_COLORS[m.color]!;
     ctx.beginPath();
     ctx.arc(m.x, m.y, m.r, 0, TAU);
@@ -298,16 +299,18 @@ export function drawFloor(ctx: CanvasRenderingContext2D, fx: GunFx, now: number,
 
 /** Each fresh flash lights the floor around the muzzle for a frame or two: a warm radial pool, bigger for a heavier gun. */
 function drawFlashPools(ctx: CanvasRenderingContext2D, fx: GunFx, now: number, view: View) {
+  // With the GL lighting pass on, each muzzle already throws a real light (muzzleLight), so a painted pool would double it.
+  const lit = lightingActive();
   const prev = ctx.globalCompositeOperation;
   ctx.globalCompositeOperation = 'lighter';
   for (const f of fx.flashes) {
     const age = now - f.born;
-    if (age < 0 || age >= FLASH_POOL_MS || f.quiet || !seen(view, f.x, f.y, 140)) continue;
+    if (lit || age < 0 || age >= FLASH_POOL_MS || f.quiet || !seen(view, f.x, f.y, 140)) continue;
     const look = FLASH_LOOK[f.base];
-    const r = look.glow * 3.2 * f.power * (1 - 0.25 * (age / FLASH_POOL_MS));
+    const r = look.glow * 2.2 * f.power * (1 - 0.25 * (age / FLASH_POOL_MS));
     const cx = f.x + Math.cos(f.angle) * look.len * 0.4, cy = f.y + Math.sin(f.angle) * look.len * 0.4;
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    g.addColorStop(0, 'rgba(255, 190, 90, 0.5)');
+    g.addColorStop(0, 'rgba(255, 190, 90, 0.3)');
     g.addColorStop(1, 'rgba(255, 150, 50, 0)');
     ctx.globalAlpha = 1 - age / FLASH_POOL_MS;
     ctx.fillStyle = g;
@@ -465,25 +468,25 @@ function drawFlash(ctx: CanvasRenderingContext2D, f: Flash, k: number) {
   const fade = 1 - k;
   // The belt guns flicker: each flash is longer or shorter and burns a different side.
   const flick = f.base === 'lmg' || f.base === 'smg' ? 0.75 + 0.35 * Math.sin(f.seed * 97) : 1;
-  const scale = 1.35 * f.power * (f.quiet ? 0.5 : 1) * flick * (1 - k * 0.35);
+  const scale = 1.05 * f.power * (f.quiet ? 0.5 : 1) * flick * (1 - k * 0.35);
   const len = look.len * scale;
-  ctx.globalAlpha = 0.28 * fade;
+  ctx.globalAlpha = 0.18 * fade;
   ctx.fillStyle = '#ffa42e';
   ctx.beginPath();
-  ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * f.power * (0.8 + 0.2 * fade), 0, TAU);
+  ctx.arc(f.x + Math.cos(f.angle) * 5, f.y + Math.sin(f.angle) * 5, look.glow * 0.7 * f.power * (0.8 + 0.2 * fade), 0, TAU);
   ctx.fill();
   if (f.base === 'sniper' || f.base === 'shotgun') {
     // A big bloom: a wide pale halo and a white-hot heart that outlast the flame itself.
     const bx = f.x + Math.cos(f.angle) * look.len * 0.35 * scale, by = f.y + Math.sin(f.angle) * look.len * 0.35 * scale;
-    ctx.globalAlpha = 0.2 * fade;
+    ctx.globalAlpha = 0.1 * fade;
     ctx.fillStyle = '#ffe08a';
     ctx.beginPath();
-    ctx.arc(bx, by, look.glow * 1.9 * f.power, 0, TAU);
+    ctx.arc(bx, by, look.glow * 0.95 * f.power, 0, TAU);
     ctx.fill();
-    ctx.globalAlpha = 0.5 * fade;
+    ctx.globalAlpha = 0.35 * fade;
     ctx.fillStyle = '#fff6c8';
     ctx.beginPath();
-    ctx.arc(f.x + Math.cos(f.angle) * 6, f.y + Math.sin(f.angle) * 6, look.glow * 0.55 * f.power, 0, TAU);
+    ctx.arc(f.x + Math.cos(f.angle) * 6, f.y + Math.sin(f.angle) * 6, look.glow * 0.32 * f.power, 0, TAU);
     ctx.fill();
   }
   ctx.globalAlpha = Math.min(1, fade * 1.6);

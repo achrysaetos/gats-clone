@@ -1,6 +1,10 @@
-import { MAPS, type MapDef } from '../shared/maps.ts';
+import { MAPS, type MapDef, type ThemeId } from '../shared/maps.ts';
 import type { Rect } from '../shared/sim/movement.ts';
+import { FLOOR } from './palette.ts';
 import { blotch, canvas, seeded, speckle } from './grain.ts';
+import { themeOf } from './themes/registry.ts';
+import { planDecor, wantsDecor, type DecorPlan } from './decor.ts';
+import { paintDecor } from './decorart.ts';
 
 /**
  * The arena floor: poured bone concrete in big slabs, laid out like a real yard. Every mark on it is placed from a seeded
@@ -16,6 +20,10 @@ export type FloorPlan = {
   core?: { x: number; y: number };
   /** A quiet floor: no scattered arrows or drains, for a map that paints its own markings (the range). */
   calm?: true;
+  /** The map's theme (src/client/themes), which may paint the whole floor itself. */
+  theme?: ThemeId;
+  /** Where the yard's practical lights and set dressing go (decor.ts); the marks are baked below, the fixtures drawn per frame (fixtures.ts). */
+  decor?: DecorPlan;
 };
 
 export function floorPlan(map: MapDef): FloorPlan {
@@ -29,7 +37,7 @@ export function floorPlan(map: MapDef): FloorPlan {
       pads.push({ ...r, team });
     }
   }
-  return { walls: map.walls, pads: map.range ? [] : pads, zones: map.zones, zoneRadius: 180, core: map.siege?.core, ...(map.range && { calm: true as const }) };
+  return { walls: map.walls, pads: map.range ? [] : pads, zones: map.zones, zoneRadius: 180, core: map.siege?.core, ...(map.range && { calm: true as const }), ...(map.theme && { theme: map.theme }), ...(wantsDecor(map) && { decor: planDecor(map) }) };
 }
 
 const plans = new Map<string, FloorPlan>();
@@ -43,12 +51,15 @@ export function floorPlanOf(idOrName: string): FloorPlan | undefined {
   return plan;
 }
 
-export const FLOOR = {
-  base: '#d9d4c7', slab: 250, slabShift: 0.035, joint: 'rgba(60, 54, 44, 0.16)',
-  ink: '#1c1f26', mustard: '#c9a23c', orange: '#d9541f', red: '#a8493f', blue: '#456fa8', rust: '#8a5a38',
-} as const;
+
 
 const TAU = Math.PI * 2;
+
+/** `#rrggbb` as an rgba() string at alpha `a`. */
+function hexA(hex: string, a: number): string {
+  const v = parseInt(hex.slice(1), 16);
+  return `rgba(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}, ${Math.min(1, a).toFixed(3)})`;
+}
 
 // Seven-segment stencil glyphs: the gaps between segments read as the bridges of a spray stencil.
 const SEGS: Record<string, string> = {
@@ -138,6 +149,8 @@ function strokeRoute(g: CanvasRenderingContext2D, route: readonly [number, numbe
 const center = (r: Rect) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
 
 export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: number, plan?: FloorPlan) {
+  const themed = plan && themeOf(plan.theme)?.floor;
+  if (themed) return themed(g, size, seed, plan);
   const rand = seeded(seed);
   const slab = FLOOR.slab;
   g.fillStyle = FLOOR.base;
@@ -147,35 +160,35 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   for (let y = 0; y < size; y += slab) {
     for (let x = 0; x < size; x += slab) {
       const k = (rand() - 0.5) * 2 * FLOOR.slabShift;
-      g.fillStyle = k > 0 ? `rgba(255, 255, 255, ${k.toFixed(3)})` : `rgba(70, 60, 44, ${(-k).toFixed(3)})`;
+      g.fillStyle = k > 0 ? hexA(FLOOR.slabA, k * 20) : hexA(FLOOR.slabB, -k * 20);
       g.fillRect(x, y, slab, slab);
       const hue = rand();
-      if (hue < 0.18) { g.fillStyle = 'rgba(120, 140, 160, 0.035)'; g.fillRect(x, y, slab, slab); }
-      else if (hue > 0.86) { g.fillStyle = 'rgba(170, 120, 70, 0.04)'; g.fillRect(x, y, slab, slab); }
+      if (hue < 0.18) { g.fillStyle = 'rgba(110, 130, 160, 0.05)'; g.fillRect(x, y, slab, slab); }
+      else if (hue > 0.86) { g.fillStyle = 'rgba(170, 120, 70, 0.06)'; g.fillRect(x, y, slab, slab); }
       // A patched slab: a newer pour with its own hard-edged border.
       if (rand() < 0.045) {
         const pw = 60 + rand() * 90, ph = 50 + rand() * 80, px = x + 20 + rand() * (slab - pw - 40), py = y + 20 + rand() * (slab - ph - 40);
-        g.fillStyle = 'rgba(255, 255, 255, 0.07)';
+        g.fillStyle = 'rgba(190, 180, 160, 0.06)';
         g.fillRect(px, py, pw, ph);
-        g.strokeStyle = 'rgba(60, 54, 44, 0.18)';
+        g.strokeStyle = hexA(FLOOR.seam, 0.45);
         g.lineWidth = 2;
         g.strokeRect(px, py, pw, ph);
       }
     }
   }
   const area = (size * size) / 1_000_000;
-  for (let i = 0; i < 20 * area; i++) blotch(g, rand() * size, rand() * size, 60 + rand() * 200, '96, 84, 66', 0.02 + rand() * 0.025);
-  speckle(g, rand, size, 600 * area, '#5a544e', '#ffffff');
+  for (let i = 0; i < 20 * area; i++) blotch(g, rand() * size, rand() * size, 60 + rand() * 200, '30, 28, 24', 0.05 + rand() * 0.05);
+  speckle(g, rand, size, 600 * area, FLOOR.grime, FLOOR.wear);
 
   // Saw-cut score lines inside each slab, and the slab joints themselves.
-  g.fillStyle = 'rgba(60, 54, 44, 0.05)';
+  g.fillStyle = hexA(FLOOR.seam, 0.2);
   for (let x = 80; x < size; x += 80) if (x % slab) g.fillRect(x - 0.5, 0, 1, size);
   for (let y = 80; y < size; y += 80) if (y % slab) g.fillRect(0, y - 0.5, size, 1);
-  g.fillStyle = FLOOR.joint;
+  g.fillStyle = hexA(FLOOR.seam, 0.85);
   for (let x = slab; x < size; x += slab) g.fillRect(x - 1, 0, 2, size);
   for (let y = slab; y < size; y += slab) g.fillRect(0, y - 1, size, 2);
   // Joint filler: a dark dowel plate where four slabs meet.
-  g.fillStyle = 'rgba(60, 54, 44, 0.2)';
+  g.fillStyle = hexA(FLOOR.grime, 0.6);
   for (let y = slab; y < size; y += slab) for (let x = slab; x < size; x += slab) g.fillRect(x - 3, y - 3, 6, 6);
 
   if (!plan) return;
@@ -183,12 +196,12 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   const mid = { x: size / 2, y: size / 2 };
 
   // Soft light pools and hard-edged window light: warm areas on an otherwise even floor.
-  const pool = (x: number, y: number, r: number, a: number) => blotch(g, x, y, r, '255, 244, 220', a);
-  for (const z of plan.zones) pool(z.x, z.y, 340, 0.15);
-  for (const p of plan.pads) { const c = center(p); pool(c.x, c.y, 260 + Math.max(p.w, p.h) * 0.4, 0.1); }
-  if (plan.core) pool(plan.core.x, plan.core.y, 420, 0.16);
+  const pool = (x: number, y: number, r: number, a: number) => blotch(g, x, y, r, '255, 226, 170', a);
+  for (const z of plan.zones) pool(z.x, z.y, 340, 0.1);
+  for (const p of plan.pads) { const c = center(p); pool(c.x, c.y, 260 + Math.max(p.w, p.h) * 0.4, 0.07); }
+  if (plan.core) pool(plan.core.x, plan.core.y, 420, 0.11);
   const lightRand = seeded(seed ^ 0x1234);
-  g.fillStyle = 'rgba(255, 250, 235, 0.045)';
+  g.fillStyle = 'rgba(255, 236, 190, 0.03)';
   for (let i = 0; i < 16 * area; i++) {
     const x = lightRand() * size, y = lightRand() * size, w = 40 + lightRand() * 50, h = 120 + lightRand() * 200;
     g.beginPath();
@@ -212,21 +225,21 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   if (nodes.length) for (const n of nodes) routes.push(pathBetween(n, mid, routeRand() < 0.5));
   g.lineJoin = 'round';
   g.lineCap = 'round';
-  for (const [w, a] of [[170, 0.03], [90, 0.035]] as const) {
-    g.strokeStyle = `rgba(88, 76, 58, ${a})`;
+  for (const [w, a] of [[170, 0.05], [90, 0.06]] as const) {
+    g.strokeStyle = `rgba(30, 26, 20, ${a})`;
     g.lineWidth = w;
     for (const r of routes) strokeRoute(g, r);
   }
   // Tyre ruts and a dashed lane line down the long straights.
   g.lineCap = 'butt';
-  g.strokeStyle = 'rgba(40, 36, 30, 0.07)';
+  g.strokeStyle = 'rgba(22, 20, 16, 0.2)';
   g.lineWidth = 3;
   g.setLineDash([60, 24, 18, 40]);
   for (const r of routes) for (const off of [-24, 24]) strokeRoute(g, r.map(([x, y], i) => (i % 2 === 0 ? [x + off, y + off] : [x - off, y + off]) as [number, number]));
   g.setLineDash([]);
-  const lane = wornPaint(g, FLOOR.mustard, seed ^ 0x51);
+  const lane = wornPaint(g, FLOOR.paint, seed ^ 0x51);
   g.strokeStyle = lane;
-  g.globalAlpha = 0.55;
+  g.globalAlpha = 0.5;
   g.lineWidth = 5;
   g.setLineDash([44, 36]);
   for (const r of routes) strokeRoute(g, r);
@@ -238,21 +251,21 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   const oil = seeded(seed ^ 0x0112);
   for (let i = 0; i < 4 * area; i++) {
     const x = oil() * size, y = oil() * size, r = 12 + oil() * 24;
-    g.fillStyle = 'rgba(30, 28, 34, 0.06)';
+    g.fillStyle = 'rgba(14, 14, 18, 0.14)';
     blob(g, oil, x, y, r * 1.35);
-    g.fillStyle = 'rgba(30, 28, 34, 0.11)';
+    g.fillStyle = 'rgba(14, 14, 18, 0.24)';
     blob(g, oil, x + r * 0.1, y, r);
-    g.fillStyle = 'rgba(20, 18, 24, 0.1)';
+    g.fillStyle = 'rgba(10, 10, 14, 0.24)';
     blob(g, oil, x + r * 0.15, y + r * 0.1, r * 0.45);
   }
 
   // Painted markings: pads, zone rings and sector numbers.
-  const white = wornPaint(g, '#f6f1e3', seed ^ 0x52);
+  const white = wornPaint(g, '#928d7f', seed ^ 0x52); // worn paint: the floor's value plus 10 to 15 percent at half alpha, never near-white
   const ink = wornPaint(g, '#2b2e34', seed ^ 0x53);
-  const mustard = wornPaint(g, FLOOR.mustard, seed ^ 0x54);
+  const mustard = wornPaint(g, FLOOR.paint, seed ^ 0x54);
   const hazardTile = (() => {
     const [c, p] = canvas(24);
-    p.fillStyle = FLOOR.mustard;
+    p.fillStyle = FLOOR.paint;
     p.fillRect(0, 0, 24, 24);
     p.fillStyle = '#2b2e34';
     p.beginPath();
@@ -270,8 +283,8 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
     g.rect(pad.x - e, pad.y - e, pad.w + e * 2, pad.h + e * 2);
     g.rect(pad.x - e + b, pad.y - e + b, pad.w + (e - b) * 2, pad.h + (e - b) * 2);
     g.fill('evenodd');
-    g.globalAlpha = 0.1;
-    g.fillStyle = tint ?? '#3b414c';
+    g.globalAlpha = 0.16;
+    g.fillStyle = tint ?? '#20242c';
     g.fillRect(pad.x, pad.y, pad.w, pad.h);
     g.globalAlpha = 0.75;
     g.fillStyle = tint ? wornPaint(g, tint, seed ^ (0x60 + i)) : mustard;
@@ -294,8 +307,8 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
 
   for (const z of plan.zones) {
     const r = plan.zoneRadius;
-    g.globalAlpha = 0.07;
-    g.fillStyle = '#2b2e34';
+    g.globalAlpha = 0.14;
+    g.fillStyle = '#16181d';
     g.beginPath(); g.arc(z.x, z.y, r - 6, 0, TAU); g.fill();
     g.globalAlpha = 0.6;
     g.fillStyle = hazardTile;
@@ -344,8 +357,10 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   const arr = seeded(seed ^ 0x999);
   g.fillStyle = white;
   g.globalAlpha = 0.5;
-  for (let i = 0; i < (plan.calm ? 0 : 4 * area); i++) {
+  for (let i = 0; i < (plan.calm || plan.decor ? 0 : 4 * area); i++) { // with decor, lane arrows come from decor.ts (real lanes, runs of two or three)
     const x = arr() * size, y = arr() * size, a = Math.floor(arr() * 4) * (Math.PI / 2);
+    // Arrows keep clear of the decor's stencils and district plans (decor.ts `avoid`).
+    if (plan.decor?.avoid.some((b) => Math.hypot(b.x - x, b.y - y) < b.r + 60)) continue;
     g.save();
     g.translate(x, y);
     g.rotate(a);
@@ -359,7 +374,7 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
 
   // Cracks, long and thin, with the odd branch.
   const cr = seeded(seed ^ 0xc4ac);
-  g.strokeStyle = 'rgba(46, 40, 34, 0.15)';
+  g.strokeStyle = 'rgba(20, 18, 14, 0.38)';
   g.lineWidth = 1.6;
   g.lineJoin = 'round';
   g.beginPath();
@@ -371,9 +386,9 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
 
   // Drains and manholes, rusting stains beneath them.
   const dr = seeded(seed ^ 0xd2a1);
-  for (let i = 0; i < (plan.calm ? 0 : 3 * area); i++) {
+  for (let i = 0; i < (plan.calm || plan.decor ? 0 : 3 * area); i++) { // with decor, a few drains along kerbs come from decor.ts
     const x = Math.round((dr() * size) / 50) * 50, y = Math.round((dr() * size) / 50) * 50 + 0.5, grate = dr() < 0.55;
-    g.fillStyle = 'rgba(138, 90, 56, 0.1)';
+    g.fillStyle = 'rgba(138, 90, 56, 0.16)';
     blob(g, dr, x + 14, y + 30, 38);
     if (grate) {
       g.fillStyle = '#2b2e34';
@@ -418,14 +433,14 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
     g.translate(x, y);
     g.rotate(a);
     if (kind < 0.3) {
-      g.fillStyle = 'rgba(105, 100, 92, 0.42)';
+      g.fillStyle = 'rgba(150, 144, 130, 0.5)';
       g.beginPath(); g.ellipse(0, 0, 2.6 + lit() * 2, 2 + lit() * 1.5, 0, 0, TAU); g.fill();
       g.fillStyle = 'rgba(255, 255, 255, 0.35)';
       g.fillRect(-1.2, -1.4, 1.6, 1);
     } else if (kind < 0.5) {
-      g.fillStyle = 'rgba(244, 240, 228, 0.85)';
+      g.fillStyle = 'rgba(214, 208, 190, 0.8)';
       g.fillRect(-4, -3, 8 + lit() * 4, 5 + lit() * 3);
-      g.fillStyle = 'rgba(60, 56, 50, 0.3)';
+      g.fillStyle = 'rgba(30, 28, 24, 0.4)';
       g.fillRect(-3, -1, 6, 0.8);
     } else if (kind < 0.62) {
       g.fillStyle = 'rgba(40, 42, 48, 0.55)';
@@ -434,9 +449,9 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
       g.lineWidth = 0.8;
       g.stroke();
     } else if (kind < 0.78) {
-      g.fillStyle = 'rgba(80, 76, 70, 0.55)';
+      g.fillStyle = 'rgba(34, 32, 28, 0.6)';
       g.beginPath(); g.moveTo(-5, 1); g.lineTo(-1, -4); g.lineTo(5, -2); g.lineTo(4, 3); g.lineTo(-2, 4); g.closePath(); g.fill();
-      g.fillStyle = 'rgba(190, 184, 170, 0.55)';
+      g.fillStyle = 'rgba(170, 164, 148, 0.55)';
       g.beginPath(); g.moveTo(-1, -4); g.lineTo(5, -2); g.lineTo(2, 0); g.closePath(); g.fill();
     } else if (kind < 0.88) {
       g.fillStyle = 'rgba(178, 104, 62, 0.8)';
@@ -444,12 +459,12 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
       g.fillStyle = 'rgba(240, 235, 220, 0.7)';
       g.fillRect(-1, -2, 2, 3.6);
     } else if (kind < 0.95) {
-      g.fillStyle = 'rgba(90, 84, 76, 0.6)';
+      g.fillStyle = 'rgba(36, 33, 29, 0.6)';
       g.fillRect(-9, -0.8, 18, 1.6);
       g.fillRect(6, -2.6, 3, 5);
     } else {
       // A pale chalk X from somebody's tally.
-      g.strokeStyle = 'rgba(250, 248, 238, 0.7)';
+      g.strokeStyle = 'rgba(220, 214, 196, 0.6)';
       g.lineWidth = 1.5;
       g.beginPath(); g.moveTo(-6, -6); g.lineTo(6, 6); g.moveTo(6, -6); g.lineTo(-6, 6); g.stroke();
     }
@@ -464,9 +479,9 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
     [0, 0, rim, 0, 0, 0, rim, size], [size, 0, size - rim, 0, size - rim, 0, rim, size],
   ] as const) {
     const grad = g.createLinearGradient(x0, y0, x1, y1);
-    grad.addColorStop(0, 'rgba(40, 36, 30, 0.2)');
-    grad.addColorStop(0.35, 'rgba(40, 36, 30, 0.07)');
-    grad.addColorStop(1, 'rgba(40, 36, 30, 0)');
+    grad.addColorStop(0, 'rgba(16, 14, 12, 0.45)');
+    grad.addColorStop(0.35, 'rgba(16, 14, 12, 0.16)');
+    grad.addColorStop(1, 'rgba(16, 14, 12, 0)');
     g.fillStyle = grad;
     g.fillRect(rx, ry, rw, rh);
   }
@@ -478,4 +493,5 @@ export function paintFloor(g: CanvasRenderingContext2D, size: number, seed: numb
   g.fillRect(line, line, th, size - line * 2);
   g.fillRect(size - line - th, line, th, size - line * 2);
   g.globalAlpha = 1;
+  if (plan.decor) paintDecor(g, plan.decor);
 }
