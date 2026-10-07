@@ -22,11 +22,15 @@ type Watch = {
   core: { x: number; y: number };
   post: { x: number; y: number };
   zombie: { id: number; x: number; y: number; d: number } | null;
+  /** Every zombie in sight. */
+  zombies: readonly { x: number; y: number }[];
   downed: PlayerView | null;
   needsTending: { x: number; y: number } | null;
   dry: { x: number; y: number } | null;
   tending: { x: number; y: number } | null;
   kiting: boolean;
+  /** Where the bot was backing off to, if it was. */
+  kiteTo: { x: number; y: number } | null;
   coreMendable: boolean;
   next: { kind: BuildingKind; cx: number; cy: number; x: number; y: number } | null;
 };
@@ -44,28 +48,58 @@ const POST_RADIUS = 320;
 const BUSY_ZOMBIE_PX = 300;
 const KITE_PX = 140;
 
-const mendAt = (s: Watch, at: { x: number; y: number }): Errand => ({ ...at, use: Math.hypot(at.x - s.me.x, at.y - s.me.y) <= ZOM.reachPx - 60 });
 /** A job already under way carries on until a zombie is this much nearer than the distance that lets one start. */
 const BUSY_SLACK_PX = 80;
-const hordeFar = (s: Watch) => !s.zombie || s.zombie.d > BUSY_ZOMBIE_PX - (s.tending ? BUSY_SLACK_PX : 0);
+const MEND_PX = ZOM.reachPx - 60;
+const mendAt = (s: Watch, at: { x: number; y: number }): Errand => ({ ...at, use: Math.hypot(at.x - s.me.x, at.y - s.me.y) <= MEND_PX });
+/** How near a zombie comes to the walk from `me` to where it stands to mend `at`. */
+function nearestOnTheWay(s: Watch, at: { x: number; y: number }): number {
+  const dx = s.me.x - at.x, dy = s.me.y - at.y, len = Math.hypot(dx, dy);
+  const stand = len > MEND_PX ? { x: at.x + (dx * MEND_PX) / len, y: at.y + (dy * MEND_PX) / len } : s.me;
+  const sx = stand.x - s.me.x, sy = stand.y - s.me.y, sl = sx * sx + sy * sy;
+  return s.zombies.reduce((best, z) => {
+    const u = sl > 0 ? Math.max(0, Math.min(1, ((z.x - s.me.x) * sx + (z.y - s.me.y) * sy) / sl)) : 0;
+    return Math.min(best, Math.hypot(z.x - s.me.x - u * sx, z.y - s.me.y - u * sy));
+  }, Infinity);
+}
+/**
+ * A job starts only while no zombie is near the walk to it, and is dropped once one comes `BUSY_SLACK_PX` nearer. Measured along the walk rather than
+ * from the bot, since walking toward a zombie by the job would otherwise close the gap itself, drop the job, walk back out, and pick it up again.
+ */
+const hordeFar = (s: Watch, at: { x: number; y: number }) => nearestOnTheWay(s, at) > BUSY_ZOMBIE_PX - (s.tending ? BUSY_SLACK_PX : 0);
 
 type Rule = (s: Watch) => Errand | null;
 
 const revive: Rule = (s) => s.downed && { x: s.downed.x, y: s.downed.y, use: Math.hypot(s.downed.x - s.me.x, s.downed.y - s.me.y) <= ZOM.reviveRange - 15 };
-const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s) ? mendAt(s, s.needsTending) : null;
-const refillDry: Rule = (s) => s.dry && (!s.zombie || s.zombie.d > KITE_PX) ? mendAt(s, s.dry) : null;
-const mendCore: Rule = (s) => s.coreMendable && hordeFar(s) ? mendAt(s, s.core) : null;
+const mendBuilding: Rule = (s) => s.needsTending && hordeFar(s, s.needsTending) ? mendAt(s, s.needsTending) : null;
+const refillDry: Rule = (s) => s.dry && !kiting(s) ? mendAt(s, s.dry) : null;
+const mendCore: Rule = (s) => s.coreMendable && hordeFar(s, s.core) ? mendAt(s, s.core) : null;
 const buildNext: Rule = (s) => s.next && { x: s.next.x, y: s.next.y, use: false };
 /** Once backing off a zombie, a bot keeps backing off until it is this much farther than the distance that started it. */
 const KITE_SLACK_PX = 60;
 const kiting = (s: Watch) => !!s.zombie && s.zombie.d <= KITE_PX + (s.kiting ? KITE_SLACK_PX : 0);
+/**
+ * Done backing off, a bot whose way back to its post runs at the zombie holds where it is and shoots until the zombie is this near,
+ * not walk straight back into kiting range: a bot outpaces a zombie, so it would otherwise shuttle back and forth between the two thresholds.
+ */
+const REGAIN_PX = KITE_PX + KITE_SLACK_PX + 100;
+/** A way out kept while kiting may run this far off straight away from the zombie, a little past square, so a sideways step survives. */
+const KEEP_KITE_COS = -0.2;
 const holdPost: Rule = (s) => {
   const post = { ...s.post, use: false };
   const z = s.zombie;
-  if (!z || !kiting(s)) return post;
+  if (!z) return post;
+  if (!kiting(s)) {
+    const towardZombie = (post.x - s.me.x) * (z.x - s.me.x) + (post.y - s.me.y) * (z.y - s.me.y) > 0;
+    return z.d <= REGAIN_PX && towardZombie ? { x: s.me.x, y: s.me.y, use: false } : post;
+  }
+  const inGuard = (p: { x: number; y: number }) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS;
+  const k = s.kiteTo, kx = k ? k.x - s.me.x : 0, ky = k ? k.y - s.me.y : 0, kd = Math.hypot(kx, ky);
+  // Keep backing off the way it started while that still does not close on the zombie, so a fresh pick each moment never swings it from side to side.
+  if (k && kd > DEAD_ZONE && inGuard(k) && (kx * (s.me.x - z.x) + ky * (s.me.y - z.y)) / (kd * Math.max(1, z.d)) > KEEP_KITE_COS) return { ...k, use: false };
   const away = Math.atan2(s.me.y - z.y, s.me.x - z.x);
   const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
-  return steps.find((p) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS) ?? post;
+  return steps.find(inGuard) ?? post;
 };
 
 const SIEGE_RULES: readonly Rule[] = [revive, refillDry, mendBuilding, buildNext, mendCore, holdPost];
@@ -142,7 +176,7 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
   const post = postFor(run.core, me.id, snap.buildings ?? []);
   const watch: Watch = {
-    me, core: run.core, post, zombie, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, kiting: !!mem.motor.siegeStep?.kite, next: buildable,
+    me, core: run.core, post, zombie, zombies, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, kiting: !!mem.motor.siegeStep?.kite, kiteTo: mem.motor.siegeStep?.kite ? mem.motor.siegeStep.to : null, next: buildable,
     coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
   };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;

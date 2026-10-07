@@ -54,3 +54,26 @@ test('bots never shuffle along a wall for seconds without getting anywhere', () 
   });
   assert.deepEqual([...new Set(stuck)].slice(0, 3), []);
 });
+
+test('squad bots shooting at the horde never shuttle back and forth between backing off and heading back', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  const r = () => rand(w);
+  const bots = new Map<number, BotMemory>();
+  for (let i = 0; i < 4; i++) bots.set(addPlayer(w, `b${i}`, randomLoadout(r), { kind: 'bot' }).id, newBotMemory(r));
+  const last = new Map<number, { kx: number; ky: number; tick: number }>();
+  const turned = new Map<number, number>();
+  const shuttles: string[] = [];
+  for (let t = 0; t < 180_000 / TICK_MS && w.run!.phase.k !== 'over'; t++) {
+    thinkBots(w, bots, r, { respawn: false, onDecision(id, snap, _before, d) {
+      const kx = +d.input.right - +d.input.left, ky = +d.input.down - +d.input.up;
+      if (!snap.players.find((p) => p.id === id)?.alive || !(kx || ky)) return;
+      const was = last.get(id);
+      last.set(id, { kx, ky, tick: t });
+      if (!was || t - was.tick > 10 || kx * was.kx + ky * was.ky >= 0 || !d.input.fire) return;
+      if (t - (turned.get(id) ?? -Infinity) <= 20) shuttles.push(`${snap.players.find((p) => p.id === id)!.name} at tick ${t}`);
+      turned.set(id, t);
+    } });
+    step(w, TICK_MS);
+  }
+  assert.deepEqual(shuttles.slice(0, 3), []);
+});
