@@ -157,19 +157,20 @@ const STAGE_GAIN = [1, 1.15, 1.3] as const;
 export const POSTURE_BY_BAND: Record<Band, 'walking' | 'standing'> = { 100: 'walking', 300: 'walking', 600: 'standing', 900: 'standing' };
 const BAND_OWNERS: Record<Band, readonly WeaponId[]> = { 100: ['smg', 'shotgun'], 300: ['assault'], 600: ['lmg', 'sniper'], 900: ['sniper'] };
 const OWNER_LEAD = 1.15;
-type Job = { bands: readonly Band[]; armor?: ArmorId };
-/** Where a gun is built to win when that differs from its parent, or for a base gun from the bands its class owns; `armor` dresses the person it kills there. */
+type Job = { bands: readonly Band[]; targetArmor?: ArmorId };
 const JOB: Partial<Record<GunId, Job>> = {
   pistol: { bands: [100] },
-  handCannon: { bands: [100, 300], armor: 'heavy' },
+  handCannon: { bands: [100, 300], targetArmor: 'heavy' },
   bulldog: { bands: [300] },
   slugGun: { bands: [300] },
   railSlug: { bands: [600] },
   lightMg: { bands: [100, 300] },
 };
-const jobOf = (id: GunId): Job => JOB[id] ?? (GUNS[id].from ? jobOf(GUNS[id].from!) : { bands: AIM_BANDS.filter((d) => BAND_OWNERS[d].includes(GUNS[id].base)) });
-/** How much quicker an evolution kills than its parent at its job: a tenth is about the least a player feels, and a second evolution costs a second pick. */
-const UPGRADE_LEAD = [1, 1.1, 1.15] as const;
+const jobOf = (id: GunId): Job => {
+  const { from, base } = GUNS[id];
+  return JOB[id] ?? (from ? jobOf(from) : { bands: AIM_BANDS.filter((d) => BAND_OWNERS[d].includes(base)) });
+};
+const SPEEDUP_OVER_PARENT: Record<1 | 2, number> = { 1: 1.1, 2: 1.15 };
 const SNIPER_CLOSE_LAG = 1.4;
 
 /** Each stage's median expected seconds per class for a person to kill a strafing person, in each band's posture. */
@@ -205,11 +206,12 @@ export function doctrineBreaches(): Breach[] {
   for (const id of GUN_IDS) {
     const parent = GUNS[id].from;
     if (!parent) continue;
-    const { bands, armor = 'none' } = jobOf(id), lead = UPGRADE_LEAD[GUNS[id].stage];
+    const { bands, targetArmor: armor = 'none' } = jobOf(id), lead = SPEEDUP_OVER_PARENT[GUNS[id].stage as 1 | 2];
     for (const d of bands) {
       const kill = (x: GunId) => aimKillMs(x, d, POSTURE_BY_BAND[d] === 'standing', HUMAN_HP, armor) / 1000;
-      if (!Number.isFinite(kill(id)) || kill(parent) < lead * kill(id)) {
-        breach(id, `upgrade@${d}`, `kills a ${armor === 'none' ? 'bare' : `${armor}-armored`} person in ${kill(id).toFixed(2)}s, not ${lead}x quicker than ${GUNS[parent].name}'s ${kill(parent).toFixed(2)}s`);
+      const mine = kill(id), theirs = kill(parent);
+      if (!Number.isFinite(mine) || theirs < lead * mine) {
+        breach(id, `upgrade@${d}`, `kills a ${armor === 'none' ? 'bare' : `${armor}-armored`} person in ${mine.toFixed(2)}s, not ${lead}x quicker than ${GUNS[parent].name}'s ${theirs.toFixed(2)}s`);
       }
     }
   }
