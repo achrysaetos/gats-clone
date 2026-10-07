@@ -60,7 +60,7 @@ export const sweepNums = (list: Num[], now: number): void => {
 };
 
 /** Point size from the stacked total: a pistol tap is small, a bolt-action's 135 is huge. */
-export const sizeOf = (total: number, kind: DamageKind): number => Math.min(40, Math.max(15, 13 + 2.2 * Math.sqrt(total))) * (kind === 'player' || kind === 'zombie' ? 1 : 0.72);
+export const sizeOf = (total: number, kind: DamageKind): number => Math.min(40, Math.max(15, 13 + 2.2 * Math.sqrt(total))) * (kind === 'player' || kind === 'zombie' || kind === 'target' ? 1 : 0.72);
 
 export const isBig = (n: Pick<Num, 'total'>) => n.total >= NUM.bigAt;
 

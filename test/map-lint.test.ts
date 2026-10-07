@@ -104,3 +104,19 @@ test('a barrel inside or beside a spawn region, in a wall, on a crate or over a 
 test('a lone barrel without its half-turn twin is a problem', () => {
   assert.ok(lintMap({ ...clean, barrels: [{ x: 700, y: 250 }] }).some((p) => p.includes('no twin')));
 });
+
+const withProps = (...props: MapDef['props']) => lintMap({ ...clean, props: [...clean.props, ...props, ...props.map((c) => ({ ...c, x: clean.size - c.x, y: clean.size - c.y }))] });
+
+test('a prop inside or beside a spawn region, in a wall, on a crate or barrel, on another prop or over a zone is a problem', () => {
+  assert.deepEqual(withProps({ x: 700, y: 250, kind: 'oil' }), [], 'a prop out in the open is fine');
+  assert.ok(withProps({ x: 75, y: 75, kind: 'gas' }).some((p) => /within \d+px of a (red|ffa|blue) spawn/.test(p)), 'in a spawn');
+  assert.ok(withProps({ x: 175, y: 75, kind: 'lamp' }).some((p) => p.includes('lamp prop')), 'beside a spawn');
+  assert.ok(withProps({ x: 100, y: 225, kind: 'medic' }).some((p) => p.includes('overlaps a wall')), 'in a wall');
+  assert.ok(withProps({ x: 425, y: 825, kind: 'ammo' }).some((p) => p.includes('overlaps a crate')), 'on a crate');
+  assert.ok(withProps({ x: 700, y: 250, kind: 'oil' }, { x: 710, y: 260, kind: 'gas' }).some((p) => p.includes('overlaps another prop')), 'on another prop');
+});
+
+test('a lone prop, or one whose twin is another kind, is a problem', () => {
+  assert.ok(lintMap({ ...clean, props: [{ x: 700, y: 250, kind: 'propane' }] }).some((p) => p.includes('no twin of its kind')));
+  assert.ok(lintMap({ ...clean, props: [{ x: 700, y: 250, kind: 'propane' }, { x: clean.size - 700, y: clean.size - 250, kind: 'gas' }] }).some((p) => p.includes('no twin of its kind')));
+});

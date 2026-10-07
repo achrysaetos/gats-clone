@@ -1,13 +1,14 @@
-import { BUILDINGS, hordeCount, isBoss, NIGHTS, nightOf, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type TurretKind, type ZombieKind } from '../defs.ts';
+import { hordeCount, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildingView, buildRefusal, cellRect, refundFor, repairScrapPerHp, serviceTarget, type BuildRefusal, type BuildSite } from './build.ts';
+import { buildingView, buildRefusal, cellRect, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
+import { armorWatch, tickArmor, tickTraps, tickUtilities, trapWatch } from './utility.ts';
 import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { tickDowned } from './downed.ts';
-import { coreRect, coverRects, loadMap, newId, newRun, rand, solidRects, spawnPoint, type Building, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
+import { coreRect, coverRects, loadMap, newId, newRun, rand, solidRects, spawnPoint, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
 
 function squadOf(w: World) {
   const squad = { humans: 0, bots: 0 };
@@ -35,15 +36,15 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
   const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, w.buildings.map((b) => ({ ...buildingView(b), b })));
   if (!target) return;
-  const mend = (it: { hp: number }, max: number, perHp: number) => {
-    const hp = Math.min((ZOM.repairHpPerSec * dtMs) / 1000, max - it.hp, run.scrap / perHp);
+  const mend = (it: { hp: number }, max: number, perHp: number, speed = 1) => {
+    const hp = Math.min((ZOM.repairHpPerSec * speed * dtMs) / 1000, max - it.hp, run.scrap / perHp);
     it.hp += hp;
     run.scrap -= hp * perHp;
   };
   if (target.on === 'core') { mend(run.core, ZOM.coreHp, ZOM.coreRepairScrapPerHp); return; }
   const b = target.on.b;
-  if (target.job === 'repair' || b.kind === 'wall') { mend(b, BUILDINGS[b.kind].hp, repairScrapPerHp(b.kind)); return; }
-  const def = BUILDINGS[b.kind].turret;
+  if (target.job === 'repair' || !('ammo' in b)) { mend(b, maxHpOf(b.kind, levelOf(b)), repairScrapPerHp(b.kind, levelOf(b)), b.kind === 'wall' ? wallTier(levelOf(b)).repairMul : 1); return; }
+  const def = turretDef(b.kind, levelOf(b));
   const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - b.ammo, run.scrap / def.scrapPerRound);
   b.ammo += rounds;
   run.scrap -= rounds * def.scrapPerRound;
@@ -75,33 +76,66 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
     ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
     ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
   ];
-  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: w.buildings.map(buildingView), scrap: run.scrap };
+  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: [...w.buildings, ...w.floor].map(buildingView), scrap: run.scrap };
 }
 
-export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number): BuildRefusal | null {
+/** Puts `kind` up on a cell for its price; a wall goes up at tier `lv` (1 to 3), anything else at its first level. */
+export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: number, lv = 1): BuildRefusal | null {
   const p = w.players.get(id);
   const run = w.run;
   const core = coreRect(w);
   if (!p || !run || !core) return 'notDay';
-  const refusal = buildRefusal(siteFor(w, run, p, core), kind, cx, cy);
+  const level = kind === 'wall' ? Math.min(WALL_TIERS.length, Math.max(1, Math.floor(lv))) : 1;
+  const refusal = buildRefusal(siteFor(w, run, p, core), kind, cx, cy, level);
   if (refusal) return refusal;
-  run.scrap -= BUILDINGS[kind].cost;
-  const at = { id: newId(w), cx, cy, hp: BUILDINGS[kind].hp };
-  w.buildings.push(kind === 'wall' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: BUILDINGS[kind].turret.ammo, nextFireAt: 0 });
-  w.buildingsVersion++;
+  run.scrap -= costOf(kind, level);
+  const at = { id: newId(w), cx, cy, hp: maxHpOf(kind, level), ...(level > 1 && { lv: level }) };
+  if (kind === 'spikes') w.floor.push({ ...at, kind });
+  else {
+    w.buildings.push(kind === 'wall' || kind === 'depot' || kind === 'post' ? { ...at, kind } : { ...at, kind, owner: p.id, ammo: turretDef(kind).ammo, nextFireAt: 0 });
+    w.buildingsVersion++;
+  }
   statsFor(run, p).built++;
+  return null;
+}
+
+const standingAt = (w: World, cx: number, cy: number) => w.buildings.find((b) => b.cx === cx && b.cy === cy) ?? w.floor.find((b) => b.cx === cx && b.cy === cy);
+
+/**
+ * Steps the wall, turret or utility on a cell up a level for the price of the step, by day, within reach. Its health and load keep their share, so a worn building stays worn.
+ * A turret's builder keeps the credit for its kills.
+ */
+export function upgrade(w: World, id: number, cx: number, cy: number): UpgradeRefusal | null {
+  const p = w.players.get(id);
+  const run = w.run;
+  const core = coreRect(w);
+  if (!p || !run || !core) return 'notDay';
+  const refusal = upgradeRefusal(siteFor(w, run, p, core), cx, cy);
+  if (refusal) return refusal;
+  const b = standingAt(w, cx, cy)!;
+  const lv = levelOf(b);
+  run.scrap -= upgradeCost(b.kind, lv)!;
+  const hpShare = b.hp / maxHpOf(b.kind, lv);
+  const ammoShare = 'ammo' in b ? b.ammo / turretDef(b.kind, lv).ammo : 0;
+  b.lv = lv + 1;
+  b.hp = hpShare * maxHpOf(b.kind, lv + 1);
+  if ('ammo' in b) b.ammo = ammoShare * turretDef(b.kind, lv + 1).ammo;
+  w.buildingsVersion++;
   return null;
 }
 
 export function demolish(w: World, id: number, cx: number, cy: number): boolean {
   const p = w.players.get(id);
   const run = w.run;
-  const building = w.buildings.find((b) => b.cx === cx && b.cy === cy);
+  const building = standingAt(w, cx, cy);
   if (!p || !run || !building || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
   const at = cellCenter(cx, cy);
   if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return false;
-  w.buildings = w.buildings.filter((b) => b !== building);
-  w.buildingsVersion++;
+  if (building.kind === 'spikes') w.floor = w.floor.filter((b) => b !== building);
+  else {
+    w.buildings = w.buildings.filter((b) => b !== building);
+    w.buildingsVersion++;
+  }
   run.scrap += refundFor(buildingView(building));
   return true;
 }
@@ -139,7 +173,7 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
 
 function burst(w: World, run: Run, z: Zombie, { radius, damage, building, core: coreBlow }: Burst) {
   explode(w, z.x, z.y, radius, damage, { attacker: null, team: null, label: ZOMBIES[z.kind].name });
-  for (const b of w.buildings) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building);
+  for (const b of [...w.buildings]) if (distToRect(z.x, z.y, cellRect(b.cx, b.cy)) <= radius) biteBuilding(w, b, building * (b.kind === 'wall' ? wallTier(levelOf(b)).blast : 1));
   if (distToRect(z.x, z.y, coreRect(w)!) <= radius) hurtCore(run, coreBlow * (1 - ZOM.coreArmor));
 }
 
@@ -163,18 +197,30 @@ function hordeOf(w: World, night: number, share: number): HordeUnit[] {
   return units;
 }
 
-const PACK_SPREAD = 90;
+const PACK_SPREAD = 140;
+/** A pack walks in as sub-groups of up to `SUB_GROUP`, each at its own spot up to this far along the edge from the pack's. */
+const SUB_GROUP = 3, SUB_SPREAD = 350, EDGE_MARGIN = 250;
 
 function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
-  const strip = MAPS[w.map].siege!.horde[side];
+  const edge = MAPS[w.map].siege!.horde[side];
+  const alongX = edge.w >= edge.h;
+  // Keep clear of the strip's ends, so a zombie in from a corner is never nearer another side's cone than its own.
+  const strip = alongX ? { ...edge, x: edge.x + EDGE_MARGIN, w: edge.w - 2 * EDGE_MARGIN } : { ...edge, y: edge.y + EDGE_MARGIN, h: edge.h - 2 * EDGE_MARGIN };
   const solids = solidRects(w);
   const r = ZOMBIES[kind].radius;
   const ax = strip.x + rand(w) * strip.w, ay = strip.y + rand(w) * strip.h;
-  for (let placed = 0, tries = 0; placed < n && tries < 20 * n; tries++) {
-    const x = clamp(ax + (rand(w) - 0.5) * PACK_SPREAD, strip.x, strip.x + strip.w), y = clamp(ay + (rand(w) - 0.5) * PACK_SPREAD, strip.y, strip.y + strip.h);
-    if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
-    w.zombies.push({ id: newId(w), kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0, vx: 0, vy: 0 });
-    placed++;
+  for (let left = n; left > 0; left -= SUB_GROUP) {
+    const want = Math.min(left, SUB_GROUP), shift = (rand(w) - 0.5) * 2 * SUB_SPREAD * (n > SUB_GROUP ? 1 : 0);
+    const sx = alongX ? ax + shift : ax, sy = alongX ? ay : ay + shift;
+    let pack: number | undefined;
+    for (let placed = 0, tries = 0; placed < want && tries < 20 * want; tries++) {
+      const x = clamp(sx + (rand(w) - 0.5) * (alongX ? PACK_SPREAD : strip.w), strip.x, strip.x + strip.w), y = clamp(sy + (rand(w) - 0.5) * (alongX ? strip.h : PACK_SPREAD), strip.y, strip.y + strip.h);
+      if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
+      const id = newId(w);
+      pack ??= id;
+      w.zombies.push({ id, kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0, vx: 0, vy: 0, pack });
+      placed++;
+    }
   }
 }
 
@@ -220,7 +266,7 @@ function restartRun(w: World) {
   const players = [...w.players.values()];
   for (const p of players) { p.x = -Infinity; p.y = -Infinity; }
   for (const p of players) {
-    resetProgress(p);
+    resetProgress(p, w);
     p.kills = 0;
     p.deaths = 0;
     placeAtCore(w, p);
@@ -255,7 +301,11 @@ export function tickRun(w: World, dtMs: number) {
       if (w.now >= phase.restartAt) restartRun(w);
       return;
   }
+  const traps = trapWatch(w), armor = armorWatch(w);
   tickHorde(w, run, dtMs);
+  tickTraps(w, dtMs, traps);
+  tickArmor(w, armor);
+  tickUtilities(w, run, dtMs);
   tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);
   if (run.core.hp <= 0 || run.survivors <= 0) endRun(w, run, false);

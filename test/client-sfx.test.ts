@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUN_IDS, GUNS, MEDALS, type MedalId } from '../src/shared/defs.ts';
-import { DUCKS, SOUNDS, duckFor, emoteCue, minGapMs, priorityOf, screenCue, soundsFor, varianceOf, type SoundId } from '../src/client/sfx.ts';
+import { DUCKS, SOUNDS, duckFor, emoteCue, minGapMs, priorityOf, screenCue, soundsFor, varianceOf, type Layer, type SoundId } from '../src/client/sfx.ts';
 import { PLANE_MS } from '../src/client/sfx.ts';
 import { TICK_MS } from '../src/client/interp.ts';
 import { planeAt } from '../src/shared/protocol.ts';
@@ -54,6 +54,47 @@ test('every gun on the evolution tree has its own shot sound, and blast guns add
   assert.equal(new Set(recipes).size, GUN_IDS.length);
   const lowest = (id: (typeof GUN_IDS)[number]) => Math.min(...SOUNDS[`shot:${id}`].flatMap((l) => (l.src === 'tone' ? [l.pitchHz[1]] : [])));
   for (const id of GUN_IDS.filter((g) => GUNS[g].blast)) assert.ok(lowest(id) < lowest(GUNS[id].base), `${id} thumps below its class gun`);
+});
+
+/** Layers a listener far away would still hear (own-gun clacks and brass leave out). */
+const heard = (id: (typeof GUN_IDS)[number] | 'silenced') => SOUNDS[`shot:${id}`].filter((l) => !l.selfOnly);
+const bodyLow = (id: (typeof GUN_IDS)[number] | 'silenced') => Math.min(...heard(id).flatMap((l) => (l.src === 'tone' && l.wave === 'sine' ? [l.pitchHz[1]] : [])));
+const tailMs = (id: (typeof GUN_IDS)[number]) => Math.max(...heard(id).map((l) => (l.delayMs ?? 0) + l.ms));
+const isCrack = (l: Layer) => l.src === 'noise' && l.filter === 'highpass' && l.ms <= 6;
+const gunPeak = (id: (typeof GUN_IDS)[number] | 'silenced') => Math.max(...SOUNDS[`shot:${id}`].map((l) => l.gain));
+
+test('every real gun has a sub-250 Hz blast body, a short high-passed crack and a reflection tail', () => {
+  for (const id of GUN_IDS.filter((g) => !GUNS[g].silenced)) {
+    const r = SOUNDS[`shot:${id}`];
+    assert.ok(r.some((l) => l.src === 'tone' && Math.max(...l.pitchHz) < 250 && l.gain >= 0.4), `${id} has a low body thump`);
+    assert.ok(r.some((l) => l.src === 'noise' && l.filter === 'lowpass' && l.cutoffHz[0] <= 1700 && l.ms >= 40), `${id} has a low-passed blast`);
+    assert.ok(r.some(isCrack), `${id} has a crack transient`);
+    assert.ok(r.some((l) => l.src === 'noise' && l.filter === 'lowpass' && (l.delayMs ?? 0) >= 18 && l.ms >= 100), `${id} has a reflection tail`);
+    assert.ok(r.some((l) => l.selfOnly), `${id} has its own action clack`);
+    assert.ok(!r.some((l) => l.src === 'tone' && l.wave !== 'sine' && l.pitchHz[0] > 1000), `${id} has no toy bleeps`);
+  }
+});
+
+test('heavier classes sound lower and ring longer; evolved guns scale with their damage', () => {
+  const order = ['smg', 'pistol', 'assault', 'lmg', 'shotgun', 'sniper'] as const;
+  for (let i = 1; i < order.length; i++) {
+    assert.ok(bodyLow(order[i]!) <= bodyLow(order[i - 1]!), `${order[i]} body is no higher than ${order[i - 1]}`);
+    assert.ok(tailMs(order[i]!) > tailMs(order[i - 1]!), `${order[i]} tail is longer than ${order[i - 1]}`);
+  }
+  assert.ok(bodyLow('handCannon') < bodyLow('pistol') && bodyLow('executioner') < bodyLow('pistol'), 'hand cannons are heavier than the pistol');
+  assert.ok(bodyLow('hornet') > bodyLow('smg') * 0.98 && bodyLow('machinePistol') >= bodyLow('pistol') * 0.95, 'light evolutions stay light');
+  assert.ok(tailMs('handCannon') > tailMs('pistol'));
+});
+
+test('a silenced shot is a muffled thup and click: no crack, nothing bright, quieter than every real gun', () => {
+  const silenced = ['silenced', ...GUN_IDS.filter((g) => GUNS[g].silenced)] as const;
+  for (const id of silenced) {
+    const r = SOUNDS[`shot:${id}`];
+    assert.ok(!r.some(isCrack) && !r.some((l) => l.src === 'noise' && l.filter === 'highpass'), `${id} has no crack`);
+    assert.ok(r.every((l) => (l.delayMs ?? 0) + l.ms <= 80), `${id} is short`);
+    assert.ok(r.some((l) => l.src === 'tone' && l.pitchHz[1] < 250), `${id} has a low thup`);
+    for (const loud of GUN_IDS.filter((g) => !GUNS[g].silenced)) assert.ok(gunPeak(id) < gunPeak(loud) * 0.8, `${id} is quieter than ${loud}`);
+  }
 });
 
 test('a knife slash makes a slash sound at the strike point, flagged self only for your own', () => {
@@ -135,7 +176,7 @@ test('the core sounds once per hundred health it loses, not on every bite', () =
 test('walls clack up, thud when bitten and crumble when they fall', () => {
   const wall = (cx: number, hp = 10): BuildingView => ({ kind: 'wall', cx, cy: 30, hp });
   const night = run({ phase: 'night', phaseEndsAt: null });
-  assert.deepEqual(ids(squad(run()), squad(run(), { buildings: [wall(26)] })), ['wallUp']);
+  assert.deepEqual(ids(squad(run()), squad(run(), { buildings: [wall(26)] })), ['build:wood']);
   const bitten: GameEvent[] = [1, 2].map(() => ({ e: 'dmg', attacker: null, victim: 9, amount: 8, x: 1325, y: 1525, kind: 'building' }));
   assert.deepEqual(ids(squad(night, { buildings: [wall(26)] }), squad(night, { buildings: [wall(26, 9)], events: bitten })), ['wallHit'], 'one thud however many bites land together');
   assert.deepEqual(ids(squad(night, { buildings: [wall(26), wall(27)] }), squad(night, { buildings: [wall(27)] })), ['wallDown']);
@@ -191,7 +232,7 @@ test('each weapon class has its own reload clicks, and a respawn does not read a
 });
 
 test('shots are layered click + body + tail, the sniper echoes, and casings only tinkle for your own gun', () => {
-  for (const id of GUN_IDS) assert.ok(SOUNDS[`shot:${id}`].length >= 5, `${id} is more than crack and thump`);
+  for (const id of GUN_IDS.filter((g) => !GUNS[g].silenced)) assert.ok(SOUNDS[`shot:${id}`].length >= 7, `${id} is more than crack and thump`);
   const sniper = SOUNDS['shot:sniper'];
   assert.ok(sniper.some((l) => (l.delayMs ?? 0) >= 140 && l.ms >= 400), 'the sniper has a delayed echo tail');
   assert.ok(Math.max(...SOUNDS['shot:shotgun'].map((l) => l.ms)) >= 280, 'the shotgun boom is long');

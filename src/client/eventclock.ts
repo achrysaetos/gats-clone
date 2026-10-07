@@ -10,7 +10,9 @@ export type PendingEffect = { at: number; fx: EffectSpec };
 function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | null {
   switch (ev.e) {
     case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null };
-    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null };
+    // A target's hit puffs and wobble are targetart.ts's, timed on the same render clock.
+    case 'target': return null;
+    case 'dmg': return ev.kind === 'target' ? null : { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null, amount: ev.amount, ...(ev.push !== undefined && { push: ev.push }) };
     case 'boom': return { kind: 'boom', x: ev.x, y: ev.y, r: ev.r };
     case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind, by: ev.by };
@@ -29,11 +31,15 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
       });
     }
     case 'shot':
+    case 'flashburst':
     case 'medal':
     case 'hunted':
     case 'life':
     case 'wiped':
-    case 'airdrop': return null;
+    case 'airdrop':
+    case 'prop': return null;
+    case 'coil': return { kind: 'coil', x: ev.x, y: ev.y, p: ev.p };
+    case 'aid': return { kind: 'aid', of: ev.kind, x: ev.x, y: ev.y };
     case 'kill': {
       const blow = snap.events.filter((d) => d.e === 'dmg' && d.kind === 'player' && d.victim === ev.victimId).at(-1);
       return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId, by: ev.killerId, weapon: ev.weapon } : null;

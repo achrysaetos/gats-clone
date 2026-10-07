@@ -2,56 +2,108 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Skirmish">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#121419">
   <title>Skirmish</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="delight.css">
   <link rel="stylesheet" href="replay.css">
+  <link rel="stylesheet" href="range.css">
+  <link rel="stylesheet" href="menu.css">
 </head>
 <body>
   <canvas id="fx" hidden aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;display:block;pointer-events:none"></canvas>
   <canvas id="game"></canvas>
 
-  <main id="menu" class="menu">
+  <main id="menu" class="menu" data-step="modes">
+    <canvas id="menu-scene" class="menu-scene" aria-hidden="true"></canvas>
+    <div class="menu-vignette" aria-hidden="true"></div>
     <div class="menu-card">
-      <header class="brand">
-        <div class="wordmark">
+      <header class="menu-top">
+        <a class="wordmark" href="./" aria-label="Skirmish">
           <svg class="emblem" viewBox="0 0 64 64" aria-hidden="true">
-            <path d="M14 4h36l10 10v36L50 60H14L4 50V14z" fill="#15171b" stroke="#ff5a1f" stroke-width="3" stroke-linejoin="miter"/>
+            <path d="M14 4h36l10 10v36L50 60H14L4 50V14z" fill="#262b33" stroke="#1c1f26" stroke-width="6" stroke-linejoin="round"/>
+            <path d="M14 4h36l10 10v36L50 60H14L4 50V14z" fill="#3d4450" stroke="#ff5a1f" stroke-width="3" stroke-linejoin="round"/>
+            <path d="M14 7h36l8 8v10H6V15z" fill="#4f5560"/>
+            <circle cx="32" cy="32" r="13" fill="none" stroke="#1c1f26" stroke-width="7.5"/>
             <circle cx="32" cy="32" r="13" fill="none" stroke="#ece6d6" stroke-width="3.5"/>
             <path d="M32 12v11M32 41v11M12 32h11M41 32h11" stroke="#ece6d6" stroke-width="3.5"/>
             <rect x="29" y="29" width="6" height="6" fill="#ff5a1f"/>
           </svg>
           <h1 class="logo"><em>S</em>KIRMISH</h1>
-        </div>
-        <p class="tagline">Top-down arena shooter</p>
+        </a>
+        <nav id="menu-tabs" class="menu-tabs" role="tablist" aria-label="Menu">
+          <button id="tab-deploy" type="button" role="tab" aria-selected="true">Deploy</button>
+          <button id="tab-armory" type="button" role="tab" aria-selected="false">Armory</button>
+          <button id="tab-challenges" type="button" role="tab" aria-selected="false">Challenges <i id="chal-badge" class="tab-badge" hidden></i></button>
+        </nav>
+        <button id="acct-btn" type="button" class="acct-chip" aria-expanded="false" aria-controls="acct-sheet">
+          <span id="acct-lv" class="acct-lv" hidden></span><span id="acct-name" class="acct-name">Log in</span>
+        </button>
       </header>
-      <div class="menu-grid">
-        <form id="play-form" class="panel play">
-          <label class="field">
-            <span>Name <a id="my-profile" class="field-link" href="profile.html">Your service record ›</a></span>
-            <input id="name" maxlength="16" autocomplete="nickname" placeholder="Unnamed" spellcheck="false">
-          </label>
-          <div id="loadout-menu" class="loadout"></div>
-          <h2>Server</h2>
-          <div id="servers" class="servers"></div>
-          <h2>Zombies</h2>
-          <div id="squad" class="squad"></div>
-          <div class="play-actions">
-            <p id="menu-status" class="status" role="status"></p>
-            <button id="play" type="submit" class="primary">Deploy</button>
+      <aside id="acct-sheet" class="acct-sheet" hidden aria-label="Account and controls">
+        <section id="account" class="panel"></section>
+        <section id="muted" class="panel" hidden></section>
+        <details class="panel sheet-controls">
+          <summary>Controls</summary>
+          <dl id="controls" class="controls"></dl>
+        </details>
+      </aside>
+      <div id="deploy-panel" class="deploy">
+        <p id="menu-status" class="status menu-status" role="status"></p>
+        <ol class="steps" aria-label="Deploy steps">
+          <li><button id="crumb-modes" type="button" class="crumb" aria-current="step"><b>1</b> Mode</button></li>
+          <li><button id="crumb-gear" type="button" class="crumb" disabled><b>2</b> Gear up</button></li>
+        </ol>
+        <section id="step-modes" class="step step-modes" aria-labelledby="modes-title">
+          <div class="step-head">
+            <h2 id="modes-title" class="step-title">Choose your fight</h2>
+            <p class="step-sub">Pick a mode. You gear up next.</p>
+          </div>
+          <div id="mode-grid" class="mode-grid">
+            <div id="servers" class="servers"></div>
+            <div class="mc-wrap"><div id="squad" class="squad mode-card plate mc-zom"></div></div>
+            <div class="mc-wrap"><div id="range-card" class="range-card mode-card plate mc-rng"></div></div>
+          </div>
+        </section>
+        <form id="play-form" class="step step-gear" hidden aria-labelledby="gear-title">
+          <div class="step-head gear-head">
+            <button id="gear-back" type="button" class="back-btn" aria-label="Back to modes"><span aria-hidden="true">&#8249;</span> Modes</button>
+            <h2 id="gear-title" class="step-title">Gear up</h2>
+            <div id="mission" class="mission" aria-live="polite"></div>
+          </div>
+          <div class="gear-grid">
+            <div class="gear-left">
+              <div class="field plate">
+                <label class="field-in">
+                  <span>Name <a id="my-profile" class="field-link" href="profile.html">Your service record &#8250;</a></span>
+                  <input id="name" maxlength="16" autocomplete="nickname" placeholder="Unnamed" spellcheck="false">
+                </label>
+                <div id="level-card" class="level-card" aria-label="Account level"></div>
+              </div>
+              <div class="gear-stage plate">
+                <canvas id="gear-view" class="gear-view" aria-label="Your soldier"></canvas>
+                <span id="gear-tag" class="gear-tag">Unnamed</span>
+              </div>
+              <div id="gear-colors" class="gear-colors plate"></div>
+            </div>
+            <div class="gear-right">
+              <div id="loadout-menu" class="loadout plate"></div>
+              <div class="play-actions">
+                <button id="play" type="submit" class="primary">Deploy</button>
+              </div>
+            </div>
           </div>
         </form>
-        <aside class="side">
-          <section id="account" class="panel"></section>
-          <section id="muted" class="panel" hidden></section>
-          <section class="panel">
-            <h2>Controls</h2>
-            <dl id="controls" class="controls"></dl>
-          </section>
-        </aside>
       </div>
+      <section id="armory" class="panel armory" hidden aria-label="Armory"></section>
+      <section id="challenges" class="panel challenges" hidden aria-label="Challenges"></section>
+      <p id="a2hs" class="hint" hidden>Tip: tap Share, then Add to Home Screen, to play Skirmish fullscreen without Safari's bars. <button id="a2hs-close" type="button" aria-label="Dismiss tip">Got it</button></p>
       <footer class="menu-footer"><a href="profile.html">Look up a player</a> · <a href="privacy.html">Privacy</a></footer>
     </div>
   </main>
@@ -71,6 +123,7 @@
     <div class="rotate-hint" role="status"><span aria-hidden="true">&#8635;</span>Turn your phone sideways to play</div>
     <div id="banner" class="banner" hidden></div>
     <div id="report" class="banner report" hidden></div>
+    <aside id="xp-card" class="xp-card" hidden aria-live="polite"></aside>
     <div id="objective" class="objective" role="status" hidden></div>
     <div id="reconnect" class="reconnect" role="status" hidden></div>
     <div id="death" class="death" hidden>

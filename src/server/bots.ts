@@ -14,14 +14,20 @@ export type BotMemory = {
   motor: Motor;
 };
 
-export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory; build?: { kind: BuildingKind; cx: number; cy: number } };
+export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory; build?: { kind: BuildingKind; cx: number; cy: number; lv?: number }; upgrade?: { cx: number; cy: number } };
 
 const IDLE_BOT_INPUT: InputState = { up: false, down: false, left: false, right: false, angle: 0, fire: false, shots: 0, reload: false, ability: false, aimDist: 0, use: false };
 
 const pick = <T>(xs: readonly T[], rand: () => number): T => xs[Math.floor(rand() * xs.length)];
 
-const PERK_WEIGHT: Partial<Record<PerkId, number>> = { ghillie: 0, longRange: 0, quickReload: 1.5, choke: 2 };
-const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = { lmg: { quickReload: 2 } };
+/** Bots do not read the minimap or sprint much, so Recon, Ninja and Tracker are rarer picks; fights reward Bloodlust, Second Wind and Fast Hands. */
+const PERK_WEIGHT: Partial<Record<PerkId, number>> = {
+  ghillie: 0, longRange: 0, quickReload: 1.5, choke: 2,
+  recon: 0.4, ninja: 0.4, tracker: 0.4, marathon: 0.6, demolitions: 0.7, brace: 0.8, steadyHands: 0.4, bloodlust: 1.5, secondWind: 1.5, fastHands: 1.5, adrenaline: 1.2,
+};
+const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>>>> = {
+  lmg: { quickReload: 2, steadyHands: 2.5 }, assault: { steadyHands: 2.5 }, smg: { steadyHands: 2 }, shotgun: { brace: 1.6, bloodlust: 2 }, sniper: { recon: 1, steadyHands: 0 },
+};
 
 function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {
   const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : 1);

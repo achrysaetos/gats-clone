@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { WebSocket } from 'ws';
-import { EVOLUTIONS, LEVELS, MEDALS, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
+import { EVOLUTIONS, LEVELS, MEDALS, PERK_TIERS, TIER2_OFFER, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { ClientMsg, GameEvent, InputState, Loadout, ServerMsg, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
@@ -20,6 +20,7 @@ export function emptyWorld(mode: ModeId = 'FFA'): World {
   w.walls = [];
   w.crates = [];
   w.barrels = [];
+  w.props = [];
   w.airdrops = { due: [], flight: null };
   return w;
 }
@@ -55,11 +56,18 @@ export function grantPerks(w: World, p: Player, perks: PerkId[]) {
       const next = EVOLUTIONS[p.gun][0];
       if (!next || !choosePick(w, p.id, pending.level, next)) throw new Error(`could not evolve ${p.gun}`);
     }
+    // A tier-2 pick offers only a few of its perks; the test names the one it wants, so make sure it is on offer.
+    if (PERK_TIERS[2].some((t) => t === perk) && !p.tier2Offer.includes(perk)) p.tier2Offer = [...p.tier2Offer.slice(0, TIER2_OFFER - 1), perk];
     const pending = pendingPick(p);
     if (!pending || !choosePick(w, p.id, pending.level, perk)) throw new Error(`could not choose ${perk}`);
   }
   p.gun = p.loadout.weapon;
   if (p.life.k === 'alive') p.life.ammo = Math.min(p.life.ammo, effectiveStats(p).mag);
+}
+
+/** Puts the named tier-2 perks on `p`'s offer (the draw is random per life), so a test can choose them. */
+export function offerPerks(p: Player, ...perks: PerkId[]) {
+  p.tier2Offer = [...perks, ...p.tier2Offer.filter((o) => !perks.includes(o))].slice(0, Math.max(TIER2_OFFER, perks.length));
 }
 
 /** Hands `p` an evolved gun with a full magazine, skipping the score it would take to evolve into it. */

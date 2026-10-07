@@ -12,7 +12,7 @@ import { thinkBots } from '../src/server/bot/tick.ts';
 import { median, pct, quantile, sec } from './lib/stats.ts';
 
 const mode = MODE_IDS.find((m) => m === process.argv[2]) satisfies ModeId | undefined;
-if (!mode || mode === 'ZOM' || mode === 'BR') throw new Error('usage: bench-maps.ts <FFA|TDM|DOM> [maps] [minutes] [players] [heatDir|-] [seeds] [capMinutes]');
+if (!mode || mode === 'ZOM' || mode === 'BR' || mode === 'RNG') throw new Error('usage: bench-maps.ts <FFA|TDM|DOM> [maps] [minutes] [players] [heatDir|-] [seeds] [capMinutes]');
 const maps = (process.argv[3] && process.argv[3] !== 'rotation' ? process.argv[3].split(',') : ROTATION[mode]) as MapId[];
 const minutes = Number(process.argv[4] ?? 10);
 const players = Number(process.argv[5] ?? WORLD.minPlayers);
@@ -25,7 +25,7 @@ const COVER_HUG_PX = 40;
 const LOOKBACK_TICKS = Math.round(1500 / TICK_MS);
 const LOSING_HP_FRAC = 0.5;
 const WIN_SCORE: Partial<Record<ModeId, number>> = { TDM: WORLD.tdmWinScore, DOM: WORLD.domWinScore };
-const TARGETS: Record<Exclude<ModeId, 'ZOM' | 'BR'>, number[]> = { FFA: [10, 20, 30, 40, 50], TDM: [50, 100, 150, 200, 250], DOM: [1000, 2000, 3000, 4000] };
+const TARGETS: Record<Exclude<ModeId, 'ZOM' | 'BR' | 'RNG'>, number[]> = { FFA: [10, 20, 30, 40, 50], TDM: [50, 100, 150, 200, 250], DOM: [1000, 2000, 3000, 4000] };
 
 const RANGE_BUCKETS = [200, 400, 600, 900, 1200, 1800, Infinity];
 const sizeOf = (map: MapId) => MAPS[map].size;
@@ -68,7 +68,7 @@ const emptyTally = (): Tally => ({
 const addTally = (into: Tally, t: Tally) => {
   for (const k of Object.keys(t) as (keyof Tally)[]) {
     const v = t[k];
-    if (Array.isArray(v)) (into[k] as number[]).push(...v); else (into[k] as number) += v;
+    if (Array.isArray(v)) { const dst = into[k] as number[]; for (const x of v as number[]) dst.push(x); } else (into[k] as number) += v;
   }
 };
 const freshLife = (bornAt: number): Life => ({ bornAt, lastFightAt: null, pulses: [] });

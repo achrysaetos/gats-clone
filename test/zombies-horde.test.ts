@@ -104,8 +104,9 @@ test('a zombie turns on a squad player it can see close by and bites at its own 
   const p = spawnAt(w, 800, 800);
   const before = hpOf(p);
   addZombie(w, 'walker', 800 + ZOMBIES.walker.aggroPx - 10, 800);
-  stepFor(w, 1000);
-  assert.equal(before - hpOf(p), ZOMBIES.walker.damage, 'one bite in the first second');
+  // It walks the last hundred px at a pace and heading of its own, so the first bite lands a little after the first second.
+  stepFor(w, 1500);
+  assert.equal(before - hpOf(p), ZOMBIES.walker.damage, 'one bite on its arrival');
   stepFor(w, ZOMBIES.walker.attackMs);
   assert.equal(before - hpOf(p), 2 * ZOMBIES.walker.damage, 'a second bite after the attack interval');
 });

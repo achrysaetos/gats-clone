@@ -5,13 +5,12 @@ export const INK = '#1c1f26';
 
 export const PALETTE = {
   outside: '#2b2e34',
-  letterbox: '#16181d',
-  grid: 'rgba(60, 54, 44, 0.07)',
-  contact: 'rgba(20, 24, 32, 0.3)',
+  grid: 'rgba(20, 18, 14, 0.1)',
+  contact: 'rgba(10, 12, 18, 0.42)',
   tracerGlow: '#ffc65a',
   tracer: '#ffe6a6',
   tracerHot: '#fffcf0',
-  casing: '#5d616a',
+  casing: '#b8a070',
   label: '#24272e',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
@@ -23,6 +22,20 @@ export const PALETTE = {
   gold: '#ffd34d',
   hunted: '#ff3b30',
   rival: '#f2555a',
+} as const;
+
+/**
+ * The floor: warm night-op concrete, mid-dark so every figure, round and light pops against it (docs/art/STYLE.md).
+ * Rules: top faces of walls and crates are lighter than `base`; decals (holes, scorch, blood) are darker than `base`;
+ * dust and chalk are lighter. Decor and props read these tokens, so they sit on the floor and not in front of it.
+ */
+export const FLOOR = {
+  base: '#615d54', slabA: '#6a655b', slabB: '#58544c', seam: '#3b3833', wear: '#7d776a', paint: '#b79a4a', grime: '#2e2b27',
+  /** Slab edge length and the lighten/darken step between slabs, for the baked ground layer. */
+  slab: 250, slabShift: 0.05,
+  ink: '#1c1f26', orange: '#d9541f', red: '#b4524a', blue: '#4f7fbf', rust: '#8a5a38',
+  /** Light mote/dust colour that reads on the floor. */
+  dust: '#c9c1ad',
 } as const;
 
 export const NIGHT = { shade: '#141c3c', alpha: 0.56, label: '#e6ebf5' } as const;
@@ -63,14 +76,17 @@ export function glow(hex: string, l: number): string {
 
 export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
-/** `armor` thickens the ink rim, `shoulders` adds pads behind the arms, and `bar` shows a health bar over the body. */
-export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; armor: number; shoulders: boolean; bar: boolean }> = {
+/**
+ * `armor` thickens the ink rim, `shoulders` adds pads behind the arms, and `bar` shows a health bar over the body. `skins` and
+ * `cloth` are the variants a horde draws from by zombie id (zombiekit.ts), so no two walkers are quite alike.
+ */
+export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; armor: number; shoulders: boolean; bar: boolean; skins: readonly string[]; cloth: readonly string[] }> = {
   // The art bible's horde tones (docs/art/STYLE.md): sickly olive, steel and rust, so the horde belongs to the same toy
-  // line. Kinds part by silhouette first; eyes glow lamp amber, or signal orange on the brute that comes for the core.
-  walker: { body: '#8a9a5b', arm: '#6f7a4e', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  brute: { body: '#7a5a46', arm: '#5e4535', eye: '#ff5a1f', armor: 0, shoulders: true, bar: true },
-  runner: { body: '#6f7a4e', arm: '#59633e', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  plated: { body: '#5c6b6e', arm: '#4a5759', eye: '#ffb347', armor: 4, shoulders: false, bar: false },
-  bloater: { body: '#8a9a5b', arm: '#6f7a4e', eye: '#1b1d22', armor: 0, shoulders: false, bar: false },
-  colossus: { body: '#6a4d3c', arm: '#4f3a2d', eye: '#ffb347', armor: 3, shoulders: true, bar: true },
+  // line. Kinds part by silhouette first; eyes glow sickly lime, lamp amber, or signal orange on the brute that comes for the core.
+  walker: { body: '#8a9a5b', arm: '#6f7a4e', eye: '#cfe27a', armor: 0, shoulders: false, bar: false, skins: ['#8a9a5b', '#7f9a6c'], cloth: ['#4f5560', '#7a5a46', '#978562'] },
+  brute: { body: '#7a5a46', arm: '#5e4535', eye: '#ff5a1f', armor: 0, shoulders: true, bar: true, skins: ['#7a5a46', '#6d5a52'], cloth: ['#4f5560', '#6c7356', '#a8552e'] },
+  runner: { body: '#6f7a4e', arm: '#59633e', eye: '#e8f08a', armor: 0, shoulders: false, bar: false, skins: ['#7d8a56', '#6f7a4e'], cloth: ['#978562', '#a8552e', '#5c6b6e'] },
+  plated: { body: '#5c6b6e', arm: '#4a5759', eye: '#ffb347', armor: 4, shoulders: false, bar: false, skins: ['#7a8a62', '#6f7a6a'], cloth: ['#6c7356', '#978562', '#7a5a46'] },
+  bloater: { body: '#8a9a5b', arm: '#6f7a4e', eye: '#cfe27a', armor: 0, shoulders: false, bar: false, skins: ['#8ea05a', '#9aa66a'], cloth: ['#cfc7b3', '#978562', '#6c7356'] },
+  colossus: { body: '#6a4d3c', arm: '#4f3a2d', eye: '#ffb347', armor: 3, shoulders: true, bar: true, skins: ['#6a4d3c', '#5e4a40'], cloth: ['#4f5560', '#6c7356', '#3d4450'] },
 };

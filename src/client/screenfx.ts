@@ -14,7 +14,12 @@ export function pulseScreen(now: number, strength: number): void {
   if (reducedMotion()) return;
   pulse.at = now;
   pulse.strength = strength;
+  onPulse?.(strength);
 }
+
+let onPulse: ((strength: number) => void) | null = null;
+/** Lets the WebGL post pass take the chromatic split when it owns the world (the 2D canvas is cleared then). */
+export const setPulseHook = (hook: ((strength: number) => void) | null) => { onPulse = hook; };
 
 const easeOut = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
 
@@ -36,14 +41,19 @@ export const flashAt = (now: number, at = pulse.at, strength = pulse.strength): 
 let scratch: HTMLCanvasElement | null = null;
 
 /** Over the finished world, before the HUD: a lamp-amber wash and a red/cyan split that decays in about 130 ms. */
-export function drawScreenPulse(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, now: number): void {
+/**
+ * `worldOnCanvas` is false when the WebGL post pass has taken the world and cleared this canvas for the HUD: the split then
+ * has nothing to shift and would composite solid colour over the whole screen (a black-out on every kill), so it is the
+ * post pass's chromatic pulse that plays instead, and only the faint amber wash is drawn here.
+ */
+export function drawScreenPulse(ctx: CanvasRenderingContext2D, w: number, h: number, dpr: number, now: number, worldOnCanvas = true): void {
   const flash = flashAt(now);
   if (flash <= 0.01) return;
   const pw = Math.ceil(w * dpr), ph = Math.ceil(h * dpr);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const age = now - pulse.at;
-  if (age < SCREEN.chromaMs) {
+  if (worldOnCanvas && age < SCREEN.chromaMs) {
     const d = Math.max(1, SCREEN.chromaPx * pulse.strength * (1 - age / SCREEN.chromaMs) * dpr);
     scratch ??= document.createElement('canvas');
     if (scratch.width !== pw || scratch.height !== ph) { scratch.width = pw; scratch.height = ph; }

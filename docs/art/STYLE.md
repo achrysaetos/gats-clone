@@ -14,7 +14,9 @@
 | Role | Colour | Use |
 |---|---|---|
 | Ink | `#1c1f26` | Every outline, punched holes, deepest shadow |
-| Bone floor | `#e2dccb` → `#cfc7b3` | Day floor slabs (never pure white) |
+| Night-op concrete | `#615d54` (slabs `#6a655b` / `#58544c`, seams `#3b3833`, wear `#7d776a`, grime `#2e2b27`) | The floor, day and night: mid-dark warm concrete (`FLOOR` in `palette.ts`) |
+| Floor paint | `#b79a4a` (stencil/bone `#d2cab4`) | Lane lines, hazard bands, range digits; desaturated ochre |
+| Bone | `#e2dccb` → `#cfc7b3` | Dust, chalk, stencil paint, UI text; never a floor |
 | Gunmetal | `#4f5560` / `#3d4450` | Concrete plates, guns, turrets, UI plates |
 | Khaki | `#b4a07a` | Sandstone, sandbags, built walls (darker `#978562`) |
 | Olive | `#6c7356` | Planters, crates, packs, ammo boxes |
@@ -32,7 +34,8 @@ Fire ramps from white to `#ffe08a` to `#ff9a3c` to `#d9541f` to smoke `#5a5550`.
 
 - **Key light** comes from the top left (`LIGHT = {x: 0.62, y: 0.78}` in `src/client/tilt.ts`). All shadows fall down and to the right; never mix directions.
 - **Cel steps**: a highlight band 24% toward white on the lit side and a shade band 30% toward black on the far side, both with hard edges. Gradients are allowed only on light itself (glows, pools, flashes), never on solid paint.
-- **Contact shadows** sit under every standing thing: `rgba(20, 24, 32, 0.3)`, tight and crisp.
+- **Contrast rules (floor is mid-dark, value about 37%)**: wall and crate *top faces* are lighter than the floor and their front faces darker; decals (bullet holes, scorch, blood, oil, cracks) are *darker* than the floor; dust, chalk, casings and floor paint are *lighter*. Concrete top `#78808c`, slate `#667080`, steel `#808a99`. Night multiplies the world by `[0.28, 0.34, 0.62]` so the floor stays readable under amber pools.
+- **Contact shadows** sit under every standing thing: `rgba(10, 12, 18, 0.42)`, tight and crisp.
 - **Practical lights**: muzzle flashes, explosions, the core, lamps and turret fire paint a short-lived warm pool on the floor (additive or `lighter`, amber, 80–250 ms, longer for blasts). At night these are the main light. A lit thing lights the floor around it.
 - **Day** is an overcast yard: soft, low-contrast floor and crisp shadows. **Night** is dark cool steel with amber pools, lamps that flicker rarely, and dust motes that show only inside light.
 

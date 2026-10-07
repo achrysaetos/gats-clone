@@ -9,20 +9,144 @@ import { GUNS, type GunId, type WeaponId } from '../shared/defs.ts';
  */
 type Pt = readonly [number, number];
 type Tone = 'metal' | 'dark' | 'poly' | 'wood' | 'tan' | 'olive' | 'glass' | 'bead';
-type Shape =
+type Shape = (
   | { kind: 'poly'; pts: readonly Pt[]; tone: Tone; barrel?: true }
   /** A stroke; `solid` ones (struts, guards, handles) belong to the silhouette, the rest are surface detail. */
   | { kind: 'line'; pts: readonly Pt[]; tone: Tone | 'shine' | 'seam'; w: number; solid?: true; barrel?: true }
-  | { kind: 'dot'; at: Pt; r: number; tone: Tone; barrel?: true };
+  | { kind: 'dot'; at: Pt; r: number; tone: Tone; barrel?: true }
+) & { part?: Part };
+/**
+ * The moving parts a reload animates (see reloadanim.ts), drawn apart from the rest of the gun: the magazine or drum box, the
+ * LMG's feed cover, a bolt's handle, a shotgun's pump, a pistol's slide. A `2` marks the second pistol of an akimbo pair, and
+ * `g2` that whole pistol.
+ */
+export type Part = 'mag' | 'lid' | 'bolt' | 'pump' | 'slide' | 'mag2' | 'slide2' | 'g2';
+const tag = (part: Part, ...shapes: Shape[]): Shape[] => shapes.map((s) => ({ ...s, part }));
 type Art = { pivot: number; accent: readonly [number, number, number, number]; shapes: readonly Shape[] };
 
 const BASE_TONES: Record<Tone, string> = {
   metal: '#555c67', dark: '#2c3037', poly: '#666b74', wood: '#93633a', tan: '#b19d72', olive: '#6a7255', glass: '#8fc0de', bead: '#efe7d0',
 };
-/** An airdrop's golden gun: every painted part keeps its shape and light but wears gold (gold means reward). */
-const GOLD_TONES: Record<Tone, string> = {
-  metal: '#d9a92b', dark: '#7a5a14', poly: '#e6bd47', wood: '#b8862a', tan: '#f0d27a', olive: '#c9a227', glass: '#fff3b0', bead: '#fff8dc',
+/**
+ * Gun skins (the `g_` cosmetics): each recolours the parts of a gun (`tones`) and may print a pattern over its solid body parts
+ * (`overlay`, clipped to each part). Shape, light and outline stay the gun's own, so a skinned gun is still plainly that gun.
+ * `ink` is the colour a kill-feed glyph takes. Every catalog id has an entry (test/client-cosmetics.test.ts).
+ */
+type Box = { x0: number; y0: number; x1: number; y1: number };
+type SkinDef = { tones?: Partial<Record<Tone, string>>; accent?: string; ink?: string; overlay?: (g: CanvasRenderingContext2D, b: Box, tone: Tone) => void };
+const BODY_TONES: ReadonlySet<Tone> = new Set<Tone>(['metal', 'poly', 'wood', 'tan', 'olive']);
+
+/** Evenly spaced diagonal stripes across a box, `step` apart and `w` wide, at slope `dy` per unit x. */
+function stripes(g: CanvasRenderingContext2D, b: Box, step: number, w: number, color: string, dy = 1, phase = 0) {
+  g.fillStyle = color;
+  const h = b.y1 - b.y0, span = (b.x1 - b.x0) + Math.abs(dy) * h;
+  for (let x = b.x0 - Math.abs(dy) * h + phase; x < b.x0 + span; x += step) {
+    g.beginPath();
+    g.moveTo(x, b.y0); g.lineTo(x + w, b.y0); g.lineTo(x + w + dy * h, b.y1); g.lineTo(x + dy * h, b.y1);
+    g.closePath();
+    g.fill();
+  }
+}
+const crack = (g: CanvasRenderingContext2D, pts: readonly Pt[], w: number, color: string) => {
+  g.strokeStyle = color; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(pts[0]![0], pts[0]![1]);
+  for (const [x, y] of pts.slice(1)) g.lineTo(x, y);
+  g.stroke();
 };
+
+const SKINS: Record<string, SkinDef> = {
+  g_factory: {},
+  g_walnut: {
+    tones: { poly: '#8a5a34', wood: '#7a4a2a', tan: '#9a6a3c', metal: '#4a4f58' }, ink: '#a8703c',
+    overlay(g, b, tone) {
+      if (tone !== 'poly' && tone !== 'wood' && tone !== 'tan') return;
+      g.strokeStyle = 'rgba(40, 20, 8, 0.4)'; g.lineWidth = 0.9;
+      g.beginPath();
+      for (let y = b.y0 + 2; y < b.y1; y += 3.2) { g.moveTo(b.x0, y); g.bezierCurveTo(b.x0 + (b.x1 - b.x0) * 0.3, y - 1.4, b.x0 + (b.x1 - b.x0) * 0.6, y + 1.4, b.x1, y); }
+      g.stroke();
+    },
+  },
+  g_carbon: {
+    tones: { metal: '#2e3340', poly: '#232832', dark: '#14171c', tan: '#2e3340', wood: '#2e3340', olive: '#2e3340' }, ink: '#5a6272',
+    overlay(g, b) {
+      stripes(g, b, 5, 2.2, 'rgba(255, 255, 255, 0.09)', 1);
+      stripes(g, b, 5, 2.2, 'rgba(255, 255, 255, 0.07)', -1);
+    },
+  },
+  g_hazard: {
+    tones: { metal: '#e6b422', poly: '#2c3037', tan: '#e6b422', wood: '#2c3037', olive: '#e6b422' }, ink: '#e6b422',
+    overlay(g, b, tone) { if (tone === 'poly' || tone === 'wood') return; stripes(g, b, 11, 5.5, '#1c1f26', 1); },
+  },
+  g_tiger: {
+    tones: { metal: '#e8651c', poly: '#c9501a', tan: '#e8651c', wood: '#c9501a', olive: '#e8651c' }, ink: '#ff7a2f',
+    overlay(g, b) {
+      g.strokeStyle = '#1c1f26'; g.lineCap = 'round';
+      const h = b.y1 - b.y0;
+      for (let x = b.x0 + 3, i = 0; x < b.x1; x += 6.5, i++) {
+        g.lineWidth = i % 2 ? 1.6 : 2.6;
+        g.beginPath(); g.moveTo(x, b.y0 - 1); g.quadraticCurveTo(x + (i % 3 - 1) * 3, b.y0 + h / 2, x + 3, b.y1 + 1); g.stroke();
+      }
+    },
+  },
+  g_chrome: {
+    tones: { metal: '#d8dee6', poly: '#aab4c2', dark: '#6b7280', wood: '#c4ccd8', tan: '#c4ccd8', olive: '#aab4c2' }, ink: '#d8dee6',
+    overlay(g, b) {
+      const h = b.y1 - b.y0;
+      g.fillStyle = 'rgba(40, 56, 80, 0.38)'; g.fillRect(b.x0, b.y0 + h * 0.46, b.x1 - b.x0, h * 0.2);
+      g.fillStyle = 'rgba(255, 255, 255, 0.7)'; g.fillRect(b.x0, b.y0 + h * 0.12, b.x1 - b.x0, Math.max(1, h * 0.1));
+      stripes(g, b, 17, 3, 'rgba(255, 255, 255, 0.5)', 0.8);
+    },
+  },
+  g_candy: {
+    tones: { metal: '#ff7ab8', poly: '#7ad8ff', wood: '#ff7ab8', tan: '#7ad8ff', dark: '#b04a86', olive: '#ff7ab8' }, ink: '#ff7ab8',
+    overlay(g, b) { stripes(g, b, 12, 3.2, 'rgba(255, 255, 255, 0.4)', 1); },
+  },
+  g_plastic: {
+    tones: { metal: '#e8433a', poly: '#3a7be8', wood: '#e8433a', tan: '#ffd34d', dark: '#26407a', olive: '#3a7be8', bead: '#ffffff' }, ink: '#e8433a',
+    overlay(g, b) {
+      const my = (b.y0 + b.y1) / 2;
+      g.strokeStyle = 'rgba(10, 12, 20, 0.5)'; g.lineWidth = 0.9;
+      g.beginPath(); g.moveTo(b.x0, my); g.lineTo(b.x1, my); g.stroke();
+      g.fillStyle = 'rgba(10, 12, 20, 0.45)';
+      g.beginPath(); g.arc(b.x0 + (b.x1 - b.x0) * 0.2, my, 1.1, 0, Math.PI * 2); g.fill();
+    },
+  },
+  g_molten: {
+    tones: { metal: '#2c2422', poly: '#3a2a24', dark: '#14100e', wood: '#3a2a24', tan: '#3a2a24', olive: '#2c2422' }, ink: '#ff9a3c',
+    overlay(g, b) {
+      const w = b.x1 - b.x0, h = b.y1 - b.y0;
+      for (const [col, lw] of [['#d9541f', 2.6], ['#ff9a3c', 1.6], ['#ffe08a', 0.7]] as const) {
+        crack(g, [[b.x0 + w * 0.05, b.y0 + h * 0.3], [b.x0 + w * 0.2, b.y0 + h * 0.65], [b.x0 + w * 0.34, b.y0 + h * 0.4], [b.x0 + w * 0.5, b.y0 + h * 0.8], [b.x0 + w * 0.66, b.y0 + h * 0.3], [b.x0 + w * 0.8, b.y0 + h * 0.7], [b.x0 + w * 0.97, b.y0 + h * 0.45]], lw, col);
+      }
+    },
+  },
+  g_gold: {
+    tones: { metal: '#d9a92b', dark: '#7a5a14', poly: '#e6bd47', wood: '#b8862a', tan: '#f0d27a', olive: '#c9a227', glass: '#fff3b0', bead: '#fff8dc' }, accent: '#fff1a8', ink: '#ffd34d',
+  },
+  g_bluesteel: {
+    tones: { metal: '#2a4a7a', poly: '#1e3558', dark: '#101d33', wood: '#3a5a8a', tan: '#5a7aa8', olive: '#2a4a7a' }, ink: '#7a9ac8',
+    overlay(g, b) {
+      g.fillStyle = 'rgba(122, 154, 200, 0.5)'; g.fillRect(b.x0, b.y0 + (b.y1 - b.y0) * 0.1, b.x1 - b.x0, 1.4);
+      stripes(g, b, 20, 1.6, 'rgba(180, 205, 240, 0.22)', 1);
+    },
+  },
+  // Wraps of grey tape round the body at a slant, each with a ragged edge, over bare metal.
+  g_tape: {
+    tones: { metal: '#7d8693', poly: '#6b7280', wood: '#6b7280', tan: '#7d8693', olive: '#6b7280' }, ink: '#aab4c0',
+    overlay(g, b) {
+      const h = b.y1 - b.y0;
+      for (let x = b.x0 + 3, i = 0; x < b.x1; x += 13, i++) {
+        g.fillStyle = i % 2 ? '#a4aebb' : '#9aa4b2';
+        g.beginPath(); g.moveTo(x, b.y0 - 1); g.lineTo(x + 6.5, b.y0 - 1); g.lineTo(x + 6.5 + h * 0.35, b.y1 + 1); g.lineTo(x + h * 0.35, b.y1 + 1); g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(28, 31, 38, 0.55)'; g.lineWidth = 0.8;
+        g.beginPath(); g.moveTo(x, b.y0 - 1); g.lineTo(x + h * 0.35, b.y1 + 1); g.moveTo(x + 6.5, b.y0 - 1); g.lineTo(x + 6.5 + h * 0.35, b.y1 + 1); g.stroke();
+      }
+    },
+  },
+};
+export const SKIN_IDS: readonly string[] = Object.keys(SKINS);
+/** The colour a kill-feed glyph of a gun in `skin` takes, or null for the stock gun. */
+export const skinInk = (skin: string | undefined): string | null => (skin && skin !== 'g_factory' ? SKINS[skin]?.ink ?? null : null);
 const SHINE = 'rgba(255, 255, 255, 0.28)';
 const SEAM = 'rgba(0, 0, 0, 0.55)';
 const EDGE = 'rgba(8, 9, 11, 0.6)';
@@ -44,10 +168,10 @@ const ART: Record<WeaponId, Art> = {
     pivot: 44,
     accent: [20, -7.5, 22, 3],
     shapes: [
-      poly('poly', [14, 1], [29, 1], [27, 25], [11, 25]),
+      poly('poly', [14, 1], [29, 1], [28.5, 11], [12.6, 11]),
+      ...tag('mag', poly('dark', [12.6, 11], [28.5, 11], [27, 25], [11, 25]), line('shine', 1.2, [14, 13], [14, 23])),
       solid('dark', 2.6, [29, 2], [29, 9], [40, 9], [42, 2]),
-      rect('metal', 9, -10, 53, 12),
-      line('shine', 1.4, [11, -8], [60, -8]),
+      ...tag('slide', rect('metal', 9, -10, 53, 12), line('shine', 1.4, [11, -8], [60, -8])),
       barrel(rect('dark', 59, -7, 5, 7)),
     ],
   },
@@ -56,7 +180,7 @@ const ART: Record<WeaponId, Art> = {
     accent: [26, -9, 26, 3.4],
     shapes: [
       poly('poly', [0, -6], [20, -4], [20, 4], [0, 9]),
-      poly('dark', [37, 5], [47, 5], [49, 29], [39, 29]),
+      ...tag('mag', poly('dark', [37, 5], [47, 5], [49, 29], [39, 29])),
       poly('poly', [23, 5], [33, 5], [31, 22], [21, 22]),
       rect('metal', 18, -11, 48, 17),
       line('shine', 1.4, [20, -9], [64, -9]),
@@ -72,7 +196,7 @@ const ART: Record<WeaponId, Art> = {
       rect('metal', 32, -9, 28, 16),
       barrel(rect('metal', 60, -8, 56, 8)),
       rect('dark', 60, 0, 44, 6),
-      rect('wood', 70, -1, 26, 10),
+      ...tag('pump', rect('wood', 70, -1, 26, 10)),
       barrel(line('shine', 1.4, [62, -6], [114, -6])),
       barrel(rect('dark', 113, -9.5, 6, 10)),
     ],
@@ -82,7 +206,7 @@ const ART: Record<WeaponId, Art> = {
     accent: [26, -9, 20, 3.4],
     shapes: [
       poly('poly', [-2, -8], [24, -6], [24, 4], [-2, 13]),
-      poly('dark', [52, 5], [62, 5], [68, 27], [58, 29]),
+      ...tag('mag', poly('dark', [52, 5], [62, 5], [68, 27], [58, 29])),
       poly('poly', [31, 5], [40, 5], [38, 22], [29, 22]),
       rect('metal', 22, -11, 48, 17),
       line('shine', 1.4, [24, -9], [68, -9]),
@@ -99,7 +223,7 @@ const ART: Record<WeaponId, Art> = {
     shapes: [
       poly('tan', [-3, -6], [40, -5], [50, -1], [98, -3], [100, 4], [50, 6], [38, 13], [-3, 15]),
       rect('metal', 46, -7, 32, 8),
-      dot('dark', 62, 7, 3.2),
+      ...tag('bolt', dot('dark', 62, 7, 3.2)),
       rect('dark', 46, -18, 38, 8),
       rect('dark', 40, -21, 8, 13),
       rect('dark', 82, -21, 10, 14),
@@ -114,17 +238,24 @@ const ART: Record<WeaponId, Art> = {
     accent: [26, -10, 28, 3.4],
     shapes: [
       poly('poly', [-2, -8], [24, -7], [24, 6], [-2, 13]),
-      rect('olive', 38, 7, 28, 24),
-      line('shine', 1.2, [40, 9.5], [64, 9.5]),
+      ...tag('mag', rect('olive', 38, 7, 28, 24), line('shine', 1.2, [40, 9.5], [64, 9.5])),
       poly('poly', [26, 8], [35, 8], [33, 23], [24, 23]),
       rect('metal', 22, -12, 50, 20),
-      rect('dark', 28, -16, 40, 5),
+      ...tag('lid', rect('dark', 28, -16, 40, 5)),
       line('shine', 1.4, [24, -9.5], [70, -9.5]),
       rect('poly', 72, -9, 22, 14),
       barrel(rect('metal', 92, -4, 31, 6)),
       barrel(rect('dark', 121, -7, 9, 11)),
     ],
   },
+};
+
+/** Which of a gun's moving parts to leave out (`hide`), or to draw alone (`only`); see `Part`. */
+export type GunView = { hide?: readonly Part[]; only?: Part };
+const isG2 = (p: Part | undefined) => p === 'g2' || p === 'mag2' || p === 'slide2';
+const shown = (s: Shape, v: GunView): boolean => {
+  if (v.only && !(s.part === v.only || (v.only === 'g2' && isG2(s.part)))) return false;
+  return !v.hide || !(s.part && (v.hide.includes(s.part) || (isG2(s.part) && v.hide.includes('g2'))));
 };
 
 /** What a gun's art becomes once its look is applied: parts in final units, and their bounds. */
@@ -150,7 +281,7 @@ function build(gun: GunId): Built {
   const accent: Pt[] | null = stage > 0 ? [map([ax, ay]), map([ax + aw, ay]), map([ax + aw, ay + ah]), map([ax, ay + ah])] : null;
   if (look.hands === 2) {
     // Akimbo: a second gun peeks out above and ahead of the first.
-    shapes = [...shapes.map((s) => shift(s, 16, -13 * look.width)), ...shapes];
+    shapes = [...shapes.map((s) => ({ ...shift(s, 16, -13 * look.width), part: s.part ? (`${s.part}2` as Part) : 'g2' })), ...shapes];
   }
   const pts = shapes.flatMap((s) => (s.kind === 'dot' ? [s.at] : s.pts));
   const out: Built = {
@@ -185,16 +316,18 @@ function trace(ctx: CanvasRenderingContext2D, pts: readonly Pt[], close: boolean
  * Draws the gun's art in its own units (call after scaling the context). `flat` fills every solid part in one colour, for
  * the kill feed's small glyphs; otherwise each part is shaded top to bottom and edged, with seams and highlights on top.
  */
-function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, golden = false) {
+function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, skin?: string, view?: GunView) {
   const b = build(gun);
-  const TONES = golden ? GOLD_TONES : BASE_TONES;
+  const shapes = view ? b.shapes.filter((s) => shown(s, view)) : b.shapes;
+  const def = skin ? SKINS[skin] : undefined;
+  const TONES = def?.tones ? { ...BASE_TONES, ...def.tones } : BASE_TONES;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   if (!flat) {
     // A bold ink outline round the whole silhouette first, so the gun reads like a sticker against any floor.
     ctx.strokeStyle = OUTLINE.color;
     ctx.fillStyle = OUTLINE.color;
-    for (const s of b.shapes) {
+    for (const s of shapes) {
       if (s.kind === 'line' && !s.solid) continue;
       if (s.kind === 'dot') {
         ctx.beginPath();
@@ -207,7 +340,7 @@ function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, golden 
       ctx.stroke();
     }
   }
-  for (const s of b.shapes) {
+  for (const s of shapes) {
     if (s.kind === 'dot') {
       ctx.fillStyle = flat ?? TONES[s.tone];
       ctx.beginPath();
@@ -245,10 +378,17 @@ function paint(ctx: CanvasRenderingContext2D, gun: GunId, flat?: string, golden 
     ctx.strokeStyle = EDGE;
     ctx.lineWidth = 0.9;
     ctx.stroke();
+    if (def?.overlay && BODY_TONES.has(s.tone)) {
+      ctx.save();
+      trace(ctx, s.pts, true);
+      ctx.clip();
+      def.overlay(ctx, { x0: Math.min(...s.pts.map((p) => p[0])), x1: Math.max(...s.pts.map((p) => p[0])), y0: top, y1: bottom }, s.tone);
+      ctx.restore();
+    }
   }
-  if (b.accent && !flat) {
+  if (b.accent && !flat && !view?.only) {
     trace(ctx, b.accent, true);
-    ctx.fillStyle = golden ? '#fff1a8' : GUNS[gun].look.accent;
+    ctx.fillStyle = def?.accent ?? GUNS[gun].look.accent;
     ctx.fill();
   }
 }
@@ -259,14 +399,14 @@ export const artBounds = (gun: GunId) => {
 };
 
 /** Fits the gun's art into the box at (`x`, `y`) of `w` by `h`, centred, at `scale` units per px if given (so siblings compare true size). */
-export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left'; golden?: boolean } = {}) {
+export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, w: number, h: number, opts: { flat?: string; scale?: number; align?: 'center' | 'left'; golden?: boolean; skin?: string; view?: GunView } = {}) {
   const b = build(gun);
   const k = opts.scale ?? Math.min(w / (b.maxX - b.minX), h / (b.maxY - b.minY));
   const left = opts.align === 'left' ? x : x + (w - (b.maxX - b.minX) * k) / 2;
   ctx.save();
   ctx.translate(left - b.minX * k, y + h / 2 - ((b.minY + b.maxY) / 2) * k);
   ctx.scale(k, k);
-  paint(ctx, gun, opts.flat, opts.golden);
+  paint(ctx, gun, opts.flat, opts.golden ? 'g_gold' : opts.skin, opts.view);
   ctx.restore();
 }
 
@@ -276,14 +416,14 @@ export function drawGunArt(ctx: CanvasRenderingContext2D, gun: GunId, x: number,
  * plus `perUnit` of its art length: a pistol reaches about 30 px past the hand, a rifle about 55 and a bolt-action about
  * 70, and a gun is exactly as big on the ground as in its owner's hands.
  */
-export const WORLD_GUN = { base: 4, perUnit: 0.6, squash: 0.6, res: 3 } as const;
+export const WORLD_GUN = { base: 5, perUnit: 0.64, squash: 0.62, res: 3 } as const;
 /** Where the butt of a held gun sits, in body radii ahead of the holder's centre: a pistol is held out, a long gun shouldered. */
 const HOLD_REAR: Record<WeaponId, number> = { pistol: 0.62, smg: 0.38, shotgun: 0.12, assault: 0.16, sniper: 0, lmg: 0.16 };
 
 const images = new Map<string, HTMLCanvasElement>();
 
-function worldImage(gun: GunId, dusted: boolean, golden = false): HTMLCanvasElement {
-  const key = `${gun}|${dusted}|${golden}`;
+function worldImage(gun: GunId, dusted: boolean, skin?: string, view?: GunView): HTMLCanvasElement {
+  const key = `${gun}|${dusted}|${skin ?? ''}|${view ? `${view.only ?? ''}-${(view.hide ?? []).join()}` : ''}`;
   let image = images.get(key);
   if (image) return image;
   const b = build(gun);
@@ -292,7 +432,7 @@ function worldImage(gun: GunId, dusted: boolean, golden = false): HTMLCanvasElem
   image.height = Math.ceil((b.maxY - b.minY) * WORLD_GUN.res) + 4;
   const g = image.getContext('2d');
   if (g) {
-    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4, { golden });
+    drawGunArt(g, gun, 2, 2, image.width - 4, image.height - 4, { skin, view });
     if (dusted) {
       // Dust settles on it: a flat grey wash over the paint only.
       g.globalCompositeOperation = 'source-atop';
@@ -315,9 +455,9 @@ function worldSize(gun: GunId) {
 }
 
 /** A dropped gun, dulled as if it lay in the dust, centred on (`x`, `y`) along the context's x axis. */
-export function drawDroppedGun(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number) {
+export function drawDroppedGun(ctx: CanvasRenderingContext2D, gun: GunId, x: number, y: number, skin?: string) {
   const { w, h } = worldSize(gun);
-  ctx.drawImage(worldImage(gun, true), x - w / 2, y - h / 2, w, h);
+  ctx.drawImage(worldImage(gun, true, skin), x - w / 2, y - h / 2, w, h);
 }
 
 /** Whether a gun aimed along `angle` is drawn mirrored, so its grip and mag always hang down-screen. */
@@ -329,14 +469,14 @@ export const heldForeshorten = (angle: number): number => 1 - 0.15 * Math.abs(Ma
  * A held gun aimed along `aim`, in the holder's frame (x along the aim, from the body's centre), its bore on the aim line,
  * mirrored when aimed left (see `heldFlipped`) and foreshortened toward up or down (see `heldForeshorten`).
  */
-export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, aim = 0, golden = false) {
+export function drawHeldGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, aim = 0, golden = false, skin?: string, view?: GunView) {
   const { w, h, bore, front } = worldSize(gun);
   const rear = HOLD_REAR[GUNS[gun].base] * radius;
   const fore = heldForeshorten(aim);
   ctx.save();
   ctx.translate(rear, 0);
   ctx.scale(fore, heldFlipped(aim) ? -1 : 1);
-  ctx.drawImage(worldImage(gun, false, golden), -front, -bore, w, h);
+  ctx.drawImage(worldImage(gun, false, golden ? 'g_gold' : skin, view), -front, -bore, w, h);
   ctx.restore();
 }
 
@@ -380,6 +520,20 @@ export function heldHands(gun: GunId, radius: number, aim = 0): [Hand, Hand] {
   return [at(grip), { x: Math.min(support.x, FORE_REACH * radius), y: support.y }];
 }
 
+/**
+ * A point of a held gun's art (`x`, `y` in art units, as the shapes are written), in the holder's frame, and the holder-frame
+ * size of one art unit along (`sx`) and across (`sy`, signed: mirrored when aimed left) the bore. Reloads hang their hand targets on it.
+ */
+export function heldPoint(gun: GunId, radius: number, aim: number, x: number, y: number): Hand & { sx: number; sy: number } {
+  const { base, look } = GUNS[gun];
+  const pivot = ART[base].pivot;
+  const { k, kAcross, front } = worldSize(gun);
+  const b = build(gun);
+  const short = heldForeshorten(aim), s = heldFlipped(aim) ? -1 : 1;
+  const sx = k * short, sy = s * kAcross;
+  return { x: HOLD_REAR[base] * radius + (((x <= pivot ? x : pivot + (x - pivot) * look.length) - b.minX + 2 / WORLD_GUN.res) * k - front) * short, y: y * look.width * sy, sx, sy };
+}
+
 /** How far ahead of its holder's centre a held gun's muzzle is, `radius` being the holder's body radius, aimed along `aim`. */
 export function heldMuzzleReach(gun: GunId, radius: number, aim = 0): number {
   return HOLD_REAR[GUNS[gun].base] * radius + worldSize(gun).length * heldForeshorten(aim);
@@ -389,7 +543,7 @@ export function heldMuzzleReach(gun: GunId, radius: number, aim = 0): number {
  * Paints a gun card into a DOM canvas at the screen's pixel density. `cssW` by `cssH` is its size on the page; `peers`
  * share one scale so a pick's options, or the six class guns, compare at true size.
  */
-export function drawGunCard(canvas: HTMLCanvasElement, gun: GunId, cssW: number, cssH: number, peers: readonly GunId[] = [gun]) {
+export function drawGunCard(canvas: HTMLCanvasElement, gun: GunId, cssW: number, cssH: number, peers: readonly GunId[] = [gun], skin?: string) {
   const dpr = Math.max(2, Math.min(4, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) * 1.5);
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
@@ -402,7 +556,7 @@ export function drawGunCard(canvas: HTMLCanvasElement, gun: GunId, cssW: number,
     return Math.min(w / (b.maxX - b.minX), h / (b.maxY - b.minY));
   }));
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGunArt(ctx, gun, canvas.width * pad, canvas.height * pad, w, h, { scale });
+  drawGunArt(ctx, gun, canvas.width * pad, canvas.height * pad, w, h, { scale, skin });
 }
 
 /** Where the muzzle of the gun held by a player at (`x`, `y`) aiming along `angle` is, so a drawn round leaves the barrel. */

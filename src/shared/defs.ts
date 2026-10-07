@@ -207,6 +207,15 @@ export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; speedMul
 /** The least share of base speed a gun and armor together can leave you, so the heaviest loadout is slow but still moves (about 148 px/s). */
 export const LOAD_SPEED_FLOOR = 0.58;
 
+/**
+ * Sprint: held with movement, it multiplies move speed by `speedMul` (after the loadout floor, so Lightweight stacks) and lowers the gun.
+ * You cannot fire while sprinting (a click ends the sprint), but you can reload. Leaving sprint raises the gun for `raiseMs` (no shot) and starts a
+ * settle: spread is `settleMul` times normal and eases out (quadratically) to normal over `settleMs`.
+ */
+export const SPRINT = { speedMul: 1.35, settleMul: 2.2, settleMs: 2000, raiseMs: 150 } as const;
+/** How many of the tier-2 pool a level-up offers, drawn per life. */
+export const TIER2_OFFER = 4;
+
 export const COLOR_IDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
 export type ColorId = (typeof COLOR_IDS)[number];
 export const byColor = <T>(f: (c: ColorId) => T) => Object.fromEntries(COLOR_IDS.map((c) => [c, f(c)])) as Record<ColorId, T>;
@@ -216,8 +225,8 @@ export const COLORS: Record<ColorId, string> = {
 
 export const PERK_TIERS = {
   1: ['optics', 'thermal', 'ghillie', 'piercing', 'extended', 'grip', 'silencer', 'lightweight', 'longRange', 'quickReload', 'choke'],
-  2: ['shield', 'thickSkin', 'firstAid'],
-  3: ['grenade', 'fragGrenade', 'gasGrenade', 'landMine', 'knife', 'engineer', 'dash'],
+  2: ['shield', 'thickSkin', 'firstAid', 'marathon', 'steadyHands', 'secondWind', 'adrenaline', 'bloodlust', 'recon', 'ninja', 'overclock', 'demolitions', 'fastHands', 'tracker', 'brace'],
+  3: ['grenade', 'fragGrenade', 'gasGrenade', 'landMine', 'knife', 'engineer', 'dash', 'flashbang', 'smokeGrenade'],
 } as const;
 export type Tier = keyof typeof PERK_TIERS;
 export type PerkId = (typeof PERK_TIERS)[Tier][number];
@@ -238,6 +247,18 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   shield: { name: 'Shield', desc: 'Blocks 33% of bullet damage from the front' },
   thickSkin: { name: 'Thick skin', desc: '+40 health: outlast a one- or two-hit gun' },
   firstAid: { name: 'First aid', desc: 'Regenerate health 3x faster, starting 1.6s after a hit' },
+  marathon: { name: 'Marathon', desc: 'Sprint 15% faster, and your gun settles 50% sooner after a sprint' },
+  steadyHands: { name: 'Steady hands', desc: 'Spray bloom builds 40% slower and recovers 60% faster; the post-sprint settle is 25% shorter' },
+  secondWind: { name: 'Second wind', desc: 'Once a life, dropping under 25% health gives 2s of +30% speed and half damage taken' },
+  adrenaline: { name: 'Adrenaline', desc: 'A kill grants +20% move speed for 3s' },
+  bloodlust: { name: 'Bloodlust', desc: 'Heal 15% of the damage you deal to players' },
+  recon: { name: 'Recon', desc: '+15% view radius, and enemies in view show a mark while they reload' },
+  ninja: { name: 'Ninja', desc: 'Firing shows you on the minimap for 1s, not 2s, and your sprint makes no noise' },
+  overclock: { name: 'Overclock', desc: 'Ability cooldown 30% shorter' },
+  demolitions: { name: 'Demolitions', desc: 'Your blasts hit 30% harder and 30% wider; you take 30% less blast damage' },
+  fastHands: { name: 'Fast hands', desc: 'Reload 25% faster, and an evolution refills your magazine' },
+  tracker: { name: 'Tracker', desc: 'Enemies you damage show on your minimap for 4s' },
+  brace: { name: 'Brace', desc: 'Take 60% less knockback and deal 15% more' },
   grenade: { name: 'Grenade', desc: 'Thrown explosive' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
@@ -245,10 +266,12 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   knife: { name: 'Knife', desc: 'Lunge melee strike' },
   engineer: { name: 'Engineer', desc: 'Build a wall' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
+  flashbang: { name: 'Flashbang', desc: 'Blinds everyone who sees it burst, you and your team too' },
+  smokeGrenade: { name: 'Smoke', desc: 'A dense cloud nobody can see through; bullets still fly' },
 };
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
-  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 10000, dash: 3500,
+  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 10000, dash: 3500, flashbang: 9000, smokeGrenade: 12000,
 };
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
@@ -256,15 +279,15 @@ export type PlayerKind = (typeof PLAYER_KINDS)[number];
 /** Humans carry multiplied health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
 export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 4, bot: 1 };
 
-export type Pick = { k: 'perk'; tier: Tier } | { k: 'evolve' };
+export type Pick = { k: 'perk'; tier: Tier; /** The tier-2 perks offered this life (`TIER2_OFFER` of the pool, drawn at spawn); absent means the whole tier. */ offer?: readonly PerkId[] } | { k: 'evolve' };
 export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
+  // A new gun is the best reward there is, so the first kill evolves your gun; the attachment follows at the second or third.
   // Medals pay a large share of score, more the hotter a life runs, so the ladder steepens toward the top: set from 800 bot
-  // lives (`node scripts/level-scale.ts`, and test/balance.test.ts holds it) so about as many lives reach each evolve and the
-  // ability as before medals. A first kill still opens a perk.
-  { score: 0, pick: null }, { score: 100, pick: { k: 'perk', tier: 1 } }, { score: 250, pick: { k: 'evolve' } },
+  // lives (`node scripts/level-scale.ts`, and test/balance.test.ts holds it).
+  { score: 0, pick: null }, { score: 100, pick: { k: 'evolve' } }, { score: 250, pick: { k: 'perk', tier: 1 } },
   { score: 420, pick: { k: 'perk', tier: 2 } }, { score: 620, pick: { k: 'perk', tier: 3 } }, { score: 1000, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
@@ -288,7 +311,7 @@ const DOES_NOTHING: Partial<Record<Attachment, (def: GunDef) => boolean>> = {
 export const pickOptions = (pick: Pick, gun: GunId): readonly PickOption[] =>
   pick.k === 'evolve' ? EVOLUTIONS[gun]
     : pick.tier === 1 ? ATTACHMENTS[GUNS[gun].base].filter((perk) => !DOES_NOTHING[perk]?.(GUNS[gun]))
-      : PERK_TIERS[pick.tier];
+      : pick.tier === 2 && pick.offer ? pick.offer : PERK_TIERS[pick.tier];
 
 export const isPerkId = (option: PickOption): option is PerkId => Object.hasOwn(PERK_INFO, option);
 
@@ -306,6 +329,20 @@ export const PRESS_BUFFER_MS = 200;
  * spread by `spread` of itself, breaks a planted sniper's pinpoint once past `breaksPinpoint`, and shades the screen's edges.
  */
 export const SUPPRESSION = { px: 60, holdMs: 150, decayPerSec: 0.8, spread: 0.25, breaksPinpoint: 0.05 } as const;
+
+/**
+ * Knockback: a round or blast that lands shoves its victim along its line. A hit adds `perDamage[gun class]` px/s per point of
+ * damage (before the human health multiplier, after armor), the sum is capped at `cap` (`blastCap` for blasts, which push `blastPerDamage`
+ * per point), and the shove bleeds off with time constant `tauMs`, so a spray of light rounds barely moves anyone while a point-blank
+ * shotgun or a sniper round visibly rocks them. `armor` is the share of a shove each armor lets through; `zombie` the share a horde kind takes
+ * (light kinds fly, brutes and the colossus do not budge).
+ */
+export const KNOCK = {
+  perDamage: { pistol: 0.6, smg: 0.35, shotgun: 0.9, assault: 0.6, sniper: 0.9, lmg: 0.4 } as Record<WeaponId, number>,
+  blastPerDamage: 1.6, cap: 120, blastCap: 180, tauMs: 80, floor: 6,
+  armor: { none: 1, light: 0.93, medium: 0.85, heavy: 0.7 } as Record<ArmorId, number>,
+  zombie: { walker: 1.15, runner: 1.4, plated: 0.7, bloater: 0.8, brute: 0, colossus: 0 } as Record<ZombieKind, number>,
+} as const;
 
 /**
  * A kill refuels the killer at once: `heal` of their max health and `ammo` of their mag back (not mid-reload), so winning
@@ -331,6 +368,8 @@ export const MEDAL_IDS = [
   'pinnedDown', 'beltFed',
   // The arena's surprises: a barrel kill, a barrel chain, and the supply drop.
   'kaboom', 'chainReaction', 'specialDelivery',
+  // The other props (`PROPS`): a propane kill, a kill while shocked by a generator you shorted, a fire kill, and a splash of paint on an enemy.
+  'liftoff', 'shockTherapy', 'arsonist', 'picasso',
 ] as const;
 export type MedalId = (typeof MEDAL_IDS)[number];
 export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
@@ -368,6 +407,10 @@ export const MEDALS: Record<MedalId, { name: string; desc: string; score: number
   kaboom: { name: 'Kaboom', desc: 'Kill with an explosive barrel you set off', score: 60, tier: 'bronze' },
   chainReaction: { name: 'Chain Reaction', desc: 'One barrel chain kills two or more', score: 200, tier: 'gold' },
   specialDelivery: { name: 'Special Delivery', desc: 'Crack open a supply drop', score: 100, tier: 'silver' },
+  liftoff: { name: 'Liftoff', desc: 'Kill with a propane tank you sent flying', score: 100, tier: 'silver' },
+  shockTherapy: { name: 'Shock Therapy', desc: 'Kill an enemy while a generator you shorted still has them shocked', score: 100, tier: 'silver' },
+  arsonist: { name: 'Arsonist', desc: 'Kill with a burning oil slick you spilled', score: 75, tier: 'bronze' },
+  picasso: { name: 'Picasso', desc: 'Splatter a paint can over an enemy', score: 50, tier: 'bronze' },
 };
 /** The streak at which each streak medal is earned. */
 export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
@@ -452,7 +495,41 @@ export const AIRDROP = {
   goldMul: 1.2, supplyChance: 0.4, supplyScore: 150, edge: 400,
 } as const;
 
-export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR'] as const;
+/**
+ * The props that stand beside the barrels on the versus maps, one `PropKind` each. A prop is a `size` px square with `hp`; shot to
+ * zero it does its thing (see `sim/props.ts`) and, but for a lamp, hides until `respawnMs` after (a lamp stays up, dark, and relights
+ * then; a cabinet leaves a pack on the floor for `packMs` first). Maps keep props `spawnGap` px from every spawn region.
+ */
+export const PROP_KINDS = ['propane', 'gas', 'generator', 'oil', 'lamp', 'medic', 'ammo', 'paint'] as const;
+export type PropKind = (typeof PROP_KINDS)[number];
+export const PROPS: Record<PropKind, { name: string; desc: string; size: number; hp: number; respawnMs: number }> = {
+  propane: { name: 'Propane tank', desc: 'Shot, it rockets off the way the round came and bursts where it lands', size: 28, hp: 28, respawnMs: 40_000 },
+  gas: { name: 'Gas canister', desc: 'Bursts into a lingering toxic cloud', size: 28, hp: 30, respawnMs: 45_000 },
+  generator: { name: 'Generator', desc: 'Shorts out in an EMP: slows everyone near and locks abilities', size: 40, hp: 50, respawnMs: 60_000 },
+  oil: { name: 'Oil drum', desc: 'Spills a burning slick', size: 32, hp: 45, respawnMs: 45_000 },
+  lamp: { name: 'Streetlamp', desc: 'Shoot the bulb to darken its pool of light', size: 20, hp: 20, respawnMs: 90_000 },
+  medic: { name: 'Medical cabinet', desc: 'Shatters and drops a health pack', size: 36, hp: 40, respawnMs: 60_000 },
+  ammo: { name: 'Ammo crate', desc: 'Opens and drops a full magazine and a fresh ability', size: 36, hp: 40, respawnMs: 60_000 },
+  paint: { name: 'Paint can', desc: 'Splatters your colour on the floor', size: 22, hp: 10, respawnMs: 30_000 },
+};
+/** The numbers behind each prop's effect. Speeds are px/s, times ms. */
+export const PROP_FX = {
+  spawnGap: 100,
+  /** A tank rockets off at `speed`, skids (its speed bleeds off at `drag` per second) and bursts on touching a wall, body or prop, or after `lifeMs`. */
+  propane: { speed: 700, drag: 0.9, lifeMs: 1800, body: 14, radius: 120, damage: 95 },
+  /** The gas cloud lasts `cloudMs` (damage is the gas grenade's). */
+  gas: { cloudMs: 7000 },
+  /** A shorted generator arcs for `arcMs`, then pulses: everyone within `radius` is slowed to `slowMul` for `slowMs` and cannot use an ability for `lockMs`. */
+  generator: { arcMs: 600, radius: 210, slowMs: 2600, slowMul: 0.55, lockMs: 2000 },
+  /** The slick burns everyone in `radius` (but its spiller) at `dps` for `burnMs`. */
+  oil: { radius: 100, burnMs: 6000, dps: 18 },
+  /** A broken-open cabinet's pack lies `packMs`, taken by a player within `pickR` who needs it. */
+  medic: { heal: 50, packMs: 25_000, pickR: 34 },
+  ammo: { packMs: 25_000, pickR: 34 },
+  paint: { radius: 90, picassoPx: 80 },
+} as const;
+
+export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR', 'RNG'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 
 export const WORLD = {
@@ -530,10 +607,14 @@ export const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
 /** How many of a kind listed `listed` times come for a squad with this share of the horde. */
 export const hordeCount = (kind: ZombieKind, listed: number, share: number) => (!listed || isBoss(kind) ? listed : Math.max(1, Math.round(listed * share)));
 
-export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar'] as const;
+export const TURRET_KINDS = ['sentry', 'cannon', 'scatter', 'mortar', 'tesla'] as const;
 export type TurretKind = (typeof TURRET_KINDS)[number];
-export const BUILDING_KINDS = ['wall', ...TURRET_KINDS] as const;
+/** Utility kinds: an ammo `depot` and a `post` that mends are solid like a wall, `spikes` lie on the floor and are walked over. */
+export const UTILITY_KINDS = ['depot', 'post', 'spikes'] as const;
+export type UtilityKind = (typeof UTILITY_KINDS)[number];
+export const BUILDING_KINDS = ['wall', ...TURRET_KINDS, ...UTILITY_KINDS] as const;
 export type BuildingKind = (typeof BUILDING_KINDS)[number];
+export const isTurretKind = (kind: BuildingKind): kind is TurretKind => (TURRET_KINDS as readonly string[]).includes(kind);
 export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TURRET_KINDS.map((k) => [k, f(k)])) as Record<TurretKind, T>;
 
 /**
@@ -544,10 +625,48 @@ export const byTurret = <T>(f: (kind: TurretKind) => T) => Object.fromEntries(TU
 export type TurretDef = {
   prefers: ZombieKind; range: number; fireMs: number; damage: number; pellets: number; bulletSpeed: number; spread: number; ammo: number; scrapPerRound: number;
   muzzle: number; bullet: { r: number; color: string }; lobbed: Blast | null;
+  /** A coil's arc: it leaps from its first target to up to `jumps` more within `reach` px of the last, each hit `falloff` as hard as the one before. No round flies. */
+  arc?: { jumps: number; reach: number; falloff: number };
 };
+/**
+ * A wall comes in three tiers, each an upgrade of the one below: `armor` is the share of a zombie's bite it shrugs off and `blast` scales a bloater's burst on it.
+ * Walls are the only buildings priced by tier; `BUILDINGS.wall` is the first.
+ */
+export type WallTier = { name: string; cost: number; hp: number; armor: number; blast: number; repairMul: number };
+export const WALL_TIERS = [
+  { name: 'Barricade', cost: 10, hp: 800, armor: 0, blast: 1, repairMul: 1.5 },
+  { name: 'Sandbag wall', cost: 24, hp: 2000, armor: 0.1, blast: 0.75, repairMul: 1 },
+  { name: 'Steel wall', cost: 60, hp: 4800, armor: 0.3, blast: 0.5, repairMul: 0.8 },
+] as const satisfies readonly WallTier[];
+/**
+ * Upgrades: one level up costs `costShare[lv - 1]` of the building's base price (a wall pays the difference of its tiers' prices instead),
+ * and each level scales a turret's `damage`, `fireMs`, `range` and `ammo`, every building's `hp`, and a utility's `aura` (how fast it works) and `reach`.
+ */
+export const MAX_LEVEL = 3;
+export const UPGRADE = {
+  costShare: [0.65, 1.15],
+  damage: [1, 1.4, 1.9], fireMs: [1, 0.85, 0.7], range: [1, 1.1, 1.2], ammo: [1, 1.5, 2.2], hp: [1, 1.4, 1.9], aura: [1, 1.6, 2.4], reach: [1, 1.15, 1.3],
+} as const;
+/**
+ * Utilities: the ammo `depot` tops up every turret within `reach` px, `ammoPerSec` as a share of a turret's load a second, for `scrapShare` of a round's price, and reloads a squad player's gun at once there.
+ * The `post` mends every squad player within `reach` px `playerHp` health a second and every building there `buildingHp`, free.
+ * `spikes` slow a zombie on them to `slow` of its speed, hurt it `dps` a second, and wear `wear` hp a second per zombie, `heavyWear` per heavy one (brute, bloater, colossus).
+ */
+export const UTILITY = {
+  depot: { reach: 175, ammoPerSec: 0.1, scrapShare: 0.6 },
+  post: { reach: 175, playerHp: 4, buildingHp: 14 },
+  spikes: { slow: 0.45, dps: 14, wear: 7, heavyWear: 24 },
+} as const;
 type BuildingDef = { name: string; cost: number; hp: number };
-export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> = {
-  wall: { name: 'Wall', cost: 20, hp: 2000, turret: null },
+export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> & Record<UtilityKind, BuildingDef & { turret: null }> = {
+  wall: { name: WALL_TIERS[0].name, cost: WALL_TIERS[0].cost, hp: WALL_TIERS[0].hp, turret: null },
+  depot: { name: 'Ammo depot', cost: 90, hp: 900, turret: null },
+  post: { name: 'Repair post', cost: 110, hp: 800, turret: null },
+  spikes: { name: 'Spike strip', cost: 12, hp: 450, turret: null },
+  tesla: {
+    name: 'Tesla coil', cost: 260, hp: 1100,
+    turret: { prefers: 'walker', range: 230, fireMs: 1000, damage: 40, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 1.5, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null, arc: { jumps: 3, reach: 120, falloff: 0.75 } },
+  },
   sentry: {
     name: 'Sentry', cost: 70, hp: 1000,
     turret: { prefers: 'walker', range: 420, fireMs: 140, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },

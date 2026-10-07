@@ -2,8 +2,13 @@ import { ZOM, ZOMBIE_KINDS, ZOMBIES, type ZombieKind } from '../shared/defs.ts';
 import type { BuildingView, ZombieView } from '../shared/protocol.ts';
 import { cellRect } from '../shared/sim/build.ts';
 import { HIT_FLASH_MS } from './effects.ts';
-import { INK, PALETTE, shade, tint, ZOMBIE_LOOK } from './palette.ts';
+import { setLight } from './lighting.ts';
+import { INK, PALETTE, shadeHex, ZOMBIE_LOOK } from './palette.ts';
 import { LIGHT } from './tilt.ts';
+import {
+  BUILD, bucketOf, eyeAt, newSpriteFrame, handBucketOf, handHalf, handSprite, headHalf, headSprite, SHOES, topOfTorso, TORSO, torsoHalf, torsoSprite,
+  variantOf, ZOMBIE_BUCKETS, type Variant,
+} from './zombiekit.ts';
 
 const TAU = Math.PI * 2;
 
@@ -145,224 +150,37 @@ export function animateZombies(
 export const zombieAnim = (id: number): Readonly<Anim> | undefined => anims.get(id);
 export const clearZombieAnims = () => anims.clear();
 
-/**
- * Each kind's build, all in body radii. `arms` is the angle off the heading the arms reach at rest (walkers reach out, a
- * runner sweeps them back), `armW` their thickness, `hand` the fist, `head` the head and how far forward it hangs (`neck`),
- * `slump` how far it lolls to one side, `sway` how much the body shambles side to side.
- */
-const BUILD: Record<ZombieKind, { arms: number; armLen: number; armW: number; hand: number; head: number; neck: number; slump: number; sway: number; foot: number }> = {
-  walker: { arms: 0.42, armLen: 1.12, armW: 0.3, hand: 0.24, head: 0.56, neck: 0.42, slump: 0.16, sway: 0.08, foot: 0.26 },
-  runner: { arms: 2.3, armLen: 0.95, armW: 0.3, hand: 0.22, head: 0.54, neck: 0.55, slump: 0.06, sway: 0.04, foot: 0.28 },
-  brute: { arms: 0.78, armLen: 1.05, armW: 0.34, hand: 0.36, head: 0.46, neck: 0.36, slump: 0.04, sway: 0.05, foot: 0.24 },
-  plated: { arms: 0.5, armLen: 1.08, armW: 0.3, hand: 0.24, head: 0.54, neck: 0.38, slump: 0.08, sway: 0.06, foot: 0.24 },
-  bloater: { arms: 0.95, armLen: 0.86, armW: 0.24, hand: 0.18, head: 0.42, neck: 0.62, slump: 0.1, sway: 0.1, foot: 0.2 },
-  colossus: { arms: 0.72, armLen: 1.0, armW: 0.3, hand: 0.34, head: 0.4, neck: 0.34, slump: 0.03, sway: 0.04, foot: 0.22 },
+export { bucketOf, ZOMBIE_BUCKETS };
+export const bodyImage = (kind: ZombieKind, bucket: number, pxPerUnit: number) => torsoSprite(kind, variantOf(0), bucket, 0, pxPerUnit);
+
+/** Plated kit chips away as the wearer's health falls: whole, then notched, cracked, and hanging off. */
+const stageOf = (kind: ZombieKind, hp: number) => (kind === 'plated' || kind === 'colossus' ? (hp >= 8 ? 0 : hp >= 5 ? 1 : hp >= 3 ? 2 : 3) : 0);
+
+/** Which kinds wear sleeves to the elbow; the rest go bare-armed. */
+const SLEEVES: Record<ZombieKind, boolean> = { walker: true, runner: false, brute: false, plated: true, bloater: false, colossus: true };
+
+type Pose = {
+  id: number; kind: ZombieKind; k: number; x: number; y: number; a: number; bx: number; by: number; stretch: number; t: number; walk: number;
+  swing: ReturnType<typeof swingPose> | null; hit: number; v: Variant; stage: number;
+  /** The torso sprite's centre, and where the head's top face sits. */
+  tx: number; ty: number; hx: number; hy: number; mouth: number; pulse: number;
+  /** The two arms, posed once a frame by drawLimbs and read again for the hands. */
+  arms: Arm[];
 };
 
-const SCALE_STEP = 20;
-const sprites = new Map<string, HTMLCanvasElement>();
-let spritesScale = 0;
+/** A thud's dust and a Colossus's cracks, short-lived and tiny. */
+type Thud = { x: number; y: number; born: number; crack: boolean; seed: number; r: number };
+const thuds: Thud[] = [];
+const lastPhase = new Map<number, number>();
+const THUD_MS = 320, CRACK_MS = 900;
+const SEEN = new Map<number, number>();
+let frame = 0;
 
-function sprite(key: string, radius: number, pxPerUnit: number, paint: (g: CanvasRenderingContext2D, r: number) => void): HTMLCanvasElement {
-  const px = Math.round(pxPerUnit * SCALE_STEP) / SCALE_STEP;
-  if (px !== spritesScale) { sprites.clear(); spritesScale = px; }
-  let image = sprites.get(key);
-  if (!image) {
-    image = document.createElement('canvas');
-    image.width = image.height = Math.ceil((radius + 3) * 2 * px);
-    const g = image.getContext('2d')!;
-    g.scale(px, px);
-    g.translate(radius + 3, radius + 3);
-    paint(g, radius);
-    sprites.set(key, image);
-  }
-  return image;
-}
-
-function disc(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
-  g.fillStyle = fill;
-  g.beginPath();
-  g.arc(x, y, r, 0, TAU);
-  g.fill();
-}
-
-/** A disc in the kit's cel shading: ink rim, a hard dark crescent away from the light and a hard light one toward it. */
-function celDisc(g: CanvasRenderingContext2D, r: number, color: string, rim: number) {
-  disc(g, 0, 0, r, INK);
-  const c = r - rim;
-  g.save();
-  g.beginPath();
-  g.arc(0, 0, c, 0, TAU);
-  g.clip();
-  disc(g, 0, 0, c, shade(color, 0.76));
-  disc(g, -c * 0.16, -c * 0.16, c, color);
-  g.fillStyle = tint(color, 0.3);
-  g.beginPath();
-  g.arc(0, 0, c, 0, TAU);
-  g.arc(c * 0.14, c * 0.14, c, 0, TAU, true);
-  g.fill();
-  g.restore();
-}
-
-/** The soldiers' bold ink (bodies.ts), as a share of the radius, at least 2 px. */
-const INK_W = (r: number) => Math.max(2, r * 0.11);
-
-/**
- * Each kind's torso in its own frame (x along the heading, y across), in radii: zombies share the soldiers' toy build, a
- * squat body wider across the shoulders than it is deep, so the six read as one toy line with the squad.
- */
-const TORSO: Record<ZombieKind, { rx: number; ry: number }> = {
-  walker: { rx: 0.66, ry: 0.94 },
-  runner: { rx: 0.56, ry: 0.84 },
-  brute: { rx: 0.74, ry: 1.0 },
-  plated: { rx: 0.7, ry: 0.96 },
-  bloater: { rx: 0.92, ry: 1.0 },
-  colossus: { rx: 0.76, ry: 0.98 },
-};
-
-/** The sprites turn in this many steps, each lit from the world's light, like the soldiers' turning parts. */
-export const ZOMBIE_BUCKETS = 32;
-export const bucketOf = (a: number) => ((Math.round((a / TAU) * ZOMBIE_BUCKETS) % ZOMBIE_BUCKETS) + ZOMBIE_BUCKETS) % ZOMBIE_BUCKETS;
-
-/**
- * A torso turned to `a`, cel-shaded in world space: ink rim, the shape in its darker tone, the same shape nudged toward
- * the light in its base tone, and a hard light rim on the lit edge. `detail` paints flat kit over it in the body's frame.
- */
-function paintTorso(g: CanvasRenderingContext2D, kind: ZombieKind, r: number, a: number) {
-  const look = ZOMBIE_LOOK[kind];
-  const t = TORSO[kind];
-  const ink = INK_W(r);
-  const shape = (dx: number, dy: number, grow: number) => {
-    g.beginPath();
-    g.ellipse(dx, dy, r * t.rx + grow, r * t.ry + grow, a, 0, TAU);
-  };
-  // Colossus: bone spikes along its back, under the hide.
-  if (kind === 'colossus') {
-    g.fillStyle = '#e3d8bd';
-    g.strokeStyle = INK;
-    g.lineWidth = ink;
-    g.lineJoin = 'round';
-    for (const off of [-0.55, 0, 0.55]) {
-      const along = -0.35, c = Math.cos(a), sn = Math.sin(a);
-      const bx = (along * c - off * sn) * r, by = (along * sn + off * c) * r;
-      const tip = { x: bx - c * r * 0.75, y: by - sn * r * 0.75 };
-      const side = { x: -sn * r * 0.2, y: c * r * 0.2 };
-      g.beginPath();
-      g.moveTo(bx + side.x, by + side.y); g.lineTo(tip.x, tip.y); g.lineTo(bx - side.x, by - side.y);
-      g.closePath();
-      g.fill();
-      g.stroke();
-    }
-  }
-  shape(0, 0, ink);
-  g.fillStyle = INK;
-  g.fill();
-  g.save();
-  shape(0, 0, 0);
-  g.clip();
-  g.fillStyle = shade(look.body, 0.74);
-  g.fillRect(-r * 2, -r * 2, r * 4, r * 4);
-  shape(-LIGHT.x * r * 0.16, -LIGHT.y * r * 0.16, 0);
-  g.fillStyle = look.body;
-  g.fill();
-  // Flat kit over the hide, in the body's frame.
-  g.save();
-  g.rotate(a);
-  g.fillStyle = shade(look.body, 0.8);
-  switch (kind) {
-    case 'walker':
-      // A torn shirt over the back.
-      g.fillStyle = '#6c7356';
-      g.fillRect(-r, -r, r * 0.72, r * 2);
-      break;
-    case 'runner':
-      g.fillStyle = '#978562';
-      g.fillRect(-r, -r, r * 0.6, r * 2);
-      break;
-    case 'brute':
-      // A hunched hump of muscle over the shoulders.
-      g.beginPath();
-      g.ellipse(-r * 0.22, 0, r * 0.36, r * 0.62, 0, 0, TAU);
-      g.fill();
-      break;
-    case 'plated':
-      // A plate carrier on its back in the kit's gunmetal.
-      g.fillStyle = '#4f5661';
-      g.beginPath();
-      g.roundRect(-r * 0.62, -r * 0.6, r * 0.62, r * 1.2, r * 0.12);
-      g.fill();
-      g.fillStyle = '#7d8693';
-      g.beginPath();
-      g.roundRect(-r * 0.58, -r * 0.56, r * 0.54, r * 0.22, r * 0.08);
-      g.fill();
-      break;
-    case 'bloater':
-      for (const [x, y, sz] of [[-0.35, -0.42, 0.24], [0.2, 0.45, 0.27], [-0.4, 0.3, 0.2], [0.28, -0.3, 0.17]] as const) {
-        // Pustules in the fire ramp's orange: it bursts.
-        disc(g, x * r, y * r, sz * r + ink * 0.6, INK);
-        disc(g, x * r, y * r, sz * r, '#ff9a3c');
-        disc(g, (x - sz * 0.3) * r, (y - sz * 0.3) * r, sz * r * 0.38, '#ffe08a');
-      }
-      break;
-    case 'colossus':
-      g.fillStyle = shade(look.body, 0.7);
-      g.beginPath();
-      g.roundRect(-r * 0.62, -r * 0.5, r * 0.5, r * 1.0, r * 0.14);
-      g.fill();
-      break;
-  }
-  g.restore();
-  // The hard light rim: the shape less itself nudged away from the light, a crescent on the lit edge.
-  g.fillStyle = tint(look.body, 0.3);
-  g.beginPath();
-  g.ellipse(0, 0, r * t.rx, r * t.ry, a, 0, TAU);
-  g.ellipse(LIGHT.x * r * 0.1, LIGHT.y * r * 0.1, r * t.rx, r * t.ry, a, 0, TAU, true);
-  g.fill();
-  g.restore();
-}
-
-/** A head: ink disc, two cel steps; the plated wear a steel helmet, the rest a patchy scalp. */
-function paintHead(g: CanvasRenderingContext2D, kind: ZombieKind, r: number) {
-  const look = ZOMBIE_LOOK[kind];
-  const ink = Math.max(1.8, r * 0.16);
-  if (kind === 'plated') {
-    celDisc(g, r, '#7a838e', ink);
-    g.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    g.fillRect(-r * 0.5, -r * 0.6, r * 0.55, r * 0.16);
-    return;
-  }
-  celDisc(g, r, tint(look.body, 0.1), ink);
-  if (kind === 'walker' || kind === 'runner') {
-    g.fillStyle = shade(look.body, 0.66);
-    g.beginPath();
-    g.ellipse(-r * 0.12, r * 0.2, r * 0.28, r * 0.18, 0.6, 0, TAU);
-    g.fill();
-  }
-}
-
-export function bodyImage(kind: ZombieKind, bucket: number, pxPerUnit: number) {
-  const r = ZOMBIES[kind].radius;
-  return sprite(`b|${kind}|${bucket}`, r + 4, pxPerUnit, (g) => paintTorso(g, kind, r, (bucket / ZOMBIE_BUCKETS) * TAU));
-}
-
-function headImage(kind: ZombieKind, pxPerUnit: number) {
-  const r = ZOMBIES[kind].radius * BUILD[kind].head;
-  return sprite(`h|${kind}`, r, pxPerUnit, (g) => paintHead(g, kind, r));
-}
-
-function addCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
-  ctx.moveTo(x + r, y);
-  ctx.arc(x, y, r, 0, TAU);
-}
-
-type Pose = { id: number; x: number; y: number; a: number; bx: number; by: number; stretch: number; bob: number; t: number; walk: number; swing: ReturnType<typeof swingPose> | null; hit: number };
-
-/** One kind's crowd as poses: the body pushed by its lunge or knockback, the walk's bob, the swing's squash. */
-function posesOf(zombies: readonly ZombieView[], k: number, flashes: ReadonlyMap<number, number>, now: number): Pose[] {
-  const kind = ZOMBIE_KINDS[k]!;
-  const r = ZOMBIES[kind].radius;
+function posesOf(zombies: readonly ZombieView[], flashes: ReadonlyMap<number, number>, now: number): Pose[] {
   const out: Pose[] = [];
-  for (const [id, , x, y] of zombies) {
+  for (const [id, k, x, y, hp] of zombies) {
+    const kind = ZOMBIE_KINDS[k]!;
+    const b = BUILD[kind], r = ZOMBIES[kind].radius;
     const z = anims.get(id);
     const a = z?.a ?? 0;
     const walk = z ? Math.min(1, z.speed / Math.max(1, ZOMBIES[kind].speed * 0.5)) : 0;
@@ -370,33 +188,111 @@ function posesOf(zombies: readonly ZombieView[], k: number, flashes: ReadonlyMap
     const hitAt = flashes.get(id);
     const hit = hitAt === undefined ? 0 : Math.max(0, 1 - (now - hitAt) / (HIT_FLASH_MS * 1.6));
     const stride = z?.stride ?? 0;
-    const sway = Math.sin(stride) * BUILD[kind].sway * r * walk;
-    // Knocked back along the heading on a hit, lunging toward the target on a swing.
-    const push = (swing ? swing.lunge * r : 0) - hit * r * 0.22;
+    const v = variantOf(id);
     const c = Math.cos(a), s = Math.sin(a);
+    const sway = Math.sin(stride) * b.sway * r * walk;
+    // Knocked back along the heading on a hit, lunging toward the target on a swing.
+    const push = (swing ? swing.lunge * r : 0) - hit * r * 0.24;
+    const bx = x + c * push - s * sway, by = y + s * push + c * sway;
+    // The body rises through each step and drops on the foot that lands; a walker's bad leg drops it further.
+    const heavy = kind === 'brute' || kind === 'colossus';
+    let rise = r * (heavy ? 0.07 : kind === 'runner' ? 0.08 : 0.05) * walk * Math.abs(Math.cos(stride));
+    if (kind === 'walker') rise -= r * 0.07 * walk * Math.max(0, v.limp > 0 ? -Math.sin(stride) : Math.sin(stride)) ** 3;
+    const breathe = kind === 'bloater' ? 0.045 * Math.sin(now / 260 + id) : 0.012 * Math.sin(now / 700 + id);
+    const ty = by - b.lift * r - rise - r * breathe;
+    // The head hangs forward and lolls; it rears back in a wind-up, snaps out on the blow and flinches back on a hit.
+    const loll = ((id % 2) * 2 - 1) * b.slump + Math.sin(now / 340 + id) * 0.08;
+    const ha = a + loll;
+    const neck = b.neck * r * (swing ? 1 + swing.lunge * 0.9 : 1) * (1 - hit * 0.8);
+    const hx = bx + Math.cos(ha) * neck, hy = ty + Math.sin(ha) * neck * 0.85 - b.headLift * r + (kind === 'runner' ? 0 : r * 0.02 * Math.sin(stride * 2 + id)) + hit * r * 0.1;
+    const mouth = swing ? (telegraphs(swing) ? 3 : swing.spread > 0.15 || swing.lunge > 0.05 ? 2 : 1) : hit > 0.3 ? 2 : kind === 'colossus' || kind === 'runner' ? 1 : id % 3 === 0 ? 0 : 1;
     out.push({
-      id, x, y, a, walk, swing, hit,
-      bx: x + c * push - s * sway, by: y + s * push + c * sway,
+      id, kind, k, x, y, a, walk, swing, hit, v, stage: stageOf(kind, hp),
+      bx, by, tx: bx, ty, hx, hy, mouth, arms: [],
       stretch: (swing?.stretch ?? 1) * (1 - hit * 0.16),
-      bob: 1 + 0.035 * Math.abs(Math.sin(stride)) * walk + (kind === 'bloater' ? 0.045 * Math.sin(now / 260 + id) : 0),
-      t: stride,
+      t: stride, pulse: 0.5 + 0.5 * Math.sin(now / 330 + id * 1.3),
     });
   }
   return out;
 }
 
+/** Dust where a heavy foot lands, a crack in the ground for the Colossus, spawned as the stride crosses each foot-fall. */
+function stomps(poses: readonly Pose[], now: number) {
+  for (const p of poses) {
+    if (p.kind !== 'brute' && p.kind !== 'colossus' && p.kind !== 'bloater') continue;
+    const cur = ((p.t % TAU) + TAU) % TAU;
+    const prev = lastPhase.get(p.id);
+    lastPhase.set(p.id, cur);
+    SEEN.set(p.id, frame);
+    if (prev === undefined || p.walk < 0.4) continue;
+    for (const [at, side] of [[Math.PI / 2, -1], [Math.PI * 1.5, 1]] as const) {
+      if (!crossed(prev, cur, at)) continue;
+      const r = ZOMBIES[p.kind].radius, b = BUILD[p.kind];
+      const c = Math.cos(p.a), s = Math.sin(p.a);
+      const fx = p.bx + c * r * b.stride * 0.9 - s * side * r * b.hip, fy = p.by + s * r * b.stride * 0.9 + c * side * r * b.hip;
+      if (thuds.length > 90) thuds.shift();
+      thuds.push({ x: fx, y: fy, born: now, crack: p.kind === 'colossus', seed: p.id * 7 + (side + 1), r: p.kind === 'bloater' ? 0.5 : p.kind === 'brute' ? 0.75 : 1 });
+    }
+  }
+  if (frame % 60 === 0) for (const id of lastPhase.keys()) if (frame - (SEEN.get(id) ?? 0) > 120) { lastPhase.delete(id); SEEN.delete(id); }
+}
+
+function drawThuds(ctx: CanvasRenderingContext2D, now: number) {
+  for (let i = thuds.length - 1; i >= 0; i--) if (now - thuds[i]!.born > CRACK_MS) thuds.splice(i, 1);
+  if (!thuds.length) return;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const t of thuds) {
+    const age = now - t.born;
+    if (t.crack) {
+      // Ink cracks splitting the floor from the footfall, in short chunky segments.
+      const k = 1 - Math.max(0, age - 200) / (CRACK_MS - 200);
+      ctx.globalAlpha = Math.min(1, k * 1.4);
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let j = 0; j < 4; j++) {
+        const a = ((t.seed * 1.7 + j * 1.6) % TAU), L = 11 + (j % 2) * 7;
+        const mx = t.x + Math.cos(a) * L * 0.55, my = t.y + Math.sin(a) * L * 0.55;
+        ctx.moveTo(t.x + Math.cos(a) * 3, t.y + Math.sin(a) * 3);
+        ctx.lineTo(mx + Math.sin(a) * 3, my - Math.cos(a) * 3);
+        ctx.lineTo(t.x + Math.cos(a) * L, t.y + Math.sin(a) * L);
+      }
+      ctx.stroke();
+    }
+    if (age < THUD_MS) {
+      const k = age / THUD_MS, e = 1 - (1 - k) ** 2;
+      ctx.globalAlpha = 0.65 * (1 - k);
+      ctx.fillStyle = '#e2dccb';
+      ctx.beginPath();
+      for (let j = 0; j < 3; j++) {
+        const a = j * 2.1 + t.seed, d = (3 + 7 * e) * t.r;
+        const rr = (1.6 + 2.6 * e) * t.r;
+        const px = t.x + Math.cos(a) * d, py = t.y + Math.sin(a) * d * 0.6 - 3 * e * t.r;
+        ctx.moveTo(px + rr, py); ctx.arc(px, py, rr, 0, TAU);
+      }
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 /**
- * The horde, batched by kind: feet, then arms, then bodies, heads and eyes, each as one path or one sprite per zombie, so a
- * night of hundreds costs a few fills per kind. Feet step with the ground covered, arms sway against them, the body bobs and
- * shambles; a biter rears back and lunges with its arms swiping across, squashing on the blow; a hit knocks it back and
- * flashes it white.
+ * The horde, drawn as the toy line it is. First the contact shadows and thuds, then each kind's limbs batched (legs in torn
+ * trousers, mismatched shoes, sleeves and bare arms: a few strokes per kind and look), then every zombie's body, hands, head
+ * and eyes as cached sprites in depth order, so a crowd overlaps the way a toy diorama would: the nearer one in front.
+ * Feet step with the ground covered (a walker favours one leg), arms sway against them, the body rises and drops with the
+ * step; a biter rears back with its jaw wide and lunges with its arms swiping across, squashing on the blow; a hit knocks it
+ * back, snaps the head and flashes it white.
  */
 /** Where the horde's eyes were last drawn, per colour, for the glow that rides over the night shade (drawHordeEyes). */
 const eyeGlow: { color: string; r: number; xy: number[] }[] = [];
+/** Swollen bellies' glow, which shines through the night too. */
+const bellyGlow: { x: number; y: number; r: number; a: number }[] = [];
 
-/** At night the horde is drawn under the shade; its eyes shine through it, a faint light each, so the horde still reads in the dark. */
+/** At night the horde is drawn under the shade; its eyes and bellies shine through it, a faint light each, so the horde still reads in the dark. */
 export function drawHordeEyes(ctx: CanvasRenderingContext2D, dark: number) {
-  if (dark <= 0.02 || !eyeGlow.length) return;
+  if (dark <= 0.02 || (!eyeGlow.length && !bellyGlow.length)) return;
   for (const g of eyeGlow) {
     ctx.fillStyle = g.color;
     ctx.globalAlpha = 0.5 * dark;
@@ -408,172 +304,358 @@ export function drawHordeEyes(ctx: CanvasRenderingContext2D, dark: number) {
     for (let i = 0; i < g.xy.length; i += 2) addCircle(ctx, g.xy[i]!, g.xy[i + 1]!, g.r);
     ctx.fill();
   }
+  if (bellyGlow.length) {
+    ctx.fillStyle = '#b6f06a';
+    for (const b of bellyGlow) {
+      ctx.globalAlpha = b.a * dark;
+      ctx.beginPath();
+      addCircle(ctx, b.x, b.y, b.r);
+      ctx.fill();
+    }
+  }
   ctx.globalAlpha = 1;
 }
 
+function addCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  ctx.moveTo(x + r, y);
+  ctx.arc(x, y, r, 0, TAU);
+}
+
+const CONTACT = 'rgba(10, 12, 18, 0.42)';
+const eyeRadius = (kind: ZombieKind) => Math.max(1.5, ZOMBIES[kind].radius * BUILD[kind].head * 0.2);
+
 export function drawHorde(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[], flashes: ReadonlyMap<number, number>, now: number, pxPerUnit: number) {
-  const byKind: ZombieView[][] = ZOMBIE_KINDS.map(() => []);
   eyeGlow.length = 0;
-  for (const z of zombies) byKind[z[1]]?.push(z);
-  for (let k = 0; k < ZOMBIE_KINDS.length; k++) {
-    const kind = ZOMBIE_KINDS[k]!;
-    if (!byKind[k]!.length) continue;
-    const poses = posesOf(byKind[k]!, k, flashes, now);
-    if (!poses.length) continue;
-    const look = ZOMBIE_LOOK[kind];
-    const b = BUILD[kind];
-    const r = ZOMBIES[kind].radius;
-    // Feet, stepping out from under the body.
-    const feet: number[] = [];
-    for (const p of poses) {
-      const c = Math.cos(p.a), s = Math.sin(p.a);
-      for (const side of [-1, 1]) {
-        const step = Math.sin(p.t + (side > 0 ? 0 : Math.PI)) * r * 0.5 * p.walk;
-        const fx = p.x + c * (step + r * 0.1) - s * side * r * 0.42, fy = p.y + s * (step + r * 0.1) + c * side * r * 0.42;
-        feet.push(fx, fy, r * b.foot);
-      }
-    }
-    ctx.fillStyle = INK;
-    ctx.beginPath();
-    for (let i = 0; i < feet.length; i += 3) addCircle(ctx, feet[i]!, feet[i + 1]!, feet[i + 2]! + 1.3);
-    ctx.fill();
-    ctx.fillStyle = shade(look.arm, 0.62);
-    ctx.beginPath();
-    for (let i = 0; i < feet.length; i += 3) addCircle(ctx, feet[i]!, feet[i + 1]!, feet[i + 2]!);
-    ctx.fill();
-    // Arms from the shoulders to the hands, swinging against the stride, or swiping in a bite.
-    const arms: number[] = [];
-    for (const p of poses) {
-      const shoulder = r * 0.62;
-      for (const side of [-1, 1]) {
-        const swingOpen = p.swing ? p.swing.spread : 0;
-        const reach = (p.swing ? p.swing.reach : 1) * b.armLen * r;
-        // Runners pump their arms; the rest reach out ahead and loll as they shamble.
-        const pump = kind === 'runner' ? Math.sin(p.t + (side > 0 ? Math.PI : 0)) * 0.5 * p.walk : Math.sin(p.t + (side > 0 ? Math.PI : 0)) * 0.16 * p.walk;
-        const rest = kind === 'runner' && p.swing ? 0.45 : b.arms;
-        const arm = p.a + side * (rest + swingOpen) + pump;
-        const sa = p.a + side * Math.PI / 2;
-        const sx = p.bx + Math.cos(sa) * shoulder, sy = p.by + Math.sin(sa) * shoulder;
-        arms.push(sx, sy, sx + Math.cos(arm) * reach, sy + Math.sin(arm) * reach);
-      }
-    }
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = r * b.armW * 2 + 2.6;
-    ctx.beginPath();
-    for (let i = 0; i < arms.length; i += 4) { ctx.moveTo(arms[i]!, arms[i + 1]!); ctx.lineTo(arms[i + 2]!, arms[i + 3]!); }
-    ctx.stroke();
-    ctx.strokeStyle = look.arm;
-    ctx.lineWidth = r * b.armW * 2;
-    ctx.stroke();
-    // Hands: ink-rimmed fists, claws for the big ones.
-    ctx.fillStyle = INK;
-    ctx.beginPath();
-    for (let i = 0; i < arms.length; i += 4) addCircle(ctx, arms[i + 2]!, arms[i + 3]!, r * b.hand + 1.3);
-    ctx.fill();
-    ctx.fillStyle = shade(look.arm, 0.82);
-    ctx.beginPath();
-    for (let i = 0; i < arms.length; i += 4) addCircle(ctx, arms[i + 2]!, arms[i + 3]!, r * b.hand);
-    ctx.fill();
-    if (look.shoulders) {
-      // Heavy shoulders over the arms' roots.
-      const pads: number[] = [];
-      for (const p of poses) for (const side of [-1, 1]) { const sa = p.a + side * 1.35; pads.push(p.bx + Math.cos(sa) * r * 0.74, p.by + Math.sin(sa) * r * 0.74, r * 0.42); }
-      ctx.fillStyle = INK;
-      ctx.beginPath();
-      for (let i = 0; i < pads.length; i += 3) addCircle(ctx, pads[i]!, pads[i + 1]!, pads[i + 2]! + 1.6);
-      ctx.fill();
-      ctx.fillStyle = look.arm;
-      ctx.beginPath();
-      for (let i = 0; i < pads.length; i += 3) addCircle(ctx, pads[i]!, pads[i + 1]!, pads[i + 2]!);
-      ctx.fill();
-      ctx.fillStyle = tint(look.arm, 0.25);
-      ctx.beginPath();
-      for (let i = 0; i < pads.length; i += 3) addCircle(ctx, pads[i]! - LIGHT.x * pads[i + 2]! * 0.3, pads[i + 1]! - LIGHT.y * pads[i + 2]! * 0.3, pads[i + 2]! * 0.5);
-      ctx.fill();
-    }
-    // Bodies: one sprite each, stretched along the heading for a lunge and squashed on the blow.
-    const half = r + 7;
-    for (const p of poses) {
-      const body = bodyImage(kind, bucketOf(p.a), pxPerUnit);
-      const sz = half * p.bob;
-      if (Math.abs(p.stretch - 1) < 0.05) { ctx.drawImage(body, p.bx - sz, p.by - sz, sz * 2, sz * 2); continue; }
-      const c = Math.cos(p.a), s = Math.sin(p.a), along = p.stretch, across = 2 - p.stretch;
-      ctx.save();
-      ctx.translate(p.bx, p.by);
-      ctx.transform(along * c * c + across * s * s, (along - across) * c * s, (along - across) * c * s, along * s * s + across * c * c, 0, 0);
-      ctx.drawImage(body, -sz, -sz, sz * 2, sz * 2);
-      ctx.restore();
-    }
-    // Heads, hung forward and lolling, then the eyes on them.
-    const head = headImage(kind, pxPerUnit);
-    const hr = r * b.head, hs = hr + 3;
-    const eyes: number[] = [];
-    const warn: number[] = [];
-    for (const p of poses) {
-      const loll = ((p.id % 2) * 2 - 1) * b.slump + Math.sin(now / 340 + p.id) * 0.08;
-      const ha = p.a + loll;
-      const reachOut = r * b.neck * (p.swing ? 1 + p.swing.lunge * 0.6 : 1);
-      // Seen a little from the front, a head rides a touch up the screen from where it hangs.
-      const hx = p.bx + Math.cos(ha) * reachOut, hy = p.by + Math.sin(ha) * reachOut - r * 0.14;
-      ctx.drawImage(head, hx - hs, hy - hs, hs * 2, hs * 2);
-      const list = p.swing && telegraphs(p.swing) ? warn : eyes;
-      for (const side of [-1, 1]) list.push(hx + Math.cos(p.a + side * 0.55) * hr * 0.55, hy + Math.sin(p.a + side * 0.55) * hr * 0.55);
-    }
-    const eyeR = Math.max(1.4, hr * 0.2);
-    if (look.eye !== '#1b1d22') {
-      // Glowing eyes get a halo, so a brute or the Colossus is spotted in the dark.
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = look.eye;
-      ctx.beginPath();
-      for (let i = 0; i < eyes.length; i += 2) addCircle(ctx, eyes[i]!, eyes[i + 1]!, eyeR * 2.2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    ctx.fillStyle = look.eye;
-    ctx.beginPath();
-    for (let i = 0; i < eyes.length; i += 2) addCircle(ctx, eyes[i]!, eyes[i + 1]!, eyeR);
-    ctx.fill();
-    if (eyes.length) eyeGlow.push({ color: look.eye === '#1b1d22' ? '#8a9a5b' : look.eye, r: eyeR, xy: eyes });
-    if (warn.length) eyeGlow.push({ color: WARN, r: eyeR * 1.2, xy: warn });
-    if (warn.length) {
-      // The wind-up's telegraph: eyes flare red as it rears back to swing.
-      ctx.globalAlpha = 0.45;
-      ctx.fillStyle = WARN;
-      ctx.beginPath();
-      for (let i = 0; i < warn.length; i += 2) addCircle(ctx, warn[i]!, warn[i + 1]!, eyeR * 2.4);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#ffd0c8';
-      ctx.beginPath();
-      for (let i = 0; i < warn.length; i += 2) addCircle(ctx, warn[i]!, warn[i + 1]!, eyeR * 1.1);
-      ctx.fill();
-    }
-    // The hit flash, over the drawn body where it was knocked to.
-    for (const p of poses) {
-      if (p.hit <= 0) continue;
-      ctx.globalAlpha = 0.85 * Math.min(1, p.hit * 1.6);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(p.bx, p.by, r * p.bob, 0, TAU);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+  bellyGlow.length = 0;
+  frame++;
+  newSpriteFrame();
+  if (!zombies.length) { drawThuds(ctx, now); return; }
+  const poses = posesOf(zombies, flashes, now);
+  stomps(poses, now);
+  // Contact shadows: a crisp pool under each pair of feet, a little down-screen, as under the soldiers.
+  ctx.fillStyle = CONTACT;
+  ctx.beginPath();
+  for (const p of poses) {
+    const r = ZOMBIES[p.kind].radius;
+    ctx.moveTo(p.bx + LIGHT.x * r * 0.12 + r * 0.86, p.by + r * 0.2);
+    ctx.ellipse(p.bx + LIGHT.x * r * 0.12, p.by + r * 0.2, r * 0.86, r * 0.5, 0, 0, TAU);
   }
+  ctx.fill();
+  drawThuds(ctx, now);
+  drawLimbs(ctx, poses);
+  poses.sort((p, q) => p.by - q.by);
+  const warn: number[] = [];
+  const eyesBy: ({ color: string; r: number; xy: number[] } | undefined)[] = [];
+  let bellies = 0, giants = 0;
+  for (const p of poses) {
+    const { kind } = p, b = BUILD[kind], r = ZOMBIES[kind].radius, look = ZOMBIE_LOOK[kind];
+    const bucket = bucketOf(p.a);
+    const half = torsoHalf(kind);
+    const body = torsoSprite(kind, p.v, bucket, p.stage, pxPerUnit);
+    if (body) {
+      if (Math.abs(p.stretch - 1) < 0.05) ctx.drawImage(body, p.tx - half, p.ty - half, half * 2, half * 2);
+      else {
+        const c = Math.cos(p.a), s = Math.sin(p.a), along = p.stretch, across = 2 - p.stretch;
+        ctx.save();
+        ctx.translate(p.tx, p.ty);
+        ctx.transform(along * c * c + across * s * s, (along - across) * c * s, (along - across) * c * s, along * s * s + across * c * c, 0, 0);
+        ctx.drawImage(body, -half, -half, half * 2, half * 2);
+        ctx.restore();
+      }
+    }
+    const tTop = topOfTorso(kind) * r;
+    if (kind === 'bloater') {
+      // The belly's glow and its pustules pulsing under the skin.
+      const bx = p.tx + Math.cos(p.a) * r * 0.12, by = p.ty - tTop + Math.sin(p.a) * r * 0.12;
+      const pr = r * (0.5 + 0.05 * p.pulse);
+      ctx.fillStyle = '#d6ff7a';
+      ctx.globalAlpha = 0.14 + 0.2 * p.pulse;
+      ctx.beginPath(); ctx.arc(bx, by, pr, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      const c = Math.cos(p.a), s = Math.sin(p.a);
+      ctx.fillStyle = '#fff2b0';
+      ctx.beginPath();
+      for (const [x, y, sz] of [[-0.35, -0.42, 0.18], [0.3, 0.45, 0.2], [-0.38, 0.32, 0.15]] as const) {
+        const wx = p.tx + (x * c - y * s) * r, wy = p.ty - tTop + (x * s + y * c) * r, rr = sz * r * (0.3 + 0.25 * p.pulse);
+        ctx.moveTo(wx + rr, wy); ctx.arc(wx, wy, rr, 0, TAU);
+      }
+      ctx.fill();
+      bellyGlow.push({ x: bx, y: by, r: pr * 1.6, a: 0.13 + 0.1 * p.pulse });
+      if (bellies++ < 10) setLight(`zb${p.id}`, { x: bx, y: by, radius: 110, color: '#a6e05a', intensity: 0.4 + 0.2 * p.pulse, flicker: 0.2, shadows: false, size: 8, inside: 40 });
+    }
+    // Hands at the end of each arm.
+    const hh = handHalf(kind);
+    for (let i = 0; i < 2; i++) {
+      const h = p.arms[i]!;
+      const img = handSprite(kind, p.v, handBucketOf(h.ha), h.stump, pxPerUnit);
+      if (img) ctx.drawImage(img, h.hx - hh, h.hy - hh, hh * 2, hh * 2);
+    }
+    // The head, its jaw on the swing, and the eyes burning in it.
+    const head = headSprite(kind, p.v, bucket, p.mouth, pxPerUnit);
+    const hs = headHalf(kind);
+    if (head) ctx.drawImage(head, p.hx - hs, p.hy - hs, hs * 2, hs * 2);
+    const hr = r * b.head;
+    const eyeR = eyeRadius(kind);
+    const telegraph = p.swing && telegraphs(p.swing);
+    const color = telegraph ? WARN : look.eye;
+    for (const side of [-1, 1]) {
+      const [ex, ey] = eyeAt(p.a, side, hr);
+      let list = warn;
+      if (!telegraph) {
+        let e = eyesBy[p.k];
+        if (!e) eyesBy[p.k] = (e = { color, r: eyeR, xy: [] });
+        list = e.xy;
+      }
+      list.push(p.hx + ex, p.hy + ey);
+    }
+    if (kind === 'colossus' && giants++ < 4) setLight(`zc${p.id}`, { x: p.hx, y: p.hy + hr * 0.4, radius: 95, color: '#ffb347', intensity: 0.5, flicker: 0.1, shadows: false, size: 6, inside: 50 });
+    if (p.hit > 0) {
+      // The hit flash, over the torso and the head where they were knocked to.
+      ctx.globalAlpha = 0.6 * Math.min(1, p.hit * 1.6);
+      ctx.fillStyle = '#ffffff';
+      const t = TORSO[kind];
+      ctx.beginPath();
+      ctx.moveTo(p.tx + r * t.rx, p.ty - tTop);
+      ctx.ellipse(p.tx + Math.cos(p.a) * t.cx * r, p.ty - tTop, r * t.rx, r * t.ry, p.a, 0, TAU);
+      ctx.moveTo(p.hx + hr, p.hy);
+      ctx.arc(p.hx, p.hy, hr, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+  for (const e of eyesBy) if (e) eyeGlow.push(e);
+  if (warn.length) eyeGlow.push({ color: WARN, r: 3, xy: warn });
   drawBars(ctx, zombies);
+}
+
+type Arm = { sx: number; sy: number; ex: number; ey: number; hx: number; hy: number; ha: number; stump: boolean; sleeve: number };
+
+function armOf(p: Pose, side: -1 | 1): Arm {
+  const { kind } = p, b = BUILD[kind], r = ZOMBIES[kind].radius;
+  const swingOpen = p.swing ? p.swing.spread : 0;
+  const reach = (p.swing ? p.swing.reach : 1) * b.armLen * r;
+  // Runners pump their arms; the rest reach out ahead and loll as they shamble, the flinch pulling them in.
+  const pump = kind === 'runner' ? Math.sin(p.t + (side > 0 ? Math.PI : 0)) * 0.5 * p.walk : Math.sin(p.t + (side > 0 ? Math.PI : 0)) * 0.16 * p.walk;
+  const rest = kind === 'runner' && p.swing ? 0.45 : b.arms;
+  const arm = p.a + side * (rest + swingOpen) + pump + side * p.hit * 0.5;
+  const sa = p.a + side * Math.PI / 2;
+  const sx = p.tx + Math.cos(sa) * b.shoulder * r, sy = p.ty - topOfTorso(kind) * r * 0.6 + Math.sin(sa) * b.shoulder * r * 0.8;
+  const gone = p.v.gone === side;
+  const len = gone ? reach * 0.38 : reach * (1 - p.hit * 0.25);
+  const hx = sx + Math.cos(arm) * len, hy = sy + Math.sin(arm) * len;
+  // The elbow bows outward from the body, more the more the arm is bent.
+  const bow = r * 0.2 * (1 - Math.min(1, len / (b.armLen * r * 1.3) * 0.6));
+  const ex = (sx + hx) / 2 + Math.cos(sa) * bow, ey = (sy + hy) / 2 + Math.sin(sa) * bow * 0.8;
+  const torn = kind === 'walker' && side === p.v.limp ? 0.45 : 1;
+  return { sx, sy, ex, ey, hx, hy, ha: arm, stump: gone, sleeve: SLEEVES[kind] ? torn : 0 };
+}
+
+/** Legs, shoes and arms for every zombie of each kind, batched by look: a handful of strokes per kind rather than per zombie. */
+type Tones = { legCloth: string; legSkin: string; armCloth: string; armSkin: string };
+const tonesOf: Tones[][] = [];
+/** A look's limb colours, worked out once. */
+function tones(kind: ZombieKind, k: number, grp: number): Tones {
+  const row = tonesOf[k] ?? (tonesOf[k] = []);
+  return row[grp] ?? (row[grp] = {
+    legCloth: shadeHex(ZOMBIE_LOOK[kind].cloth[(grp / 2) | 0]!, 0.88), legSkin: shadeHex(ZOMBIE_LOOK[kind].skins[grp % 2]!, 0.85),
+    armCloth: shadeHex(ZOMBIE_LOOK[kind].cloth[(grp / 2) | 0]!, 0.9), armSkin: shadeHex(ZOMBIE_LOOK[kind].skins[grp % 2]!, 0.82),
+  });
+}
+
+function drawLimbs(ctx: CanvasRenderingContext2D, poses: readonly Pose[]) {
+  const byKind: Pose[][] = ZOMBIE_KINDS.map(() => []);
+  for (const p of poses) byKind[p.k]!.push(p);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let k = 0; k < ZOMBIE_KINDS.length; k++) {
+    const list = byKind[k]!;
+    if (!list.length) continue;
+    const kind = ZOMBIE_KINDS[k]!, b = BUILD[kind], r = ZOMBIES[kind].radius, look = ZOMBIE_LOOK[kind];
+    const legs: number[][] = [[], [], [], [], [], []];
+    const shoes: number[][] = SHOES.map(() => []);
+    const armsAll: number[] = [];
+    const arms: number[][] = [[], [], [], [], [], []];
+    for (const p of list) {
+      const c = Math.cos(p.a), s = Math.sin(p.a);
+      const grp = p.v.cloth * 2 + p.v.skin;
+      for (const side of [-1, 1] as const) {
+        const ph = p.t + (side > 0 ? 0 : Math.PI);
+        // A walker's bad leg takes short steps and drags its foot; everyone else steps evenly.
+        const bad = kind === 'walker' && side === p.v.limp;
+        const amp = r * b.stride * p.walk * (bad ? 0.55 : 1);
+        const along = Math.sin(ph) * amp + r * 0.08, lift = Math.max(0, Math.cos(ph)) * r * 0.22 * p.walk * (bad ? 0.3 : 1);
+        const fx = p.bx + c * along - s * side * b.hip * r, fy = p.by + s * along + c * side * b.hip * r - lift;
+        const hipx = p.bx - s * side * b.hip * r * 0.8, hipy = p.by + c * side * b.hip * r * 0.8 - b.lift * r * 0.5;
+        legs[grp]!.push(hipx, hipy, fx, fy);
+        shoes[side < 0 ? p.v.shoes[0] : p.v.shoes[1]]!.push(fx + c * r * 0.08, fy + s * r * 0.08 + r * 0.04, p.a);
+        const arm = armOf(p, side);
+        p.arms[side < 0 ? 0 : 1] = arm;
+        armsAll.push(arm.sx, arm.sy, arm.ex, arm.ey, arm.hx, arm.hy);
+        arms[grp]!.push(arm.sx, arm.sy, arm.ex, arm.ey, arm.hx, arm.hy, arm.stump ? 1 : 0, arm.sleeve);
+      }
+    }
+    const ink = Math.max(2, r * 0.09);
+    // Legs: ink, then trousers (or bare skin below torn shorts), per look.
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = b.legW * r + ink * 2;
+    ctx.beginPath();
+    for (const g of legs) for (let i = 0; i < g.length; i += 4) { ctx.moveTo(g[i]!, g[i + 1]!); ctx.lineTo(g[i + 2]!, g[i + 3]!); }
+    ctx.stroke();
+    for (let grp = 0; grp < 6; grp++) {
+      const g = legs[grp]!;
+      if (!g.length) continue;
+      const { legCloth: cloth, legSkin: skin } = tones(kind, k, grp);
+      if (b.trouser < 1) {
+        ctx.strokeStyle = skin;
+        ctx.lineWidth = b.legW * r;
+        ctx.beginPath();
+        for (let i = 0; i < g.length; i += 4) { ctx.moveTo(g[i]!, g[i + 1]!); ctx.lineTo(g[i + 2]!, g[i + 3]!); }
+        ctx.stroke();
+      }
+      ctx.strokeStyle = cloth;
+      ctx.lineWidth = b.legW * r * (b.trouser < 1 ? 1.12 : 1);
+      ctx.beginPath();
+      for (let i = 0; i < g.length; i += 4) { ctx.moveTo(g[i]!, g[i + 1]!); ctx.lineTo(g[i]! + (g[i + 2]! - g[i]!) * b.trouser, g[i + 1]! + (g[i + 3]! - g[i + 1]!) * b.trouser); }
+      ctx.stroke();
+    }
+    // Shoes, each side a different pair: ink, then paint by colour with a dark sole line.
+    ctx.fillStyle = INK;
+    ctx.beginPath();
+    for (const sh of shoes) for (let i = 0; i < sh.length; i += 3) { const rx = r * b.foot * 1.25 + ink, ry = r * b.foot * 0.85 + ink; ctx.moveTo(sh[i]! + rx, sh[i + 1]!); ctx.ellipse(sh[i]!, sh[i + 1]!, rx, ry, sh[i + 2]!, 0, TAU); }
+    ctx.fill();
+    shoes.forEach((sh, ci) => {
+      if (!sh.length) return;
+      ctx.fillStyle = SHOES[ci]!;
+      ctx.beginPath();
+      for (let i = 0; i < sh.length; i += 3) { const rx = r * b.foot * 1.25, ry = r * b.foot * 0.85; ctx.moveTo(sh[i]! + rx, sh[i + 1]!); ctx.ellipse(sh[i]!, sh[i + 1]!, rx, ry, sh[i + 2]!, 0, TAU); }
+      ctx.fill();
+    });
+    // Arms: one ink pass over every arm, then each look's sleeves, bare forearms and a cel shade along the far side.
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = r * b.armW * 2 + ink * 2;
+    ctx.beginPath();
+    for (let i = 0; i < armsAll.length; i += 6) { ctx.moveTo(armsAll[i]!, armsAll[i + 1]!); ctx.lineTo(armsAll[i + 2]!, armsAll[i + 3]!); ctx.lineTo(armsAll[i + 4]!, armsAll[i + 5]!); }
+    ctx.stroke();
+    for (let grp = 0; grp < 6; grp++) {
+      const g = arms[grp]!;
+      if (!g.length) continue;
+      const { armCloth: cloth, armSkin: skin } = tones(kind, k, grp);
+      ctx.lineWidth = r * b.armW * 2;
+      ctx.strokeStyle = skin;
+      ctx.beginPath();
+      for (let i = 0; i < g.length; i += 8) {
+        // Bare to the shoulder where the sleeve is torn off or absent.
+        ctx.moveTo(g[i]!, g[i + 1]!); ctx.lineTo(g[i + 2]!, g[i + 3]!);
+        if (!g[i + 6]) ctx.lineTo(g[i + 4]!, g[i + 5]!);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = cloth;
+      ctx.beginPath();
+      for (let i = 0; i < g.length; i += 8) {
+        const f = g[i + 7]!;
+        if (f <= 0) continue;
+        ctx.moveTo(g[i]!, g[i + 1]!);
+        ctx.lineTo(g[i]! + (g[i + 2]! - g[i]!) * f, g[i + 1]! + (g[i + 3]! - g[i + 1]!) * f);
+      }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.16)';
+    ctx.lineWidth = r * b.armW * 0.7;
+    const o = r * b.armW * 0.6;
+    ctx.beginPath();
+    for (let i = 0; i < armsAll.length; i += 6) { ctx.moveTo(armsAll[i]! + LIGHT.x * o, armsAll[i + 1]! + LIGHT.y * o); ctx.lineTo(armsAll[i + 2]! + LIGHT.x * o, armsAll[i + 3]! + LIGHT.y * o); ctx.lineTo(armsAll[i + 4]! + LIGHT.x * o, armsAll[i + 5]! + LIGHT.y * o); }
+    ctx.stroke();
+  }
 }
 
 function drawBars(ctx: CanvasRenderingContext2D, zombies: readonly ZombieView[]) {
   for (const [, kind, x, y, hp] of zombies) {
     if (!ZOMBIE_LOOK[ZOMBIE_KINDS[kind]!].bar) continue;
     const r = ZOMBIES[ZOMBIE_KINDS[kind]!].radius, half = r - 2;
+    const top = y - r - 15.5 - BUILD[ZOMBIE_KINDS[kind]!].lift * r * 0.5 - 4;
     ctx.fillStyle = 'rgba(28, 31, 38, 0.6)';
     ctx.beginPath();
-    ctx.roundRect(x - half - 1.5, y - r - 15.5, half * 2 + 3, 7, 3);
+    ctx.roundRect(x - half - 1.5, top, half * 2 + 3, 7, 3);
     ctx.fill();
     ctx.fillStyle = hp > 3 ? PALETTE.hpBad : '#ff9f43';
     ctx.beginPath();
-    ctx.roundRect(x - half, y - r - 14, Math.max(4, half * 2 * (hp / 10)), 4, 2);
+    ctx.roundRect(x - half, top + 1.5, Math.max(4, half * 2 * (hp / 10)), 4, 2);
     ctx.fill();
+  }
+}
+
+/** Sets a zombie's animation state directly, for the offline gallery and tests: heading, stride, speed and bite phase (null for none). */
+export function debugPose(id: number, kind: ZombieKind, a: number, stride: number, speed: number, bitePhase: number | null) {
+  anims.set(id, { x: 0, y: 0, a, stride, speed, at: 0, swingAt: bitePhase === null ? null : 0, phase: bitePhase ?? 0, target: null, kind });
+}
+
+const frac = (n: number) => n - Math.floor(n);
+/**
+ * A fallen zombie, for the corpse field: it topples along the blow that killed it (`age` ms since it fell), its head
+ * popping off the shoulders and rolling to rest, arms flung, shoes splayed, the same torn toy kit as the living (a dead
+ * tone, crossed-out eyes). A zombie that lacked an arm lies beside it.
+ */
+export function drawZombieRemains(ctx: CanvasRenderingContext2D, kind: ZombieKind, id: number, x: number, y: number, blow: number | null, age: number, pxPerUnit: number) {
+  const r = ZOMBIES[kind].radius, b = BUILD[kind], v = variantOf(id);
+  const rd = (k: number) => frac(Math.sin(id * 12.9898 + k * 78.233) * 43758.5453);
+  const la = blow ?? rd(1) * TAU;
+  const f = 1 - (1 - Math.min(1, Math.max(0, age) / 380)) ** 3;
+  const c = Math.cos(la), s = Math.sin(la);
+  const cx = x + c * r * 0.25 * f, cy = y + s * r * 0.25 * f - b.lift * r * (1 - f);
+  const ink = Math.max(2, r * 0.09);
+  ctx.lineCap = 'round';
+  // Shoes splayed behind it, and the arms flung out to the sides.
+  for (const side of [-1, 1] as const) {
+    const fx = x - c * r * 0.95 - s * side * r * (0.35 + 0.2 * rd(2 + side)), fy = y - s * r * 0.95 + c * side * r * (0.35 + 0.2 * rd(2 + side));
+    ctx.strokeStyle = INK; ctx.lineWidth = r * b.foot * 1.7 + ink * 2;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx - c * r * 0.1, fy - s * r * 0.1); ctx.stroke();
+    ctx.strokeStyle = shadeHex(SHOES[side < 0 ? v.shoes[0] : v.shoes[1]]!, 0.8); ctx.lineWidth = r * b.foot * 1.7;
+    ctx.stroke();
+  }
+  const arms: { x: number; y: number; stump: boolean; a: number }[] = [];
+  ctx.strokeStyle = INK; ctx.lineWidth = r * b.armW * 2 + ink * 2;
+  ctx.beginPath();
+  for (const side of [-1, 1] as const) {
+    const aa = la + side * (Math.PI / 2 + (rd(5 + side) - 0.3) * 0.9);
+    const gone = v.gone === side;
+    const len = r * b.armLen * (gone ? 0.4 : 0.95) * f;
+    const sx = cx + Math.cos(la + side * Math.PI / 2) * r * b.shoulder * 0.8, sy = cy + Math.sin(la + side * Math.PI / 2) * r * b.shoulder * 0.8;
+    ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(aa) * len, sy + Math.sin(aa) * len);
+    arms.push({ x: sx + Math.cos(aa) * len, y: sy + Math.sin(aa) * len, stump: gone, a: aa });
+  }
+  ctx.stroke();
+  ctx.strokeStyle = shadeHex(ZOMBIE_LOOK[kind].skins[v.skin]!, 0.7); ctx.lineWidth = r * b.armW * 2;
+  ctx.stroke();
+  const half = torsoHalf(kind), bucket = bucketOf(la);
+  const body = torsoSprite(kind, v, bucket, 0, pxPerUnit, true);
+  if (body) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((1 - f) * 0.5 * (rd(3) < 0.5 ? -1 : 1));
+    ctx.scale(1 + 0.08 * f + (kind === 'bloater' ? 0.1 * f : 0), 1 - (kind === 'bloater' ? 0.26 : 0.16) * f);
+    ctx.drawImage(body, -half, -half, half * 2, half * 2);
+    ctx.restore();
+  }
+  for (const h of arms) {
+    const img = handSprite(kind, v, handBucketOf(h.a), h.stump, pxPerUnit, true);
+    const hh = handHalf(kind);
+    if (img) ctx.drawImage(img, h.x - hh, h.y - hh, hh * 2, hh * 2);
+  }
+  // The head: from the shoulders up and over to where it comes to rest, a little off the line of the body.
+  const sx = x + (c * r * 0.4) * 0 + Math.cos(la) * b.neck * r, sy = y + Math.sin(la) * b.neck * r - b.headLift * r;
+  const ex = x + c * r * (0.85 + 0.25 * rd(7)) - s * r * 0.3 * (rd(8) - 0.5), ey = y + s * r * (0.85 + 0.25 * rd(7)) + c * r * 0.3 * (rd(8) - 0.5) - r * 0.08;
+  const hx = sx + (ex - sx) * f, hy = sy + (ey - sy) * f - Math.sin(f * Math.PI) * r * 0.35;
+  const head = headSprite(kind, v, bucketOf(rd(9) * TAU), 1, pxPerUnit, true);
+  const hs = headHalf(kind);
+  if (head) ctx.drawImage(head, hx - hs, hy - hs, hs * 2, hs * 2);
+  // A piece of kit knocked loose: a plate chip off a plated one, a bone shard off the Colossus.
+  if ((kind === 'plated' || kind === 'colossus') && f > 0.5) {
+    const px = x + Math.cos(la + 2.2) * r * 1.25, py = y + Math.sin(la + 2.2) * r * 1.25;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = INK; ctx.lineWidth = r * 0.3 + ink * 2;
+    ctx.beginPath(); ctx.moveTo(px - r * 0.12, py); ctx.lineTo(px + r * 0.12, py + r * 0.05); ctx.stroke();
+    ctx.strokeStyle = kind === 'plated' ? '#4f5661' : '#d9cfb0'; ctx.lineWidth = r * 0.3;
+    ctx.stroke();
+    ctx.lineCap = 'round';
   }
 }

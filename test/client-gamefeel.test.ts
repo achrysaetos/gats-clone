@@ -14,7 +14,7 @@ import { createPool } from '../src/client/particles.ts';
 import { createCracks } from '../src/client/decals.ts';
 import { glow, INK, PALETTE } from '../src/client/palette.ts';
 import { addCorpse, addZombieCorpse, CORPSE, corpseAlpha, deadHex, deadTone, drawCorpses, drawZombieCorpses, explosiveDeath, liveCorpses, restingGun, ZOMBIE_CORPSE, zombieField, type Corpse, type ZombieCorpse } from '../src/client/corpses.ts';
-import { drawnTags, drawWorld } from '../src/client/render.ts';
+import { drawnTags, drawWorld, roundHeft } from '../src/client/render.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -232,7 +232,7 @@ const lightness = (color: unknown): number => {
   return (r! + g! + b!) / (3 * 255);
 };
 
-test("by day every gun's round is a solid slug in its own bullet color with a lighter highlight", () => {
+test("every gun's round is a lit slug: a warm tracer, an amber body and a hot core lighter than both, with no ink outline", () => {
   worldStrokes(snap());
   for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
     // The first frame with a gun paints its cached image; measure from the second.
@@ -243,10 +243,16 @@ test("by day every gun's round is a solid slug in its own bullet color with a li
     const strokes = worldStrokes(frame);
     const from = strokes.findIndex((c, i) => c !== base[i]);
     const round = strokes.slice(from, from + strokes.length - base.length);
-    const color = GUNS[gun].look.bullet.color;
-    assert.ok(round.filter((c) => c === color).length >= 2, `${gun} draws its slug and trail in ${color}`);
-    assert.ok(round.some((c) => c !== color && lightness(c) > lightness(color)), `${gun} slug has a lighter highlight`);
+    assert.ok(round.includes('#ff8a2a'), `${gun} streaks a warm tracer`);
+    assert.ok(round.includes('#ffc247'), `${gun} has an amber body`);
+    assert.ok(round.includes('#fff6c8') && lightness('#fff6c8') > lightness('#ffc247'), `${gun} has a hot core`);
+    assert.ok(!round.includes(INK), `${gun}'s round is light, so no ink outline`);
   }
+});
+
+test('a heavier round is fatter: a pistol round is modest, a slug or a sniper round is the biggest on the field', () => {
+  assert.ok(roundHeft('pistol') < roundHeft('handCannon') && roundHeft('handCannon') < roundHeft('slugGun') && roundHeft('slugGun') < roundHeft('sniper'));
+  assert.ok(roundHeft('pistol') < 0.35 && roundHeft('sniper') === 1 && roundHeft('smg') < roundHeft('pistol'));
 });
 
 test('a fallen player lies where they died as an obviously dead body, for 30s, then fades away', () => {

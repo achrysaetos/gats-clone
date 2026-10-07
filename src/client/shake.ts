@@ -29,7 +29,7 @@ export function heftOf(gun: GunId): number {
 }
 
 /** Your own shot's camera trauma: heavier guns shake more, scaled down for fast-firing guns so a held trigger rumbles rather than blurs. */
-const shotTrauma = (gun: GunId) => (0.08 + 0.3 * heftOf(gun)) * Math.min(1, GUNS[gun].fireMs / 110);
+const shotTrauma = (gun: GunId) => (0.08 + 0.5 * heftOf(gun) ** 1.5) * Math.min(1, GUNS[gun].fireMs / 110);
 
 /** A blast's shake reaches this share of the view and is felt most within its own radius; `r` scales it from a crate's pop up to a grenade. */
 const BOOM = { reach: 0.85, near: 0.75, far: 0.12, fullRadius: 150, minSize: 0.35, defaultR: 100 } as const;
@@ -43,7 +43,7 @@ function boomTrauma(cue: SoundCue, listener: Point, viewRadius: number): number 
 }
 
 /** Your own big gun shoves the camera back along your aim, this many px at full heft, easing out over `ms`. */
-export const RECOIL_KICK = { px: 10, maxPx: 12, ms: 90 } as const;
+export const RECOIL_KICK = { px: 16, maxPx: 20, ms: 100 } as const;
 
 export type Kick = { x: number; y: number };
 

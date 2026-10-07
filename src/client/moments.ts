@@ -82,7 +82,9 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
     best = true;
     announce({ title: 'NEW BEST', line: `${streak} kills in one life`, color: MOMENT_COLORS.best, ring: true });
   }
-  if (kills.length && life && life.me.hp > life.was.hp) {
+  // Bloodlust heals on every hit you land, not only a kill.
+  const lifted = kills.length > 0 || (Object.values(next.self.perks).includes('bloodlust') && next.events.some((e) => e.e === 'dmg' && e.attacker === next.self.id && e.kind === 'player'));
+  if (lifted && life && life.me.hp - life.was.hp >= 1) {
     popups.push({ x: life.me.x, y: life.me.y, amount: 0, text: `+${Math.round(life.me.hp - life.was.hp)} HP`, color: MOMENT_COLORS.heal, born: now, onSelf: true });
   }
   return { callouts, popups, medals, best };

@@ -10,8 +10,8 @@ const R = WORLD.playerRadius;
 const SIEGE_MAPS = MAP_IDS.filter((id) => MAPS[id].siege);
 
 test('every versus mode rotates through every versus map, and zombies through the siege maps', () => {
-  const versus = MAP_IDS.filter((id) => !MAPS[id].siege).sort();
-  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), mode === 'ZOM' ? SIEGE_MAPS : versus, mode);
+  const versus = MAP_IDS.filter((id) => !MAPS[id].siege && !MAPS[id].range).sort();
+  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), mode === 'ZOM' ? SIEGE_MAPS : mode === 'RNG' ? ['range'] : versus, mode);
 });
 
 for (const id of SIEGE_MAPS) {

@@ -1,6 +1,14 @@
 import { badgeKey, CAREER, CAREER_IDS, CAREER_TIERS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId, type WeaponId } from '../shared/defs.ts';
 import { careerArt, careerName, medalArt, medalSvg } from './medals.ts';
 import { trackRootScale } from './uiscale.ts';
+import { COSMETIC_BY_ID, SLOTS, type Slot } from '../shared/cosmetics.ts';
+import { COLORS, COLOR_IDS, type ColorId } from '../shared/defs.ts';
+import { hash32 } from '../shared/cosmetics.ts';
+import { lookOfEquipped, RARITY_INK } from './cosmeticlook.ts';
+import { renderLevelCard, starsHtml } from './levelcard.ts';
+import { collectionCounts, parseProfile, SLOT_LABEL } from './progression.ts';
+import { drawPreview } from './preview.ts';
+import { reducedMotion } from './screenfx.ts';
 
 /**
  * A player's profile page (profile.html?name=...): their worn medal and career numbers, every lifetime track with the
@@ -54,6 +62,45 @@ function medalCard(p: ProfileJson, id: MedalId): HTMLElement {
   return card;
 }
 
+let previewRaf = 0;
+/** The level bar, the equipped look on a live soldier, and how much of each slot's collection this player holds. */
+function renderLocker(raw: unknown) {
+  const prof = parseProfile(raw);
+  cancelAnimationFrame(previewRaf);
+  if (!prof) return;
+  renderLevelCard($('profile-level'), { level: { level: prof.level, prestige: prof.prestige, xpInLevel: prof.xpInLevel, xpToNext: prof.xpToNext } });
+  const look = lookOfEquipped(prof.equipped);
+  // A player's soldier colour is theirs to pick in the menu and is not on record, so each name gets a steady one of its own.
+  const color: ColorId = COLOR_IDS[hash32(prof.name.toLowerCase()) % COLOR_IDS.length]!;
+  const canvas = $('profile-view') as HTMLCanvasElement;
+  const frame = (now: number) => {
+    const calm = reducedMotion();
+    drawPreview(canvas, { look, color: COLORS[color], gun: 'assault', aim: Math.PI * 0.08 + (calm ? 0 : Math.sin(now / 1700) * 0.4), now: calm ? 0 : now, scale: 2.2, at: { x: 0.45, y: 0.56 }, walking: !calm && look.helmet === 'h_propeller' });
+    if (!calm) previewRaf = requestAnimationFrame(frame);
+  };
+  previewRaf = requestAnimationFrame(frame);
+  $('wear-list').replaceChildren(...SLOTS.map((slot: Slot) => {
+    const c = COSMETIC_BY_ID.get(prof.equipped[slot])!;
+    const li = el('li');
+    li.style.setProperty('--rc', RARITY_INK[c.rarity]);
+    li.append(el('small', '', SLOT_LABEL[slot]), el('b', '', c.name));
+    return li;
+  }));
+  const counts = collectionCounts(new Set(prof.unlocked));
+  let have = 0, total = 0;
+  $('collection').replaceChildren(...SLOTS.map((slot) => {
+    const { have: h, total: t } = counts[slot];
+    have += h; total += t;
+    const d = el('div');
+    const n = el('span', '', String(h));
+    n.append(el('small', '', ` / ${t}`));
+    d.append(el('b', '', SLOT_LABEL[slot]), n);
+    return d;
+  }));
+  $('collection-count').textContent = `${have} of ${total}`;
+  void starsHtml;
+}
+
 function render(p: ProfileJson) {
   document.title = `${p.name} · Skirmish`;
   const head = $('profile-head');
@@ -61,7 +108,10 @@ function render(p: ProfileJson) {
   const worn = el('div', 'profile-worn');
   if (p.featured) worn.innerHTML = medalSvg(careerArt(p.featured), 132, careerName(p.featured));
   const who = el('div', 'profile-who');
-  who.append(el('h1', 'profile-name', p.name), el('p', 'profile-sub', p.featured ? `Wears ${careerName(p.featured)}` : 'No lifetime medal yet'));
+  const lvl = (p as unknown as { level?: number }).level;
+  const stars = (p as unknown as { prestige?: number }).prestige ?? 0;
+  const sub = el('p', 'profile-sub', `${lvl ? `Level ${lvl}${stars ? ` · ${stars} star${stars === 1 ? '' : 's'}` : ''} · ` : ''}${p.featured ? `Wears ${careerName(p.featured)}` : 'No lifetime medal yet'}`);
+  who.append(el('h1', 'profile-name', p.name), sub);
   head.append(worn, who);
   const kd = p.deaths ? (p.kills / p.deaths).toFixed(2) : String(p.kills);
   const stats: [string, string][] = [
@@ -73,6 +123,7 @@ function render(p: ProfileJson) {
     d.append(el('dt', '', label), el('dd', '', value));
     return d;
   }));
+  renderLocker(p);
   const earned = Object.keys(p.badges).length;
   $('career-count').textContent = `${earned} of ${CAREER_IDS.length * 4}`;
   $('career').replaceChildren(...CAREER_IDS.map((t) => trackCard(p, t)));
@@ -89,7 +140,8 @@ async function load(name: string) {
     render(await res.json() as ProfileJson);
     $('profile-status').textContent = '';
     $('profile-body').hidden = false;
-  } catch {
+  } catch (err) {
+    console.error('profile page', String(err), (err as Error)?.stack);
     $('profile-status').textContent = 'Could not load the profile. Try again in a moment.';
   }
 }

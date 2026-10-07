@@ -1,4 +1,5 @@
-import { ABILITY_COOLDOWN_MS, type AbilityId } from '../shared/defs.ts';
+import type { AbilityId } from '../shared/defs.ts';
+import { abilityCooldownMs } from '../shared/sim/stats.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import { iconSvg, PERK_ICONS, UI_ICONS } from './icons.ts';
 
@@ -23,7 +24,7 @@ export function buttonFaces(self: SelfView, unlockAt: number | undefined): Butto
     reload,
     ability: {
       icon: self.ability,
-      sweep: left > 0 ? 1 - Math.min(1, left / ABILITY_COOLDOWN_MS[self.ability]) : 0,
+      sweep: left > 0 ? 1 - Math.min(1, left / abilityCooldownMs(self.ability, self.perks ?? {})) : 0,
       label: left > 0 ? String(Math.ceil(left / 1000)) : '',
       ready: left <= 0,
     },

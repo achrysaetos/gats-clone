@@ -1,0 +1,365 @@
+/*
+ * The menu, as part of the diorama (docs/art/STYLE.md): plates are objects with a lit top face, a darker front lip and an ink outline,
+ * shadows fall down and to the right (key light top left), nothing blurs, and buttons press down into their lip. Two steps (choose
+ * your fight, gear up) over a slow night yard painted by menuscene.ts; every mode card holds a diorama painted with the match's own art.
+ * Text sits on dark gunmetal at 4.5:1 or better; nothing is under 13px at 1x --ui, and --ui scales the lot to 4K.
+ */
+#menu {
+  --m-ink: #1c1f26;
+  --m-top: #5b6371;
+  --m-face: #4f5560;
+  --m-body: #3d4450;
+  --m-deep: #2a2f38;
+  --m-lip: #272c34;
+  --m-well: #15171c;
+  --m-text: #ece6d6;
+  --m-sub: #d3cdbc;
+  --m-shadow: rgba(5, 6, 9, 0.6);
+  --m-accent: #ff5a1f;
+  --m-accent-hi: #ff7a45;
+  --m-accent-lip: #a63a12;
+  --m-accent-text: #ffa57c;
+  --m-gold: #ffd34d;
+  --m-ok: #7ee8b0;
+  --cardlip: 8px;
+  background: #0d0f14;
+  color: var(--m-text);
+  padding: calc(18px + var(--st)) calc(20px + var(--sr)) calc(34px + var(--sb)) calc(20px + var(--sl));
+}
+#menu .menu-scene { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; }
+/* The vignette keeps the scene's light at the edges and the middle calm, so text always has a quiet ground (light, not paint). */
+#menu .menu-vignette {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 78% 74% at 50% 46%, rgba(8, 10, 14, 0.5) 0%, rgba(8, 10, 14, 0.34) 42%, rgba(8, 10, 14, 0.78) 100%),
+    linear-gradient(180deg, rgba(8, 10, 14, 0.5), transparent 20%, transparent 74%, rgba(8, 10, 14, 0.55));
+}
+#menu .menu-card { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; zoom: var(--ui, 1); }
+
+/* ---- The plate: lit top, ink outline, a darker front lip below, and a hard shadow down and to the right. */
+#menu .plate {
+  --lip: 6px;
+  position: relative;
+  background: linear-gradient(var(--m-face) 0 7px, var(--m-body) 7px);
+  border: 2px solid var(--m-ink);
+  border-radius: 7px;
+  clip-path: none;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.13), 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 8px calc(var(--lip) + 8px) 0 0 var(--m-shadow);
+  backdrop-filter: none;
+}
+#menu .panel {
+  background: linear-gradient(var(--m-deep) 0 6px, #23272e 6px);
+  border: 2px solid var(--m-ink);
+  border-radius: 7px;
+  clip-path: none;
+  backdrop-filter: none;
+  padding: 20px 22px 18px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1), 0 5px 0 0 var(--m-lip), 0 5px 0 2px var(--m-ink), 8px 13px 0 0 var(--m-shadow);
+}
+#menu .panel::before { left: 6px; top: 6px; width: 14px; height: 14px; border-top-width: 3px; border-left-width: 3px; }
+#menu .panel > h2:first-child { margin-top: 0; }
+#menu h2 { color: var(--m-sub); }
+#menu .muted { color: var(--m-sub); }
+#menu input { background: var(--m-well); border: 2px solid var(--m-ink); border-radius: 5px; box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.5); color: var(--m-text); }
+#menu input::placeholder { color: #a2a9b6; }
+#menu input:focus { border-color: var(--m-accent); }
+#menu button:focus-visible, #menu input:focus-visible, #menu summary:focus-visible, #menu a:focus-visible { outline: 3px solid var(--m-accent-text); outline-offset: 3px; }
+
+/* ---- Buttons: a face, a lip, and a press that sinks into it. */
+#menu button:not(.mc-hit):not(.server):not(.primary):not(.tile):not(.swatch):not(.crumb):not(.armory-tab):not(.cos-card):not(.link):not(.chal-reward):not(.xp-close) {
+  --lip: 4px;
+  position: relative;
+  background: linear-gradient(var(--m-top) 0 5px, var(--m-face) 5px);
+  color: var(--m-text);
+  border: 2px solid var(--m-ink);
+  border-radius: 6px;
+  box-shadow: 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 5px) 0 0 var(--m-shadow);
+  transform: none;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+#menu button:not(.mc-hit):not(.server):not(.primary):not(.tile):not(.swatch):not(.crumb):not(.armory-tab):not(.cos-card):not(.link):not(.chal-reward):not(.xp-close):hover:not(:disabled) {
+  --lip: 6px; transform: translateY(-2px); background: linear-gradient(#6a7482 0 5px, #596170 5px);
+}
+#menu button:not(.mc-hit):not(.server):not(.primary):not(.tile):not(.swatch):not(.crumb):not(.armory-tab):not(.cos-card):not(.link):not(.chal-reward):not(.xp-close):active:not(:disabled) {
+  --lip: 1px; transform: translateY(3px); background: linear-gradient(var(--m-face) 0 5px, #454c58 5px);
+}
+#menu button:disabled { opacity: 0.6; }
+
+/* ---- Top bar */
+#menu .menu-top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; margin-bottom: 14px; }
+#menu .wordmark { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--m-text); }
+#menu .emblem { width: 46px; height: auto; filter: drop-shadow(3px 4px 0 var(--m-shadow)); }
+#menu .logo {
+  font: italic 900 clamp(32px, 4vw, 46px)/0.9 var(--display);
+  letter-spacing: 0.02em; color: var(--m-text);
+  background: none; -webkit-text-fill-color: currentColor; animation: none; filter: none;
+  text-shadow: 0 3px 0 var(--m-ink), 3px 3px 0 var(--m-ink), -2px 0 0 var(--m-ink), 0 -2px 0 var(--m-ink), 5px 7px 0 var(--m-shadow);
+}
+#menu .logo em { color: var(--m-accent); background: none; -webkit-text-fill-color: currentColor; animation: none; }
+#menu .menu-tabs { display: flex; justify-content: center; gap: 12px; margin: 0; }
+#menu .menu-tabs button {
+  padding: 11px 22px; border-radius: 6px; clip-path: none; color: var(--m-sub);
+  font: 800 18px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase;
+}
+#menu .menu-tabs button[aria-selected="true"] {
+  color: var(--m-text); transform: translateY(-2px); --lip: 6px;
+  background: linear-gradient(var(--m-accent) 0 5px, #5a626f 5px); box-shadow: 0 6px 0 0 var(--m-lip), 0 6px 0 2px var(--m-ink), 6px 14px 0 0 var(--m-shadow);
+}
+#menu .tab-badge { background: var(--m-accent); color: #160a04; border: 2px solid var(--m-ink); border-radius: 4px; }
+#menu .acct-chip { display: inline-flex; align-items: center; gap: 10px; padding: 9px 16px; font: 800 17px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
+#menu .acct-lv { padding: 3px 7px 2px; background: var(--m-ink); color: var(--m-gold); font: 900 15px/1 var(--display); letter-spacing: 0.08em; border-radius: 3px; }
+#menu .acct-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#menu .acct-chip:not(.in) .acct-name::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 8px; background: var(--m-accent); border: 2px solid var(--m-ink); border-radius: 50%; vertical-align: 1px; }
+#menu .acct-sheet { position: absolute; right: 0; top: 70px; z-index: 30; width: min(400px, 100%); display: grid; gap: 14px; max-height: calc((100vh - 110px) / var(--ui, 1)); overflow-y: auto; padding: 0 12px 24px 0; }
+#menu .acct-sheet .panel { background: linear-gradient(var(--m-deep) 0 6px, #262a32 6px); }
+#menu .sheet-controls summary { cursor: pointer; font: 700 14px/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--m-sub); }
+#menu .sheet-controls[open] summary { margin-bottom: 14px; }
+#menu .controls dd { color: var(--m-sub); }
+
+/* ---- Steps */
+#menu .menu-status:empty { display: none; }
+#menu .menu-status { margin: 0 0 12px; font: 700 15px/1.3 var(--text); color: var(--m-sub); }
+#menu .menu-status:not(:empty) { padding: 10px 14px; background: var(--m-deep); border: 2px solid var(--m-ink); border-left: 5px solid var(--m-gold); border-radius: 5px; box-shadow: 4px 5px 0 var(--m-shadow); }
+#menu .menu-status.error { color: #ffb0a8; border-left-color: #ff4d5e; }
+#menu .deploy { position: relative; }
+#menu .steps { position: absolute; right: 4px; top: 6px; z-index: 3; display: flex; gap: 10px; list-style: none; margin: 0; padding: 0; }
+#menu .crumb {
+  display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px 7px 8px; border: 2px solid var(--m-ink); border-radius: 20px; background: rgba(28, 31, 38, 0.92);
+  font: 800 15px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--m-sub); box-shadow: 3px 4px 0 var(--m-shadow);
+}
+#menu .crumb b { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--m-face); color: var(--m-text); font: 900 15px/1 var(--display); }
+#menu .crumb[aria-current="step"] { color: var(--m-text); }
+#menu .crumb[aria-current="step"] b { background: var(--m-accent); color: #160a04; }
+#menu .crumb:hover:not(:disabled) { background: #2a2f38; border-color: var(--m-ink); }
+#menu .crumb:disabled { cursor: default; opacity: 0.7; }
+#menu .step-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; margin: 2px 0 16px; min-height: 50px; }
+#menu .step-title {
+  display: block; margin: 0; font: italic 900 clamp(36px, 4.4vw, 54px)/0.92 var(--display); letter-spacing: 0.015em; text-transform: uppercase; color: var(--m-text);
+  text-shadow: 0 3px 0 var(--m-ink), 3px 3px 0 var(--m-ink), -2px 0 0 var(--m-ink), 0 -2px 0 var(--m-ink), 5px 8px 0 var(--m-shadow);
+}
+#menu .step-title::before { display: none; }
+#menu .step-sub { font: 600 17px/1.2 var(--text); color: var(--m-text); padding: 6px 12px; background: rgba(28, 31, 38, 0.86); border: 2px solid var(--m-ink); border-radius: 5px; }
+
+/* ---- Mode cards */
+#menu .mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 34px 30px; padding: 6px 4px 26px; }
+#menu .servers { display: contents; }
+#menu .mc-empty { grid-column: 1 / -1; padding: 14px 18px; background: var(--m-deep); border: 2px solid var(--m-ink); border-radius: 6px; }
+#menu .mc-wrap { position: relative; isolation: isolate; display: flex; }
+/* The card's shadow stays on the floor while the card lifts away from it. */
+#menu .mc-wrap::before { content: ""; position: absolute; inset: 0 0 var(--cardlip) 0; z-index: -1; border-radius: 9px; background: var(--m-shadow); transform: translate(11px, 20px); }
+#menu .mode-card {
+  --rise: 0px; --lip: var(--cardlip); --ring: transparent;
+  display: flex; flex-direction: column; width: 100%; padding: 0; text-align: left; cursor: pointer; position: relative;
+  background: var(--m-body); color: var(--m-text); border: 2px solid var(--m-ink); border-radius: 9px; font: inherit; letter-spacing: 0;
+  transform: translateY(calc(-1 * var(--rise)));
+  box-shadow: 0 0 0 4px var(--ring), 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink);
+  transition: transform 0.16s cubic-bezier(0.2, 1.5, 0.4, 1), box-shadow 0.16s;
+}
+#menu .mode-card:hover:not(:disabled), #menu .mode-card:has(.mc-hit:focus-visible), #menu .mode-card:focus-visible { --rise: 8px; --lip: 15px; background: var(--m-body); border-color: var(--m-ink); }
+#menu .mode-card:active:not(:disabled) { --rise: -2px; --lip: 4px; }
+#menu .mode-card[aria-pressed="true"], #menu .mode-card:has(#squad-room[aria-pressed="true"]) { --ring: var(--m-accent); }
+#menu .mode-card:focus-visible, #menu .mode-card:has(.mc-hit:focus-visible) { outline: 3px solid var(--m-accent-text); outline-offset: 5px; }
+#menu .mc-face { display: flex; flex-direction: column; flex: 1; overflow: hidden; border-radius: 7px; }
+#menu .mc-stage { display: block; position: relative; aspect-ratio: 360 / 180; overflow: hidden; background: #1a1d24; border-bottom: 3px solid var(--m-ink); }
+#menu .mc-art { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+/* A warm bloom crosses the diorama window when the card is up (light, drawn over the art; the soldiers react in the canvas). */
+#menu .mc-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255, 214, 150, 0.14), transparent 60%); opacity: 0; transition: opacity 0.2s; }
+#menu .mode-card:hover .mc-stage::after, #menu .mode-card:has(.mc-hit:focus-visible) .mc-stage::after { opacity: 1; }
+#menu .mc-live { position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; background: var(--m-ink); border-radius: 4px; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4); font: 700 14px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-text); }
+#menu .mc-live i { width: 9px; height: 9px; background: var(--m-ok); border-radius: 50%; }
+#menu .mc-live .n:empty { display: none; }
+#menu .mc-live:has(.n:empty) { display: none; }
+#menu .mc-plate { display: grid; align-content: start; flex: 1; gap: 8px; padding: 13px 16px 17px; background: linear-gradient(var(--m-face) 0 7px, var(--m-body) 7px); }
+#menu .mc-head { display: flex; align-items: center; gap: 11px; }
+#menu .mc-name { font: italic 900 29px/1 var(--display); letter-spacing: 0.02em; text-transform: uppercase; color: var(--m-text); text-shadow: 2px 2px 0 var(--m-ink); }
+#menu .mc-pitch { font: 500 15px/1.35 var(--text); color: var(--m-sub); }
+#menu .mode { padding: 4px 8px 3px; background: var(--m-ink); border: 0; border-radius: 3px; font: 800 14px/1 var(--display); letter-spacing: 0.14em; }
+#menu .mode-ffa { color: #ffb48a; } #menu .mode-tdm { color: #ff9aa6; } #menu .mode-dom { color: #a9c0ff; } #menu .mode-zom { color: #bbe685; } #menu .mode-br { color: #dfbdf5; } #menu .mode-rng { color: #96dce6; }
+#menu .mc-hit { position: absolute; inset: 0; z-index: 1; width: 100%; padding: 0; border: 0; background: none; border-radius: 9px; cursor: pointer; box-shadow: none; transform: none; clip-path: none; }
+#menu .mc-hit:hover:not(:disabled) { background: none; }
+#menu .mc-cta { position: relative; z-index: 2; }
+#menu .mc-actions { position: relative; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 4px; }
+#menu .mc-btn { padding: 10px 16px; font: 800 16px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+#menu .mc-cta .mc-btn { background: linear-gradient(var(--m-accent-hi) 0 5px, var(--m-accent) 5px) !important; color: #160a04; box-shadow: 0 4px 0 0 var(--m-accent-lip), 0 4px 0 2px var(--m-ink), 5px 9px 0 0 var(--m-shadow) !important; }
+#menu .mc-cta .mc-btn:hover:not(:disabled) { background: linear-gradient(#ff9468 0 5px, var(--m-accent-hi) 5px) !important; }
+#menu .mc-room { position: relative; z-index: 2; display: inline-flex; align-items: center; gap: 9px; padding: 7px 11px; background: var(--m-ink); border: 2px solid var(--m-ink); border-radius: 5px; color: var(--m-text); font: 700 16px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+#menu .mc-room[aria-pressed="true"] { border-color: var(--m-accent); }
+#menu .mc-room .count { color: var(--m-sub); font: 600 14px var(--text); letter-spacing: 0; text-transform: none; }
+#menu .invite { display: flex; gap: 8px; flex: 1 1 100%; }
+#menu .invite input { flex: 1; min-width: 0; font-size: 14px; padding: 8px 10px; }
+#menu .range-pitch { display: grid; align-content: start; flex: 1; gap: 8px; padding: 13px 16px 17px; background: linear-gradient(var(--m-face) 0 7px, var(--m-body) 7px); border: 0; clip-path: none; position: static; }
+#menu .range-pitch::before { display: none; }
+#menu .range-title { display: flex; gap: 11px; }
+#menu .range-title b { font: italic 900 29px/1 var(--display); letter-spacing: 0.02em; }
+#menu .mc-zom .mc-pitch, #menu .mc-rng .mc-pitch { margin-bottom: 2px; }
+
+/* ---- Gear up */
+#menu .back-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px 10px 14px; font: 800 18px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; }
+#menu .back-btn span { font-size: 26px; line-height: 0.7; }
+#menu .mission { display: inline-flex; align-items: center; gap: 12px; padding: 9px 16px; background: rgba(28, 31, 38, 0.92); border: 2px solid var(--m-ink); border-radius: 6px; box-shadow: 4px 5px 0 var(--m-shadow); font: 700 18px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
+#menu .mission b { font-weight: 900; font-style: italic; font-size: 21px; }
+#menu .mission-detail { color: var(--m-sub); font: 600 15px/1 var(--text); letter-spacing: 0; text-transform: none; }
+#menu .gear-grid { display: grid; grid-template-columns: minmax(310px, 5fr) minmax(0, 7fr); gap: 34px; align-items: start; padding: 0 4px 24px; }
+#menu .gear-left { display: grid; gap: 20px; }
+#menu .field { display: grid; gap: 12px; padding: 14px 16px 14px; }
+#menu .field-in { display: grid; gap: 9px; }
+#menu .field-in > span { display: flex; justify-content: space-between; font: 800 14px/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--m-sub); }
+#menu .field-link { color: var(--m-accent-text); font-weight: 700; letter-spacing: 0.08em; }
+#menu #name { font: 800 24px/1.1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 14px; }
+#menu .level-card { margin: 0; padding: 10px 2px 0; background: none; border: 0; border-top: 2px solid var(--m-ink); }
+#menu .lv-chip { background: var(--m-ink); border: 0; clip-path: none; border-radius: 4px; padding: 2px 9px 2px 8px; }
+#menu .lv-chip small, #menu .lv-label { color: var(--m-sub); }
+#menu .lv-label { font-size: 14px; }
+#menu .xp-bar { height: 12px; background: var(--m-ink); border: 2px solid var(--m-ink); border-radius: 3px; }
+#menu .lv-next { color: var(--m-sub); font-size: 14px; margin-top: 6px; }
+#menu .gear-stage { padding: 0; aspect-ratio: 420 / 250; overflow: hidden; background: #1a1d24; }
+#menu .gear-colors { padding: 0 18px 16px; }
+#menu .gear-colors h2 { margin: 14px 0 12px; font: 800 15px/1 var(--display); letter-spacing: 0.24em; color: var(--m-sub); }
+#menu .gear-view { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#menu .gear-tag { position: absolute; left: 14px; bottom: 14px; max-width: 70%; padding: 7px 14px 6px; background: var(--m-ink); border-left: 5px solid var(--m-accent); border-radius: 4px; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45); font: italic 900 25px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; color: var(--m-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+
+#menu .loadout { padding: 2px 22px 22px; }
+#menu .loadout h2 { margin: 16px 0 11px; font: 800 15px/1 var(--display); letter-spacing: 0.24em; color: var(--m-sub); }
+#menu .loadout .weapons { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 14px; }
+
+/* Gun tiles: the gun art stands on a lit shelf, name and numbers below, four chunky bars. */
+#menu .loadout .tile { clip-path: none; position: relative; padding: 0; gap: 0; justify-items: stretch; text-align: left; border: 2px solid var(--m-ink); border-radius: 7px; --lip: 5px; background: var(--m-body); transition: transform 0.14s cubic-bezier(0.2, 1.5, 0.4, 1), box-shadow 0.14s; box-shadow: 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 6px) 0 0 var(--m-shadow); }
+#menu .loadout .tile:hover:not(:disabled) { --lip: 9px; transform: translateY(-4px); background: var(--m-body); border-color: var(--m-ink); box-shadow: 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 6px + 4px) 0 0 var(--m-shadow); }
+#menu .loadout .tile:active:not(:disabled) { --lip: 2px; transform: translateY(3px); }
+#menu .loadout .tile[aria-pressed="true"] { border-color: var(--m-ink); background: var(--m-body); --lip: 7px; transform: translateY(-3px); box-shadow: 0 0 0 3px var(--m-accent), 0 var(--lip) 0 3px var(--m-accent-lip), 0 var(--lip) 0 5px var(--m-ink), 5px calc(var(--lip) + 8px) 0 0 var(--m-shadow); animation: none; }
+#menu .loadout .weapon { display: grid; grid-template-columns: minmax(0, 1fr); }
+#menu .loadout .weapon .gun-art { grid-column: 1 / -1; display: block; width: 100%; max-width: none; height: auto; aspect-ratio: 190 / 60; padding: 6px 12px 0; background: linear-gradient(180deg, #667080 0 62%, #566070 62%); border-radius: 5px 5px 0 0; border-bottom: 2px solid var(--m-ink); box-sizing: border-box; }
+#menu .loadout .weapon[aria-pressed="true"] .gun-art { background: linear-gradient(180deg, #8a6a52 0 62%, #77594a 62%); }
+#menu .loadout .weapon b { display: block; padding: 9px 12px 0; font: italic 900 21px/1 var(--display); letter-spacing: 0.04em; color: var(--m-text); text-shadow: 2px 2px 0 var(--m-ink); }
+#menu .loadout .weapon[aria-pressed="true"] b { color: var(--m-text); }
+#menu .loadout .weapon small { display: block; padding: 4px 12px 0; color: var(--m-sub); font: 600 14px/1.1 var(--text); white-space: nowrap; }
+#menu .loadout .gun-stats { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px 8px; width: auto; margin: 9px 12px 11px; align-items: center; }
+#menu .loadout .gun-stats span { font: 800 12px/1 var(--display); letter-spacing: 0.12em; color: var(--m-sub); }
+#menu .loadout .gun-stats i {
+  height: 8px; border: 2px solid var(--m-ink); border-radius: 3px; box-sizing: content-box;
+  background: linear-gradient(90deg, var(--m-text) var(--v), var(--m-well) var(--v));
+}
+#menu .loadout .weapon[aria-pressed="true"] .gun-stats i { background: linear-gradient(90deg, var(--m-accent) var(--v), var(--m-well) var(--v)); }
+#menu .loadout .weapon[aria-pressed="true"]::after { content: "Equipped"; position: absolute; right: 8px; top: 8px; padding: 3px 7px 2px; background: var(--m-accent); color: #160a04; border: 2px solid var(--m-ink); border-radius: 3px; font: 900 12px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* Colours are paint pots: a metal lid over a pot of the colour, lit on the left, shaded on the right. */
+#menu .swatches { gap: 14px; padding: 2px 0 8px; }
+#menu .swatch {
+  --lip: 5px; width: 56px; height: 50px; padding: 0; border-radius: 7px 7px 13px 13px; border: 2px solid var(--m-ink); position: relative;
+  background:
+    linear-gradient(180deg, #98a2b0 0 7px, #667080 7px 15px, transparent 15px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.3) 0 24%, transparent 24% 70%, rgba(8, 10, 16, 0.32) 70%),
+    var(--swatch);
+  box-shadow: 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 6px) 0 0 var(--m-shadow);
+  transition: transform 0.12s cubic-bezier(0.2, 1.5, 0.4, 1), box-shadow 0.12s;
+}
+#menu .swatch::after { content: ""; position: absolute; left: 50%; top: 24px; width: 16px; height: 9px; margin-left: -8px; background: rgba(236, 230, 214, 0.9); border: 2px solid var(--m-ink); border-radius: 3px; }
+#menu .swatch:hover:not(:disabled) { transform: translateY(-4px); --lip: 9px; background: linear-gradient(180deg, #98a2b0 0 7px, #667080 7px 15px, transparent 15px), linear-gradient(90deg, rgba(255, 255, 255, 0.3) 0 24%, transparent 24% 70%, rgba(8, 10, 16, 0.32) 70%), var(--swatch); }
+#menu .swatch:active:not(:disabled) { transform: translateY(3px); --lip: 2px; }
+#menu .swatch[aria-pressed="true"] { transform: translateY(-4px); --lip: 9px; box-shadow: 0 0 0 4px var(--m-accent), 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 6px) 0 0 var(--m-shadow); background: linear-gradient(180deg, #98a2b0 0 7px, #667080 7px 15px, transparent 15px), linear-gradient(90deg, rgba(255, 255, 255, 0.3) 0 24%, transparent 24% 70%, rgba(8, 10, 16, 0.32) 70%), var(--swatch); }
+#menu .swatch[aria-pressed="true"]::after { background: var(--m-accent); }
+
+/* Armor: plates, with one chunky segment per tier of protection. */
+#menu .loadout .armors { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+#menu .loadout .armor { padding: 10px 12px 10px; gap: 4px; }
+#menu .loadout .armor b { padding: 0; font: italic 900 20px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; color: var(--m-text); text-shadow: 2px 2px 0 var(--m-ink); }
+#menu .loadout .armor small { padding: 0; color: var(--m-sub); font: 600 14px/1.2 var(--text); }
+#menu .loadout .armor .meter { height: 12px; gap: 4px; margin: 2px 0 4px; }
+#menu .loadout .armor .meter i { border: 2px solid var(--m-ink); border-radius: 3px; background: var(--m-well); }
+#menu .loadout .armor .meter i.on { background: linear-gradient(var(--m-text) 0 40%, #b9b3a2 40%); }
+#menu .loadout .armor[aria-pressed="true"] .meter i.on { background: linear-gradient(var(--m-accent-hi) 0 40%, var(--m-accent) 40%); }
+#menu .loadout .armor[aria-pressed="true"]::after { content: "Worn"; position: absolute; right: 8px; top: 8px; padding: 3px 7px 2px; background: var(--m-accent); color: #160a04; border: 2px solid var(--m-ink); border-radius: 3px; font: 900 12px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* ---- Deploy: the big orange plate that sinks when pressed. */
+#menu .play-actions { position: sticky; bottom: 14px; z-index: 5; margin: 22px 0 0; padding: 0; background: none; border: 0; }
+#menu button.primary {
+  --lip: 9px; clip-path: none; width: 100%; margin: 0; padding: 18px 28px 17px; border: 2px solid var(--m-ink); border-radius: 9px;
+  background: linear-gradient(var(--m-accent-hi) 0 12px, var(--m-accent) 12px); color: #160a04;
+  font: italic 900 38px/1 var(--display); letter-spacing: 0.24em; text-indent: 0.24em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(255, 190, 150, 0.6);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 var(--lip) 0 0 var(--m-accent-lip), 0 var(--lip) 0 2px var(--m-ink), 9px calc(var(--lip) + 10px) 0 0 var(--m-shadow);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+#menu button.primary::before { display: none; }
+#menu button.primary::after { right: 28px; font-size: 40px; opacity: 0.55; }
+#menu button.primary:hover:not(:disabled) { --lip: 12px; transform: translateY(-3px); background: linear-gradient(#ff9468 0 12px, var(--m-accent-hi) 12px); }
+#menu button.primary:active:not(:disabled) { --lip: 2px; transform: translateY(8px); filter: none; }
+#menu button.primary:disabled { background: linear-gradient(#78808c 0 12px, #646c78 12px); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 6px 0 0 #3a404a, 0 6px 0 2px var(--m-ink), 9px 16px 0 0 var(--m-shadow); color: #1c1f26; opacity: 1; text-shadow: none; }
+
+/* ---- Armory, challenges: the same plates; the armory's stage becomes a dark pad. */
+#menu .armory-stage { background: #1a1d24; border: 2px solid var(--m-ink); clip-path: none; border-radius: 7px; }
+#menu .armory-floor { background: radial-gradient(ellipse 66% 52% at 46% 64%, #7b8492 0 57%, #656e7c 58% 100%); }
+#menu .armory-floor::after { background: rgba(10, 12, 18, 0.42); }
+#menu .armory-desc, #menu .armory-count, #menu .chal-reset, #menu .armory-tab { color: var(--m-sub); }
+#menu .armory-tab[aria-selected="true"] { color: var(--m-text); }
+#menu .lv-next b { font-weight: 800; }
+#menu .cos-card small { color: var(--rc, var(--m-sub)); }
+
+/* ---- Small screens: three columns shrink to two, then one row-shaped card per mode. */
+@media (max-width: 1020px) {
+  #menu .mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 24px; }
+  #menu .menu-top { grid-template-columns: auto 1fr auto; gap: 12px; }
+  #menu .menu-tabs button { padding: 10px 14px; font-size: 16px; letter-spacing: 0.1em; }
+}
+@media (max-width: 860px) {
+  #menu .gear-grid { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  #menu .gear-left { grid-template-columns: minmax(0, 1fr); }
+  #menu .gear-stage { aspect-ratio: 420 / 250; }
+  #menu .armory, #menu .challenges { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  #menu { padding-left: calc(12px + var(--sl)); padding-right: calc(12px + var(--sr)); }
+  #menu .menu-top { grid-template-columns: 1fr auto; row-gap: 12px; }
+  #menu .menu-tabs { grid-column: 1 / -1; grid-row: 2; justify-content: stretch; }
+  #menu .menu-tabs button { flex: 1; padding: 11px 6px; font-size: 15px; letter-spacing: 0.06em; }
+  #menu .step-title { font-size: 40px; }
+  #menu .steps { display: none; }
+  #menu .mode-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-right: 12px; }
+  /* A card lies on its side: the diorama on the left, the plate on the right. */
+  #menu .mc-face { display: grid; grid-template-columns: 46% minmax(0, 1fr); }
+  #menu .mc-stage { aspect-ratio: auto; min-height: 100%; border-bottom: 0; border-right: 3px solid var(--m-ink); overflow: hidden; }
+  #menu .mc-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #menu .mc-plate, #menu .range-pitch { padding: 11px 12px 14px; gap: 6px; }
+  #menu .mc-name, #menu .range-title b { font-size: 23px; }
+  #menu .mc-pitch { font-size: 14px; }
+  #menu .mc-live { left: 6px; top: 6px; font-size: 13px; padding: 3px 7px 3px 6px; }
+  #menu .mc-actions { gap: 8px; }
+  #menu .mc-btn { padding: 9px 12px; font-size: 15px; }
+  #menu .swatches { gap: 9px; }
+  #menu .swatch { width: 46px; height: 44px; }
+  #menu .swatch::after { top: 21px; width: 14px; margin-left: -7px; }
+  #menu .gear-colors { padding: 0 14px 14px; }
+  #menu .loadout .weapons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #menu .loadout .armors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #menu .loadout { padding: 4px 14px 20px; }
+  #menu button.primary { font-size: 32px; padding: 20px 18px 19px; }
+  #menu .acct-sheet { width: 100%; top: 62px; }
+}
+/* A phone on its side is short: cards go compact, three across, and the pitch drops out. */
+@media (max-height: 520px) and (min-width: 600px) {
+  #menu { padding-top: calc(8px + var(--st)); }
+  #menu .menu-top { margin-bottom: 8px; }
+  #menu .emblem { width: 36px; }
+  #menu .logo { font-size: 30px; }
+  #menu .menu-tabs button { padding: 8px 14px; font-size: 15px; }
+  #menu .acct-chip { padding: 7px 12px; font-size: 15px; }
+  #menu .step-head { margin: 6px 0 14px; }
+  #menu .step-title { font-size: 34px; }
+  #menu .step-sub, #menu .steps { display: none; }
+  #menu .mode-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 16px; }
+  #menu .mc-pitch { display: none; }
+  #menu .mc-live { left: 5px; top: 5px; font-size: 12px; padding: 3px 6px 3px 5px; gap: 5px; }
+  #menu .mc-live i { width: 7px; height: 7px; }
+  #menu .mc-name, #menu .range-title b { font-size: 21px; }
+  #menu .mc-plate, #menu .range-pitch { padding: 9px 11px 12px; gap: 6px; }
+  #menu .gear-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; }
+  #menu .gear-left { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  #menu .gear-stage { height: auto; aspect-ratio: 420 / 250; max-height: none; }
+  #menu .loadout .weapons { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #menu .loadout .armors { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #menu button.primary { font-size: 24px; padding: 9px 18px 8px; --lip: 6px; }
+  #menu .play-actions { bottom: 8px; margin-top: 12px; }
+  #menu .acct-sheet { top: 52px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #menu .mode-card, #menu .loadout .tile, #menu .swatch, #menu button, #menu .mc-stage::after { transition: none !important; }
+}

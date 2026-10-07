@@ -1,10 +1,11 @@
+import type { PropKind } from './defs.ts';
 import type { Center, MapDef, MapWall, WallMaterial } from './maps.ts';
 import type { Rect } from './sim/movement.ts';
 
 const MAP_CELL = 50;
 
 type Layer = WallMaterial | 'red' | 'blue' | 'ffa';
-type Cell = { layers: readonly Layer[]; crate: boolean; zone: boolean; barrel?: boolean };
+type Cell = { layers: readonly Layer[]; crate: boolean; zone: boolean; barrel?: boolean; prop?: PropKind };
 
 const FLOOR: Cell = { layers: [], crate: false, zone: false };
 const LEGEND: Record<string, Cell> = {
@@ -12,9 +13,43 @@ const LEGEND: Record<string, Cell> = {
   '#': { ...FLOOR, layers: ['concrete'] },
   S: { ...FLOOR, layers: ['sandstone'] },
   P: { ...FLOOR, layers: ['planter'] },
+  /** Night Market: stall counter, shopfront, crate stack, food cart or scooter, shrine. */
+  T: { ...FLOOR, layers: ['stall'] },
+  H: { ...FLOOR, layers: ['shopfront'] },
+  K: { ...FLOOR, layers: ['stack'] },
+  V: { ...FLOOR, layers: ['cart'] },
+  N: { ...FLOOR, layers: ['shrine'] },
+  /** Museum: gallery wall, marble pier or column, glass display case, dinosaur plinth, shop counter. */
+  W: { ...FLOOR, layers: ['gallery'] },
+  M: { ...FLOOR, layers: ['marble'] },
+  G: { ...FLOOR, layers: ['vitrine'] },
+  D: { ...FLOOR, layers: ['plinth'] },
+  C: { ...FLOOR, layers: ['counter'] },
+  /** Sub Pen: submarine hull, conning tower, bulkhead, torpedo rack, water. */
+  Q: { ...FLOOR, layers: ['hull'] },
+  Y: { ...FLOOR, layers: ['tower'] },
+  B: { ...FLOOR, layers: ['bulkhead'] },
+  Z: { ...FLOOR, layers: ['rack'] },
+  U: { ...FLOOR, layers: ['water'] },
+  /** Park: clipped hedge, pond, pale stonework, tree trunk, park bench, playground frame. */
+  h: { ...FLOOR, layers: ['hedge'] },
+  w: { ...FLOOR, layers: ['pond'] },
+  t: { ...FLOOR, layers: ['parkstone'] },
+  k: { ...FLOOR, layers: ['trunk'] },
+  n: { ...FLOOR, layers: ['bench'] },
+  y: { ...FLOOR, layers: ['play'] },
   c: { ...FLOOR, crate: true },
   /** An explosive barrel. */
   b: { ...FLOOR, barrel: true },
+  /** The other props: propane tank, gas canister, generator (electrical box), oil drum, streetlamp, medical cabinet, ammo crate, paint can. */
+  p: { ...FLOOR, prop: 'propane' },
+  g: { ...FLOOR, prop: 'gas' },
+  e: { ...FLOOR, prop: 'generator' },
+  o: { ...FLOOR, prop: 'oil' },
+  l: { ...FLOOR, prop: 'lamp' },
+  m: { ...FLOOR, prop: 'medic' },
+  a: { ...FLOOR, prop: 'ammo' },
+  i: { ...FLOOR, prop: 'paint' },
   R: { ...FLOOR, layers: ['red'] },
   F: { ...FLOOR, layers: ['ffa'] },
   X: { ...FLOOR, layers: ['red', 'ffa'] },
@@ -50,7 +85,7 @@ function mergeCells(on: readonly boolean[][]): Rect[] {
   return rects;
 }
 
-export function gridMap(name: string, text: string): MapDef {
+export function gridMap(name: string, text: string, theme?: MapDef['theme']): MapDef {
   const rows = gridRows(text);
   const cols = rows[0]?.length ?? 0;
   if (rows.some((r) => r.length !== cols)) throw new Error(`${name}: rows are not all ${cols} wide`);
@@ -71,14 +106,17 @@ export function gridMap(name: string, text: string): MapDef {
   const walls = (material: WallMaterial): MapWall[] => mergeCells(layerAt(material)).map((r) => ({ ...r, material }));
   const westCrates = half.flatMap((row, r) => row.flatMap((cell, c) => (cell.crate ? [center(c, r)] : [])));
   const westBarrels = half.flatMap((row, r) => row.flatMap((cell, c) => (cell.barrel ? [center(c, r)] : [])));
+  const westProps = half.flatMap((row, r) => row.flatMap((cell, c) => (cell.prop ? [{ ...center(c, r), kind: cell.prop }] : [])));
   const zoneA = center(zoneCells[0]!.c, zoneCells[0]!.r);
   return {
     name,
+    ...(theme && { theme }),
     size,
-    walls: [...walls('concrete'), ...walls('sandstone'), ...walls('planter')],
+    walls: [...walls('concrete'), ...walls('sandstone'), ...walls('planter'), ...walls('stall'), ...walls('shopfront'), ...walls('stack'), ...walls('cart'), ...walls('shrine'), ...walls('gallery'), ...walls('marble'), ...walls('vitrine'), ...walls('plinth'), ...walls('counter'), ...walls('hull'), ...walls('tower'), ...walls('bulkhead'), ...walls('rack'), ...walls('water'), ...walls('hedge'), ...walls('pond'), ...walls('parkstone'), ...walls('trunk'), ...walls('bench'), ...walls('play')],
     zones: [zoneA, { x: size / 2, y: size / 2 }, turn(zoneA)],
     spawns: { red: mergeCells(layerAt('red')), blue: mergeCells(layerAt('blue')), ffa: mergeCells(layerAt('ffa')) },
     crates: [...westCrates, ...westCrates.map(turn)],
     barrels: [...westBarrels, ...westBarrels.map(turn)],
+    props: [...westProps, ...westProps.map((p) => ({ ...turn(p), kind: p.kind }))],
   };
 }

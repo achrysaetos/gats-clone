@@ -1,18 +1,21 @@
 import type { WebSocket } from 'ws';
+import type { Player } from '../shared/sim/world.ts';
 import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, ROTATION } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
-import { benchUntilNextMatch, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
-import { build, demolish, toggleReady } from '../shared/sim/run.ts';
+import { benchUntilNextMatch, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
+import { build, demolish, toggleReady, upgrade } from '../shared/sim/run.ts';
 import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { addScore, choosePick } from '../shared/sim/stats.ts';
-import { MODES } from '../shared/sim/modes.ts';
+import { MODES, TEAM_NAME } from '../shared/sim/modes.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
+import { botCosmetics, XP } from '../shared/cosmetics.ts';
 import type { Accounts } from './accounts.ts';
 import { NO_PROFILES, type Profiles } from './profiles.ts';
+import { applyRangeMsg, isPractice } from './range.ts';
 import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { thinkBots } from './bot/tick.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
@@ -32,7 +35,7 @@ const BOTS_PER_HUMAN = 3;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; lastEmoteAt: number; aspect: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; lastEmoteAt: number; aspect: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -60,9 +63,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   const names = () => [...world.players.values()].map((pl) => pl.name);
   const registered = (name: string) => accounts.stats(name) !== null;
 
-  const humanCap = mode === 'ZOM' ? ZOM.squadSize : limits.humansPerRoom;
+  /** A practice room (the range) is one player's own: nothing in it counts toward an account, a profile, XP or a medal, and no bots join. */
+  const practice = isPractice(mode);
+  const humanCap = practice ? 1 : mode === 'ZOM' ? ZOM.squadSize : limits.humansPerRoom;
 
   function botTargets(): [Team, number][] {
+    if (practice) return [];
     const humans = (team: Team) => [...world.players.values()].filter((p) => p.kind === 'human' && p.team === team).length;
     if (mode === 'FFA') return [[null, Math.max(0, limits.minPlayers - humans(null))]];
     if (mode === 'ZOM') return [['red', Math.max(0, ZOM.squadSize - humans('red'))]];
@@ -75,6 +81,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
     const p = addPlayer(world, name, randomLoadout(botRand), { team });
     bots.set(p.id, newBotMemory(botRand));
+    p.cos = botCosmetics(name);
     return p;
   }
 
@@ -115,7 +122,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   /** Humans split evenly first, so a lone pair lands on opposite sides; balanceBots then evens the sides out with bots. */
   function teamForHuman(): Team {
-    if (mode === 'FFA' || mode === 'ZOM') return MODES[mode].assignTeam(world);
+    if (mode === 'FFA' || mode === 'ZOM' || practice) return MODES[mode].assignTeam(world);
     const count = (team: Team, kind?: PlayerKind) => [...world.players.values()].filter((p) => p.team === team && (kind === undefined || p.kind === kind)).length;
     const redHumans = count('red', 'human'), blueHumans = count('blue', 'human');
     if (redHumans !== blueHumans) return redHumans < blueHumans ? 'red' : 'blue';
@@ -135,6 +142,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   }
   /** Folds a change into a human's profile, and pays, announces and puts on any lifetime medal it earned. */
   function profile(playerId: number, delta: Parameters<Profiles['record']>[1]) {
+    if (practice) return;
     const p = world.players.get(playerId);
     const c = joined().find((j) => j.playerId === playerId);
     const name = c && p ? profileKey(c, p.name) : null;
@@ -148,12 +156,66 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (p && earned.length) p.badge = profiles.featured(name);
   }
 
+  /** A finished life pays its account's stats and its profile's XP. */
   function creditLives(departed?: Extract<Client, { k: 'joined' }>) {
-    const accountOf = new Map<number, string>();
-    for (const c of departed ? [...joined(), departed] : joined()) if (c.account) accountOf.set(c.playerId, c.account);
+    if (practice) { world.lifeRecords.length = 0; return; }
+    const owners = new Map<number, Extract<Client, { k: 'joined' }>>();
+    for (const c of departed ? [...joined(), departed] : joined()) owners.set(c.playerId, c);
     for (const r of world.lifeRecords.splice(0)) {
-      const account = accountOf.get(r.id);
-      if (account) accounts.credit(account, { kills: r.kills, deaths: r.died ? 1 : 0, score: r.score, games: 0 });
+      const c = owners.get(r.id);
+      if (!c) continue;
+      if (c.account) accounts.credit(c.account, { kills: r.kills, deaths: r.died ? 1 : 0, score: r.score, games: 0 });
+      const key = profileKey(c, r.name);
+      if (key) profiles.life(key, { score: r.score, kills: r.kills });
+    }
+  }
+
+  /** Tells a player what their last moments earned: XP, level-ups, unlocks, challenges done. A level-up changes the level their name shows. */
+  function notify(c: Extract<Client, { k: 'joined' }>) {
+    if (practice) return;
+    const p = world.players.get(c.playerId);
+    const key = p && profileKey(c, p.name);
+    const msg = key ? profiles.notice(key) : null;
+    if (!p || !key || !msg) return;
+    send(c.ws, msg);
+    if (msg.levelUps.length) p.cos = profiles.cos(key);
+  }
+
+  const wonRound = (p: Player): boolean => {
+    const m = world.match;
+    if (m.k !== 'over') return false;
+    if (mode === 'FFA') return m.winner.id === p.id;
+    if (mode === 'BR') return !!(world.royale && p.team && placeOf(world, world.royale, p.team) === 1);
+    return p.team !== null && m.winner.name === (TEAM_NAME as Record<string, string>)[p.team];
+  };
+  let roundPaid = false;
+  let roundStartAt = 0;
+  /** Versus rounds pay each seated human once when the round is over, if they were there for a while. */
+  function payRound() {
+    if (world.match.k !== 'over') { if (roundPaid) { roundPaid = false; roundStartAt = world.now; } return; }
+    if (roundPaid) return;
+    roundPaid = true;
+    for (const c of joined()) {
+      const p = world.players.get(c.playerId);
+      const key = p && profileKey(c, p.name);
+      if (!p || !key || world.now - Math.max(c.since, roundStartAt) < XP.minRoundPlayMs) continue;
+      profiles.round(key, { won: wonRound(p), finished: true });
+    }
+  }
+
+  /** Zombies pay for each night survived at dawn, and the finish and the Bastion when the run ends. */
+  let run: object | null = null, runNight = 0, nightAt = 0, runPhase = '', runPaid = false;
+  function payRun() {
+    const r = world.run;
+    if (!r) return;
+    if (r !== run) { run = r; runNight = r.night; nightAt = world.now; runPhase = r.phase.k; runPaid = false; }
+    if (r.phase.k === 'night' && runPhase !== 'night') nightAt = world.now;
+    runPhase = r.phase.k;
+    const seated = () => joined().flatMap((c) => { const p = world.players.get(c.playerId); const key = p && profileKey(c, p.name); return key && c.since <= nightAt ? [key] : []; });
+    if (r.night > runNight) { runNight = r.night; for (const key of seated()) profiles.round(key, { won: false, finished: false, nights: 1 }); }
+    if (r.phase.k === 'over' && !runPaid) {
+      runPaid = true;
+      for (const key of seated()) profiles.round(key, { won: r.phase.won, finished: true, nights: r.phase.won ? 1 : 0, bastion: r.phase.won });
     }
   }
 
@@ -162,10 +224,10 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
    * medal lands the moment it is earned rather than when the life ends.
    */
   function creditProfiles(events: readonly GameEvent[]) {
-    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[]; weaponKills: WeaponId[] }>();
+    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[]; weaponKills: WeaponId[]; zkills: number }>();
     const delta = (id: number) => {
       let d = deltas.get(id);
-      if (!d) deltas.set(id, (d = { kills: 0, deaths: 0, medals: [], weaponKills: [] }));
+      if (!d) deltas.set(id, (d = { kills: 0, deaths: 0, medals: [], weaponKills: [], zkills: 0 }));
       return d;
     };
     for (const e of events) {
@@ -176,6 +238,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         if (gun) delta(e.killerId).weaponKills.push(GUNS[gun].base);
       }
       if (e.e === 'kill' && !e.knock) delta(e.victimId).deaths++;
+      if (e.e === 'zkill' && e.by !== null) delta(e.by).zkills++;
     }
     for (const c of joined()) {
       const p = world.players.get(c.playerId);
@@ -206,14 +269,21 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const p = mode === 'BR' ? seatHuman(name, msg.loadout) : addPlayer(world, name, msg.loadout, { kind: 'human', team: teamForHuman() });
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
-      if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, lastEmoteAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
+      if (account && !practice) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
+      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, lastEmoteAt: -Infinity, aspect: msg.aspect, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
       const key = profileKey(joinedClient, name);
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
       profile(p.id, { games: 1 });
+      if (key) {
+        // Looking is free in practice; changing a profile, or reading its news (which clears it), is not.
+        if (msg.cosmetics && !practice) profiles.equip(key, msg.cosmetics);
+        p.cos = profiles.cos(key);
+        const state = practice ? null : profiles.state(key);
+        if (state) send(client.ws, state);
+      }
       return;
     }
     const id = client.playerId;
@@ -223,9 +293,21 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'input': enqueueInput(client.inputs, { seq: msg.seq, input: msg.input, viewAt: msg.viewAt, rewindCapMs, arrivedTick: world.tick }); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
-      case 'build': build(world, id, msg.kind, msg.cx, msg.cy); return;
+      case 'build': build(world, id, msg.kind, msg.cx, msg.cy, msg.lv); return;
       case 'demolish': demolish(world, id, msg.cx, msg.cy); return;
+      case 'upgrade': upgrade(world, id, msg.cx, msg.cy); return;
       case 'ready': toggleReady(world, id); return;
+      case 'range': { const refused = applyRangeMsg(world, id, msg); if (refused) send(client.ws, { t: 'error', message: refused }); return; }
+      case 'equip': {
+        const p = world.players.get(id);
+        const key = p && profileKey(client, p.name);
+        if (!p || !key) { send(client.ws, { t: 'error', message: 'Sign in or pick another name to change your look' }); return; }
+        const r = profiles.equip(key, { [msg.slot]: msg.id }, true);
+        p.cos = profiles.cos(key);
+        send(client.ws, { t: 'equipped', equipped: r.equipped });
+        if (!r.ok) send(client.ws, { t: 'error', message: 'That item is locked' });
+        return;
+      }
       case 'emote': {
         const now = Date.now();
         const p = world.players.get(id);
@@ -260,10 +342,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (mode === 'BR' && left?.team && seatOpen(left.team)) takeSeat(world, addBot(left.team), left);
     const walk = walked.get(c.playerId);
     const key = left ? profileKey(c, left.name) : null;
-    if (key && walk?.px) profiles.record(key, { distance: walk.px });
+    if (key && walk?.px && !practice) profiles.record(key, { distance: walk.px });
     walked.delete(c.playerId);
     removePlayer(world, c.playerId);
     creditLives(c);
+    if (key && !practice) profiles.notice(key);
     balanceBots();
   }
 
@@ -281,9 +364,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       thinkBots(world, bots, botRand);
       step(world, TICK_MS);
       events.push(...world.events);
-      creditProfiles(world.events);
+      if (!practice) creditProfiles(world.events);
       creditLives();
     }
+    if (practice) { /* nothing is paid */ } else if (mode === 'ZOM') payRun(); else payRound();
+    for (const c of joined()) notify(c);
     return events;
   }
 

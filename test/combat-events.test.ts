@@ -27,7 +27,10 @@ test('one bullet hitting a player emits exactly one dmg event naming attacker, v
   const b = spawnAt(w, 700, 500);
   const got = hits(fireAndCollect(w, a));
   assert.equal(got.length, 1, JSON.stringify(got));
-  assert.deepEqual(got[0], { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: b.x, y: b.y, kind: 'player' });
+  // The round shoves its victim along its line, so the event carries the heading (straight along +x here).
+  const { push, ...rest } = got[0] as Extract<GameEvent, { e: 'dmg' }>;
+  assert.ok(push !== undefined && Math.abs(push) < 0.1, `heading ${push}`);
+  assert.deepEqual(rest, { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: 700, y: 500, kind: 'player' });
 });
 
 test('dmg amount is what armor let through', () => {

@@ -1,6 +1,8 @@
 import { ARMOR_IDS, COLOR_IDS, MODE_IDS, WEAPON_IDS, type ModeId } from '../shared/defs.ts';
 import { parseLoadout, type Loadout } from '../shared/protocol.ts';
 import { parseMuted, serializeMuted, type MutedNames } from './chatmute.ts';
+import { parsePicks, type Equipped, type Picks, type Slot } from '../shared/cosmetics.ts';
+import { parseProfile, type ProfileLite } from './progression.ts';
 
 export type ServerInfo = { id: string; mode: ModeId; players: number; humans: number };
 type Stats = { name: string; kills: number; deaths: number; score: number; games: number; best: number };
@@ -88,3 +90,27 @@ export const saveLoadout = (l: Loadout) => store.set('skirmish.loadout', JSON.st
 
 export const loadMuted = () => parseMuted(store.get('skirmish.mutedNames'));
 export const saveMuted = (muted: MutedNames) => store.set('skirmish.mutedNames', serializeMuted(muted));
+
+/** A guest's cosmetic picks, kept in the browser and sent with `join`; the server checks them against the name's unlocks. */
+export function loadCosmetics(): Picks {
+  try { return parsePicks(JSON.parse(store.get('skirmish.cosmetics') ?? 'null')); } catch { return {}; }
+}
+export const saveCosmetics = (picks: Picks) => store.set('skirmish.cosmetics', JSON.stringify(picks));
+
+/** The profile endpoint: level, XP, unlocks, what is worn and the challenges. Null when the name has no profile yet. */
+export async function fetchProfile(name: string): Promise<ProfileLite | null> {
+  try {
+    const res = await fetch(`/api/profile/${encodeURIComponent(name)}`);
+    return res.ok ? parseProfile(await res.json()) : null;
+  } catch { return null; }
+}
+
+/** Equips one item for a signed-in account. */
+export async function postEquip(token: string, slot: Slot, id: string): Promise<{ equipped: Equipped; unlocked: string[] } | { error: string }> {
+  try {
+    const res = await fetch('/api/equip', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ slot, id }) });
+    const r: unknown = await res.json();
+    if (res.ok && isObj(r) && isObj(r.equipped)) return { equipped: r.equipped as Equipped, unlocked: Array.isArray(r.unlocked) ? (r.unlocked as string[]) : [] };
+    return { error: isObj(r) && typeof r.error === 'string' ? r.error : 'Could not equip that' };
+  } catch { return { error: 'Could not reach server' }; }
+}

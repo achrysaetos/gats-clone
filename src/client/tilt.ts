@@ -1,15 +1,16 @@
-import { ROYALE, WORLD, type BuildingKind } from '../shared/defs.ts';
+import { ROYALE, WORLD } from '../shared/defs.ts';
 import type { BuildingView, CrateView, RunView, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { paintFloor, stencil, type FloorPlan } from './floor.ts';
 import { paintFoliage, paintGrain, paintHazard, seeded, type Grain } from './grain.ts';
 import { PALETTE } from './palette.ts';
+import { paintThemedSolids } from './themes/registry.ts';
 
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
 const SHADOW_PER_HEIGHT = 2.2;
 export const LIP = 4;
 
-export type SolidKind = 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core' | 'crate' | 'supply';
+export type SolidKind = 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core' | 'crate' | 'supply' | 'wood' | 'sandbag' | 'steel' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play';
 type Bed = { inset: number; ground: string; leaves: readonly (readonly [string, number])[] };
 type Material = { top: string; grain: Grain; height: number; bed?: Bed };
 
@@ -24,24 +25,53 @@ const GRAIN: Grain = { specks: 120, blotches: 0, scratches: 0.2, seams: null, ti
  * Every solid is seen slightly from the front: its top face is its collision rect, and below the south edge hangs a darker
  * front face this many px tall. Bodies are drawn over it, so a player standing at a wall's foot is in front of the wall.
  */
-export const FACE: Record<SolidKind, number> = { sandstone: 15, concrete: 16, slate: 14, brick: 12, planter: 12, crate: 12, supply: 13, pad: 6, curb: 0, core: 0 };
+export const FACE: Record<SolidKind, number> = { stall: 14, shopfront: 18, stack: 12, cart: 10, shrine: 16, gallery: 18, marble: 16, vitrine: 14, plinth: 22, counter: 14, sandstone: 15, concrete: 16, slate: 14, brick: 12, planter: 12, crate: 12, supply: 13, pad: 6, curb: 0, core: 0, wood: 10, sandbag: 13, steel: 15, hull: 14, tower: 24, bulkhead: 16, rack: 12, water: 0, hedge: 18, pond: 8, parkstone: 16, trunk: 14, bench: 9, play: 13 };
 /** How far below its rect a solid's drawing can reach: its front face and the rubble at its foot. */
 export const FOOT = 30;
 
 export const MATERIALS: Record<SolidKind, Material> = {
+  // Night Market (themes/market.ts paints these itself; the numbers here drive shadow reach and the loose-sprite size).
+  stall: { top: '#7a5a3a', grain: GRAIN, height: 22 },
+  shopfront: { top: '#4b4650', grain: GRAIN, height: 50 },
+  stack: { top: '#8a6a40', grain: GRAIN, height: 30 },
+  cart: { top: '#8a8f96', grain: GRAIN, height: 24 },
+  shrine: { top: '#8a8478', grain: GRAIN, height: 38 },
+  // Museum (themes/museum.ts paints these itself; the numbers here drive shadow reach and the loose-sprite size).
+  gallery: { top: '#8a3a47', grain: GRAIN, height: 46 },
+  marble: { top: '#cfc6b0', grain: GRAIN, height: 40 },
+  vitrine: { top: '#8fb4b6', grain: GRAIN, height: 26 },
+  plinth: { top: '#b0a07c', grain: GRAIN, height: 30 },
+  counter: { top: '#8a5a34', grain: GRAIN, height: 22 },
+  // Sub Pen (themes/subpen.ts paints these itself; the numbers here drive shadow reach and the loose-sprite size).
+  hull: { top: '#5d7479', grain: GRAIN, height: 30 },
+  tower: { top: '#6d868b', grain: GRAIN, height: 54 },
+  bulkhead: { top: '#6b7480', grain: GRAIN, height: 46 },
+  rack: { top: '#4a525c', grain: GRAIN, height: 22 },
+  water: { top: '#1b2f37', grain: GRAIN, height: 0 },
+  // Park (themes/park*.ts paints these itself; the heights set how long their shadows fall).
+  hedge: { top: '#4f7040', grain: GRAIN, height: 40 },
+  pond: { top: '#2f565a', grain: GRAIN, height: 0 },
+  parkstone: { top: '#bab29c', grain: GRAIN, height: 38 },
+  trunk: { top: '#6a4b32', grain: GRAIN, height: 54 },
+  bench: { top: '#8d6b44', grain: GRAIN, height: 14 },
+  play: { top: '#c9a23c', grain: GRAIN, height: 34 },
   // Sandbags: stacked, stitched and lit along their crowns.
   sandstone: { top: '#b4a07a', grain: { ...GRAIN, seams: 'bags', tile: 96 }, height: 46 },
-  concrete: { top: '#5d636d', grain: { ...GRAIN, seams: 'panel', tile: 200, rivets: true }, height: 46 },
+  concrete: { top: '#78808c', grain: { ...GRAIN, seams: 'panel', tile: 200, rivets: true }, height: 46 },
   curb: { top: '#2b2e34', grain: GRAIN, height: 20 },
   planter: { top: '#6c7356', grain: GRAIN, height: 26, bed: { inset: 6, ground: '#252b1d', leaves: [['#3a4429', 0.45], ['#4d5934', 0.35], ['#66744a', 0.2]] } },
-  slate: { top: '#4f5560', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 36 },
+  slate: { top: '#667080', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 36 },
   // A squad's own wall: riveted khaki plate, a shade darker than the map's sandstone so it reads as built, not found.
-  brick: { top: '#978562', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 28 },
-  pad: { top: '#454a53', grain: GRAIN, height: 14 },
+  brick: { top: '#a8946b', grain: { ...GRAIN, seams: 'panel', tile: 50, rivets: true }, height: 28 },
+  pad: { top: '#5a626e', grain: GRAIN, height: 14 },
+  // The squad's three walls, each of its own stuff: weathered boards, stacked sandbags, riveted steel plate. They are drawn lower, then taller, then tallest, so a tier reads by its height as well as its colour.
+  wood: { top: '#93724a', grain: { ...GRAIN, specks: 90, scratches: 0, seams: 'planks', tile: 64 }, height: 20 },
+  sandbag: { top: '#a8946a', grain: { ...GRAIN, specks: 60, scratches: 0, seams: 'bags', tile: 96 }, height: 30 },
+  steel: { top: '#808a99', grain: { ...GRAIN, specks: 50, scratches: 0.5, seams: 'panel', tile: 50, rivets: true }, height: 44 },
   // Supply crates: wooden slatted boxes in the map, olive-drab metal cases for royale drops.
   crate: { top: '#a3814f', grain: { ...GRAIN, specks: 200, tile: 88 }, height: 28 },
   supply: { top: '#59653f', grain: { ...GRAIN, tile: 88 }, height: 30 },
-  core: { top: '#3c414b', grain: GRAIN, height: 56 },
+  core: { top: '#4d535f', grain: GRAIN, height: 56 },
 };
 
 /** The arena's edge is hazard tape in the interface's orange, so the map is framed like every other piece of kit. */
@@ -74,9 +104,13 @@ export const curbSolids = (size: number): Solid[] => [
 
 export const crateSolid = (c: CrateView): Solid => ({ kind: c.drop ? 'supply' : 'crate', x: c.x, y: c.y, w: c.size, h: c.size, wear: 1 - c.hp / (c.drop ? ROYALE.dropHp : WORLD.crateHp) });
 
-const BUILDING_SOLID: Record<BuildingKind, SolidKind> = { wall: 'brick', sentry: 'pad', cannon: 'pad', scatter: 'pad', mortar: 'pad' };
+/** A wall's tier is its upgrade level: boards, then sandbags, then steel. Everything else that stands is a pad under its own head (siege.ts). */
+const WALL_SOLID: readonly SolidKind[] = ['wood', 'sandbag', 'steel'];
 
-export const buildingSolid = (b: BuildingView): Solid => ({ kind: BUILDING_SOLID[b.kind], ...cellRect(b.cx, b.cy), wear: 1 - b.hp / 10 });
+export const buildingSolid = (b: BuildingView): Solid => ({ kind: b.kind === 'wall' ? WALL_SOLID[Math.min(WALL_SOLID.length, b.lv ?? 1) - 1]! : 'pad', ...cellRect(b.cx, b.cy), wear: 1 - b.hp / 10 });
+
+/** Spike strips lie on the floor and are walked over, so they are drawn by siege.ts and cast no shadow. */
+export const standsUp = (b: BuildingView): boolean => b.kind !== 'spikes';
 
 export const coreSolid = (run: RunView): Solid => ({ kind: 'core', ...coreRectAt(run.core) });
 
@@ -87,7 +121,7 @@ const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
 /** Crisp, graphic drop shadows rather than soft photographic ones. */
 const BLUR_PX = 3;
-const SHADOW_ALPHA = 0.24;
+const SHADOW_ALPHA = 0.32;
 const FLOOR_SEED = 7;
 const AO_COLOR = 'rgba(16, 18, 24, ';
 
@@ -240,10 +274,17 @@ function patternOf(ctx: CanvasRenderingContext2D, cache: Map<SolidKind, CanvasPa
 
 /** What lies under a top face when it is chipped away: the darker core of each material. */
 const CORE: Record<SolidKind, { dark: string; lit: string }> = {
+  stall: { dark: '#2e1e10', lit: '#4a3320' }, shopfront: { dark: '#25232a', lit: '#3a3742' }, stack: { dark: '#2e1e0d', lit: '#4a3319' }, cart: { dark: '#2a2e35', lit: '#3d424b' }, shrine: { dark: '#2e2c28', lit: '#4a4740' },
+  gallery: { dark: '#3c1a22', lit: '#5e2a35' }, marble: { dark: '#5a5448', lit: '#8a8372' }, vitrine: { dark: '#2c3a3c', lit: '#46585a' }, plinth: { dark: '#4a4130', lit: '#6e6248' }, counter: { dark: '#2e1c10', lit: '#4e3320' },
+  hull: { dark: '#273238', lit: '#3d4e55' }, tower: { dark: '#273238', lit: '#3d4e55' }, bulkhead: { dark: '#25282e', lit: '#383c44' }, rack: { dark: '#25282e', lit: '#383c44' }, water: { dark: '#10181c', lit: '#1b2a30' },
+  hedge: { dark: '#223820', lit: '#3a5632' }, pond: { dark: '#22403f', lit: '#2f565a' }, parkstone: { dark: '#7b7562', lit: '#9a937d' }, trunk: { dark: '#46321f', lit: '#6a4b32' }, bench: { dark: '#664a2d', lit: '#8d6b44' }, play: { dark: '#8a6f2a', lit: '#c9a23c' },
   sandstone: { dark: '#6e5d40', lit: '#8a7752' },
   concrete: { dark: '#25282e', lit: '#383c44' },
   slate: { dark: '#2a2e35', lit: '#3d424b' },
   brick: { dark: '#4d4128', lit: '#6a5a38' },
+  wood: { dark: '#3a2616', lit: '#5c4129' },
+  sandbag: { dark: '#6e5d40', lit: '#8a7752' },
+  steel: { dark: '#272a31', lit: '#3d424b' },
   planter: { dark: '#262b1e', lit: '#3a4229' },
   crate: { dark: '#2e1e0d', lit: '#4a3319' },
   supply: { dark: '#232a1b', lit: '#364029' },
@@ -252,7 +293,7 @@ const CORE: Record<SolidKind, { dark: string; lit: string }> = {
   core: { dark: '#23262c', lit: '#383c44' },
 };
 const REBAR: ReadonlySet<SolidKind> = new Set(['concrete', 'slate', 'brick', 'pad', 'core']);
-const SPLINTERS: ReadonlySet<SolidKind> = new Set(['crate', 'supply', 'planter']);
+const SPLINTERS: ReadonlySet<SolidKind> = new Set(['crate', 'supply', 'planter', 'wood']);
 
 type Feature =
   | { thr: number; type: 'crater'; pts: number[]; halo: number[]; lit: number[]; sticks: number[] }
@@ -348,7 +389,8 @@ function layoutAt(s: Solid): Layout {
       const bw = alongX ? pw : ph, bh = alongX ? ph : pw;
       L.plates.push({ t: type, x: (alongX ? cu : cv) - bw / 2, y: (alongX ? cv : cu) - bh / 2, w: bw, h: bh });
     }
-  } else if (kind === 'brick') corners(6);
+  } else if (kind === 'brick' || kind === 'steel') corners(6);
+  else if (kind === 'wood') corners(5);
   else if (kind === 'pad') corners(5);
   else if (kind === 'planter' && m >= 30) {
     const step = 30, ix = x + 11, iy = y + 11, iw = w - 22, ih = h - 22;
@@ -360,7 +402,7 @@ function layoutAt(s: Solid): Layout {
     }
   }
   // Old battle damage the map was born with: a pit, a streak of soot and a bitten corner or two on bigger solids.
-  if (kind !== 'curb' && kind !== 'core' && kind !== 'pad' && kind !== 'brick' && kind !== 'supply' && m >= 36) {
+  if (kind !== 'curb' && kind !== 'core' && kind !== 'pad' && kind !== 'brick' && kind !== 'supply' && kind !== 'wood' && kind !== 'sandbag' && kind !== 'steel' && m >= 36) {
     if (rand() < 0.75) L.feats.push(craterAt(rand, s, -1, clamp(m * 0.13, 5, 11)));
     if (long >= 100 && rand() < 0.6) L.feats.push(craterAt(rand, s, -1, clamp(m * 0.1, 4, 8)));
     if (rand() < 0.65) L.feats.push(biteAt(rand, s, -1, 5 + rand() * 7, Math.floor(rand() * 4)));
@@ -589,6 +631,108 @@ function drawBraces(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
   }
 }
 
+/** The barricade: a diagonal brace nailed across its boards, the way a door is boarded up. */
+function drawBarricades(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
+  ctx.lineCap = 'butt';
+  for (const [color, width, off] of [[INK_EDGE, 7, 0], ['#a98859', 4.4, 0], ['rgba(255, 238, 200, 0.32)', 1.2, -1.2]] as const) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    for (const s of list) {
+      const i = 6;
+      ctx.moveTo(s.x + i + off, s.y + s.h - i + off); ctx.lineTo(s.x + s.w - i + off, s.y + i + off);
+    }
+    ctx.stroke();
+  }
+}
+
+/** Sandbags stacked three courses deep, each a stuffed bag with an ink outline, a lit crown and a stitched seam, the rows staggered. */
+function drawBagCourses(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
+  const bags: { x: number; y: number; w: number; h: number; shade: number }[] = [];
+  for (const s of list) {
+    const rows = 3, rh = (s.h - 4) / rows;
+    for (let r = 0; r < rows; r++) {
+      const n = r % 2 ? 3 : 2, bw = (s.w - 4) / (r % 2 ? 2.5 : 2);
+      for (let i = 0; i < n; i++) {
+        const x = s.x + 2 + (r % 2 ? (i - 0.5) * bw : i * bw), w = bw;
+        const x0 = Math.max(s.x + 2, x), x1 = Math.min(s.x + s.w - 2, x + w);
+        if (x1 - x0 > 8) bags.push({ x: x0, y: s.y + 2 + r * rh, w: x1 - x0, h: rh, shade: (r * 3 + i) % 3 });
+      }
+    }
+  }
+  ctx.lineJoin = 'round';
+  for (const [shade, fill] of [[0, '#b39e72'], [1, '#a8946a'], [2, '#9a875f']] as const) {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    for (const b of bags) if (b.shade === shade) ctx.roundRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, 5);
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255, 246, 224, 0.3)';
+  ctx.beginPath();
+  for (const b of bags) ctx.roundRect(b.x + 3, b.y + 2, b.w - 8, b.h * 0.34, 3);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(40, 30, 14, 0.22)';
+  ctx.beginPath();
+  for (const b of bags) ctx.rect(b.x + 3, b.y + b.h - 4, b.w - 6, 2);
+  ctx.fill();
+  ctx.strokeStyle = INK_EDGE;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  for (const b of bags) ctx.roundRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, 5);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(46, 36, 22, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const b of bags) { ctx.moveTo(b.x + b.w * 0.3, b.y + b.h * 0.55); ctx.lineTo(b.x + b.w * 0.7, b.y + b.h * 0.55); }
+  ctx.stroke();
+  ctx.lineJoin = 'miter';
+}
+
+/** The steel wall: a heavy plate inset in the frame, riveted at its corners and down the middle, with a hazard tab. */
+function drawSteelPlates(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
+  ctx.fillStyle = 'rgba(14, 16, 20, 0.34)';
+  ctx.beginPath();
+  for (const s of list) { ctx.rect(s.x + 4, s.y + 4, s.w - 8, s.h - 8); }
+  ctx.fill();
+  ctx.fillStyle = '#7f8996';
+  ctx.beginPath();
+  for (const s of list) ctx.rect(s.x + 6, s.y + 6, s.w - 12, s.h - 12);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+  ctx.beginPath();
+  for (const s of list) { ctx.rect(s.x + 6, s.y + 6, s.w - 12, 2.5); ctx.rect(s.x + 6, s.y + 6, 2.5, s.h - 12); }
+  ctx.fill();
+  ctx.fillStyle = 'rgba(10, 12, 16, 0.28)';
+  ctx.beginPath();
+  for (const s of list) { ctx.rect(s.x + 6, s.y + s.h - 8.5, s.w - 12, 2.5); ctx.rect(s.x + s.w - 8.5, s.y + 6, 2.5, s.h - 12); }
+  ctx.fill();
+  ctx.strokeStyle = INK_EDGE;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (const s of list) ctx.rect(s.x + 6, s.y + 6, s.w - 12, s.h - 12);
+  ctx.stroke();
+  // A hazard tab across the plate's middle.
+  ctx.save();
+  ctx.beginPath();
+  for (const s of list) ctx.rect(s.x + 12, s.y + s.h / 2 - 4, s.w - 24, 8);
+  ctx.clip();
+  ctx.fillStyle = '#c9a23c';
+  for (const s of list) ctx.fillRect(s.x + 12, s.y + s.h / 2 - 4, s.w - 24, 8);
+  ctx.restore();
+  ctx.fillStyle = '#25282e';
+  ctx.beginPath();
+  for (const s of list) {
+    const y = s.y + s.h / 2 - 4;
+    for (let x = s.x + 12; x < s.x + s.w - 12; x += 8) { ctx.moveTo(x, y + 8); ctx.lineTo(x + 4, y + 8); ctx.lineTo(Math.min(x + 8, s.x + s.w - 12), y); ctx.lineTo(Math.min(x + 4, s.x + s.w - 12), y); ctx.closePath(); }
+  }
+  ctx.fill();
+  ctx.strokeStyle = INK_EDGE;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (const s of list) ctx.rect(s.x + 12.5, s.y + s.h / 2 - 3.5, s.w - 25, 7);
+  ctx.stroke();
+}
+
 /** A wooden supply crate: framed slats, then either a plank brace, steel straps or a stencilled lid, and it splinters as it is shot. */
 function drawCrates(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
   for (const s of list) {
@@ -689,8 +833,11 @@ function drawSupply(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
 
 
 const FRONT: Record<SolidKind, string> = {
+  stall: '#553a22', shopfront: '#2f2c36', stack: '#6a4e2c', cart: '#5a5f66', shrine: '#5e5a50',
+  gallery: '#5a2431', marble: '#9b937f', vitrine: '#5f8087', plinth: '#7d6f55', counter: '#55371f',
+  hull: '#35464c', tower: '#3f555b', bulkhead: '#454c57', rack: '#2f343c', water: '#10181c', hedge: '#2f4a2b', pond: '#22403f', parkstone: '#7b7562', trunk: '#46321f', bench: '#664a2d', play: '#8a6f2a',
   sandstone: '#8e7d5a', concrete: '#484d56', slate: '#3b4049', brick: '#756748', planter: '#585e45',
-  crate: '#7d6038', supply: '#454f31', pad: '#363a42', curb: '#25282e', core: '#2e323a',
+  crate: '#7d6038', supply: '#454f31', pad: '#363a42', curb: '#25282e', core: '#2e323a', wood: '#6e5337', sandbag: '#8b7a56', steel: '#4d5560',
 };
 
 /** The front faces: flat, darker than the tops, with their own seams, rivets and baseboard, laid before any top so nearer solids cover them. */
@@ -718,16 +865,16 @@ function drawFronts(ctx: CanvasRenderingContext2D, byKind: ReadonlyMap<SolidKind
     ctx.beginPath();
     for (const s of list) {
       const y0 = s.y + s.h;
-      if (kind === 'sandstone') {
+      if (kind === 'sandstone' || kind === 'sandbag') {
         // Two courses of sandbags, staggered.
         for (let c = 0; c < 2; c++) {
           const cy = y0 + (fh / 2) * c;
           if (c) { ctx.moveTo(s.x, cy + 0.5); ctx.lineTo(s.x + s.w, cy + 0.5); }
           for (let x = s.x + 12 + c * 12; x < s.x + s.w - 2; x += 24) { ctx.moveTo(x + 0.5, cy + 1); ctx.lineTo(x + 0.5, cy + fh / 2); }
         }
-      } else if (kind === 'crate') {
-        for (let x = s.x + 11; x < s.x + s.w - 3; x += 11) { ctx.moveTo(x + 0.5, y0 + 1); ctx.lineTo(x + 0.5, y0 + fh - 1); }
-      } else if (kind === 'concrete' || kind === 'slate' || kind === 'planter') {
+      } else if (kind === 'crate' || kind === 'wood') {
+        for (let x = s.x + (kind === 'wood' ? 9 : 11); x < s.x + s.w - 3; x += kind === 'wood' ? 9 : 11) { ctx.moveTo(x + 0.5, y0 + 1); ctx.lineTo(x + 0.5, y0 + fh - 1); }
+      } else if (kind === 'concrete' || kind === 'slate' || kind === 'planter' || kind === 'steel') {
         ctx.moveTo(s.x, y0 + fh * 0.5 + 0.5); ctx.lineTo(s.x + s.w, y0 + fh * 0.5 + 0.5);
         for (let x = s.x + 50; x < s.x + s.w - 4; x += 50) { ctx.moveTo(x + 0.5, y0 + 1); ctx.lineTo(x + 0.5, y0 + fh * 0.5); }
       } else if (kind === 'brick' || kind === 'supply') {
@@ -735,7 +882,7 @@ function drawFronts(ctx: CanvasRenderingContext2D, byKind: ReadonlyMap<SolidKind
       }
     }
     ctx.stroke();
-    if (kind === 'concrete' || kind === 'slate' || kind === 'brick') {
+    if (kind === 'concrete' || kind === 'slate' || kind === 'brick' || kind === 'steel') {
       ctx.fillStyle = 'rgba(14, 16, 20, 0.6)';
       ctx.beginPath();
       for (const s of list) for (let x = s.x + 8; x < s.x + s.w - 4; x += 16) { ctx.moveTo(x + 1.3, s.y + s.h + fh * 0.3); ctx.arc(x, s.y + s.h + fh * 0.3, 1.3, 0, Math.PI * 2); }
@@ -802,6 +949,9 @@ function drawDetails(ctx: CanvasRenderingContext2D, kind: SolidKind, list: reado
   switch (kind) {
     case 'concrete': case 'slate': drawPlates(ctx, list); drawBolts(ctx, list, 1.9); break;
     case 'brick': drawBraces(ctx, list); drawBolts(ctx, list, 1.8); break;
+    case 'wood': drawBarricades(ctx, list); drawBolts(ctx, list, 1.5); break;
+    case 'sandbag': drawBagCourses(ctx, list); break;
+    case 'steel': drawSteelPlates(ctx, list); drawBolts(ctx, list, 2.2); break;
     case 'pad': drawBolts(ctx, list, 1.6); break;
     case 'planter': drawBushes(ctx, list); break;
     case 'crate': drawCrates(ctx, list); break;
@@ -823,7 +973,8 @@ function drawTints(ctx: CanvasRenderingContext2D, list: readonly Solid[]) {
  * Paints solids straight onto `ctx`: lips, front faces, rubble, tops with their details and damage, bevels, outlines and
  * bites. The game does not call this every frame; `drawSolids` paints each solid once into a sprite and blits that.
  */
-export function paintSolids(ctx: CanvasRenderingContext2D, solids: readonly Solid[]) {
+export function paintSolids(ctx: CanvasRenderingContext2D, all: readonly Solid[]) {
+  const solids = paintThemedSolids(ctx, all);
   const byKind = new Map<SolidKind, Solid[]>();
   for (const s of solids) {
     const list = byKind.get(s.kind);

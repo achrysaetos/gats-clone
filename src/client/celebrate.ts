@@ -209,7 +209,7 @@ export function createCelebration(host: HTMLElement) {
   const stage = (t: number, delay: number, dur: number) => (reduced ? 1 : easeOut((t - delay) / dur));
 
   function plate(x: number, y: number, w: number, h: number, cut: number, lit = true) {
-    ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+    ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
     clipped(ctx, x + 3, y + 3, w, h, cut);
     ctx.fill();
     clipped(ctx, x, y, w, h, cut);
@@ -268,7 +268,7 @@ export function createCelebration(host: HTMLElement) {
       const rise = stage(t, [0.5, 0.15, 0.3][slot.rank]!, 0.5);
       const hh = heights[slot.rank]! * rise;
       const x = slot.x - bw / 2, top = baseY - hh;
-      ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+      ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
       ctx.fillRect(x + 8, baseY - 2, bw, 10 * u);
       // front face
       ctx.beginPath(); ctx.rect(x, top, bw, hh); outlined(ctx, shade(s.color, 0.62));
@@ -353,7 +353,7 @@ export function createCelebration(host: HTMLElement) {
         ctx.font = FONT(800, 78 * u);
         const sw = Math.max(ctx.measureText(c.stamp.text).width + 44 * u, 150 * u), sh = 108 * u;
         const ink = c.stamp.top3 ? GOLD : BONE;
-        ctx.fillStyle = 'rgba(20, 24, 32, 0.3)';
+        ctx.fillStyle = 'rgba(10, 12, 18, 0.42)';
         ctx.fillRect(-sw / 2 + 5, -sh / 2 + 5, sw, sh);
         ctx.fillStyle = 'rgba(21, 23, 27, 0.9)';
         ctx.fillRect(-sw / 2, -sh / 2, sw, sh);

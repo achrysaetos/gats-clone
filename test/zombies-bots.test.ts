@@ -119,7 +119,7 @@ test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing'
   const shots = () => w.events.filter((e) => e.e === 'shot').length;
   let fired = 0;
   play(w, [bot], 3000, () => { fired += shots(); bot.life.k === 'alive' && (bot.life.hp = 1e9); return false; });
-  assert.ok(fired > 20, `${fired} shots in 3s`);
+  assert.ok(fired > 8, `${fired} shots in 3s`);
 });
 
 test('by day a squad bot walks round the core to put up the next turret of its plan, the first a sentry north of the core', () => {

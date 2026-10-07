@@ -1,4 +1,6 @@
-import { addPulse, decayPulse, decideFx, gradeFor, vignetteReach, watchdog, type Context, type FxMode, type Grade } from './fxparams.ts';
+import { addPulse, decayPulse, decideFx, gradeFor, tierGovernor, vignetteReach, watchdog, type Context, type FxMode, type Grade } from './fxparams.ts';
+import { createLightGL, type LightGL } from './lightgl.ts';
+import { addLight, addShockwave, ambientFor, liveShocks, pushOut, resolveLights, selectLights, setLightingEnabled, TIERS, type Occluder, type ViewRect } from './lighting.ts';
 
 /**
  * The shader pass. The 2D world is uploaded as a texture once a frame and composited into a WebGL canvas that sits under
@@ -7,6 +9,11 @@ import { addPulse, decayPulse, decideFx, gradeFor, vignetteReach, watchdog, type
  * The HUD is drawn afterwards on the (cleared) 2D canvas above, so it stays crisp and unprocessed, and input still lands
  * on the 2D canvas. Anything that goes wrong (no WebGL, software GL, a lost context, a slow upload) turns the pass off
  * and the plain canvas path draws the world exactly as before, at zero cost.
+ *
+ * When the lighting pass (lightgl.ts) is up as well, drawWorld hands over the world at the moment the night shade would
+ * be painted (`captureBase`) and keeps drawing the rest (players, rounds, effects) on the cleared canvas as an overlay.
+ * The composite then lights the base with the shadow-casting light buffer, lays the overlay over it unlit, and the bloom,
+ * grade and vignette run on the result. If lighting fails or is never enabled, the frame is the plain upload as before.
  */
 
 const VERT = `attribute vec2 a; varying vec2 v; void main(){ v = a * 0.5 + 0.5; gl_Position = vec4(a, 0.0, 1.0); }`;
@@ -91,11 +98,24 @@ let wasSlow = watchdog();
 let chosen: FxMode = 'off';
 let broken = false;
 let forced = false;
+let lightGL: LightGL | null = null;
+let baseTex: WebGLTexture | null = null;
+let sceneTex: WebGLTexture | null = null;
+let lightBroken = false;
+let tierIx = 0;
+let captured: { view: ViewRect; occluders: readonly Occluder[] } | null = null;
+let lastLit = 0;
+const governor = tierGovernor();
 
 /** True while the shaders own the vignette, so ambience.ts leaves it out of the 2D canvas. */
 export function owningVignette(): boolean { return mode !== 'off'; }
 /** The vignette strength the 2D path would have painted this frame. */
 export function setVignette(strength: number): void { vigStrength = strength; }
+/** True while the lighting pass can take the night and the shadows from the 2D path this frame. */
+export function lightingActive(): boolean { return mode !== 'off' && !!lightGL && !lightBroken; }
+/** Dev probe: the lighting tier and what the last lit frame drew. */
+export function lightState(): { on: boolean; tier: number; stats: ReturnType<LightGL['stats']> | null } { return { on: lightingActive(), tier: tierIx, stats: lightGL?.stats() ?? null }; }
+
 /** Why the pass is on or off, for the dev probe and tests. */
 export function fxState(): { mode: FxMode; reason: string } { return { mode, reason }; }
 
@@ -162,7 +182,7 @@ export function initPostfx(el: HTMLCanvasElement): FxMode {
   mode = chosen = decision.mode;
   reason = decision.reason;
   // Dev only: flip the pass at runtime to compare the same scene with and without it.
-  if (new URLSearchParams(location.search).has('dev')) (window as unknown as { __postfx: unknown }).__postfx = { set: (on: boolean) => { mode = on && !broken ? chosen : 'off'; if (!on) skipFrame(); }, state: fxState };
+  if (new URLSearchParams(location.search).has('dev')) (window as unknown as { __postfx: unknown }).__postfx = { set: (on: boolean) => { mode = on && !broken ? chosen : 'off'; setLightingEnabled(mode !== 'off' && !!lightGL && !lightBroken); if (!on) skipFrame(); }, state: fxState, light: lightState, addLight, addShockwave, lighting: (on: boolean) => { lightBroken = !on; setLightingEnabled(on && mode !== 'off' && !!lightGL); } };
   if (mode !== 'off' && gl) {
     try {
       progs = {
@@ -179,6 +199,16 @@ export function initPostfx(el: HTMLCanvasElement): FxMode {
       gl.disable(gl.BLEND);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
       srcTex = texture(gl);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      try {
+        lightGL = createLightGL(gl);
+        baseTex = texture(gl);
+        // The lighting programs rebind the shared triangle themselves; make sure attribute 0 is back on a triangle afterwards.
+        setLightingEnabled(true);
+      } catch (err) {
+        lightGL = null;
+        reason = `lighting off: ${String(err).slice(0, 80)}`;
+      }
       el.addEventListener('webglcontextlost', (e) => { e.preventDefault(); disable('context lost'); });
     } catch (err) {
       disable(`shader failed: ${String(err).slice(0, 80)}`);
@@ -193,6 +223,7 @@ export function initPostfx(el: HTMLCanvasElement): FxMode {
 
 function disable(why: string) {
   mode = 'off';
+  setLightingEnabled(false);
   broken = true;
   reason = why;
   if (canvas) canvas.hidden = true;
@@ -219,6 +250,27 @@ function pass(g: WebGLRenderingContext, prog: Prog, out: Target | null, w: numbe
 }
 
 /**
+ * drawWorld calls this at the point the night shade would be painted: uploads the world drawn so far as the lit base and
+ * remembers what the lights need. The caller then clears the canvas and draws the rest of the frame as the overlay.
+ * False means the lighting pass is not running this frame and the 2D path should paint the night itself.
+ */
+export function captureBase(source: HTMLCanvasElement, view: ViewRect, occluders: readonly Occluder[]): boolean {
+  if (!lightingActive() || !gl || !baseTex || gl.isContextLost()) return false;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, baseTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  captured = { view, occluders };
+  return true;
+}
+
+/** Turns the lighting off for good (a shader fault, or the frame-time governor ran out of tiers); the plain pass carries on. */
+function disableLighting(why: string) {
+  lightBroken = true;
+  setLightingEnabled(false);
+  reason = `lighting off: ${why}`;
+}
+
+/**
  * Composites `source` (the 2D world) into the shader canvas. Returns true when it did, and the caller should then clear
  * the 2D canvas before drawing the HUD over it; false means nothing changed and the 2D canvas already shows the world.
  */
@@ -234,11 +286,33 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   g.activeTexture(g.TEXTURE0);
   g.bindTexture(g.TEXTURE_2D, srcTex);
   g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, source);
+  // A lit frame: the upload above was only the overlay; the lights compose it over the captured base.
+  let scene = srcTex;
+  const cap = captured;
+  captured = null;
+  if (cap && lightGL && baseTex) {
+    try {
+      const tier = TIERS[tierIx]!;
+      const lights = selectLights(resolveLights(now), cap.view, tier.lights, tier.shadowLights).map((l) => ({ ...l, ...pushOut(l.x, l.y, cap.occluders) }));
+      sceneTex = lightGL.render({ w, h, view: cap.view, occluders: cap.occluders, lights, ambient: ambientFor(c.night, c.storm), tier, shocks: liveShocks(now), now }, baseTex, srcTex);
+      if (sceneTex) scene = sceneTex;
+      // Frame pacing is the honest GPU meter: when lit frames come in slow, step down a tier, then give the lights up.
+      const t = performance.now();
+      if (lastLit && t - lastLit < 250 && !forced) {
+        const next = governor(t - lastLit, tierIx, TIERS.length - 1);
+        if (next === -1) disableLighting('too slow');
+        else tierIx = next;
+      }
+      lastLit = t;
+    } catch (err) {
+      disableLighting(String(err).slice(0, 80));
+    }
+  } else lastLit = 0;
   const [h0, h1] = half, [q0, q1] = quarter;
   g.useProgram(progs.bright.p);
   g.uniform2f(progs.bright.u.texel, 1 / w, 1 / h);
   g.uniform1f(progs.bright.u.thr, grade.bloomThreshold);
-  pass(g, progs.bright, h0, h0.w, h0.h, [srcTex], ['src']);
+  pass(g, progs.bright, h0, h0.w, h0.h, [scene], ['src']);
   g.useProgram(progs.blur.p);
   g.uniform2f(progs.blur.u.dir, 1 / h0.w, 0);
   pass(g, progs.blur, h1, h1.w, h1.h, [h0.tex], ['src']);
@@ -268,10 +342,10 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   g.uniform2f(u.reach, rx, ry);
   g.uniform3f(u.lift, ...grade.lift);
   g.uniform3f(u.gain, ...grade.gain);
-  pass(g, p, null, w, h, [srcTex, h0.tex, q0.tex], ['src', 'bloomA', 'bloomB']);
+  pass(g, p, null, w, h, [scene, h0.tex, q0.tex], ['src', 'bloomA', 'bloomB']);
   if (wasSlow(performance.now() - t0) && !forced) disable('too slow');
   return true;
 }
 
 /** The plain-canvas path drew this frame (a menu with no world, say): hide the shader canvas so a stale frame never shows. */
-export function skipFrame(): void { if (shown && canvas) { canvas.hidden = true; shown = false; } }
+export function skipFrame(): void { captured = null; if (shown && canvas) { canvas.hidden = true; shown = false; } }

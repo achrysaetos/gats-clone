@@ -51,7 +51,7 @@ const goalOf = (i: Intent): Point | null => {
   switch (i.k) {
     case 'patrol': return i.goal;
     case 'takePosition': case 'peekAndHide': case 'reloadInCover': case 'retreatAndHeal': return i.spot;
-    case 'search': case 'flank': case 'engage': return null;
+    case 'search': case 'flank': case 'engage': case 'blinded': return null;
   }
 };
 

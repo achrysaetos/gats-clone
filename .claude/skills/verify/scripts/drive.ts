@@ -105,6 +105,12 @@ const STEPS: Record<string, () => Promise<void>> = {
     await sleep(300);
     expect('menu has no horizontal scroll at 375px', await js(`document.documentElement.scrollWidth <= innerWidth`));
     await shot('menu-phone');
+    // Step one lists the rooms as mode cards; picking one goes on to the gear-up step, where Deploy waits (sticky, always in view).
+    await js(`document.querySelector('#servers .server').click()`);
+    await sleep(300);
+    expect('picking a mode card opens the gear-up step', await js(`!document.getElementById('play-form').hidden && document.getElementById('step-modes').hidden`));
+    expect('gear-up has no horizontal scroll at 375px', await js(`document.documentElement.scrollWidth <= innerWidth`));
+    await shot('menu-phone-gear');
     for (const [width, height] of [[1366, 768], [1280, 800]]) {
       await cdp('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
       await sleep(300);
@@ -112,6 +118,9 @@ const STEPS: Record<string, () => Promise<void>> = {
       expect(`Play button in view without scrolling at ${width}x${height}`, r.top >= 0 && r.bottom <= r.vh, `play top ${r.top} bottom ${r.bottom} viewport ${r.vh}`);
     }
     await shot('menu-desktop');
+    await js(`document.getElementById('gear-back').click()`);
+    expect('Back returns to the mode cards', await js(`document.getElementById('play-form').hidden && !document.getElementById('step-modes').hidden`));
+    await js(`document.querySelector('#servers .server').click()`);
   },
   async account() {
     await js(`(() => { const [n, p] = document.querySelectorAll('#account input'); n.value = '${NAME}'; p.value = 'verify-pass'; [...document.querySelectorAll('#account button')].find(b => b.textContent === 'Register').click(); })()`);
@@ -157,8 +166,15 @@ const STEPS: Record<string, () => Promise<void>> = {
     const before = me()!;
     await press('KeyD', 'd', 700);
     await sleep(200);
-    const after = me()!;
-    expect('holding D moves the player right on the server', !!after && after.x > before.x + 50, `x ${before.x.toFixed(0)} -> ${after?.x.toFixed(0)}`);
+    let after = me()!;
+    // Some FFA spawn pads sit with cover just to their right; walk left instead before calling it a failure.
+    if (after && after.x <= before.x + 50) {
+      const from = after;
+      await press('KeyA', 'a', 700);
+      await sleep(200);
+      after = me()!;
+      expect('holding A moves the player left on the server (D was blocked by cover)', !!after && after.x < from.x - 50, `x ${from.x.toFixed(0)} -> ${after?.x.toFixed(0)}`);
+    } else expect('holding D moves the player right on the server', true, `x ${before.x.toFixed(0)} -> ${after.x.toFixed(0)}`);
     await shot('moved');
   },
   async fire() {

@@ -19,7 +19,7 @@
   --panel-2: #1e2127;
   --panel-3: #282c33;
   --well: #0d0e11;
-  --line: rgba(236, 230, 214, 0.1);
+  --line: rgba(236, 230, 214, 0.15);
   --line-strong: rgba(236, 230, 214, 0.24);
   --ink: #ece6d6;
   --muted: #9a9ea6;
@@ -48,6 +48,11 @@
   --s4: 16px;
   --s5: 24px;
   --lift: 0 18px 40px -20px rgba(0, 0, 0, 0.7);
+  /* Notch and home-bar insets (viewport-fit=cover lets the page run under them), so panels and buttons sit inside. */
+  --sl: env(safe-area-inset-left, 0px);
+  --sr: env(safe-area-inset-right, 0px);
+  --st: env(safe-area-inset-top, 0px);
+  --sb: env(safe-area-inset-bottom, 0px);
   color-scheme: dark;
   font-family: var(--text);
   font-size: var(--t-body);
@@ -59,7 +64,13 @@
 html, body {
   margin: 0;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   background: var(--bg);
   color: var(--ink);
 }
@@ -70,7 +81,10 @@ html, body {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: block;
+  -webkit-user-select: none;
+  user-select: none;
   cursor: crosshair;
 }
 #game.aiming { cursor: none; }
@@ -187,7 +201,7 @@ kbd {
   position: fixed;
   inset: 0;
   overflow-y: auto;
-  padding: 28px 16px;
+  padding: calc(28px + var(--st)) calc(16px + var(--sr)) calc(28px + var(--sb)) calc(16px + var(--sl));
   background:
     radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255, 90, 31, 0.1), transparent 70%),
     linear-gradient(180deg, rgba(12, 13, 16, 0.55), rgba(12, 13, 16, 0.86) 45%, rgba(12, 13, 16, 0.94));
@@ -422,8 +436,8 @@ a.wordmark { text-decoration: none; }
 
 .chat {
   position: absolute;
-  left: 16px;
-  bottom: 16px;
+  left: calc(16px + var(--sl));
+  bottom: calc(16px + var(--sb));
   width: min(380px, calc(100vw - 24px));
   pointer-events: none;
 }
@@ -634,8 +648,8 @@ a.wordmark { text-decoration: none; }
     background: rgba(19, 21, 25, 0.62); color: var(--ink); font: 700 20px var(--display); touch-action: none;
   }
   .touch-buttons button:active { background: rgba(255, 90, 31, 0.7); }
-  #touch-reload { right: 178px; bottom: 142px; }
-  #touch-ability { right: 62px; bottom: 154px; width: 60px; height: 60px; font-size: 24px; }
+  #touch-reload { right: calc(178px + var(--sr)); bottom: calc(142px + var(--sb)); }
+  #touch-ability { right: calc(62px + var(--sr)); bottom: calc(154px + var(--sb)); width: 60px; height: 60px; font-size: 24px; }
   /* Icons instead of letters; --sweep (0..1, touchbuttons.ts) fills a dark wedge round the button as a reload or cooldown runs. */
   .touch-buttons button { display: grid; place-items: center; padding: 0; overflow: hidden; }
   .touch-buttons button::before {
@@ -686,6 +700,11 @@ a.wordmark { text-decoration: none; }
     background: rgba(12, 13, 16, .95); color: var(--ink); font: 800 24px var(--display); letter-spacing: 0.08em; text-transform: uppercase; text-align: center; padding: 24px;
   }
   .rotate-hint span { font-size: 56px; line-height: 1; color: var(--accent); }
+}
+
+/* The round-start banner on a phone sits between the vitals and the leaderboard, below the kill feed, and wraps instead of spanning them. */
+@media (pointer: coarse) and (max-height: 519px) {
+  .objective, .objective.siege { top: 98px; max-width: calc(100vw - 2 * 244px); min-width: 220px; padding: 7px 14px; font-size: 15px; }
 }
 
 /* The level-up dock collapses to a pulsing pill; tapping it or its toggle opens the choices again. */
@@ -830,3 +849,199 @@ a.wordmark { text-decoration: none; }
   .medal-toast { animation: medal-out 0.4s ease-in calc(var(--life) - 0.4s) both !important; }
   .perk-panel.collapsed { animation: none; }
 }
+
+/*
+ * Account progression: the level card, the armory (the locker), challenges, the XP card and the reveal of a new cosmetic. Rarity
+ * rides as --rc on common (bone), rare (sky), epic (lilac) and legendary (gold); gold otherwise stays for reward, as everywhere.
+ */
+.r-common { --rc: #b9b3a2; }
+.r-rare { --rc: #7cc4ff; }
+.r-epic { --rc: #c3a6ff; }
+.r-legendary { --rc: #ffd34d; }
+.rarity { display: inline-block; padding: 2px 7px; border: 1px solid var(--rc); color: var(--rc); font: 800 11px/1.2 var(--display); letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; }
+.cos-art { display: block; width: 100%; height: 64px; }
+
+.menu-tabs { display: flex; justify-content: center; gap: var(--s2); margin: 0 0 var(--s4); }
+.menu-tabs button {
+  position: relative; padding: 10px 22px; background: var(--panel); border-color: var(--line); border-radius: 0;
+  font: 800 17px/1 var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+.menu-tabs button[aria-selected="true"] { color: var(--ink); background: var(--panel-3); box-shadow: inset 0 -3px 0 var(--accent); border-color: var(--line-strong); }
+.tab-badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 2px 5px; background: var(--accent); color: var(--accent-ink); font: 900 12px/1 var(--display); letter-spacing: 0; text-align: center; font-style: normal; }
+
+/* The level card under the name field: a level chip, prestige stars, a gold XP bar, and what the next level earns. */
+.level-card { margin: var(--s3) 0 0; padding: 10px 12px 9px; background: var(--well); border: 1px solid var(--line); border-left: 3px solid var(--gold); }
+.lv-top { display: flex; align-items: center; gap: var(--s2); }
+.lv-chip { display: inline-flex; align-items: baseline; gap: 4px; padding: 1px 9px 2px 7px; background: #26292f; border: 1px solid var(--line-strong); clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 5px 100%, 0 calc(100% - 5px)); }
+.lv-chip small { font: 800 11px/1 var(--display); letter-spacing: 0.2em; color: var(--muted); }
+.lv-chip b { font: 900 24px/1 var(--display); color: var(--gold); font-variant-numeric: tabular-nums; }
+.lv-stars { display: inline-flex; align-items: center; gap: 1px; }
+.lv-star { width: 15px; height: 15px; fill: var(--gold); stroke: #1c1f26; stroke-width: 1.4; stroke-linejoin: round; }
+.lv-x { font: 800 14px var(--display); color: var(--gold); margin-left: 2px; }
+.lv-label { margin-left: auto; font: 700 12px/1 var(--display); letter-spacing: 0.1em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.xp-bar { height: 9px; margin-top: 7px; background: #0a0b0e; border: 1px solid var(--line-strong); overflow: hidden; }
+.xp-bar i { display: block; height: 100%; width: 0; background: linear-gradient(180deg, #ffe08a 0 45%, var(--gold) 45% 100%); }
+.xp-bar.big { height: 13px; margin-top: 0; }
+.lv-next { margin-top: 7px; font: 600 12px/1.3 var(--text); color: var(--faint); }
+.lv-next b { font-weight: 700; }
+
+/* The armory. */
+.armory { display: grid; grid-template-columns: minmax(280px, 350px) minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.armory-stage { position: relative; aspect-ratio: 320 / 250; background: #1a1d23; border: 1px solid var(--line-strong); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); overflow: hidden; }
+.armory-floor { position: absolute; inset: 0; background: radial-gradient(ellipse 70% 55% at 46% 64%, #e9e3d2 0 55%, #d8d1bc 56% 100%); }
+.armory-floor::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 12%; height: 9%; background: rgba(20, 24, 32, 0.22); border-radius: 50%; }
+.armory-view, .armory-fx { position: absolute; inset: 0; width: 100%; height: 100%; }
+.armory-fx { pointer-events: none; }
+.armory-info { margin-top: var(--s3); display: grid; gap: 6px; }
+.armory-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.armory-name { margin: 0; font: italic 900 28px/1 var(--display); text-transform: uppercase; letter-spacing: 0.02em; }
+.armory-desc { color: var(--muted); font: 500 14px/1.35 var(--text); }
+.armory-status { font: 800 13px/1.2 var(--display); letter-spacing: 0.14em; text-transform: uppercase; }
+.armory-status.own { color: var(--ok); }
+.armory-status.lock { color: var(--gold); }
+.armory-equip { margin-top: var(--s1); padding: 12px var(--s4); font-size: 18px; letter-spacing: 0.24em; }
+.armory-tabs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: var(--s3); border-bottom: 1px solid var(--line); }
+.armory-tab { border: 0; border-radius: 0; background: transparent; padding: 9px 12px 10px; font: 800 14px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); box-shadow: inset 0 -3px 0 transparent; }
+.armory-tab[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -3px 0 var(--accent); background: var(--accent-wash); }
+.armory-count { margin-left: auto; font: 700 13px var(--display); letter-spacing: 0.12em; color: var(--faint); }
+.armory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: var(--s2); max-height: 62vh; overflow-y: auto; padding: 2px 4px 4px 2px; }
+.cos-card {
+  position: relative; display: grid; gap: 2px; justify-items: stretch; align-content: start; padding: 8px 8px 8px; text-align: left;
+  background: var(--panel-2); border: 1px solid var(--line); border-top: 3px solid var(--rc, var(--line)); border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+}
+.cos-card:hover:not(:disabled) { background: var(--panel-3); border-color: var(--line-strong); border-top-color: var(--rc); }
+.cos-card b { font: 700 15px/1.1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cos-card small { font: 700 11px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--rc); }
+.cos-card.worn { border-color: var(--accent); background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); border-top-color: var(--accent); }
+.cos-card.locked .cos-art { filter: grayscale(1) brightness(0.55); opacity: 0.75; }
+.cos-card.locked b { color: var(--faint); }
+.cos-card.locked small { color: var(--muted); }
+.cos-tag { position: absolute; top: 7px; left: 0; padding: 1px 6px 1px 5px; background: var(--accent); color: var(--accent-ink); font: 900 10px/1.3 var(--display); letter-spacing: 0.14em; text-transform: uppercase; font-style: normal; }
+/* A small padlock, drawn with borders. */
+.cos-lock { position: absolute; top: 9px; right: 9px; width: 11px; height: 8px; background: var(--muted); border-radius: 1px; }
+.cos-lock::before { content: ""; position: absolute; left: 1.5px; top: -5px; width: 5px; height: 5px; border: 2px solid var(--muted); border-bottom: 0; border-radius: 4px 4px 0 0; }
+.armory-notice { margin-top: var(--s2); color: var(--danger); font: 600 13px var(--text); }
+
+/* Challenges. */
+.challenges { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s5); }
+.chal-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.chal-head h2 { margin-top: 0; }
+.chal-reset { font: 700 12px var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.chal-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.chal { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 12px; background: var(--well); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); }
+.chal-text { font: 600 15px/1.2 var(--text); }
+.chal-xp { font: 800 16px/1.2 var(--display); color: var(--gold); letter-spacing: 0.04em; }
+.chal-bar { grid-column: 1 / -1; height: 7px; background: #0a0b0e; border: 1px solid var(--line); overflow: hidden; }
+.chal-bar i { display: block; height: 100%; background: var(--accent); }
+.chal-count { grid-column: 1 / 2; grid-row: 3; font: 700 12px var(--display); letter-spacing: 0.1em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chal-gift { grid-column: 2; justify-self: end; font: 800 10px var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); font-style: normal; grid-row: 3; }
+.chal.done { border-left-color: var(--ok); }
+.chal.done .chal-bar i { background: var(--ok); }
+.chal.done .chal-text { color: var(--muted); }
+.chal.done .chal-count { color: var(--ok); }
+.chal-reward { grid-column: 1 / -1; display: grid; grid-template-columns: 140px 1fr; gap: var(--s3); align-items: center; padding: 10px 14px; background: var(--well); border: 1px solid var(--line); border-top: 3px solid var(--rc); }
+.chal-reward-info { display: grid; gap: 4px; justify-items: start; }
+.chal-reward-info b { font: italic 900 22px/1 var(--display); text-transform: uppercase; }
+.chal-reward-info small { font: 600 12px var(--text); color: var(--muted); letter-spacing: 0; text-transform: none; }
+.chal-reward.got { opacity: 0.8; }
+
+/* The XP card, docked at the side where the death card and medals are not. */
+.xp-card {
+  position: absolute; z-index: 4; right: 16px; top: 214px; width: 300px; max-height: calc(100vh - 214px - 12px); min-height: 120px; overflow-y: auto;
+  background: var(--panel-solid); border-top: 2px solid var(--gold); padding: 12px 14px 14px; box-shadow: var(--lift);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+}
+.xp-card.in { animation: xp-in 0.38s cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes xp-in { from { transform: translateX(40px); opacity: 0; } }
+.xp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.xp-head b { font: italic 900 22px/1 var(--display); text-transform: uppercase; letter-spacing: 0.04em; }
+.xp-close { padding: 0 8px; border: 0; background: transparent; font: 700 22px/1 var(--display); color: var(--muted); }
+.xp-lines { list-style: none; margin: 0; padding: 0; }
+.xp-lines li { display: flex; justify-content: space-between; gap: var(--s3); padding: 3px 0; border-top: 1px solid var(--line); font: 600 15px/1.2 var(--display); letter-spacing: 0.04em; animation: recap-stamp 0.3s cubic-bezier(.2, 1.5, .4, 1) calc(0.1s + var(--i, 0) * 140ms) both; }
+.xp-lines li b { color: var(--gold); font-weight: 800; font-variant-numeric: tabular-nums; }
+.xp-lines li.chal span { color: var(--ok); }
+.xp-total { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0 8px; border-top: 2px solid var(--line-strong); font: 700 14px var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.xp-total b { font: 900 28px/1 var(--display); letter-spacing: 0.02em; color: var(--gold); font-variant-numeric: tabular-nums; }
+.xp-level { position: relative; display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px; align-items: center; }
+.xp-level .xp-bar { grid-column: 1 / -1; }
+.xp-level .lv-label { grid-column: 1 / -1; margin-left: 0; text-align: right; }
+.xp-stamp {
+  position: absolute; right: 0; top: -4px; padding: 3px 10px; background: var(--gold); color: #1c1f26; font: italic 900 22px/1 var(--display); letter-spacing: 0.1em;
+  text-transform: uppercase; transform: rotate(-4deg) scale(0); transform-origin: 85% 50%; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 0 0 2px #1c1f26, 4px 4px 0 2px #1c1f26;
+}
+.xp-stamp.hit { animation: xp-stamp 0.55s cubic-bezier(.2, 1.7, .4, 1) both; }
+@keyframes xp-stamp { 0% { transform: rotate(-14deg) scale(2.8); opacity: 0; } 45% { opacity: 1; transform: rotate(-4deg) scale(0.95); } 100% { transform: rotate(-4deg) scale(1); opacity: 1; } }
+.xp-reveal { margin-top: var(--s3); border-top: 2px solid var(--rc, var(--gold)); padding-top: var(--s3); animation: recap-stamp 0.4s cubic-bezier(.2, 1.4, .4, 1) both; }
+.xp-reveal-main { --r: var(--rc); position: relative; display: grid; gap: 6px; justify-items: center; text-align: center; padding: 10px 8px 6px; overflow: hidden; }
+.xp-reveal-main::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--r) 38%, transparent), transparent 62%); pointer-events: none; }
+.reveal-rays { position: absolute; left: 50%; top: 28%; width: 260px; aspect-ratio: 1; margin: -130px 0 0 -130px; border-radius: 50%; pointer-events: none; opacity: 0.5;
+  background: repeating-conic-gradient(color-mix(in srgb, var(--r) 55%, transparent) 0 7deg, transparent 7deg 22.5deg); -webkit-mask: radial-gradient(circle, #000 10%, transparent 68%); mask: radial-gradient(circle, #000 10%, transparent 68%); animation: medal-spin 14s linear infinite; }
+.xp-reveal-main .cos-art { width: 132px; height: 88px; position: relative; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--r) 70%, transparent)); }
+.xp-reveal-info { position: relative; display: grid; gap: 5px; justify-items: center; }
+.xp-new { font: 800 11px var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+.xp-reveal-name { font: italic 900 26px/1 var(--display); text-transform: uppercase; letter-spacing: 0.03em; text-shadow: 0 2px 0 #0b0c0f; }
+.xp-reveal-info p { font: 500 13px/1.3 var(--text); color: var(--muted); }
+.xp-actions { display: grid; justify-items: center; gap: 4px; width: 100%; }
+.xp-equip { margin-top: 4px; padding: 10px var(--s3); font-size: 18px; letter-spacing: 0.24em; }
+.xp-chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 4px; }
+.xp-chip { padding: 3px 8px; font: 700 12px var(--display); letter-spacing: 0.08em; border-color: var(--rc); color: var(--rc); border-radius: 0; background: transparent; }
+.xp-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--rc) 18%, transparent); box-shadow: none; }
+
+.challenge-toast { width: 210px; }
+.challenge-toast .medal-name { font-size: 17px; white-space: normal; text-align: center; line-height: 1.05; }
+.challenge-toast .medal-banner { background: var(--ok); }
+
+/* The profile page's level, equipped preview and collection. */
+.profile-level { display: grid; gap: 4px; min-width: 220px; }
+.profile-wear { display: grid; grid-template-columns: 260px 1fr; gap: var(--s4); align-items: center; }
+.profile-preview { position: relative; aspect-ratio: 320 / 250; background: radial-gradient(ellipse 70% 55% at 50% 64%, #e9e3d2 0 55%, #d8d1bc 56% 100%); border: 1px solid var(--line-strong); }
+.profile-preview canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wear-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.wear-list li { display: grid; gap: 1px; padding: 6px 10px; background: var(--well); border: 1px solid var(--line); border-left: 3px solid var(--rc, var(--line)); }
+.wear-list small { font: 700 11px var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+.wear-list b { font: 700 16px/1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+.collection { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--s2); }
+.collection div { display: grid; gap: 6px; padding: 10px 12px; background: var(--well); border: 1px solid var(--line); }
+.collection b { font: 700 14px var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.collection span { font: 800 24px/1 var(--display); font-variant-numeric: tabular-nums; }
+.collection span small { font-size: 14px; color: var(--faint); }
+
+@media (max-width: 760px) {
+  .armory, .challenges { grid-template-columns: minmax(0, 1fr); }
+  .armory-grid { max-height: none; }
+  .profile-wear { grid-template-columns: minmax(0, 1fr); }
+  .menu-tabs button { padding: 9px 12px; font-size: 14px; letter-spacing: 0.12em; }
+}
+/* A phone on its side: the card shrinks and sits at the right edge, clear of the death card and the sticks. */
+@media (max-height: 519px) {
+  .xp-card { width: 236px; right: 8px; top: 8px; padding: 8px 10px 10px; max-height: calc(100vh - 16px); }
+  .xp-lines li { font-size: 14px; padding: 3px 0; }
+  .xp-total b { font-size: 22px; }
+  .xp-reveal-main .cos-art { width: 100px; height: 64px; }
+  .xp-reveal-name { font-size: 20px; }
+  .xp-reveal-info p { display: none; }
+  .challenge-toast { width: 150px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xp-card.in, .xp-lines li, .xp-reveal, .xp-stamp.hit { animation-duration: 0.01ms !important; animation-delay: 0s !important; }
+  .xp-stamp.hit { transform: rotate(-4deg) scale(1); opacity: 1; }
+  .reveal-rays { animation: none; }
+}
+
+#profile-level { margin-bottom: var(--s2); }
+.xp-lines.folded { display: none; }
+/* One-time iOS tip: Safari has no page fullscreen, so the home-screen app is the way to lose its bars. */
+.hint {
+  margin: var(--s4) auto 0;
+  max-width: 560px;
+  padding: var(--s3);
+  background: var(--panel);
+  border-top: 2px solid var(--accent);
+  color: var(--ink);
+  font-size: var(--t-label);
+  text-align: center;
+}
+.hint button { margin-left: var(--s2); min-height: 44px; padding: 0 var(--s4); }

@@ -7,6 +7,7 @@ import { gzipSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
+import { isSlot, parsePicks } from '../shared/cosmetics.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
 import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
@@ -22,7 +23,7 @@ const ROOM_MODES: [string, ModeId][] = [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.map': 'application/json', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon', '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2',
 };
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -86,8 +87,9 @@ type AuthLimiter = (key: string, now: number) => boolean;
 
 const SQUAD_CODE_CHARS = 'abcdefghijklmnopqrstuvwxyz234567';
 const squadCode = () => `z-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
+const rangeCode = () => `r-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
 
-type Rooms = { all: Map<string, Room>; openSquad(): string | null };
+type Rooms = { all: Map<string, Room>; openSquad(): string | null; openRange(): string | null };
 type IpOf = (req: IncomingMessage) => string;
 
 const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
@@ -102,11 +104,17 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size });
-  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM'));
+  if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM' && info.mode !== 'RNG'));
   if (req.method === 'POST' && path === '/api/squads') {
     if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many squads. Try again in a minute.' });
     const room = rooms.openSquad();
     return room ? json(res, 200, { room }) : json(res, 503, { error: 'Every squad slot is taken. Try again soon.' });
+  }
+  // Each player's own shooting range: a private room, nothing in it counts toward a record.
+  if (req.method === 'POST' && path === '/api/range') {
+    if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many ranges. Try again in a minute.' });
+    const room = rooms.openRange();
+    return room ? json(res, 200, { room }) : json(res, 503, { error: 'Every range lane is taken. Try again soon.' });
   }
   if (req.method === 'GET' && path === '/api/leaderboard') return json(res, 200, accounts.leaderboard(20));
   if (req.method === 'GET' && path.startsWith('/api/stats/')) {
@@ -120,6 +128,23 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
     try { name = decodeURIComponent(path.slice('/api/profile/'.length)); } catch { return json(res, 400, { error: 'Bad player name' }); }
     const p = profiles.get(name);
     return p ? json(res, 200, profileView(p)) : json(res, 404, { error: 'No such player' });
+  }
+  if (req.method === 'POST' && path === '/api/equip') {
+    if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
+    const body = await readBody(req);
+    if (typeof body !== 'object' || body === null) return json(res, 400, { error: 'Bad request' });
+    const b = body as Record<string, unknown>;
+    const bearer = /^Bearer (.+)$/.exec(String(req.headers.authorization ?? ''))?.[1];
+    const token = bearer ?? (typeof b.token === 'string' ? b.token.slice(0, 128) : '');
+    const account = token ? accounts.nameForToken(token) : null;
+    if (!account) return json(res, 401, { error: 'Sign in to change your look' });
+    const asked: Record<string, unknown> = isSlot(b.slot) ? { [b.slot]: b.id } : typeof b.equipped === 'object' && b.equipped !== null ? (b.equipped as Record<string, unknown>) : {};
+    const picks = parsePicks(asked);
+    const wanted = Object.keys(asked).length;
+    if (wanted === 0 || Object.keys(picks).length !== wanted) return json(res, 400, { error: 'Unknown slot or item' });
+    const result = profiles.equip(account, picks, true);
+    if (!result.ok) return json(res, 403, { error: 'Item not unlocked', rejected: result.rejected, equipped: result.equipped });
+    return json(res, 200, { equipped: result.equipped, unlocked: profiles.get(account)?.unlocked ?? [] });
   }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {
     if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
@@ -160,7 +185,26 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     squadSeenAt.set(id, Date.now());
     return id;
   };
+  /** When each range room last had a player in it; one empty for `rangeIdleMs` closes. */
+  const rangeSeenAt = new Map<string, number>();
+  const openRange = (): string | null => {
+    if (rangeSeenAt.size >= limits.rangeRooms) return null;
+    let id = rangeCode();
+    while (rooms.has(id)) id = rangeCode();
+    rooms.set(id, newRoom(id, 'RNG', randomInt(2 ** 31)));
+    rangeSeenAt.set(id, Date.now());
+    return id;
+  };
   const closeIdleSquads = (now: number) => {
+    for (const [id, seenAt] of rangeSeenAt) {
+      const room = rooms.get(id)!;
+      if (room.info().humans > 0) rangeSeenAt.set(id, now);
+      else if (now - seenAt >= limits.rangeIdleMs) {
+        room.close();
+        rooms.delete(id);
+        rangeSeenAt.delete(id);
+      }
+    }
     for (const [id, seenAt] of squadSeenAt) {
       const room = rooms.get(id)!;
       if (room.info().humans > 0) squadSeenAt.set(id, now);
@@ -173,7 +217,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const http = createServer((req, res) => {
-    route(req, res, { all: rooms, openSquad }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad, openRange }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });

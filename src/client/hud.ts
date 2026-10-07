@@ -1,5 +1,7 @@
-import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
-import { ABILITY_COOLDOWN_MS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { abilityCooldownMs } from '../shared/sim/stats.ts';
+import { settleOf } from './fire.ts';
+import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
+import { byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
@@ -11,10 +13,11 @@ import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { glow, PALETTE, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, useHint } from './zombies.ts';
+import { BUILD_CONTROLS, buildRows, downedLine, forecast, phaseLine, readyHint, squadShare, upgradeTarget, useHint, type BuildChip, type HintChip } from './zombies.ts';
 import { airdropLine, drawAirdropMap } from './arenafx.ts';
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
-import { drawGunArt } from './gunart.ts';
+import { drawGunArt, skinInk } from './gunart.ts';
+import { drawFlashOverlay } from './flashsmoke.ts';
 import type { Session } from './state.ts';
 import { uiScaleFor } from './uiscale.ts';
 
@@ -41,6 +44,10 @@ const ON_WORLD = {
 } as const;
 type OnWorld = { ink: string; muted: string; track: string; glyph: string; halo: string };
 const EDGE = 16;
+/** Notch and home-bar insets in screen px (set on every resize); `inset()` gives them in HUD units, so each corner panel sits inside them. */
+let safe = { l: 0, t: 0, r: 0, b: 0 };
+export const setHudInsets = (i: { l: number; t: number; r: number; b: number }): void => { safe = i; };
+const inset = () => ({ l: safe.l / hudScale, t: safe.t / hudScale, r: safe.r / hudScale, b: safe.b / hudScale });
 const FEED_ROW = 24;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
@@ -97,12 +104,12 @@ const sticksUsed = { move: false, aim: false };
 /** Touch screens draw a faint ring where each stick goes while no thumb is on it, so players know the sticks are there. */
 function drawStickGuides(ctx: CanvasRenderingContext2D, sticks: Sticks, w: number, h: number) {
   const guides = [
-    { key: 'move', active: sticks.move, x: STICK_GUIDE.inset, label: 'MOVE' },
-    { key: 'aim', active: sticks.aim, x: w - STICK_GUIDE.aimRight, label: 'AIM · FIRE' },
+    { key: 'move', active: sticks.move, x: STICK_GUIDE.inset + safe.l, label: 'MOVE' },
+    { key: 'aim', active: sticks.aim, x: w - STICK_GUIDE.aimRight - safe.r, label: 'AIM · FIRE' },
   ] as const;
   for (const g of guides) {
     if (g.active) { sticksUsed[g.key] = true; continue; }
-    const y = h - STICK_GUIDE.inset;
+    const y = h - STICK_GUIDE.inset - safe.b;
     ctx.globalAlpha = sticksUsed[g.key] ? STICK_GUIDE.usedAlpha : STICK_GUIDE.alpha;
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
@@ -135,6 +142,17 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks, dpr: n
     ctx.beginPath();
     ctx.arc(st.ox + v.x * STICK_RADIUS, st.oy + v.y * STICK_RADIUS, STICK_RADIUS * 0.42, 0, Math.PI * 2);
     ctx.fill();
+    // A second, outer ring on the move stick sprints; it lights up orange once the thumb is out on it.
+    if (st === sticks.move) {
+      ctx.globalAlpha = sticksSprint(st) ? 0.95 : 0.3;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = sticksSprint(st) ? '#ff5a1f' : '#ffffff';
+      ctx.setLineDash(sticksSprint(st) ? [] : [6, 6]);
+      ctx.beginPath();
+      ctx.arc(st.ox, st.oy, SPRINT_RING, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
   ctx.globalAlpha = 1;
 }
@@ -160,12 +178,15 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   buildChips = [];
   const compact = w < 640 || h < 520 || k < 1;
   drawSuppression(hud);
+  drawFlashOverlay(ctx, w, h, snap.self.flash ?? 0, now);
   drawHurtVignette(hud);
   drawHurtArcs(hud);
   const boardBottom = drawLeaderboard(hud, compact, fullBoard);
-  drawKillFeed(hud, boardBottom + SPACE.sm, touchScreen && k < 1 ? 2 : compact ? 3 : 5);
   drawMinimap(hud, compact ? 96 : 160);
   const below = drawPill(hud, compact);
+  // On a phone the right column is the leaderboard above the thumbs' buttons, so a short feed (two rows) goes top centre under the timer.
+  if (touchScreen && compact) drawKillFeed(hud, below + SPACE.sm, 2, w / 2 + 120);
+  else drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
   ctx.globalAlpha = 1;
   const siegeTop = drawObjectiveLine(hud, below, fullBoard);
   if (me?.alive) drawVitals(hud, compact);
@@ -369,11 +390,23 @@ const deniedShake = (now: number) => {
 
 export const drawnReticleGap = (): number => reticleDrawnGap;
 
-function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
+function drawReticle({ ctx, snap, s, selfAt }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
-  const gap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
+  const sprinting = snap.self.sprint === true;
+  const settle = sprinting || !s.firing ? 0 : settleOf(s.firing);
+  const gap = sprinting ? RETICLE.maxGap * 0.55 : Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
   reticleDrawnGap = gap;
   ctx.lineCap = 'round';
+  // Sprinting, the gun is down: the reticle opens wide and dims. Leaving it, an amber arc round the reticle shrinks as the aim settles.
+  if (sprinting) ctx.globalAlpha = 0.4;
+  if (settle > 0.01) {
+    const r = gap + RETICLE.tick + 6;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(255, 179, 71, 0.9)';
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, r, -Math.PI / 2, -Math.PI / 2 + settle * TAU);
+    ctx.stroke();
+  }
   for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.75)'], [1.5, '#ffffff']] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
@@ -386,7 +419,8 @@ function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   }
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(at.x - 1, at.y - 1, 2, 2);
-  if (!reloading) return;
+  ctx.globalAlpha = 1;
+  if (!reloading || sprinting) return;
   ctx.lineWidth = 3.5;
   ctx.strokeStyle = 'rgba(30, 32, 38, 0.5)';
   ctx.beginPath();
@@ -431,7 +465,7 @@ function drawHitmarker({ ctx, s, now }: Hud, at: Point) {
 }
 
 const MINIMAP = { bg: 'rgba(19, 21, 25, 0.86)', block: '#454a53', built: '#6a7da6' } as const;
-const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff' };
+const MINIMAP_BUILDING: Record<BuildingKind, string> = { wall: '#c7a383', sentry: '#f5c400', cannon: '#ff6b3d', scatter: '#3fd1b8', mortar: '#b98cff', tesla: '#8fb8ff', depot: '#8a9a5b', post: '#8ff0c4', spikes: '#9aa3b0' };
 
 /** Panels drawn this frame, so edge markers drawn after them can stay clear. */
 let panels: Rect[] = [];
@@ -542,10 +576,10 @@ const FEED_ICON_W = 44;
 const BOUNTY_TAG = `+${WORLD.bountyScore} BOUNTY`;
 
 /** Class guns read as their icon; an evolved gun is spelled out in its accent color, since its silhouette is easy to mistake. */
-function feedWeapon(ctx: CanvasRenderingContext2D, label: string): { width: number; draw(x: number, y: number): void } {
+function feedWeapon(ctx: CanvasRenderingContext2D, label: string, skin?: string): { width: number; draw(x: number, y: number): void } {
   const gun = GUN_BY_NAME.get(label);
   if (gun && GUNS[gun].stage === 0) {
-    return { width: FEED_ICON_W, draw: (x, y) => drawGunArt(ctx, gun, x, y - 7, FEED_ICON_W - SPACE.sm, 14, { flat: PANEL_INK, align: 'left' }) };
+    return { width: FEED_ICON_W, draw: (x, y) => drawGunArt(ctx, gun, x, y - 7, FEED_ICON_W - SPACE.sm, 14, { flat: skinInk(skin) ?? PANEL_INK, align: 'left' }) };
   }
   const perk = PERK_BY_NAME.get(label);
   if (perk) return { width: 20, draw: (x, y) => strokeIcon(ctx, PERK_ICONS[perk], x + 8, y, 13, PANEL_INK, 2.2) };
@@ -567,10 +601,11 @@ function lifeLine(f: Extract<Snapshot['events'][number], { e: 'life' }>, by: str
   }
 }
 
-function drawKillFeed(hud: Hud, top: number, rows: number) {
+/** `rightEdge` is where each row ends; rows right-align there (the screen's right edge by default). */
+function drawKillFeed(hud: Hud, top: number, rows: number, rightEdge?: number) {
   const { ctx, w, s, now } = hud;
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
-  const right = w - EDGE;
+  const right = rightEdge ?? w - EDGE - inset().r;
   const drawRow = (f: (typeof lines)[number], i: number) => {
     const y = top + i * FEED_ROW + 10;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600) * 0.95;
@@ -618,7 +653,7 @@ function drawKillFeed(hud: Hud, top: number, rows: number) {
     }
     const kw = f.killer ? ctx.measureText(f.killer).width : 0;
     const vw = ctx.measureText(f.victim).width;
-    const weapon = feedWeapon(ctx, f.weapon);
+    const weapon = feedWeapon(ctx, f.weapon, hud.snap.players.find((p) => p.id === f.killerId)?.cos?.g);
     setFont(ctx, 800, TYPE.micro);
     const tag = f.bounty ? BOUNTY_TAG : f.knock ? KNOCK_TAG : null;
     const bw = tag ? ctx.measureText(tag).width + SPACE.sm : 0;
@@ -693,7 +728,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
   const pw = compact ? BOARD.compactW : BOARD.w;
-  const x = w - pw - EDGE, top = EDGE;
+  const x = w - pw - EDGE - inset().r, top = EDGE + inset().t;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
   const head = full ? 22 : 0;
   const ph = BOARD.pad * 2 + rows.length * BOARD.row + head + (split ? 5 : 0);
@@ -790,7 +825,7 @@ function drawMinimap(hud: Hud, size: number) {
   const k = size / s.worldSize;
   const pad = 8;
   // On a touch screen the bottom right is the aiming thumb's, so the minimap sits top left under the vitals, as in mobile shooters.
-  const x0 = touchScreen ? EDGE : w - EDGE - size - pad * 2, y0 = touchScreen ? EDGE + VITALS.height + 8 : h - EDGE - size - pad * 2;
+  const x0 = touchScreen ? EDGE + inset().l : w - EDGE - inset().r - size - pad * 2, y0 = touchScreen ? EDGE + inset().t + VITALS.height + 8 : h - EDGE - inset().b - size - pad * 2;
   const base = fadePanel(hud, 'minimap', x0, y0, size + pad * 2, size + pad * 2);
   panel(ctx, x0, y0, size + pad * 2, size + pad * 2, MINIMAP.bg);
   const x = x0 + pad, y = y0 + pad;
@@ -812,6 +847,14 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.beginPath();
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);
     ctx.fill();
+    // A Tracker mark: a ring round an enemy you hurt.
+    if (m.marked) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ff5a1f';
+      ctx.beginPath();
+      ctx.arc(x + m.x * k, y + m.y * k, 5.5, 0, TAU);
+      ctx.stroke();
+    }
   }
   const inside = (v: number) => Math.min(size - DIAMOND_R, Math.max(DIAMOND_R, v));
   for (const m of snap.minimap) {
@@ -878,7 +921,7 @@ function drawMinimap(hud: Hud, size: number) {
 
 function drawPill(hud: Hud, compact: boolean): number {
   const { ctx, w, snap, me, s, now } = hud;
-  const ph = compact ? 24 : 28, y = EDGE;
+  const ph = compact ? 24 : 28, y = EDGE + inset().t;
   const side = compact ? 40 : 48, mid = compact ? 56 : 66;
   const big = compact ? 14 : 16;
   const left = timeLeft(hud);
@@ -919,6 +962,13 @@ function drawPill(hud: Hud, compact: boolean): number {
     panel(ctx, x, y, lw + mid, ph);
     text(ctx, label, x + lw / 2 + 4, cy + 1, TYPE.label + 1, color, 'center', 800);
     text(ctx, center, x + lw + mid / 2 - 4, cy + 1, TYPE.body, PANEL_INK, 'center', 600);
+    return y + ph;
+  }
+  if (snap.range) {
+    const lw = compact ? 110 : 132, x = w / 2 - lw / 2;
+    fadePanel(hud, 'score', x, y, lw, ph);
+    panel(ctx, x, y, lw, ph);
+    text(ctx, 'RANGE · PRACTICE', x + lw / 2, cy + 1, TYPE.label + 1, '#8fd6e0', 'center', 800);
     return y + ph;
   }
   const x = w / 2 - mid / 2;
@@ -989,10 +1039,15 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   const row = h - (compact ? 150 : 30);
   if (use) platedLine(ctx, use, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750, ACCENT);
   if (s.building) {
-    hintBar(ctx, s, BUILD_HINTS.filter((p) => p.pick), w / 2, row - 32, null);
-    hintBar(ctx, s, BUILD_HINTS.filter((p) => !p.pick), w / 2, row, 'BUILD');
+    const rows = buildRows();
+    rows.forEach((r, i) => hintBar(ctx, s, r.chips, w / 2, row - 32 * (rows.length - i), r.label));
+    const hover = s.buildGhost?.hover ?? null;
+    const controls = BUILD_CONTROLS.map((c) => (c.pick && 'upgrade' in c.pick ? { ...c, what: hover ? (hover.next ? `upgrade to ${hover.next.name} ${hover.next.cost}` : 'upgrade (top level)') : 'upgrade' } : c));
+    hintBar(ctx, s, controls, w / 2, row, 'BUILD');
   } else if (run.phase === 'day') {
-    hintBar(ctx, s, [{ key: 'B', what: 'build walls and turrets' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }], w / 2, row, null);
+    hintBar(ctx, s, [{ key: 'B', what: 'build walls, turrets and more' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }], w / 2, row, null);
+    const up = upgradeTarget(hud.snap, s.lastSelf);
+    if (up && run.scrap >= up.cost) platedLine(ctx, `U to upgrade the ${up.b.kind === 'wall' ? 'wall' : up.b.kind} to ${up.to} · ${up.cost} scrap`, w / 2, h * 0.64 + 34, TYPE.body, PALETTE.gold, 700, ACCENT);
   }
 }
 
@@ -1040,36 +1095,43 @@ function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: numb
   platedLine(ctx, lines.sub, w / 2, h - 66, TYPE.body, PANEL_MUTED, 650);
 }
 
-function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {
+function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly HintChip[], cx: number, row: number, label: string | null) {
   setFont(ctx, 650, TYPE.label);
   const parts = hints.map((p) => ({ ...p, kw: ctx.measureText(p.key).width + 10, ww: ctx.measureText(p.what).width }));
-  const total = parts.reduce((t, p) => t + p.kw + p.ww + 22, label ? 56 : 0) + 8;
+  setFont(ctx, 850, TYPE.label);
+  const labelW = label ? ctx.measureText(label).width + 12 : 0;
+  setFont(ctx, 650, TYPE.label);
+  const total = parts.reduce((t, p) => t + p.kw + p.ww + 22, labelW) + 8;
   let hx = cx - total / 2;
   panel(ctx, hx, row - 12, total, 24);
   hx += 10;
   if (label) {
     text(ctx, label, hx, row, TYPE.label, PALETTE.gold, 'left', 850);
-    hx += 48;
+    hx += labelW;
   }
+  const hover = s.buildGhost?.hover ?? null;
   for (const p of parts) {
-    const picked = p.pick !== undefined && p.pick === s.buildKind;
-    ctx.fillStyle = picked ? PALETTE.gold : 'rgba(255, 255, 255, 0.16)';
+    const pick = p.pick;
+    const picked = pick !== undefined && 'kind' in pick && pick.kind === s.buildKind && (pick.kind !== 'wall' || pick.lv === s.buildTier);
+    // The upgrade chip lights only while a building that can step up is hovered.
+    const lit = pick !== undefined && 'upgrade' in pick && !!hover?.next && s.buildGhost?.upgrade === null;
+    ctx.fillStyle = picked || lit ? PALETTE.gold : 'rgba(255, 255, 255, 0.16)';
     ctx.beginPath();
     ctx.roundRect(hx, row - 8, p.kw, 16, 3);
     ctx.fill();
-    text(ctx, p.key, hx + 5, row, TYPE.label, picked ? '#16181d' : PANEL_INK, 'left', 750);
-    text(ctx, p.what, hx + p.kw + 5, row, TYPE.label, picked ? PALETTE.gold : PANEL_MUTED, 'left', picked ? 750 : 550);
-    if (p.pick) buildChips.push({ kind: p.pick, x: hx - 4, y: row - 12, w: p.kw + p.ww + 12, h: 24 });
+    text(ctx, p.key, hx + 5, row, TYPE.label, picked || lit ? '#16181d' : PANEL_INK, 'left', 750);
+    text(ctx, p.what, hx + p.kw + 5, row, TYPE.label, picked || lit ? PALETTE.gold : PANEL_MUTED, 'left', picked || lit ? 750 : 550);
+    if (pick) buildChips.push({ pick, x: hx - 4, y: row - 12, w: p.kw + p.ww + 12, h: 24 });
     hx += p.kw + p.ww + 22;
   }
 }
 
-/** The build bar's kind chips as last drawn, in CSS px, so a click on one picks its kind. */
-let buildChips: (Rect & { kind: BuildingKind })[] = [];
-export const drawnBuildChips = (): readonly (Rect & { kind: BuildingKind })[] => buildChips;
-export const buildChipAt = (sx: number, sy: number): BuildingKind | null => {
+/** The build bar's chips as last drawn, in CSS px, so a click or tap on one picks its kind or upgrades the hovered building. */
+let buildChips: (Rect & { pick: BuildChip })[] = [];
+export const drawnBuildChips = (): readonly (Rect & { pick: BuildChip })[] => buildChips;
+export const buildChipAt = (sx: number, sy: number): BuildChip | null => {
   const x = sx / hudScale, y = sy / hudScale;
-  return buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.kind ?? null;
+  return buildChips.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h)?.pick ?? null;
 };
 
 /** Returns the height of the warning's plate, so lines below it can stand clear. */
@@ -1240,8 +1302,9 @@ function drawVitals(hud: Hud, compact: boolean) {
   if (!me) return;
   const on = ON_PANEL;
   const self = snap.self;
-  const x = EDGE + VITALS.pad;
-  let y = EDGE + VITALS.pad + 6;
+  const ins = inset();
+  const x = EDGE + ins.l + VITALS.pad;
+  let y = EDGE + ins.t + VITALS.pad + 6;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
   const hpFrac = me.hp / me.maxHp;
   const hpText = `${Math.ceil(vfx.shownHp)} / ${me.maxHp}`;
@@ -1255,7 +1318,7 @@ function drawVitals(hud: Hud, compact: boolean) {
   setFont(ctx, 700, TYPE.label);
   const gunRow = ctx.measureText(gunName).width + gun.stage * 9 + 148;
   const abilityRow = abilityWidth(ctx, self) + 14 + owned.length * 22;
-  panel(ctx, EDGE, EDGE, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
+  panel(ctx, EDGE + ins.l, EDGE + ins.t, Math.max(hpRow, gunRow, abilityRow) + VITALS.pad * 2 + 4, VITALS.height);
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
   fill.addColorStop(0, HP_FILL[0]);
   fill.addColorStop(1, HP_FILL[1]);
@@ -1295,6 +1358,7 @@ function drawVitals(hud: Hud, compact: boolean) {
       ctx.globalAlpha = 1;
     }
   }
+  drawSprintChip(ctx, x + 178, y, self.sprint === true, self.sprint === true || !hud.s.firing ? 0 : settleOf(hud.s.firing), on);
   y += 26;
   text(ctx, gunName, x, y, TYPE.label, gun.stage ? glow(gun.look.accent, 0.74) : on.ink, 'left', 700);
   setFont(ctx, 700, TYPE.label);
@@ -1324,6 +1388,15 @@ function drawVitals(hud: Hud, compact: boolean) {
   drawSparks(ctx, now);
 }
 
+/** SPRINT while the gun is down; then SETTLE with a bar that drains as the aim steadies, so the player sees when the bloom is gone. */
+function drawSprintChip(ctx: CanvasRenderingContext2D, x: number, y: number, sprinting: boolean, settle: number, on: OnWorld) {
+  if (!sprinting && settle <= 0.01) return;
+  const color = sprinting ? '#ff5a1f' : PALETTE.gold;
+  strokeIcon(ctx, PERK_ICONS.marathon, x + 7, y, 14, color, 2.2);
+  text(ctx, sprinting ? 'SPRINT' : 'SETTLE', x + 18, y + 1, TYPE.micro, color, 'left', 800);
+  if (!sprinting) bar(ctx, x + 18, y + 7, 40, 3, settle, color, on.track);
+}
+
 type SelfView = Snapshot['self'];
 
 const abilityLabel = (self: SelfView): string =>
@@ -1341,7 +1414,7 @@ function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, self: 
     return;
   }
   const ready = self.abilityReadyIn <= 0;
-  const left = Math.max(0, Math.min(1, self.abilityReadyIn / ABILITY_COOLDOWN_MS[self.ability]));
+  const left = Math.max(0, Math.min(1, self.abilityReadyIn / abilityCooldownMs(self.ability, self.perks ?? {})));
   const denied = !ready && performance.now() - abilityDeniedAt < ABILITY_CUE.deniedMs;
   const cx = x + 12 + deniedShake(performance.now());
   ctx.lineWidth = 3;

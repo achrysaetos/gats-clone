@@ -40,7 +40,21 @@ R.
     },
     crates: [{ x: 25, y: 125 }, { x: 175, y: 75 }],
     barrels: [{ x: 75, y: 25 }, { x: 125, y: 175 }],
+    props: [],
   });
+});
+
+test('prop symbols place one prop of their kind per cell, and the east half turns each into a twin of the same kind', () => {
+  const m = gridMap('Props', `
+pg
+lo
+mA
+ai
+`);
+  assert.deepEqual(m.props, [
+    { x: 25, y: 25, kind: 'propane' }, { x: 75, y: 25, kind: 'gas' }, { x: 25, y: 75, kind: 'lamp' }, { x: 75, y: 75, kind: 'oil' }, { x: 25, y: 125, kind: 'medic' }, { x: 25, y: 175, kind: 'ammo' }, { x: 75, y: 175, kind: 'paint' },
+    { x: 175, y: 175, kind: 'propane' }, { x: 125, y: 175, kind: 'gas' }, { x: 175, y: 125, kind: 'lamp' }, { x: 125, y: 125, kind: 'oil' }, { x: 175, y: 75, kind: 'medic' }, { x: 175, y: 25, kind: 'ammo' }, { x: 125, y: 25, kind: 'paint' },
+  ]);
 });
 
 test('spawn cells merge into rects the way walls do, and concrete, sandstone and planter never merge with each other', () => {

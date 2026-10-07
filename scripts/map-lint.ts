@@ -1,9 +1,10 @@
 /// <reference types="node" />
 // Usage: node scripts/map-lint.ts
 import { fileURLToPath } from 'node:url';
-import { BARREL, GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
+import { BARREL, GUN_IDS, GUNS, PROP_FX, PROPS, WORLD } from '../src/shared/defs.ts';
 import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
+import { TARGETS, targetPos } from '../src/shared/range.ts';
 
 export const CELL = 25;
 const R = WORLD.playerRadius;
@@ -12,7 +13,7 @@ export function standable(def: MapDef, n: number): Uint8Array {
   const free = new Uint8Array(n * n);
   const at = (i: number) => (i + 0.5) * CELL;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) free[j * n + i] = at(i) >= R && at(j) >= R && at(i) <= def.size - R && at(j) <= def.size - R ? 1 : 0;
-  for (const s of [...def.walls, ...crateRects(def), ...barrelRects(def)]) {
+  for (const s of [...def.walls, ...crateRects(def), ...barrelRects(def), ...propRects(def)]) {
     const i0 = Math.max(0, Math.floor((s.x - R) / CELL)), i1 = Math.min(n - 1, Math.floor((s.x + s.w + R) / CELL));
     const j0 = Math.max(0, Math.floor((s.y - R) / CELL)), j1 = Math.min(n - 1, Math.floor((s.y + s.h + R) / CELL));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (circleHitsRect(at(i), at(j), R, s)) free[j * n + i] = 0;
@@ -22,6 +23,7 @@ export function standable(def: MapDef, n: number): Uint8Array {
 
 const crateRects = (def: MapDef): Rect[] => def.crates.map((c) => ({ x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
 const barrelRects = (def: MapDef): Rect[] => def.barrels.map((b) => ({ x: b.x - BARREL.size / 2, y: b.y - BARREL.size / 2, w: BARREL.size, h: BARREL.size }));
+const propRects = (def: MapDef): Rect[] => def.props.map((q) => { const h = PROPS[q.kind].size / 2; return { x: q.x - h, y: q.y - h, w: 2 * h, h: 2 * h }; });
 const centerOf = (c: number, n: number): Center => ({ x: ((c % n) + 0.5) * CELL, y: (Math.floor(c / n) + 0.5) * CELL });
 /** The raster cells on both sides of `v` when it sits on a cell edge, so a zone and its turned twin are judged alike. */
 const cellsEitherSide = (v: number, n: number) => [Math.floor((v - 1) / CELL), Math.floor((v + 1) / CELL)].filter((k) => k >= 0 && k < n);
@@ -67,7 +69,7 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   const edges = [...new Set(rects.flatMap(({ r }) => [r.x, r.x + r.w, r.y, r.y + r.h]).flatMap((v) => [v, size - v]).concat(0, size))].sort((a, b) => a - b);
   const index = new Map(edges.map((v, i) => [v, i]));
   const k = edges.length - 1;
-  const cover = new Uint8Array(k * k);
+  const cover = new Uint32Array(k * k);
   for (const { r, key } of rects) {
     for (let j = index.get(r.y)!; j < index.get(r.y + r.h)!; j++) for (let i = index.get(r.x)!; i < index.get(r.x + r.w)!; i++) cover[j * k + i]! |= key;
   }
@@ -77,7 +79,7 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   return null;
 }
 
-const MATERIAL_KEY = { concrete: 1, sandstone: 2, planter: 4 } as const;
+const MATERIAL_KEY = { concrete: 1, gallery: 1 << 10, marble: 1 << 11, vitrine: 1 << 12, plinth: 1 << 13, counter: 1 << 14, sandstone: 2, planter: 4, stall: 8, shopfront: 16, stack: 32, cart: 64, shrine: 128, hull: 1 << 20, tower: 1 << 21, bulkhead: 1 << 22, rack: 1 << 23, water: 1 << 24, hedge: 1 << 26, pond: 1 << 27, parkstone: 1 << 28, trunk: 1 << 29, bench: 1 << 30, play: 2 ** 31 } as const;
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
 
@@ -109,6 +111,18 @@ export function lintMap(def: MapDef): string[] {
       if (regions.some((r) => rectsOverlap(r, b, WORLD.playerRadius + BARREL.spawnGap))) problems.push(`barrel ${i} at ${where(def.barrels[i]!)} sits within ${BARREL.spawnGap}px of a ${side} spawn`);
     }
   });
+  const props = propRects(def);
+  props.forEach((b, i) => {
+    const at = def.props[i]!, name = `${at.kind} prop ${i} at ${where(at)}`;
+    if (!inside(b, 0)) problems.push(`${name} leaves the world`);
+    if (def.walls.some((w) => rectsOverlap(w, b))) problems.push(`${name} overlaps a wall`);
+    if (crates.some((c) => rectsOverlap(c, b))) problems.push(`${name} overlaps a crate`);
+    if (barrels.some((o) => rectsOverlap(o, b))) problems.push(`${name} overlaps a barrel`);
+    if (props.some((o, j) => j > i && rectsOverlap(o, b))) problems.push(`${name} overlaps another prop`);
+    for (const [side, regions] of Object.entries(def.spawns)) {
+      if (regions.some((r) => rectsOverlap(r, b, WORLD.playerRadius + PROP_FX.spawnGap))) problems.push(`${name} sits within ${PROP_FX.spawnGap}px of a ${side} spawn`);
+    }
+  });
   const spawnSides = Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][];
 
   for (const [side, regions] of spawnSides) {
@@ -133,9 +147,11 @@ export function lintMap(def: MapDef): string[] {
     if (def.walls.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
     if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
     if (barrels.some((b) => circleHitsRect(z.x, z.y, ZONE_RADIUS, b))) problems.push(`zone ${i} at ${where(z)} overlaps a barrel`);
+    if (props.some((b) => circleHitsRect(z.x, z.y, ZONE_RADIUS, b))) problems.push(`zone ${i} at ${where(z)} overlaps a prop`);
   });
 
-  if (def.siege) return problems;
+  if (def.range) problems.push(...lintRange(def, free, n));
+  if (def.siege || def.range) return problems;
   if (def.zones.length !== 3) problems.push(`${def.zones.length} zones, DOM needs 3`);
 
   const red = def.spawns.red.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
@@ -154,7 +170,44 @@ export function lintMap(def: MapDef): string[] {
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
   for (const c of withoutHalfTurnTwin(def.crates, def.size)) problems.push(`the crate at ${where(c)} has no twin at the half turn`);
   for (const b of withoutHalfTurnTwin(def.barrels, def.size)) problems.push(`the barrel at ${where(b)} has no twin at the half turn`);
+  for (const q of def.props.filter((q) => !def.props.some((o) => o.kind === q.kind && o.x === def.size - q.x && o.y === def.size - q.y))) problems.push(`the ${q.kind} prop at ${where(q)} has no twin of its kind at the half turn`);
   for (const z of withoutHalfTurnTwin(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
+  return problems;
+}
+
+/**
+ * The shooting range: every target (and every spot a rail target slides through) stands clear of walls, barrels, props and other targets,
+ * and each one can be shot from somewhere a player can stand.
+ */
+function lintRange(def: MapDef, free: Uint8Array, n: number): string[] {
+  const problems: string[] = [];
+  const range = def.range!;
+  const barrels = barrelRects(def), props = propRects(def);
+  if (def.zones.length || def.crates.length) problems.push('a range has no zones or crates');
+  if (!range.marks.every((m, i) => m > 0 && (i === 0 || m > range.marks[i - 1]!))) problems.push('the painted distances are not rising');
+  if (range.lanes.some((l) => l.y0 < 0 || l.y1 > def.size)) problems.push('a lane leaves the world');
+  const spots = (d: (typeof range.targets)[number]) => (d.rail ? Array.from({ length: 9 }, (_, i) => targetPos(d, (i / 8) * ((4 * d.rail!.reach) / d.rail!.speed) * 500)) : [targetPos(d, 0)]);
+  const bodies = range.targets.map((d) => ({ d, r: TARGETS[d.kind].r, at: spots(d) }));
+  bodies.forEach(({ d, r, at }, i) => {
+    const name = `${d.kind} target ${i} at ${where(d)}`;
+    for (const p of at) {
+      if (p.x - r < 0 || p.y - r < 0 || p.x + r > def.size || p.y + r > def.size) problems.push(`${name} leaves the world`);
+      const box: Rect = { x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r };
+      if (def.walls.some((w) => circleHitsRect(p.x, p.y, r, w))) problems.push(`${name} touches a wall`);
+      if ([...barrels, ...props].some((b) => rectsOverlap(b, box))) problems.push(`${name} overlaps a barrel or prop`);
+      if (p.x < range.line) problems.push(`${name} stands behind the firing line`);
+    }
+    bodies.forEach((o, j) => {
+      if (j > i && o.at.some((q) => at.some((p) => Math.hypot(p.x - q.x, p.y - q.y) < r + o.r))) problems.push(`${name} overlaps target ${j}`);
+    });
+    // Some stand behind cover, so a clear shot may come from anywhere a player can reach near it, not only from the line.
+    const open = [150, 250, 350].some((reach) => Array.from({ length: 12 }, (_, k) => (k / 12) * 2 * Math.PI).some((a) => {
+      const sx = d.x + Math.cos(a) * reach, sy = d.y + Math.sin(a) * reach;
+      if (sx < 0 || sy < 0 || sx >= def.size || sy >= def.size) return false;
+      return free[Math.floor(sy / CELL) * n + Math.floor(sx / CELL)] === 1 && !def.walls.some((w) => crosses(sx, sy, d.x, d.y, w));
+    }));
+    if (!open) problems.push(`${name} has no clear line of fire from anywhere a player can stand`);
+  });
   return problems;
 }
 

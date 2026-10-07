@@ -29,7 +29,8 @@ test('shooting a zombie dead pays the shooter its score and kill, and the squad 
   addZombie(w, 'walker', 100, 100);
   const shots = Math.ceil(z.hp / GUNS.pistol.damage);
   const scrap = w.run!.scrap;
-  for (let i = 0; i < shots; i++) shootOnce(w, p, DOWN, 300);
+  // The walker comes on with a lane and sway of its own, so each shot is aimed at where it is.
+  for (let i = 0; i < shots; i++) shootOnce(w, p, Math.atan2(z.y - p.y, z.x - p.x), 300);
   assert.ok(!w.zombies.includes(z), 'the zombie is gone');
   assert.deepEqual(
     { score: p.score, kills: p.kills, scrap: w.run!.scrap - scrap, stats: w.run!.stats.get(p.id)?.kills },

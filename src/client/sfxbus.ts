@@ -19,5 +19,10 @@ export function emitSfx(id: Exclude<SoundId, 'hurt'>, opts: { gain?: number; pan
   sink?.cues([screenCue(id, gain, opts.pan)]);
 }
 
+/** Voices a cue at a place in the world (a magazine hitting the floor), heard from `self`'s own gun a touch louder. */
+export function emitSfxAt(id: Exclude<SoundId, 'hurt'>, x: number, y: number, self: boolean, opts: { gain?: number; delayMs?: number } = {}) {
+  sink?.cues([{ id, x, y, self, gain: opts.gain ?? 1, ...(opts.delayMs ? { delayMs: opts.delayMs } : {}) }]);
+}
+
 /** Dulls the whole mix (the killcam) or opens it again. */
 export const setMuffle = (on: boolean) => sink?.muffle(on);

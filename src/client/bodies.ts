@@ -1,9 +1,10 @@
 import { INK, PALETTE, shade, shadeHex, tint } from './palette.ts';
 import { LIGHT } from './tilt.ts';
+import { CEL, celOver, celPart, ellipse, roundBox, TAU, type Trace } from './cel.ts';
+import { paintCamo } from './camo.ts';
+import { drawPropeller, HELMETS, helmetReach, type HeadKit } from './hats.ts';
 
 const SCALE_STEP = 20;
-/** How far, as a share of the radius, the dark and light crescents of a body's cel shading reach in. */
-const CEL = { shadeShift: 0.16, lightShift: 0.12 } as const;
 const RIM = 1.8;
 const SHADOW_SHIFT = 0.55;
 const SHADOW_FEATHER = 1.3;
@@ -58,6 +59,25 @@ export function bodySprite(color: string, radius: number, armor: number, pxPerUn
   });
 }
 
+const tiles = new Map<string, HTMLCanvasElement>();
+/** A square of camo over `base` to fill a sleeve with, `R` radii wide at scale `px`, cached by colour and pattern. */
+function camoTile(camo: string, base: string, R: number, px: number): HTMLCanvasElement {
+  const key = `${camo}|${base}|${R}|${px}`;
+  let tile = tiles.get(key);
+  if (!tile) {
+    if (tiles.size > 120) tiles.clear();
+    const side = R * 2.2;
+    const [c, g] = canvas(side * px);
+    g.scale(px, px);
+    g.fillStyle = shade(base, 0.86);
+    g.fillRect(0, 0, side, side);
+    g.translate(side / 2, side / 2);
+    paintCamo(camo, { g, W: R * 0.9, H: R * 0.9, R, color: base });
+    tiles.set(key, (tile = c));
+  }
+  return tile;
+}
+
 export function drawBody(ctx: CanvasRenderingContext2D, image: HTMLCanvasElement, x: number, y: number, radius: number) {
   ctx.drawImage(image, x - radius - 1, y - radius - 1, (radius + 1) * 2, (radius + 1) * 2);
 }
@@ -109,95 +129,16 @@ export const GEAR = {
 } as const;
 
 type ArmorTier = 'none' | 'light' | 'medium' | 'heavy';
-const CONTACT = 'rgba(20, 24, 32, 0.2)';
-const TAU = Math.PI * 2;
+const CONTACT = 'rgba(10, 12, 18, 0.32)';
 const BUCKETS = 32;
+/** How much of the torso's top face a camo may cover; the rest is a rim of the player's colour. */
+const CAMO_FACE = 0.86;
 
 /** The nearest cached angle bucket for `angle`, and the remainder to turn the cached sprite by. */
 export function angleBucket(angle: number): { index: number; rest: number } {
   const step = TAU / BUCKETS;
   const raw = Math.round(angle / step);
   return { index: ((raw % BUCKETS) + BUCKETS) % BUCKETS, rest: angle - raw * step };
-}
-
-/** A shape's outline traced as subpaths into the current path, without beginning a new one. */
-type Trace = (g: CanvasRenderingContext2D) => void;
-
-const ellipse = (cx: number, cy: number, rx: number, ry: number): Trace => (g) => {
-  g.moveTo(cx + rx, cy);
-  g.ellipse(cx, cy, rx, ry, 0, 0, TAU);
-};
-const roundBox = (x0: number, y0: number, x1: number, y1: number, r: number): Trace => (g) => {
-  g.moveTo(x0 + r, y0);
-  g.arcTo(x1, y0, x1, y1, r);
-  g.arcTo(x1, y1, x0, y1, r);
-  g.arcTo(x0, y1, x0, y0, r);
-  g.arcTo(x0, y0, x1, y0, r);
-  g.closePath();
-};
-
-/**
- * Fills a part with the kit's two hard cel steps, in a sprite drawn turned by `turn`: a dark crescent on the side away from
- * the light, a light one toward it, both measured in the world's frame. `size` sets how deep the crescents reach, and an
- * ink outline `ink` wide goes round it first. Seen at the world's three-quarter angle, a part standing from height `rise`
- * to `rise + lip` shows its top face that far up-screen and its darker front face below it, down-screen.
- */
-function celPart(g: CanvasRenderingContext2D, trace: Trace, base: string, turn: number, size: number, ink: number, lip = 0, rise = -lip / 2) {
-  const c = Math.cos(turn), s = Math.sin(turn);
-  const local = (dx: number, dy: number): [number, number] => [dx * c + dy * s, -dx * s + dy * c];
-  const steps = Math.ceil(lip / 0.5);
-  const sweep = (paint: () => void) => {
-    for (let i = 0; i <= steps; i++) {
-      const [x, y] = local(0, -rise - (steps ? (lip * i) / steps : 0));
-      g.translate(x, y);
-      g.beginPath();
-      trace(g);
-      g.translate(-x, -y);
-      paint();
-    }
-  };
-  g.lineJoin = 'round';
-  if (ink > 0) {
-    g.lineWidth = ink * 2;
-    g.strokeStyle = INK;
-    sweep(() => g.stroke());
-  }
-  if (lip > 0) {
-    g.fillStyle = shade(base, 0.66);
-    sweep(() => g.fill());
-  }
-  const [tx, ty] = local(0, -rise - lip);
-  g.save();
-  g.translate(tx, ty);
-  if (lip > 0 && ink > 0) {
-    // The ink line where the top face meets the front face.
-    g.beginPath();
-    trace(g);
-    g.lineWidth = ink * 1.2;
-    g.strokeStyle = INK;
-    g.stroke();
-  }
-  g.beginPath();
-  trace(g);
-  g.clip();
-  g.fillStyle = shade(base, 0.76);
-  g.fill();
-  const [dx, dy] = local(-LIGHT.x * size * CEL.shadeShift, -LIGHT.y * size * CEL.shadeShift);
-  g.translate(dx, dy);
-  g.beginPath();
-  trace(g);
-  g.fillStyle = base;
-  g.fill();
-  g.translate(-dx, -dy);
-  const [lx, ly] = local(LIGHT.x * size * CEL.lightShift, LIGHT.y * size * CEL.lightShift);
-  g.beginPath();
-  trace(g);
-  g.translate(lx, ly);
-  trace(g);
-  g.translate(-lx, -ly);
-  g.fillStyle = tint(base, 0.3);
-  g.fill('evenodd');
-  g.restore();
 }
 
 /** How far the torso sprite reaches from the body's centre, in radii. */
@@ -209,8 +150,8 @@ export const STACK = {
 } as const;
 
 /** The shoulders, torso, pack and armor, turned to angle bucket `index`. */
-function torsoSprite(color: string, radius: number, armor: ArmorTier, index: number, pxPerUnit: number): HTMLCanvasElement {
-  return cached(`torso|${color}|${radius}|${armor}|${index}`, pxPerUnit, (px) => {
+function torsoSprite(color: string, radius: number, armor: ArmorTier, index: number, pxPerUnit: number, camo = 'c_plain'): HTMLCanvasElement {
+  return cached(`torso|${color}|${radius}|${armor}|${index}|${camo}`, pxPerUnit, (px) => {
     const half = radius * TORSO_REACH + 2;
     const [c, g] = canvas(half * 2 * px);
     const turn = (index / BUCKETS) * TAU;
@@ -225,6 +166,49 @@ function torsoSprite(color: string, radius: number, armor: ArmorTier, index: num
     // Heavier armor rides on a broader frame.
     const broad = armor === 'heavy' ? 1.04 : 1;
     part(ellipse(t.cx * R, 0, t.rx * R * broad, t.ry * R * broad), color, t.rx * R, STACK.torso);
+    // A camo prints on a part's top face, inside a rim of the part's own colour, and takes the same two cel steps.
+    const printCamo = (face: Trace, cx: number, W: number, H: number, rise: number) => {
+      if (camo === 'c_plain') return;
+      const [ox, oy] = up(rise);
+      g.save();
+      g.translate(ox, oy);
+      g.beginPath();
+      face(g);
+      g.clip();
+      g.translate(cx, 0);
+      paintCamo(camo, { g, W, H, R, color });
+      g.restore();
+      g.save();
+      g.translate(ox, oy);
+      celOver(g, face, turn, W);
+      g.restore();
+    };
+    printCamo(ellipse(t.cx * R, 0, t.rx * R * broad * CAMO_FACE, t.ry * R * broad * CAMO_FACE), t.cx * R, t.rx * R * broad, t.ry * R * broad, STACK.torso.rise + STACK.torso.lip);
+    if (camo !== 'c_plain') {
+      // The torso's front face, the crescent that shows below the helmet, carries the pattern too, a step darker than the top.
+      const lipTrace: Trace = (c) => {
+        for (let i = 0; i <= 4; i++) {
+          const [ox, oy] = up(STACK.torso.rise + (STACK.torso.lip * i) / 4);
+          c.save(); c.translate(ox, oy); ellipse(t.cx * R, 0, t.rx * R * broad * CAMO_FACE, t.ry * R * broad * CAMO_FACE)(c); c.restore();
+        }
+      };
+      const [tx0, ty0] = up(STACK.torso.rise + STACK.torso.lip);
+      g.save();
+      g.beginPath();
+      lipTrace(g);
+      // Not the top face again: only what the lip adds below it.
+      g.translate(tx0, ty0);
+      ellipse(t.cx * R, 0, t.rx * R * broad * CAMO_FACE, t.ry * R * broad * CAMO_FACE)(g);
+      g.translate(-tx0, -ty0);
+      g.clip('evenodd');
+      const [mx, my] = up(STACK.torso.rise + STACK.torso.lip * 0.5);
+      g.translate(mx + t.cx * R, my);
+      paintCamo(camo, { g, W: t.rx * R * broad, H: t.ry * R * broad, R, color });
+      g.translate(-mx - t.cx * R, -my);
+      g.fillStyle = 'rgba(10, 12, 20, 0.34)';
+      g.fillRect(-R * 2, -R * 2, R * 4, R * 4);
+      g.restore();
+    }
     // Webbing: two straps over the shoulders to the pack, on the torso's top face.
     const [sx, sy] = up(STACK.torso.rise + STACK.torso.lip);
     g.translate(sx, sy);
@@ -245,6 +229,8 @@ function torsoSprite(color: string, radius: number, armor: ArmorTier, index: num
       const [cx, cy] = up(STACK.carrier.rise + STACK.carrier.lip);
       g.fillStyle = 'rgba(0, 0, 0, 0.3)';
       for (const side of [-1, 1]) g.fillRect(0.12 * R + cx, side * w * R * 0.6 - 0.06 * R + cy, 0.18 * R, 0.12 * R);
+      // A camo vest: the pattern over the plates, inside a gunmetal edge.
+      printCamo(roundBox(-0.38 * R, -(w - 0.07) * R, 0.3 * R, (w - 0.07) * R, 0.14 * R), -0.04 * R, 0.4 * R, w * R, STACK.carrier.rise + STACK.carrier.lip);
     }
     part(roundBox(k.x0 * R, -k.half * R, k.x1 * R, k.half * R, k.round * R), GEAR.pack, 0.3 * R, STACK.pack);
     const [px0, py0] = up(STACK.pack.rise + STACK.pack.lip);
@@ -287,15 +273,29 @@ function torsoSprite(color: string, radius: number, armor: ArmorTier, index: num
   });
 }
 
-/** The helmet in the player's colour, goggles to the front, turned to angle bucket `index`. */
-function headSprite(color: string, radius: number, index: number, pxPerUnit: number): HTMLCanvasElement {
-  return cached(`head|${color}|${radius}|${index}`, pxPerUnit, (px) => {
+/** The head sprite's half-size, in px: the head's lift plus the farthest a helmet style reaches, in head radii. */
+export const headHalf = (radius: number, helmet = 'h_standard'): number => (STACK.head.rise + STACK.head.lip) * radius + Math.max(1, helmetReach(helmet)) * SOLDIER.head.r * radius + 2;
+
+/** The helmet in the player's colour, goggles to the front, turned to angle bucket `index`; a helmet cosmetic swaps the style. */
+function headSprite(color: string, radius: number, index: number, pxPerUnit: number, helmet = 'h_standard'): HTMLCanvasElement {
+  return cached(`head|${color}|${radius}|${index}|${helmet}`, pxPerUnit, (px) => {
     const R = radius, r = SOLDIER.head.r * R;
-    const half = r + (STACK.head.rise + STACK.head.lip) * R + 2;
+    const half = headHalf(R, helmet);
     const [c, g] = canvas(half * 2 * px);
     const turn = (index / BUCKETS) * TAU;
     g.scale(px, px);
     g.translate(half, half);
+    const style = helmet === 'h_standard' ? undefined : HELMETS[helmet];
+    if (style) {
+      const T = (STACK.head.rise + STACK.head.lip) * R, ink = SOLDIER.ink * R;
+      const kit: HeadKit = {
+        g, u: r, T, ink, lip: STACK.head.lip * R, a: turn, color,
+        xy: (f, s) => [(f * Math.cos(turn) - s * Math.sin(turn)) * r, (f * Math.sin(turn) + s * Math.cos(turn)) * r],
+        part: (trace, base, lip = 0, rise = T, size = r) => celPart(g, trace, base, 0, size, ink, lip, rise),
+      };
+      style.paint(kit);
+      return c;
+    }
     g.rotate(turn);
     const top = STACK.head.rise + STACK.head.lip;
     celPart(g, ellipse(0, 0, r, r), shadeHex(color, 0.92), turn, r, SOLDIER.ink * R, STACK.head.lip * R, STACK.head.rise * R);
@@ -356,11 +356,15 @@ export function stepGait(prev: Gait | undefined, x: number, y: number, now: numb
 export const gaitAmount = (g: Gait | undefined): number => (g ? Math.max(0, Math.min(1, g.speed / GAIT.fullSpeed)) : 0);
 
 /** How a walking body sways: the shoulders' twist, and each boot's offset along the heading, in radii. */
-export function walkPose(g: Gait | undefined): { twist: number; stride: number; amount: number } {
+export function walkPose(g: Gait | undefined, sprint = 0): { twist: number; stride: number; amount: number } {
   const amount = gaitAmount(g);
   const swing = g ? Math.sin(g.phase) : 0;
-  return { twist: swing * 0.11 * amount, stride: swing * SOLDIER.boot.reach * amount, amount };
+  // A sprint swings wider and longer.
+  return { twist: swing * 0.11 * amount * (1 + 0.8 * sprint), stride: swing * SOLDIER.boot.reach * amount * (1 + 0.55 * sprint), amount };
 }
+
+/** The sprint pose at full: the gun is carried across the chest at `tilt` radians, pulled `pull` radii in, and the head leans `lean` radii forward. */
+export const SPRINT_POSE = { tilt: -0.95, pull: 0.28, lean: 0.16 } as const;
 
 export type SoldierLook = {
   angle: number; armor: ArmorTier;
@@ -375,12 +379,22 @@ export type SoldierLook = {
   flash: number;
   /** Skip the contact shadow, when the caller keeps one on the floor itself (a body falling in from above). */
   noShadow?: boolean;
+  /** Cosmetics: the helmet style and camo pattern (catalog ids; the defaults when absent), and the propeller beanie's spin in radians. */
+  helmet?: string;
+  camo?: string;
+  spin?: number;
+  /** 0..1, how far into a sprint: the gun swings down across the chest, the stride lengthens and the head leans in (see `SPRINT_POSE`). */
+  sprint?: number;
 };
 
 /** Draws a soldier at (`x`, `y`): boots, arms, torso, gun, gloves, helmet, in that order from the ground up. */
 export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number, look: SoldierLook, pxPerUnit: number) {
   const R = radius, ink = SOLDIER.ink * R;
-  const pose = walkPose(look.gait);
+  const sp = Math.max(0, Math.min(1, look.sprint ?? 0));
+  const pose = walkPose(look.gait, sp);
+  // Sprinting, the whole gun-and-hands assembly turns across the chest and tucks in.
+  const tilt = SPRINT_POSE.tilt * sp, pull = SPRINT_POSE.pull * R * sp;
+  const hands = (sp > 0 ? look.hands.map((h) => ({ x: h.x * Math.cos(tilt) - h.y * Math.sin(tilt) - pull, y: h.x * Math.sin(tilt) + h.y * Math.cos(tilt) })) : look.hands) as SoldierLook['hands'];
   ctx.save();
   ctx.translate(x, y);
   // A crisp contact shadow where the boots meet the floor, a little down-screen.
@@ -414,7 +428,7 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
     const sx = SOLDIER.shoulder.x * R, sy = side * SOLDIER.shoulder.y * R;
     return { x: sx * Math.cos(twist) - sy * Math.sin(twist) - back, y: sx * Math.sin(twist) + sy * Math.cos(twist) };
   };
-  const [trigger, support] = look.hands;
+  const [trigger, support] = hands;
   const arms = [[shoulder(1), trigger], [shoulder(-1), support]] as const;
   // A long reach (a rifle held out ahead, aimed up- or down-screen) would draw as a thin wedge, so the elbow bows out and the
   // sleeve thickens with the reach: every aim keeps a chunky, bent arm.
@@ -423,7 +437,12 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
     ({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 + (from.y >= 0 ? 1 : -1) * R * (0.08 + 0.12 * reach(from, to)) });
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const [width, style] of [[SOLDIER.arm * R + ink * 2, INK], [SOLDIER.arm * R, shade(color, 0.86)]] as const) {
+  let sleeve: string | CanvasPattern = shade(color, 0.86);
+  if (look.camo && look.camo !== 'c_plain') {
+    const pat = ctx.createPattern(camoTile(look.camo, color, R, pxPerUnit), 'repeat');
+    if (pat) { pat.setTransform(new DOMMatrix().scale(1 / pxPerUnit).translate(-R * 1.1 * pxPerUnit, -R * 1.1 * pxPerUnit)); sleeve = pat; }
+  }
+  for (const [width, style] of [[SOLDIER.arm * R + ink * 2, INK], [SOLDIER.arm * R, sleeve]] as const) {
     for (const [from, to] of arms) {
       const m = elbow(from, to);
       ctx.lineWidth = width * (1 + 0.35 * reach(from, to));
@@ -451,15 +470,21 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   const { index, rest } = angleBucket(look.angle);
   ctx.translate(-back, 0);
   ctx.rotate(-look.angle);
-  drawTurned(ctx, torsoSprite(color, R, look.armor, index, pxPerUnit), R * TORSO_REACH + 2, rest + twist);
+  drawTurned(ctx, torsoSprite(color, R, look.armor, index, pxPerUnit, look.camo), R * TORSO_REACH + 2, rest + twist);
   ctx.rotate(look.angle);
   ctx.translate(back, 0);
-  look.gun?.(ctx);
+  if (sp > 0 && look.gun) {
+    ctx.save();
+    ctx.translate(-pull, 0);
+    ctx.rotate(tilt);
+    look.gun(ctx);
+    ctx.restore();
+  } else look.gun?.(ctx);
   ctx.fillStyle = GEAR.glove;
   ctx.strokeStyle = INK;
   ctx.lineWidth = ink * 2;
   ctx.beginPath();
-  for (const h of look.hands) {
+  for (const h of hands) {
     ctx.moveTo(h.x + SOLDIER.hand * R, h.y);
     ctx.arc(h.x, h.y, SOLDIER.hand * R, 0, TAU);
   }
@@ -467,15 +492,16 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   ctx.fill();
   ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
   ctx.beginPath();
-  for (const h of look.hands) {
+  for (const h of hands) {
     ctx.moveTo(h.x - lx * R * 0.06 + R * 0.07, h.y - ly * R * 0.06);
     ctx.arc(h.x - lx * R * 0.06, h.y - ly * R * 0.06, R * 0.07, 0, TAU);
   }
   ctx.fill();
-  const headX = SOLDIER.head.cx * R - look.jump * 0.3;
+  const headX = SOLDIER.head.cx * R - look.jump * 0.3 + SPRINT_POSE.lean * R * sp;
   ctx.translate(headX, 0);
   ctx.rotate(-look.angle);
-  drawTurned(ctx, headSprite(color, R, index, pxPerUnit), SOLDIER.head.r * R + (STACK.head.rise + STACK.head.lip) * R + 2, rest + twist * 0.5);
+  drawTurned(ctx, headSprite(color, R, index, pxPerUnit, look.helmet), headHalf(R, look.helmet), rest + twist * 0.5);
+  if (look.helmet === 'h_propeller') drawPropeller(ctx, SOLDIER.head.r * R, (STACK.head.rise + STACK.head.lip) * R, STACK.head.lip * R, look.spin ?? 0, gaitAmount(look.gait));
   ctx.rotate(look.angle);
   ctx.translate(-headX, 0);
   if (look.flash > 0) {
@@ -491,7 +517,7 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
     ctx.rotate(-twist);
     ctx.translate(back - ux * torsoUp, -uy * torsoUp);
     ellipse(headX + ux * headUp, uy * headUp, SOLDIER.head.r * R, SOLDIER.head.r * R)(ctx);
-    for (const h of look.hands) ellipse(h.x, h.y, SOLDIER.hand * R, SOLDIER.hand * R)(ctx);
+    for (const h of hands) ellipse(h.x, h.y, SOLDIER.hand * R, SOLDIER.hand * R)(ctx);
     ctx.fill();
   }
   ctx.restore();
@@ -502,7 +528,7 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
  * `splay` (radians off straight sideways, one per arm) and the head lolled `loll` radii to one side. `scale` swells the
  * body a little while it drops.
  */
-export function drawFallenSoldier(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number, pose: { angle: number; splay: readonly [number, number]; loll: number; scale: number }, pxPerUnit: number) {
+export function drawFallenSoldier(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number, pose: { angle: number; splay: readonly [number, number]; loll: number; scale: number; helmet?: string; camo?: string }, pxPerUnit: number) {
   const R = radius, ink = SOLDIER.ink * R;
   ctx.save();
   ctx.translate(x, y);
@@ -536,11 +562,11 @@ export function drawFallenSoldier(ctx: CanvasRenderingContext2D, color: string, 
   ctx.fill();
   const { index, rest } = angleBucket(pose.angle);
   ctx.rotate(-pose.angle);
-  drawTurned(ctx, torsoSprite(color, R, 'none', index, pxPerUnit), R * TORSO_REACH + 2, rest);
+  drawTurned(ctx, torsoSprite(color, R, 'none', index, pxPerUnit, pose.camo), R * TORSO_REACH + 2, rest);
   ctx.rotate(pose.angle);
   const hx = SOLDIER.head.cx * R + R * 0.08, hy = pose.loll * R;
   ctx.translate(hx, hy);
   ctx.rotate(-pose.angle);
-  drawTurned(ctx, headSprite(color, R, index, pxPerUnit), SOLDIER.head.r * R + (STACK.head.rise + STACK.head.lip) * R + 2, rest);
+  drawTurned(ctx, headSprite(color, R, index, pxPerUnit, pose.helmet), headHalf(R, pose.helmet), rest);
   ctx.restore();
 }

@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  BUILD_HINTS, buildKindForKey, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, useHint, withSquad,
+  BUILD_CONTROLS, buildKindForKey, buildRows, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, useHint, withSquad,
 } from '../src/client/zombies.ts';
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
 import type { RunView } from '../src/shared/protocol.ts';
-import { BUILDING_KINDS, BUILDINGS, hordeCount, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, NIGHTS, SIDES, UPGRADE, WALL_TIERS, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
 import { build } from '../src/shared/sim/run.ts';
@@ -62,20 +62,73 @@ test('the ghost judges each kind as the server would build it, and names what it
   }
   const site = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(site, 'sentry', at(26, 30), MAPS[w.map].size).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
-  assert.equal(ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 20}`, 'the refund is the standing building\'s, for the tenth of it left');
+  const worn = ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size);
+  assert.deepEqual([worn.label, worn.hover?.refund], [`Cannon · level 1/3 · health 10%`, BUILDINGS.cannon.cost / 20], 'the refund is the standing building\'s, for the tenth of it left');
+  assert.ok(worn.detail?.endsWith(`Right click: take down +${BUILDINGS.cannon.cost / 20}`), worn.detail ?? '');
   w.buildings[0]!.hp = BUILDINGS.cannon.hp;
   const whole = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
-  assert.equal(ghostAt(whole, 'wall', at(26, 31), MAPS[w.map].size).label, `Right click to take down the cannon · +${BUILDINGS.cannon.cost / 2}`, 'half back for a whole one');
+  assert.equal(ghostAt(whole, 'wall', at(26, 31), MAPS[w.map].size).hover?.refund, BUILDINGS.cannon.cost / 2, 'half back for a whole one');
   w.run!.scrap = 0;
   assert.equal(ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'cannon', at(26, 30), MAPS[w.map].size).label, `Cannon needs ${BUILDINGS.cannon.cost} scrap`);
 });
 
-test('in build mode 1 to 5 pick wall, sentry, cannon, scatter and mortar, and the hint bar lists each with its cost', () => {
-  assert.deepEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'KeyB'].map(buildKindForKey), ['wall', 'sentry', 'cannon', 'scatter', 'mortar', null, null]);
-  assert.deepEqual(BUILD_HINTS.filter((h) => h.pick).map((h) => [h.key, h.what, h.pick]), [
-    ['1', `Wall ${BUILDINGS.wall.cost}`, 'wall'], ['2', `Sentry ${BUILDINGS.sentry.cost}`, 'sentry'], ['3', `Cannon ${BUILDINGS.cannon.cost}`, 'cannon'],
-    ['4', `Scatter ${BUILDINGS.scatter.cost}`, 'scatter'], ['5', `Mortar ${BUILDINGS.mortar.cost}`, 'mortar'],
+test('in build mode 1 to 9 pick wall, the turrets and the utilities, and the hint bar lists them by category with their costs', () => {
+  assert.deepEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'KeyB'].map(buildKindForKey),
+    ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes', null, null]);
+  const rows = buildRows();
+  assert.deepEqual(rows.map((r) => r.label), ['WALLS', 'TURRETS', 'UTILITY']);
+  assert.deepEqual(rows[0]!.chips.map((c) => [c.key, c.what, c.pick]), WALL_TIERS.map((t, i) => [['I', 'II', 'III'][i], `${t.name} ${t.cost}`, { kind: 'wall', lv: i + 1 }]));
+  assert.deepEqual(rows[1]!.chips.map((c) => [c.key, c.what, c.pick]), [
+    ['2', `Sentry ${BUILDINGS.sentry.cost}`, { kind: 'sentry' }], ['3', `Cannon ${BUILDINGS.cannon.cost}`, { kind: 'cannon' }], ['4', `Scatter ${BUILDINGS.scatter.cost}`, { kind: 'scatter' }],
+    ['5', `Mortar ${BUILDINGS.mortar.cost}`, { kind: 'mortar' }], ['6', `Tesla coil ${BUILDINGS.tesla.cost}`, { kind: 'tesla' }],
   ]);
+  assert.deepEqual(rows[2]!.chips.map((c) => [c.key, c.what, c.pick]), [
+    ['7', `Ammo depot ${BUILDINGS.depot.cost}`, { kind: 'depot' }], ['8', `Repair post ${BUILDINGS.post.cost}`, { kind: 'post' }], ['9', `Spike strip ${BUILDINGS.spikes.cost}`, { kind: 'spikes' }],
+  ]);
+  assert.ok(BUILD_CONTROLS.some((c) => c.key === 'U' && c.pick && 'upgrade' in c.pick), 'the controls row has the upgrade chip');
+});
+
+test('a wall key steps the tier and the wheel steps every item, both wrapping round', () => {
+  assert.deepEqual([1, 2, 3].map(nextTier), [2, 3, 1]);
+  assert.deepEqual(stepItem({ kind: 'wall', lv: 3 }, 1), { kind: 'sentry', lv: 1 });
+  assert.deepEqual(stepItem({ kind: 'wall', lv: 1 }, -1), { kind: 'spikes', lv: 1 });
+  assert.deepEqual(stepItem({ kind: 'wall', lv: 1 }, 1), { kind: 'wall', lv: 2 });
+  let at = { kind: 'wall' as const, lv: 1 };
+  const seen = new Set<string>();
+  for (let i = 0; i < 11; i++) { at = stepItem(at, 1) as typeof at; seen.add(`${at.kind}${at.lv}`); }
+  assert.equal(seen.size, 11, 'eleven steps visit eleven different items, ending where they began');
+});
+
+test('hovering a building in build mode names its level, health and what upgrading costs, and the ghost judges the upgrade as the server does', () => {
+  const { w, p } = squadWorld();
+  w.run!.scrap = 1000;
+  build(w, p.id, 'wall', 26, 30, 2);
+  const at = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
+  let g = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'sentry', at(26, 30), MAPS[w.map].size);
+  assert.equal(g.refusal, 'taken');
+  assert.deepEqual(g.hover, { name: 'Sandbag wall', lv: 2, top: 3, hpPct: 100, refund: WALL_TIERS[1].cost / 2, next: { name: 'Steel wall', cost: WALL_TIERS[2].cost - WALL_TIERS[1].cost } });
+  assert.equal(g.label, 'Sandbag wall · level 2/3 · health 100%');
+  assert.equal(g.upgrade, null);
+  assert.ok(g.detail?.startsWith(`U or click: upgrade to Steel wall · ${WALL_TIERS[2].cost - WALL_TIERS[1].cost} scrap`), g.detail ?? '');
+  w.run!.scrap = 5;
+  g = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'sentry', at(26, 30), MAPS[w.map].size);
+  assert.equal(g.upgrade, 'scrap');
+  assert.equal(upgradeLine(g.hover!, g.upgrade), `Upgrade to Steel wall needs ${WALL_TIERS[2].cost - WALL_TIERS[1].cost} scrap`);
+  w.buildings[0]!.lv = 3;
+  assert.equal(upgradeLine(hoverOf({ kind: 'wall', cx: 26, cy: 30, hp: 10, lv: 3 }), 'maxed'), 'Fully upgraded');
+  assert.equal(upgradeLine(hoverOf({ kind: 'spikes', cx: 26, cy: 30, hp: 10 }), 'maxed'), 'No upgrades');
+});
+
+test('outside build mode U upgrades the nearest building in reach that can step up, by day', () => {
+  const { w, p } = squadWorld();
+  w.run!.scrap = 1000;
+  build(w, p.id, 'wall', 26, 30, 3);
+  build(w, p.id, 'sentry', 26, 31);
+  const near = upgradeTarget(snapshotFor(w, p.id), p);
+  assert.deepEqual([near?.b.kind, near?.to], ['sentry', 'Sentry II'], 'the steel wall has nowhere to go, so the sentry beside it is the target');
+  assert.equal(near?.cost, Math.round(BUILDINGS.sentry.cost * UPGRADE.costShare[0]));
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
+  assert.equal(upgradeTarget(snapshotFor(w, p.id), p), null, 'no building is upgraded at night');
 });
 
 test('holding E is offered to reload a turret short of ammo, to repair it first when worn, nearest first', () => {
@@ -105,9 +158,9 @@ test('a turret\'s barrel takes the angle of its last shot, and its aim is forgot
 });
 
 test('the report sums the squad\'s turret kills by kind and the Bastion\'s, and leaves the line off when they killed none', () => {
-  const report = { night: 4, won: false, survivors: 0, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
+  const report = { night: 4, won: false, survivors: 0, durationMs: 1, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
   assert.equal(turretLine(report), null);
-  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7, scatter: 0, mortar: 3 }, bastionKills: 12 }), 'Defense kills · Sentry 41 · Cannon 7 · Mortar 3 · Bastion 12');
+  assert.equal(turretLine({ ...report, turretKills: { sentry: 41, cannon: 7, scatter: 0, mortar: 3, tesla: 0 }, bastionKills: 12 }), 'Defense kills · Sentry 41 · Cannon 7 · Mortar 3 · Bastion 12');
   assert.equal(turretLine({ ...report, bastionKills: 2 }), 'Defense kills · Bastion 2');
 });
 
@@ -158,7 +211,7 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: null, waveLeft: 12 }), 19_000), 'Night 3 · 12 left');
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: 109_000, waveLeft: 4 }), 19_000), 'Night 3 · 4 left · first light in 1:30', 'once the last pack is in, first light counts down');
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000 }), 16_000), 'The Bastion fell · next run in 0:14');
-  const held = { night: 10, won: true, survivors: 31, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
+  const held = { night: 10, won: true, survivors: 31, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000, report: held }), 16_000), 'The Bastion held · next run in 0:14');
 });
 
@@ -174,7 +227,7 @@ test('a downed player is told how long they have, or that help is on the way', (
 test('holding E is offered for a downed squadmate in reach before a worn wall, and never with an empty bank for repairs', () => {
   const { w, p } = squadWorld();
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 30, hp: 100 });
-  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the wall');
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the barricade');
   const mate = spawnAt(w, AT.x + 50, AT.y, { name: 'Ann' });
   mate.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0, hp: 0 };
   assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to revive Ann');
@@ -188,7 +241,7 @@ test('holding E is offered for the worn core in reach, after a nearer worn wall,
   w.run!.core.hp = ZOM.coreHp - 100;
   assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the Bastion');
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 26, cy: 30, hp: 100 });
-  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the wall');
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the barricade');
   w.buildings = [];
   p.x = 1500 - ZOM.reachPx - 10;
   assert.equal(useHint(snapshotFor(w, p.id), p), null, 'out of reach of the core');
@@ -222,7 +275,7 @@ test('the fall clears every callout, so none shows through behind the report', (
 test('the run report ranks the squad by kills, then revives, and marks you', () => {
   const report = { night: 4, won: false, survivors: 0, durationMs: 372_000, players: [
     { name: 'Bo', kills: 12, revives: 0, built: 9 }, { name: 'Ann', kills: 30, revives: 1, built: 0 }, { name: 'Cy', kills: 12, revives: 4, built: 7 },
-  ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0 }, bastionKills: 0 };
+  ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The Bastion fell on night 4');
   assert.equal(reportTitle({ ...report, night: 10, won: true, survivors: 31 }), 'The Bastion held. 31 survivors saw the morning.');
@@ -272,7 +325,7 @@ test('holding E names the job the server does, even for a building a sliver shor
   w.run!.scrap = 100;
   const wall = { id: newId(w), kind: 'wall' as const, cx: 26, cy: 30, hp: BUILDINGS.wall.hp - 1 };
   w.buildings.push(wall);
-  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the wall');
+  assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to repair the barricade');
   press(w, p, { use: true });
   run(w, 100);
   assert.equal(wall.hp, BUILDINGS.wall.hp, 'and the server mends that wall');
