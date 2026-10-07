@@ -20,20 +20,20 @@ export const ART = {
     elevation: 26,
     strength: 6.0,
     softness: 2.2,
-    color: [1.0, 0.86, 0.68] as const,
+    color: [1.0, 0.9, 0.78] as const,
   },
-  sky: { color: [0.7, 0.75, 0.86] as const, strength: 0.5 },
+  sky: { color: [0.7, 0.75, 0.86] as const, strength: 0.42 },
   floor: {
     slab: 120,
-    a: [0.47, 0.45, 0.42] as const,
-    b: [0.56, 0.535, 0.5] as const,
+    a: [0.47, 0.455, 0.435] as const,
+    b: [0.55, 0.535, 0.51] as const,
     seam: [0.2, 0.19, 0.18] as const,
     /** What collects where walls meet the floor. */
-    grime: [0.45, 0.4, 0.34] as const,
+    grime: [0.36, 0.32, 0.27] as const,
     /** The quay outside the map edge. */
     quay: [0.4, 0.39, 0.37] as const,
   },
-  render: { samples: 16, exposure: 0.35, look: 'AgX - High Contrast' },
+  render: { samples: 16, exposure: 0.3, view: 'Khronos PBR Neutral', look: 'None' },
   heights: { concrete: 46, sandstone: 46, planter: 26, curb: 20, crate: 30, slate: 36 },
 } as const;
 

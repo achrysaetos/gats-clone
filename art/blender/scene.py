@@ -40,13 +40,15 @@ def reset():
     scene.cycles.transmission_bounces = 1
     scene.cycles.transparent_max_bounces = 4
     scene.cycles.use_adaptive_sampling = True
+    # A wider pixel filter drops detail finer than the game shows (tiles are drawn at two thirds size), which WebP would otherwise pay for.
+    scene.cycles.filter_width = 2.2
     scene.cycles.adaptive_threshold = 0.02
     scene.render.film_transparent = True
     scene.render.image_settings.file_format = 'PNG'
     scene.render.image_settings.color_mode = 'RGBA'
     scene.render.image_settings.color_depth = '8'
     scene.render.image_settings.compression = 30
-    scene.view_settings.view_transform = 'AgX'
+    scene.view_settings.view_transform = SPEC['render']['view']
     scene.view_settings.look = SPEC['render']['look']
     scene.view_settings.exposure = SPEC['render']['exposure']
     scene.render.use_persistent_data = True
@@ -298,10 +300,10 @@ def material(name):
         mat = bpy.data.materials.new(name)
         MATERIALS[name](mat)
         _cache[name] = mat
-    return mat
+    return _cache[name]
 
 
-def _slabs(mat, a, b, slab, grime_reach=26):
+def _slabs(mat, a, b, slab, grime_reach=26, seam_color=None):
     """Sun-bleached poured slabs: per-slab tone, photo grain, pits, grime pooling where things meet the floor, sparse cracks and oil."""
     f = SPEC['floor']
     g = G(mat)
@@ -310,21 +312,21 @@ def _slabs(mat, a, b, slab, grime_reach=26):
     rnd = g.white(cell, 'Color')
     rv = g.white(cell)
     col = g.mix(tuple(a), tuple(b), rv)
-    uv = g.vmath('ADD', g.scaled(p, 1 / 230), g.vmath('SCALE', rnd, scale=7.3))
+    uv = g.vmath('ADD', g.scaled(p, 1 / 320), g.vmath('SCALE', rnd, scale=7.3))
     grain = g.image('floor.jpg', uv)
-    col = g.shade(col, g.remap(grain, 0.0, 1.0, 0.66, 1.14))
+    col = g.shade(col, g.remap(grain, 0.0, 1.0, 0.75, 1.1))
     broad = g.noise(g.scaled(p, 1.0), 0.0035, 4, 0.55)
     col = g.mix(col, g.shade(col, 0.74), g.remap(broad, 0.42, 0.68, 0.0, 1.0, True))
     # Pits and grit: a few dark specks per square, too small to read as anything but texture.
-    pit_cell = g.voronoi(g.scaled(p, 1.0), 0.3, 'F1', 'Distance')
-    pit_rand = g.voronoi(g.scaled(p, 1.0), 0.3, 'F1', 'Color')
-    pits = g.math('MULTIPLY', g.remap(pit_cell, 0.07, 0.16, 1.0, 0.0), g.math('GREATER_THAN', g.vmath('DOT_PRODUCT', pit_rand, (1, 0, 0)), 0.55))
-    col = g.shade(col, g.math('SUBTRACT', 1.0, g.math('MULTIPLY', pits, 0.45)))
+    pit_cell = g.voronoi(g.scaled(p, 1.0), 0.17, 'F1', 'Distance')
+    pit_rand = g.voronoi(g.scaled(p, 1.0), 0.17, 'F1', 'Color')
+    pits = g.math('MULTIPLY', g.remap(pit_cell, 0.05, 0.11, 1.0, 0.0), g.math('GREATER_THAN', g.vmath('DOT_PRODUCT', pit_rand, (1, 0, 0)), 0.55))
+    col = g.shade(col, g.math('SUBTRACT', 1.0, g.math('MULTIPLY', pits, 0.35)))
     # Grime and dust where walls, curbs and planters meet the floor.
-    occl = g.ao(grime_reach, 8)
+    occl = g.ao(grime_reach, 5)
     grime = g.mix(col, g.rgb(f['grime']), 1.0, 'MULTIPLY')
     dirt_noise = g.noise(g.scaled(p, 1.0), 0.06, 3, 0.6)
-    near = g.math('MULTIPLY', g.remap(occl, 0.3, 0.98, 1.0, 0.0), g.remap(dirt_noise, 0.3, 0.7, 0.55, 1.0))
+    near = g.math('MULTIPLY', g.remap(occl, 0.5, 0.93, 1.0, 0.0), g.remap(dirt_noise, 0.3, 0.7, 0.55, 1.0))
     col = g.mix(col, grime, near)
     # Cracks: one photo crack net, shown only where a slow noise lets it through.
     cracks = g.image('cracks.png', g.vmath('ADD', g.scaled(p, 1 / 520), g.vmath('SCALE', rnd, scale=0.31)))
@@ -345,7 +347,7 @@ def _slabs(mat, a, b, slab, grime_reach=26):
     bricks.inputs['Mortar Smooth'].default_value = 0.4
     g.link(p, bricks.inputs['Vector'])
     seam = bricks.outputs['Fac']
-    col = g.mix(col, tuple(f['seam']), g.math('MULTIPLY', seam, 0.8))
+    col = g.mix(col, tuple(seam_color or f['seam']), g.math('MULTIPLY', seam, 0.8))
     nrm = g.normal_map('floor_normal.jpg', uv, 0.5)
     nrm = g.bump(g.math('SUBTRACT', 1.0, seam), 0.5, 1.0, nrm)
     g.out(col, 0.88, nrm)
@@ -359,7 +361,7 @@ def _precast(light, wear=0.5, grain_scale=1 / 140):
         n = g.geo('Normal')
         col = g.rgb(light)
         det = g.image('wall.jpg', g.scaled(p, grain_scale), box=True)
-        col = g.shade(col, g.remap(det, 0.0, 1.0, 0.82, 1.06))
+        col = g.shade(col, g.remap(det, 0.0, 1.0, 0.7, 1.12))
         mott = g.noise(g.scaled(p, 1.0), 0.05, 4, 0.6)
         col = g.shade(col, g.remap(mott, 0.3, 0.7, 0.88, 1.04))
         # Bevel faces lean off-axis: chip them lighter in patches.
@@ -368,7 +370,7 @@ def _precast(light, wear=0.5, grain_scale=1 / 140):
         ax = g.math('MAXIMUM', g.math('ABSOLUTE', sep.outputs['X']), g.math('MAXIMUM', g.math('ABSOLUTE', sep.outputs['Y']), g.math('ABSOLUTE', sep.outputs['Z'])))
         edge = g.remap(ax, 0.97, 0.8, 0.0, 1.0)
         chip = g.remap(g.noise(g.scaled(p, 1.0), 0.35, 3, 0.6), 0.45, 0.6, 0.0, 1.0)
-        col = g.mix(col, g.shade(col, 1.18), g.math('MULTIPLY', edge, 0.8))
+        col = g.mix(col, g.shade(col, 1.35), g.math('MULTIPLY', edge, 0.8))
         col = g.mix(col, g.shade(col, 0.55), g.math('MULTIPLY', g.math('MULTIPLY', edge, chip), wear))
         # Vertical faces: streaks and grime toward the foot. Height is world z, which the shear leaves alone.
         side = g.math('SUBTRACT', 1.0, g.math('ABSOLUTE', sep.outputs['Z']))
@@ -466,8 +468,8 @@ def _leaf(mat):
     g = G(mat)
     p = g.pos()
     clump = g.white(g.vmath('SNAP', p, (9, 9, 9)))
-    cells = g.voronoi(g.scaled(p, 1.0), 0.32, 'F1', 'Distance')
-    cellc = g.voronoi(g.scaled(p, 1.0), 0.32, 'F1', 'Color')
+    cells = g.voronoi(g.scaled(p, 1.0), 0.24, 'F1', 'Distance')
+    cellc = g.voronoi(g.scaled(p, 1.0), 0.24, 'F1', 'Color')
     sepc = g.node('ShaderNodeSeparateColor')
     g.link(cellc, sepc.inputs['Color'])
     leafv = sepc.outputs['Red']
@@ -524,14 +526,15 @@ def _glass(mat):
 
 MATERIALS = {
     'floor': lambda m: _slabs(m, SPEC['floor']['a'], SPEC['floor']['b'], SPEC['floor']['slab']),
-    'quay': lambda m: _slabs(m, SPEC['floor']['quay'], SPEC['floor']['quay'], 40),
-    'roof': lambda m: _slabs(m, (0.17, 0.172, 0.175), (0.2, 0.2, 0.205), 80, 14),
-    'concrete': _precast((0.58, 0.57, 0.545)),
-    'concrete_cap': _precast((0.66, 0.65, 0.62), wear=0.7),
+    'quay': lambda m: _slabs(m, SPEC['floor']['quay'], SPEC['floor']['quay'], 40, 26, (0.12, 0.12, 0.12)),
+    'roof': lambda m: _slabs(m, (0.17, 0.172, 0.175), (0.2, 0.2, 0.205), 80, 14, (0.11, 0.11, 0.112)),
+    'concrete': _precast((0.36, 0.358, 0.35)),
+    'concrete_cap': _precast((0.38, 0.375, 0.36), wear=0.8),
     'concrete_dark': _precast((0.36, 0.36, 0.355), wear=0.3),
     'building': _precast((0.3, 0.305, 0.31), wear=0.3, grain_scale=1 / 200),
-    'sandstone': _blocks((0.62, 0.5, 0.36), (0.52, 0.41, 0.29)),
-    'sandstone_cap': _precast((0.7, 0.6, 0.46), wear=0.6),
+    'sandstone': _blocks((0.46, 0.36, 0.25), (0.38, 0.29, 0.2)),
+    'sandstone_cap': _precast((0.46, 0.37, 0.27), wear=0.8),
+    'sandstone_cap_b': _precast((0.41, 0.33, 0.24), wear=0.8),
     'hazard': _hazard,
     'metal': _metal((0.3, 0.31, 0.32)),
     'metal_dark': _metal((0.09, 0.095, 0.1), 0.5, 0.5),
@@ -647,6 +650,7 @@ def strip(points, width, z, mat):
         right.append(part.verts.new(to_blender(px - nx, py - ny, z)))
     for i in range(len(points) - 1):
         f = part.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
+        f.normal_update()
         if f.normal.z < 0:
             f.normal_flip()
     _commit(part, mat, 0)
@@ -661,6 +665,7 @@ def ring_paint(cx, cy, r, width, z, mat, segments=96):
     for i in range(segments):
         j = (i + 1) % segments
         f = part.faces.new((outer[i], inner[i], inner[j], outer[j]))
+        f.normal_update()
         if f.normal.z < 0:
             f.normal_flip()
     _commit(part, mat, 0)

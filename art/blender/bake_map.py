@@ -117,10 +117,10 @@ def barrier(x, y, w, h, r):
         # Lifting eyes on top.
         if along_x and sw >= 60:
             for px in (sx + sw * 0.3, sx + sw * 0.7):
-                S.box(px - 2, sy + sh / 2 - 2, 4, 4, top, top + 0.8, 'metal_dark', top)
+                S.box(px - 1.5, sy + sh / 2 - 4, 3, 8, top, top + 0.3, 'metal_dark', top)
         elif not along_x and sh >= 60:
             for py in (sy + sh * 0.3, sy + sh * 0.7):
-                S.box(sx + sw / 2 - 2, py - 2, 4, 4, top, top + 0.8, 'metal_dark', top)
+                S.box(sx + sw / 2 - 4, py - 1.5, 8, 3, top, top + 0.3, 'metal_dark', top)
     hazard_end(x, y, w, h, top, along_x)
     # Hazard bands on the south face: both ends of a long face, or across a short end.
     if along_x:
@@ -133,11 +133,11 @@ def barrier(x, y, w, h, r):
         for k in range(n + 1):
             t = k / n
             px, py = (x + 8 + t * (w - 16), y + h / 2) if along_x else (x + w / 2, y + 8 + t * (h - 16))
-            S.cylinder(px, py, 1.3, top, top + 9, 'rail', top, 10)
+            S.cylinder(px, py, 1.7, top, top + 9, 'rail', top, 10)
         if along_x:
-            S.hcylinder(x + 8, y + h / 2, x + w - 8, y + h / 2, 1.2, top + 9, 'rail', top)
+            S.hcylinder(x + 8, y + h / 2, x + w - 8, y + h / 2, 1.8, top + 9, 'rail', top)
         else:
-            S.hcylinder(x + w / 2, y + 8, x + w / 2, y + h - 8, 1.2, top + 9, 'rail', top)
+            S.hcylinder(x + w / 2, y + 8, x + w / 2, y + h - 8, 1.8, top + 9, 'rail', top)
 
 
 def stone_wall(x, y, w, h, r):
@@ -147,9 +147,9 @@ def stone_wall(x, y, w, h, r):
     lip = 1.6
     S.box(x + lip, y + lip, w - 2 * lip, h - 2 * lip, 0, top - cap, 'sandstone', top, bevel=1.5)
     along_x = w >= h
-    for s0, sl in segments(x if along_x else y, w if along_x else h, 50):
-        sx, sy, sw, sh = (s0, y, sl, h) if along_x else (x, s0, w, sl)
-        S.box(sx, sy, sw, sh, top - cap, top, 'sandstone_cap', top, bevel=1.0)
+    for sx, sw in segments(x, w, 50):
+        for sy, sh in segments(y, h, 50):
+            S.box(sx, sy, sw, sh, top - cap, top, r.choice(('sandstone_cap', 'sandstone_cap', 'sandstone_cap_b')), top, bevel=1.0)
     S.box(x + lip - 1, y + lip - 1, w - 2 * lip + 2, h - 2 * lip + 2, 0, 4, 'concrete_dark', top, bevel=0.5)
     if max(w, h) >= 300 and min(w, h) >= 80:
         # A long, wide wall carries a rail along one side of its top.
@@ -158,11 +158,11 @@ def stone_wall(x, y, w, h, r):
         for k in range(n + 1):
             t = k / n
             px, py = (x + 10 + t * (w - 20), y + off) if along_x else (x + off, y + 10 + t * (h - 20))
-            S.cylinder(px, py, 1.3, top, top + 9, 'rail', top, 10)
+            S.cylinder(px, py, 1.7, top, top + 9, 'rail', top, 10)
         if along_x:
-            S.hcylinder(x + 10, y + off, x + w - 10, y + off, 1.2, top + 9, 'rail', top)
+            S.hcylinder(x + 10, y + off, x + w - 10, y + off, 1.8, top + 9, 'rail', top)
         else:
-            S.hcylinder(x + off, y + 10, x + off, y + h - 10, 1.2, top + 9, 'rail', top)
+            S.hcylinder(x + off, y + 10, x + off, y + h - 10, 1.8, top + 9, 'rail', top)
 
 
 def fan_unit(x, y, w, h, z, top, fans):
