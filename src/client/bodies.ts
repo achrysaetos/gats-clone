@@ -426,7 +426,7 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   for (const [width, style] of [[SOLDIER.arm * R + ink * 2, INK], [SOLDIER.arm * R, shade(color, 0.86)]] as const) {
     for (const [from, to] of arms) {
       const m = elbow(from, to);
-      ctx.lineWidth = width * (1 + 0.8 * reach(from, to));
+      ctx.lineWidth = width * (1 + 0.35 * reach(from, to));
       ctx.strokeStyle = style;
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
@@ -440,7 +440,7 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   const off = SOLDIER.arm * R * 0.3;
   for (const [from, to] of arms) {
     const m = elbow(from, to);
-    ctx.lineWidth = SOLDIER.arm * R * 0.35 * (1 + 0.8 * reach(from, to));
+    ctx.lineWidth = SOLDIER.arm * R * 0.35 * (1 + 0.35 * reach(from, to));
     ctx.beginPath();
     ctx.moveTo(from.x + lx * off, from.y + ly * off);
     ctx.quadraticCurveTo(m.x + lx * off, m.y + ly * off, to.x + lx * off, to.y + ly * off);
