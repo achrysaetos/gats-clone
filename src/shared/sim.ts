@@ -7,6 +7,7 @@ import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
+import { carrying, ceasefire, moveSpeed } from './sim/extract.ts';
 import { crateHpMax, IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
@@ -81,13 +82,13 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p);
   if (moving) {
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs, MAPS[w.map].size);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, moveSpeed(w, p), dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     life.dash = m.dash;
   }
 
-  const armed = w.match.k === 'playing';
+  const armed = w.match.k === 'playing' && !ceasefire(w);
   if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     life.shieldUntil = -Infinity;
     const muzzle = WORLD.playerRadius + 4;
@@ -111,7 +112,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const ability = abilityOf(p);
-  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
+  if (armed && inp.ability && ability && !carrying(w, p) && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
     if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
   }

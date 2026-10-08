@@ -164,6 +164,24 @@ export type RoyaleView = {
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
 };
 
+export type ExtTeam = 'red' | 'blue';
+/**
+ * Extraction, as every player sees it. `case` is where the data case is: still in the terminal while `progress` (0..1) runs, at the terminal
+ * once hacked, with carrier `by`, or dropped and going home at `returnAt`. `roundEndsAt` is the live round's server deadline; `between` holds
+ * the round just won during the ceasefire before round `round + 1`.
+ */
+export type ExtView = {
+  round: number; attackers: ExtTeam; wins: Record<ExtTeam, number>;
+  terminal: Circle; pad: { x: number; y: number; w: number; h: number };
+  case:
+    | { k: 'hacking'; progress: number; contested: boolean }
+    | { k: 'ready'; x: number; y: number }
+    | { k: 'carried'; by: number; x: number; y: number }
+    | { k: 'dropped'; x: number; y: number; returnAt: number };
+  roundEndsAt: number | null;
+  between: { winner: ExtTeam; why: 'extracted' | 'time'; nextAt: number } | null;
+};
+
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null };
 
@@ -203,10 +221,12 @@ export type Snapshot = {
   run?: RunView;
   /** Last Squad only. */
   royale?: RoyaleView;
+  /** Extraction only. */
+  ext?: ExtView;
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'ext'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
 

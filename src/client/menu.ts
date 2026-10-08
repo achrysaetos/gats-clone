@@ -73,7 +73,7 @@ export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name:
   })));
 }
 
-const MODE_NAMES: Record<ServerInfo['mode'], string> = { FFA: 'Free-for-all', TDM: 'Team deathmatch', DOM: 'Domination', BR: 'Last Squad', ZOM: 'Zombies' };
+const MODE_NAMES: Record<ServerInfo['mode'], string> = { FFA: 'Free-for-all', TDM: 'Team deathmatch', DOM: 'Domination', BR: 'Last Squad', ZOM: 'Zombies', EXT: 'Extraction' };
 
 export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string) => void) {
   if (servers === null) {

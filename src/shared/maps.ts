@@ -211,10 +211,11 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
   DOM: ['warehouse'],
   ZOM: ['outpost'],
   BR: ['warehouse'],
+  EXT: ['vault'],
 };
 
 /** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
-export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity };
+export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity, EXT: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
 export function nextMap(mode: ModeId, current: MapId): MapId {

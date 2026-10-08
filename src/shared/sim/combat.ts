@@ -6,6 +6,7 @@ import { angleDiff, circleHitsRect, clamp, dist2, segmentEntersCircleAt, segment
 import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
 import { damageZombie } from './run.ts';
+import { ceasefire } from './extract.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
 import { crateRect, friendly, newId, trainBody, type Bullet, type Crate, type Player, type Pose, type Shooter, type Thrown, type Wall, type World } from './world.ts';
 
@@ -30,7 +31,7 @@ type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Sh
 type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'fire' | 'bite'; fromX: number; fromY: number; hit?: Hit };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
-  if (victim.life.k === 'dead' || w.match.k === 'over') return;
+  if (victim.life.k === 'dead' || w.match.k === 'over' || ceasefire(w)) return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
   if (victim.life.k === 'downed') {
@@ -84,7 +85,7 @@ export function kill(w: World, victim: Player, killer: Player | null, label: str
   const named = credited ?? killer;
   const bounty = credited !== null && isHunted(w, victim);
   const assisters = assistersOf(w, victim, credited);
-  const knock = w.royale ? fall(w, w.royale, victim, named) : (die(w, victim, w.now + WORLD.respawnMs), false);
+  const knock = w.royale ? fall(w, w.royale, victim, named) : (die(w, victim, MODES[w.mode].respawnAt?.(w) ?? w.now + WORLD.respawnMs), false);
   w.events.push({
     e: 'kill', killer: named?.name ?? '', victim: victim.name, killerId: named?.id ?? null, victimId: victim.id, weapon: label, bounty,
     assisters: assisters.map((p) => p.id), ...(knock && { knock: true as const }),

@@ -6,6 +6,7 @@ import { trainAt } from './train.ts';
 import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 import { newRoyale, farthestEdgeSlot } from './royale.ts';
+import { newExtract, sideSpawns, type Extract } from './extract.ts';
 
 export type Wall = WallView & { expiresAt: number };
 
@@ -215,6 +216,7 @@ export type World = {
   buildingsVersion: number;
   run: Run | null;
   royale: Royale | null;
+  extract: Extract | null;
 };
 
 export const IDLE_INPUT: InputState = {
@@ -244,7 +246,7 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], walls: [], fences: [], wallsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], history: [],
-    zombies: [], buildings: [], buildingsVersion: 0, run: null, royale: null,
+    zombies: [], buildings: [], buildingsVersion: 0, run: null, royale: null, extract: null,
   };
   loadMap(w, map);
   if (mode === 'ZOM') w.run = newRun(w.now);
@@ -276,6 +278,7 @@ export function loadMap(w: World, map: MapId) {
   w.buildings = [];
   w.buildingsVersion++;
   if (w.mode === 'BR') w.royale = newRoyale(w);
+  if (w.mode === 'EXT') w.extract = newExtract(w.now);
 }
 
 export const crateHpMax = (c: Pick<Crate, 'piece' | 'tier'>): number => (c.tier ? CRATE_TIERS[c.tier].hp : KIT[c.piece].breaks?.hp ?? 1);
@@ -337,7 +340,8 @@ export function spawnPoint(w: World, team: Team): Spot {
   const { spawns, siege, size } = MAPS[w.map];
   const solids = solidRects(w);
   if (w.royale) return squadSpawn(w, team, solids, size);
-  const regions = spawns[team === 'red' || team === 'blue' ? team : 'ffa'];
+  const sided = team === 'red' || team === 'blue' ? team : null;
+  const regions = w.extract && sided ? sideSpawns(w, w.extract, sided) : spawns[sided ?? 'ffa'];
   const core = siege?.core;
   if (w.run && core) {
     const inside = defendedPoints(solids, core, size);

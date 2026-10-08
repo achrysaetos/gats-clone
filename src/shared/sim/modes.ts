@@ -3,6 +3,7 @@ import { byRank, type RoundWinner, type Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
 import { emptiestSquad, royaleKill, royaleWinner, startRoyale, tickRoyale } from './royale.ts';
 import { tickRun } from './run.ts';
+import { extractWinner, tickExtract, waveRespawnAt } from './extract.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
 import { loadMap, moveTo, spawnPoint, type Player, type World, type Zone } from './world.ts';
@@ -17,6 +18,8 @@ export type ModeRules = {
   winner(w: World): RoundWinner | null;
   /** Runs once a new round has reset everyone's progress, before the next map loads. */
   start?(w: World): void;
+  /** When the killed come back, if not `WORLD.respawnMs` after they fall. */
+  respawnAt?(w: World): number;
 };
 
 const TEAM_NAME = { red: 'Red team', blue: 'Blue team' } as const;
@@ -115,6 +118,13 @@ export const MODES: Record<ModeId, ModeRules> = {
     tick: tickRoyale,
     winner: royaleWinner,
     start: startRoyale,
+  },
+  EXT: {
+    assignTeam: smallerTeam,
+    onKill: () => {},
+    tick: tickExtract,
+    winner: extractWinner,
+    respawnAt: waveRespawnAt,
   },
 };
 

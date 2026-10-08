@@ -284,7 +284,7 @@ export const PRESS_GRACE_MS = 100;
 /** How far ahead of the gun being ready a click is kept; an earlier click is dropped rather than firing later on its own. */
 export const PRESS_BUFFER_MS = 200;
 
-export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR'] as const;
+export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR', 'EXT'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 
 export const WORLD = {
