@@ -5,7 +5,7 @@
  */
 import type { ClientMsg } from '../shared/protocol.ts';
 import { newestSnap } from './interp.ts';
-import { FIXED_RADIO, cycleStation, hiddenRadios, isStationId, RADIO_MODES, RADIO_REACH, roundKeyOf, STATION_IDS, type StationId, type TrackId } from '../shared/radio.ts';
+import { FIXED_RADIO, cycleStation, hiddenRadios, isStationId, RADIO_INTERVAL_MS, RADIO_MODES, RADIO_REACH, roundKeyOf, STATION_IDS, type StationId, type TrackId } from '../shared/radio.ts';
 import { beatPulse } from './music.ts';
 import { getMapTrack, getPersonalStation, getRoomStation, getStation, playTuneIn, setPersonalStation, setRoomStation } from './music.ts';
 import { drawRadio, drawRadioPrompt, drawRadioToast, drawTuneRings } from './radioart.ts';
@@ -34,6 +34,7 @@ let lastScope = '';
 let touchBtn: HTMLButtonElement | null = null;
 let finds = 0;
 let foundBefore = false;
+let pressedAt = -Infinity;
 const touchScreen = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 const store = {
@@ -128,8 +129,12 @@ export function radioPress(state: ClientState, now: number, send: (msg: ClientMs
   if (state.phase !== 'playing' || !near) return false;
   const r = near;
   if (!r.hidden) {
+    // Like a real radio, the dial turns as you press: play the station now and tell the server, whose echo then changes nothing.
+    // Presses faster than the server takes them are ignored here too, so what you hear never drifts from what the squad hears.
+    if (now - pressedAt < RADIO_INTERVAL_MS + 50) return true;
+    pressedAt = now;
     const next = cycleStation(getStation(), false);
-    if (next) send({ t: 'radio', station: next });
+    if (next) { send({ t: 'radio', station: next }); onRoomRadio(next, now); }
     return true;
   }
   const next = cycleStation(getPersonalStation(), true);
@@ -187,4 +192,4 @@ function syncTouch(show: boolean, label: string) {
 /** What stands where, and which one is near; for tests and the dev probe. */
 export const radioDebug = () => ({ placed: placed.map((r) => ({ x: r.x, y: r.y, hidden: r.hidden, sputtering: r.sputterUntil })), near: near ? { x: near.x, y: near.y } : null });
 
-export const __test = { reset() { placed = []; placedKey = ''; near = null; toasts = []; lastRound = null; finds = 0; foundBefore = false; } };
+export const __test = { reset() { placed = []; placedKey = ''; near = null; toasts = []; lastRound = null; finds = 0; foundBefore = false; pressedAt = -Infinity; } };

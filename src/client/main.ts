@@ -6,7 +6,7 @@ import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout,
 import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
-import { musicDuck, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
+import { musicDuck, musicProbe, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
@@ -1060,7 +1060,7 @@ if (params.has('dev')) {
 }
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion() && shakeScale() > 0) kick = addKick(kick, gun, angle, shakeScale()); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
-if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { pause: { open: () => pause.open(), close: () => pause.close(), isOpen: () => pause.isOpen(), probe: () => pause.probe(), quality: () => qualityProbe(), held: () => [...held], firing: () => firing } });
+if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { pause: { open: () => pause.open(), close: () => pause.close(), isOpen: () => pause.isOpen(), probe: () => pause.probe(), quality: () => qualityProbe(), held: () => [...held], firing: () => firing }, music: musicProbe });
 renderMuted($('muted'), muted, toggleMuted);
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; void wardrobe.refresh(nameInput.value); syncAcct(); });
 /** The wardrobe: level, XP, what you own and wear. A change goes down the socket too, so the room sees it at once. */

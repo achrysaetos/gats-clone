@@ -75,6 +75,31 @@ const TONES: Partial<Record<Inst, ToneSpec>> = {
   padair: { parts: [P('triangle', 1, 1, 1, -8), P('triangle', 1, 1, 1, 8), P('sine', 2, 0.3), P('sine', 3, 0.12)], level: 0.05, att: 0.55, sus: 1, rel: 0.7, filt: { type: 'lowpass', f0: 3000, f1: 3000, tf: 0.1, q: 0.5 }, trem: { rate: 0.3, depth: 0.3 } },
   dread: { parts: [P('sawtooth', 1, 1, 1, -12), P('sawtooth', 1.0595, 0.7), P('sawtooth', 0.5, 0.6)], level: 0.08, att: 0.7, sus: 1, rel: 0.8, filt: { type: 'lowpass', f0: 220, f1: 520, tf: 1.2, q: 2 } },
   clank: { parts: [P('square', 1, 0.5), P('square', 2.76, 0.5, 0.6), P('sine', 5.4, 0.4, 0.35), P('sine', 8.9, 0.25, 0.2)], level: 0.1, att: 0.001, sus: 0, rel: 0.7, chiff: { hz: 3000, q: 1, level: 0.1, ms: 30 } },
+  // Stand-ins for the sampled instruments (musicsamples.ts) while their samples load, or if they never do.
+  piano: { parts: [P('triangle'), P('sine', 2, 0.45, 0.5), P('sine', 3, 0.18, 0.3), P('sine', 4.02, 0.08, 0.2)], level: 0.24, att: 0.002, sus: 0, rel: 1.1, filt: { type: 'lowpass', f0: 4200, f1: 1400, tf: 0.5, q: 0.6 } },
+  honky: { parts: [P('triangle', 1, 1, 1, -14), P('triangle', 1, 1, 1, 14), P('sine', 2, 0.4, 0.5)], level: 0.16, att: 0.002, sus: 0, rel: 0.7, filt: { type: 'lowpass', f0: 4000, f1: 1500, tf: 0.3, q: 0.6 } },
+  tpt: { parts: [P('sawtooth', 1, 1, 1, -4), P('sawtooth', 1, 1, 1, 4), P('square', 1, 0.3)], level: 0.085, att: 0.03, sus: 0.9, rel: 0.1, filt: { type: 'lowpass', f0: 900, f1: 3400, tf: 0.07, q: 2 }, vib: { rate: 5.5, cents: 12, delay: 0.25 } },
+  horn: { parts: [P('sawtooth'), P('triangle', 1, 0.8, 1, 5)], level: 0.11, att: 0.06, sus: 0.9, rel: 0.18, filt: { type: 'lowpass', f0: 500, f1: 1300, tf: 0.12, q: 0.9 }, vib: { rate: 5, cents: 8, delay: 0.3 } },
+  bone: { parts: [P('sawtooth'), P('sawtooth', 1, 0.6, 1, 6)], level: 0.1, att: 0.04, sus: 0.9, rel: 0.12, filt: { type: 'lowpass', f0: 450, f1: 1700, tf: 0.1, q: 1.4 } },
+  timp: { parts: [P('sine'), P('sine', 1.51, 0.45, 0.5), P('sine', 1.99, 0.25, 0.4)], level: 0.5, att: 0.003, sus: 0, rel: 1.3, glide: { cents: 70, time: 0.06 }, chiff: { hz: 300, q: 0.8, level: 0.2, ms: 50 } },
+  bell: { parts: [P('sine'), P('sine', 2, 0.55, 0.8), P('sine', 2.76, 0.4, 0.6), P('sine', 5.4, 0.2, 0.3)], level: 0.13, att: 0.002, sus: 0, rel: 3.2 },
+  pbass: { parts: [P('sawtooth', 1, 0.6), P('sine')], level: 0.42, att: 0.003, sus: 0.6, rel: 0.1, filt: { type: 'lowpass', f0: 2600, f1: 500, tf: 0.12, q: 1.2 } },
+  slap: { parts: [P('sawtooth', 1, 0.5), P('sine'), P('sine', 2, 0.3, 0.3)], level: 0.4, att: 0.002, sus: 0.4, rel: 0.1, filt: { type: 'lowpass', f0: 4200, f1: 450, tf: 0.08, q: 2 }, chiff: { hz: 2600, q: 1, level: 0.12, ms: 15 } },
+  steel: { parts: [P('triangle'), P('sawtooth', 1, 0.3, 0.6)], level: 0.16, att: 0.002, sus: 0, rel: 1, filt: { type: 'lowpass', f0: 4200, f1: 1300, tf: 0.3, q: 0.8 }, glide: { cents: -200, time: 0.09 } },
+  dist: { parts: [P('sawtooth', 1, 1, 1, -10), P('square', 1, 0.6, 1, 10), P('sawtooth', 2, 0.3)], level: 0.06, att: 0.003, sus: 0.85, rel: 0.06, filt: { type: 'lowpass', f0: 2600, f1: 1800, tf: 0.2, q: 1.6 } },
+  od: { parts: [P('sawtooth', 1, 1, 1, -6), P('square', 1, 0.5, 1, 6)], level: 0.06, att: 0.005, sus: 0.9, rel: 0.12, filt: { type: 'lowpass', f0: 3000, f1: 2000, tf: 0.2, q: 2 }, vib: { rate: 5.8, cents: 18, delay: 0.25 } },
+  organ: { parts: [P('sine'), P('sine', 2, 0.7), P('sine', 4, 0.35)], level: 0.06, att: 0.006, sus: 1, rel: 0.05, trem: { rate: 6.3, depth: 0.25 } },
+  bandoneon: { parts: [P('sawtooth', 1, 1, 1, -6), P('sawtooth', 1, 1, 1, 6), P('square', 0.5, 0.4)], level: 0.05, att: 0.015, sus: 1, rel: 0.06, filt: { type: 'lowpass', f0: 1700, f1: 2400, tf: 0.05, q: 1 }, trem: { rate: 5, depth: 0.08 } },
+  violin: { parts: [P('sawtooth', 1, 1, 1, -4), P('sawtooth', 1, 0.7, 1, 5)], level: 0.06, att: 0.06, sus: 0.95, rel: 0.15, filt: { type: 'lowpass', f0: 2800, f1: 3400, tf: 0.1, q: 1.2 }, vib: { rate: 5.6, cents: 20, delay: 0.15 } },
+  fiddle: { parts: [P('sawtooth', 1, 1, 1, -5), P('sawtooth', 1, 0.6, 1, 6)], level: 0.06, att: 0.02, sus: 0.9, rel: 0.1, filt: { type: 'lowpass', f0: 3200, f1: 3200, tf: 0.1, q: 1.4 }, vib: { rate: 6, cents: 16, delay: 0.12 } },
+  flute: { parts: [P('sine'), P('sine', 2, 0.18), P('triangle', 3, 0.05)], level: 0.16, att: 0.05, sus: 0.95, rel: 0.12, vib: { rate: 5, cents: 14, delay: 0.2 }, chiff: { hz: 2400, q: 1.5, level: 0.06, ms: 70 } },
+  sax: { parts: [P('sawtooth'), P('square', 1, 0.5, 1, 4)], level: 0.075, att: 0.02, sus: 0.9, rel: 0.1, filt: { type: 'lowpass', f0: 700, f1: 2300, tf: 0.08, q: 2.2 }, vib: { rate: 5.2, cents: 16, delay: 0.25 } },
+  synbrass: { parts: [P('sawtooth', 1, 1, 1, -10), P('sawtooth', 1, 1, 1, 10)], level: 0.06, att: 0.01, sus: 0.8, rel: 0.1, filt: { type: 'lowpass', f0: 700, f1: 3800, tf: 0.09, q: 1.5 } },
+  choir: { parts: [P('triangle', 1, 1, 1, -9), P('triangle', 1, 1, 1, 9), P('sine', 2, 0.25)], level: 0.06, att: 0.35, sus: 1, rel: 0.6, filt: { type: 'lowpass', f0: 1800, f1: 1800, tf: 0.1, q: 0.7 }, vib: { rate: 4.5, cents: 10, delay: 0.3 } },
+  // Synth leads and bass: an 8-bit square, a synthwave saw, a squelchy synth bass.
+  square: { parts: [P('square')], level: 0.055, att: 0.002, sus: 0.85, rel: 0.03, vib: { rate: 6.5, cents: 22, delay: 0.2 } },
+  saw: { parts: [P('sawtooth', 1, 1, 1, -9), P('sawtooth', 1, 1, 1, 9), P('sawtooth', 2, 0.2)], level: 0.055, att: 0.01, sus: 0.9, rel: 0.25, filt: { type: 'lowpass', f0: 1200, f1: 3200, tf: 0.15, q: 1.5 }, vib: { rate: 5.5, cents: 12, delay: 0.3 } },
+  synbass: { parts: [P('sawtooth'), P('square', 0.5, 0.5)], level: 0.3, att: 0.003, sus: 0.6, rel: 0.06, filt: { type: 'lowpass', f0: 1500, f1: 260, tf: 0.12, q: 4 } },
 };
 
 /** Builds the pitched voices from the table. */
@@ -137,6 +162,7 @@ let hits = 0;
 export const EXTRA_INSTS: readonly Inst[] = [
   ...(Object.keys(TONES) as Inst[]),
   'brush', 'swirl', 'clap', 'bongo', 'sleigh', 'shaker', 'rim', 'chug', 'ohat', 'stomp', 'scrape', 'dust', 'wind', 'drone',
+  'k909', 'kbb', 'krock', 'sbb', 'srock', 'sgate', 'crash', 'ride', 'chip', 'tamb',
 ];
 
 /** All the voices the scores add, keyed by instrument. */
@@ -187,6 +213,52 @@ export function createVoices(k: Kit): Partial<Record<Inst, Voice>> {
     const g = k.env(dest, t, 0.07 * v, dur * 0.4, 0, dur * 0.5);
     src.connect(f).connect(g);
     src.start(t, 0, dur + 0.1); src.stop(t + dur * 0.9 + 0.2);
+  };
+  // ---- the genre kits ----
+  const thump = (t: number, v: number, dest: AudioNode, hz0: number, hz1: number, fall: number, decay: number, peak: number) => {
+    const g = k.env(dest, t, peak * v, 0.002, 0.015, decay);
+    const o = k.osc('sine', hz0, t, t + decay + 0.15, g);
+    o.frequency.exponentialRampToValueAtTime(hz1, t + fall);
+  };
+  // A 909: a long, punchy sine drop with a sharp click.
+  voices.k909 = (t, _m, _d, v, dest) => { thump(t, v, dest, 210, 48, 0.09, 0.42, 0.95); burst(k, t, 0.0005, 0.012, 'highpass', 3500, 0.6, 0.28 * v, dest); };
+  // Boom-bap: round and dull, the top rolled off like an old record.
+  voices.kbb = (t, _m, _d, v, dest) => { thump(t, v, dest, 120, 50, 0.12, 0.3, 0.9); burst(k, t, 0.002, 0.03, 'lowpass', 900, 0.7, 0.25 * v, dest); };
+  // A rock kick: a beater's slap on top of the drop.
+  voices.krock = (t, _m, _d, v, dest) => { thump(t, v, dest, 160, 55, 0.07, 0.24, 0.95); burst(k, t, 0.0005, 0.02, 'bandpass', 3200, 1, 0.3 * v, dest); };
+  voices.sbb = (t, _m, _d, v, dest) => {
+    burst(k, t, 0.002, 0.15, 'bandpass', 1700, 0.8, 0.42 * v, dest);
+    const g = k.env(dest, t, 0.22 * v, 0.001, 0.01, 0.09); k.osc('triangle', 185, t, t + 0.15, g);
+  };
+  voices.srock = (t, _m, _d, v, dest) => {
+    burst(k, t, 0.001, 0.2, 'bandpass', 2200, 0.6, 0.5 * v, dest);
+    burst(k, t, 0.001, 0.08, 'highpass', 5500, 0.5, 0.25 * v, dest);
+    const g = k.env(dest, t, 0.35 * v, 0.001, 0.02, 0.1); const o = k.osc('triangle', 200, t, t + 0.2, g); o.frequency.exponentialRampToValueAtTime(160, t + 0.08);
+  };
+  // The eighties snare: a big burst of room that is shut off dead.
+  voices.sgate = (t, _m, _d, v, dest) => {
+    const src = ctx.createBufferSource(); src.buffer = k.noise;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1600; f.Q.value = 0.5;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.42 * v, t + 0.004); g.gain.setValueAtTime(0.3 * v, t + 0.22); g.gain.linearRampToValueAtTime(0.0001, t + 0.26);
+    src.connect(f).connect(g).connect(dest); src.start(t, (t * 3.1) % 0.5, 0.3);
+    const tg = k.env(dest, t, 0.3 * v, 0.001, 0.01, 0.1); k.osc('triangle', 190, t, t + 0.15, tg);
+  };
+  voices.crash = (t, _m, _d, v, dest) => { burst(k, t, 0.002, 1.5, 'highpass', 4800, 0.4, 0.13 * v, dest); burst(k, t, 0.002, 0.6, 'bandpass', 8200, 1.5, 0.06 * v, dest); };
+  voices.ride = (t, _m, _d, v, dest) => {
+    burst(k, t, 0.001, 0.45, 'highpass', 7000, 0.5, 0.05 * v, dest);
+    for (const hz of [3150, 4720]) { const g = k.env(dest, t, 0.012 * v, 0.001, 0, 0.5); k.osc('square', hz, t, t + 0.55, g); }
+  };
+  // 8-bit noise: a short, hard-edged burst; a low `midi` makes it the snare, none the hat.
+  voices.chip = (t, midi, _d, v, dest) => {
+    const g = ctx.createGain(); const end = t + (midi ? 0.11 : 0.04);
+    g.gain.setValueAtTime(0.16 * v, t); g.gain.setValueAtTime(0.16 * v, end - 0.005); g.gain.linearRampToValueAtTime(0.0001, end);
+    const src = ctx.createBufferSource(); src.buffer = k.noise;
+    const f = ctx.createBiquadFilter(); f.type = midi ? 'bandpass' : 'highpass'; f.frequency.value = midi ? 1400 : 7000; f.Q.value = 0.4;
+    src.connect(f).connect(g).connect(dest); src.start(t, (t * 5.3) % 0.5, end - t + 0.02);
+  };
+  voices.tamb = (t, _m, _d, v, dest) => {
+    burst(k, t, 0.002, 0.11, 'highpass', 6500, 0.5, 0.1 * v, dest);
+    for (const hz of [5100, 6350, 7600]) { const g = k.env(dest, t, 0.012 * v, 0.001, 0, 0.12); k.osc('sine', hz, t, t + 0.15, g); }
   };
   // The propeller hum: two low saws and a wash of noise, chopped by a rotor at 24 Hz.
   voices.drone = (t, midi, dur, v, dest) => {

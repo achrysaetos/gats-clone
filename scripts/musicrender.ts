@@ -7,11 +7,14 @@
  */
 import { createBus } from '../src/client/audio.ts';
 import { createRig } from '../src/client/musicsynth.ts';
-import { TRACKS, TRACK_IDS, type TrackId } from '../src/client/musictracks.ts';
+import { instsOf, TRACKS, TRACK_IDS, type TrackId } from '../src/client/musictracks.ts';
+import { createSampleBank } from '../src/client/musicsamples.ts';
 import { crossfade, heartTier, IDLE_INPUT, layerTargets, LAYER_IDS, levelGain, modeOf, type LayerId, type MusicInput } from '../src/client/musictheory.ts';
 export const SAMPLE_RATE = 44100;
 export type Rendered = { left: Float32Array; right: Float32Array; seconds: number };
 export type Waa = { OfflineAudioContext: new (channels: number, length: number, rate: number) => OfflineAudioContext };
+/** Reads a file published under public/ (the sampled instruments); without one the render uses the synth voices only. */
+export type FetchBytes = (path: string) => Promise<ArrayBuffer>;
 const BUS_GAIN = 0.32;
 const TAIL_S = 4;
 
@@ -34,14 +37,16 @@ const inputAt = (t: number, base: Partial<MusicInput>): MusicInput => {
 };
 
 /** Renders a track through the real rig. `night` renders the Zombies night (minor, heartbeat); `day` the Zombies day (calm only). */
-export async function renderTour(waa: Waa, id: TrackId, o: { seed?: number; night?: boolean; day?: boolean; seconds?: number; tour?: boolean } = {}): Promise<Rendered> {
+export async function renderTour(waa: Waa, id: TrackId, o: { seed?: number; night?: boolean; day?: boolean; seconds?: number; tour?: boolean; fetchBytes?: FetchBytes } = {}): Promise<Rendered> {
   const seed = o.seed ?? 12345;
   const total = o.seconds ?? CADENCE_AT + TAIL_S + 4;
   const base: Partial<MusicInput> = o.night ? { mode: 'zombies', night: true, horde: 1 } : o.day ? { mode: 'zombies', day: true } : {};
   const lead = Math.round(0.2 * SAMPLE_RATE);
   const ctx = new waa.OfflineAudioContext(2, lead + Math.ceil(total * SAMPLE_RATE), SAMPLE_RATE);
   const master = createBus(ctx, ctx.destination);
-  const rig = createRig(ctx, master);
+  const bank = o.fetchBytes ? createSampleBank(ctx, o.fetchBytes) : null;
+  await bank?.load(instsOf(id));
+  const rig = createRig(ctx, master, bank);
   rig.volume.gain.value = BUS_GAIN;
   const track = TRACKS[id];
   const deck = rig.newDeck(track.trim);
@@ -76,7 +81,7 @@ export async function renderTour(waa: Waa, id: TrackId, o: { seed?: number; nigh
 }
 
 /** A map change: `from` plays four bars at hype, then `to` crossfades in over `xfade` seconds (the same curves as music.ts). */
-export async function renderCrossfade(waa: Waa, from: TrackId, to: TrackId, xfade = 3.5, seed = 777): Promise<Rendered> {
+export async function renderCrossfade(waa: Waa, from: TrackId, to: TrackId, xfade = 3.5, seed = 777, fetchBytes?: FetchBytes): Promise<Rendered> {
   const input: MusicInput = { ...IDLE_INPUT, phase: 'play', heat: 1, streak: 4 };
   const A = TRACKS[from], B = TRACKS[to];
   const barsA = 6, spbA = 60 / A.bpm(input), spbB = 60 / B.bpm(input);
@@ -84,7 +89,9 @@ export async function renderCrossfade(waa: Waa, from: TrackId, to: TrackId, xfad
   const total = Math.ceil(swapAt + xfade + 6 * spbB * 4 + 3);
   const ctx = new waa.OfflineAudioContext(2, Math.ceil(total * SAMPLE_RATE), SAMPLE_RATE);
   const master = createBus(ctx, ctx.destination);
-  const rig = createRig(ctx, master);
+  const bank = fetchBytes ? createSampleBank(ctx, fetchBytes) : null;
+  await bank?.load([...instsOf(from), ...instsOf(to)]);
+  const rig = createRig(ctx, master, bank);
   rig.volume.gain.value = BUS_GAIN;
   const target = layerTargets(input);
   const mk = (tr: typeof A) => { const d = rig.newDeck(tr.trim); for (const l of LAYER_IDS) d.layers[l].gain.value = levelGain(target[l]); return d; };

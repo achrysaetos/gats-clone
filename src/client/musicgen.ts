@@ -1,8 +1,10 @@
 /**
- * The bar writer for the per-map scores: a form of sections (intro, A, B, bridge, breakdown...), seeded chord
- * substitutions, motif-based melodies and compact drum-pattern strings. Pure and deterministic: the same
- * (spec, seed, mode, barNo) always returns the same bar, and nothing touches WebAudio.
+ * The bar writer for the per-map scores: a form of sections (intro, A, B, bridge, breakdown...), each track's written theme
+ * (musichook.ts) arranged across the intensity layers, and compact drum-pattern strings. Pure and deterministic: the same
+ * (spec, seed, mode, barNo) always returns the same bar, and nothing touches WebAudio. The tune and the chords under it never
+ * depend on the seed; the seed only picks drum fills and the odd ornament.
  */
+import { bassBar, diatonic, sparse, type HookNote, type Theme } from './musichook.ts';
 import { hash, rng, type Bar, type Chord, type Inst, type LayerId, type Mode, type MusicEvent } from './musictheory.ts';
 
 export type Deg = readonly [root: number, tones: readonly number[]];
@@ -19,12 +21,11 @@ export type Section = {
   bars: number;
   /** One chord per bar, looping if shorter than the section. */
   prog: readonly Deg[];
-  /** A second reading of the section some cycles play instead. */
+  /** A second reading of the section that every other time round plays instead (sections without the tune only). */
   alt?: readonly Deg[];
-  /** Chords that may stand in for the last bar of a four-bar group. */
-  turn?: readonly Deg[];
+  /** Semitones the whole section is lifted by: the last chorus's key change. */
+  lift?: number;
 };
-export type Rhythm = readonly (readonly [step: number, dur: number])[];
 
 export type Cx = {
   spec: TrackSpec;
@@ -53,8 +54,13 @@ export type Cx = {
 export type TrackSpec = {
   id: string;
   tonic: number;
-  /** Scale pitch classes above the tonic, for melodies. */
+  /** Scale pitch classes above the tonic, for harmony lines under the tune. */
   scale: readonly number[];
+  /** The written tune and bass riff. */
+  theme: Theme;
+  /** The minor-mode form's own tune and scale (the Zombies night), when it has one. */
+  minorTheme?: Theme;
+  minorScale?: readonly number[];
   /** How far the off-beat eighths are pushed late, in sixteenths (0 straight, 0.67 a full triplet swing). */
   swing?: number;
   form: { major: readonly Section[]; minor?: readonly Section[] };
@@ -81,19 +87,24 @@ function locate(form: readonly Section[], barNo: number) {
   throw new Error('unreachable');
 }
 
-function chordIn(spec: TrackSpec, mode: Mode, seed: number, barNo: number): { chord: Chord; sec: Section; secIdx: number; barIn: number; cycle: number } {
+/** Sections that sing the theme keep their written chords; the others alternate a second reading every other time round. */
+const HOOK_KINDS: ReadonlySet<SectionKind> = new Set(['A', 'A2', 'B', 'break']);
+
+function chordIn(spec: TrackSpec, mode: Mode, barNo: number): { chord: Chord; sec: Section; secIdx: number; barIn: number; cycle: number } {
   const loc = locate(formOf(spec, mode), barNo);
   const { sec } = loc;
-  const prog = sec.alt && hash(seed, loc.cycle, loc.secIdx, 5) % 2 === 1 ? sec.alt : sec.prog;
-  let deg = prog[loc.barIn % prog.length]!;
-  if (sec.turn && loc.barIn % 4 === 3 && loc.barIn !== sec.bars - 1 && hash(seed, loc.cycle, loc.secIdx, loc.barIn, 9) % 3 === 0) deg = sec.turn[hash(seed, loc.cycle, loc.barIn) % sec.turn.length]!;
+  const prog = sec.alt && !HOOK_KINDS.has(sec.kind) && loc.cycle % 2 === 1 ? sec.alt : sec.prog;
+  const deg = prog[loc.barIn % prog.length]!;
   return { chord: { rootPc: (spec.tonic + deg[0]) % 12, tones: deg[1] }, ...loc };
 }
 
 /** The bar `barNo` of a track, with every event of every layer. */
 export function generateTrackBar(spec: TrackSpec, seed: number, mode: Mode, barNo: number): Bar {
-  const here = chordIn(spec, mode, seed, barNo);
-  const next = chordIn(spec, mode, seed, barNo + 1).chord;
+  const here = chordIn(spec, mode, barNo);
+  const after = chordIn(spec, mode, barNo + 1);
+  // A bar before a key change walks into the lifted chord.
+  const shift = (after.sec.lift ?? 0) - (here.sec.lift ?? 0);
+  const next = { ...after.chord, rootPc: (after.chord.rootPc + shift + 12) % 12 };
   const events: MusicEvent[] = [];
   const swing = spec.swing ?? 0;
   const add: Cx['add'] = (layer, inst, step, dur, midi, vel, tier) => {
@@ -106,7 +117,10 @@ export function generateTrackBar(spec: TrackSpec, seed: number, mode: Mode, barN
     chord: here.chord, next, tonic: spec.tonic, r: rng(hash(seed, barNo, 3, spec.tonic)), cr: rng(hash(seed, barNo, here.cycle, 4, spec.tonic)), add, events,
   };
   spec.build(cx);
-  return { barNo, mode, tonic: spec.tonic, chord: here.chord, degree: (here.chord.rootPc - spec.tonic + 12) % 12, events };
+  const lift = here.sec.lift ?? 0;
+  if (lift) for (const e of events) if (e.midi > 0) e.midi += lift;
+  const chord = lift ? { ...here.chord, rootPc: (here.chord.rootPc + lift) % 12 } : here.chord;
+  return { barNo, mode, tonic: (spec.tonic + lift) % 12, chord, degree: (here.chord.rootPc - spec.tonic + 12) % 12, events };
 }
 
 // ---------------- building blocks ----------------
@@ -125,11 +139,6 @@ export const toneMidi = (cx: Cx, i: number, base = 60) => {
 export const chordNotes = (c: Chord, lo: number, hi: number): number[] => {
   const out: number[] = [];
   for (let m = lo; m <= hi; m++) if (c.tones.some((t) => mod(m - c.rootPc - t, 12) === 0)) out.push(m);
-  return out;
-};
-export const scaleNotes = (tonic: number, scale: readonly number[], lo: number, hi: number): number[] => {
-  const out: number[] = [];
-  for (let m = lo; m <= hi; m++) if (scale.includes(mod(m - tonic, 12))) out.push(m);
   return out;
 };
 
@@ -164,69 +173,6 @@ export function voicing(cx: Cx, layer: LayerId, inst: Inst, vel: number, base = 
   cx.chord.tones.forEach((t, i) => cx.add(layer, inst, step + i * stagger, dur, base + mod(cx.chord.rootPc + t - base, 12), vel));
 }
 
-export type MelodyOpts = {
-  layer: LayerId;
-  inst: Inst;
-  rhythms: readonly Rhythm[];
-  /** Range, midi. */
-  lo: number;
-  hi: number;
-  /** Tells one voice's tune from another's. */
-  salt: number;
-  /** Steps per rhythm unit (4/3 for twelve-eighths bars). */
-  unit?: number;
-  vel?: number;
-  /** Chance each note after the first is left out, decided per cycle. */
-  restP?: number;
-  /** How the section's last bar ends. */
-  cadence?: Rhythm;
-  /** A different scale from the track's. */
-  scale?: readonly number[];
-  /** Largest leap taken now and then, semitones. */
-  leap?: number;
-};
-
-/**
- * One bar of a tune. A section's tune is a four-bar motif answered by a variant in bars 4-7; which of three readings
- * it plays depends on the seed and the cycle, so the hook is recognisable while a 10-minute round keeps changing.
- */
-export function melody(cx: Cx, o: MelodyOpts): MusicEvent[] {
-  const unit = o.unit ?? 1;
-  const variant = hash(cx.seed, cx.cycle, 3) % 3;
-  const key = hash(o.salt, cx.secIdx, variant);
-  const m = cx.barIn % 4;
-  const answer = cx.barIn % 8 >= 4;
-  const fresh = answer && m >= 2 ? 1 : 0;
-  const rr = rng(hash(key, m, fresh, 11));
-  const rhythm = cx.last && o.cadence ? o.cadence : pick(rr, o.rhythms);
-  const rp = rng(hash(key, m, fresh, 12));
-  const sn = scaleNotes(cx.tonic, o.scale ?? cx.spec.scale, o.lo, o.hi);
-  const cn = chordNotes(cx.chord, o.lo, o.hi);
-  const cr = rng(hash(key, 99));
-  const contour = [0, 1, 2, 3].map(() => Math.floor(cr() * 5) - 2);
-  const centre = Math.min(sn.length - 1, Math.max(0, Math.floor(sn.length / 2) + contour[m]! * 2));
-  const target = sn[centre]!;
-  let cur = cn.reduce((best, n) => (Math.abs(n - target) < Math.abs(best - target) ? n : best), cn[0]!);
-  const rest = rng(hash(cx.seed, cx.barNo, cx.cycle, 21));
-  const out: MusicEvent[] = [];
-  rhythm.forEach(([s, dur], idx) => {
-    const step = s * unit;
-    if (idx > 0 && o.restP && rest() < o.restP && !(cx.last && idx === rhythm.length - 1)) return;
-    const onBeat = Math.abs(step % 4) < 0.01;
-    const pool = onBeat ? cn : sn;
-    const reach = rp() < 0.2 ? (o.leap ?? 7) : 3;
-    const near = pool.filter((n) => Math.abs(n - cur) <= reach);
-    // A tune moves: most of the time the next note is not the one just played.
-    const moved = near.filter((n) => n !== cur);
-    cur = pick(rp, moved.length && rp() < 0.8 ? moved : near.length ? near : pool);
-    if (cx.last && idx === rhythm.length - 1) cur = cn.reduce((best, n) => (Math.abs(n - (o.lo + o.hi) / 2) < Math.abs(best - (o.lo + o.hi) / 2) ? n : best), cn[0]!);
-    const ev: MusicEvent = { layer: o.layer, inst: o.inst, step: 0, dur: 0, midi: cur, vel: 0 };
-    cx.add(o.layer, o.inst, step, dur * unit, cur, (o.vel ?? 1) * (onBeat ? 1 : 0.82));
-    out.push({ ...ev, step, dur: dur * unit, vel: onBeat ? 1 : 0.82 });
-  });
-  return out;
-}
-
 /** Converts a rhythm written in eighths of a 12/8 bar into steps. */
 export const E12 = 4 / 3;
 
@@ -237,9 +183,86 @@ export function comp(cx: Cx, layer: LayerId, inst: Inst, str: string, vel = 1, b
   }
 }
 
-/** A bass line on the hits of a pattern string: hit k plays the root plus `offs[k % offs.length]` semitones. */
-export function bassLine(cx: Cx, layer: LayerId, inst: Inst, str: string, offs: readonly number[], vel = 1, lo = 36, dur = 2) {
-  const root = rootMidi(cx, lo);
-  parsePat(str).forEach(([step, v], k) => cx.add(layer, inst, step, dur, root + offs[k % offs.length]!, v * vel));
+
+
+// ---------------- the theme ----------------
+
+/** Which part of the theme this bar sings: the A tune, the B tune, a fragment of A in a breakdown, or none. */
+export function hookPart(cx: Cx): 'A' | 'B' | 'tease' | null {
+  const k = cx.sec.kind;
+  return k === 'A' || k === 'A2' ? 'A' : k === 'B' ? 'B' : k === 'break' ? 'tease' : null;
+}
+const themeOf = (cx: Cx): Theme => (cx.mode === 'minor' && cx.spec.minorTheme) || cx.spec.theme;
+const scaleOf = (cx: Cx) => (cx.mode === 'minor' && cx.spec.minorScale) || cx.spec.scale;
+/** The theme's notes for this bar: the tune of an A or B section, the hook's first two bars over and over in a breakdown. */
+export function hookNotes(cx: Cx): readonly HookNote[] {
+  const th = themeOf(cx), part = hookPart(cx);
+  if (part === 'A') return th.A[cx.barIn % th.A.length]!;
+  if (part === 'B') return th.B[cx.barIn % th.B.length]!;
+  if (part === 'tease') return th.A[cx.barIn % 2]!;
+  return [];
 }
 
+/** Notes onto a layer, `shift` semitones moved, accented on the beat. Tagged as the hook so tests and tools can find the tune. */
+export function play(cx: Cx, layer: LayerId, inst: Inst, notes: readonly HookNote[], vel = 1, shift = 0, tag = true) {
+  for (const n of notes) {
+    const before = cx.events.length;
+    cx.add(layer, inst, n.step, n.dur, n.midi + shift, vel * (Math.abs(n.step % 4) < 0.01 ? 1 : 0.85));
+    if (tag) cx.events[before]!.tag = 'hook';
+  }
+}
+
+/** The bass riff for this bar, its root the lowest at or above `lo`. */
+export function riff(cx: Cx, layer: LayerId, inst: Inst, lo: number, vel = 1, shift = 0) {
+  for (const n of bassBar(themeOf(cx), cx.barIn, cx.chord, cx.next, lo)) cx.add(layer, inst, n.step, n.dur, n.midi + shift, vel * (Math.abs(n.step % 4) < 0.01 ? 1 : 0.8));
+}
+
+/** A diatonic line `steps` scale places from the notes (a third under is -2). */
+const harmonise = (cx: Cx, notes: readonly HookNote[], steps = -2) => diatonic(notes, cx.tonic, scaleOf(cx), steps);
+
+export type Arrangement = {
+  /** The voice that sings the tune once a fight starts. */
+  lead: Inst;
+  vel?: number;
+  /** The A2 statement's voice (and the A's, every other time round). */
+  alt?: Inst;
+  /** The quiet layer's voice: the A whole and the rest's skeleton, so the hook is there even with no fight. */
+  calm: Inst;
+  calmVel?: number;
+  /** Doubles the tune in the hype layer, `dblShift` semitones away (an octave up unless set). */
+  dbl?: Inst;
+  dblShift?: number;
+  dblVel?: number;
+  /** Sings a third under the tune: the A2's hype and every statement's finale. */
+  harm?: Inst;
+  harmVel?: number;
+  /** Plays the bass riff `riffShift` up in a bridge, where the tune rests. */
+  riffInst?: Inst;
+  riffLo?: number;
+  riffShift?: number;
+  riffVel?: number;
+};
+
+/**
+ * The standard staging of a theme: its skeleton in calm, the whole tune in combat, a double (or, in the A2, a harmony) in hype,
+ * the harmony in the finale. A breakdown teases the hook's opening on the calm voice; a bridge hands the riff to a lead voice.
+ */
+export function stageHook(cx: Cx, a: Arrangement) {
+  const part = hookPart(cx);
+  const notes = hookNotes(cx);
+  if (part === 'tease') { play(cx, 'calm', a.calm, notes, (a.calmVel ?? 0.45) * 1.2); return; }
+  if (part === null) {
+    if (cx.sec.kind === 'bridge' && a.riffInst) riff(cx, 'combat', a.riffInst, a.riffLo ?? 36, a.riffVel ?? 0.6, a.riffShift ?? 24);
+    return;
+  }
+  const second = cx.sec.kind === 'A2';
+  const swap = second !== (cx.cycle % 2 === 1);
+  // Calm sings the A softly but whole (it is what you hear at a radio with no fight on), and only the skeleton of the rest.
+  play(cx, 'calm', a.calm, cx.sec.kind === 'A' ? notes : sparse(notes), a.calmVel ?? 0.45);
+  play(cx, 'combat', swap && a.alt ? a.alt : a.lead, notes, a.vel ?? 0.8);
+  const harm = a.harm ?? a.lead;
+  if (second) play(cx, 'hype', harm, harmonise(cx, notes), a.harmVel ?? 0.5);
+  else if (a.dbl) play(cx, 'hype', a.dbl, notes, a.dblVel ?? 0.45, a.dblShift ?? 12);
+  if (second && a.dbl) play(cx, 'finale', a.dbl, notes, a.dblVel ?? 0.45, a.dblShift ?? 12);
+  else if (!second) play(cx, 'finale', harm, harmonise(cx, notes), a.harmVel ?? 0.5);
+}

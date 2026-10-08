@@ -1,10 +1,11 @@
 /**
- * The adaptive soundtrack: a toy-military march built bar by bar from a seeded chord progression, in layers that swell with the fight.
+ * The adaptive soundtrack: each map's written theme (musichook.ts) played bar by bar, in layers that swell with the fight.
  * `musicStart` runs from a user gesture, `musicUpdate` once a frame; `onBeat` and `getBeat` give the visuals a clock.
  */
 import { newestSnap } from './interp.ts';
 import { createRig, type Deck, type Rig } from './musicsynth.ts';
-import { pickTrack, trackIdFor, TRACKS, type TrackDef, type TrackId } from './musictracks.ts';
+import { instsOf, pickTrack, trackIdFor, TRACKS, type TrackDef, type TrackId } from './musictracks.ts';
+import { createSampleBank } from './musicsamples.ts';
 import type { StationId } from '../shared/radio.ts';
 import { NO_TRACKER, observe, type MusicCue, type MusicTracker } from './musicstate.ts';
 import {
@@ -25,6 +26,8 @@ const DEAD_CUTOFF_HZ = 650;
 const ZKILL_GAP_S = 0.35;
 /** A map change crossfades the old track out and the new one in over this long. */
 export const XFADE_S = 3.5;
+/** A radio retune is a real radio's: the old station is cut this fast and the new one starts at once, under the tune-in static. */
+export const RETUNE_CUT_S = 0.05;
 
 export type BeatInfo = { beat: number; phase: number; bar: number; beatInBar: number; step: number; bpm: number; audible: boolean };
 export type BeatEvent = { beat: number; bar: number; beatInBar: number; downbeat: boolean; time: number };
@@ -44,7 +47,7 @@ let bars: BarClock[] = [];
 let barModes = new Map<number, Mode>();
 const barLocal = new Map<number, { local: number; track: TrackId }>();
 /** What the playing deck is: its track, its first global bar, the layers audible when it was last replaced. */
-type Playing = { track: TrackDef; deck: Deck; startBar: number };
+type Playing = { track: TrackDef; deck: Deck; startBar: number; map: TrackId; station: StationId | null; fadeIn: { t: number; x: number } | null };
 let current: Playing | null = null;
 /** The deck fading out, still being fed its own bars until `endT`. */
 let leaving: (Playing & { local: number; nextT: number; endT: number; mode: Mode; on: Record<LayerId, boolean> }) | null = null;
@@ -83,16 +86,18 @@ function applyVolume() {
 export function musicStart(audioCtx: AudioContext, out: AudioNode) {
   if (rig) { void ctx?.resume(); return; }
   ctx = audioCtx;
-  rig = createRig(ctx, out);
+  // The sampled instruments come from public/music/; until a track's arrive, its synth voices play.
+  rig = createRig(ctx, out, createSampleBank(ctx, (path) => fetch(path).then((r) => { if (!r.ok) throw new Error(`${path}: ${r.status}`); return r.arrayBuffer(); })));
+  void rig.samples?.load(instsOf(wantTrack));
   applyVolume();
-  current = { track: TRACKS[wantTrack], deck: rig.newDeck(TRACKS[wantTrack].trim), startBar: barNo };
+  current = { track: TRACKS[wantTrack], deck: rig.newDeck(TRACKS[wantTrack].trim), startBar: barNo, map: mapTrack, station: effectiveStation(), fadeIn: null };
   nextBarT = ctx.currentTime + 0.12;
   timer = setInterval(tick, TICK_MS);
   (timer as { unref?: () => void }).unref?.();
   tick();
 }
 
-/** Writes a different march: a new key, progressions and tunes. Takes effect from the next bar. */
+/** Reseeds the score's small ornaments (drum fills, sparkles); every track's tune, chords and key stay its own. Takes effect from the next bar. */
 export function musicSeed(n: number) { seed = hash(n, 17); }
 
 function activeLayers(): Record<LayerId, boolean> {
@@ -102,24 +107,58 @@ function activeLayers(): Record<LayerId, boolean> {
   return on;
 }
 
-/** Begins the next track at `t`: the old deck keeps playing its own bars for the crossfade while the new one fades in. */
+/**
+ * A radio retune, the way a real radio does it: the old station is cut within `RETUNE_CUT_S` and the new one starts right away, on its hook,
+ * at `t` (a moment from now, mid-bar if need be), while the tune-in static covers the join. The bar clock restarts from the new station's bar.
+ */
+function retune(t: number, id: TrackId) {
+  if (!rig || !ctx || !current) return;
+  const old = current;
+  const g = old.deck.fade.gain;
+  if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(t); else { g.cancelScheduledValues(0); g.setValueAtTime(g.value, t); }
+  g.linearRampToValueAtTime(0, t + RETUNE_CUT_S);
+  // Whatever the old deck had scheduled plays on into silence; it goes once its last bar is over.
+  const dead = old.deck;
+  setTimeout(() => { if (rig) rig.disposeDeck(dead); }, (Math.max(nextBarT, t) - ctx.currentTime + 1.5) * 1000);
+  if (leaving) { const gone = leaving.deck; leaving.deck.fade.gain.cancelScheduledValues(0); leaving.deck.fade.gain.setValueAtTime(0, t); setTimeout(() => { if (rig) rig.disposeDeck(gone); }, 3000); leaving = null; }
+  const track = TRACKS[id];
+  void rig.samples?.load(instsOf(id));
+  const deck = rig.newDeck(track.trim);
+  for (const l of LAYER_IDS) deck.layers[l].gain.value = levelGain(levels[l]);
+  deck.fade.gain.setValueAtTime(0, ctx.currentTime);
+  deck.fade.gain.setValueAtTime(0, t);
+  deck.fade.gain.linearRampToValueAtTime(1, t + RETUNE_CUT_S);
+  current = { track, deck, startBar: barNo - track.hookStart[modeOf(input)], map: mapTrack, station: effectiveStation(), fadeIn: null };
+  nextBarT = t;
+}
+
+/** Begins the next track at `t` after a map change: the old deck keeps playing its own bars for an `XFADE_S` crossfade while the new one fades in. */
 function switchTrack(t: number, id: TrackId) {
   if (!rig || !ctx || !current) return;
   const old = current;
   const oldLocal = barNo - old.startBar;
   const on = activeLayers();
-  const x = Math.max(0.5, XFADE_S);
-  const curveOut = Float32Array.from({ length: 32 }, (_, i) => crossfade(i / 31).a);
+  const x = XFADE_S;
+  // A deck still fading in (a quick second retune) fades out from where it had got to, not from full.
+  const from = old.fadeIn && t < old.fadeIn.t + old.fadeIn.x ? crossfade(Math.max(0, t - old.fadeIn.t) / old.fadeIn.x).b : 1;
+  const curveOut = Float32Array.from({ length: 32 }, (_, i) => from * crossfade(i / 31).a);
   const curveIn = Float32Array.from({ length: 32 }, (_, i) => crossfade(i / 31).b);
-  old.deck.fade.gain.cancelScheduledValues(t);
-  old.deck.fade.gain.setValueAtTime(1, t);
-  old.deck.fade.gain.setValueCurveAtTime(curveOut, t, x);
+  const g = old.deck.fade.gain;
+  try {
+    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(t); else g.cancelScheduledValues(t);
+    g.setValueCurveAtTime(curveOut, t, x);
+  } catch {
+    // Some engines refuse a curve over one still running: cut the old deck at once rather than leave it playing at full.
+    g.cancelScheduledValues(0);
+    g.setValueAtTime(0, t);
+  }
   const track = TRACKS[id];
+  void rig.samples?.load(instsOf(id));
   const deck = rig.newDeck(track.trim);
   for (const l of LAYER_IDS) deck.layers[l].gain.value = levelGain(levels[l]);
   deck.fade.gain.setValueAtTime(0, ctx.currentTime);
   deck.fade.gain.setValueCurveAtTime(curveIn, t, x);
-  current = { track, deck, startBar: barNo };
+  current = { track, deck, startBar: barNo, map: mapTrack, station: effectiveStation(), fadeIn: { t, x } };
   leaving = { ...old, local: oldLocal, nextT: t, endT: t + x, mode: barModes.get(barNo - 1) ?? 'major', on };
   const dead = old.deck;
   setTimeout(() => { if (rig) rig.disposeDeck(dead); }, (t - ctx.currentTime + x + 2.5) * 1000);
@@ -128,6 +167,8 @@ function switchTrack(t: number, id: TrackId) {
 function tick() {
   if (!ctx || !rig || !current) return;
   const now = ctx.currentTime;
+  // The radio retunes at once; a new map's track waits for the bar line and crossfades.
+  if (wantTrack !== current.track.id && current.map === mapTrack && current.station !== effectiveStation()) retune(now + 0.02, wantTrack);
   while (nextBarT < now + LOOKAHEAD_S) {
     if (wantTrack !== current.track.id) switchTrack(nextBarT, wantTrack);
     const mode = modeOf(input);
@@ -136,6 +177,7 @@ function tick() {
     const bar = current.track.bar(seed, mode, local);
     const on = activeLayers();
     if (audible()) rig.playBar({ ...bar, events: bar.events.filter((e) => on[e.layer]) }, nextBarT, spb, heartTier(input.horde), current.deck);
+    lastBar = { track: current.track.id, at: nextBarT, voices: [...new Set(bar.events.filter((e) => on[e.layer]).map((e) => e.inst))], tune: bar.events.filter((e) => e.tag === 'hook' && on[e.layer]).map((e) => e.midi) };
     bars.push({ t0: nextBarT, spb, barNo });
     barModes.set(barNo, mode);
     barLocal.set(barNo, { local, track: current.track.id });
@@ -150,7 +192,8 @@ function tick() {
     leaving.local++;
     leaving.nextT += spb * 4;
   }
-  if (leaving && leaving.nextT >= leaving.endT) leaving = null;
+  // The crossfade is over once the old deck has faded out, not when its last bar was handed over.
+  if (leaving && now >= leaving.endT) leaving = null;
   if (bars.length > 12) { for (const b of bars.slice(0, -12)) { barModes.delete(b.barNo); barLocal.delete(b.barNo); } bars = bars.slice(-12); }
   const at = beatAt(bars, now - (ctx.outputLatency || ctx.baseLatency || 0));
   if (at) {
@@ -307,5 +350,8 @@ export const getCrossfade = (): { from: TrackId; to: TrackId } | null => (leavin
 export function playTuneIn() {
   if (rig && ctx && audibleBase()) rig.playTuneIn(ctx.currentTime + 0.01);
 }
+let lastBar: { track: TrackId; at: number; voices: string[]; tune: number[] } | null = null;
+/** What the director is doing, for the `?dev` probe: the station, the track wanted and playing, the crossfade, and the last bar handed to the synth. */
+export const musicProbe = () => ({ station: effectiveStation(), mapTrack, want: wantTrack, playing: current?.track.id ?? null, crossfade: getCrossfade(), now: ctx?.currentTime ?? null, lastBar });
 /** The scheduler step; the page runs it on a timer, tests drive it. */
 export const musicTick = tick;

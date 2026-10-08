@@ -61,7 +61,7 @@ test('E at a hidden radio cycles your own music through the map default and Off,
   assert.equal(getPersonalStation(), null);
 });
 
-test('the fixed radio asks the server, and the squad\'s station is the one the server says', () => {
+test('the fixed radio turns at once and tells the server, and the squad\'s station is the one the server says', () => {
   reset();
   const at = FIXED_RADIO.outpost!;
   const state = stateOf(snapAt({ mode: 'ZOM', x: at.x + 30, y: at.y, round: null }), 'outpost');
@@ -70,7 +70,9 @@ test('the fixed radio asks the server, and the squad\'s station is the one the s
   assert.deepEqual(radioDebug().placed.map(({ x, y, hidden }) => ({ x, y, hidden })), [{ ...at, hidden: false }]);
   assert.equal(radioPress(state, 50, (m) => sent.push(m)), true);
   assert.deepEqual(sent, [{ t: 'radio', station: 'march' }], 'untuned, the dial starts at the first station');
-  assert.equal(getRoomStation(), null, 'nothing changes until the server answers');
+  assert.equal(getRoomStation(), 'march', 'like a real radio, the station changes as you press, before the server answers');
+  assert.equal(radioPress(state, 200, (m) => sent.push(m)), true);
+  assert.equal(sent.length, 1, 'a press faster than the server takes them is ignored, so you never drift from the squad');
   onRoomRadio('march', 100);
   assert.equal(getRoomStation(), 'march');
   onRoomRadio('wasteland', 600);

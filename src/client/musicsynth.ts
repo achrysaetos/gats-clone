@@ -1,9 +1,10 @@
 /**
- * The voices of the soundtrack. Everything is synthesized, and everything takes a BaseAudioContext, so the same rig plays live
- * and renders offline (the offline render is how the mix is measured).
+ * The voices of the soundtrack: synthesized drums and voices, and sampled instruments (musicsamples.ts) wherever their samples have loaded.
+ * Everything takes a BaseAudioContext, so the same rig plays live and renders offline (the offline render is how the mix is measured).
  */
 import { LAYER_IDS, MID_C, midiToHz, STEPS_PER_BAR, type Bar, type Chord, type Inst, type LayerId, type Mode } from './musictheory.ts';
 import { createVoices } from './musicvoices.ts';
+import type { SampleBank } from './musicsamples.ts';
 
 /** One track's set of layer gains. A map change crossfades between two decks; each fades under its own gain. */
 export type Deck = { layers: Record<LayerId, GainNode>; trim: GainNode; fade: GainNode };
@@ -21,6 +22,8 @@ export type Rig = {
   volume: GainNode;
   /** Radio sounds (tune-in static, dial clicks): they skip the music's own gate so turning the radio Off still clicks. */
   fx: GainNode;
+  /** The sampled instruments, if any: a note whose instrument has loaded plays the sample, any other the synth voice. */
+  samples: SampleBank | null;
   playTuneIn(t: number): void;
   playBar(bar: Bar, t0: number, spb: number, heartTier: 0 | 1 | 2, deck: Deck): void;
   playSting(chord: Chord, mode: Mode, streak: number, t: number, bounty?: boolean, inst?: Inst): void;
@@ -50,7 +53,7 @@ function makeReverb(ctx: BaseAudioContext): AudioBuffer {
   return buf;
 }
 
-export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
+export function createRig(ctx: BaseAudioContext, out: AudioNode, samples: SampleBank | null = null): Rig {
   const noise = makeNoise(ctx);
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.18;
@@ -207,6 +210,8 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
       const t = t0 + e.step * step;
       const dest = deck.layers[e.layer];
       const dur = e.dur * step;
+      const sampled = samples?.voice(e.inst);
+      if (sampled) { sampled(t, e.midi, dur, e.vel, dest); continue; }
       switch (e.inst) {
         case 'kick': kick(t, e.vel, dest); break;
         case 'snare': snare(t, e.vel, dest); break;
@@ -225,7 +230,8 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
 
   /** Chord tones climbing from the chord's root, so a kill rings in the key the march is in. */
   function playSting(chord: Chord, mode: Mode, streak: number, t: number, bounty = false, inst: Inst = 'glock') {
-    const bell = (tt: number, m: number, v: number) => (inst === 'glock' ? glock(tt, m, v, direct) : extra[inst]?.(tt, m, 0.3, v, direct) ?? glock(tt, m, v, direct));
+    const sampled = samples?.voice(inst);
+    const bell = (tt: number, m: number, v: number) => (sampled ? sampled(tt, m, 0.3, v, direct) : inst === 'glock' ? glock(tt, m, v, direct) : extra[inst]?.(tt, m, 0.3, v, direct) ?? glock(tt, m, v, direct));
     const root = MID_C + 12 + ((chord.rootPc - 0) % 12);
     const climb: number[] = [];
     const count = 3 + Math.min(3, Math.max(0, streak - 1));
@@ -305,21 +311,22 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
     src.loop = true;
     const f = ctx.createBiquadFilter();
     f.type = 'bandpass'; f.Q.value = 1.2;
-    f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(3600, t + 0.2); f.frequency.exponentialRampToValueAtTime(1100, t + 0.42);
+    f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(3600, t + 0.12); f.frequency.exponentialRampToValueAtTime(1100, t + 0.25);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     // Crackle: the static is gated in short bursts that thin out as the station comes in.
-    for (let i = 0; i < 9; i++) {
-      const a = t + 0.02 + i * 0.045;
+    // About a quarter of a second: a sweep across the dial while the old station drops out and the new one comes in under it.
+    for (let i = 0; i < 6; i++) {
+      const a = t + 0.01 + i * 0.04;
       g.gain.setValueAtTime(0.0001, a);
-      g.gain.linearRampToValueAtTime(0.2 * (1 - i / 11), a + 0.006);
-      g.gain.setValueAtTime(0.2 * (1 - i / 11), a + 0.024);
-      g.gain.exponentialRampToValueAtTime(0.0001, a + 0.04);
+      g.gain.linearRampToValueAtTime(0.2 * (1 - i / 8), a + 0.005);
+      g.gain.setValueAtTime(0.2 * (1 - i / 8), a + 0.022);
+      g.gain.exponentialRampToValueAtTime(0.0001, a + 0.036);
     }
     src.connect(f).connect(g).connect(fx);
-    src.start(t, 0, 0.5); src.stop(t + 0.5);
-    click(t + 0.44, 1100);
+    src.start(t, 0, 0.3); src.stop(t + 0.3);
+    click(t + 0.25, 1100);
   }
 
-  return { ctx, newDeck, disposeDeck, duck, tone, volume, fx, playTuneIn, playBar, playSting, playCadence };
+  return { ctx, newDeck, disposeDeck, duck, tone, volume, fx, samples, playTuneIn, playBar, playSting, playCadence };
 }

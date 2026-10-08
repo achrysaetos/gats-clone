@@ -1,99 +1,96 @@
 /**
- * Scores for the harbour, night market, museum, submarine pen and park. Each is a `TrackSpec` (musicgen.ts): a form of sections
- * and a `build` that writes one bar into the five intensity layers (calm, combat, hype, finale; heart is the Zombies night's).
+ * Scores for the harbour (a sea shanty), the night market (city-pop future-funk), the museum (a smoky jazz trio), the submarine pen (industrial
+ * techno) and the park (indie-pop picnic). Each is a `TrackSpec` (musicgen.ts): a written theme (musichook.ts: an A hook, a B tune and a bass
+ * riff, the same notes every time), a form whose A and B carry the theme's own chords, and a `build` that writes one bar into the intensity
+ * layers (calm, combat, hype, finale). Each genre has its own band, drum kit and groove; the sampled instruments are in musicsamples.ts.
  */
-import { bassLine, chordNotes, comp, d, E12, fillKind, melody, pat, pick, Q, roll, rootMidi, scaleNotes, toneMidi, voicing, type Cx, type Rhythm, type Section, type TrackSpec } from './musicgen.ts';
+import { chordNotes, comp, d, E12, fillKind, pat, pick, Q, riff, roll, rootMidi, stageHook, toneMidi, voicing, type Section, type TrackSpec } from './musicgen.ts';
+import { theme } from './musichook.ts';
 
-const sec = (kind: Section['kind'], bars: number, prog: Section['prog'], alt?: Section['alt'], turn?: Section['turn']): Section => ({ kind, bars, prog, alt, turn });
-const E = (r: readonly (readonly [number, number])[]): Rhythm => r.map(([s, n]) => [s, n] as const);
+const sec = (kind: Section['kind'], bars: number, prog: Section['prog'], o: { alt?: Section['alt']; lift?: number } = {}): Section => ({ kind, bars, prog, ...o });
 
-// ================= HARBOUR: sea-shanty swing in 12/8 =================
-// D dorian, 108 beats a minute where a beat is a dotted quarter: oom (tuba) on 1 and 3, pah (accordion) on 2 and 4, a heave-ho stomp, a gull for a lead.
-const hi = d(0, Q.min), hVII = d(10, Q.maj), hIV = d(5, Q.maj), hIII = d(3, Q.maj), hv = d(7, Q.min), hV = d(7, Q.maj);
-const SHANTY: readonly Rhythm[] = [
-  E([[0, 3], [3, 2], [5, 1], [6, 3], [9, 3]]), E([[0, 2], [2, 1], [3, 3], [6, 2], [8, 1], [9, 3]]),
-  E([[0, 1], [1, 1], [2, 1], [3, 3], [6, 3], [9, 2], [11, 1]]), E([[0, 3], [3, 3], [6, 2], [8, 1], [9, 1], [10, 2]]),
-];
+// ================= HARBOUR: a sea shanty in 12/8 =================
+// D dorian, 108 dotted-quarter beats a minute. A fiddle lead, an accordion and a tuba, a deck stomp and claps, a bodhran under the jig.
+const hi = d(0, Q.min), hVII = d(10, Q.maj), hIV = d(5, Q.maj), hIII = d(3, Q.maj), hV = d(7, Q.maj);
+const H_A = [hi, hVII, hi, hVII, hi, hIV, hVII, hV], H_B = [hIII, hVII, hi, hi, hIII, hVII, hV, hV];
 export const HARBOR: TrackSpec = {
   id: 'harbor', tonic: 2, scale: [0, 2, 3, 5, 7, 9, 10],
+  // A quarter-eighth lilt that tumbles down the D minor chord from the top and heaves back up (D'-C-A-F-D, F-A), then the same a step down.
+  theme: theme({
+    meter: 12,
+    A: 'D6:2 C6:1 A5:2 F5:1 D5:3 F5:2 A5:1 | C6:2 B5:1 G5:2 E5:1 C5:3 E5:2 G5:1 | D6:2 C6:1 A5:2 F5:1 D5:2 E5:1 F5:2 A5:1 | G5:2 F5:1 E5:2 D5:1 C5:6 |'
+      + ' A5:2 A5:1 A5:2 G5:1 F5:2 E5:1 D5:3 | B5:2 B5:1 B5:2 A5:1 G5:2 A5:1 B5:3 | C6:2 B5:1 A5:2 G5:1 E5:2 G5:1 C5:3 | E5:3 A5:3 E5:6',
+    B: 'F5:3 A5:3 C6:3 A5:3 | G5:3 E5:3 C5:6 | D5:2 E5:1 F5:2 G5:1 A5:6 | F5:2 E5:1 D5:9 | F5:3 A5:3 C6:3 D6:3 | C6:3 G5:3 E5:6 | E5:2 F5:1 E5:2 D5:1 C#5:6 | E5:6 A5:6',
+    bass: '1:3 5,:3 1:3 5,:2 ^:1',
+  }),
   form: {
     major: [
       sec('intro', 4, [hi, hi, hVII, hi]),
-      sec('A', 8, [hi, hVII, hi, hVII, hi, hIV, hVII, hV], [hi, hVII, hIII, hVII, hi, hIV, hv, hV], [hVII]),
-      sec('A2', 8, [hi, hVII, hi, hVII, hi, hIV, hVII, hV], [hi, hVII, hIII, hVII, hi, hIV, hv, hV], [hIII]),
-      sec('B', 8, [hIII, hVII, hi, hi, hIII, hVII, hV, hV], [hIII, hVII, hi, hIV, hIII, hVII, hV, hi]),
-      sec('A', 8, [hi, hVII, hi, hVII, hi, hIV, hVII, hV], [hi, hVII, hIII, hVII, hi, hIV, hv, hV], [hVII]),
+      sec('A', 8, H_A),
+      sec('A2', 8, H_A),
+      sec('B', 8, H_B),
+      sec('A', 8, H_A),
       sec('bridge', 8, [hIV, hi, hIV, hi, hVII, hIII, hVII, hV]),
-      sec('B', 8, [hIII, hVII, hi, hi, hIII, hVII, hV, hV], [hIII, hVII, hi, hIV, hIII, hVII, hV, hi]),
-      sec('break', 4, [hi, hi, hVII, hV]),
-      sec('A2', 8, [hi, hVII, hi, hVII, hi, hIV, hVII, hV], [hi, hVII, hIII, hVII, hi, hIV, hv, hV]),
+      sec('B', 8, H_B),
+      sec('break', 4, [hi, hVII]),
+      sec('A2', 8, H_A),
+      sec('A', 8, H_A, { lift: 2 }),
       sec('outro', 8, [hi, hVII, hi, hIV, hVII, hIII, hV, hi]),
     ],
   },
   build(cx) {
     const kind = cx.sec.kind;
-    const root = rootMidi(cx, 38), fifth = root + 7;
-    const open = kind === 'intro' || kind === 'break', rest = open || kind === 'outro';
+    const root = rootMidi(cx, 38);
+    const open = kind === 'intro' || kind === 'break';
     const fk = fillKind(cx);
-    const chordTones = (base: number) => cx.chord.tones.map((t) => base + ((cx.chord.rootPc + t - base + 120) % 12));
-    // calm: oom-pah, a shaker on the eighths, the fog and a ship's bell.
-    cx.add('calm', 'tuba', 0, 3, root, 1); cx.add('calm', 'tuba', 8, 3, kind === 'bridge' ? root : fifth, 0.85);
-    if (!open) for (const s of [4, 12]) for (const n of chordTones(60)) cx.add('calm', 'accordion', s, 3, n, 0.55);
-    cx.add('calm', 'pad', 0, 16, toneMidi(cx, 0, 55), 0.35); cx.add('calm', 'pad', 0, 16, toneMidi(cx, 2, 55), 0.3);
-    pat(cx, 'calm', 'shaker', '6.3.6.3.6.3.', 0.8);
-    if (cx.barIn === 0 && (rest || kind === 'bridge' || cx.cycle % 2 === 0)) cx.add('calm', 'foghorn', 0, 12, rootMidi(cx, 28), 0.9);
-    if (cx.barIn % 4 === 0 && (open || kind === 'bridge')) { cx.add('calm', 'rbell', 0, 2, 88, 0.7); cx.add('calm', 'rbell', 2 * E12, 2, 88, 0.55); }
-    if (cx.r() < 0.5) cx.add('calm', 'chime', Math.floor(cx.r() * 12) * E12, 2, pick(cx.r, chordNotes(cx.chord, 76, 91)), 0.5);
+    // calm: the tuba's oom-pah riff, the squeezebox pumping the off-beats, the fog and a ship's bell.
+    riff(cx, 'calm', 'tuba', 38, 0.9);
+    if (!open) comp(cx, 'calm', 'accordion', '..6..5..6..5', 0.35, 60, 0.9);
+    if (cx.barIn === 0 && (open || kind === 'bridge' || cx.cycle % 2 === 0)) cx.add('calm', 'foghorn', 0, 12, rootMidi(cx, 28), 0.8);
+    if (cx.barIn % 4 === 0 && (open || kind === 'bridge')) { cx.add('calm', 'rbell', 0, 2, 88, 0.6); cx.add('calm', 'rbell', 2 * E12, 2, 88, 0.45); }
 
-    // combat: heave-ho stomp and clap, the accordion lilts between the beats.
-    if (kind !== 'break') {
-      pat(cx, 'combat', 'stomp', kind === 'bridge' ? '9.....5.....' : '9.....9.....', 0.9);
-      pat(cx, 'combat', 'kick', '9.....7..5..', 0.6);
-    }
-    pat(cx, 'combat', 'clap', '...8.....8..', 0.8);
-    pat(cx, 'combat', 'rim', kind === 'B' ? '..5..5..5..5' : '..........3.', 0.8);
-    for (const s of [2 * E12, 7 * E12, 10 * E12]) for (const n of chordTones(64)) cx.add('combat', 'accordion', s, 1.2, n, 0.5);
-    cx.add('combat', 'tuba', 11 * E12, 1, fifth, 0.6);
-    if (cx.barIn % 4 === 3) {
-      const hits = fk === 0 ? [8, 9, 10, 11] : fk === 1 ? [9, 10, 11, 11.5] : [6, 8, 9, 10, 11];
-      hits.forEach((h, i) => cx.add('combat', 'tom', h * E12, 1, 52 - i * 2, 0.6 + i * 0.08));
-    }
+    // combat: a deck-stomp on the dotted beats, claps between, a bodhran rolling the jig underneath.
+    if (kind !== 'break') pat(cx, 'combat', 'stomp', kind === 'bridge' ? '9.....5.....' : '9.....9.....', 0.95);
+    pat(cx, 'combat', 'clap', '...8.....8..', 0.85);
+    pat(cx, 'combat', 'tom', '7.47.47.47.4', 0.55, 45);
+    if (cx.barIn % 4 === 3) [8, 9, 10, 11].forEach((h, i) => cx.add('combat', 'tom', h * E12, 1, 52 - i * 2, 0.6 + i * 0.08 + (fk ? 0.05 : 0)));
 
-    // hype: the gull sings the tune; the accordion doubles it low in the chorus; the bridge answers it with a pennywhistle fife.
-    if (kind !== 'break' && kind !== 'intro') {
-      const ev = melody(cx, { layer: 'hype', inst: kind === 'bridge' ? 'fife' : 'gull', rhythms: SHANTY, lo: kind === 'bridge' ? 74 : 69, hi: kind === 'bridge' ? 91 : 86, salt: 0x51, unit: E12, restP: 0.1, cadence: E([[0, 3], [3, 3], [6, 6]]) });
-      if (kind === 'B') for (const e of ev) cx.add('hype', 'accordion', e.step, e.dur, e.midi - 12, 0.55);
-    }
-    if (cx.barIn % 8 === 7) cx.add('hype', 'foghorn', 0, 12, rootMidi(cx, 28), 0.8);
+    // The fiddle sings the tune (a tin whistle takes the second verse); the accordion doubles it low; the bridge whistles the riff.
+    stageHook(cx, { lead: 'fiddle', alt: 'whistle', calm: 'accordion', calmVel: 0.32, dbl: 'accordion', dblShift: -12, dblVel: 0.45, harm: 'fiddle', harmVel: 0.4, riffInst: 'whistle', riffLo: 38, riffShift: 36, riffVel: 0.5 });
+    if (cx.barIn % 8 === 7) cx.add('hype', 'foghorn', 0, 12, rootMidi(cx, 28), 0.7);
 
-    // finale: a full shaker, an accordion run up the chord, pumping tuba and toms.
-    pat(cx, 'finale', 'shaker', '857857857857', 1);
-    for (let i = 0; i < 12; i++) cx.add('finale', 'accordion', i * E12, 1.2, toneMidi(cx, i % 4, 64 + (i >> 2) * 0) + 12 * (i >> 2), 0.45);
-    for (const s of [4, 12]) cx.add('finale', 'tuba', s, 2, root + 12, 0.7);
-    pat(cx, 'finale', 'tom', '..7..7..7..7', 0.8, 47);
+    // finale: a tambourine jig on every eighth, the squeezebox pumping triplets, the tuba doubled.
+    pat(cx, 'finale', 'tamb', '9.59.59.59.5', 0.9);
+    comp(cx, 'finale', 'accordion', '6..5..6..5..', 0.3, 64, 0.8);
+    for (const s of [4, 12]) cx.add('finale', 'tuba', s, 2, root + 12, 0.6);
   },
 };
 
-// ================= NIGHT MARKET: city-pop / lo-fi groove =================
-// E-flat, 100 bpm, swung sixteenths. Electric piano comps, a plucky bass, a koto on pentatonic hooks, lantern chimes.
+// ================= NIGHT MARKET: city-pop future-funk =================
+// E-flat, 118 bpm, nearly straight. A slap bass in octaves, Rhodes chords, synth-brass stabs, a 909 four on the floor and an alto sax lead.
 const mI = d(0, Q.maj7), mIV = d(5, Q.maj7), miii = d(4, Q.min7), mvi = d(9, Q.min7), mii = d(2, Q.min7), mV = d(7, Q.dom7), mbVI = d(8, Q.maj7), mbVII = d(10, Q.maj7);
-const MARKET_HOOKS: readonly Rhythm[] = [
-  E([[0, 2], [2, 1], [3, 1], [4, 3], [8, 2], [10, 2], [12, 4]]), E([[0, 1], [2, 2], [4, 2], [6, 1], [7, 1], [8, 4], [12, 2], [14, 2]]),
-  E([[0, 3], [3, 1], [4, 2], [6, 2], [8, 2], [10, 1], [11, 1], [12, 4]]), E([[2, 2], [4, 2], [6, 2], [8, 3], [11, 1], [12, 4]]),
-];
+const M_A = [mIV, mV, miii, mvi, mii, mV, mI, mI], M_B = [mI, mvi, mii, mV, mI, miii, mIV, mV];
 export const MARKET: TrackSpec = {
-  id: 'market', tonic: 3, scale: [0, 2, 4, 7, 9], swing: 0.3,
+  id: 'market', tonic: 3, scale: [0, 2, 4, 5, 7, 9, 11], swing: 0.12,
+  // A pentatonic city-pop hook that skips the downbeat: (rest) di-di DAH DAH, (rest) DAH DAAH, stepping down the chain of sevenths.
+  theme: theme({
+    A: 'r:2 C6:1 Bb5:1 C6:2 Eb6:2 r:2 Bb5:2 G5:4 | r:2 Bb5:1 Ab5:1 Bb5:2 D6:2 r:2 Ab5:2 F5:4 | r:2 G5:1 F5:1 G5:2 Bb5:2 r:2 F5:2 D5:4 | Eb5:6 F5:2 G5:8 |'
+      + ' r:2 C6:1 Bb5:1 C6:2 Eb6:2 r:2 Ab5:2 F5:4 | r:2 Bb5:1 Ab5:1 Bb5:2 D6:2 r:2 F6:2 D6:4 | Eb6:3 D6:1 Bb5:2 G5:2 r:2 F5:2 Eb5:4 | r:8 Bb5:2 C6:2 Eb6:4',
+    B: 'G5:4 Bb5:4 Eb6:6 D6:2 | C6:8 r:4 G5:2 Bb5:2 | Ab5:4 C6:4 Eb6:6 C6:2 | D6:8 r:4 C6:2 Bb5:2 | G5:4 Bb5:4 Eb6:4 F6:4 | D6:8 Bb5:4 G5:4 | C6:4 Eb6:4 G5:4 Ab5:4 | F5:6 G5:2 Ab5:4 Bb5:4',
+    bass: '1:3 1:1 r:2 8:2 r:2 5:2 7:2 8:2',
+  }),
   form: {
     major: [
       sec('intro', 4, [mIV, miii, mii, mV]),
-      sec('A', 8, [mIV, mV, miii, mvi, mii, mV, mI, mI], [mIV, miii, mii, mV, mIV, mV, mI, mvi], [d(1, Q.dom7), d(2, Q.dom7)]),
-      sec('A2', 8, [mIV, mV, miii, mvi, mIV, mV, mI, mI], [mIV, miii, mvi, mV, mIV, mV, mI, mI], [d(4, Q.dom7)]),
-      sec('B', 8, [mI, mvi, mii, mV, mI, miii, mIV, mV], [mI, mvi, mii, mV, mI, mbVII, mIV, mV]),
+      sec('A', 8, M_A),
+      sec('A2', 8, M_A),
+      sec('B', 8, M_B),
       sec('bridge', 8, [mbVI, mbVII, mI, mI, mbVI, mbVII, miii, mV]),
-      sec('break', 4, [mI, mIV, mI, mV]),
-      sec('A', 8, [mIV, mV, miii, mvi, mii, mV, mI, mI], [mIV, miii, mii, mV, mIV, mV, mI, mvi], [d(1, Q.dom7)]),
-      sec('B', 8, [mI, mvi, mii, mV, mI, miii, mIV, mV], [mI, mvi, mii, mV, mI, mbVII, mIV, mV]),
-      sec('A2', 8, [mIV, mV, miii, mvi, mIV, mV, mI, mI], [mIV, miii, mvi, mV, mIV, mV, mI, mI]),
+      sec('break', 4, [mIV, mV]),
+      sec('A', 8, M_A),
+      sec('B', 8, M_B),
+      sec('A2', 8, M_A),
+      sec('A', 8, M_A, { lift: 1 }),
       sec('outro', 4, [mIV, miii, mI, mI]),
     ],
   },
@@ -101,123 +98,114 @@ export const MARKET: TrackSpec = {
     const kind = cx.sec.kind;
     const open = kind === 'intro' || kind === 'break' || kind === 'outro';
     const fk = fillKind(cx);
-    const compPat = [
-      '9..5..9...5.....', '..9...5..9..5...', '9.....5.9..5..7.', '.9..5...9.5..5..',
-    ][cx.secIdx % 4]!;
-    // calm: rootless piano comps, a plucky bass, soft kick, swung shaker, lantern chimes.
-    comp(cx, 'calm', 'epiano', open ? '9.......5.......' : compPat, 0.55, 60, 3);
-    const bassPat = open ? '9.......5...5...' : ['9..5..7..9..5.7.', '9...5.7.9...5.9.'][cx.secIdx % 2]!;
-    bassLine(cx, 'calm', 'fbass', bassPat, [0, 12, 7, 0, 10, 12, 7, 5], 0.85, 33, 2);
-    pat(cx, 'calm', 'kick', '9.....5...5.....', 0.5);
-    pat(cx, 'calm', 'shaker', '4.3.4.3.4.3.4.3.', 0.9);
-    const bells = scaleNotes(cx.tonic, [0, 2, 4, 7, 9], 79, 96);
-    if (cx.r() < 0.7) cx.add('calm', 'chime', Math.floor(cx.r() * 8) * 2, 2, pick(cx.r, bells), 0.55);
-    if (cx.barIn % 4 === 0) cx.add('calm', 'chime', 0, 2, pick(cx.r, bells), 0.7);
+    // calm: four on the floor kept low and round, the slap bass riff, Rhodes chords pushed off the beat, a shaker.
+    pat(cx, 'calm', 'k909', '9...9...9...9...', 0.5);
+    riff(cx, 'calm', 'slap', 33, 0.75);
+    comp(cx, 'calm', 'epiano', open ? '9...............' : ['9.....7...7.....', '...7..7.....9...'][cx.barIn % 2]!, 0.42, 58, 3);
+    pat(cx, 'calm', 'shaker', '4343434343434343', 0.6);
 
-    // combat: a lazy backbeat, funk kick, offbeat open hats, koto arpeggios.
-    pat(cx, 'combat', 'rim', '....9.....5.9...', 0.9);
-    pat(cx, 'combat', 'kick', kind === 'break' ? '9...............' : '9..5..5.9..5.5..', 0.9);
-    pat(cx, 'combat', 'hat', '6.4.6.4.6.4.6.4.', 0.8);
-    pat(cx, 'combat', 'ohat', '..............5.', 0.7);
-    const arp = chordNotes(cx.chord, 67, 86);
-    const arpPat = '9.5.7.5.9.5.7.5.';
-    let k = 0;
-    for (let s = 0; s < 16; s += 2) { if (arpPat[s] !== '.') cx.add('combat', 'koto', s, 2, arp[(k++ * 2 + (cx.barIn % 2)) % arp.length]!, (Number(arpPat[s]) / 9) * 0.6); }
-    if (cx.barIn % 4 === 3) { if (fk === 0) roll(cx, 'combat', 'rim', 12, 0.3, 0.8); else pat(cx, 'combat', 'tom', '............5.79', 0.8, 50); }
+    // combat: the disco kit: clap on two and four, open hats on the off-beats, sixteenth hats, synth-brass stabs.
+    pat(cx, 'combat', 'k909', kind === 'break' ? '9...............' : '9...9...9...9...', 0.45);
+    pat(cx, 'combat', 'clap', '....9.......9...', 0.95);
+    pat(cx, 'combat', 'ohat', '..8...8...8...8.', 0.85);
+    pat(cx, 'combat', 'hat', '5.3.5.3.5.3.5.3.', 0.7);
+    comp(cx, 'combat', 'synbrass', cx.barIn % 2 ? '......8.....7...' : '..........8.7...', 0.5, 60, 1);
+    if (cx.barIn % 4 === 3) { if (fk === 0) roll(cx, 'combat', 'clap', 12, 0.3, 0.8); else pat(cx, 'combat', 'tom', '............5.79', 0.8, 50); }
 
-    // hype: the koto sings the hook, a lantern chime doubling the long notes an octave up.
-    if (kind !== 'break' && kind !== 'intro') {
-      const ev = melody(cx, { layer: 'hype', inst: 'koto', rhythms: MARKET_HOOKS, lo: 72, hi: 91, salt: 0x6d, restP: 0.1, cadence: E([[0, 2], [2, 2], [4, 12]]), vel: 0.9 });
-      for (const e of ev) if (e.dur >= 3) cx.add('hype', 'chime', e.step, 2, e.midi + 12, 0.5);
-    }
-    // finale: sixteenth shaker, claps, a chime run, bass octave fills.
-    pat(cx, 'finale', 'shaker', '6564656465646564', 0.9);
-    pat(cx, 'finale', 'clap', '....7.......7...', 0.8);
-    if (cx.barIn % 2 === 0) for (let i = 0; i < 6; i++) cx.add('finale', 'chime', i * 2, 2, bells[(i * 2 + cx.barIn) % bells.length]!, 0.4);
-    bassLine(cx, 'finale', 'fbass', '..5...5...5...5.', [12], 0.6, 33, 1);
+    // The alto sax has the hook (synth brass the second verse) over a Rhodes skeleton; the Rhodes shadows it an octave down when it heats.
+    stageHook(cx, { lead: 'sax', alt: 'synbrass', calm: 'epiano', calmVel: 0.32, dbl: 'epiano', dblShift: -12, dblVel: 0.3, harm: 'sax', harmVel: 0.35, riffInst: 'slap', riffLo: 33, riffShift: 12, riffVel: 0.55 });
+
+    // finale: a crash on the phrase, open hats on every off-beat sixteenth, the slap bass popping octaves.
+    if (cx.barIn % 4 === 0) cx.add('finale', 'crash', 0, 1, 0, 0.8);
+    pat(cx, 'finale', 'ohat', '.5.5.5.5.5.5.5.5', 0.5);
+    pat(cx, 'finale', 'slap', '..5...5...5...5.', 0.55, rootMidi(cx, 33) + 12);
   },
 };
 
-// ================= MUSEUM: noir heist jazz =================
-// C minor, 112 bpm, triplet swing. Walking upright, brushes on the ride, a muted trumpet over vibraphone comps.
+// ================= MUSEUM: a smoky jazz trio =================
+// C minor, 112 bpm, triplet swing. Walking upright, the ride and brushes, piano comping, a muted trumpet over vibraphone.
 const mi7 = d(0, Q.min7), miv7 = d(5, Q.min7), miiø = d(2, Q.m7b5), mV7 = d(7, Q.dom7), mbVIM = d(8, Q.maj7), mbVII7 = d(10, Q.dom7), mbIII = d(3, Q.maj7), mimaj = d(0, Q.mmaj7);
-const NOIR: readonly Rhythm[] = [
-  E([[0, 6], [6, 2], [8, 4], [12, 2], [14, 2]]), E([[2, 2], [4, 4], [10, 2], [12, 4]]), E([[0, 2], [2, 2], [4, 2], [6, 2], [8, 8]]), E([[0, 4], [4, 2], [6, 1], [7, 1], [8, 6]]),
-];
+const U_A = [mi7, miv7, miiø, mV7, mi7, mbVIM, miiø, mV7], U_B = [miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7, mi7];
 export const MUSEUM: TrackSpec = {
   id: 'museum', tonic: 0, scale: [0, 2, 3, 5, 7, 8, 10, 11], swing: 0.6,
+  // A cat-burglar head: a chromatic tiptoe into each note ((rest) F#-G, (rest) Bb-G), answered by a slinking fall through the changes.
+  theme: theme({
+    A: 'r:2 F#5:2 G5:4 r:2 Bb5:2 G5:4 | r:2 B5:2 C6:4 Ab5:2 F5:2 Eb5:4 | D5:2 F5:2 Ab5:2 C6:2 F5:4 r:4 | Ab5:2 G5:2 F5:2 D5:2 B4:8 |'
+      + ' r:2 F#5:2 G5:4 r:2 Bb5:2 G5:4 | r:2 B5:2 C6:4 G5:2 Eb5:2 C5:4 | F5:2 Ab5:2 C6:2 Ab5:2 F5:2 D5:2 F5:4 | F5:2 D5:2 B4:4 G5:8',
+    B: 'C6:6 Bb5:2 Ab5:4 F5:4 | Ab5:6 G5:2 F5:4 D5:4 | G5:6 F5:2 Eb5:4 G5:4 | C6:12 r:4 | Ab5:4 F5:4 D5:4 F5:4 | B5:4 Ab5:4 F5:4 D5:4 | Eb5:4 G5:4 Bb5:4 D6:4 | C6:8 r:8',
+    bass: '1:4 3:4 5:4 ^:4',
+  }),
   form: {
     major: [
-      sec('intro', 8, [mi7, mi7, miv7, mV7, mi7, mbVIM, miiø, mV7]),
-      sec('A', 8, [mi7, miv7, miiø, mV7, mi7, mbVIM, miiø, mV7], [mi7, miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7], [d(1, Q.dom7)]),
-      sec('A2', 8, [mi7, miv7, miiø, mV7, mi7, mbVIM, miiø, mV7], [mi7, miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7], [d(1, Q.dom7)]),
-      sec('B', 8, [miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7, mi7], [miv7, mbVII7, mbIII, mbVIM, miiø, d(1, Q.dom7), mi7, mV7]),
-      sec('A', 8, [mi7, miv7, miiø, mV7, mi7, mbVIM, miiø, mV7], [mi7, miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7]),
+      sec('intro', 4, [mi7, miv7, miiø, mV7]),
+      sec('A', 8, U_A),
+      sec('A2', 8, U_A),
+      sec('B', 8, U_B),
+      sec('A', 8, U_A),
       sec('bridge', 8, [mi7, mi7, miv7, miv7, mbVIM, mV7, mi7, mV7]),
-      sec('break', 4, [mi7, mbVIM, miiø, mV7]),
-      sec('A2', 8, [mi7, miv7, miiø, mV7, mi7, mbVIM, miiø, mV7], [mi7, miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7]),
-      sec('B', 8, [miv7, mbVII7, mbIII, mbVIM, miiø, mV7, mi7, mi7]),
+      sec('break', 4, [mi7, miv7]),
+      sec('A2', 8, U_A),
+      sec('B', 8, U_B),
+      sec('A', 8, U_A),
       sec('outro', 4, [mi7, miv7, mV7, mimaj]),
     ],
   },
   build(cx) {
     const kind = cx.sec.kind;
     const fk = fillKind(cx);
-    const nextRoot = rootMidi({ ...cx, chord: cx.next } as Cx, 36);
-    const root = rootMidi(cx, 36);
-    // calm: walking bass (root, chord tone, fifth, chromatic approach), brush ride, foot hat, sparse vibes comps.
-    const third = root + cx.chord.tones[1]!, fifthN = root + 7;
-    const approach = nextRoot + (cx.r() < 0.5 ? -1 : 1) + (nextRoot < root - 6 ? 12 : nextRoot > root + 6 ? -12 : 0);
-    const step2 = pick(cx.r, [third, fifthN, root + 12]);
-    const walk = kind === 'break' && cx.barIn % 2 === 1 ? [root, third, fifthN, root + 12] : [root, step2, pick(cx.r, [fifthN, root + 9, third + 12 > root + 14 ? third : third + 12]), approach];
-    walk.forEach((n, i) => cx.add('calm', 'upright', i * 4, 3.4, n, i === 0 ? 1 : 0.8));
-    pat(cx, 'calm', 'brush', kind === 'break' ? '9.......9.......' : '9...9.5.9...9.5.', 0.8);
-    pat(cx, 'calm', 'hat', '....5.......5...', 0.6);
-    if (kind !== 'break' && kind !== 'intro' && cx.cr() < 0.7) comp(cx, 'calm', 'vibes', cx.cr() < 0.5 ? '......7.........' : '..............7.', 0.5, 64, 3, 0.1);
-    if (kind === 'intro' && cx.barIn % 4 === 0) cx.add('calm', 'vibes', 0, 6, toneMidi(cx, 3, 79), 0.5);
+    // calm: the walking bass (root, third, fifth, a half-step into the next chord), the ride's ding ding-a-ding, the hat on two and four,
+    // and the piano comping shells in a Charleston.
+    riff(cx, 'calm', 'upright', 36, 0.95);
+    pat(cx, 'calm', 'ride', '9...9.6.9...9.6.', 0.8);
+    pat(cx, 'calm', 'hat', '....6.......6...', 0.6);
+    if (kind !== 'intro') comp(cx, 'calm', 'piano', cx.barIn % 2 ? '9.....6.........' : '......7.......6.', 0.33, 55, 2.5, 0.02);
+    else if (cx.barIn % 2 === 0) cx.add('calm', 'vibes', 0, 6, toneMidi(cx, 3, 79), 0.45);
 
-    // combat: feathered kick, cross-stick, snare ghosts.
-    pat(cx, 'combat', 'kick', '5...5...5...5...', 0.5);
-    pat(cx, 'combat', 'rim', kind === 'break' ? '................' : '....8.......8...', 0.9);
-    const ghosts = [3, 7, 10, 11, 15];
-    for (const g of ghosts) if (cx.r() < 0.4) cx.add('combat', 'brush', g, 1, 0, 0.45);
-    pat(cx, 'combat', 'swirl', '..........7.....', 0.8);
-    if (cx.barIn % 4 === 3) { if (fk === 0) { cx.add('combat', 'rim', 12, 1, 0, 0.5); cx.add('combat', 'rim', 14, 1, 0, 0.55); cx.add('combat', 'rim', 15, 1, 0, 0.7); } else roll(cx, 'combat', 'brush', 10, 0.3, 0.8); }
+    // combat: brushes comping on the snare, a feathered kick, the cross-stick on four, the piano punching harder.
+    pat(cx, 'combat', 'kick', '5.......5.......', 0.45);
+    pat(cx, 'combat', 'rim', kind === 'break' ? '................' : '............8...', 0.85);
+    for (const g of [3, 7, 10, 11, 15]) if (cx.r() < 0.4) cx.add('combat', 'brush', g, 1, 0, 0.45);
+    pat(cx, 'combat', 'swirl', '..........7.....', 0.7);
+    comp(cx, 'combat', 'piano', '...6......6.....', 0.3, 60, 1.5, 0.015);
+    if (cx.barIn % 4 === 3) { if (fk === 0) pat(cx, 'combat', 'rim', '............5.57', 0.7); else roll(cx, 'combat', 'brush', 10, 0.3, 0.8); }
 
-    // hype: the muted trumpet; in the solo section the vibraphone plays the tune.
-    if (kind !== 'break' && kind !== 'intro') {
-      const solo = kind === 'bridge';
-      melody(cx, { layer: 'hype', inst: solo ? 'vibes' : 'trumpet', rhythms: NOIR, lo: 67, hi: 86, salt: 0x77, restP: 0.15, cadence: E([[0, 4], [4, 12]]), vel: solo ? 0.9 : 1 });
-      if (solo) comp(cx, 'hype', 'trumpet', '..............7.', 0.5, 62, 2);
-    }
-    // finale: ride in eighths, the trumpet shadowed by vibraphone, tom breaks.
-    pat(cx, 'finale', 'brush', '9.9.9.9.9.9.9.9.', 0.7);
-    pat(cx, 'finale', 'hat', '....7.......7...', 0.6);
-    if (cx.barIn % 2 === 0) for (let i = 0; i < 4; i++) cx.add('finale', 'vibes', 8 + i * 2, 2, toneMidi(cx, i, 72), 0.45);
+    // The muted trumpet has the head (the piano takes the second chorus); vibes shadow it; the bridge is a piano walking with the bass.
+    stageHook(cx, { lead: 'trumpet', alt: 'piano', calm: 'vibes', calmVel: 0.32, dbl: 'vibes', dblShift: 12, dblVel: 0.28, harm: 'trumpet', harmVel: 0.38, riffInst: 'piano', riffLo: 36, riffShift: 24, riffVel: 0.5 });
+
+    // finale: the ride on every swung eighth, block chords on the piano, a brush roll into each four.
+    pat(cx, 'finale', 'ride', '9.7.9.7.9.7.9.7.', 0.6);
+    comp(cx, 'finale', 'piano', '9.......9.......', 0.3, 64, 1, 0.01);
     if (cx.barIn % 4 === 3) roll(cx, 'finale', 'brush', 12, 0.4, 0.9);
   },
 };
 
-// ================= SUBMARINE PEN: tense techno-thriller =================
-// C-sharp phrygian, 118 bpm. Sonar pings on the beat, a pulsing low bass, four on the floor, metallic hull hits, an acid line.
-const si = d(0, Q.min), sII = d(1, Q.maj), sVII = d(10, Q.maj), siv = d(5, Q.min), sVI = d(8, Q.maj), sdim = d(7, Q.dim);
-const SONAR_LEAD: readonly Rhythm[] = [
-  E([[0, 2], [2, 2], [4, 1], [5, 1], [6, 2], [8, 2], [10, 2], [12, 4]]), E([[0, 1], [1, 1], [2, 2], [4, 2], [6, 2], [8, 1], [9, 1], [10, 2], [12, 2], [14, 2]]),
-  E([[0, 3], [3, 1], [4, 2], [6, 2], [8, 4], [12, 2], [14, 2]]),
-];
+// ================= SUBMARINE PEN: industrial techno =================
+// C-sharp phrygian, 128 bpm. A 909 on the floor, a rumbling synth bass, an acid line, metal hits and sonar pings.
+const si = d(0, Q.min), sII = d(1, Q.maj), sVII = d(10, Q.maj), sVI = d(8, Q.maj);
+const S_A = [si, si, sII, si, si, sVII, sII, si], S_B = [sVI, sVII, si, si, sVI, sII, sVII, si];
 export const SUBPEN: TrackSpec = {
   id: 'subpen', tonic: 1, scale: [0, 1, 3, 5, 7, 8, 10],
+  // An acid riff that bounces off the octave (C#-C#'-.-C#-.-B-C#) then runs down to the root; the B is a slow sonar-lit phrygian line.
+  theme: theme({
+    A: "C#5:1 C#6:1 r:1 C#5:1 r:1 B5:1 C#5:1 r:1 G#5:2 C#5:1 E5:2 D5:1 C#5:2 | C#5:1 C#6:1 r:1 C#5:1 r:1 B5:1 C#5:1 r:1 E5:2 F#5:2 G#5:4 |"
+      + " D5:1 D6:1 r:1 D5:1 r:1 C#6:1 D5:1 r:1 A5:2 D5:1 F#5:2 E5:1 D5:2 | C#5:1 C#6:1 r:1 C#5:1 r:1 B5:1 C#5:1 r:1 E5:2 F#5:2 G#5:4 |"
+      + " C#5:1 C#6:1 r:1 C#5:1 r:1 B5:1 C#5:1 r:1 G#5:2 C#5:1 E5:2 D5:1 C#5:2 | B4:1 B5:1 r:1 B4:1 r:1 A5:1 B4:1 r:1 F#5:2 B4:1 D#5:2 C#5:1 B4:2 |"
+      + " D5:1 D6:1 r:1 D5:1 r:1 C#6:1 D5:1 r:1 A5:2 D5:1 F#5:2 E5:1 D5:2 | C#5:1 C#6:1 r:1 C#5:1 r:1 B5:1 C#5:1 r:1 G#5:4 C#5:4",
+    B: 'C#6:4 B5:4 A5:8 | B5:4 A5:4 F#5:8 | G#5:4 E5:4 C#5:8 | D5:4 E5:4 G#5:8 | C#6:4 B5:4 A5:4 E5:4 | D6:4 C#6:4 A5:8 | B5:4 A5:4 F#5:4 D#5:4 | E5:4 D5:4 C#5:8',
+    bass: '1:2 1:1 8:1 1:2 1:1 8:1 1:2 1:1 8:1 5:2 8:2',
+  }),
   form: {
     major: [
-      sec('intro', 8, [si, si, si, sII, si, si, sII, si]),
-      sec('A', 8, [si, si, sII, si, si, sVII, sII, si], [si, sII, si, sVI, siv, sII, si, sdim], [sII]),
-      sec('A2', 8, [si, si, sII, si, si, sVII, sII, si], [si, sII, si, sVI, siv, sII, si, sdim], [sVII]),
-      sec('B', 8, [sVI, sVII, si, si, sVI, sII, sVII, si]),
-      sec('break', 8, [si, si, sII, si, si, si, sII, sII]),
+      sec('intro', 4, [si, si, si, sII]),
+      sec('A', 8, S_A),
+      sec('A2', 8, S_A),
+      sec('B', 8, S_B),
+      sec('A', 8, S_A),
+      sec('break', 8, [si, si]),
       sec('build', 8, [si, sVII, sVI, sVII, si, sVII, sVI, sII]),
-      sec('A', 8, [si, si, sII, si, si, sVII, sII, si], [si, sII, si, sVI, siv, sII, si, sdim]),
-      sec('B', 8, [sVI, sVII, si, si, sVI, sII, sVII, si]),
-      sec('A2', 8, [si, si, sII, si, si, sVII, sII, si], [si, sII, si, sVI, siv, sII, si, sdim]),
+      sec('B', 8, S_B),
+      sec('A2', 8, S_A),
+      sec('A', 8, S_A),
       sec('outro', 4, [si, si, sII, si]),
     ],
   },
@@ -225,90 +213,85 @@ export const SUBPEN: TrackSpec = {
     const kind = cx.sec.kind;
     const root = rootMidi(cx, 25);
     const sparse = kind === 'intro' || kind === 'outro' || kind === 'break';
-    // calm: a sonar ping on the one with its echoes, the low pulse, a drone, the odd clank against the hull.
+    // calm: a sonar ping on the one with its echoes, the rumbling synth-bass riff, a drone, the odd clank against the hull.
     const ping = 83 + (cx.chord.rootPc === cx.tonic ? 0 : 2);
-    cx.add('calm', 'sonar', 0, 4, ping, 0.9); cx.add('calm', 'sonar', 6, 4, ping, 0.3); cx.add('calm', 'sonar', 11, 4, ping, 0.12);
-    if (kind === 'break' || kind === 'build') cx.add('calm', 'sonar', 8, 4, ping + 5, 0.5);
-    bassLine(cx, 'calm', 'tbass', sparse ? '9...5...7...5...' : '9.5.7.5.9.5.7.5.', [0, 0, 12, 0, 7, 0], 1, 25, 1.5);
-    voicing(cx, 'calm', 'dread', 0.9, 48, 0, 16);
-    if (cx.r() < (sparse ? 0.3 : 0.4)) cx.add('calm', 'metal', Math.floor(cx.r() * 16), 2, 52 + Math.floor(cx.r() * 14), 0.55);
-    pat(cx, 'calm', 'hat', '....5.......5...', 0.5);
+    cx.add('calm', 'sonar', 0, 4, ping, 0.8); cx.add('calm', 'sonar', 6, 4, ping, 0.25); cx.add('calm', 'sonar', 11, 4, ping, 0.1);
+    if (sparse) pat(cx, 'calm', 'synbass', '9...5...7...5...', 0.9, root, 1.5);
+    else riff(cx, 'calm', 'synbass', 25, 0.85);
+    voicing(cx, 'calm', 'dread', 0.8, 48, 0, 16);
+    if (cx.r() < 0.35) cx.add('calm', 'metal', Math.floor(cx.r() * 16), 2, 52 + Math.floor(cx.r() * 14), 0.5);
 
-    // combat: the four on the floor, offbeat open hats, claps, a fast pulse.
-    if (kind !== 'break') pat(cx, 'combat', 'kick', '9...9...9...9...', 1);
-    else pat(cx, 'combat', 'kick', '9.......', 0.8);
-    pat(cx, 'combat', 'ohat', '..9...9...9...9.', 0.9);
-    pat(cx, 'combat', 'clap', '....8.......8...', 0.9);
-    pat(cx, 'combat', 'hat', '4.5.4.5.4.5.4.5.', 0.7);
-    bassLine(cx, 'combat', 'tbass', '..5.5.7...5.5.7.', [0, 12, 0, 7], 0.8, 25, 1);
-    if (kind === 'build') roll(cx, 'combat', 'snare', cx.barIn >= 6 ? 0 : 8, 0.25, 0.9);
+    // combat: a 909 on the floor, open hats off the beat, claps with a hull hit on two and four, a ride ticking the off-beats.
+    pat(cx, 'combat', 'k909', kind === 'break' ? '9.......' : '9...9...9...9...', 1);
+    pat(cx, 'combat', 'ohat', '..9...9...9...9.', 0.8);
+    pat(cx, 'combat', 'clap', '....8.......8...', 0.85);
+    pat(cx, 'combat', 'metal', '....5.......5..3', 0.6, 64);
+    pat(cx, 'combat', 'hat', '4545454545454545', 0.55);
+    if (kind === 'build') roll(cx, 'combat', 'sgate', cx.barIn >= 6 ? 0 : 8, 0.2, 0.7);
     else if (cx.barIn % 4 === 3) roll(cx, 'combat', 'clap', fillKind(cx, 2) === 0 ? 12 : 8, 0.3, 0.85);
 
-    // hype: the acid line in phrygian.
-    if (kind !== 'intro' && kind !== 'break') melody(cx, { layer: 'hype', inst: 'acid', rhythms: SONAR_LEAD, lo: 61, hi: 80, salt: 0x2b, restP: 0.1, cadence: E([[0, 4], [4, 4], [8, 8]]) });
-    // finale: sixteenth arpeggio, pings on every beat, hull rolls.
-    const arp = chordNotes(cx.chord, 61, 85);
-    const order = [0, 2, 1, 3, 2, 1, 3, 2, 0, 2, 1, 3, 4, 3, 2, 1];
-    for (let s = 0; s < 16; s++) cx.add('finale', 'acid', s, 1, arp[order[s]! % arp.length]!, s % 4 === 0 ? 0.8 : 0.5);
-    for (const s of [4, 8, 12]) cx.add('finale', 'sonar', s, 3, ping + (s === 8 ? 5 : 0), 0.5);
-    if (cx.barIn % 2 === 1) pat(cx, 'finale', 'metal', '.......5.5.5.5.9', 0.8, 60);
+    // The acid riff, its skeleton pinged on the sonar in calm, a saw an octave up when it heats; the build hands the riff to the acid line.
+    stageHook(cx, { lead: 'acid', calm: 'sonar', calmVel: 0.25, dbl: 'saw', dblShift: 12, dblVel: 0.3, harm: 'acid', harmVel: 0.35 });
+    if (kind === 'build') riff(cx, 'combat', 'acid', 25, 0.45, 36);
+    // finale: a crash every four, the ride on every off-beat sixteenth, hull rolls.
+    if (cx.barIn % 4 === 0) cx.add('finale', 'crash', 0, 1, 0, 0.7);
+    pat(cx, 'finale', 'ride', '.5.5.5.5.5.5.5.5', 0.7);
+    if (cx.barIn % 2 === 1) pat(cx, 'finale', 'metal', '.......5.5.5.5.9', 0.7, 60);
   },
 };
 
-// ================= PARK: bright folk-pop =================
-// G major, 124 bpm. Ukulele strums, a bouncy tuba-ish bass, hand claps, a whistled tune doubled by marimba.
-const pI = d(0, Q.maj), pIV = d(5, Q.maj), pV = d(7, Q.maj), pvi = d(9, Q.min), pii = d(2, Q.min), piii = d(4, Q.min);
-const FOLK: readonly Rhythm[] = [
-  E([[0, 2], [2, 1], [3, 1], [4, 2], [6, 2], [8, 4], [12, 4]]), E([[0, 1], [1, 1], [2, 2], [4, 2], [6, 2], [8, 2], [10, 2], [12, 4]]),
-  E([[0, 4], [4, 2], [6, 1], [7, 1], [8, 2], [10, 1], [11, 1], [12, 4]]), E([[2, 2], [4, 2], [6, 2], [8, 3], [11, 1], [12, 4]]),
-];
+// ================= PARK: indie-pop picnic =================
+// G major, 124 bpm. A strummed ukulele, a bass guitar, hand claps and tambourine, a marimba tune, a whistle and glockenspiel.
+const pI = d(0, Q.maj), pIV = d(5, Q.maj), pV = d(7, Q.maj), pvi = d(9, Q.min), piii = d(4, Q.min);
+const P_A = [pI, pV, pvi, pIV, pI, pV, pIV, pV], P_B = [pvi, pIV, pI, pV, pvi, pIV, pV, pV];
 export const PARK: TrackSpec = {
   id: 'park', tonic: 7, scale: [0, 2, 4, 5, 7, 9, 11],
+  // Three staccato hops (G . G . B .) then a skip down the chord: a picnic bounce, answered by the same hops on the dominant.
+  theme: theme({
+    A: 'G5:1 r:1 G5:1 r:1 B5:1 r:1 D6:2 B5:2 G5:2 A5:2 B5:2 | A5:1 r:1 A5:1 r:1 F#5:1 r:1 D5:2 E5:2 F#5:2 A5:4 | G5:1 r:1 G5:1 r:1 B5:1 r:1 E6:2 D6:2 B5:2 G5:4 | E6:2 D6:2 C6:2 A5:2 G5:8 |'
+      + ' G5:1 r:1 G5:1 r:1 B5:1 r:1 D6:2 B5:2 G5:2 A5:2 B5:2 | A5:1 r:1 A5:1 r:1 F#5:1 r:1 D5:2 E5:2 F#5:2 A5:4 | E6:1 r:1 E6:1 r:1 D6:1 r:1 C6:2 B5:2 A5:2 G5:2 E5:2 | F#5:4 A5:4 D6:4 r:4',
+    B: 'B5:6 A5:2 G5:4 E5:4 | G5:6 E5:2 C6:8 | D6:6 C6:2 B5:4 G5:4 | A5:12 r:4 | B5:6 A5:2 G5:4 B5:4 | E6:6 D6:2 C6:4 G5:4 | F#5:4 A5:4 D6:4 C6:4 | D6:8 r:4 D5:4',
+    bass: '1:2 r:2 5,:2 r:2 1:2 3:2 5:2 3:2',
+  }),
   form: {
     major: [
       sec('intro', 4, [pI, pV, pvi, pIV]),
-      sec('A', 8, [pI, pV, pvi, pIV, pI, pV, pIV, pV], [pI, pIV, pvi, pV, pI, pIV, pV, pI], [d(4, Q.dom7), d(2, Q.dom7)]),
-      sec('A2', 8, [pI, pV, pvi, pIV, pI, pV, pIV, pV], [pI, pIV, pvi, pV, pI, pIV, pV, pI], [d(4, Q.dom7)]),
-      sec('B', 8, [pvi, pIV, pI, pV, pvi, pIV, pV, pV], [pIV, pI, pV, pvi, pIV, pI, pV, pV]),
-      sec('A', 8, [pI, pV, pvi, pIV, pI, pV, pIV, pV], [pI, pIV, pvi, pV, pI, pIV, pV, pI]),
+      sec('A', 8, P_A),
+      sec('A2', 8, P_A),
+      sec('B', 8, P_B),
+      sec('A', 8, P_A),
       sec('bridge', 8, [pIV, pV, piii, pvi, pIV, pV, pI, pI]),
-      sec('B', 8, [pvi, pIV, pI, pV, pvi, pIV, pV, pV], [pIV, pI, pV, pvi, pIV, pI, pV, pV]),
-      sec('break', 8, [pI, pI, pIV, pIV, pvi, pV, pI, pV]),
-      sec('A2', 8, [pI, pV, pvi, pIV, pI, pV, pIV, pV], [pI, pIV, pvi, pV, pI, pIV, pV, pI]),
-      sec('B', 8, [pvi, pIV, pI, pV, pvi, pIV, pV, pV], [pIV, pI, pV, pvi, pIV, pI, pV, pV]),
+      sec('B', 8, P_B),
+      sec('break', 8, [pI, pV]),
+      sec('B', 8, P_B),
+      sec('A2', 8, P_A, { lift: 2 }),
       sec('outro', 4, [pIV, pV, pI, pI]),
     ],
   },
   build(cx) {
     const kind = cx.sec.kind;
-    const root = rootMidi(cx, 36), fifth = root + 7;
     const stripped = kind === 'bridge';
     const fk = fillKind(cx);
-    // calm: strummed ukulele, oom-pah bass, soft claps on 2 and 4, a shaker.
-    comp(cx, 'calm', 'uke', kind === 'intro' ? '9...5...9...5...' : '9.5.7.5.9.5.7.5.', 0.8, 62, 2, 0.12);
-    cx.add('calm', 'tuba', 0, 3, root, 0.9); cx.add('calm', 'tuba', 8, 3, fifth, 0.8);
-    if (!stripped && kind !== 'intro') { cx.add('calm', 'tuba', 4, 2, root + 12, 0.5); cx.add('calm', 'tuba', 12, 2, fifth, 0.5); }
-    pat(cx, 'calm', 'clap', '....6.......6...', 0.6);
-    pat(cx, 'calm', 'shaker', '..5...5...5...5.', 0.8);
-    const spark = chordNotes(cx.chord, 74, 93);
-    if (cx.r() < 0.6) cx.add('calm', 'marimba', Math.floor(cx.r() * 8) * 2, 2, pick(cx.r, spark), 0.55);
+    // calm: a ukulele strummed down and up, the bass guitar's bounce, a tambourine, soft claps.
+    comp(cx, 'calm', 'uke', kind === 'intro' ? '9...5...9...5...' : '9.5.7.5.9.5.7.5.', 0.5, 60, 2, 0.02);
+    riff(cx, 'calm', 'fbass', 36, stripped ? 0.65 : 0.8);
+    pat(cx, 'calm', 'tamb', '..5...5...5...5.', 0.6);
+    pat(cx, 'calm', 'clap', '....5.......5...', 0.5);
+    const spark = chordNotes(cx.chord, 76, 93);
+    if (kind === 'intro' || kind === 'bridge' || kind === 'outro') if (cx.r() < 0.6) cx.add('calm', 'glock', Math.floor(cx.r() * 8) * 2, 2, pick(cx.r, spark), 0.5);
 
-    // combat: folk stomp, claps, tambourine.
-    if (kind !== 'break') pat(cx, 'combat', 'kick', stripped ? '9...............' : '9.......9...5...', 0.9);
-    pat(cx, 'combat', 'clap', '....9.......9...', 1);
-    pat(cx, 'combat', 'shaker', '9.5.9.5.9.5.9.5.', 0.8);
-    pat(cx, 'combat', 'snare', '....7.......7...', 0.4);
-    if (cx.barIn % 4 === 3) { if (fk === 0) roll(cx, 'combat', 'clap', 12, 0.3, 0.9); else pat(cx, 'combat', 'tom', '..........5.7.9.', 0.8, 50); }
+    // combat: a bright little kit, hand claps doubled off the beat, tambourine eighths.
+    if (kind !== 'break') pat(cx, 'combat', 'krock', stripped ? '9...............' : '9.......9.5.....', 0.8);
+    pat(cx, 'combat', 'clap', '....9..5....9..5', 0.9);
+    pat(cx, 'combat', 'tamb', '7.4.7.4.7.4.7.4.', 0.75);
+    if (cx.barIn % 4 === 3) { if (fk === 0) roll(cx, 'combat', 'clap', 12, 0.3, 0.9); else pat(cx, 'combat', 'tom', '..........5.7.9.', 0.8, 52); }
 
-    // hype: the whistled tune, marimba doubling a bar behind in the chorus.
-    if (kind !== 'intro') {
-      const ev = melody(cx, { layer: 'hype', inst: 'whistle', rhythms: FOLK, lo: 72, hi: 91, salt: 0x1f, restP: 0.08, cadence: E([[0, 4], [4, 12]]) });
-      if (kind === 'B' || kind === 'bridge') for (const e of ev) cx.add('hype', 'marimba', e.step, 2, e.midi - 12, 0.6);
-    }
-    // finale: a clap on every eighth, bells running up the chord, whistle harmony a sixth up.
-    pat(cx, 'finale', 'clap', '9.5.9.5.9.5.9.5.', 0.8);
-    for (let i = 0; i < 4; i++) cx.add('finale', 'glock', 8 + i * 2, 2, toneMidi(cx, i, 79), 0.5);
-    cx.add('finale', 'whistle', 0, 6, toneMidi(cx, 2, 79), 0.45);
+    // The marimba bounces the tune over a glockenspiel skeleton (whistled the second verse), the glockenspiel an octave up when it heats.
+    stageHook(cx, { lead: 'marimba', alt: 'whistle', calm: 'glock', calmVel: 0.28, dbl: 'glock', dblShift: 12, dblVel: 0.28, harm: 'marimba', harmVel: 0.35, riffInst: 'uke', riffLo: 36, riffShift: 36, riffVel: 0.5 });
+
+    // finale: claps on every eighth, the glockenspiel running up the chord, a whistled sixth on top.
+    pat(cx, 'finale', 'clap', '9.5.9.5.9.5.9.5.', 0.7);
+    for (let i = 0; i < 4; i++) cx.add('finale', 'glock', 8 + i * 2, 2, toneMidi(cx, i, 79), 0.4);
     pat(cx, 'finale', 'tom', '..........7.9.9.', 0.8, 52);
   },
 };

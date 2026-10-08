@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { Snapshot } from '../src/shared/protocol.ts';
 import { NO_TRACKER, observe, outcomeOf, finaleOf } from '../src/client/musicstate.ts';
 import {
-  approach, beatAt, BARS_PER_PHRASE, chordAt, crossfade, generateBar, heartTier, IDLE_INPUT, KEYS, layerTargets, levelGain, stepHeat, tempoFor, type MusicInput,
+  approach, beatAt, BARS_PER_PHRASE, chordAt, crossfade, generateBar, heartTier, IDLE_INPUT, layerTargets, levelGain, stepHeat, tempoFor, type MusicInput,
 } from '../src/client/musictheory.ts';
 
 const input = (o: Partial<MusicInput>): MusicInput => ({ ...IDLE_INPUT, phase: 'play', ...o });
@@ -16,10 +16,10 @@ test('a seed always writes the same bars, and different seeds write different on
   assert.notEqual(a, b);
 });
 
-test('the key comes from the seed and every note stays in a playable range', () => {
+test('the march keeps its own key whatever the seed, and every note stays in a playable range', () => {
   for (let seed = 0; seed < 40; seed++) {
     const bar = generateBar(seed, seed % 2 ? 'minor' : 'major', seed);
-    assert.ok(KEYS.includes(bar.tonic as (typeof KEYS)[number]));
+    assert.equal(bar.tonic, 0, 'C, the plaza band\'s key');
     for (const e of bar.events) {
       assert.ok(e.step >= 0 && e.step < 16 && e.dur > 0 && e.vel > 0 && e.vel <= 1, JSON.stringify(e));
       if (e.inst === 'lead') assert.ok(e.midi >= 60 && e.midi <= 100, `lead ${e.midi}`);
@@ -37,13 +37,13 @@ test('the lead is diatonic in major and the bars loop with variation, not repeti
   assert.ok(new Set(phrases).size > 1, 'four phrases are not all the same');
 });
 
-test('each phrase turns round on the dominant', () => {
+test('the march\'s A rests on the dominant halfway and comes home at its end, in major and minor', () => {
   for (const mode of ['major', 'minor'] as const) {
-    const last = chordAt(9, mode, BARS_PER_PHRASE - 1);
-    const first = chordAt(9, mode, 0);
-    assert.equal(last.degree, 7);
-    assert.notEqual(first.degree, undefined);
+    assert.equal(chordAt(mode, 0).degree, 0);
+    assert.equal(chordAt(mode, 3).degree, 7);
+    assert.equal(chordAt(mode, BARS_PER_PHRASE - 1).degree, 0);
   }
+  assert.deepEqual(chordAt('minor', 0).chord.tones, [0, 3, 7], 'the night turns the tonic minor');
 });
 
 test('night is minor with a heartbeat that thickens with the horde, day has neither', () => {
