@@ -1,6 +1,7 @@
 import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WEAPON_IDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId } from '../../shared/defs.ts';
 import { GUN_PARTS } from '../sprites.ts';
-import { KIT } from '../../shared/kit.ts';
+import { KIT, PIECE_IDS, type PieceId } from '../../shared/kit.ts';
+import { ART } from './art.ts';
 
 /**
  * Every baked sprite the world draws, as one table both sides read: `npm run art` bakes and packs a frame for each entry,
@@ -46,7 +47,17 @@ function gunBox(gun: GunId): Box {
 }
 
 /** A footprint's frame: origin at the footprint's top-left corner, with room for the south face and a little spill. */
-const footprint = (w: number, h: number, pad = 6): Box => ({ x: -pad, y: -pad, w: w + pad * 2, h: h + pad * 2 + FACE });
+const footprint = (w: number, h: number, pad = 6, south = FACE): Box => ({ x: -pad, y: -pad, w: w + pad * 2, h: h + pad * 2 + south });
+
+/** Room below a footprint for the south face of something `height` tall, which the shear hangs that far below its top. */
+const southOf = (height: number) => Math.max(FACE, Math.ceil(ART.camera.shear * height) + 4);
+
+/** The baked look of a placed kit piece: its `bakedTurn` and its damage stage (0 for a piece that never breaks). */
+export const kitSprite = (id: PieceId, turn: number, stage = 0) => `kit.${id}.${turn}.${stage}`;
+
+/** The train's cars, baked travelling east (turn 0) and south (turn 1): `across` is the lane, the rest run along it. */
+export const TRAIN = { across: 150, loco: 300, car: 250, height: 110 } as const;
+export const trainSprite = (part: 'loco' | 'car', turn: 0 | 1) => `train.${part}.${turn}`;
 
 /**
  * The split soldier's frame layout. `soldier` is the waist up with arms and gun hands, turned to the aim; `soldier.legs`
@@ -87,6 +98,18 @@ const entries: [string, SpriteSpec][] = [
   ...TURRET_KINDS.map((kind): [string, SpriteSpec] => [`turret.${kind}`, { box: { x: -20, y: -20, w: 60, h: 40 }, dirs: 1, frames: 1, layers: ['base', 'glow'], model: `turret:${kind}` }]),
   ['core', { box: footprint(ZOM.coreHalf * 2, ZOM.coreHalf * 2), dirs: 1, frames: 1, layers: ['base', 'glow'], model: 'core' }],
   ...(['grenade', 'fragGrenade', 'gasGrenade', 'landMine'] as const).map((kind): [string, SpriteSpec] => [`thrown.${kind}`, { box: square(16, 4), dirs: 1, frames: 1, layers: ['base', 'glow'], model: `thrown:${kind}` }]),
+  ...PIECE_IDS.flatMap((id) => {
+    const def = KIT[id];
+    return Array.from({ length: def.turns }, (_, turn) => Array.from({ length: def.breaks?.stages ?? 1 }, (_, stage): [string, SpriteSpec] => {
+      const [w, h] = turn % 2 ? [def.h, def.w] : [def.w, def.h];
+      return [kitSprite(id, turn, stage), { box: footprint(w, h, 6, southOf(def.height)), dirs: 1, frames: 1, layers: def.lights ? ['base', 'glow'] : ['base'], model: `kit:${id}:${turn}:${stage}` }];
+    })).flat();
+  }),
+  ...(['loco', 'car'] as const).flatMap((part) => ([0, 1] as const).map((turn): [string, SpriteSpec] => {
+    const long = TRAIN[part];
+    const [w, h] = turn ? [TRAIN.across, long] : [long, TRAIN.across];
+    return [trainSprite(part, turn), { box: footprint(w, h, 6, southOf(TRAIN.height)), dirs: 1, frames: 1, layers: ['base', 'glow'], model: `train:${part}:${turn}` }];
+  })),
   ['fx.muzzle', { box: { x: -6, y: -16, w: 56, h: 32 }, dirs: 1, frames: 4, layers: ['glow'], model: 'muzzle-flash' }],
   ['fx.explosion', { box: square(110, 0), dirs: 1, frames: 16, layers: ['base', 'glow'], model: 'explosion', scale: 0.5 }],
   ['fx.smoke', { box: square(32, 0), dirs: 1, frames: 4, layers: ['base'], model: 'smoke-puff', scale: 0.75 }],

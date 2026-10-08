@@ -190,8 +190,17 @@ def freeze(colls):
     """The model's mesh parts as (object, model-space vertices), unparented, for place() to rewrite per facing.
 
     Blender decomposes an object matrix into location, rotation and scale, so a shear set on the root is lost. Writing
-    the transformed vertices keeps the true shear: height z moves north by shear * (z - z_ref).
+    the transformed vertices keeps the true shear: height z moves north by shear * (z - z_ref). Text is a curve, so it
+    becomes a mesh first.
     """
+    bpy.context.view_layer.update()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    for role in ROLES:
+        for o in list(colls[role].all_objects):
+            if o.type == 'FONT':
+                mesh = link(bpy.data.objects.new(o.name, bpy.data.meshes.new_from_object(o.evaluated_get(depsgraph))), colls[role])
+                mesh.matrix_world = o.matrix_world.copy()
+                bpy.data.objects.remove(o)
     bpy.context.view_layer.update()
     parts = []
     for role in ROLES:

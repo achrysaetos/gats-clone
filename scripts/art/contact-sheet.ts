@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node scripts/art/contact-sheet.ts <sprites-spec.json> <bakeDir> <outDir> [characters|guns|props|effects]
+// Usage: node scripts/art/contact-sheet.ts <sprites-spec.json> <bakeDir> <outDir> [characters|guns|props|effects|kit]
 // Composites baked frames the way the painter will (shadow, base, tinted team, armor, additive glow) at game scale on
 // concrete, beside crops of the reference, so a person can judge the bake by eye.
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -232,4 +232,30 @@ async function effects() {
   await save(c, labels, [{ left: 150, top: 160, width: 230, height: 220, zoom: 1 }], 'sheet-fx.png');
 }
 
-for (const [name, sheet] of Object.entries({ characters, guns, props, effects })) if (!only || only === name) await sheet();
+/** Every kit piece at every baked turn and damage stage, then the train, base with glow added, labelled by catalog key. */
+async function kit() {
+  const names = Object.keys(spec.sprites).filter((n) => (n.startsWith('kit.') || n.startsWith('train.')) && existsSync(join(bakeDir!, n)));
+  const zoom = 0.75, width = 2400;
+  let x = 20, y = 40, rowH = 0;
+  const spots: [string, number, number][] = [];
+  for (const n of names) {
+    const e = spec.sprites[n]!;
+    const w = e.box.w * S * zoom, h = e.box.h * S * zoom + 18;
+    if (x + w > width - 20) { x = 20; y += rowH + 12; rowH = 0; }
+    spots.push([n, x, y]);
+    x += Math.max(w, 110) + 14;
+    rowH = Math.max(rowH, h);
+  }
+  const c = canvas(width, Math.ceil(y + rowH + 20));
+  const labels: [number, number, string][] = [[10, 18, `kit pieces at every turn and stage, then the train (game scale x${zoom}); labels are kit.PIECE.TURN.STAGE without the kit prefix`]];
+  for (const [n, sx, sy] of spots) {
+    const e = spec.sprites[n]!;
+    const ox = sx - e.box.x * S * zoom, oy = sy - e.box.y * S * zoom;
+    await draw(c, n, 'base', 0, 0, ox, oy, { zoom });
+    if (e.layers.includes('glow')) await draw(c, n, 'glow', 0, 0, ox, oy, { zoom, blend: 'add' });
+    labels.push([sx, sy + e.box.h * S * zoom + 13, n.replace(/^kit\./, '')]);
+  }
+  await save(c, labels, [], 'sheet-kit.png');
+}
+
+for (const [name, sheet] of Object.entries({ characters, guns, props, effects, kit })) if (!only || only === name) await sheet();
