@@ -3,6 +3,7 @@ import { KIT, PIECE_IDS, placed, type Light, type Material, type PieceId, type P
 import type { Rect } from './sim/movement.ts';
 import { timetableProblem, type TrainDef } from './sim/train.ts';
 import OUTPOST from './maps/outpost.json' with { type: 'json' };
+import VAULT from './maps/vault.json' with { type: 'json' };
 import WAREHOUSE from './maps/warehouse.json' with { type: 'json' };
 
 export type Center = { x: number; y: number };
@@ -195,12 +196,13 @@ function extractOf(name: string, ext: NonNullable<MapFile['extract']>, pieces: r
 
 export const loadMap = (json: unknown): MapDef => expandMap(parseMapFile(json));
 
-export const MAP_IDS = ['warehouse', 'outpost'] as const;
+export const MAP_IDS = ['warehouse', 'outpost', 'vault'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
   warehouse: loadMap(WAREHOUSE),
   outpost: loadMap(OUTPOST),
+  vault: loadMap(VAULT),
 };
 
 export const ROTATION: Record<ModeId, readonly MapId[]> = {

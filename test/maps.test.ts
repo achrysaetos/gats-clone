@@ -9,9 +9,12 @@ const R = WORLD.playerRadius;
 
 const SIEGE_MAPS = MAP_IDS.filter((id) => MAPS[id].siege);
 
-test('every versus mode rotates through every versus map, and zombies through the siege maps', () => {
-  const versus = MAP_IDS.filter((id) => !MAPS[id].siege).sort();
-  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), mode === 'ZOM' ? SIEGE_MAPS : versus, mode);
+const EXTRACT_MAPS = MAP_IDS.filter((id) => MAPS[id].extract);
+
+test('every versus mode rotates through every versus map, zombies through the siege maps and extraction through its own', () => {
+  const versus = MAP_IDS.filter((id) => !MAPS[id].siege && !MAPS[id].extract).sort();
+  const want = (mode: string) => (mode === 'ZOM' ? SIEGE_MAPS : mode === 'EXT' ? EXTRACT_MAPS : versus);
+  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), want(mode), mode);
 });
 
 for (const id of SIEGE_MAPS) {
