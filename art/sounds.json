@@ -18,12 +18,6 @@
       "page": "https://freesound.org/people/michorvath/sounds/427596/",
       "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
     },
-    "fs-9mm-load": {
-      "title": "9mm pistol load and chamber", "author": "michorvath",
-      "url": "https://cdn.freesound.org/previews/427/427593_3094998-hq.mp3",
-      "page": "https://freesound.org/people/michorvath/sounds/427593/",
-      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
-    },
     "fs-405win": {
       "title": "405Win.wav", "author": "Jon285",
       "url": "https://cdn.freesound.org/previews/49/49513_282197-hq.mp3",
@@ -125,6 +119,48 @@
       "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
       "page": "https://kenney.nl/assets/music-jingles",
       "licence": "CC0-1.0", "licenceSeen": "kenney.nl asset page: License Creative Commons CC0"
+    },
+    "fs-1911-reload": {
+      "title": "1911 Reload", "author": "nioczkus",
+      "url": "https://cdn.freesound.org/previews/396/396331_932959-hq.mp3",
+      "page": "https://freesound.org/people/nioczkus/sounds/396331/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ak-reload": {
+      "title": "AK-47 Assault Rifle being unloaded and reloaded", "author": "serøutōnin--deprivəd",
+      "url": "https://cdn.freesound.org/previews/674/674742_7157894-hq.mp3",
+      "page": "https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/674742/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-shotgun-rack": {
+      "title": "SXP_SHOTGUN_RACK_01", "author": "dasBUTCHER84",
+      "url": "https://cdn.freesound.org/previews/449/449614_9348290-hq.mp3",
+      "page": "https://freesound.org/people/dasBUTCHER84/sounds/449614/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-shell-load": {
+      "title": "shell load.ogg", "author": "CeebFrack",
+      "url": "https://cdn.freesound.org/previews/108/108793_1553758-hq.mp3",
+      "page": "https://freesound.org/people/CeebFrack/sounds/108793/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-mg-reload": {
+      "title": "Machine gun reload", "author": "SamsterBirdies",
+      "url": "https://cdn.freesound.org/previews/363/363168_5487341-hq.mp3",
+      "page": "https://freesound.org/people/SamsterBirdies/sounds/363168/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-brass-drop": {
+      "title": "Brass bullet shell casing drop onto concrete, multiple takes", "author": "GrayJoy",
+      "url": "https://cdn.freesound.org/previews/210/210102_3278936-hq.mp3",
+      "page": "https://freesound.org/people/GrayJoy/sounds/210102/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-shell-drop": {
+      "title": "12 guage shotgun shell drop", "author": "MrGungus",
+      "url": "https://cdn.freesound.org/previews/773/773860_15468302-hq.mp3",
+      "page": "https://freesound.org/people/MrGungus/sounds/773860/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
     }
   },
   "sounds": {
@@ -134,11 +170,10 @@
     "assault": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.5, "gainDb": -2 },
     "sniper": { "source": "fs-405win", "start": 0.065, "length": 0.9, "gainDb": 0 },
     "lmg": { "source": "fs-sniper-shot", "start": 0.03, "length": 0.4, "gainDb": -2 },
-    "crack": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.05, "gainDb": -2, "highpassHz": 2000, "note": "the transient every report opens on" },
+    "crack": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.05, "gainDb": -4, "highpassHz": 2000, "note": "the transient every report opens on" },
     "sub": { "source": "fs-20-gauge", "start": 0.045, "length": 0.5, "gainDb": -1, "lowpassHz": 200, "note": "the low body under heavy reports" },
     "silenced": { "source": "oga-silencers", "member": "Silencers - 1.wav", "start": 0.02, "length": 0.35, "gainDb": -6 },
     "launcher": { "source": "fs-grenade-launcher", "start": 0.015, "length": 0.4, "gainDb": -2 },
-    "reload": { "source": "fs-9mm-load", "start": 0.55, "length": 0.4, "gainDb": -8 },
     "hit": { "source": "fs-visceral-impacts", "start": 0.185, "length": 0.1, "gainDb": -6 },
     "splat": { "source": "fs-visceral-impacts", "start": 1.2, "length": 0.15, "gainDb": -4 },
     "bite": { "source": "fs-zombie-bites", "start": 9.305, "length": 0.35, "gainDb": -3 },
@@ -161,6 +196,16 @@
     "knock": { "source": "kenney-impact", "member": "Audio/impactPlate_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -5 },
     "chime": { "source": "oga-100-sfx", "member": "bell_01.ogg", "start": 0.01, "length": 1.0, "gainDb": -9 },
     "horn": { "source": "fs-ship-horn", "start": 6.15, "length": 1.4, "gainDb": -6 },
-    "ring": { "source": "kenney-scifi", "member": "Audio/spaceEngineLow_000.ogg", "start": 0.5, "length": 1.5, "gainDb": -8 }
+    "ring": { "source": "kenney-scifi", "member": "Audio/spaceEngineLow_000.ogg", "start": 0.5, "length": 1.5, "gainDb": -8 },
+    "magOut": { "source": "fs-ak-reload", "start": 0.13, "length": 0.25, "gainDb": -6, "note": "magazine released and pulled" },
+    "magIn": { "source": "fs-ak-reload", "start": 0.83, "length": 0.25, "gainDb": -5, "note": "magazine inserted and seated" },
+    "bolt": { "source": "fs-ak-reload", "start": 1.08, "length": 0.24, "gainDb": -4, "note": "charging handle; also the sniper bolt after each shot" },
+    "slide": { "source": "fs-1911-reload", "start": 0.3, "length": 0.2, "gainDb": -7 },
+    "shellIn": { "source": "fs-shell-load", "start": 0.05, "length": 0.29, "gainDb": -6 },
+    "pump": { "source": "fs-shotgun-rack", "start": 0.03, "length": 0.45, "gainDb": -3 },
+    "boxOpen": { "source": "fs-mg-reload", "start": 0.05, "length": 0.22, "gainDb": -6 },
+    "boxClose": { "source": "fs-mg-reload", "start": 1.52, "length": 0.3, "gainDb": -5 },
+    "casing": { "source": "fs-brass-drop", "start": 2.31, "length": 0.5, "gainDb": -10, "note": "three bounces of one casing on concrete" },
+    "shellDrop": { "source": "fs-shell-drop", "start": 0.0, "length": 0.5, "gainDb": -9 }
   }
 }

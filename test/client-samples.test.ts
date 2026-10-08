@@ -49,7 +49,7 @@ test('a cue keeps its synth recipe until its recording decodes, then plays the r
 test('a few download at once, and the latest want jumps the queue', async () => {
   const f = fakeIo();
   const loader = createSampleLoader(f.io);
-  loader.want(['click', 'hurt', 'kill', 'reload', 'pistol', 'smg']);
+  loader.want(['click', 'hurt', 'kill', 'magIn', 'pistol', 'smg']);
   await settle();
   assert.deepEqual(f.asked, ['click.mp3', 'hurt.mp3', 'kill.mp3'], 'three at a time, in the order asked');
   loader.want(['boom']);

@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { EVOLUTIONS, GUN_IDS, GUNS } from '../src/shared/defs.ts';
-import { impulse, placeCue, RATE_JITTER, roofsOf, SAMPLE_IDS, SAMPLES, SOUNDS, soundsFor, voiceFor, type Hearing, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
+import { RELOAD_BEATS, reloadFamily } from '../src/client/reload.ts';
+import { impulse, placeCue, RATE_JITTER, roofsOf, SAMPLE_IDS, SAMPLES, shotCues, SOUNDS, soundsFor, voiceFor, type Hearing, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
 import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
@@ -44,7 +45,8 @@ test('another player\'s shot sounds like their weapon, and your own shot events 
     { e: 'shot', x: 100, y: 0, angle: 0, silenced: false, owner: 1, gun: 'smg' },
     { e: 'shot', x: 200, y: 0, angle: 0, silenced: true, owner: 2, gun: 'sniper' },
   ] }));
-  assert.deepEqual(shots.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:silenced', false, 200]]);
+  const reports = shots.filter((c) => c.id.startsWith('shot:'));
+  assert.deepEqual(reports.map((c) => [c.id, c.self, c.x]), [['shot:sniper', false, 200], ['shot:silenced', false, 200]]);
 });
 
 test('every gun on the evolution tree has its own shot sound, and blast guns add a low thump', () => {
@@ -84,10 +86,51 @@ test('a bounty kill plays the bounty cue in place of the plain kill confirm', ()
   assert.deepEqual(ids(snap(), snap({ events: [kill(false)] })), ['kill']);
 });
 
-test('reload plays when reloading starts, not while it continues', () => {
-  const r = (reloading: boolean) => snap({ self: { reloading } });
-  assert.deepEqual(ids(r(false), r(true)), ['reload']);
-  assert.deepEqual(ids(r(true), r(true)), []);
+/** Walks a reload through `shares` (undefined once it is over) and collects the handling cues each snapshot pair makes. */
+const reloadRun = (shares: (number | undefined)[], frame: (share: number | undefined) => Snapshot) =>
+  shares.slice(1).map((share, i) => soundsFor(frame(shares[i]), frame(share)).filter((c) => c.id.startsWith('gun:')));
+
+test('your reload plays each beat of its family once, as the reload passes it, finishing the last on the snapshot it ends', () => {
+  const mine = (gun: 'pistol' | 'shotgun' | 'lmg') => (share: number | undefined) =>
+    snap({ me: { gun }, self: { reloading: share !== undefined, reloadFrac: share ?? 0 } });
+  for (const gun of ['pistol', 'shotgun', 'lmg'] as const) {
+    const steps = reloadRun([undefined, 0.05, 0.3, 0.5, 0.7, 0.8, undefined, undefined], mine(gun));
+    const heard = steps.flat();
+    assert.deepEqual(heard.map((c) => c.id), RELOAD_BEATS[reloadFamily(gun)].map((b) => `gun:${b.cue}`), `${gun} beats, each once, in order`);
+    assert.ok(heard.every((c) => c.self), 'your own reload is centred on you');
+    assert.ok(steps.at(-2)!.length > 0, 'the beats past 0.8 land as the reload completes');
+    assert.deepEqual(steps.at(-1), [], 'nothing after it is over');
+  }
+  const pistol = reloadRun([undefined, 0.05, 0.3, 0.5, 0.7, 0.8, undefined], mine('pistol'));
+  assert.deepEqual(pistol.map((cues) => cues.map((c) => c.id)), [[], ['gun:magOut'], [], ['gun:magIn'], [], ['gun:slide']], 'each beat on the snapshot that passes it');
+});
+
+test('dying mid-reload cuts the reload off, and the first snapshot of a session plays no beats', () => {
+  const dead = snap({ me: { alive: false, hp: 0 }, self: { alive: false, reloading: false } });
+  assert.deepEqual(soundsFor(snap({ self: { reloading: true, reloadFrac: 0.5 } }), dead).filter((c) => c.id.startsWith('gun:')), []);
+  assert.deepEqual(ids(null, snap({ self: { reloading: true, reloadFrac: 0.9 } })), []);
+});
+
+test('another player reloading is heard where they stand, beat by beat, and their finished reload plays its last beats', () => {
+  const them = (share: number | undefined) => snap({ players: [player(2, { gun: 'shotgun', x: 400, ...(share !== undefined && { reload: share }) })] });
+  const heard = reloadRun([undefined, 0.1, 0.45, 0.7, undefined], them).flat();
+  assert.deepEqual(heard.map((c) => c.id), ['gun:shell', 'gun:shell', 'gun:shell', 'gun:pump']);
+  assert.ok(heard.every((c) => !c.self && c.x === 400), 'placed at the reloading player');
+  const killed = (share: number | undefined) => snap({ players: [player(2, { gun: 'shotgun', ...(share === undefined ? { alive: false } : { reload: share }) })] });
+  assert.deepEqual(reloadRun([0.7, undefined], killed).flat(), [], 'a reload ended by death never pumps');
+});
+
+test('a shotgun blast is followed by its pump and then the shell landing, a sniper by its bolt, and an SMG only by its casing', () => {
+  const at = { x: 0, y: 0 };
+  const shape = (gun: 'shotgun' | 'sniper' | 'smg') => shotCues(gun, false, at, true).map((c) => [c.id, c.delayMs ?? 0]);
+  const shotgun = shape('shotgun');
+  assert.deepEqual(shotgun.map(([id]) => id), ['shot:shotgun', 'gun:pump', 'brass:shell']);
+  assert.ok(0 < (shotgun[1]![1] as number) && (shotgun[1]![1] as number) < (shotgun[2]![1] as number), 'blast, then pump, then the shell it threw');
+  assert.deepEqual(shape('sniper').map(([id]) => id), ['shot:sniper', 'gun:bolt', 'brass:casing']);
+  assert.deepEqual(shape('smg').map(([id]) => id), ['shot:smg', 'brass:casing']);
+  assert.deepEqual(shotCues('smg', true, at, false)[0]!.id, 'shot:silenced');
+  const lmg = shotCues('lmg', false, at, false).find((c) => c.id === 'brass:casing')!;
+  assert.ok(placeCue(lmg, open(600)) === null, 'brass is only heard close by');
 });
 
 test('death plays once on the alive-to-dead edge, even when the server drops you from players', () => {

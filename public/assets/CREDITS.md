@@ -7,16 +7,22 @@ Every sound is CC0 1.0 (public domain dedication). Credit is given as thanks, no
 
 | Sample | Author | Source | Licence |
 | --- | --- | --- | --- |
+| slide | nioczkus | [1911 Reload](https://freesound.org/people/nioczkus/sounds/396331/) | CC0-1.0 |
 | shotgun, sub | michorvath | [20 gauge shotgun gunshot](https://freesound.org/people/michorvath/sounds/427595/) | CC0-1.0 |
 | sniper | Jon285 | [405Win.wav](https://freesound.org/people/Jon285/sounds/49513/) | CC0-1.0 |
-| reload | michorvath | [9mm pistol load and chamber](https://freesound.org/people/michorvath/sounds/427593/) | CC0-1.0 |
 | pistol | michorvath | [9mm pistol shot](https://freesound.org/people/michorvath/sounds/427592/) | CC0-1.0 |
+| bolt, magIn, magOut | serøutōnin--deprivəd | [AK-47 Assault Rifle being unloaded and reloaded](https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/674742/) | CC0-1.0 |
 | smg | michorvath | [AR15 pistol shot](https://freesound.org/people/michorvath/sounds/427598/) | CC0-1.0 |
 | assault, crack | michorvath | [AR15 rifle shot](https://freesound.org/people/michorvath/sounds/427596/) | CC0-1.0 |
+| casing | GrayJoy | [Brass bullet shell casing drop onto concrete, multiple takes](https://freesound.org/people/GrayJoy/sounds/210102/) | CC0-1.0 |
 | boom | unfa | [Grenade Explosion SFX (medium-sized, meaty, realistic)](https://freesound.org/people/unfa/sounds/609587/) | CC0-1.0 |
 | launcher | LeMudCrab | [Grenade Launcher](https://freesound.org/people/LeMudCrab/sounds/163458/) | CC0-1.0 |
+| boxClose, boxOpen | SamsterBirdies | [Machine gun reload](https://freesound.org/people/SamsterBirdies/sounds/363168/) | CC0-1.0 |
 | mortar | qubodup | [M-327 Mortar Shots.flac](https://freesound.org/people/qubodup/sounds/187542/) | CC0-1.0 |
+| shellDrop | MrGungus | [12 guage shotgun shell drop](https://freesound.org/people/MrGungus/sounds/773860/) | CC0-1.0 |
+| shellIn | CeebFrack | [shell load.ogg](https://freesound.org/people/CeebFrack/sounds/108793/) | CC0-1.0 |
 | horn | monotraum | [ship horn.wav](https://freesound.org/people/monotraum/sounds/208714/) | CC0-1.0 |
+| pump | dasBUTCHER84 | [SXP_SHOTGUN_RACK_01](https://freesound.org/people/dasBUTCHER84/sounds/449614/) | CC0-1.0 |
 | lmg | LeMudCrab | [Sniper Shot](https://freesound.org/people/LeMudCrab/sounds/163460/) | CC0-1.0 |
 | hit, splat | u1769092 | [VisceralBulletImpacts.wav](https://freesound.org/people/u1769092/sounds/423301/) | CC0-1.0 |
 | bite | MrPokephile | [Zombie Flesh Bites](https://freesound.org/people/MrPokephile/sounds/155973/) | CC0-1.0 |

@@ -1,12 +1,14 @@
 import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
-import type { Snapshot } from '../shared/protocol.ts';
+import type { SelfView, Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
+import { beatsCrossed, cycleOf, reloadFamily, type ReloadCue } from './reload.ts';
 import { ringMoved } from './royale.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'reload' | 'levelup' | 'evolve' | 'perk' | 'click'
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click'
+  | `gun:${ReloadCue}` | 'brass:casing' | 'brass:shell'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'knock' | 'ring';
 
@@ -19,6 +21,7 @@ type Recipe = readonly Layer[];
 
 const crack = (cutoffHz: number, ms: number, gain: number): Layer => ({ src: 'noise', filter: 'bandpass', q: 0.9, cutoffHz: [cutoffHz, cutoffHz * 0.4], ms, gain });
 const thump = (pitchHz: number, ms: number, gain: number): Layer => ({ src: 'tone', wave: 'triangle', pitchHz: [pitchHz, pitchHz * 0.35], ms, gain });
+const tick = (cutoffHz: number, ms: number, gain: number, delayMs?: number): Layer => ({ src: 'noise', filter: 'bandpass', q: 3, cutoffHz: [cutoffHz, cutoffHz * 0.8], ms, gain, ...(delayMs !== undefined && { delayMs }) });
 const note = (pitchHz: number, delayMs: number, ms = 110, gain = 0.25): Layer => ({ src: 'tone', wave: 'square', pitchHz: [pitchHz, pitchHz], ms, gain, delayMs });
 
 const CLASS_SHOTS: Record<WeaponId, Recipe> = {
@@ -73,7 +76,16 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   ],
   kill: [note(880, 0), note(1320, 70, 160)],
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
-  reload: [{ src: 'noise', filter: 'highpass', q: 1, cutoffHz: [3000, 3000], ms: 40, gain: 0.25 }, { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [2200, 2200], ms: 50, gain: 0.25, delayMs: 110 }],
+  'gun:magOut': [tick(2600, 40, 0.25), tick(1800, 60, 0.2, 50)],
+  'gun:magIn': [tick(2200, 30, 0.3), thump(420, 40, 0.25)],
+  'gun:slide': [tick(3200, 50, 0.3), tick(2400, 40, 0.3, 70)],
+  'gun:bolt': [tick(3000, 40, 0.3), tick(2000, 50, 0.35, 90)],
+  'gun:shell': [tick(1600, 50, 0.25), thump(300, 40, 0.2)],
+  'gun:pump': [tick(1400, 70, 0.35), thump(220, 60, 0.3), tick(1800, 60, 0.35, 150)],
+  'gun:boxOpen': [tick(2000, 60, 0.3), thump(260, 50, 0.2)],
+  'gun:boxClose': [thump(300, 60, 0.35), tick(2400, 40, 0.3)],
+  'brass:casing': [{ src: 'tone', wave: 'triangle', pitchHz: [5200, 4800], ms: 40, gain: 0.08 }, { src: 'tone', wave: 'triangle', pitchHz: [4700, 4500], ms: 30, gain: 0.05, delayMs: 90 }],
+  'brass:shell': [tick(900, 40, 0.15), tick(1100, 30, 0.1, 110)],
   levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22)],
   evolve: [
     { src: 'tone', wave: 'sawtooth', pitchHz: [180, 720], ms: 420, gain: 0.16 },
@@ -115,7 +127,8 @@ export const SOUNDS: Record<SoundId, Recipe> = {
 
 /** The recordings `npm run art:sounds` ships, named as in art/sounds.json. Several cues share one at different rates. */
 export const SAMPLE_IDS = [
-  'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'reload', 'crack', 'sub',
+  'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'crack', 'sub',
+  'magOut', 'magIn', 'slide', 'bolt', 'shellIn', 'pump', 'boxOpen', 'boxClose', 'casing', 'shellDrop',
   'hit', 'hurt', 'boom', 'slash', 'kill', 'bounty', 'levelup', 'evolve', 'perk', 'click',
   'bite', 'splat', 'wallHit', 'wallUp', 'wallDown', 'coreHit', 'horn', 'chime', 'revived', 'knock', 'ring', 'cannon', 'mortar',
 ] as const;
@@ -166,7 +179,16 @@ export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
   kill: [layer('kill')],
   bounty: [layer('kill'), layer('bounty')],
   death: [layer('hurt', 0.6)],
-  reload: [layer('reload')],
+  'gun:magOut': [layer('magOut')],
+  'gun:magIn': [layer('magIn')],
+  'gun:slide': [layer('slide')],
+  'gun:bolt': [layer('bolt')],
+  'gun:shell': [layer('shellIn')],
+  'gun:pump': [layer('pump')],
+  'gun:boxOpen': [layer('boxOpen')],
+  'gun:boxClose': [layer('boxClose')],
+  'brass:casing': [layer('casing')],
+  'brass:shell': [layer('shellDrop')],
   levelup: [layer('levelup')],
   evolve: [layer('evolve')],
   perk: [layer('perk')],
@@ -218,6 +240,8 @@ export function traitsOf(id: SoundId): Trait {
   if (id === 'boom') return TRAIT(1.2, 0.8);
   if (id === 'turret:cannon' || id === 'turret:mortar') return TRAIT(1.2, 0.5);
   if (id.startsWith('turret:')) return TRAIT(1.2, 0.25);
+  if (id.startsWith('gun:')) return TRAIT(0.6, 0.05);
+  if (id.startsWith('brass:')) return TRAIT(0.45, 0, true);
   return TRAIT(1.2);
 }
 
@@ -293,8 +317,29 @@ const CORE_HIT_STEP = 100;
 export type SoundCue = { x: number; y: number; self: boolean; gain: number; delayMs?: number; rate?: number }
   & ({ id: 'hurt'; damageFrac: number } | { id: Exclude<SoundId, 'hurt'> });
 
-export const shotCue = (gun: GunId, silenced: boolean, at: { x: number; y: number }, self: boolean): SoundCue =>
-  ({ id: silenced ? 'shot:silenced' : `shot:${gun}`, x: at.x, y: at.y, self, gain: 1 });
+/** Handling sounds pitch with the gun: a pistol's parts are small and quick, an LMG's heavy. */
+const HANDLING_RATE: Record<WeaponId, number> = { pistol: 1.12, smg: 1.08, assault: 1, sniper: 0.94, shotgun: 1, lmg: 0.88 };
+/** How long a casing flies before it rings on the floor; it leaves on the shot, or on the pump or bolt that throws it. */
+const BRASS_LANDS_MS = 400;
+
+const handling = (gun: GunId, cue: ReloadCue, at: { x: number; y: number }, self: boolean, delayMs?: number): SoundCue =>
+  ({ id: `gun:${cue}`, x: at.x, y: at.y, self, gain: 0.8, rate: HANDLING_RATE[GUNS[gun].base], ...(delayMs !== undefined && { delayMs }) });
+
+/** A shot's report, then the pump or bolt worked after it, then its casing or shell landing. */
+export function shotCues(gun: GunId, silenced: boolean, at: { x: number; y: number }, self: boolean): SoundCue[] {
+  const cycle = cycleOf(gun);
+  return [
+    { id: silenced ? 'shot:silenced' : `shot:${gun}`, x: at.x, y: at.y, self, gain: 1 },
+    ...(cycle ? [handling(gun, cycle.kind, at, self, cycle.atMs)] : []),
+    { id: cycle?.kind === 'pump' ? 'brass:shell' : 'brass:casing', x: at.x, y: at.y, self, gain: self ? 0.45 : 0.7, delayMs: (cycle?.atMs ?? 0) + BRASS_LANDS_MS },
+  ];
+}
+
+/** The reload beats passed between two shares of a reload, undefined when none runs; one that vanished from a living player finished. */
+function reloadBeats(gun: GunId, from: number | undefined, to: number | undefined, alive: boolean): ReloadCue[] {
+  if (from === undefined && to === undefined) return [];
+  return beatsCrossed(reloadFamily(gun), from ?? 0, to ?? (alive ? 1 : 0));
+}
 
 /** The sounds a snapshot's events and changes make. Your own shots are left out: the page voices them as it fires them. */
 export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
@@ -305,7 +350,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   for (const ev of next.events) {
     switch (ev.e) {
       case 'shot':
-        if (ev.owner !== next.self.id) cues.push(shotCue(ev.gun, ev.silenced, ev, false));
+        if (ev.owner !== next.self.id) cues.push(...shotCues(ev.gun, ev.silenced, ev, false));
         break;
       case 'dmg': {
         const iHitSomeone = (ev.kind === 'player' || ev.kind === 'zombie') && ev.attacker === next.self.id && ev.victim !== next.self.id;
@@ -360,7 +405,15 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     if (GUNS[me.gun].stage > GUNS[was.gun].stage) mine('evolve');
     if (Object.keys(next.self.perks).length > Object.keys(prev.self.perks).length) mine('perk');
   }
-  if (next.self.reloading && !prev.self.reloading) mine('reload');
+  if (me) {
+    const share = (v: SelfView) => (v.reloading ? v.reloadFrac : undefined);
+    for (const cue of reloadBeats(me.gun, share(prev.self), share(next.self), next.self.alive)) cues.push(handling(me.gun, cue, at, true));
+  }
+  for (const p of next.players) {
+    if (p.id === next.self.id) continue;
+    const was = prev.players.find((q) => q.id === p.id);
+    if (was) for (const cue of reloadBeats(p.gun, was.reload, p.reload, p.alive)) cues.push(handling(p.gun, cue, p, false));
+  }
   if (next.self.pending !== null && next.self.pending.level !== prev.self.pending?.level) mine('levelup');
   if (!next.self.alive && prev.self.alive && !me?.downed) mine('death');
   return cues;
