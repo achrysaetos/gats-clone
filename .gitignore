@@ -9,3 +9,4 @@ todo.md
 decisions.tsv
 art/build
 __pycache__
+.env.local
