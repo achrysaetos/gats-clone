@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EMPTY_BUFFER, pushSnap, TICK_MS } from '../src/client/interp.ts';
 import { NO_PREDICTION, type Prediction } from '../src/client/predict.ts';
-import { MAX_FRAME_STEP_MS, frameStep, resyncNet, shouldPredict } from '../src/client/resync.ts';
+import { MAX_FRAME_STEP_MS, frameStep, resyncNet } from '../src/client/resync.ts';
 import { createDegrader, createFrameGate } from '../src/client/quality.ts';
 import { lightGovernor } from '../src/client/fxparams.ts';
 import type { Snapshot } from '../src/shared/protocol.ts';
@@ -32,11 +32,6 @@ test('resyncNet keeps only the newest snapshot, forgets the clock and the predic
   const next = pushSnap(r.snaps, snap(2000), 61_000);
   assert.equal(next.serverClockOffset, 2000 * TICK_MS - 61_000);
   assert.deepEqual(resyncNet({ snaps: EMPTY_BUFFER, predict: NO_PREDICTION, pendingFx: [], pendingShots: [] }).snaps, { snaps: [], serverClockOffset: null });
-});
-
-test('a hidden tab does not predict', () => {
-  assert.equal(shouldPredict(true), false);
-  assert.equal(shouldPredict(false), true);
 });
 
 test('the frame gate ignores hidden time and the settle period after it', () => {

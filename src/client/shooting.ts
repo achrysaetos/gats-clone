@@ -98,7 +98,7 @@ export function createShooting(page: Page) {
         if (ev.owner === s.myId) own.push(ev);
         else s.pendingShots.push({ at: snap.tick * TICK_MS, shot: ev });
       }
-      const settled = settle(s.firing, serverGun(snap), snap.ackSeq, own.length, s.predict.pending);
+      const settled = settle(s.firing, serverGun(snap), snap.ackSeq, own.length, s.predict.pending.map((p) => ({ seq: p.seq, input: { ...p.input, dashing: !!p.dashing } })));
       s.firing = settled.firing;
       settled.rejected.forEach((shot) => takeBack(s, shot));
       for (const ev of own.slice(own.length - settled.unmatched)) {

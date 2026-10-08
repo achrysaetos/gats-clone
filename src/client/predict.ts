@@ -11,7 +11,8 @@ import { lerp } from './interp.ts';
 
 type Point = { x: number; y: number };
 export type PredictedAbility = { k: 'dash' } | { k: 'knife'; enemies: readonly Point[] };
-export type PendingInput = { seq: number; input: InputState; dtMs: number; ability: PredictedAbility | null };
+/** `dashing`: a dash was running as the input was taken (the motion before it), which the trigger needs (fire.ts). */
+export type PendingInput = { seq: number; input: InputState; dtMs: number; ability: PredictedAbility | null; dashing?: boolean };
 
 export type Prediction = {
   pending: PendingInput[];
@@ -81,20 +82,28 @@ function stepInput(solids: readonly Rect[], at: Motion, p: PendingInput, speed: 
   }
 }
 
-const replay = (solids: readonly Rect[], start: Motion, pending: readonly PendingInput[], speed: Pace, size: number): Motion =>
-  pending.reduce((at, p) => stepInput(solids, at, p, speed, size), start);
+/** Replays `pending` from `start`, noting on each input whether a dash was running as it was taken. */
+function replay(solids: readonly Rect[], start: Motion, pending: readonly PendingInput[], speed: Pace, size: number): { at: Motion; pending: PendingInput[] } {
+  let at = start;
+  const noted = pending.map((p) => {
+    const dashing = !!at.dash;
+    at = stepInput(solids, at, p, speed, size);
+    return p.dashing === dashing ? p : { ...p, dashing };
+  });
+  return { at, pending: noted };
+}
 
 export function predictInput(pred: Prediction, entry: PendingInput, solids: readonly Rect[], speed: Pace, now: number, size: number): Prediction {
-  const pending = [...pred.pending, entry].slice(-MAX_PENDING);
   const was = pred.afterNewest;
+  const pending = [...pred.pending, was ? { ...entry, dashing: !!was.dash } : entry].slice(-MAX_PENDING);
   if (!was) return { ...pred, pending };
   return { ...pred, pending, beforeNewest: was, afterNewest: stepInput(solids, was, entry, speed, size), sampledAt: now };
 }
 
 export function reconcile(pred: Prediction, server: Motion | null, ackSeq: number, solids: readonly Rect[], speed: Pace, size: number): Prediction {
-  const pending = pred.pending.filter((p) => p.seq > ackSeq);
-  if (!server) return { ...NO_PREDICTION, pending };
-  const afterNewest = replay(solids, server, pending, speed, size);
+  const unacked = pred.pending.filter((p) => p.seq > ackSeq);
+  if (!server) return { ...NO_PREDICTION, pending: unacked };
+  const { at: afterNewest, pending } = replay(solids, server, unacked, speed, size);
   const was = pred.afterNewest;
   if (!was || !pred.beforeNewest || Math.hypot(afterNewest.x - was.x, afterNewest.y - was.y) > SNAP_DIST) {
     return { pending, afterNewest, beforeNewest: afterNewest, sampledAt: pred.sampledAt, smoothingCorrection: { x: 0, y: 0 } };

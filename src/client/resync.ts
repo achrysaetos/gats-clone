@@ -23,9 +23,3 @@ export function resyncNet(s: { snaps: SnapBuffer; predict: Prediction; pendingFx
   const newest = newestSnap(s.snaps);
   return { snaps: { snaps: newest ? [newest] : [], serverClockOffset: null } as SnapBuffer, predict: NO_PREDICTION, pendingFx: [] as never[], pendingShots: [] as never[] };
 }
-
-/**
- * Whether movement should be sent and predicted now. A hidden tab sends neutral inputs only (so the server keeps it alive but
- * walks nowhere) and does not advance the prediction, which would otherwise run one 33 ms step per throttled input.
- */
-export const shouldPredict = (hidden: boolean): boolean => !hidden;

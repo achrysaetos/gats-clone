@@ -12,8 +12,11 @@ type Trigger = {
   /** Sprinting, when the gun is back up after it, and the post-sprint clock still to run (the raise, then `settleMs` of settle; see `postSprint`); `bloomRecover` is Steady Hands'. */
   sprint: boolean; raiseUntil: number; settleLeft: number; settleMs: number; bloomRecover: number;
 };
-/** The keys are optional so a bare trigger test need not name them; a missing key reads as not held. */
-export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'> & Partial<Pick<InputState, 'up' | 'down' | 'left' | 'right' | 'sprint'>>;
+/**
+ * The keys are optional so a bare trigger test need not name them; a missing key reads as not held. `dashing` is whether a
+ * dash is running as the input is taken (the predicted motion before it): the sim holds no sprint through a dash.
+ */
+export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'> & Partial<Pick<InputState, 'up' | 'down' | 'left' | 'right' | 'sprint'>> & { dashing?: boolean };
 
 const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0, sprint: false, raiseUntil: -Infinity, settleLeft: 0 } as const;
 const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, ...FRESH_LIFE };
@@ -23,8 +26,8 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   const g = { ...t };
   const pressed = consumePresses(g, input.shots);
   if (!g.alive) return { t: g, fired: false };
-  // The server's sprint: held while moving and not firing, ended by a click; leaving it starts the post-sprint clock (the raise, then the settle).
-  const sprinting = sprintWanted(input) && !pressed;
+  // The server's sprint: held while moving and not firing, ended by a click or a dash; leaving it starts the post-sprint clock (the raise, then the settle).
+  const sprinting = !input.dashing && sprintWanted(input) && !pressed;
   if (sprinting !== g.sprint) {
     g.sprint = sprinting;
     if (!sprinting) { g.settleLeft = raiseMsOf(GUNS[g.gun]) + g.settleMs; g.raiseUntil = now + raiseMsOf(GUNS[g.gun]); }

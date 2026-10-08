@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { actionForKey, assembleInput, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
+import { actionForKey, assembleInput, keyRepeats, MAX_AIM_DIST, perkSlotForKey, type Action } from '../src/client/input.ts';
 import { makeCamera, screenToWorld, worldToScreen } from '../src/client/camera.ts';
 import { clock, deathText, feedMentions, killOf, levelProgress, objectiveFor, roundTimeLeft } from '../src/client/derive.ts';
 import { LEVELS, WORLD } from '../src/shared/defs.ts';
@@ -14,6 +14,12 @@ test('WASD and arrows map to the same movement; unknown and prototype keys map t
   assert.equal(actionForKey('Space'), 'ability');
   assert.equal(actionForKey('KeyQ'), null);
   assert.equal(actionForKey('toString'), null);
+});
+
+test('a held key repeats only held actions and Tab: toggles, picks and Escape act once per press', () => {
+  for (const code of ['KeyW', 'ArrowLeft', 'Space', 'ShiftLeft', 'KeyE', 'KeyR', 'Tab']) assert.equal(keyRepeats(code), true, code);
+  // B (build mode), M (sound), C (chatter), a digit (a build item, which steps wall tiers when pressed again), Escape (pause).
+  for (const code of ['KeyB', 'KeyM', 'KeyC', 'Digit1', 'Digit0', 'Escape', 'KeyQ', 'KeyU', 'Enter']) assert.equal(keyRepeats(code), false, code);
 });
 
 test('digit keys pick perk slots 0-9 with 0 as the tenth', () => {
