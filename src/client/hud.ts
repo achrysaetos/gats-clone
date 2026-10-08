@@ -16,6 +16,8 @@ import { BUILD_HINTS, downedLine, forecast, phaseLine, readyHint, squadShare, us
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
 import { drawGunGlyph } from './sprites.ts';
 import type { Session } from './state.ts';
+import { inBestBand } from '../shared/bands.ts';
+import { EFFECT_LIFE_MS } from './state.ts';
 
 const HUD_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const TYPE = { micro: 10, label: 11, body: 13, title: 15, figure: 17 } as const;
@@ -72,6 +74,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   buildChips = [];
   const compact = w < 640 || h < 520;
   drawHurtVignette(hud);
+  drawNearMisses(hud);
   drawHurtArcs(hud);
   const boardBottom = drawLeaderboard(hud, compact, fullBoard);
   drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
@@ -107,6 +110,36 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
     ctx.fillRect(0, h - d, w, d);
     ctx.fillRect(0, d, d, h - d * 2);
     ctx.fillRect(w - d, d, d, h - d * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** How deep a near miss smears the screen edge, as a share of the short side, and how strongly. */
+const NEAR_MISS = { depth: 0.09, span: 0.32, alpha: 0.16, bands: 5 } as const;
+
+/**
+ * A round passing close by you smears the stretch of screen edge on its side: stacked pale bands that thin toward the
+ * middle, fading over the whizz. Cheap like the hurt vignette, with no blur pass.
+ */
+function drawNearMisses({ ctx, w, h, s, now, cam, selfAt }: Hud) {
+  for (const fx of s.effects) {
+    if (fx.kind !== 'whizz' || fx.victim !== s.myId) continue;
+    const k = (now - fx.born) / EFFECT_LIFE_MS.whizz;
+    if (k < 0 || k >= 1) continue;
+    const at = worldToScreen(cam, fx);
+    const dx = at.x - selfAt.x, dy = at.y - selfAt.y;
+    if (Math.hypot(dx, dy) < 1) continue;
+    const edge = edgePoint(selfAt, { x: selfAt.x + dx * 1e4, y: selfAt.y + dy * 1e4 }, w, h, 0);
+    if (!edge) continue;
+    const depth = Math.min(w, h) * NEAR_MISS.depth, half = Math.max(w, h) * NEAR_MISS.span / 2;
+    const vertical = edge.x <= 0.5 || edge.x >= w - 0.5;
+    ctx.fillStyle = 'rgb(226, 230, 238)';
+    ctx.globalAlpha = (NEAR_MISS.alpha * (1 - k) * (1 - k)) / NEAR_MISS.bands;
+    for (let i = 0; i < NEAR_MISS.bands; i++) {
+      const d = depth * (1 - i / NEAR_MISS.bands), l = half * (1 - i / (NEAR_MISS.bands + 1));
+      if (vertical) ctx.fillRect(edge.x <= 0.5 ? 0 : w - d, edge.y - l, d, l * 2);
+      else ctx.fillRect(edge.x - l, edge.y <= 0.5 ? 0 : h - d, l * 2, d);
+    }
   }
   ctx.globalAlpha = 1;
 }
@@ -219,12 +252,15 @@ export const reticleGap = (spread: number, distPx: number): number =>
 let reticleDrawnGap = 0;
 export const drawnReticleGap = (): number => reticleDrawnGap;
 
-function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
+function drawReticle({ ctx, snap, selfAt, me, cam }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
-  const gap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
+  const dist = Math.hypot(at.x - selfAt.x, at.y - selfAt.y);
+  const gap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, dist));
   reticleDrawnGap = gap;
+  // In the gun's best band the ticks turn gold and a small diamond sits on each, so the right range reads at a glance.
+  const best = !!me && inBestBand(me.gun, dist / cam.scale);
   ctx.lineCap = 'round';
-  for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.5)'], [1.5, '#ffffff']] as const) {
+  for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.5)'], [1.5, best ? PALETTE.gold : '#ffffff']] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
     ctx.beginPath();
@@ -236,6 +272,15 @@ function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   }
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(at.x - 1, at.y - 1, 2, 2);
+  if (best) {
+    ctx.fillStyle = PALETTE.gold;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = at.x + dx * (gap + RETICLE.tick + 4), y = at.y + dy * (gap + RETICLE.tick + 4);
+      ctx.beginPath();
+      ctx.moveTo(x, y - 2.5); ctx.lineTo(x + 2.5, y); ctx.lineTo(x, y + 2.5); ctx.lineTo(x - 2.5, y);
+      ctx.fill();
+    }
+  }
   if (!reloading) return;
   ctx.lineWidth = 3.5;
   ctx.strokeStyle = 'rgba(30, 32, 38, 0.5)';

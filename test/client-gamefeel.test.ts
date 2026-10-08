@@ -113,7 +113,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { Path2D: class {} });
-  const s = { myId: 1, worldSize: 3000, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], snaps: EMPTY_BUFFER, ...session } as unknown as Session;
+  const s = { myId: 1, worldSize: 3000, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], effects: [], snaps: EMPTY_BUFFER, ...session } as unknown as Session;
   drawHud(ctx, 1, makeCamera(s.lastSelf, 1280, 800, WORLD.viewRadius), frame, s, 1000, { x: 0, y: 0 }, null);
   return drawn;
 }

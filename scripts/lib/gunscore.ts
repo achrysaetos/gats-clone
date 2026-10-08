@@ -4,6 +4,9 @@ import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 import { median } from './stats.ts';
+import { AIM_BANDS, BAND_OWNERS, jobOf, type Band } from '../../src/shared/bands.ts';
+
+export { AIM_BANDS };
 
 export const DPS_RANGES = [100, 270, 470, 670] as const;
 
@@ -140,10 +143,7 @@ const binomial = (n: number, k: number): number => (k === 0 ? 1 : (binomial(n, k
 
 export const aimDps = (id: GunId, d: number, still: boolean): number => (HUMAN_HP * 1000) / aimKillMs(id, d, still);
 
-export const AIM_BANDS = [70, 200, 400, 600] as const;
-/** The bands by name: close, mid and long; the fourth is the far edge of the view. */
 const [CLOSE, MID, LONG] = AIM_BANDS;
-type Band = (typeof AIM_BANDS)[number];
 
 const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: number; fastestKillS: Record<Band, number> }> = {
   pistol: { cadenceMs: [80, 750], scope: 1, fastestKillS: { 70: 2.5, 200: 3.2, 400: 5.25, 600: 6.46 } },
@@ -155,21 +155,7 @@ const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: 
 };
 const STAGE_GAIN = [1, 1.15, 1.3] as const;
 export const POSTURE_BY_BAND: Record<Band, 'walking' | 'standing'> = { 70: 'walking', 200: 'walking', 400: 'standing', 600: 'standing' };
-const BAND_OWNERS: Record<Band, readonly WeaponId[]> = { 70: ['smg', 'shotgun'], 200: ['assault'], 400: ['lmg', 'sniper'], 600: ['sniper'] };
 const OWNER_LEAD = 1.15;
-type Job = { bands: readonly Band[]; targetArmor?: ArmorId };
-const JOB: Partial<Record<GunId, Job>> = {
-  pistol: { bands: [CLOSE] },
-  handCannon: { bands: [CLOSE, MID], targetArmor: 'heavy' },
-  bulldog: { bands: [MID] },
-  slugGun: { bands: [MID] },
-  railSlug: { bands: [LONG] },
-  lightMg: { bands: [CLOSE, MID] },
-};
-const jobOf = (id: GunId): Job => {
-  const { from, base } = GUNS[id];
-  return JOB[id] ?? (from ? jobOf(from) : { bands: AIM_BANDS.filter((d) => BAND_OWNERS[d].includes(base)) });
-};
 const SPEEDUP_OVER_PARENT: Record<1 | 2, number> = { 1: 1.1, 2: 1.15 };
 const SNIPER_CLOSE_LAG = 1.4;
 
