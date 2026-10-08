@@ -3,7 +3,7 @@ import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
 import type { Perception, Threat } from './awareness.ts';
-import { coverNear, pickCover } from './cover.ts';
+import { coverBroke, coverNear, pickCover } from './cover.ts';
 import { between, dist, type Point } from './nav.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
@@ -154,6 +154,16 @@ const losing = (v: Perception, p: Personality) => {
 
 type Interrupt = (cur: Intent, v: Perception, c: IntentCtx) => Plan | null;
 
+/** Cover can break while a bot hides behind it: a peek turns into a straight fight, and a retreat or a reload finds new cover. */
+const leaveBrokenCover: Interrupt = (cur, v, c) => {
+  if ((cur.k !== 'peekAndHide' && cur.k !== 'reloadInCover' && cur.k !== 'retreatAndHeal') || !cur.spot || !coverBroke(c.arena.cover, cur.spot)) return null;
+  if (cur.k === 'peekAndHide') return { k: 'engage', target: cur.target };
+  const threat = v.threats[0] ? pos(v.threats[0]) : cur.threat;
+  const spot = hideFrom(v, c, threat);
+  if (cur.k === 'retreatAndHeal') return { k: 'retreatAndHeal', spot, threat };
+  return spot ? { k: 'reloadInCover', spot, threat } : v.threats[0] ? { k: 'engage', target: v.threats[0].p.id } : searchPlan(v, c, threat);
+};
+
 const fleeLosingFight: Interrupt = (cur, v, c) => {
   const near = v.threats[0];
   if (cur.k === 'retreatAndHeal' || !losing(v, c.persona) || (near && near.d < FLEE_FROM_PX)) return null;
@@ -197,7 +207,18 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   return searchPlan(v, c, v.lead);
 };
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
+/** Pinned by near misses in the open, a bot gets behind cover from where they come, unless the shooter is too close to hide from; one peeking ducks back early. */
+const duckWhenPinned: Interrupt = (cur, v, c) => {
+  const from = v.pinnedFrom;
+  const covering = cur.k === 'retreatAndHeal' || cur.k === 'reloadInCover' || cur.k === 'peekAndHide' || cur.k === 'takePosition';
+  if (!from || covering || c.band.rushes || dist(v.me, from) < CORNERED_PX) return null;
+  const t = v.threats[0];
+  if (t) return peekPlan(v, c, t);
+  const spot = hideFrom(v, c, from);
+  return spot && dist(spot, v.me) > ARRIVED_PX ? { k: 'takePosition', spot, facing: from } : null;
+};
+
+const INTERRUPTS: readonly Interrupt[] = [leaveBrokenCover, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, duckWhenPinned, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -241,6 +262,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
 };
 
 function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
+  if (cur.k === 'peekAndHide' && cur.phase === 'peek' && v.pinnedFrom) return { ...cur, phase: 'hide', phaseUntil: v.tick + ticks(between(c.persona.hideMs, c.rand)) };
   if (cur.k !== 'peekAndHide' || v.tick < cur.phaseUntil) return cur;
   const unansweredPeek = cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target);
   if (unansweredPeek) return cur;

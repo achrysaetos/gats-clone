@@ -1,6 +1,6 @@
-import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, HP_MULTIPLIER, rulesOf, WEAPON_IDS, WORLD, type ArmorId, type GunId, type WeaponId } from '../../src/shared/defs.ts';
+import { ARMORS, EVOLUTIONS, FEEL, GUN_IDS, GUNS, HP_MULTIPLIER, rulesOf, WEAPON_IDS, WORLD, type ArmorId, type GunId, type WeaponId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
-import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
+import { effectiveStats, flinchUntil, knockbackPx, shakenOf, spreadFor, suppressedUntil } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 import { median } from './stats.ts';
@@ -89,8 +89,9 @@ export function edgesOver(a: GunId, b: GunId, margin = 1.2): Axis[] {
 const HUMAN_AIM = { handWanderRad: 0.012, trackingLagMs: 80, strafe: WORLD.baseSpeed, strafeMisreadFrac: 0.5 } as const;
 export const HUMAN_HP = WORLD.baseHp * HP_MULTIPLIER.human;
 
-function hitChance(d: number, spread: number, bulletSpeed: number): number {
-  const R = WORLD.playerRadius, cone = d * Math.tan(spread), wander = d * HUMAN_AIM.handWanderRad;
+/** The chance a round passes within `R` of the target's centre: a hit at the body's radius, a near miss or a hit at the near-miss reach. */
+function hitChance(d: number, spread: number, bulletSpeed: number, R: number = WORLD.playerRadius): number {
+  const cone = d * Math.tan(spread), wander = d * HUMAN_AIM.handWanderRad;
   const misread = HUMAN_AIM.strafeMisreadFrac * HUMAN_AIM.strafe * (d / bulletSpeed + HUMAN_AIM.trackingLagMs / 1000);
   const N = 64;
   let sum = 0;
@@ -120,6 +121,12 @@ export function perfectKill(id: GunId, hp: number, armor: ArmorId): { hits: numb
   return { hits, firstToLastMs: shots[hits - 1]!.t - shots[0]!.t };
 }
 
+/**
+ * The duel is a mirror: the target fires back with the same gun and lands as often, so the shooter flinches from the hits it takes
+ * and is suppressed by the rounds that pass close.
+ * A shooter standing still loses ground to every shove its hits give the target and wins it back over about `REGAIN_MS`, stepping in
+ * between bursts; one walking steps straight back in, which every gun's shot interval leaves time for.
+ */
 export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, armor: ArmorId = 'none'): number {
   const g = GUNS[id];
   if (d > g.range) return Infinity;
@@ -127,8 +134,17 @@ export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, a
   const shots = heldTriggerShots.get(id)!;
   let odds = [1, ...Array<number>(need).fill(0)];
   let expected = 0;
+  let at = d, lastT = shots[0]!.t, flinch = -Infinity, suppressed = -Infinity;
   for (const shot of shots) {
-    const p = hitChance(d, spreadFor(id, {}, still, shot.spray), g.bulletSpeed);
+    at = d + (at - d) * Math.exp(-(shot.t - lastT) / REGAIN_MS);
+    lastT = shot.t;
+    const spread = spreadFor(id, {}, still, shot.spray, shakenOf({ flinchUntil: flinch, suppressedUntil: suppressed }, shot.t));
+    const inReach = at <= g.range + WORLD.playerRadius;
+    const p = inReach ? hitChance(at, spread, g.bulletSpeed) : 0;
+    const nearMiss = inReach ? hitChance(at, spread, g.bulletSpeed, WORLD.playerRadius + FEEL.suppression.px) - p : 0;
+    if (still) at += Math.min(FEEL.knockback.maxPx, g.pellets * p * knockbackPx(id, g.damage, at, g.range));
+    flinch = flinchUntil(flinch, shot.t, (g.pellets * p * g.damage) / WORLD.baseHp);
+    suppressed = suppressedUntil(suppressed, shot.t, g.pellets * nearMiss);
     const pellets = Array.from({ length: g.pellets + 1 }, (_, k) => binomial(g.pellets, k) * p ** k * (1 - p) ** (g.pellets - k));
     const next = Array<number>(need + 1).fill(0);
     odds.forEach((o, j) => pellets.forEach((q, k) => { next[Math.min(need, j + k)]! += o * q; }));
@@ -139,6 +155,7 @@ export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, a
 }
 
 const LIKELY = 0.5;
+const REGAIN_MS = 1000;
 const binomial = (n: number, k: number): number => (k === 0 ? 1 : (binomial(n, k - 1) * (n - k + 1)) / k);
 
 export const aimDps = (id: GunId, d: number, still: boolean): number => (HUMAN_HP * 1000) / aimKillMs(id, d, still);

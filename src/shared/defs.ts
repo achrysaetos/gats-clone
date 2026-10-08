@@ -173,6 +173,66 @@ export const GUNS: Record<GunId, GunDef> = {
     look: { length: 1.05, width: 1.3, barrels: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
 };
 
+/**
+ * How a landed round moves the body it hits. Every number scales from the round's own damage, so a gun's weight sets its push
+ * and only the per-class factor is tuned; see docs/feel/README.md for why each value is what it is.
+ */
+export const FEEL = {
+  knockback: {
+    /** Px of shove per point of a round's damage: a shotgun blast throws a body back, rifle rounds nudge it, SMG rounds never move it, so spraying stays a tracking duel. */
+    perDamage: { pistol: 0.15, smg: 0, shotgun: 0.32, assault: 0.08, sniper: 0.12, lmg: 0.06 } satisfies Record<WeaponId, number>,
+    /** Share of the shove a round still carries at the end of its range; it falls off in a straight line from the muzzle, so the shotgun's push is a close-range reward. */
+    farMul: 0.2,
+    /** The longest a run of hits can shove a body: two body widths, enough to break an aim and open a gap, never enough to throw someone across a room. */
+    maxPx: 48,
+    /** A shove plays out over this long, about four ticks, so others see a push rather than a jump and the target keeps walking through it. */
+    ms: 120,
+  },
+  /** A heavy hit slows its target's walk; it never touches a dash, which stays the way out. */
+  stagger: {
+    /** The raw damage one round, or one blast's pellets landing together, must carry: every sniper round, the hand cannon line and slugs pass it, and a shotgun blast does once half its pellets land, at close range. */
+    damage: 60,
+    /** How long the slow lasts: a beat you feel and others see, shorter than any staggering gun's next shot, so it opens a moment rather than a kill. */
+    ms: 200,
+    /** Walking speed while staggered: half pace is a slow the eye catches, and the target still moves and can still dash. */
+    speedMul: 0.5,
+    /** From one stagger's start, no new one lands for this long, so a staggered player walks at full speed at least three quarters of the time whatever hits them. */
+    immuneMs: 800,
+  },
+  /** Being hit shakes your own aim for a moment, so whoever lands first holds the edge. Its level runs 0..1 and drains in a straight line. */
+  flinch: {
+    /** A full flinch drains in this long: a hit you feel through your next shot or two, gone before a duel is decided. */
+    ms: 450,
+    /** A hit taking this share of your health flinches you fully; smaller hits add their share, so an SMG's stream builds it and a sniper round maxes it. */
+    fullAt: 0.25,
+    /** Spread grows by this much of itself at a full flinch: enough to cost the second shooter, small enough that SMGs, which flinch each other most, keep their lead up close (0.4 let a sniper's hip-fire into SMG range). */
+    spreadAdd: 0.3,
+  },
+  /** Enemy rounds passing close without hitting shake your aim, so covering fire pins someone without landing. Its level runs 0..1 and drains in a straight line. */
+  suppression: {
+    /** How close past your body a round must pass: two body widths of air, near enough to hear it crack by. */
+    px: 48,
+    /** Each near miss adds this long, and a full level drains over `ms`: five close rounds suppress fully, and it is gone a second and a half after the fire stops. */
+    perPassMs: 300,
+    ms: 1500,
+    /** Spread grows by this much of itself at full suppression: pinned in the open you trade badly, behind cover it costs nothing. */
+    spreadAdd: 0.3,
+    /** At most one whizz event a victim this often, so the wire stays small however much fire passes. */
+    whizzGapMs: 333,
+  },
+  /** However shaken, by flinch and suppression together, spread grows by at most this much of itself, so a shaken shooter still hits up close. */
+  shakenMaxAdd: 0.8,
+  /** Low cover (barriers, sandbags, broken walls) wears down under fire and breaks; tall walls, containers and buildings never do. */
+  cover: {
+    /** Health of each low piece: about a rifle magazine for concrete and two thirds of one for sandbags, so cover outlasts a duel fought over it but falls to a squad's sustained fire or a grenade or two. */
+    hp: { lowwall: 600, 'wall.broken': 600, sandbags: 400 },
+    /** Looks a piece shows as it wears, the same count as a crate, so a chipped barrier reads as one about to go. */
+    stages: 3,
+    /** A broken piece stands again after this long, twice a crate's wait, so a broken lane stays open for most of a fight; Last Squad keeps it broken for the match. */
+    respawnMs: 90_000,
+  },
+} as const;
+
 export function byGun<T>(f: (id: GunId) => T): Record<GunId, T> {
   const out: Partial<Record<GunId, T>> = {};
   for (const id of GUN_IDS) out[id] = f(id);

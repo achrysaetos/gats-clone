@@ -7,7 +7,7 @@ import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { KIT } from '../kit.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
+import { abilityOf, effectiveStats, isHunted, pendingPick, shakenOf } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
@@ -39,6 +39,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
+    ...(alive && life.staggerUntil > w.now && { staggered: true as const }),
     ...(alive && life.reloadUntil !== null && { reload: Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs)) }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
@@ -48,6 +49,7 @@ function selfView(w: World, p: Player): SelfView {
   const life = p.life;
   const stats = effectiveStats(p);
   const ability = abilityOf(p);
+  const shaken = life.k === 'alive' ? shakenOf(life, w.now) : null;
   return {
     id: p.id,
     ammo: life.k === 'alive' ? life.ammo : 0,
@@ -64,6 +66,11 @@ function selfView(w: World, p: Player): SelfView {
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
     dash: life.k === 'alive' ? life.dash : null,
+    ...(life.k === 'alive' && life.shove && { shove: life.shove }),
+    ...(life.k === 'alive' && life.staggerUntil > w.now && { stagger: life.staggerUntil - w.now }),
+    ...(life.k === 'alive' && life.spray > 0 && { spray: life.spray }),
+    ...(shaken && shaken.flinch > 0 && { flinch: shaken.flinch }),
+    ...(shaken && shaken.suppression > 0 && { suppression: shaken.suppression }),
     // A squad player who bled out waits for dawn, which the run view times.
     respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,
@@ -133,8 +140,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
+  // A whizz goes only to the player it passed.
   const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped'
-    || (inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
+    || (e.e === 'whizz' ? e.victim === me.id : inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),

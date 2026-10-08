@@ -58,6 +58,8 @@ export type PlayerView = {
   spawnShield?: true;
   /** 0..1 through a reload while one runs, so everyone sees the open window. */
   reload?: number;
+  /** Slowed by a heavy hit right now. */
+  staggered?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
@@ -72,6 +74,8 @@ export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
+/** A push from landed rounds playing out: `vx`, `vy` px a second for `leftMs` more, on top of walking and through the same collision. */
+export type Shove = { vx: number; vy: number; leftMs: number };
 
 /** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
 export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
@@ -105,6 +109,17 @@ export type SelfView = {
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
+  /** The shove still to play out from rounds that hit you, so prediction moves you with it. */
+  shove?: Shove;
+  /** Ms left of a stagger slowing your walk, so prediction slows you with it. */
+  stagger?: number;
+  /**
+   * How far into a spray you are, how shaken by hits (`flinch`) and by enemy rounds passing close (`suppression`), each 0..1: with your
+   * movement, what `spreadFor` needs to draw your real spread.
+   */
+  spray?: number;
+  flinch?: number;
+  suppression?: number;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;

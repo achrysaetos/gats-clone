@@ -25,6 +25,9 @@ const BOT_AIM = {
   motionTauMs: 30,
   strafeLeadFraction: 0.7,
   fireSlackRad: 2.5 * DEG,
+  /** A full flinch widens the hand's wander by this much of itself and jerks the aim by about this many radians on the hit, as a person's aim jumps when they are hit. */
+  flinchSigmaAdd: 1,
+  flinchJoltRad: 4 * DEG,
 } as const;
 
 const SUBSTEP_MS = 5;
@@ -102,6 +105,10 @@ export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: n
 }
 
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);
+
+/** How a flinch (0..1) shakes a bot's hand: a wider wander while it lasts, and a jerk on the tick a hit lands. */
+export const flinchedSigma = (sigma: number, flinch: number) => sigma * (1 + BOT_AIM.flinchSigmaAdd * flinch);
+export const flinchJolt = (flinch: number, rand: () => number) => BOT_AIM.flinchJoltRad * flinch * gaussian(rand);
 
 export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
 const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'knife', 'engineer']);
