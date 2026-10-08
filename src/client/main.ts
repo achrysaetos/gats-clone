@@ -36,7 +36,7 @@ import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
 import { addStop, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
 import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
-import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
+import { EFFECT_LIFE_MS, newAnim, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, easeTurrets, faceZombies, nextCoreHitAt } from './siege.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
@@ -295,7 +295,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: M
     ws, rejoin, myId: welcome.id, map: welcome.map, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), anim: newAnim(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 

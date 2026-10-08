@@ -4,7 +4,9 @@ import { BLAST_RADIUS } from '../../shared/sim/abilities.ts';
 import { KIT, type Light, type PieceId } from '../../shared/kit.ts';
 import { MAPS } from '../../shared/maps.ts';
 import { trainAt } from '../../shared/sim/train.ts';
-import { legFrame, stride } from '../gait.ts';
+import { stride } from '../gait.ts';
+import { FALL_MS, gunAt, liveRemains, remainsAlpha, type Fall } from '../remains.ts';
+import { bob, FLINCH_MS, fromFront, gunKick, gunParts, jolt, legsOf, torsoOf, type GunParts, type Legs, type Torso } from './pose.ts';
 import { SOLDIER, TRAIN, trainSprite } from './catalog.ts';
 import { mapLooks, pieceKey, stageFor, type PieceLook } from './pieces.ts';
 import { cellRect, coreRectAt } from '../../shared/sim/build.ts';
@@ -41,8 +43,20 @@ export type BodyLook = {
   killer: boolean;
   /** 1 in the sun, less inside a wall's shadow. */
   light: number;
-  /** The legs: the way they walk and the frame of the run cycle (`SOLDIER.legs`). */
-  legs: { heading: number; frame: number };
+  /** The legs: the way they face and their frame (`SOLDIER.legs`). */
+  legs: Legs;
+  torso: Torso;
+  /** How far back the gun is kicked, as a share of a full kick, and where its magazine and pump or bolt are. */
+  gunKick: number;
+  parts: GunParts;
+  /** The drawn body's offset from its true spot this frame (a hit's jolt, the lean and bob of a run) and its scale. */
+  dx: number; dy: number; scale: number;
+};
+
+/** A fallen soldier: the fall's frame turned the way it fell, and the gun lying (or still skidding) beside it. */
+export type RemainsLook = {
+  id: number; x: number; y: number; turn: number; frame: number; color: string; alpha: number;
+  gun: { gun: GunId; x: number; y: number; angle: number };
 };
 
 export type Tag = { id: number; x: number; y: number; name: string | null; bar: number; hp: number };
@@ -56,7 +70,7 @@ export type OverheadLook = PieceLook & { under: boolean };
 export type TrainLook = { cars: (Rect & { key: string })[]; warn: boolean; axis: 'x' | 'y'; back: boolean };
 export type SiegeLook = Rect & { key: string; kind: BuildingKind; wear: number; ammo: number | null; flash: number; barrel: { angle: number; recoil: number } | null };
 export type ZombieLook = { id: number; kind: ZombieKind; x: number; y: number; angle: number; flash: number; hp: number; bar: boolean; light: number };
-export type DownedLook = { id: number; x: number; y: number; color: string; self: boolean; revive: number; bleedLeft: number | null };
+export type DownedLook = { id: number; x: number; y: number; color: string; self: boolean; revive: number; bleedLeft: number | null; angle: number; frame: number };
 export type TracerLook = { x0: number; y0: number; x1: number; y1: number; r: number; glow: string; color: string; hot: string };
 export type CrackLook = { lines: readonly number[]; alpha: number };
 export type RingLook = { x: number; y: number; r: number; next: Circle | null };
@@ -91,6 +105,7 @@ export type Scene = {
   tracers: TracerLook[];
   zombies: ZombieLook[];
   downed: DownedLook[];
+  remains: RemainsLook[];
   bodies: BodyLook[];
   tags: Tag[];
   cracks: CrackLook[];
@@ -198,7 +213,10 @@ export function describeWorld(f: Frame, dark: number): Scene {
   const clock = snap.royale || snap.run ? serverNow(s.snaps, now) : null;
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   const looks = mapLooks(s.map);
-  for (const p of alive) s.strides.set(p.id, stride(s.strides.get(p.id), p.x, p.y, now));
+  const hits = recentHits(s.effects, now);
+  const downedNow = snap.players.filter((p) => p.downed && near(p.x, p.y, R * 3));
+  for (const p of [...alive, ...downedNow]) s.strides.set(p.id, stride(s.strides.get(p.id), p.x, p.y, now));
+  noteMoves(s, snap, alive, now);
   if (s.strides.size > alive.length * 2 + 16) for (const id of s.strides.keys()) if (!alive.some((p) => p.id === id)) s.strides.delete(id);
   const standing = new Set([...s.walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })), ...(snap.buildings ?? []).map((b) => cellRect(b.cx, b.cy)), ...(snap.run ? [coreRectAt(snap.run.core)] : [])].map(hostKey));
 
@@ -232,19 +250,29 @@ export function describeWorld(f: Frame, dark: number): Scene {
       const hit = flashes.get(id);
       return { id, kind, x, y, angle: s.zombieFaces.get(id)?.a ?? 0, flash: hit === undefined ? 0 : 1 - (now - hit) / HIT_FLASH_MS, hp, bar: ZOMBIE_LOOK[kind].bar, light: lightAt(x, y) };
     }),
-    downed: snap.players.filter((p) => p.downed && near(p.x, p.y, R * 3)).map((p) => ({
+    downed: downedNow.map((p) => ({
       id: p.id, x: p.x, y: p.y, color: colorOf(p), self: p.id === s.myId, revive: p.downed!.revive, bleedLeft: clock === null ? null : p.downed!.bleedOutAt - clock,
+      angle: s.strides.get(p.id)?.heading ?? p.angle, frame: downedFrame(s.strides.get(p.id), p.downed!.revive, now),
     })),
+    remains: remainsOf(s, near, now),
     bodies: alive.map((p) => {
       const self = p.id === s.myId;
-      const flash = flashes.get(p.id), kick = recoil.get(p.id);
+      const flash = flashes.get(p.id), kickAt = recoil.get(p.id);
+      const angle = self && f.selfAngle !== null ? f.selfAngle : p.angle;
+      const kick = kickAt === undefined ? 0 : 1 - (now - kickAt) / KICK_MS;
+      const st = s.strides.get(p.id), hit = hits.get(p.id), move = s.anim.moves.get(p.id), shotAt = s.anim.shotAt.get(p.id), dashAt = s.anim.dashAt.get(p.id);
+      const reload = p.reload ?? null;
+      const j = jolt(hit ? { ms: now - hit.born, dir: hit.dir } : null), b = bob(st);
       return {
-        id: p.id, x: p.x, y: p.y, angle: self && f.selfAngle !== null ? f.selfAngle : p.angle, gun: p.gun, color: colorOf(p), armor: p.armorTier, alpha: p.hidden ? 0.25 : 1,
+        id: p.id, x: p.x, y: p.y, angle, gun: p.gun, color: colorOf(p), armor: p.armorTier, alpha: p.hidden ? 0.25 : 1,
         ring: self ? 'self' : p.team === null && p.color === mine?.color ? 'rival' : null,
         hunted: p.hunted && !self, stage: GUNS[p.gun].stage, spawnShield: !!p.spawnShield, shield: p.shield,
-        flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS,
+        flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick,
         killer: p === killer, light: lightAt(p.x, p.y),
-        legs: legsOf(s.strides.get(p.id)),
+        legs: legsOf(st, angle, dashAt === undefined ? null : now - dashAt),
+        torso: torsoOf({ gun: p.gun, now, id: p.id, reload, kick, moving: !!st?.moving, hit: hit ? { ms: now - hit.born, front: fromFront(hit.dir, angle) } : null, move: move ? { kind: move.kind, ms: now - move.at } : null }),
+        gunKick: gunKick(p.gun, kick), parts: gunParts(p.gun, shotAt === undefined ? null : now - shotAt, reload),
+        dx: j.dx + b.dx, dy: j.dy + b.dy, scale: b.scale,
       };
     }),
     tags: tagsOf(alive, s, now),
@@ -260,9 +288,52 @@ export function describeWorld(f: Frame, dark: number): Scene {
   };
 }
 
-function legsOf(st: ReturnType<typeof stride> | undefined): BodyLook['legs'] {
-  if (!st) return { heading: 0, frame: SOLDIER.legs.stand };
-  return { heading: st.heading, frame: legFrame(st, SOLDIER.legs.stand, SOLDIER.legs.run[0], SOLDIER.legs.run.length) };
+/** Each soldier's newest hit still flinching: when it landed and the way the round flew. */
+function recentHits(effects: readonly Effect[], now: number): Map<number, { born: number; dir: number }> {
+  const out = new Map<number, { born: number; dir: number }>();
+  for (const fx of effects) {
+    if (fx.kind !== 'impact' || fx.victim === null || fx.dir === null || now - fx.born >= FLINCH_MS) continue;
+    if ((out.get(fx.victim)?.born ?? -Infinity) <= fx.born) out.set(fx.victim, { born: fx.born, dir: fx.dir });
+  }
+  return out;
+}
+
+/** Notes who just began a dash, and who threw each new grenade or mine (the nearest soldier to where it appeared). */
+function noteMoves(s: Session, snap: Snapshot, alive: readonly PlayerView[], now: number) {
+  for (const p of alive) {
+    if (p.dashing && !s.anim.dashAt.has(p.id)) s.anim.dashAt.set(p.id, now);
+    else if (!p.dashing) s.anim.dashAt.delete(p.id);
+  }
+  const ids = new Set<number>();
+  for (const t of snap.thrown) {
+    ids.add(t.id);
+    if (s.anim.thrown.has(t.id) || t.kind === 'gasCloud' || t.kind === 'fire') continue;
+    s.anim.thrown.add(t.id);
+    const by = alive.reduce<PlayerView | null>((best, p) => (Math.hypot(p.x - t.x, p.y - t.y) < (best ? Math.hypot(best.x - t.x, best.y - t.y) : R * 3) ? p : best), null);
+    if (by) s.anim.moves.set(by.id, { kind: 'throw', at: now });
+  }
+  for (const id of s.anim.thrown) if (!ids.has(id)) s.anim.thrown.delete(id);
+}
+
+const FALL_STRIP: Record<Fall, readonly number[]> = { forward: SOLDIER.die.forward, back: SOLDIER.die.back, spin: SOLDIER.die.spin };
+
+function remainsOf(s: Session, near: (x: number, y: number, pad: number) => boolean, now: number): RemainsLook[] {
+  s.anim.remains = liveRemains(s.anim.remains, now);
+  return s.anim.remains.filter((r) => near(r.x, r.y, R * 6)).map((r) => {
+    const strip = FALL_STRIP[r.fall], ms = now - r.born;
+    const g = gunAt(r, ms);
+    return {
+      id: r.id, x: r.x, y: r.y, turn: r.turn, color: r.color, alpha: remainsAlpha(r, now),
+      frame: strip[Math.min(strip.length - 1, Math.floor((ms / FALL_MS) * strip.length))]!,
+      gun: { gun: r.gun, x: g.x, y: g.y, angle: g.angle },
+    };
+  });
+}
+
+/** A downed soldier crawls while they move and pushes up while someone revives them. */
+function downedFrame(st: ReturnType<typeof stride> | undefined, revive: number, now: number): number {
+  if (revive > 0) return SOLDIER.downed.revive[Math.min(3, Math.floor(revive * 4))]!;
+  return st?.moving ? SOLDIER.downed.crawl[Math.floor(now / 160) % 4]! : SOLDIER.downed.crawl[0]!;
 }
 
 /** Train cars in their baked sizes, laid back from the nose along the lane. */

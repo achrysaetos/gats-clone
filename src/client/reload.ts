@@ -17,6 +17,14 @@ export const RELOAD_BEATS: Record<ReloadFamily, readonly { at: number; cue: Relo
   box: [{ at: 0.1, cue: 'boxOpen' }, { at: 0.26, cue: 'magOut' }, { at: 0.56, cue: 'magIn' }, { at: 0.76, cue: 'boxClose' }, { at: 0.9, cue: 'bolt' }],
 };
 
+/** Where each of a family's six reload frames starts, as a share of the reload, so the hand moves on the sound's beat. */
+export const RELOAD_FRAMES: Record<ReloadFamily, readonly number[]> = {
+  pistol: [0, 0.12, 0.33, 0.5, 0.7, 0.82],
+  mag: [0, 0.14, 0.3, 0.44, 0.56, 0.8],
+  pump: [0, 0.16, 0.3, 0.4, 0.8, 0.88],
+  box: [0, 0.2, 0.32, 0.45, 0.56, 0.74],
+};
+
 export const reloadFamily = (gun: GunId): ReloadFamily => RELOAD_FAMILY[GUNS[gun].base];
 
 /** The cues a reload passed going from `from` to `to` (shares of the reload), in order. */

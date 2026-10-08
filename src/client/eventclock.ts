@@ -13,7 +13,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.hit?.x ?? ev.x, y: ev.hit?.y ?? ev.y, dir: ev.hit?.dir ?? null, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null, by: ev.attacker };
     case 'boom': return { kind: 'boom', x: ev.x, y: ev.y, r: ev.r };
     case 'broke': return { kind: 'broke', piece: ev.piece, x: ev.x - ev.w / 2, y: ev.y - ev.h / 2, w: ev.w, h: ev.h };
-    case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
+    case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle, owner: ev.owner };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
     case 'turret': {
       const def = BUILDINGS[ev.kind].turret;

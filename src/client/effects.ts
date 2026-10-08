@@ -6,6 +6,7 @@ import type { EffectSpec } from './eventclock.ts';
 import { newestSnap } from './interp.ts';
 import { ZOMBIE_LOOK } from './palette.ts';
 import { burst } from './particles.ts';
+import { addRemains, fallOf, liveRemains } from './remains.ts';
 import type { Effect, Session } from './state.ts';
 
 const TAU = Math.PI * 2;
@@ -74,12 +75,28 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       if (debris === 'metal') burst(s.particles, 'metalSpark', cx, cy, angle, now);
       return;
     }
-    case 'death': burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint); return;
+    case 'death': {
+      burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint);
+      const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
+      if (!victim) return;
+      const blow = s.effects.filter((fx) => fx.kind === 'impact' && fx.victim === spec.victim && fx.dir !== null && now - fx.born < 400).at(-1);
+      const blast = s.effects.some((fx) => fx.kind === 'boom' && now - fx.born < 300 && Math.hypot(fx.x - spec.x, fx.y - spec.y) < fx.r + 30);
+      const dir = blow?.kind === 'impact' ? blow.dir : null;
+      const { fall, turn } = fallOf(dir, victim.angle, blast);
+      s.anim.remains = addRemains(liveRemains(s.anim.remains, now), {
+        id: spec.victim, x: spec.x, y: spec.y, turn, fall, color: tint ?? '#888888', armor: victim.armorTier, gun: victim.gun, born: now,
+        blow: dir ?? angle, spin: spec.victim % 2 ? 1 : -1,
+      });
+      return;
+    }
     case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
     case 'flash':
+      s.anim.shotAt.set(spec.owner, now);
       if (WISPS.has(GUNS[spec.gun].base)) burst(s.particles, 'wisp', spec.x, spec.y, spec.angle, now);
       return;
     case 'slash':
+      s.anim.moves.set(spec.owner, { kind: 'knife', at: now });
+      return;
     case 'tracer':
       return;
   }

@@ -17,6 +17,7 @@ import type { SoundCue } from './sfx.ts';
 import type { TurretAim } from './siege.ts';
 import type { TrailPoint } from './trails.ts';
 import type { CrackPool } from './decals.ts';
+import type { Remains } from './remains.ts';
 
 export type Effect =
   /** (`x`, `y`) is where the round struck, and `dir` the way it flew, when the server knows. */
@@ -27,7 +28,7 @@ export type Effect =
   | { kind: 'flash'; x: number; y: number; angle: number; owner: number; gun: GunId; born: number }
   /** A breakable piece gone to pieces: its solid's rect, flinging its debris from the centre. */
   | { kind: 'broke'; piece: PieceId; x: number; y: number; w: number; h: number; born: number }
-  | { kind: 'slash'; x: number; y: number; angle: number; born: number }
+  | { kind: 'slash'; x: number; y: number; angle: number; owner: number; born: number }
   | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number }
   /** A turret's round from its muzzle at (`x`, `y`), flying `reach` px before it stops. */
   | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number };
@@ -81,11 +82,24 @@ export type Session = {
   zombieFaces: Map<number, { x: number; y: number; a: number }>;
   /** Each soldier's last drawn spot, the way its legs face and how far through the run cycle they are. */
   strides: Map<number, Stride>;
+  /** What each soldier did lately, for their frames: their last shot, a throw or knife swing, when a dash began. And the bodies that stay. */
+  anim: Anim;
   building: boolean;
   buildKind: BuildingKind;
   /** Each turret's aim by cell (`cx,cy`). */
   turretAims: Map<string, TurretAim>;
 };
+
+export type Anim = {
+  shotAt: Map<number, number>;
+  moves: Map<number, { kind: 'throw' | 'knife'; at: number }>;
+  dashAt: Map<number, number>;
+  /** Thrown things already seen, so a new one names who threw it. */
+  thrown: Set<number>;
+  remains: Remains[];
+};
+
+export const newAnim = (): Anim => ({ shotAt: new Map(), moves: new Map(), dashAt: new Map(), thrown: new Set(), remains: [] });
 
 type MenuStatus =
   | { kind: 'idle' }

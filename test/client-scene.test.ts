@@ -9,7 +9,7 @@ import { makeCamera } from '../src/client/camera.ts';
 import { addCrack, createCracks } from '../src/client/decals.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import { createPool } from '../src/client/particles.ts';
-import type { Session } from '../src/client/state.ts';
+import { newAnim, type Session } from '../src/client/state.ts';
 import { mapLooks } from '../src/client/world/pieces.ts';
 import { SOLDIER } from '../src/client/world/catalog.ts';
 import { KIT } from '../src/shared/kit.ts';
@@ -33,7 +33,7 @@ const snap = (o: { me?: Partial<PlayerView>; players?: PlayerView[]; thrown?: Sn
 
 const session = (over: Partial<Session> = {}): Session => ({
   myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: NO_FEEDBACK,
-  map: 'warehouse', strides: new Map(), zombieFaces: new Map(), turretAims: new Map(), coreHitAt: -Infinity, lastSelf: { x: 100, y: 0 }, ...over,
+  map: 'warehouse', strides: new Map(), anim: newAnim(), zombieFaces: new Map(), turretAims: new Map(), coreHitAt: -Infinity, lastSelf: { x: 100, y: 0 }, ...over,
 } as unknown as Session);
 
 const describe = (frame: Snapshot, o: { killerId?: number | null; s?: Session; at?: { x: number; y: number } } = {}): Scene =>
@@ -167,14 +167,17 @@ test('an overhead piece knows when a body stands under it, so the painter can fa
   assert.equal(clear?.under ?? false, false, 'standing off to the side');
 });
 
-test('legs run while a body moves and stand when it stops, facing the way it walked', () => {
+test('legs run while a body moves and stand when it stops; walking away from the aim they backpedal facing it', () => {
   const s = session();
-  const at = (x: number, now: number) => describeWorld({ snap: snap({ me: { x, y: 0 } }), s, cam: makeCamera({ x, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now, selfAngle: Math.PI, killerId: null }, 0);
-  at(100, 0);
-  const running = body(at(108, 33), 1).legs;
-  assert.notEqual(running.frame, SOLDIER.legs.stand, 'a run frame while moving east');
-  assert.ok(Math.abs(running.heading) < 1e-9, 'legs face east though the body aims west');
-  const stopped = body(at(108, 66), 1).legs;
+  const at = (x: number, now: number, aim: number) => describeWorld({ snap: snap({ me: { x, y: 0 } }), s, cam: makeCamera({ x, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now, selfAngle: aim, killerId: null }, 0);
+  at(100, 0, 0);
+  const running = body(at(108, 33, 0), 1).legs;
+  assert.ok((SOLDIER.legs.run as readonly number[]).includes(running.frame), 'a run frame while moving east and aiming east');
+  assert.ok(Math.abs(running.heading) < 1e-9, 'legs face east');
+  const back = body(at(116, 66, Math.PI), 1).legs;
+  assert.ok((SOLDIER.legs.run as readonly number[]).includes(back.frame), 'the run cycle, played backwards');
+  assert.ok(Math.abs(Math.cos(back.heading) + 1) < 1e-9, 'legs face west, the way the body aims');
+  const stopped = body(at(116, 99, 0), 1).legs;
   assert.equal(stopped.frame, SOLDIER.legs.stand);
 });
 

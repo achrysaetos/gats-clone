@@ -10,7 +10,7 @@ import { TURRET_LOOK } from '../siege.ts';
 import type { Knobs } from '../quality.ts';
 import { loadArt, type Art } from './assets.ts';
 import { ART, SHADOW_PER_HEIGHT } from './art.ts';
-import { facing, FIRE_FRAMES, siegeWallSprite, SOLDIER, SPRITES, TRAIN, type Layer } from './catalog.ts';
+import { facing, FIRE_FRAMES, GUN_FRAMES, siegeWallSprite, SPRITES, TRAIN, type Layer } from './catalog.ts';
 import { blockLook } from './blocks.ts';
 import { createGround } from './ground.ts';
 import { createKnee } from './knee.ts';
@@ -65,7 +65,7 @@ const sprite = (blend?: 'add' | 'multiply') => () => {
   return s;
 };
 
-type BodyView = { root: Container; ring: Sprite; legs: Sprite; legsTeam: Sprite; base: Sprite; team: Sprite; armor: Sprite; gun: Sprite; flash: Sprite; chevrons: Sprite[]; hunted: Sprite; guard: Sprite; shield: Sprite; killer: Sprite };
+type BodyView = { root: Container; ring: Sprite; legs: Sprite; legsTeam: Sprite; base: Sprite; team: Sprite; armor: Sprite; gun: Sprite; mag: Sprite; action: Sprite; flash: Sprite; chevrons: Sprite[]; hunted: Sprite; guard: Sprite; shield: Sprite; killer: Sprite };
 
 /**
  * The most marks each ring holds, at the top tier; the tier's budget draws the newest of them. Floor marks (scorch, blood,
@@ -135,6 +135,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   const shadowLayer = new Container();
   const solidLayer = new Container();
   const cracks = new Graphics();
+  const remainsLayer = new Container();
   const actorLayer = new Container();
   const fxLayer = new Container();
   const over = new Graphics();
@@ -143,7 +144,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   /** Above the actors: the train, then roofs, gantries and pipes, which fade to show who is under them. */
   const aboveLayer = new Container();
   const aboveBlocks = new Graphics();
-  world.addChild(groundLayer, decalLayer, under, casingLayer, shadowLayer, blocks, solidLayer, cracks, actorLayer, aboveBlocks, aboveLayer, fxLayer, over);
+  world.addChild(groundLayer, decalLayer, under, casingLayer, shadowLayer, remainsLayer, blocks, solidLayer, cracks, actorLayer, aboveBlocks, aboveLayer, fxLayer, over);
   const nightSprite = new Sprite();
   nightSprite.blendMode = 'multiply';
   const glowWorld = new Container({ isRenderGroup: true });
@@ -195,7 +196,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   const solidPool = pool(solidLayer, sprite());
   const solidGlowPool = pool(glowWorld, sprite('add'));
   const zombiePool = pool(actorLayer, sprite());
-  const downedPool = pool(actorLayer, sprite());
+  const downedPool = pool(remainsLayer, sprite());
+  const remainsPool = pool(remainsLayer, sprite());
   const bodyPool = pool(actorLayer, () => makeBody());
   const thrownPool = pool(actorLayer, sprite());
   const fxPool = pool(fxLayer, sprite());
@@ -209,12 +211,12 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   function makeBody(): Container {
     const root = new Container();
     const parts = {
-      ring: new Sprite(tex.ring), legs: new Sprite(), legsTeam: new Sprite(), base: new Sprite(), team: new Sprite(), armor: new Sprite(), gun: new Sprite(), flash: new Sprite(tex.disc),
+      ring: new Sprite(tex.ring), legs: new Sprite(), legsTeam: new Sprite(), base: new Sprite(), team: new Sprite(), armor: new Sprite(), gun: new Sprite(), mag: new Sprite(), action: new Sprite(), flash: new Sprite(tex.disc),
       chevrons: [new Sprite(tex.chevron), new Sprite(tex.chevron)], hunted: new Sprite(tex.brackets), guard: new Sprite(tex.ring), shield: new Sprite(tex.arc), killer: new Sprite(tex.ring),
     };
     for (const s of [parts.ring, parts.flash, parts.hunted, parts.guard, parts.shield, parts.killer, ...parts.chevrons]) s.anchor.set(0.5);
     parts.flash.blendMode = 'add';
-    root.addChild(parts.ring, parts.killer, parts.legs, parts.legsTeam, parts.base, parts.team, parts.armor, parts.gun, parts.flash, parts.hunted, parts.guard, parts.shield, ...parts.chevrons);
+    root.addChild(parts.ring, parts.killer, parts.legs, parts.legsTeam, parts.gun, parts.mag, parts.action, parts.base, parts.team, parts.armor, parts.flash, parts.hunted, parts.guard, parts.shield, ...parts.chevrons);
     (root as Container & { parts: Omit<BodyView, 'root'> }).parts = parts;
     return root;
   }
@@ -245,26 +247,32 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   function drawBody(b: BodyLook, now: number) {
     const root = bodyPool.next() as Container & { parts: Omit<BodyView, 'root'> };
     const p = root.parts;
-    root.position.set(b.x, b.y);
+    root.position.set(b.x + b.dx, b.y + b.dy);
+    root.scale.set(b.scale);
     root.alpha = b.alpha;
     const { dir, rest } = facing(b.angle, SPRITES.soldier!.dirs);
+    const pose = facing(b.angle, SPRITES[b.torso.sprite]!.dirs);
     const lit = grey(b.light);
     const gait = facing(b.legs.heading, SPRITES['soldier.legs']!.dirs);
     place(p.legs, 'soldier.legs', 'base', gait.dir, b.legs.frame, 0, 0, gait.rest);
     p.legs.tint = lit;
     place(p.legsTeam, 'soldier.legs', 'team', gait.dir, b.legs.frame, 0, 0, gait.rest);
-    const torso = b.kick > 0.5 ? SOLDIER.torso.recoilHeavy[0] : b.kick > 0 ? SOLDIER.torso.recoilHeavy[1] : SOLDIER.torso.aim;
-    place(p.base, 'soldier', 'base', dir, torso, 0, 0, rest);
+    place(p.base, b.torso.sprite, 'base', pose.dir, b.torso.frame, 0, 0, pose.rest);
     p.base.tint = lit;
-    place(p.team, 'soldier', 'team', dir, torso, 0, 0, rest);
+    place(p.team, b.torso.sprite, 'team', pose.dir, b.torso.frame, 0, 0, pose.rest);
     const tc = hex(b.color);
     p.team.tint = b.light === 1 ? tc : shadeNum(tc, b.light);
     p.legsTeam.tint = p.team.tint;
     p.armor.visible = b.armor !== 'none';
     if (p.armor.visible) { place(p.armor, 'soldier', b.armor === 'light' ? 'armorLight' : b.armor === 'medium' ? 'armorMedium' : 'armorHeavy', dir, 0, 0, 0, rest); p.armor.tint = lit; }
-    const back = RECOIL * Math.max(0, b.kick);
-    place(p.gun, `gun.${b.gun}`, 'base', 0, 0, -Math.cos(b.angle) * back, -Math.sin(b.angle) * back, b.angle);
+    // The gun lies under the torso, so the hands baked on its grip and fore-end sit on top of it.
+    const c = Math.cos(b.angle), s = Math.sin(b.angle), back = RECOIL * b.gunKick;
+    place(p.gun, `gun.${b.gun}`, 'base', 0, GUN_FRAMES.body, -c * back, -s * back, b.angle);
     p.gun.tint = lit;
+    p.mag.visible = b.parts.mag;
+    if (b.parts.mag) { place(p.mag, `gun.${b.gun}`, 'base', 0, GUN_FRAMES.mag, -c * back, -s * back, b.angle); p.mag.tint = lit; }
+    place(p.action, `gun.${b.gun}`, 'base', 0, GUN_FRAMES.action, -c * (back + b.parts.action), -s * (back + b.parts.action), b.angle);
+    p.action.tint = lit;
     p.flash.visible = b.flash > 0;
     if (b.flash > 0) mark(p.flash, tex.disc, 0, 0, R * 2.2, 0xffffff, b.flash * 0.8);
     p.ring.visible = b.ring !== null;
@@ -282,6 +290,24 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       if (c.visible) mark(c, tex.chevron, 0, MARK_Y - i * 6, 13, b.stage === 2 ? hex(PALETTE.gold) : 0xc9ced8, 1);
       c.height = 8;
     });
+  }
+
+  /** The fallen, each with the gun it dropped: a soft shadow under the gun, then the gun's frames, then the body over them. */
+  function drawRemains(scene: Scene) {
+    for (const r of scene.remains) {
+      mark(remainsPool.next(), tex.disc, r.gun.x + 3, r.gun.y + 4, R * 1.3, 0x141820, 0.25 * r.alpha);
+      for (const frame of [GUN_FRAMES.body, GUN_FRAMES.mag, GUN_FRAMES.action]) {
+        const g = remainsPool.next();
+        place(g, `gun.${r.gun.gun}`, 'base', 0, frame, r.gun.x, r.gun.y, r.gun.angle);
+        g.alpha = r.alpha;
+      }
+      for (const layer of ['base', 'team'] as const) {
+        const s = remainsPool.next();
+        place(s, 'soldier.die', layer, 0, r.frame, r.x, r.y, r.turn);
+        s.alpha = r.alpha;
+        if (layer === 'team') s.tint = hex(shade(r.color, 0.8));
+      }
+    }
   }
 
   function drawZombies(scene: Scene, now: number) {
@@ -780,7 +806,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       cracks.clear();
       blocks.clear();
       aboveBlocks.clear();
-      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.begin();
+      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, remainsPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.begin();
       drawEffects(scene, now, walls);
       drawMarks(scene, now);
       drawUnder(scene, now);
@@ -788,11 +814,12 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       drawSolids(scene, now);
       drawCracks(scene);
       drawZombies(scene, now);
+      drawRemains(scene);
       for (const d of scene.downed) {
         const base = downedPool.next();
-        place(base, 'soldier.downed', 'base', 0, 0, d.x, d.y);
+        place(base, 'soldier.downed', 'base', 0, d.frame, d.x, d.y, d.angle);
         const team = downedPool.next();
-        place(team, 'soldier.downed', 'team', 0, 0, d.x, d.y);
+        place(team, 'soldier.downed', 'team', 0, d.frame, d.x, d.y, d.angle);
         team.tint = hex(shade(d.color, 0.8));
       }
       for (const b of scene.bodies) drawBody(b, now);
@@ -802,7 +829,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       drawOver(scene, now);
       drawTracers(scene);
       drawParticles(scene, now);
-      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.end();
+      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, remainsPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.end();
 
       const px = { w: view.w * res, h: view.h * res };
       nightSprite.visible = scene.dark > 0;

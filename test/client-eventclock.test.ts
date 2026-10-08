@@ -45,8 +45,8 @@ test('a knife slash draws an arc at the strike point on the render clock, includ
     { e: 'slash', x: 30, y: 40, angle: 0, owner: 2 },
   ]), 700);
   assert.deepEqual(later, [
-    { at: 700, fx: { kind: 'slash', x: 10, y: 20, angle: 1.5 } },
-    { at: 700, fx: { kind: 'slash', x: 30, y: 40, angle: 0 } },
+    { at: 700, fx: { kind: 'slash', x: 10, y: 20, angle: 1.5, owner: ME } },
+    { at: 700, fx: { kind: 'slash', x: 30, y: 40, angle: 0, owner: 2 } },
   ]);
 });
 
