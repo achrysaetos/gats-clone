@@ -441,7 +441,8 @@ a.wordmark { text-decoration: none; }
 .chat {
   position: absolute;
   left: calc(16px + var(--sl));
-  bottom: calc(16px + var(--sb));
+  /* Above the health cross the canvas HUD draws in the bottom-left corner (hud.ts, HEALTH.size + 16 + a gap). */
+  bottom: calc(132px + var(--sb));
   width: min(380px, calc(100vw - 24px));
   pointer-events: none;
 }

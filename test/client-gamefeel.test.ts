@@ -5,7 +5,7 @@ import { GUNS, WORLD } from '../src/shared/defs.ts';
 import { clearOfRects, deathText, edgePoint, killOf, lossOf, type KillEvent } from '../src/client/derive.ts';
 import { spreadFor } from '../src/shared/sim/stats.ts';
 import { addMoments, CALLOUT_MS, CALLOUT_STAGGER_MS, MEDAL_MS, NO_MOMENTS } from '../src/client/moments.ts';
-import { approachAlpha, drawHud, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
+import { approachAlpha, drawHud, HEALTH, healthLook, hudScaleFor, PANEL_ALPHA, reticleGap } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import { EMPTY_BUFFER } from '../src/client/interp.ts';
@@ -104,7 +104,7 @@ test('a HUD panel fades toward see-through while a player is under it, and back 
   assert.ok(PANEL_ALPHA.rest < 1, 'even at rest the panel is translucent');
 });
 
-type Drawn = { text: string; color: unknown };
+type Drawn = { text: string; color: unknown; font?: unknown };
 
 /** Draws the HUD into a recording context and returns every filled string with its fill color. */
 function hudTexts(frame: Snapshot, session: Partial<Session> = {}, now = 1000): Drawn[] {
@@ -112,7 +112,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}, now = 1000): 
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get(target, prop) {
       if (prop in target) return target[prop];
-      if (prop === 'fillText') return (text: string) => drawn.push({ text, color: target.fillStyle });
+      if (prop === 'fillText') return (text: string) => drawn.push({ text, color: target.fillStyle, font: target.font });
       if (prop === 'measureText') return (text: string) => ({ width: text.length * 7 });
       if (typeof prop === 'string' && prop.startsWith('create')) return () => ({ addColorStop() {} });
       return () => {};
@@ -138,11 +138,11 @@ test('holding a stage-2 gun shows a HUNTED badge on your HUD', () => {
   assert.equal(hudTexts(snap({ me: { gun: 'skirmisher' } })).some((d) => d.text === 'HUNTED'), false);
 });
 
-test('the HUD reads your health and magazine off the snapshot: the figure on the tag, rounds over the mag size, RELOAD while reloading', () => {
+test('the HUD reads your health and magazine off the snapshot: the figure on the health cross, rounds over the mag size, RELOAD while reloading', () => {
   const texts = (frame: Snapshot, now: number) => hudTexts(frame, {}, now).map((d) => d.text);
   // Seen fresh (a new life, or the first frame in a while), the figures are exact.
   const fresh = texts(snap({ me: { hp: 73 }, self: { ammo: 7, mag: 12 } }), 50_000);
-  assert.ok(fresh.includes('73'), `health 73 on the tag: ${fresh}`);
+  assert.ok(fresh.includes('73'), `health 73 on the cross: ${fresh}`);
   assert.ok(fresh.includes('7') && fresh.includes('/12'), 'seven rounds of twelve');
   const reloading = texts(snap({ self: { ammo: 0, mag: 12, reloading: true, reloadFrac: 0.4 } }), 60_000);
   assert.ok(reloading.includes('RELOAD') && !reloading.includes('/12'), 'a reload replaces the count');
@@ -153,6 +153,37 @@ test('the HUD reads your health and magazine off the snapshot: the figure on the
   let t = 70_016, last: string[] = [];
   for (let i = 0; i < 40; i++) last = texts(snap({ me: { hp: 41 } }), (t += 16));
   assert.ok(last.includes('41'), `settled on 41: ${last}`);
+});
+
+test('the health cross colours by health: green over half, amber to 35%, orange (low) to 15%, red (critical) under', () => {
+  const at = (hp: number) => healthLook(hp, 400, hp, 10_000, -1e9, -1e9, true);
+  assert.deepEqual([400, 201, 200, 141, 140, 61, 60, 1].map((hp) => at(hp).state), ['ok', 'ok', 'hurt', 'hurt', 'low', 'low', 'critical', 'critical']);
+  assert.equal(at(400).tone, PALETTE.hpGood);
+  assert.equal(at(50).tone, PALETTE.hpBad);
+  assert.equal(at(0).figure, '0');
+  assert.equal(healthLook(41, 100, 40.2, 0, -1e9, -1e9).figure, '41', 'the rolling figure rounds up, never showing less than you have');
+  assert.equal(healthLook(500, 400, 500, 0, -1e9, -1e9).frac, 1, 'the fill never spills past full');
+});
+
+test('the health cross flashes on a hit and glows on a heal, each for a moment only', () => {
+  const look = (now: number) => healthLook(200, 400, 200, now, 1000, 5000, false);
+  assert.equal(look(1000).flash, 1, 'full flash the frame the hit lands');
+  assert.ok(look(1000 + HEALTH.flashMs / 2).flash > 0.4 && look(1000 + HEALTH.flashMs / 2).flash < 0.6, 'fading');
+  assert.equal(look(1001 + HEALTH.flashMs).flash, 0, 'gone after flashMs');
+  assert.equal(look(5000).heal, 1);
+  assert.equal(look(5001 + HEALTH.healMs).heal, 0);
+  assert.equal(look(3000).pulse, 0, 'no throb above 35%');
+  const low = [0, 100, 200, 300].map((t) => healthLook(100, 400, 100, t, -1e9, -1e9, false).pulse);
+  assert.ok(new Set(low).size > 1 && low.every((p) => p >= 0 && p <= 1), `low health throbs: ${low}`);
+  assert.equal(healthLook(100, 400, 100, 300, -1e9, -1e9, true).pulse, 0, 'steady with reduced motion');
+});
+
+test('the health figure is drawn big: 40 px or more at 1080p', () => {
+  const drawn = hudTexts(snap({ me: { hp: 287, maxHp: 400 } }), {}, 90_000).filter((d) => d.text === '287');
+  assert.equal(drawn.length, 1, 'once: on the cross, not again under your soldier');
+  const px = Number(/(\d+(?:\.\d+)?)px/.exec(String(drawn[0]!.font))?.[1]);
+  assert.equal(px, HEALTH.figure);
+  assert.ok(px * hudScaleFor(1920, 1080, false) >= 40, `${px} HUD px at 1080p`);
 });
 
 /** Draws the world into a recording context and returns the stroke color of every stroke. */

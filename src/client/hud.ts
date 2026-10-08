@@ -1356,8 +1356,8 @@ function stepVitals({ dt, now }: Hud, me: PlayerView, self: SelfView, displayLev
   vfx.streak = self.streak;
 }
 
-/** The corner kit's height (the touch minimap sits just below it); see the toy-box vitals below. */
-const VITALS = { height: 138 } as const;
+/** The corner kit's height on a touch screen, the health cross with the kit beside it (the touch minimap sits just below it). */
+const VITALS = { height: 84 + 4 } as const;
 const AMMO = { live: '#e6b850', liveLow: ACCENT, spent: '#2a2f38', empty: PALETTE.hpBad, pipsMax: 20 } as const;
 const STATUS = { shield: '#6eb4ff', rush: HEAL, sprint: ACCENT } as const;
 /** Where the vitals plate's origin is on the HUD, so sparks (drawn in HUD space) can start from inside it. */
@@ -1391,41 +1391,100 @@ function statusTab(ctx: CanvasRenderingContext2D, x: number, cy: number, label: 
 
 const hpColor = (frac: number): string => (frac > 0.5 ? PALETTE.hpGood : frac > 0.35 ? '#ffb347' : frac > 0.15 ? ACCENT : PALETTE.hpBad);
 
-/** The health bar: a chunky segment per 100 hp (4 at least), each with a lit top band, the hit's trailing chunk held pale, a flash on a hit and a shimmer on a heal. */
-function drawHealthSegs(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, maxHp: number, frac: number, color: string, now: number, pulse: number) {
-  const n = Math.max(4, Math.min(8, Math.ceil(maxHp / 100)));
-  const gap = 3;
-  const sw = (w - (n - 1) * gap) / n;
-  ctx.fillStyle = CEL.ink;
+/**
+ * Health, read like TF2's: a chunky cross bottom left (top left on a touch screen, clear of the move stick) with one big figure on it,
+ * the cross filling from the bottom in the health colour. Low health (35% and under) throbs red round the cross, faster when
+ * critical (15%); a hit flashes the fill pale and pops the figure, a heal glows green, and a shield rings it blue. Flat shapes,
+ * an ink outline and one hard shadow, like the rest of the kit.
+ */
+export const HEALTH = { size: 104, compactSize: 84, arm: 0.48, figure: 46, compactFigure: 38, low: 0.35, critical: 0.15, flashMs: 280, healMs: 480 } as const;
+export type HealthState = 'ok' | 'hurt' | 'low' | 'critical';
+export type HealthLook = { figure: string; frac: number; state: HealthState; tone: string; flash: number; heal: number; pulse: number };
+
+/** What the health block shows for `shownHp` (the rolling figure) of `maxHp`, `now` ms after the last hit and heal. Pure, for the tests. */
+export function healthLook(hp: number, maxHp: number, shownHp: number, now: number, hurtAt: number, healAt: number, reduced = REDUCED): HealthLook {
+  const frac = Math.max(0, Math.min(1, hp / maxHp));
+  const state: HealthState = frac <= HEALTH.critical ? 'critical' : frac <= HEALTH.low ? 'low' : frac <= 0.5 ? 'hurt' : 'ok';
+  const fade = (age: number, ms: number) => (age < 0 || age > ms ? 0 : 1 - age / ms);
+  const throb = (state === 'low' || state === 'critical') && !reduced ? 0.5 + 0.5 * Math.sin(now / (state === 'critical' ? 150 : 260)) : 0;
+  return { figure: String(Math.max(0, Math.ceil(shownHp))), frac, state, tone: hpColor(frac), flash: fade(now - hurtAt, HEALTH.flashMs), heal: fade(now - healAt, HEALTH.healMs), pulse: throb };
+}
+
+function crossPath(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  const a = s * HEALTH.arm, o = (s - a) / 2;
   ctx.beginPath();
-  ctx.roundRect(x - 2, y - 2, w + 4, h + 4, 4);
-  ctx.fill();
-  const hurt = popOf(now - vfx.hurtAt, 260);
-  const lit = hurt > 0 ? mixHex(color, '#fff1d2', hurt * 0.8) : color;
-  const trailColor = now < vfx.hold || REDUCED ? '#fff1d2' : '#f2c27a';
-  for (let i = 0; i < n; i++) {
-    const sx = x + i * (sw + gap);
-    ctx.fillStyle = '#262a32';
-    ctx.fillRect(sx, y, sw, h);
-    const f = Math.max(0, Math.min(1, frac * n - i)), t = Math.max(0, Math.min(1, vfx.trail * n - i));
-    if (t > f + 0.004) { ctx.fillStyle = trailColor; ctx.fillRect(sx + sw * f, y, sw * (t - f), h); }
-    if (f <= 0) continue;
-    ctx.fillStyle = lit;
-    ctx.fillRect(sx, y, sw * f, h);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.fillRect(sx, y, sw * f, Math.round(h * 0.34));
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.fillRect(sx, y + h - 3, sw * f, 3);
-  }
-  const heal = (now - vfx.healAt) / 750;
-  if (heal >= 0 && heal < 1) sheen(ctx, x, y, w * frac, h, heal, 'rgba(143,240,196,0.95)');
-  if (pulse > 0) {
-    ctx.globalAlpha = 0.35 + 0.55 * pulse;
+  ctx.moveTo(x + o, y);
+  ctx.lineTo(x + o + a, y);
+  ctx.lineTo(x + o + a, y + o);
+  ctx.lineTo(x + s, y + o);
+  ctx.lineTo(x + s, y + o + a);
+  ctx.lineTo(x + o + a, y + o + a);
+  ctx.lineTo(x + o + a, y + s);
+  ctx.lineTo(x + o, y + s);
+  ctx.lineTo(x + o, y + o + a);
+  ctx.lineTo(x, y + o + a);
+  ctx.lineTo(x, y + o);
+  ctx.lineTo(x + o, y + o);
+  ctx.closePath();
+}
+
+/** The health cross at (x, y), `s` square: glows (shield, heal, low), shadow, the back in your colour, the fill, the outline, the figure. */
+function drawHealthCross(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, look: HealthLook, accent: string, shield: 'spawn' | 'perk' | null, now: number) {
+  ctx.lineJoin = 'round';
+  const glowAt = (color: string, alpha: number, width: number) => {
+    if (alpha <= 0.01) return;
+    ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+    ctx.lineWidth = width;
+    crossPath(ctx, x, y, s);
+    ctx.stroke();
     ctx.globalAlpha = 1;
+  };
+  if (shield) glowAt(STATUS.shield, shield === 'spawn' && !REDUCED ? 0.55 + 0.3 * Math.sin(now / 200) : 0.75, 12);
+  glowAt(PALETTE.hpBad, look.state === 'critical' || look.state === 'low' ? (REDUCED ? 0.6 : 0.3 + 0.6 * look.pulse) : 0, 10);
+  glowAt(HEAL, look.heal * 0.9, 10);
+  ctx.fillStyle = CEL.shadow;
+  ctx.translate(3, 4);
+  crossPath(ctx, x, y, s);
+  ctx.fill();
+  ctx.translate(-3, -4);
+  ctx.save();
+  crossPath(ctx, x, y, s);
+  // Low health stains the empty cross red, throbbing (steady with reduced motion), the way TF2's cross flashes.
+  const back = mixHex('#23272e', accent, 0.2);
+  const danger = look.state === 'critical' || look.state === 'low';
+  ctx.fillStyle = danger ? mixHex(back, '#8a1a14', REDUCED ? 0.7 : 0.4 + 0.5 * look.pulse) : back;
+  ctx.fill();
+  ctx.clip();
+  // The pale chunk a hit just took, held a moment, then the fill.
+  const top = y + s * (1 - look.frac);
+  const trailTop = y + s * (1 - Math.max(look.frac, Math.min(1, vfx.trail)));
+  if (trailTop < top - 0.5) { ctx.fillStyle = '#f2c27a'; ctx.fillRect(x, trailTop, s, top - trailTop); }
+  ctx.fillStyle = look.flash > 0 ? mixHex(look.tone, '#fff1d2', look.flash * 0.85) : look.tone;
+  ctx.fillRect(x, top, s, y + s - top);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+  ctx.fillRect(x, y + s - 5, s, 5);
+  ctx.restore();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = CEL.ink;
+  crossPath(ctx, x, y, s);
+  ctx.stroke();
+  const size = (s === HEALTH.size ? HEALTH.figure : HEALTH.compactFigure) * (1 + 0.12 * look.flash);
+  const ink = look.heal > 0 ? mixHex('#ffffff', HEAL, look.heal) : look.state === 'critical' || look.state === 'low' ? mixHex('#ffffff', '#ffb3b3', look.pulse) : '#ffffff';
+  inked(ctx, look.figure, x + s / 2, y + s / 2 + 1, size, ink, 800, 'center');
+}
+
+/** The armor worn as a small shield chip with a pip per tier (light, medium, heavy). Returns its width, 0 when none is worn. */
+function drawArmorChip(ctx: CanvasRenderingContext2D, x: number, cy: number, tier: number): number {
+  if (tier <= 0) return 0;
+  const w = 50;
+  cel(ctx, x, cy - 10, w, 20, '#3d4450', 4, 2);
+  fillIcon(ctx, PERK_ICONS.shield, x + 12, cy, 14, PANEL_INK);
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < tier ? PANEL_INK : 'rgba(236, 230, 214, 0.2)';
+    ctx.fillRect(x + 23 + i * 8, cy - 5, 5, 10);
   }
+  return w;
 }
 
 /** The level as a ring badge: the ring fills with XP toward the next level. */
@@ -1622,13 +1681,11 @@ export const abilityHint = (pending: PendingPick | null): [string, string] =>
 
 /* ---------------------------------------------------------------------------------------------------------------------------
  * Toy-box vitals: no panel. Each readout is its own drawn object in the game's ink-and-cel style, so the HUD reads as part of the
- * toy-soldier world yet stays apart from the floor (ink outline, hard down-right shadow, tin and brass colours no floor uses):
- * a tin dog tag for health, a drawn magazine for ammo, an enamel medal token for the ability and round pins for level and perks.
- * Health and the corner kit sit top left; the ammo magazine rides beside the reticle (a near-the-gun readout is read fastest),
- * or beside the tag on a touch screen, where there is no cursor to follow.
+ * toy-soldier world yet stays apart from the floor (ink outline, hard down-right shadow): a health cross bottom left (see HEALTH),
+ * an inked count for ammo, an enamel medal token for the ability and round pins for level and perks. The corner kit sits top
+ * left; the ammo count rides beside the reticle (a near-the-gun readout is read fastest), or beside your soldier on a touch screen,
+ * where there is no cursor to follow.
  * ------------------------------------------------------------------------------------------------------------------------- */
-const TAG = { w: 166, h: 68, lip: 4 } as const;
-const TIN = { face: '#aeb6c2', top: '#cdd3dc', lip: '#6c7482', shadow: 'rgba(5, 6, 9, 0.5)' } as const;
 let hudCrosshair: Point = { x: 0, y: 0 };
 
 /** Text over the world: bone (or any colour) with a fat ink stroke, so it holds on a light floor and a dark one. */
@@ -1668,76 +1725,6 @@ function pin(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, f
   ctx.beginPath();
   ctx.arc(cx - r * 0.35, cy - r * 0.4, r * 0.22, 0, TAU);
   ctx.fill();
-}
-
-/** The dog tag: stamped HP figure, a recessed slot of health segments, armor rivets, a ball chain up to the screen corner. Paints toward the health colour when low. */
-function drawDogTag(ctx: CanvasRenderingContext2D, x: number, y: number, me: PlayerView, frac: number, tone: string, now: number, pulse: number): void {
-  const { w, h, lip } = TAG;
-  // The chain: beads from the hole up and out past the corner.
-  for (let i = 5; i >= 0; i--) {
-    const bx = x + 20 - i * 6.5, by = y + 15 - i * 6.5 - Math.sin(i * 0.9) * 2;
-    ctx.fillStyle = CEL.ink;
-    ctx.beginPath();
-    ctx.arc(bx, by, 3.6, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = '#d9dee6';
-    ctx.beginPath();
-    ctx.arc(bx - 0.5, by - 0.5, 2.2, 0, TAU);
-    ctx.fill();
-  }
-  const low = frac <= 0.35;
-  const paint = low ? 0.5 + 0.12 * pulse : 0;
-  const face = mixHex(TIN.face, tone, paint);
-  const top = mixHex(TIN.top, tone, paint * 0.8);
-  ctx.fillStyle = TIN.shadow;
-  ctx.beginPath();
-  ctx.roundRect(x + 3, y + 4, w, h + lip, 14);
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = CEL.ink;
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h + lip, 14);
-  ctx.fillStyle = mixHex(TIN.lip, tone, paint * 0.8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 14);
-  ctx.fillStyle = face;
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = top;
-  ctx.fillRect(x, y, w, 20);
-  ctx.restore();
-  ctx.stroke();
-  // The hole.
-  ctx.fillStyle = CEL.ink;
-  ctx.beginPath();
-  ctx.arc(x + 20, y + 15, 6.5, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = '#5b6371';
-  ctx.beginPath();
-  ctx.arc(x + 20, y + 15, 3.4, 0, TAU);
-  ctx.fill();
-  // The stamped figure: a pressed-in highlight under dark ink.
-  const hurtPop = popOf(now - vfx.hurtAt, 220);
-  const size = 40 + Math.round(hurtPop * 3);
-  const figure = String(Math.ceil(vfx.shownHp));
-  setFont(ctx, 800, size);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-  ctx.fillText(figure, x + 38, y + 28.5);
-  ctx.fillStyle = low ? mixHex('#7a1812', '#3a0d0a', pulse) : popOf(now - vfx.healAt, 420) > 0 ? '#0f7a4d' : CEL.ink;
-  ctx.fillText(figure, x + 38, y + 27);
-  // Armor rivets: dark plates stamped for each tier worn.
-  const tier = ARMOR_IDS.indexOf(me.armorTier);
-  for (let i = 0; i < 3; i++) {
-    const px = x + w - 16 - (3 - i) * 12;
-    cel(ctx, px, y + 11, 10, 8, i < tier ? '#4f5560' : mixHex(face, '#ffffff', 0.25), 2, 1);
-  }
-  // The slot.
-  drawHealthSegs(ctx, x + 14, y + h - 21, w - 28, 11, me.maxHp, frac, tone, now, low ? pulse * 0.6 : 0);
 }
 
 /** The ability as an enamel medal: ribbon tails, a lit face with its icon, the cooldown wedge, READY glow, and its key stamped beside it. */
@@ -1825,16 +1812,16 @@ function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, se
   }
 }
 
-/** Health as a segmented ring round your soldier (ink-edged so it holds on any floor), the figure under it. */
-function drawHpRing(hud: Hud, me: PlayerView, frac: number, tone: string, pulse: number) {
+/** Health as a thin segmented ring round your soldier while hurt: a glance-cue where your eyes already are; the cross holds the figure. */
+function drawHpRing(hud: Hud, me: PlayerView, frac: number, tone: string) {
   const { ctx, selfAt, cam, now } = hud;
-  const R = WORLD.playerRadius * cam.scale + 11;
+  const R = WORLD.playerRadius * cam.scale + 9;
   const n = Math.max(4, Math.min(8, Math.ceil(me.maxHp / 100)));
-  const gap = 0.2, span = TAU / n - gap;
+  const gap = 0.22, span = TAU / n - gap;
   const hurt = popOf(now - vfx.hurtAt, 260);
   const lit = hurt > 0 ? mixHex(tone, '#fff1d2', hurt * 0.8) : tone;
   ctx.lineCap = 'butt';
-  for (const [width, color] of [[9, CEL.ink], [5, '#262a32']] as const) {
+  for (const [width, color] of [[5, CEL.ink], [2.5, '#262a32']] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
     for (let i = 0; i < n; i++) {
@@ -1844,7 +1831,7 @@ function drawHpRing(hud: Hud, me: PlayerView, frac: number, tone: string, pulse:
       ctx.stroke();
     }
   }
-  ctx.lineWidth = 5;
+  ctx.lineWidth = 2.5;
   for (let i = 0; i < n; i++) {
     const a0 = -Math.PI / 2 + i * (TAU / n) + gap / 2;
     const f = Math.max(0, Math.min(1, frac * n - i)), t = Math.max(0, Math.min(1, vfx.trail * n - i));
@@ -1860,14 +1847,12 @@ function drawHpRing(hud: Hud, me: PlayerView, frac: number, tone: string, pulse:
     ctx.arc(selfAt.x, selfAt.y, R, a0, a0 + span * f);
     ctx.stroke();
   }
-  const figure = String(Math.ceil(vfx.shownHp));
-  inked(ctx, figure, selfAt.x, selfAt.y + R + 17, 24, frac <= 0.35 ? mixHex(tone, '#ffffff', pulse * 0.4) : PANEL_INK, 800, 'center');
 }
 
 /**
- * The vitals: a dog tag top left (health is read best from a fixed corner), the ability medal and rank pins under it, the ammo
- * magazine beside the reticle (ammo is read best next to the gun; your soldier's side on a touch screen, which has no cursor), and a
- * health ring round your soldier that appears only while hurt or low, where your eyes already are.
+ * The vitals: the health cross bottom left (top left on a touch screen, where the move stick owns the bottom left), the ability
+ * medal and rank pins top left, the ammo count beside the reticle (your soldier's side on a touch screen, which has no cursor),
+ * and a thin health ring round your soldier while hurt or low.
  */
 function drawVitals(hud: Hud, compact: boolean) {
   const { ctx, snap, me, w, h, now, selfAt, cam } = hud;
@@ -1877,36 +1862,58 @@ function drawVitals(hud: Hud, compact: boolean) {
   const X0 = EDGE + ins.l, Y0 = EDGE + ins.t;
   vitalsAt.x = X0;
   vitalsAt.y = Y0;
-  const hpFrac = me.hp / me.maxHp;
   const lp = levelProgress(me.level, me.score);
   stepVitals(hud, me, self, lp.displayLevel, lp.frac);
   const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
-  const tone = hpColor(hpFrac);
-  const lowHp = hpFrac <= 0.35;
-  const pulse = lowHp && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (hpFrac <= 0.15 ? 160 : 260)) : 0;
+  const look = healthLook(me.hp, me.maxHp, vfx.shownHp, now, vfx.hurtAt, vfx.healAt);
+  const lowHp = look.state === 'low' || look.state === 'critical';
   // The ring: full while low, otherwise a few seconds after a hit, fading out.
   const sinceHurt = now - vfx.hurtAt;
   const ringA = lowHp ? 1 : REDUCED ? (sinceHurt < 2400 ? 1 : 0) : Math.max(0, Math.min(1, (3000 - sinceHurt) / 700));
   if (ringA > 0.01) {
-    ctx.globalAlpha = ringA;
-    drawHpRing(hud, me, hpFrac, tone, pulse);
+    ctx.globalAlpha = ringA * 0.85;
+    drawHpRing(hud, me, look.frac, look.tone);
     ctx.globalAlpha = 1;
   }
-  panels.push({ x: X0, y: Y0, w: TAG.w, h: TAG.h + TAG.lip });
-  drawDogTag(ctx, X0, Y0, me, hpFrac, tone, now, pulse);
-  // The corner kit: ability medal, then level and perks.
-  const rowY = Y0 + TAG.h + TAG.lip + 24;
-  drawMedalToken(ctx, X0 + 18, rowY, self, now);
-  const kitW = drawRankRow(ctx, X0 + 98, rowY, lp, owned, now);
-  panels.push({ x: X0, y: rowY - 20, w: 98 + kitW, h: 52 });
-  // Status tabs beside the tag, only while in effect.
-  let cx = X0 + TAG.w + 14;
-  const sy = Y0 + 20;
-  if (me.spawnShield || me.shield) cx += statusTab(ctx, cx, sy, me.spawnShield ? 'SPAWN' : 'SHIELD', STATUS.shield, PERK_ICONS.shield) + 6;
-  if (me.rush) cx += statusTab(ctx, cx, sy, self.perks[2] === 'secondWind' ? 'WIND' : 'RUSH', STATUS.rush, self.perks[2] === 'secondWind' ? PERK_ICONS.secondWind : PERK_ICONS.adrenaline) + 6;
-  if (self.sprint === true) cx += statusTab(ctx, cx, sy, 'SPRINT', STATUS.sprint, PERK_ICONS.marathon) + 6;
-  if (me.hunted) cx += drawHuntedBadge(ctx, cx, sy) + 6;
-  if (self.streak >= 2) drawStreakBadge(ctx, cx, sy, self.streak, now);
+  // The health cross, with the armor chip and the health statuses (shield, rush) beside it.
+  const S = compact || touchScreen ? HEALTH.compactSize : HEALTH.size;
+  const bx = X0, by = touchScreen ? Y0 : h - EDGE - ins.b - S;
+  const shield = me.spawnShield ? 'spawn' : me.shield ? 'perk' : null;
+  drawHealthCross(ctx, bx, by, S, look, colorHexOf(snap, me.id, me.team), shield, now);
+  panels.push({ x: bx - 6, y: by - 6, w: S + 12, h: S + 12 });
+  const tier = ARMOR_IDS.indexOf(me.armorTier);
+  const healthTabs: [string, string, string][] = [];
+  if (shield) healthTabs.push([shield === 'spawn' ? 'SPAWN' : 'SHIELD', STATUS.shield, PERK_ICONS.shield]);
+  if (me.rush) healthTabs.push(self.perks[2] === 'secondWind' ? ['WIND', STATUS.rush, PERK_ICONS.secondWind] : ['RUSH', STATUS.rush, PERK_ICONS.adrenaline]);
+  // The corner kit: ability medal, then level and perks; beside the cross on a touch screen.
+  const kitX = touchScreen ? X0 + S + 16 : X0;
+  const rowY = Y0 + 22;
+  drawMedalToken(ctx, kitX + 18, rowY, self, now);
+  const kitW = drawRankRow(ctx, kitX + 98, rowY, lp, owned, now);
+  panels.push({ x: kitX, y: rowY - 20, w: 98 + kitW, h: 52 });
+  // Tabs while in effect, in a row under the kit; on a desktop the health ones sit by the cross instead.
+  let cx = kitX;
+  let sy = rowY + 40;
+  // Each tab goes on the row, wrapping before it would reach `limit`: on a phone that is the chat's left edge at the top centre.
+  const limit = touchScreen ? w / 2 - Math.min(360, 0.44 * w * hudScale) / 2 / hudScale - 6 : Infinity;
+  const put = (width: number, draw: (x: number, y: number) => void) => {
+    if (cx > kitX && cx + width > limit) { cx = kitX; sy += 24; }
+    draw(cx, sy);
+    cx += width + 6;
+  };
+  const tabWidth = (label: string) => { setFont(ctx, 800, TYPE.micro); return ctx.measureText(label).width + 29; };
+  if (touchScreen) {
+    if (tier > 0) put(50, (x, y) => drawArmorChip(ctx, x, y, tier));
+    for (const [label, color, icon] of healthTabs) put(tabWidth(label), (x, y) => statusTab(ctx, x, y, label, color, icon));
+  } else {
+    const sx = bx + S + 8;
+    let ty = by + S / 2;
+    if (drawArmorChip(ctx, sx, ty, tier) > 0) ty -= 26;
+    for (const [label, color, icon] of healthTabs) { statusTab(ctx, sx, ty, label, color, icon); ty -= 24; }
+  }
+  if (self.sprint === true) put(tabWidth('SPRINT'), (x, y) => statusTab(ctx, x, y, 'SPRINT', STATUS.sprint, PERK_ICONS.marathon));
+  if (me.hunted) put(huntedBadgeWidth(ctx), (x, y) => drawHuntedBadge(ctx, x, y));
+  if (self.streak >= 2) put(streakBadgeWidth(ctx, self.streak), (x, y) => drawStreakBadge(ctx, x, y, self.streak, now));
   // Ammo: beside the reticle, or your soldier on a touch screen; mirrored when it would run off the right edge.
   const near = touchScreen || spreadOff;
   const reach = WORLD.playerRadius * cam.scale;
