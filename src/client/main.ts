@@ -19,13 +19,13 @@ import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.
 import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied, noteTopup, setHudInsets } from './hud.ts';
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
-import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
+import { actionForKey, assembleInput, keyRepeats, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { notePropEvents } from './propfx.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
 import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
-import { frameStep, resyncNet, shouldPredict } from './resync.ts';
+import { frameStep, resyncNet } from './resync.ts';
 import { nextInputDue, pullsInput } from './inputclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
@@ -86,6 +86,7 @@ import { renderLevelCard } from './levelcard.ts';
 import { createChallengePanel } from './challengepanel.ts';
 import { createXpCard } from './xpcard.ts';
 import { createChallengeToasts } from './challengetoast.ts';
+import { parseServerMsg, routeServerMsg } from './servermsg.ts';
 import { newlyDone, openChallenges } from './progression.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
@@ -96,7 +97,6 @@ const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
-const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'radio', 'badge', 'error', 'progress', 'equipped']);
 
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
@@ -278,16 +278,6 @@ function leave() {
   ws?.close();
 }
 
-function parseServerMsg(data: unknown): ServerMsg | null {
-  if (typeof data !== 'string') return null;
-  try {
-    const v: unknown = JSON.parse(data);
-    return typeof v === 'object' && v !== null && SERVER_MSG_TYPES.has((v as { t: string }).t) ? (v as ServerMsg) : null;
-  } catch {
-    return null;
-  }
-}
-
 function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   const now = performance.now();
   if (state.phase === 'menu' || state.phase === 'reconnecting') {
@@ -307,20 +297,22 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   }
   const s = state.s;
   if (s.ws !== ws) return;
-  switch (msg.t) {
-    case 'snap': {
-      const snap = fillSnapshot(msg, newestSnap(s.snaps));
-      return snap ? onSnap(s, snap, now) : undefined;
-    }
-    case 'radio': onRoomRadio(msg.station, now); return;
-    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; s.mapId = msg.map; return;
-    case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
-    case 'emote': { noteEmote(msg.pid, msg.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, msg.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); return; }
-    case 'badge': if (isCenturion(msg.badge) && aimCamera) { const at = worldToScreen(aimCamera, s.lastSelf); celebrate.puff(at.x, at.y - 30, bodyColor({ color: loadout.color, team: null })); }
-      s.moments = addCareerToast(s.moments, msg.badge, msg.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius); return;
-    case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
-    case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; s.mapId = msg.map; return;
-  }
+  // Every type the server sends has its handler here: the compiler refuses one left out (servermsg.ts).
+  routeServerMsg(msg, {
+    snap: (m) => { const snap = fillSnapshot(m, newestSnap(s.snaps)); if (snap) onSnap(s, snap, now); },
+    radio: (m) => onRoomRadio(m.station, now),
+    walls: (m) => { s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; },
+    chat: (m) => { s.chat.push({ from: m.from, text: m.text, team: m.team, at: now }); },
+    emote: (m) => { noteEmote(m.pid, m.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, m.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); },
+    badge: (m) => {
+      if (isCenturion(m.badge) && aimCamera) { const at = worldToScreen(aimCamera, s.lastSelf); celebrate.puff(at.x, at.y - 30, bodyColor({ color: loadout.color, team: null })); }
+      s.moments = addCareerToast(s.moments, m.badge, m.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
+    },
+    error: (m) => { s.chat.push({ from: '', text: m.message, team: null, at: now }); },
+    welcome: (m) => { s.myId = m.id; s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; },
+    progress: (m) => onProgress(m),
+    equipped: (m) => wardrobe.onEquipped(m.equipped),
+  });
 }
 
 /** Account progress: the new totals reach the menu's cards, the XP card waits to be shown, a completed challenge toasts. */
@@ -488,13 +480,14 @@ function sendInputTick() {
   shooting.fireBeforeSending(s, now);
   const input = committed(s.firing, assembleInput(actions, active && (firing || touchAiming), s.shots, aimOffset(s)));
   s.walk = { now: walks(input), at: walks(input) ? now : s.walk.at };
-  const sent = sendInput(s.firing, s.seq, input, now);
+  // The trigger keeps no sprint through a dash, as the sim does (fire.ts), so it is told whether one runs as this input is taken.
+  const sent = sendInput(s.firing, s.seq, { ...input, dashing: !!s.predict.afterNewest?.dash }, now);
   s.firing = sent.firing;
   if (sent.rejected) shooting.takeBack(s, sent.rejected);
   const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   // A hidden tab's timer is throttled to about 1 Hz: sending neutral inputs keeps the player alive, but predicting a step for each would drift far from the server.
-  if (!shouldPredict(hidden)) return;
+  if (hidden) return;
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
   s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest, doorsOf(s)), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
@@ -721,6 +714,8 @@ function onKeyDown(e: KeyboardEvent) {
   const s = sessionOf(state);
   if (!s) return;
   if (overlays.typing) {
+    // A held Enter's repeat would close the chat line it just opened (keyRepeats: Enter acts once per press).
+    if (e.repeat) return;
     if (e.key === 'Enter') {
       const text = overlays.closeChat();
       if (text) send(s.ws, { t: 'chat', text });
@@ -732,17 +727,21 @@ function onKeyDown(e: KeyboardEvent) {
   // Escape closes the innermost thing first and opens the pause menu only when nothing else wants it (pausegate.ts).
   if (e.code === 'Escape') {
     e.preventDefault();
+    // A held Escape's repeat would close the pause menu it just opened.
+    if (e.repeat) return;
     const action = escapeAction({ inMatch: true, typing: false, pauseOpen: pause.isOpen(), confirming: pause.confirming(), wheelOpen: wheel.open, rangeOpen: rangeUi.isOpen(), building: s.building });
     if (action === 'cancel-leave') pause.cancelConfirm();
     else if (action === 'close-pause') pause.close();
     else if (action === 'close-wheel') wheel.close();
     else if (action === 'close-range') rangeUi.close();
     else if (action === 'exit-build') s.building = false;
-    else if (action === 'open-pause' && !e.repeat) pause.open();
+    else if (action === 'open-pause') pause.open();
     return;
   }
   // While the menu is up nothing reaches the soldier: Tab cycles inside it, arrows and Space belong to the focused control.
   if (pause.isOpen()) { pause.handleKey(e); return; }
+  // A held toggle or pick acts once, not again on every repeat (input.ts `keyRepeats`).
+  if (e.repeat && !keyRepeats(e.code)) return;
   if (e.code === 'Tab') {
     e.preventDefault();
     fullBoard = true;

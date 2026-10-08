@@ -16,6 +16,13 @@ const KEY_BINDINGS: Readonly<Record<string, Action>> = {
 
 export const actionForKey = (code: string): Action | null => (Object.hasOwn(KEY_BINDINGS, code) ? KEY_BINDINGS[code]! : null);
 
+/**
+ * Whether a held key's auto-repeat still reaches the match. Only a held action (whose repeat changes nothing) and Tab (held for
+ * the board) do: a repeating toggle or pick (B, M, C, a build digit stepping wall tiers, Escape, Enter opening and closing the
+ * chat line) would flip while the key is held.
+ */
+export const keyRepeats = (code: string): boolean => actionForKey(code) !== null || code === 'Tab';
+
 const PERK_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'] as const;
 
 export const perkSlotForKey = (code: string): number | null => {
