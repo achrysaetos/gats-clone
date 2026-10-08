@@ -30,7 +30,7 @@ const ms = (v: number) => v.toFixed(2);
 type Squad = { w: World; bots: Map<number, BotMemory>; encoders: Map<number, (snap: Snapshot) => string>; r: () => number };
 
 function newSquad(seed: number): Squad {
-  const w = createWorld('ZOM', seed, 'outpost');
+  const w = createWorld('ZOM', seed, 'yard');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < squad; i++) {
@@ -105,7 +105,7 @@ run.night = 10;
 run.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
 // The squad cannot fall either, so it keeps firing into the horde for the whole sample, and the horde is topped up at its edges to the cap every tick.
 let shots = 0, kills = 0, turretShots = 0;
-const horde = Object.values(MAPS.outpost.siege!.horde);
+const horde = Object.values(MAPS.yard.siege!.horde);
 const holdOut = () => {
   for (const p of sq.w.players.values()) if (p.life.k === 'alive') p.life.hp = 1e9;
   for (const b of sq.w.buildings) if (b.kind !== 'wall') b.ammo = BUILDINGS[b.kind].turret.ammo;

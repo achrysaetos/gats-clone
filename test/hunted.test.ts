@@ -106,7 +106,7 @@ test('a hunted player cannot vanish in a ghillie suit', () => {
 });
 
 test('a squadmate on a stage-2 gun in a zombies run is never hunted: no announcement, no marker, no ping', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   const a = spawnAt(w, 1400, 1400, { name: 'Bramble' });
   const mate = spawnAt(w, 1600, 1400);
   a.level = 5;

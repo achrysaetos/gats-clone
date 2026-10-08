@@ -3,7 +3,7 @@ import type { MapId } from '../../shared/maps.ts';
 export const FLOOR_DETAILS = ['concrete', 'asphalt'] as const;
 export type FloorDetail = (typeof FLOOR_DETAILS)[number];
 /** The detail texture each map's floor takes: poured concrete slabs unless named, asphalt and ballast for open yards. */
-export const MAP_FLOOR: Partial<Record<MapId, FloorDetail>> = { outpost: 'asphalt' };
+export const MAP_FLOOR: Partial<Record<MapId, FloorDetail>> = { yard: 'asphalt' };
 
 /**
  * The look every baked image shares: the camera, the sun and the bake resolution.

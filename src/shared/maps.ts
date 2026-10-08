@@ -2,9 +2,10 @@ import { MODE_IDS, SIDES, type ModeId, type Side } from './defs.ts';
 import { KIT, PIECE_IDS, placed, type Light, type Material, type PieceId, type Placement } from './kit.ts';
 import type { Rect } from './sim/movement.ts';
 import { timetableProblem, type TrainDef } from './sim/train.ts';
-import OUTPOST from './maps/outpost.json' with { type: 'json' };
+import RAILYARD from './maps/railyard.json' with { type: 'json' };
 import VAULT from './maps/vault.json' with { type: 'json' };
 import WAREHOUSE from './maps/warehouse.json' with { type: 'json' };
+import YARD from './maps/yard.json' with { type: 'json' };
 
 export type Center = { x: number; y: number };
 export type WallMaterial = Material;
@@ -196,21 +197,26 @@ function extractOf(name: string, ext: NonNullable<MapFile['extract']>, pieces: r
 
 export const loadMap = (json: unknown): MapDef => expandMap(parseMapFile(json));
 
-export const MAP_IDS = ['warehouse', 'outpost', 'vault'] as const;
+export const MAP_IDS = ['warehouse', 'railyard', 'yard', 'vault'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
   warehouse: loadMap(WAREHOUSE),
-  outpost: loadMap(OUTPOST),
+  railyard: loadMap(RAILYARD),
+  yard: loadMap(YARD),
   vault: loadMap(VAULT),
 };
 
+/**
+ * Which maps each mode plays, in order. Railyard's centre is its track, and a half-turn map's middle zone must sit on its centre, so
+ * it cannot host DOM; Yard's plaza holds the zombies' core and is DOM's zone B. Last Squad plays only 4000 maps, the size its ring is scaled for.
+ */
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
-  FFA: ['warehouse'],
-  TDM: ['warehouse'],
-  DOM: ['warehouse'],
-  ZOM: ['outpost'],
-  BR: ['warehouse'],
+  FFA: ['warehouse', 'railyard'],
+  TDM: ['warehouse', 'railyard', 'yard'],
+  DOM: ['warehouse', 'yard'],
+  ZOM: ['yard'],
+  BR: ['warehouse', 'railyard'],
   EXT: ['vault'],
 };
 

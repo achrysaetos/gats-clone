@@ -33,11 +33,11 @@ test('an engineer wall blocks bot paths while it stands and frees them once it i
 test('a new map rebuilds the arena\'s cover', () => {
   const w = emptyWorld();
   const first = arenaFor(w);
-  loadMap(w, 'outpost');
+  loadMap(w, 'yard');
   const second = arenaFor(w);
   assert.notEqual(second.cover, first.cover);
-  const block = MAPS.outpost.walls[0]!;
-  assert.ok(!isOpen(second.nav, { x: block.x + block.w / 2, y: block.y + block.h / 2 }), 'the outpost\'s first wall is solid');
+  const block = MAPS.yard.walls[0]!;
+  assert.ok(!isOpen(second.nav, { x: block.x + block.w / 2, y: block.y + block.h / 2 }), 'the yard\'s first wall is solid');
 });
 
 test('a room plans only a few new bot routes a tick, and plans again the next tick', () => {

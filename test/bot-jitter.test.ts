@@ -34,7 +34,7 @@ const net = (h: readonly Sample[]) => Math.hypot(h[h.length - 1]!.x - h[0]!.x, h
 const travelled = (h: readonly Sample[]) => h.slice(1).reduce((sum, s, i) => sum + Math.hypot(s.x - h[i]!.x, s.y - h[i]!.y), 0);
 
 test('squad bots never flip their keys back and forth in place around the Bastion', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < 4; i++) bots.set(addPlayer(w, `b${i}`, randomLoadout(r), { kind: 'bot' }).id, newBotMemory(r));

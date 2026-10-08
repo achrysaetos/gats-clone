@@ -9,7 +9,7 @@ import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { run, spawnAt, TICK_MS } from './helpers.ts';
 
-const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
+const zomWorld = (): World => createWorld('ZOM', 1, 'yard');
 
 test('a zombies snapshot shows the horde in view as compact tuples, the squad walls and the run', () => {
   const w = zomWorld();

@@ -15,7 +15,7 @@ const X = 1475, Y = 1700;
 const lifeOf = (p: Player) => p.life;
 
 function nightWorld(): World {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;
@@ -108,7 +108,7 @@ test('a downed player nobody revives bleeds out, then gets up at the core when d
   run(w, TICK_MS);
   assert.equal(w.run!.phase.k, 'day');
   assert.equal(lifeOf(p).k, 'alive');
-  const core = MAPS.outpost.siege!.core;
+  const core = MAPS.yard.siege!.core;
   assert.ok(Math.hypot(p.x - core.x, p.y - core.y) <= 2 * ZOM.coreHalf + 2 * ZOM.cell, `back at the core, at ${p.x},${p.y}`);
   assert.deepEqual({ score: p.score, level: p.level }, { score: LEVELS[1].score, level: 1 });
 });
@@ -145,7 +145,7 @@ test('holding use beside a damaged wall mends it for scrap, and stops when the s
 test('holding use by the worn core mends it for scrap at the core\'s dearer rate, by night as by day, up to full', () => {
   const w = nightWorld();
   holdNight(w);
-  const core = MAPS.outpost.siege!.core;
+  const core = MAPS.yard.siege!.core;
   const p = spawnAt(w, core.x, core.y + ZOM.reachPx - 20);
   w.run!.core.hp = ZOM.coreHp - 500;
   w.run!.scrap = 1000;
@@ -220,7 +220,7 @@ test('a player who bleeds out at night is sent back from the Bastion after a wai
   assert.equal(lifeOf(p).k, 'dead', 'not before the wait');
   run(w, 1500);
   assert.equal(lifeOf(p).k, 'alive', 'back after the wait');
-  const core = MAPS.outpost.siege!.core;
+  const core = MAPS.yard.siege!.core;
   assert.ok(Math.hypot(p.x - core.x, p.y - core.y) < 200, 'at the Bastion');
   const cost = ZOM.reinforce.survivors(w.run!.night);
   assert.equal(w.run!.survivors, before - cost);

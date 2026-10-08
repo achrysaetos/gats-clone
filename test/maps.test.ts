@@ -11,10 +11,11 @@ const SIEGE_MAPS = MAP_IDS.filter((id) => MAPS[id].siege);
 
 const EXTRACT_MAPS = MAP_IDS.filter((id) => MAPS[id].extract);
 
-test('every versus mode rotates through every versus map, zombies through the siege maps and extraction through its own', () => {
-  const versus = MAP_IDS.filter((id) => !MAPS[id].siege && !MAPS[id].extract).sort();
-  const want = (mode: string) => (mode === 'ZOM' ? SIEGE_MAPS : mode === 'EXT' ? EXTRACT_MAPS : versus);
-  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), want(mode), mode);
+test('every map is played, every mode has a map, zombies plays every siege map and extraction every extraction map', () => {
+  for (const id of MAP_IDS) assert.ok(MODE_IDS.some((mode) => ROTATION[mode].includes(id)), `${id} is in no rotation`);
+  for (const mode of MODE_IDS) assert.ok(ROTATION[mode].length > 0, `${mode} has no map`);
+  assert.deepEqual([...ROTATION.ZOM].sort(), [...SIEGE_MAPS].sort());
+  assert.deepEqual([...ROTATION.EXT].sort(), [...EXTRACT_MAPS].sort());
 });
 
 for (const id of SIEGE_MAPS) {

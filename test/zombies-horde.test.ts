@@ -9,12 +9,12 @@ import { damageZombie } from '../src/shared/sim/run.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { hpOf, spawnAt, TICK_MS } from './helpers.ts';
 
-const CORE = MAPS.outpost.siege!.core;
+const CORE = MAPS.yard.siege!.core;
 const CORE_CELL = { lo: (CORE.x - ZOM.coreHalf) / ZOM.cell, hi: (CORE.x + ZOM.coreHalf) / ZOM.cell - 1 };
 
 /** A night with nothing left to spawn, so only the zombies a test places walk. */
 function nightWorld(): World {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   return w;
 }
@@ -83,14 +83,14 @@ test('a brute bites a wall for its building share of its bite', () => {
 
 test('no zombie stays pinned on cover: one starting behind each wall of the map reaches the core', () => {
   const stuck: string[] = [];
-  for (const wall of MAPS.outpost.walls) {
+  for (const wall of MAPS.yard.walls) {
     const cx = wall.x + wall.w / 2, cy = wall.y + wall.h / 2;
     const d = Math.hypot(cx - CORE.x, cy - CORE.y);
     const ux = (cx - CORE.x) / d, uy = (cy - CORE.y) / d;
     const reach = Math.max(wall.w, wall.h) / 2 + 40;
     const w = nightWorld();
     w.run!.core.hp = 1e9;
-    const z = addZombie(w, 'walker', clamp(cx + ux * reach, 40, MAPS.outpost.size - 40), clamp(cy + uy * reach, 40, MAPS.outpost.size - 40));
+    const z = addZombie(w, 'walker', clamp(cx + ux * reach, 40, MAPS.yard.size - 40), clamp(cy + uy * reach, 40, MAPS.yard.size - 40));
     let closest = Infinity;
     stepFor(w, (d / ZOMBIES.walker.speed) * 1000 * 2 + 5000, () => { closest = Math.min(closest, toCore(z.x, z.y)); });
     if (closest > ZOMBIES.walker.radius + ZOM.biteReach) stuck.push(`(${z.x.toFixed(0)}, ${z.y.toFixed(0)}) ended ${closest.toFixed(0)}px off`);

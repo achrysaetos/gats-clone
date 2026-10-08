@@ -12,7 +12,7 @@ import { TICK_MS } from './helpers.ts';
 
 /** Plays a bot squad through the first day, walls and turrets and the first nights, hashing every snapshot. */
 function replay(seed: number): { hash: string; nights: number; walls: number } {
-  const w = createWorld('ZOM', seed, 'outpost');
+  const w = createWorld('ZOM', seed, 'yard');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < ZOM.squadSize; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));

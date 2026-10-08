@@ -8,7 +8,7 @@ import { equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from
 
 /** A quiet night, so only what a test places takes part. Tests line up on the open ground due south of the core, where a zombie walks straight at the shooter. */
 function nightWorld(): World {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;

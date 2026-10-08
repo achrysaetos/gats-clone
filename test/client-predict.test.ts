@@ -26,7 +26,7 @@ function lockstepWorld(squad: Lockstep['squad']) {
     w.walls = [{ x: 600, y: 300, w: 40, h: 400, built: false, material: 'concrete', expiresAt: Infinity }];
     return { w, p: spawnAt(w, 500, 500) };
   }
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   const p = spawnAt(w, 1380, 1525);
   for (const [cx, cy] of squad.walls) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: 400 });
   if (squad.downed) goDown(w, p);
