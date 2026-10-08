@@ -134,11 +134,11 @@ export function drawNightFx(ctx: CanvasRenderingContext2D, tl: Point, br: Point,
       if (l.beam > 0 && amb.shafts > 0.01) shaft(gg, x, y, r * 1.25, l.cone.angle, l.cone.half * 0.8 + 0.04, l.rgb, lv * l.beam * 0.5);
       // The source itself: a small pool, so a lamp is lit even when its cone faces away.
       pool(g, x, y, Math.min(r * 0.35, 40), l.rgb, lv * 0.4 * own);
-      wedge(mk, x, y, r, l.cone.angle, l.cone.half * 0.8, [1, 1, 1], Math.min(1, lv * 0.6));
+      if (amb.fog) wedge(mk, x, y, r, l.cone.angle, l.cone.half * 0.8, [1, 1, 1], Math.min(1, lv * 0.6));
     } else {
       pool(g, x, y, r, l.rgb, lv * 1.3);
       pool(gg, x, y, r * 0.85, l.rgb, lv * 0.36);
-      pool(mk, x, y, r * 0.9, [1, 1, 1], Math.min(1, lv));
+      if (amb.fog) pool(mk, x, y, r * 0.9, [1, 1, 1], Math.min(1, lv));
     }
   }
   // Fog: a few big soft banks, drifting, lit a little by the pools they sit in.

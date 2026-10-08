@@ -402,7 +402,8 @@ const BAND_RGB = BAND_COLORS.map(rgbOfHex);
 
 const fields = new WeakMap<WaterPrep, Uint8Array>();
 const fieldOf = (prep: WaterPrep): Uint8Array => { let f = fields.get(prep); if (!f) { f = field(prep); fields.set(prep, f); } return f; };
-const tiles = new Map<string, HTMLCanvasElement>();
+/** A baked tile, or `false` for one with no water in it at all (blitting a clear tile every frame is pure cost). */
+const tiles = new Map<string, HTMLCanvasElement | false>();
 let prepSeq = 0;
 const prepIds = new WeakMap<WaterPrep, number>();
 const prepId = (p: WaterPrep): number => { let i = prepIds.get(p); if (i === undefined) { i = ++prepSeq; prepIds.set(p, i); } return i; };
@@ -426,12 +427,13 @@ const vnoise = (x: number, y: number): number => {
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
 };
 
-function bakeTile(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement {
+function bakeTile(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement | false {
   const f = fieldOf(prep), n = prep.cells;
   const c = document.createElement('canvas'); c.width = c.height = TILE_PX;
   const g = c.getContext('2d')!;
   const img = g.createImageData(TILE_PX, TILE_PX), px = img.data;
   const out = [0, 0, 0], x0 = tx * TILE - SKIRT, y0 = ty * TILE - SKIRT;
+  let wetPx = false;
   for (let j = 0; j < TILE_PX; j++) for (let i = 0; i < TILE_PX; i++) {
     const wx = x0 + i + 0.5, wy = y0 + j + 0.5;
     sample(f, n, wx, wy, out);
@@ -466,16 +468,18 @@ function bakeTile(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement {
     col = [col[0]! + (FOAM_RGB[0] - col[0]!) * a1, col[1]! + (FOAM_RGB[1] - col[1]!) * a1, col[2]! + (FOAM_RGB[2] - col[2]!) * a1];
     const al = Math.min(1, Math.max(0, (sd + 0.9) / 1.8));
     px[o] = col[0]!; px[o + 1] = col[1]!; px[o + 2] = col[2]!; px[o + 3] = al * 255;
+    if (al > 0) wetPx = true;
   }
+  if (!wetPx) return false;
   g.putImageData(img, 0, 0);
   return c;
 }
 
 let bakedThisFrame = 0;
-function tileFor(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement | null {
+function tileFor(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement | false | null {
   const key = `${prepId(prep)}:${tx},${ty}`;
   const hit = tiles.get(key);
-  if (hit) { tiles.delete(key); tiles.set(key, hit); return hit; }
+  if (hit !== undefined) { tiles.delete(key); tiles.set(key, hit); return hit; }
   if (bakedThisFrame >= 2) return null;
   bakedThisFrame++;
   const c = bakeTile(prep, tx, ty);
@@ -499,7 +503,7 @@ function drawPlain(g: CanvasRenderingContext2D, now: number, view: { x0: number;
   const ty0 = Math.max(0, Math.floor(view.y0 / TILE)), ty1 = Math.min(Math.ceil(prep.size / TILE) - 1, Math.floor(view.y1 / TILE));
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const c = tileFor(prep, tx, ty);
-    if (c) { g.drawImage(c, tx * TILE - SKIRT, ty * TILE - SKIRT); continue; }
+    if (c !== null) { if (c) g.drawImage(c, tx * TILE - SKIRT, ty * TILE - SKIRT); continue; }
     // Not baked yet: the deep tone, so the picture only ever sharpens.
     g.save(); g.beginPath(); for (const pts of prep.polys) pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.clip();
     g.fillStyle = BAND_COLORS[4]!; g.fillRect(tx * TILE, ty * TILE, TILE, TILE); g.restore();

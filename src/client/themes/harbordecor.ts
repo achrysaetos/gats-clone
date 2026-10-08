@@ -79,7 +79,19 @@ export const EAST_ITEMS: readonly Item[] = [
   { k: 'heart', x: 5240, y: 700 },
 ];
 
-const SIZEOF: Record<string, number> = { forklift: 160, nets: 150, bike: 90, motto: 380, tally: 420, note: 240 };
+/** Half the width and height of the box each belonging is baked into (the rest default to 56): tight, because a sprite is stamped at its full box every frame. */
+const BOX: Record<string, readonly [number, number]> = { forklift: [70, 38], nets: [62, 70], bike: [46, 30], note: [68, 24] };
+/** Painted lettering is baked into a box measured from its own text: [font size, letter spacing] as `painted` is called for it below. */
+const LETTERS: Record<string, readonly [number, number]> = { motto: [30, 0.2], tally: [20, 0.12] };
+let measure: CanvasRenderingContext2D | null = null;
+function boxOf(it: Item): readonly [number, number] {
+  const lt = LETTERS[it.k];
+  if (!lt || !it.text) return BOX[it.k] ?? [56, 56];
+  measure ??= document.createElement('canvas').getContext('2d')!;
+  measure.font = `800 ${lt[0]}px "Barlow Condensed", "Arial Narrow", sans-serif`;
+  (measure as unknown as { letterSpacing: string }).letterSpacing = `${lt[0] * lt[1]}px`;
+  return [Math.ceil(measure.measureText(it.text).width / 2) + 10, Math.ceil(lt[0] * 0.8) + 8];
+}
 
 /* -- the pieces -------------------------------------------------------------------------------------------------- */
 
@@ -123,21 +135,21 @@ const PAINT: Record<string, (g: G, it: Item) => void> = {
   pallet(g) { shadow(g, 0, 0, 34, 14); box(g, -28, -16, 56, 30, 6, '#a8844e', '#6e5430'); g.strokeStyle = 'rgba(40,26,10,0.5)'; g.lineWidth = 2; for (let x = -18; x < 28; x += 14) { g.beginPath(); g.moveTo(x, -16); g.lineTo(x, 14); g.stroke(); } g.fillStyle = '#d8d0bc'; g.fillRect(-10, -6, 20, 10); g.fillStyle = INK; g.font = '800 6px sans-serif'; g.textAlign = 'center'; g.fillText('FRAGILE', 0, 1); },
 };
 
-const spriteOf = (it: Item): { s: ReturnType<typeof sprite>; w: number } => {
-  const half = SIZEOF[it.k] ?? 56;
+const spriteOf = (it: Item): { s: ReturnType<typeof sprite>; hw: number; hh: number } => {
+  const [hw, hh] = boxOf(it);
   const key = `deco:${it.k}:${it.text ?? ''}`;
-  const s = sprite(key, half * 2, half * 2, 4, (g) => { g.translate(half, half); PAINT[it.k]?.(g, it); });
-  return { s, w: half };
+  const s = sprite(key, hw * 2, hh * 2, 4, (g) => { g.translate(hw, hh); PAINT[it.k]?.(g, it); });
+  return { s, hw, hh };
 };
 
 function drawItems(g: G, view: ThemeView, items: readonly Item[]): void {
   for (const it of items) {
     if (!inView(view, it.x, it.y, 260)) continue;
-    const { s, w } = spriteOf(it);
+    const { s, hw, hh } = spriteOf(it);
     g.save();
     g.translate(it.x, it.y);
     if (it.rot) g.rotate(it.rot);
-    g.drawImage(s.canvas, -w + s.ox, -w + s.oy, s.w, s.h);
+    g.drawImage(s.canvas, -hw + s.ox, -hh + s.oy, s.w, s.h);
     g.restore();
   }
 }
