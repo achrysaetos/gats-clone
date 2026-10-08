@@ -1,4 +1,4 @@
-import { GUNS, type GunId, type WeaponId } from '../../shared/defs.ts';
+import { GUNS, WORLD, type GunId, type WeaponId } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type PlayerView, type SelfView, type Snapshot, type Team, type ZoneView } from '../../shared/protocol.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { SHARPNESS, TICK_MS } from './aim.ts';
@@ -11,6 +11,9 @@ type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId 
 
 type Lead = { x: number; y: number; tick: number; hunted: boolean };
 
+/** The last enemy round fired this bot's way from where it was heard (it may be out of sight): where from, by whom, with what. */
+export type ShotAt = { x: number; y: number; tick: number; owner: number; gun: GunId };
+
 export type Awareness = {
   contacts: readonly Contact[];
   heard: readonly Lead[];
@@ -18,6 +21,7 @@ export type Awareness = {
   hitTick: number;
   /** Flashbangs this bot has had in sight, and when each first came into view, so it can "notice" one after a reaction delay. */
   nades?: readonly { id: number; tick: number }[];
+  shotAt?: ShotAt | null;
 };
 
 export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity, nades: [] });
@@ -44,6 +48,8 @@ export type Perception = {
   smokes: readonly Smoke[];
   /** A flashbang it has noticed in the air and has a line to, which it should look away from. */
   incomingFlash: Point | null;
+  /** An enemy round fired at this bot lately (`SHOT_AT_MS`), seen or not: the line it should get off. */
+  shotAt?: ShotAt | null;
 };
 
 /** At this much flash a bot sees nothing at all: no new sightings, no minimap, no ears. Below it vision is back but its aim is still ruined. */
@@ -64,6 +70,9 @@ const UNDER_FIRE_MS = 500;
 const SUPPRESSED_UNDER_FIRE = 0.25;
 const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
+const SHOT_AT_MS = 1500;
+/** A round counts as fired at this bot when its heading passes within this many body widths of him. */
+const SHOT_AT_BODIES = 3;
 
 const crateRect = (c: { x: number; y: number; size: number }): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
 
@@ -108,8 +117,14 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   };
   const heardNow: Lead[] = [];
   let hitTick = prev.hitTick;
+  let shotAt = prev.shotAt && (tick - prev.shotAt.tick) * TICK_MS < SHOT_AT_MS ? prev.shotAt : null;
   for (const e of snap.events) {
-    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= SILENCED_HEARING_PX)) heardNow.push({ x: e.x, y: e.y, tick, hunted: false });
+    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= SILENCED_HEARING_PX)) {
+      heardNow.push({ x: e.x, y: e.y, tick, hunted: false });
+      const d = dist(e, me);
+      const off = Math.atan2(me.y - e.y, me.x - e.x) - e.angle;
+      if (d <= GUNS[e.gun].range && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.atan2(WORLD.playerRadius * SHOT_AT_BODIES, d)) shotAt = { x: e.x, y: e.y, tick, owner: e.owner, gun: e.gun };
+    }
     else if (e.e === 'dmg' && e.kind === 'player' && e.victim === me.id) hitTick = tick;
     else if (e.e === 'kill') {
       const mate = prev.mates.find((m) => m.id === e.victimId);
@@ -129,11 +144,11 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const noticed = flashes.find((t) => (t.owner === me.id || noticesThrow(t.id, me.id)) && (tick - (nades.find((n) => n.id === t.id)?.tick ?? tick)) * TICK_MS >= (t.owner === me.id ? 0 : NOTICE_MS));
   const lastSeen = live.filter((c) => !seen.has(c.id)).reduce<Contact | null>((best, c) => (best && best.seenTick >= c.seenTick ? best : c), null);
   return {
-    awareness: { contacts: live, heard, mates, hitTick, nades },
+    awareness: { contacts: live, heard, mates, hitTick, nades, shotAt },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
       threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS || snap.self.suppression >= SUPPRESSED_UNDER_FIRE, zones: snap.zones, solids, allies: mates,
-      flash, incomingFlash: noticed ? { x: noticed.x, y: noticed.y } : null,
+      flash, incomingFlash: noticed ? { x: noticed.x, y: noticed.y } : null, shotAt,
       smokes: snap.thrown.filter((t) => t.kind === 'smokeCloud').map((t) => ({ x: t.x, y: t.y, r: t.r })),
     },
   };

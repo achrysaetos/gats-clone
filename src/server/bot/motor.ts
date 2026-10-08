@@ -10,6 +10,7 @@ import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
+import { boltCue, DODGE_AT, dangerTo, dodgeLeg, dodgeStyle, nextDodge, weave, type Dodge, type DodgeStyle } from './evade.ts';
 
 export type Motor = {
   route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
@@ -33,6 +34,8 @@ export type Motor = {
   shots: number;
   /** Burst-tapping (see `tapRhythm`): when the current tap began and until when the trigger is let go. */
   tap?: { since: number | null; pauseUntil: number };
+  /** Getting off a long gun's line of fire (see evade.ts): the current leg, or null when nothing worth dodging has it in its sights. */
+  dodge?: Dodge | null;
 };
 
 export const freshMotor = (): Motor => ({
@@ -108,6 +111,7 @@ export const MIN_TURN_BACK_MS = 400;
 const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
 
 const crateRect = (c: CrateView): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
+const anyKey = (k: Pick<InputState, 'up' | 'down' | 'left' | 'right'>) => k.up || k.down || k.left || k.right;
 
 function retreatHeading(me: Point, away: number, arena: BotArena): number {
   const headings = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)
@@ -223,7 +227,7 @@ function shove(me: Point, mates: readonly Point[], id: number): Point | null {
   return len === 0 ? null : { x: x / Math.max(1, len), y: y / Math.max(1, len) };
 }
 
-function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbility: AbilityId | null): { steer: Steer; stance: Motor['stance'] } {
+function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbility: AbilityId | null, dodge: Dodge | null, danger: Point | null): { steer: Steer; stance: Motor['stance']; dodge?: Dodge | null } {
   const me = v.me;
   const idle = (to: Point | null, face: Point | null): Steer => ({ to, face, reload: false, crates: true });
   switch (intent.k) {
@@ -269,6 +273,13 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       const crowd = v.threats.filter((x) => x.d < CROWD_PX).length;
       const backing = !c.band.rushes && t.d < c.band.hold * (1 + CROWD_HOLD * Math.min(2, Math.max(0, crowd - 1)));
       const leg: Leg = closing ? 'in' : backing ? 'out' : 'side';
+      // In a long gun's sights (or a planted gun between its own shots): it runs its dodge legs across his line instead of its usual strafe.
+      if (dodge && (danger || !closing && !backing)) {
+        const from = closing || backing || !danger ? t.p : danger;
+        const run = dodgeLeg(me, from, dodge, leg, c.arena, v.solids, v.tick);
+        const stance = { ...m.stance, step: run.to ? run.dodge.side : 0, heading: run.heading, planted: dodge.stop } as Motor['stance'];
+        return { steer: fight(run.to ?? (closing && !dodge.stop ? t.p : null)), stance, dodge: run.dodge };
+      }
       const stance = nextStance(m, v, c, !closing && !backing && plants(v, c, t.d, false));
       const step = stance.step;
       if (step === 0) return { steer: fight(null), stance };
@@ -283,6 +294,9 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     }
   }
 }
+
+/** Intents that travel, which weave under long-range fire (see `weave`); cover, a retreat and a peek go straight. */
+const WEAVES = new Set<Intent['k']>(['patrol', 'takePosition', 'search', 'flank', 'engage']);
 
 /** Intents that wander or travel, which a mate's shadow may bend; a held spot, cover or a retreat is never moved off. */
 const SPACED = new Set<Intent['k']>(['patrol', 'takePosition', 'search', 'flank', 'engage']);
@@ -385,10 +399,25 @@ function keysToward(m: Motor, me: Point, at: Point | null, tick: number): Drive 
 export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap: Snapshot): { input: InputState; motor: Motor } {
   const me = v.me;
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
-  const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
+  const fighting = intent.k === 'engage' ? focus(v, intent.target) : undefined;
+  const danger = dangerTo(v, m.engaged);
+  // Out of a fight (on its way somewhere, the shooter maybe out of sight) any gun just weaves; in one, it dodges the way its gun fights.
+  const style: DodgeStyle = fighting ? dodgeStyle(me.gun, c.band.rushes && fighting.d > c.band.ideal) : { k: 'zigzag' };
+  // A slow plant-to-aim gun in a fight moves off its spot after each shot whatever it faces; anyone else dodges only a gun worth dodging.
+  const dodging = (danger !== null && danger.w * c.persona.evasion >= DODGE_AT) || (style.k === 'plant' && fighting !== undefined && plants(v, c, fighting.d, false));
+  const fired = snap.events.some((e) => e.e === 'shot' && e.owner === me.id);
+  const dangerAt = danger && danger.w * c.persona.evasion >= DODGE_AT ? danger : null;
+  const cue = dangerAt && v.shotAt?.owner === dangerAt.id ? boltCue(v.shotAt, me) : null;
+  const dodgeNow = dodging ? nextDodge(m.dodge ?? null, v.tick, c, style, fired, v.self.reloading, cue) : null;
+  const steered = steer(intent, v, c, m, readyAbility, dodgeNow, dangerAt);
+  const { steer: s, stance } = steered;
+  const dodge = steered.dodge !== undefined ? steered.dodge : dodgeNow;
   const crawling = m.dir !== null && v.tick - m.progress.tick > CRAWL.ticks;
   const routed = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick, crawling) : { at: null, route: m.route, replanned: false };
-  const way = { ...routed, at: spaced(intent, me, routed.at, s.to, v.allies, c.arena) };
+  const bent = spaced(intent, me, routed.at, s.to, v.allies, c.arena);
+  // On its way somewhere with a long gun shooting at it from afar: it zig-zags there rather than walking his lane.
+  const weaving = dodge && dangerAt && bent && WEAVES.has(intent.k) && !(intent.k === 'engage' && fighting);
+  const way = { ...routed, at: weaving ? weave(me, bent, dodge, c.arena, v.solids) : bent };
   const detour = crawling ? { side: (m.detour?.side === 1 ? -1 : 1) as 1 | -1, until: v.tick + CRAWL.detourTicks } : m.detour;
   const drive = keysToward({ ...m, detour }, me, way.at, v.tick);
   const gained = way.at ? dist(m.last, way.at) - dist(me, way.at) : 0;
@@ -475,6 +504,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     look = { want: Math.atan2(me.y - v.incomingFlash.y, me.x - v.incomingFlash.x), spin: 0, hand: HANDS.flick, d: 300, err: 0 };
     wantsFire = false;
   }
+  // A planted gun moving off its spot between shots lets go of the trigger: its next round waits until it has stopped again.
+  if (style.k === 'plant' && dodge && !dodge.stop && anyKey(keys)) wantsFire = false;
   const rhythm = tapRhythm(me.gun, c.band.rushes);
   // Up close the cone is wider than any bloom, so it only taps once the fight is far enough for the spread to matter.
   const resting = rhythm !== null && t !== undefined && t.d >= TAP_FROM_PX && v.tick < (m.tap?.pauseUntil ?? -Infinity);
@@ -495,6 +526,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
       route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
       stuckTicks: pressing && gained < 1 && !way.replanned ? m.stuckTicks + 1 : 0,
       progress: !pressing || crawling || dist(me, m.progress) > CRAWL.px ? { x: me.x, y: me.y, tick: v.tick } : m.progress, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),
+      ...((dodge || m.dodge) && { dodge }),
     },
   };
 }

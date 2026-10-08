@@ -22,12 +22,15 @@ export type Personality = {
   sidestepOdds: number;
   plantsFromCover: boolean;
   commitMul: number;
+  /** How readily it gets out of a long gun's line of fire (see `dangerTo` in evade.ts), and how long its dodge legs run. */
+  evasion: number;
+  dodgeMs: readonly [number, number];
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
-  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8 },
-  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2 },
-  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
+  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8, evasion: 0.8, dodgeMs: [500, 1300] },
+  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2, evasion: 1, dodgeMs: [700, 2000] },
+  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3, evasion: 0.65, dodgeMs: [600, 1500] },
 };
 
 /**
@@ -276,7 +279,12 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   engage: (cur, v, c) => {
     const t = v.threats[0];
     if (!t) return justLost(v) ? null : lostSight(v, c, cur.target);
-    if (c.band.rushes || t.d < c.band.headOn * 0.7 || c.rand() >= c.persona.peekOdds) return null;
+    // Outranged by a long gun that is hitting it: it does not trade in his lane but breaks his sight behind cover and works in from there.
+    if (!c.band.rushes && v.underFire && t.d > c.band.max && GUN_BAND[t.p.gun][1] > c.band.max) {
+      const hide = peekPlan(v, c, t);
+      if (hide) return hide;
+    }
+    if (c.band.rushes ||t.d < c.band.headOn * 0.7 || c.rand() >= c.persona.peekOdds) return null;
     return peekPlan(v, c, t);
   },
   peekAndHide: (cur, v, c) => {
