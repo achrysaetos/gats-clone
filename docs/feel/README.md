@@ -1,5 +1,84 @@
 # Feel
 
+This stage gives Skirmish soldiers and guns that move like the ones in the references, hits that land on both ends, deaths that leave a body, and five combat mechanics. [IMPLEMENTATION.md](IMPLEMENTATION.md) is the brief. Sound has its own page, [sound.md](sound.md). The models, their frames and the bake's checks are in [art/SPRITES.md](../../art/SPRITES.md).
+
+## Models
+
+Everything is built in script with Blender and baked to sprites, as before.
+
+- **Soldier.** Four designs were baked at game scale beside the reference soldiers (`shots/soldier-variants.webp`). Design A ("plate") won: rounded team pauldrons and chest shell, a glossy helmet with a stripe, armour in three tiers. It is rigged with a bone table and two-bone arms, and every pose is a table of targets. The bake fails when a held hand misses its grip by more than 2 px.
+- **Guns.** All 42 guns have a real model, baked in three frames over one box: body, magazine and action (`shots/guns.webp`). The painter hides the magazine between the reload's magazine-out and magazine-in beats and slides a pump or bolt after each shot. A dropped gun is the same frames.
+- **Zombies.** The six kinds were lifted to the soldier's look, with hunched reaching poses, torn clothes and a mark per kind (`shots/zombies.webp`). Their night eyes now sit on the model's eyes, and the bake checks it.
+- **Low cover.** Barriers, sandbags and broken walls show three wear stages (`shots/cover-wear.webp`).
+
+**How far scripted modelling got.** At game scale (a soldier is about 50 px across) the soldier, guns and zombies now read as the reference's kind of object: team colour on the shoulders and chest, a dark helmet, a gun held by two visible hands, a body that lies where it fell. It stopped improving at form detail. Bodies are still smooth capsules and spheres, with no cloth folds, straps that wrap, or sculpted muscle, so close crops look like toys beside the painted references. More primitives stopped paying off below about 2 px. The next step up is sculpted or photo-sourced meshes, not more script.
+
+## Animation set
+
+| Animation | Frames | Facings | Notes |
+|---|---|---|---|
+| Aim, and breathing when still | 1 + 1 | 32 | breath shows for 45% of a 1.7 s cycle, offset per player |
+| Recoil, light and heavy | 2 each | 32 | heavy for guns whose damage x pellets passes 36 |
+| Reload: pistol, magazine, pump, box | 6 each | 16 | frames turn on the same beats as the sounds (`RELOAD_FRAMES`, `RELOAD_BEATS` in `src/client/reload.ts`) |
+| Run, strafe, backpedal, dash | 8, 8, the run reversed, 3 | 16 | legs follow movement against aim: run within 60 degrees, strafe 60 to 120, backpedal beyond |
+| Flinch, front and back | 2 each | 16 | picked from the round's direction against facing |
+| Throw, knife | 3 each | 16 | |
+| Death: forward, back, spin | 6 each | 1, turned | ends on the lying body |
+| Downed crawl, reviving | 4 each | 1, turned | Last Squad |
+
+Procedural motion on top: a lean into the run and a bob on each footfall, a 3.2 unit jolt along the round on a hit, a 3% squash on a heavy gun's kick, a sideways sway while staggered, and dust on sharp turns and at the end of a dash. Head lag was left out, because the head is baked into the torso.
+
+## Hits, deaths and feedback
+
+- **Flinch.** Every hit jolts the target along the round for 200 ms, plays its flinch frames and flashes.
+- **Impacts by material.** Metal sparks, concrete chips and dust, wood splinters, sandbag grit, blood out the far side of a body. Armour throws plate sparks and grey chips, and heavy armour shows less blood. Each leaves its floor mark, and chips and planks bounce.
+- **Deaths that stay.** The fall is picked from the killing blow: from in front the body is thrown back, from behind it folds forward, and a blast spins it. The body stays 25 s and the newest 24 are kept. The gun skids off along the blow and lies beside it.
+- **Kill confirm.** Your own kill punches the camera 3% for 120 ms, flashes the victim white and plays the thump and confirm tone.
+- **Brass.** Casings and red shotgun shells bounce, settle and stay within the decal budget.
+- **Tracers and flashes.** Tracers are thicker and warmer, muzzle flashes bigger, and heavy guns leave smoke at the muzzle.
+- **Near misses.** A round passing close plays a whizz and smears the screen edge on its side.
+- **Suppression.** The screen edges close in, dark, as your suppression rises.
+- **Reticle.** It draws the sim's own spread, with moving spread, bloom, flinch and suppression. It turns gold when your target sits in your gun's best band (`src/shared/bands.ts`) and keeps the reload ring.
+
+The moments, caught in a real match by the verify recipe `moments.ts`, are in `shots/moments.webp`: a hit reaction, a fall, the body 2.5 s later, a reload, a close shotgun blast and a suppressed view. The modes before and after are in `shots/modes-before-after.webp` (before left).
+
+## Budgets
+
+**First download.** 7610 KB reach the first game frame, against 5054 KB before and an 8 MB budget (`loading.ts`, load 0.9). The sprite atlas grew from three 2048 px pages (2.9 MB) to five and a half (5.3 MB). Transient actions use 16 facings to hold that down. The reload, flinch, throw and knife frames are still half the atlas.
+
+**GPU memory.** The sprite atlas now takes about 88 MB as RGBA against 48 MB before, and the kit 48 MB as before. That is more than the third the brief allows before moving to KTX2. KTX2 was not done. Neither a Basis encoder nor KTX tools are on this machine, and adding one is a new build dependency to choose deliberately. The download stays under budget. It is the first open item.
+
+**Frame time.** CPU draw cost per frame (headless Chrome, 1920x1080, two runs each, before then after, load 1.5 to 5):
+
+| tier | before p50 | after p50 | before p95 | after p95 |
+|---|---|---|---|---|
+| low | 4.8, 3.8 ms | 4.8, 5.8 ms | 7.6, 6.1 ms | 7.6, 8.7 ms |
+| high | 6.2, 8.0 ms | 3.7, 6.5 ms | 14.6, 14.0 ms | 6.2, 14.0 ms |
+
+No change stands out from the noise. These numbers are CPU only: this machine renders in software, so its frame interval (50 to 420 ms) says nothing about a GPU. The 2560x1440 at 2x numbers on the owner's Mac (`gpu-matrix.sh`) are still to be taken.
+
+**Sim cost.** See "Sim cost" under the combat mechanics below.
+
+## Departures from the guide
+
+- Bodies stay 25 s and the newest 24, not the rest of the match. Long rounds would otherwise bury the floor.
+- Dropped guns are drawn with the body and fade with it. They are not pickups, as the guide allows.
+- Transient actions are baked at 16 facings and the aim torso at 32, to hold the atlas down.
+- Backpedal plays the run backwards facing the aim rather than a cycle of its own.
+- Head lag on fast turns was left out (see "Animation set").
+- KTX2 was not adopted (see "Budgets").
+- Cover keeps its full collision until it breaks. The art wears down in three stages, but collision never opens a gap (see "Cover that wears down").
+- The near-miss and suppression blur are stacked translucent bands, not a blur pass, the same technique as the hurt vignette.
+- The macOS golden replay hash was not re-pinned. It needs the owner's Mac.
+
+## Open
+
+- KTX2 atlases, if integrated GPUs struggle with the larger atlas.
+- Frame time on the owner's Mac at 2560x1440 and 2x DPR, per tier, with `gpu-matrix.sh`.
+- The macOS golden replay hash.
+- Zombie night eyes are each drawn 0.7 of the radius wide and now sit close enough to merge into one glow at night. Shrinking them to about 0.45 would show a pair.
+- Roofs still cover much of the frame when you spawn under them (see the FFA shot).
+
 ## Combat mechanics
 
 Five mechanics make a hit land on both sides of the fight: knockback, stagger, flinch, suppression and low cover that wears down. They live in the authoritative sim (`src/shared/sim/`). They draw on `rand(w)` only, so a seed still replays exactly. Every tuning number sits in the `FEEL` table in `src/shared/defs.ts`, each with its reason beside it. `node scripts/feel-sweep.ts flinch.spreadAdd=0.4 ...` prints the doctrine breaches and the class kill matrix for other values without editing that table.
