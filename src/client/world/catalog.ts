@@ -1,4 +1,4 @@
-import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WEAPON_IDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId } from '../../shared/defs.ts';
+import { GUN_IDS, TURRET_KINDS, WEAPON_IDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId, type WeaponId } from '../../shared/defs.ts';
 import { GUN_PARTS } from '../sprites.ts';
 import { KIT, PIECE_IDS, type PieceId } from '../../shared/kit.ts';
 import { ART } from './art.ts';
@@ -72,8 +72,21 @@ export const SOLDIER = {
   dead: { frames: 3 },
 } as const;
 
-export const CRATE_STAGES = 3;
 export const WALL_STAGES = 3;
+export const FIRE_FRAMES = 8;
+
+/** Each class's muzzle flash frame, around the muzzle tip with the barrel along +x: long rifles throw long jets, a brake throws side flares. */
+const MUZZLE: Record<WeaponId, Box> = {
+  pistol: { x: -6, y: -14, w: 40, h: 28 },
+  smg: { x: -6, y: -12, w: 38, h: 24 },
+  assault: { x: -6, y: -18, w: 54, h: 36 },
+  shotgun: { x: -6, y: -24, w: 50, h: 48 },
+  sniper: { x: -6, y: -24, w: 68, h: 48 },
+  lmg: { x: -6, y: -24, w: 58, h: 48 },
+};
+
+/** Casing frames in `fx.casing`, by what the class ejects. */
+export const CASING: Record<WeaponId, number> = { pistol: 0, smg: 0, assault: 1, sniper: 1, lmg: 1, shotgun: 2 };
 
 const entries: [string, SpriteSpec][] = [
   ['soldier', { box: square(R * 1.5, FACE), dirs: 32, frames: SOLDIER.torso.frames, layers: ['base', 'team', 'armorLight', 'armorMedium', 'armorHeavy'], still: ['armorLight', 'armorMedium', 'armorHeavy'], model: 'soldier:torso' }],
@@ -87,10 +100,6 @@ const entries: [string, SpriteSpec][] = [
     return [`drop.${kind}`, { box: { x: g.x - pad, y: g.y - pad, w: g.w + pad * 2, h: g.h + pad * 2 }, dirs: 1, frames: 1, layers: ['base'], model: `drop:${kind}` }];
   }),
   ...ZOMBIE_KINDS.map((kind): [string, SpriteSpec] => [`zombie.${kind}`, { box: square(ZOMBIES[kind].radius * 1.9, FACE), dirs: 16, frames: 1, layers: ['base'], model: `zombie:${kind}`, scale: ZOMBIES[kind].radius > 30 ? 0.75 : 1 }]),
-  ...(['plain', ...Object.keys(CRATE_TIERS)] as const).flatMap((tier) => {
-    const size = KIT[tier === 'plain' ? 'crate' : CRATE_TIERS[tier as CrateTier].piece].w;
-    return Array.from({ length: CRATE_STAGES }, (_, stage): [string, SpriteSpec] => [`crate.${tier}.${stage}`, { box: footprint(size, size), dirs: 1, frames: 1, layers: ['base'], model: `crate:${tier}:${stage}` }]);
-  }),
   ['engineer.wall.h', { box: footprint(140, 24), dirs: 1, frames: 1, layers: ['base'], model: 'engineer-wall' }],
   ['engineer.wall.v', { box: footprint(24, 140), dirs: 1, frames: 1, layers: ['base'], model: 'engineer-wall' }],
   ...Array.from({ length: WALL_STAGES }, (_, stage): [string, SpriteSpec] => [`siege.wall.${stage}`, { box: footprint(ZOM.cell, ZOM.cell), dirs: 1, frames: 1, layers: ['base'], model: `siege-wall:${stage}` }]),
@@ -110,10 +119,17 @@ const entries: [string, SpriteSpec][] = [
     const [w, h] = turn ? [TRAIN.across, long] : [long, TRAIN.across];
     return [trainSprite(part, turn), { box: footprint(w, h, 6, southOf(TRAIN.height)), dirs: 1, frames: 1, layers: ['base', 'glow'], model: `train:${part}:${turn}` }];
   })),
-  ['fx.muzzle', { box: { x: -6, y: -16, w: 56, h: 32 }, dirs: 1, frames: 4, layers: ['glow'], model: 'muzzle-flash' }],
+  ...WEAPON_IDS.map((kind): [string, SpriteSpec] => [`fx.muzzle.${kind}`, { box: MUZZLE[kind], dirs: 1, frames: 3, layers: ['glow'], model: `muzzle-flash:${kind}` }]),
   ['fx.explosion', { box: square(110, 0), dirs: 1, frames: 16, layers: ['base', 'glow'], model: 'explosion', scale: 0.5 }],
   ['fx.smoke', { box: square(32, 0), dirs: 1, frames: 4, layers: ['base'], model: 'smoke-puff', scale: 0.75 }],
-  ['decal.scorch', { box: square(70, 0), dirs: 1, frames: 2, layers: ['base'], model: 'scorch', scale: 0.5 }],
+  ['fx.fire', { box: { x: -26, y: -64, w: 52, h: 76 }, dirs: 1, frames: FIRE_FRAMES, layers: ['glow'], model: 'fire' }],
+  ['fx.plank', { box: { x: -13, y: -5, w: 26, h: 10 }, dirs: 1, frames: 3, layers: ['base'], model: 'debris:plank' }],
+  ['fx.chunk', { box: square(5, 0), dirs: 1, frames: 3, layers: ['base'], model: 'debris:chunk' }],
+  ['fx.casing', { box: { x: -4, y: -2, w: 8, h: 4 }, dirs: 1, frames: 3, layers: ['base'], model: 'debris:casing', scale: 2 }],
+  ['decal.scorch', { box: square(70, 0), dirs: 1, frames: 3, layers: ['base'], model: 'scorch', scale: 0.5 }],
+  ['decal.planks', { box: square(40, 0), dirs: 1, frames: 3, layers: ['base'], model: 'pile:planks' }],
+  ['decal.rubble', { box: square(36, 0), dirs: 1, frames: 3, layers: ['base'], model: 'pile:rubble' }],
+  ['decal.scrap', { box: square(30, 0), dirs: 1, frames: 2, layers: ['base'], model: 'pile:scrap' }],
   ['decal.blood', { box: square(26, 0), dirs: 1, frames: 4, layers: ['base'], model: 'blood' }],
   ['decal.ichor', { box: square(26, 0), dirs: 1, frames: 4, layers: ['base'], model: 'ichor' }],
 ];
@@ -133,5 +149,4 @@ export function facing(angle: number, dirs: number): { dir: number; rest: number
   return { dir, rest: angle - Math.round(angle / step) * step };
 }
 
-export const crateSprite = (tier: CrateTier | undefined, wear: number) => `crate.${tier ?? 'plain'}.${Math.min(CRATE_STAGES - 1, Math.floor(wear * CRATE_STAGES))}`;
 export const siegeWallSprite = (wear: number) => `siege.wall.${Math.min(WALL_STAGES - 1, Math.floor(wear * WALL_STAGES))}`;

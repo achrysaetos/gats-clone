@@ -1,7 +1,7 @@
 import { COLORS, CRATE_TIERS, GUNS, RING, WORLD, ZOMBIE_KINDS, ZOMBIES, type ArmorId, type BuildingKind, type CrateTier, type GunId, type ZombieKind } from '../../shared/defs.ts';
 import { ringAt, type BulletView, type ThrownKind, type PlayerView, type RunView, type Snapshot, type WallView } from '../../shared/protocol.ts';
 import { BLAST_RADIUS } from '../../shared/sim/abilities.ts';
-import { KIT, type PieceId } from '../../shared/kit.ts';
+import { KIT, type Light, type PieceId } from '../../shared/kit.ts';
 import { MAPS } from '../../shared/maps.ts';
 import { trainAt } from '../../shared/sim/train.ts';
 import { legFrame, stride } from '../gait.ts';
@@ -13,7 +13,7 @@ import { crackFade, hostKey } from '../decals.ts';
 import { HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from '../effects.ts';
 import type { DamageNumber } from '../feedback.ts';
 import { serverNow } from '../interp.ts';
-import { glow, PALETTE, TEAM_COLORS, teamColor, ZOMBIE_LOOK } from '../palette.ts';
+import { PALETTE, TEAM_COLORS, teamColor, ZOMBIE_LOOK } from '../palette.ts';
 import type { ParticlePool } from '../particles.ts';
 import { TRACER } from '../rounds.ts';
 import { wallFlashes, type TurretAim } from '../siege.ts';
@@ -83,6 +83,8 @@ export type Scene = {
   train: TrainLook | null;
   /** Burning fuel on the floor. */
   fires: (Circle & { id: number })[];
+  /** The lights the map's pieces throw, in reach of the view; night draws them live. */
+  lamps: Light[];
   engineerWalls: Rect[];
   siege: SiegeLook[];
   core: CoreLook | null;
@@ -137,11 +139,11 @@ export function inShadow(x: number, y: number, walls: readonly WallView[]): bool
   return false;
 }
 
+/** Every round flies as a warm orange streak, as thick as its gun's bullet. */
 const TRACER_LOOK = { r: 1.6, glow: PALETTE.tracerGlow, color: PALETTE.tracer, hot: PALETTE.tracerHot } as const;
 
 function tracerOf(b: BulletView): TracerLook {
-  const look = !b.gun || GUNS[b.gun].stage === 0 ? TRACER_LOOK : { r: GUNS[b.gun].look.bullet.r, glow: glow(GUNS[b.gun].look.bullet.color, 0.62), color: glow(GUNS[b.gun].look.bullet.color, 0.72), hot: glow(GUNS[b.gun].look.bullet.color, 0.92) };
-  return { x0: b.x - b.vx * TRACER.tail, y0: b.y - b.vy * TRACER.tail, x1: b.x, y1: b.y, ...look };
+  return { x0: b.x - b.vx * TRACER.tail, y0: b.y - b.vy * TRACER.tail, x1: b.x, y1: b.y, ...TRACER_LOOK, r: b.gun ? GUNS[b.gun].look.bullet.r : TRACER_LOOK.r };
 }
 
 function tagsOf(bodies: readonly PlayerView[], s: Session, now: number): Tag[] {
@@ -219,6 +221,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
       ...p, under: alive.some((b) => b.x > p.x - R && b.x < p.x + p.w + R && b.y > p.y - R && b.y < p.y + p.h + R),
     })),
     train: trainOf(s, now),
+    lamps: dark > 0 ? looks.lights.filter((l) => inView(view, l.x - l.r, l.y - l.r, l.r * 2, l.r * 2)) : [],
     fires: snap.thrown.flatMap((t) => (t.kind === 'fire' && near(t.x, t.y, t.r) ? [{ id: t.id, x: t.x, y: t.y, r: t.r }] : [])),
     engineerWalls: s.walls.filter((w) => w.built && inView(view, w.x, w.y, w.w, w.h)).map(({ x, y, w, h }) => ({ x, y, w, h })),
     siege: siegeOf(snap, s, view, now),

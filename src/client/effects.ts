@@ -1,4 +1,5 @@
-import { WORLD } from '../shared/defs.ts';
+import { GUNS } from '../shared/defs.ts';
+import { KIT, type Material } from '../shared/kit.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { addCrack, hostOf, inward } from './decals.ts';
 import type { EffectSpec } from './eventclock.ts';
@@ -10,18 +11,33 @@ import type { Effect, Session } from './state.ts';
 const TAU = Math.PI * 2;
 export const HIT_FLASH_MS = 120;
 
-function coverOf(s: Session) {
+type Cover = { x: number; y: number; w: number; h: number; material: Material };
+
+function coverOf(s: Session): Cover[] {
   const snap = newestSnap(s.snaps);
   return [
-    ...s.walls,
-    ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })),
-    ...(snap?.buildings ?? []).map((b) => cellRect(b.cx, b.cy)),
-    ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
+    ...s.walls.map((w) => ({ x: w.x, y: w.y, w: w.w, h: w.h, material: w.built ? 'concrete' as const : w.material })),
+    ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h, material: KIT[c.piece].material })),
+    ...(snap?.buildings ?? []).map((b) => ({ ...cellRect(b.cx, b.cy), material: 'concrete' as const })),
+    ...(snap?.run ? [{ ...coreRectAt(snap.run.core), material: 'metal' as const }] : []),
   ];
 }
 
+/** What a round knocks off each material: the chips that fly, the grit's tint, and how hard it sparks. */
+const STRIKE: Record<Material, { chips: 'rubble' | 'splinter' | null; dust: string | null; sparks: 'spark' | 'metalSpark' | null }> = {
+  concrete: { chips: 'rubble', dust: '#b9b4aa', sparks: 'spark' },
+  metal: { chips: null, dust: null, sparks: 'metalSpark' },
+  wood: { chips: 'splinter', dust: '#a8865a', sparks: null },
+  planter: { chips: 'rubble', dust: '#8a7458', sparks: null },
+  sandbag: { chips: null, dust: '#b8a37c', sparks: null },
+};
+
+/** Heavier classes leave smoke hanging at the muzzle. */
+const WISPS = new Set(['shotgun', 'sniper', 'lmg']);
+
 export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: string) {
-  s.effects.push({ ...spec, born: now } as Effect);
+  const host = spec.kind === 'impact' && spec.victim === null ? hostOf(coverOf(s), spec.x, spec.y) : null;
+  s.effects.push({ ...spec, ...(host && { material: host.material }), born: now } as Effect);
   const angle = Math.random() * TAU;
   switch (spec.kind) {
     case 'impact': {
@@ -34,24 +50,35 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
         }
         return;
       }
-      const host = hostOf(coverOf(s), spec.x, spec.y);
       const away = spec.dir !== null ? reflect(spec.dir, host ? inward(host, spec.x, spec.y) + Math.PI : null) : host ? inward(host, spec.x, spec.y) + Math.PI : angle;
       if (host) addCrack(s.cracks, host, spec.x, spec.y, now);
-      burst(s.particles, spec.surface === 'crate' ? 'splinter' : 'rubble', spec.x, spec.y, away, now);
-      burst(s.particles, 'spark', spec.x, spec.y, away, now);
+      const strike = STRIKE[host?.material ?? 'concrete'];
+      if (strike.chips) burst(s.particles, strike.chips, spec.x, spec.y, away, now);
+      if (strike.dust) burst(s.particles, 'dust', spec.x, spec.y, away, now, Math.random, strike.dust);
+      if (strike.sparks) burst(s.particles, strike.sparks, spec.x, spec.y, away, now);
       return;
     }
     case 'boom':
       burst(s.particles, 'debris', spec.x, spec.y, angle, now);
       burst(s.particles, 'smoke', spec.x, spec.y, angle, now);
+      burst(s.particles, 'ember', spec.x, spec.y, angle, now);
+      burst(s.particles, 'plume', spec.x, spec.y, -Math.PI / 2, now);
       return;
-    case 'death': burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint); return;
-    case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
-    case 'flash': {
-      const back = WORLD.playerRadius * 0.9;
-      burst(s.particles, 'casing', spec.x - Math.cos(spec.angle) * back, spec.y - Math.sin(spec.angle) * back, spec.angle + Math.PI / 2 + 0.25, now);
+    case 'broke': {
+      const debris = KIT[spec.piece].breaks?.debris ?? 'wood';
+      const cx = spec.x + spec.w / 2, cy = spec.y + spec.h / 2;
+      burst(s.particles, debris === 'wood' ? 'splinter' : 'rubble', cx, cy, angle, now);
+      burst(s.particles, debris === 'wood' ? 'splinter' : 'rubble', cx, cy, angle + Math.PI, now);
+      burst(s.particles, 'dust', cx, cy, angle, now, Math.random, debris === 'wood' ? '#a8865a' : '#9c978e');
+      burst(s.particles, 'dust', cx, cy, angle + Math.PI, now, Math.random, debris === 'wood' ? '#a8865a' : '#9c978e');
+      if (debris === 'metal') burst(s.particles, 'metalSpark', cx, cy, angle, now);
       return;
     }
+    case 'death': burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint); return;
+    case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
+    case 'flash':
+      if (WISPS.has(GUNS[spec.gun].base)) burst(s.particles, 'wisp', spec.x, spec.y, spec.angle, now);
+      return;
     case 'slash':
     case 'tracer':
       return;

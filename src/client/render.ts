@@ -75,7 +75,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const scene: Scene = {
     view, size, layout: mapLayoutKey(backdropWalls), dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
     crates: !world?.art.loaded() ? [] : BACKDROP_MAP.breakables.map((at, i) => ({ id: i, key: pieceKey(at), piece: at.p, ...placed(at).foot, height: KIT[at.p].height, tier: undefined, wear: 0 })),
-    pieces: mapLooks('warehouse').standing, overheads: mapLooks('warehouse').overhead.map((p) => ({ ...p, under: false })), train: null, fires: [],
+    pieces: mapLooks('warehouse').standing, overheads: mapLooks('warehouse').overhead.map((p) => ({ ...p, under: false })), train: null, fires: [], lamps: [],
     engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
     ghost: null, killer: null, numbers: [], effects: [], particles: noParticles,
   };

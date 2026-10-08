@@ -1,19 +1,20 @@
 import { BlurFilter, Color, Container, Graphics, Matrix, RenderTexture, Sprite, WebGLRenderer, type ColorSource, type Texture } from 'pixi.js';
-import { BUILDINGS, WORLD, ZOM, ZOMBIES, type TurretKind } from '../../shared/defs.ts';
+import { BUILDINGS, GUNS, WORLD, ZOM, ZOMBIES, type TurretKind, type WeaponId } from '../../shared/defs.ts';
 import type { PieceId } from '../../shared/kit.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import type { Camera } from '../camera.ts';
 import { PALETTE, shade, ZOMBIE_LOOK } from '../palette.ts';
-import { isLive, particleAt } from '../particles.ts';
+import { isLive, PARTICLE_CAP, particleAt } from '../particles.ts';
 import { EFFECT_LIFE_MS, type Effect } from '../state.ts';
 import { TURRET_LOOK } from '../siege.ts';
 import type { Knobs } from '../quality.ts';
 import { loadArt, type Art } from './assets.ts';
-import { ART } from './art.ts';
-import { facing, siegeWallSprite, SOLDIER, SPRITES, TRAIN, type Layer } from './catalog.ts';
+import { ART, SHADOW_PER_HEIGHT } from './art.ts';
+import { facing, FIRE_FRAMES, siegeWallSprite, SOLDIER, SPRITES, TRAIN, type Layer } from './catalog.ts';
 import { blockLook } from './blocks.ts';
 import { createGround } from './ground.ts';
 import { createKnee } from './knee.ts';
+import { add, clear, createRing, marksOf, visible, type Placed } from './marks.ts';
 import type { BodyLook, Scene } from './scene.ts';
 import { createTextures } from './textures.ts';
 
@@ -66,10 +67,22 @@ const sprite = (blend?: 'add' | 'multiply') => () => {
 
 type BodyView = { root: Container; ring: Sprite; legs: Sprite; legsTeam: Sprite; base: Sprite; team: Sprite; armor: Sprite; gun: Sprite; flash: Sprite; chevrons: Sprite[]; hunted: Sprite; guard: Sprite; shield: Sprite; killer: Sprite };
 
-type Decal = { name: string; frame: number; x: number; y: number; rotation: number; born: number };
-const DECALS = { lifeMs: 40_000, fadeMs: 6000 } as const;
-/** How strongly each decal marks the ground; the baked soot is opaque at its heart, which reads as a hole rather than a burn. */
-const DECAL_STRENGTH: Record<string, number> = { 'decal.scorch': 0.55, 'decal.blood': 0.85, 'decal.ichor': 0.85 };
+/**
+ * The most marks each ring holds, at the top tier; the tier's budget draws the newest of them. Floor marks (scorch, blood,
+ * piles, rubble) stay for the match, casings for `CASING_LIFE_MS`.
+ */
+const MARK_CAP = 400;
+const CASING_CAP = 300;
+const CASING_LIFE_MS = 14_000;
+/** How each class's flash shows: its size, and the light it throws at night. A suppressor shrinks and dims it. */
+const FLASH: Record<WeaponId, { glow: number; light: number }> = {
+  pistol: { glow: 40, light: 210 }, smg: { glow: 34, light: 190 }, assault: { glow: 48, light: 240 },
+  shotgun: { glow: 64, light: 290 }, sniper: { glow: 60, light: 300 }, lmg: { glow: 56, light: 270 },
+};
+/** How much of each channel full night takes from the day. */
+const NIGHT = { r: 0.9, g: 0.88, b: 0.8 } as const;
+/** A breakable piece's live sun shadow, as dark as the baked ones under the pieces that never break. */
+const LIVE_SHADOW = { color: 0x0e1420, alpha: 0.42 } as const;
 
 /** Thrown when the browser cannot give the world a WebGL2 context; the menu says so and keeps Play off. */
 export class NoWebGL2 extends Error {}
@@ -107,6 +120,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   const tex = createTextures();
   let view = { w: 1, h: 1, dpr: 1 };
   let k = knobs();
+  /** The share of particles, flames and smoke the tier draws. */
+  let density = 1;
   /** World pixels per CSS pixel: the display's DPR scaled by the tier. */
   let res = 1;
 
@@ -163,8 +178,15 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   blurRoot.addChild(blurSprite);
 
   const ground = createGround(art, groundLayer, waterLayer);
-  const decals: Decal[] = [];
+  const floorMarks = createRing(MARK_CAP);
+  const casingMarks = createRing(CASING_CAP, CASING_LIFE_MS);
+  /** The map the marks were left on: a new one wipes the floor. */
+  let markedLayout = '';
   const seen = new WeakSet<Effect>();
+  const liveShadows = new Graphics();
+  shadowLayer.addChild(liveShadows);
+  /** The crates the live shadows were last built for, so a still scene keeps its geometry. */
+  let shadowed = '';
 
   const decalPool = pool(decalLayer, sprite());
   const minePool = pool(casingLayer, sprite());
@@ -177,6 +199,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   const bodyPool = pool(actorLayer, () => makeBody());
   const thrownPool = pool(actorLayer, sprite());
   const fxPool = pool(fxLayer, sprite());
+  const flyPool = pool(fxLayer, sprite());
   const glowPool = pool(glowWorld, sprite('add'));
   const abovePool = pool(aboveLayer, sprite());
   /** Each overhead piece's drawn opacity by its key and spot, eased toward shown or faded. */
@@ -292,6 +315,23 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       const r = ZOMBIES[z.kind].radius;
       mark(shadowPool.next(), tex.disc, z.x + sx * r * 0.7, z.y + sy * r * 0.7, r * 2.6, 0x141820, z.light === 1 ? 0.42 : 0.15);
     }
+    // Breakable pieces cast live, since a baked shadow would outlive them. Each sprite is sheared about its top, so its
+    // foot, and the shadow leaving it, sits its south face's depth below the solid.
+    const key = scene.crates.map((c) => `${c.id}:${c.wear}`).join();
+    if (key === shadowed) return;
+    shadowed = key;
+    liveShadows.clear();
+    for (const c of scene.crates) {
+      const h = c.height * (1 - 0.5 * c.wear);
+      const face = h * ART.camera.shear, dx = sx * h * SHADOW_PER_HEIGHT, dy = sy * h * SHADOW_PER_HEIGHT;
+      if (c.piece.startsWith('barrel')) liveShadows.poly(capsule(c.x + c.w / 2, c.y + c.h / 2 + face, c.w / 2, dx, dy));
+      else {
+        // The hull of the foot and its copy cast south-west, the way ART.sun.shadow falls.
+        const x0 = c.x, x1 = c.x + c.w, y0 = c.y + face, y1 = c.y + c.h + face;
+        liveShadows.poly([x0, y0, x1, y0, x1, y1, x1 + dx, y1 + dy, x0 + dx, y1 + dy, x0 + dx, y0 + dy]);
+      }
+      liveShadows.fill({ color: LIVE_SHADOW.color, alpha: LIVE_SHADOW.alpha });
+    }
   }
 
   /** A kit piece: its baked look when the atlas has it, else its greybox top and south face. */
@@ -333,17 +373,48 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     lastDraw = now;
   }
 
-  function drawFires(scene: Scene, now: number) {
-    for (const f of scene.fires) {
-      const flicker = 0.75 + 0.25 * Math.sin(now / 70 + f.id) * Math.sin(now / 113 + f.id * 3);
-      mark(glowPool.next(), tex.glow, f.x, f.y, f.r * 2.6 * flicker, 0xff8a30, 0.55 * flicker);
-      mark(fxPool.next(), tex.disc, f.x, f.y, f.r * 2, 0x2a1408, 0.35);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + f.id, t = ((now / 600 + i / 6) % 1);
-        const rr = f.r * 0.55 * ((i * 37) % 10) / 10;
-        mark(glowPool.next(), tex.glow, f.x + Math.cos(a) * rr, f.y + Math.sin(a) * rr - t * 26, 34 * (1 - t), i % 2 ? 0xffc050 : 0xff6a20, 0.9 * (1 - t));
+  /**
+   * Flames licking up from spots across a burning patch of radius `r`, each at its own phase of the looping flipbook, with
+   * smoke rising off them and embers. `size` scales the flames; the tier's density thins flames, smoke and embers alike.
+   */
+  function drawFire(x: number, y: number, r: number, seed: number, size: number, now: number) {
+    const flicker = 0.8 + 0.2 * Math.sin(now / 70 + seed) * Math.sin(now / 113 + seed * 3);
+    mark(glowPool.next(), tex.glow, x, y, (r * 2 + 50 * size) * flicker, 0xff8a30, 0.5 * flicker);
+    const flames = Math.max(1, Math.round((1 + r / 10) * density));
+    for (let i = 0; i < flames; i++) {
+      const a = hash(seed, i) * TAU, d = r * 0.6 * Math.sqrt(hash(seed, i + 17));
+      const fx = x + Math.cos(a) * d, fy = y + Math.sin(a) * d * 0.7;
+      const frame = Math.floor(now / 75 + hash(seed, i + 5) * 40) % FIRE_FRAMES;
+      const sc = size * (0.65 + 0.45 * hash(seed, i + 31)) * (0.92 + 0.08 * Math.sin(now / 90 + i));
+      // The flame's own colour first, so it holds its shape over a sunlit floor, then its glow, which blooms.
+      for (const [into, tint, alpha] of [[fxPool, 0xc84a12, 0.6], [glowPool, 0xffffff, 0.95]] as const) {
+        const s = into.next();
+        place(s, 'fx.fire', 'glow', 0, frame, fx, fy);
+        s.scale.x *= sc; s.scale.y *= sc;
+        s.tint = tint;
+        s.alpha = alpha;
       }
     }
+    const puffs = Math.max(1, Math.round((1 + r / 30) * 2 * density));
+    for (let i = 0; i < puffs; i++) {
+      const h = hash(seed, i + 50), p = (now / 2600 + i / puffs + h) % 1;
+      const s = fxPool.next();
+      place(s, 'fx.smoke', 'base', 0, (i + seed) & 3, x + (h - 0.5) * r * 0.8 + 30 * p * size, y - 30 * size - 130 * p * size, h * TAU + p);
+      const grow = size * (0.7 + 1.9 * p);
+      s.scale.x *= grow; s.scale.y *= grow;
+      s.tint = 0x34302c;
+      s.alpha = 0.55 * Math.sin(Math.PI * Math.min(1, p * 1.4)) * (1 - p * 0.4);
+    }
+    const embers = Math.round((2 + r / 12) * density);
+    for (let i = 0; i < embers; i++) {
+      const h = hash(seed, i + 90), p = (now / 1100 + i / embers + h) % 1;
+      mark(glowPool.next(), tex.glow, x + (h - 0.5) * r * 1.2 + Math.sin(now / 200 + i) * 6, y - p * 100 * Math.max(0.6, size), 8 * (1 - p), i % 2 ? 0xffc050 : 0xff7020, 1 - p);
+    }
+  }
+
+  function drawFires(scene: Scene, now: number) {
+    for (const f of scene.fires) drawFire(f.x, f.y, f.r, f.id, 1.25, now);
+    for (const p of scene.pieces) if (p.p === 'barrel.fire') drawFire(p.x + p.w / 2, p.y + p.h / 2 - p.height * ART.camera.shear, 6, p.x * 7 + p.y, 0.42, now);
   }
 
   function drawSolids(scene: Scene, now: number) {
@@ -488,27 +559,23 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     }
   }
 
-  function addDecal(name: string, x: number, y: number, now: number) {
-    const spec = SPRITES[name]!;
-    const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-    decals.push({ name, frame: Math.floor(h * spec.frames), x, y, rotation: h * TAU, born: now });
-  }
-
-  function drawEffects(scene: Scene, now: number) {
+  function drawEffects(scene: Scene, now: number, walls: readonly WallView[]) {
     for (const fx of scene.effects) {
       const k = Math.max(0, now - fx.born) / EFFECT_LIFE_MS[fx.kind];
       if (!seen.has(fx)) {
         seen.add(fx);
-        if (fx.kind === 'boom') addDecal('decal.scorch', fx.x, fx.y, now);
-        if (fx.kind === 'death') addDecal('decal.blood', fx.x, fx.y, now);
-        if (fx.kind === 'splat') addDecal('decal.ichor', fx.x, fx.y, now);
+        const left = marksOf(fx, walls, Math.random);
+        for (const m of left.floor) add(floorMarks, m);
+        for (const m of left.casings) add(casingMarks, m);
       }
       if (k >= 1) continue;
       switch (fx.kind) {
         case 'impact':
-          if (fx.victim === null) {
+          // Hard cover sparks where the round strikes; wood, sandbags and planters only throw grit.
+          if (fx.victim === null && (fx.material === 'metal' || fx.material === 'concrete' || fx.material === undefined)) {
             const fade = Math.max(0, 1 - k * 2.5);
-            if (fade > 0) mark(glowPool.next(), tex.glow, fx.x, fx.y, 26 * (0.6 + 0.4 * fade), 0xffd56a, fade);
+            const hot = fx.material === 'metal' ? 1.5 : 1;
+            if (fade > 0) mark(glowPool.next(), tex.glow, fx.x, fx.y, 26 * hot * (0.6 + 0.4 * fade), 0xffc04a, fade);
           }
           break;
         case 'boom': {
@@ -522,13 +589,16 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
           place(fire, 'fx.explosion', 'glow', 0, frame, fx.x, fx.y);
           fire.scale.x *= scale; fire.scale.y *= scale;
           const wave = 1 - (1 - k) * (1 - k);
-          over.circle(fx.x, fx.y, fx.r * (0.4 + 0.75 * wave)).stroke({ width: 10 * (1 - k) + 1, color: 0xffffff, alpha: (1 - k) * 0.7 });
+          over.circle(fx.x, fx.y, fx.r * (0.4 + 0.75 * wave)).stroke({ width: 8 * (1 - k) + 1, color: 0xffe2b0, alpha: (1 - k) * 0.4 });
           break;
         }
         case 'flash': {
-          const spec = SPRITES['fx.muzzle']!;
-          place(glowPool.next(), 'fx.muzzle', 'glow', 0, Math.min(spec.frames - 1, Math.floor(k * spec.frames)), fx.x, fx.y, fx.angle);
-          mark(glowPool.next(), tex.glow, fx.x + Math.cos(fx.angle) * 6, fx.y + Math.sin(fx.angle) * 6, 44, 0xffc93a, 0.5 * (1 - k));
+          const base = GUNS[fx.gun].base, quiet = GUNS[fx.gun].silenced ? 0.35 : 1;
+          const s = glowPool.next();
+          place(s, `fx.muzzle.${base}`, 'glow', 0, Math.min(2, Math.floor(k * 3)), fx.x, fx.y, fx.angle);
+          s.scale.x *= 0.5 + 0.5 * quiet; s.scale.y *= 0.5 + 0.5 * quiet;
+          s.alpha = quiet;
+          mark(glowPool.next(), tex.glow, fx.x + Math.cos(fx.angle) * 6, fx.y + Math.sin(fx.angle) * 6, FLASH[base].glow * (0.6 + 0.4 * quiet), 0xffb43a, 0.35 * (1 - k) * quiet);
           break;
         }
         case 'slash': {
@@ -548,7 +618,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         }
         case 'tracer': {
           const ms = now - fx.born;
-          if (ms < 70) place(glowPool.next(), 'fx.muzzle', 'glow', 0, Math.min(3, Math.floor((ms / 70) * 4)), fx.x, fx.y, fx.angle);
+          if (ms < 70) place(glowPool.next(), 'fx.muzzle.lmg', 'glow', 0, Math.min(2, Math.floor((ms / 70) * 3)), fx.x, fx.y, fx.angle);
           const { bulletSpeed, bullet } = BUILDINGS[fx.turret].turret;
           const head = (bulletSpeed * ms) / 1000;
           if (head > fx.reach) break;
@@ -565,26 +635,43 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
           t.alpha = 1;
           break;
         }
+        case 'broke':
+          break;
       }
     }
   }
 
-  function drawDecals(now: number) {
-    while (decals.length > k.decals) decals.shift();
-    for (const d of decals) {
-      const age = now - d.born;
-      if (age >= DECALS.lifeMs) continue;
-      const s = decalPool.next();
-      place(s, d.name, 'base', 0, d.frame, d.x, d.y, d.rotation);
-      s.alpha = (DECAL_STRENGTH[d.name] ?? 1) * Math.min(1, (DECALS.lifeMs - age) / DECALS.fadeMs);
+  /** A mark at rest lies in its floor layer under the cover; one still flying is drawn over everything, lifted by its hop. */
+  function drawMark(p: Placed, rest: Pool<Sprite>, view: Scene['view']) {
+    const { m } = p;
+    if (p.x < view.x0 || p.x > view.x1 || p.y < view.y0 || p.y > view.y1) return;
+    const s = (p.flying ? flyPool : rest).next();
+    place(s, m.sprite, 'base', 0, m.frame, p.x, p.y - p.lift, p.turn);
+    const grow = m.scale * (1 + p.lift / 40);
+    s.scale.x *= grow; s.scale.y *= grow;
+    s.alpha = p.alpha;
+    s.tint = m.tint;
+  }
+
+  function drawMarks(scene: Scene, now: number) {
+    if (scene.layout !== markedLayout) {
+      markedLayout = scene.layout;
+      clear(floorMarks);
+      clear(casingMarks);
     }
-    while (decals.length && now - decals[0]!.born >= DECALS.lifeMs) decals.shift();
+    // Oldest first, so newer marks lie on top.
+    for (const p of visible(floorMarks, k.decals, now).reverse()) drawMark(p, decalPool, scene.view);
+    for (const p of visible(casingMarks, k.casings, now).reverse()) drawMark(p, casingPool, scene.view);
   }
 
   function drawParticles(scene: Scene, now: number) {
     let left = k.particles;
-    for (const p of scene.particles.slots) {
+    const slots = scene.particles.slots;
+    for (let i = 0; i < slots.length; i++) {
+      const p = slots[i]!;
       if (!isLive(p, now)) continue;
+      // A lower tier keeps an even share of every burst rather than whichever particles come first.
+      if (density < 1 && hash(i, 0.5) >= density) continue;
       if (left-- <= 0) break;
       const { x, y, k } = particleAt(p, now);
       if (p.shape === 'smoke') {
@@ -592,18 +679,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         place(s, 'fx.smoke', 'base', 0, Math.floor(p.vx * 7 + p.vy * 3) & 3, x, y, p.born * 0.001);
         const grow = (p.size * (1 + p.grow * k)) / 32;
         s.scale.x *= grow; s.scale.y *= grow;
-        s.alpha = 0.6 * (1 - k);
+        s.alpha = 0.6 * Math.min(1, k * 8) * (1 - k);
         s.tint = hex(p.color);
-      } else if (p.shape === 'casing') {
-        const s = casingPool.next();
-        s.texture = tex.casing;
-        s.anchor.set(0.5);
-        s.position.set(x, y);
-        s.width = p.size * 1.4;
-        s.height = p.size * 0.6;
-        s.rotation = Math.atan2(p.vy, p.vx) + Math.hypot(x - p.x, y - p.y) * 0.35;
-        s.alpha = k < 0.75 ? 1 : (1 - k) / 0.25;
-        s.tint = 0xffffff;
       } else if (p.shape === 'chip') {
         const s = fxPool.next();
         const r = p.size * (1 - k * 0.5);
@@ -614,6 +691,9 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         s.rotation = p.born;
         s.tint = hex(p.color);
         s.alpha = 1 - k * k;
+      } else if (p.shape === 'ember') {
+        const flicker = 0.7 + 0.3 * Math.sin(now / 40 + i);
+        mark(glowPool.next(), tex.glow, x, y - k * 30, p.size * 3.2 * (1 - k * 0.6), hex(p.color), (1 - k) * flicker);
       } else {
         const s = glowPool.next();
         const speed = Math.exp((-p.drag * (now - p.born)) / 1000);
@@ -642,17 +722,19 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     const light = (x: number, y: number, r: number, color: number, alpha: number) => { if (left-- > 0) mark(lightPool.next(), tex.light, x, y, r * 2, color, alpha); };
     // Most telling first, so a low cap drops other players' and tracers' lights before your own and the blasts.
     if (scene.core) light(scene.core.x, scene.core.y, 300, 0x4fd1e8, 0.8);
-    for (const b of scene.bodies) if (b.ring === 'self') light(b.x, b.y, 420, 0xfff2dc, 0.95);
+    for (const b of scene.bodies) if (b.ring === 'self') light(b.x, b.y, 380, 0xfff2dc, 0.9);
     for (const fx of scene.effects) {
       const k = Math.max(0, now - fx.born) / EFFECT_LIFE_MS[fx.kind];
       if (k >= 1) continue;
-      if (fx.kind === 'flash') light(fx.x, fx.y, 230, 0xffc070, 1 - k);
+      if (fx.kind === 'flash') light(fx.x, fx.y, FLASH[GUNS[fx.gun].base].light * (GUNS[fx.gun].silenced ? 0.5 : 1), 0xffb060, 1 - k);
       if (fx.kind === 'boom') light(fx.x, fx.y, fx.r * 3.5, 0xffa050, 1 - k);
     }
-    for (const f of scene.fires) light(f.x, f.y, f.r * 4, 0xff8a40, 0.9);
+    for (const f of scene.fires) light(f.x, f.y, f.r * 4, 0xff8a40, 0.85 + 0.15 * Math.sin(now / 70 + f.id));
+    for (const l of scene.lamps) light(l.x, l.y, l.r * 1.3, l.color, l.strength * (l.pulseMs ? 0.6 + 0.4 * Math.sin((now / l.pulseMs) * TAU) : 1));
     for (const p of scene.pieces) if (p.p === 'signal' && scene.train && Math.floor(now / 250) % 2 === 0) light(p.x + p.w / 2, p.y + p.h / 2, 160, 0xff3a2e, 1);
-    for (const b of scene.bodies) if (b.ring !== 'self') light(b.x, b.y, 170, 0xc8d4ff, 0.5);
-    for (const t of scene.tracers) light(t.x1, t.y1, 70, 0xffd080, 0.6);
+    for (const b of scene.bodies) if (b.ring !== 'self') light(b.x, b.y, 150, 0xc8d4ff, 0.45);
+    for (const fx of scene.effects) if (fx.kind === 'impact' && fx.victim === null && now - fx.born < 120) light(fx.x, fx.y, 60, 0xffc070, 0.8);
+    for (const t of scene.tracers) light(t.x1, t.y1, 80, 0xff9a40, 0.6);
     lightPool.end();
   }
 
@@ -686,6 +768,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     finish() { renderer.gl.readPixels(0, 0, 1, 1, renderer.gl.RGBA, renderer.gl.UNSIGNED_BYTE, new Uint8Array(4)); },
     draw(scene, cam, now, walls) {
       k = knobs();
+      density = Math.min(1, k.particles / PARTICLE_CAP);
       if (dprScaled() !== res) { res = dprScaled(); renderer.resize(view.w, view.h, res); }
       world.scale.set(cam.scale);
       world.position.set(cam.w / 2 - cam.x * cam.scale, cam.h / 2 - cam.y * cam.scale);
@@ -697,9 +780,9 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       cracks.clear();
       blocks.clear();
       aboveBlocks.clear();
-      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, glowPool, abovePool]) pool.begin();
-      drawEffects(scene, now);
-      drawDecals(now);
+      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.begin();
+      drawEffects(scene, now, walls);
+      drawMarks(scene, now);
       drawUnder(scene, now);
       drawShadows(scene);
       drawSolids(scene, now);
@@ -719,7 +802,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       drawOver(scene, now);
       drawTracers(scene);
       drawParticles(scene, now);
-      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, glowPool, abovePool]) pool.end();
+      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.end();
 
       const px = { w: view.w * res, h: view.h * res };
       nightSprite.visible = scene.dark > 0;
@@ -727,7 +810,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         drawLights(scene, now);
         lightSum = sizedRT(lightSum, px.w / 2, px.h / 2, true);
         lightRT = sizedRT(lightRT, px.w / 2, px.h / 2);
-        const amb = [1 - 0.58 * scene.dark, 1 - 0.53 * scene.dark, 1 - 0.38 * scene.dark, 1] as [number, number, number, number];
+        // Full night leaves a tenth of the day's light, moonlit blue, so what no lamp, fire or flash reaches is dark but not void.
+        const amb = [1 - NIGHT.r * scene.dark, 1 - NIGHT.g * scene.dark, 1 - NIGHT.b * scene.dark, 1] as [number, number, number, number];
         renderTo(lights, lightSum, res / 2, amb);
         knee(lightKnee, lightSum, lightRT);
         nightSprite.texture = lightRT;
@@ -775,3 +859,24 @@ function shadeNum(c: number, light: number): number {
   return (Math.round(((c >> 16) & 255) * light) << 16) | (Math.round(((c >> 8) & 255) * light) << 8) | Math.round((c & 255) * light);
 }
 
+
+/** The hull of a circle and its copy moved by (dx, dy), as a flat point list: a round piece's shadow along the floor. */
+function capsule(x: number, y: number, r: number, dx: number, dy: number, n = 10): number[] {
+  const a = Math.atan2(dy, dx);
+  const pts: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = a + Math.PI / 2 + (i / n) * Math.PI;
+    pts.push(x + Math.cos(t) * r, y + Math.sin(t) * r);
+  }
+  for (let i = 0; i <= n; i++) {
+    const t = a - Math.PI / 2 + (i / n) * Math.PI;
+    pts.push(x + dx + Math.cos(t) * r, y + dy + Math.sin(t) * r);
+  }
+  return pts;
+}
+
+/** A stable pseudo-random value in [0, 1) for a pair of numbers, so a fire's flames keep their spots frame to frame. */
+function hash(a: number, b: number): number {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}

@@ -96,16 +96,5 @@ export function createTextures() {
         g.stroke();
       }
     }),
-    /** A spent brass casing seen from above. */
-    casing: paint(16, 8, (g) => {
-      const grad = g.createLinearGradient(0, 0, 0, 8);
-      grad.addColorStop(0, '#f6d58a');
-      grad.addColorStop(0.5, '#c8962e');
-      grad.addColorStop(1, '#7a5a1a');
-      g.fillStyle = grad;
-      g.beginPath();
-      g.roundRect(1, 1.5, 14, 5, 2);
-      g.fill();
-    }),
   };
 }

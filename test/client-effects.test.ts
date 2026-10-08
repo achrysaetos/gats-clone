@@ -12,7 +12,7 @@ test('a body flashes from its newest hit until the flash runs out', () => {
   assert.deepEqual([...flashes], [[2, now - 10]], 'only the live player hit, its newest one');
 });
 
-const shot = (owner: number, born: number): Effect => ({ kind: 'flash', x: 0, y: 0, angle: 0, owner, born });
+const shot = (owner: number, born: number): Effect => ({ kind: 'flash', x: 0, y: 0, angle: 0, owner, gun: 'pistol', born });
 
 test("a gun kicks back from its shooter's newest shot until the kick runs out, and a hit kicks nothing", () => {
   const now = 1000;

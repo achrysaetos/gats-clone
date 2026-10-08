@@ -11,16 +11,19 @@ export type Knobs = {
   bloomDiv: 2 | 4 | null;
   /** Whether the glow layer is summed off-screen and rolled off before it lands, which costs a full-size pass; without it glows add straight on. */
   glowClamp: boolean;
+  /** The most particles drawn; below the pool's size a tier draws an even share of every burst. */
   particles: number;
+  /** The newest floor marks drawn (scorch, blood, piles, rubble), and the newest casings. */
   decals: number;
+  casings: number;
   lights: number;
 };
 
 export const QUALITY: Readonly<Record<Tier, Knobs>> = {
-  low: { renderScale: 0.5, bloomDiv: null, glowClamp: false, particles: 120, decals: 24, lights: 12 },
-  medium: { renderScale: 0.75, bloomDiv: 4, glowClamp: true, particles: 250, decals: 48, lights: 24 },
-  high: { renderScale: 1, bloomDiv: 4, glowClamp: true, particles: 500, decals: 90, lights: 48 },
-  ultra: { renderScale: 1, bloomDiv: 2, glowClamp: true, particles: 500, decals: 160, lights: 96 },
+  low: { renderScale: 0.5, bloomDiv: null, glowClamp: false, particles: 160, decals: 60, casings: 30, lights: 12 },
+  medium: { renderScale: 0.75, bloomDiv: 4, glowClamp: true, particles: 350, decals: 140, casings: 80, lights: 24 },
+  high: { renderScale: 1, bloomDiv: 4, glowClamp: true, particles: 800, decals: 260, casings: 200, lights: 48 },
+  ultra: { renderScale: 1, bloomDiv: 2, glowClamp: true, particles: 800, decals: 400, casings: 300, lights: 96 },
 };
 
 const MODES: readonly string[] = ['auto', ...TIERS];
