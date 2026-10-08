@@ -34,7 +34,6 @@ const kills: { at: number; ev: Extract<GameEvent, { e: 'kill' }> }[] = [];
 let whizzes = 0;
 type Arena = { worldSize: number; walls: WallView[] };
 let arena = null as Arena | null;
-const ground = () => arena;
 const page = await openPage({
   profile: 'skirmish-moments-',
   viewport: { width: VIEW.w, height: VIEW.h },
@@ -87,7 +86,7 @@ let seenHits = 0, seenKills = 0;
 const KEYS: Dir[] = ['right', 'down', 'left', 'up'];
 const RANGE = 300;
 /** Whether the straight line between two points misses every wall, so a shot at the far one can land. */
-const clear = (a: { x: number; y: number }, b: { x: number; y: number }) => !(ground()?.walls ?? []).some((w) => {
+const clear = (a: { x: number; y: number }, b: { x: number; y: number }) => !(arena?.walls ?? []).some((w) => {
   for (let t = 0; t <= 1; t += 0.05) {
     const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
     if (x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h) return true;
@@ -118,7 +117,7 @@ while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
     await sleep(250);
     continue;
   }
-  suppression = Math.max(suppression, (full!.self as { suppression?: number }).suppression ?? 0);
+  suppression = Math.max(suppression, full!.self.suppression ?? 0);
   if (suppression > 0.5) await once('suppressed', self);
   const foes = full!.players.filter((p) => p.id !== myId && p.alive).sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y));
   const foe = foes.find((p) => Math.hypot(p.x - self.x, p.y - self.y) < RANGE && clear(self, p)) ?? foes[0];
@@ -132,7 +131,7 @@ while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
     await walk([], self, 60);
     await mouse('mouseReleased', mx, my);
   } else {
-    const g = ground();
+    const g = arena;
     const dirs = foe && g ? pathStep(navGridFor(g.worldSize, g.walls), self, foe) : [KEYS[step++ % 4]!];
     await walk(dirs.length ? dirs : [KEYS[step++ % 4]!], self, 300);
   }

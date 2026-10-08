@@ -123,9 +123,9 @@ export type Scene = {
 
 const R = WORLD.playerRadius;
 const CULL_MARGIN = 120;
-/** A change of heading this sharp between frames at a run, in radians, kicks up dust. */
 /** How much a full kick shrinks the drawn body for a frame, the squash of a heavy gun's shove. */
 const RECOIL_SQUASH = 0.03;
+/** A change of heading this sharp between frames at a run, in radians, kicks up dust. */
 const SHARP_TURN = 1.2;
 const FOOT_DUST = '#a49c8c';
 const HURT_SHOW_MS = 1800;
@@ -224,7 +224,6 @@ export function describeWorld(f: Frame, dark: number): Scene {
   const downedNow = snap.players.filter((p) => p.downed && near(p.x, p.y, R * 3));
   for (const p of [...alive, ...downedNow]) {
     const was = s.strides.get(p.id), st = stride(was, p.x, p.y, now);
-    // A sharp turn at a run kicks up dust behind the feet.
     if (was?.moving && st.moving && Math.abs(Math.atan2(Math.sin(st.heading - was.heading), Math.cos(st.heading - was.heading))) > SHARP_TURN) {
       burst(s.particles, 'dust', p.x - Math.cos(st.heading) * 8, p.y - Math.sin(st.heading) * 8 + 10, was.heading, now, Math.random, FOOT_DUST);
     }

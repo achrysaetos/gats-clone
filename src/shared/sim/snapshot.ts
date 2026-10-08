@@ -140,7 +140,6 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
-  // A whizz goes only to the player it passed.
   const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped'
     || (e.e === 'whizz' ? e.victim === me.id : inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 

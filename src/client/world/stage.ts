@@ -574,7 +574,6 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       const len = Math.hypot(t.x1 - t.x0, t.y1 - t.y0);
       if (len < 1) continue;
       const a = Math.atan2(t.y1 - t.y0, t.x1 - t.x0);
-      // Thick warm streaks: a wide orange glow, a hot core.
       for (const [w, color, alpha] of [[t.r * 8, t.glow, 0.6], [t.r * 2.8, t.hot, 1]] as const) {
         const s = glowPool.next();
         s.texture = tex.streak;
@@ -641,7 +640,6 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         }
         case 'death':
           over.circle(fx.x, fx.y, R * (0.8 + 1.4 * Math.sqrt(k))).stroke({ width: 3 * (1 - k) + 0.5, color: 0xffffff, alpha: (1 - k) * 0.6 });
-          // The kill confirm: a white flash on the body for its first beat.
           if (now - fx.born < KILL_FLASH_MS) mark(glowPool.next(), tex.disc, fx.x, fx.y, R * 2.6, 0xffffff, 0.85 * (1 - (now - fx.born) / KILL_FLASH_MS));
           break;
         case 'splat': {
