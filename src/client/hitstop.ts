@@ -9,6 +9,15 @@ export type Hitstop = { at: number; ms: number; base: number } | null;
 
 export const NO_HITSTOP: Hitstop = null;
 
+/** Your kill also punches the view in by 3% and back out over 120 ms. */
+export const KILL_ZOOM = { amount: 0.03, ms: 120 } as const;
+
+/** The drawn view's scale `now` for a kill confirmed at `at`. */
+export function killZoom(at: number, now: number): number {
+  const t = (now - at) / KILL_ZOOM.ms;
+  return t < 0 || t >= 1 ? 1 : 1 + KILL_ZOOM.amount * Math.sin(Math.PI * t);
+}
+
 /** How many ms the drawn world lags the clock at `now`. */
 export function stopLag(stop: Hitstop, now: number): number {
   if (!stop) return 0;

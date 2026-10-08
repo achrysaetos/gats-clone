@@ -26,6 +26,9 @@ const SOLDIER_SHADOW = 0.6;
 const OVERHEAD_FADED = 0.28;
 const OVERHEAD_EASE_MS = 140;
 const RECOIL = R * 0.22;
+const KILL_FLASH_MS = 120;
+/** Each class's flash drawn larger than its baked frame: the heavy guns throw the biggest. */
+const FLASH_SIZE: Record<WeaponId, number> = { pistol: 1.1, smg: 1.1, assault: 1.2, shotgun: 1.45, sniper: 1.4, lmg: 1.35 };
 const MARK_Y = -R - 8;
 
 const colors = new Map<string, number>();
@@ -570,7 +573,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       const len = Math.hypot(t.x1 - t.x0, t.y1 - t.y0);
       if (len < 1) continue;
       const a = Math.atan2(t.y1 - t.y0, t.x1 - t.x0);
-      for (const [w, color, alpha] of [[t.r * 6, t.glow, 0.55], [t.r * 2, t.hot, 1]] as const) {
+      // Thick warm streaks: a wide orange glow, a hot core.
+      for (const [w, color, alpha] of [[t.r * 8, t.glow, 0.6], [t.r * 2.8, t.hot, 1]] as const) {
         const s = glowPool.next();
         s.texture = tex.streak;
         s.anchor.set(1, 0.5);
@@ -581,7 +585,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         s.tint = hex(color);
         s.alpha = alpha;
       }
-      mark(glowPool.next(), tex.glow, t.x1, t.y1, t.r * 7, hex(t.glow), 0.7);
+      mark(glowPool.next(), tex.glow, t.x1, t.y1, t.r * 9, hex(t.glow), 0.75);
     }
   }
 
@@ -622,7 +626,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
           const base = GUNS[fx.gun].base, quiet = GUNS[fx.gun].silenced ? 0.35 : 1;
           const s = glowPool.next();
           place(s, `fx.muzzle.${base}`, 'glow', 0, Math.min(2, Math.floor(k * 3)), fx.x, fx.y, fx.angle);
-          s.scale.x *= 0.5 + 0.5 * quiet; s.scale.y *= 0.5 + 0.5 * quiet;
+          const big = (0.5 + 0.5 * quiet) * FLASH_SIZE[base];
+          s.scale.x *= big; s.scale.y *= big;
           s.alpha = quiet;
           mark(glowPool.next(), tex.glow, fx.x + Math.cos(fx.angle) * 6, fx.y + Math.sin(fx.angle) * 6, FLASH[base].glow * (0.6 + 0.4 * quiet), 0xffb43a, 0.35 * (1 - k) * quiet);
           break;
@@ -635,6 +640,8 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         }
         case 'death':
           over.circle(fx.x, fx.y, R * (0.8 + 1.4 * Math.sqrt(k))).stroke({ width: 3 * (1 - k) + 0.5, color: 0xffffff, alpha: (1 - k) * 0.6 });
+          // The kill confirm: a white flash on the body for its first beat.
+          if (now - fx.born < KILL_FLASH_MS) mark(glowPool.next(), tex.disc, fx.x, fx.y, R * 2.6, 0xffffff, 0.85 * (1 - (now - fx.born) / KILL_FLASH_MS));
           break;
         case 'splat': {
           const r = ZOMBIES[fx.zombie].radius, color = ZOMBIE_LOOK[fx.zombie].arm;

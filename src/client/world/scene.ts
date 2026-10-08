@@ -5,8 +5,10 @@ import { KIT, type Light, type PieceId } from '../../shared/kit.ts';
 import { MAPS } from '../../shared/maps.ts';
 import { trainAt } from '../../shared/sim/train.ts';
 import { stride } from '../gait.ts';
+import { burst } from '../particles.ts';
+import { reloadFamily } from '../reload.ts';
 import { FALL_MS, gunAt, liveRemains, remainsAlpha, type Fall } from '../remains.ts';
-import { bob, FLINCH_MS, fromFront, gunKick, gunParts, jolt, legsOf, torsoOf, type GunParts, type Legs, type Torso } from './pose.ts';
+import { bob, FLINCH_MS, fromFront, gunKick, gunParts, jolt, legsOf, magIn, torsoOf, type GunParts, type Legs, type Torso } from './pose.ts';
 import { SOLDIER, TRAIN, trainSprite } from './catalog.ts';
 import { mapLooks, pieceKey, stageFor, type PieceLook } from './pieces.ts';
 import { cellRect, coreRectAt } from '../../shared/sim/build.ts';
@@ -121,6 +123,9 @@ export type Scene = {
 
 const R = WORLD.playerRadius;
 const CULL_MARGIN = 120;
+/** A change of heading this sharp between frames at a run, in radians, kicks up dust. */
+const SHARP_TURN = 1.2;
+const FOOT_DUST = '#a49c8c';
 const HURT_SHOW_MS = 1800;
 const HURT_FADE_MS = 500;
 /** How much of the sun a body inside a wall's shadow still gets. */
@@ -215,7 +220,14 @@ export function describeWorld(f: Frame, dark: number): Scene {
   const looks = mapLooks(s.map);
   const hits = recentHits(s.effects, now);
   const downedNow = snap.players.filter((p) => p.downed && near(p.x, p.y, R * 3));
-  for (const p of [...alive, ...downedNow]) s.strides.set(p.id, stride(s.strides.get(p.id), p.x, p.y, now));
+  for (const p of [...alive, ...downedNow]) {
+    const was = s.strides.get(p.id), st = stride(was, p.x, p.y, now);
+    // A sharp turn at a run kicks up dust behind the feet.
+    if (was?.moving && st.moving && Math.abs(Math.atan2(Math.sin(st.heading - was.heading), Math.cos(st.heading - was.heading))) > SHARP_TURN) {
+      burst(s.particles, 'dust', p.x - Math.cos(st.heading) * 8, p.y - Math.sin(st.heading) * 8 + 10, was.heading, now, Math.random, FOOT_DUST);
+    }
+    s.strides.set(p.id, st);
+  }
   noteMoves(s, snap, alive, now);
   if (s.strides.size > alive.length * 2 + 16) for (const id of s.strides.keys()) if (!alive.some((p) => p.id === id)) s.strides.delete(id);
   const standing = new Set([...s.walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })), ...(snap.buildings ?? []).map((b) => cellRect(b.cx, b.cy)), ...(snap.run ? [coreRectAt(snap.run.core)] : [])].map(hostKey));
@@ -302,7 +314,17 @@ function recentHits(effects: readonly Effect[], now: number): Map<number, { born
 function noteMoves(s: Session, snap: Snapshot, alive: readonly PlayerView[], now: number) {
   for (const p of alive) {
     if (p.dashing && !s.anim.dashAt.has(p.id)) s.anim.dashAt.set(p.id, now);
-    else if (!p.dashing) s.anim.dashAt.delete(p.id);
+    else if (!p.dashing && s.anim.dashAt.delete(p.id)) {
+      // The skid at a dash's end throws dust ahead along the way it slid.
+      const h = s.strides.get(p.id)?.heading ?? p.angle;
+      burst(s.particles, 'dust', p.x + Math.cos(h) * 6, p.y + Math.sin(h) * 6 + 10, h, now, Math.random, FOOT_DUST);
+      burst(s.particles, 'dust', p.x, p.y + 10, h + Math.PI / 2, now, Math.random, FOOT_DUST);
+    }
+    const out = p.reload !== undefined && !magIn(reloadFamily(p.gun), p.reload);
+    if (out && !s.anim.magOut.has(p.id)) {
+      s.anim.magOut.add(p.id);
+      s.effects.push({ kind: 'magdrop', x: p.x + Math.cos(p.angle) * 10, y: p.y + Math.sin(p.angle) * 10, angle: p.angle, gun: p.gun, born: now });
+    } else if (!out) s.anim.magOut.delete(p.id);
   }
   const ids = new Set<number>();
   for (const t of snap.thrown) {

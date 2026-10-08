@@ -31,9 +31,13 @@ export type Effect =
   | { kind: 'slash'; x: number; y: number; angle: number; owner: number; born: number }
   | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number }
   /** A turret's round from its muzzle at (`x`, `y`), flying `reach` px before it stops. */
-  | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number };
+  | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number }
+  /** A spent magazine dropped from a reload at (`x`, `y`), out of a gun aimed `angle`. */
+  | { kind: 'magdrop'; x: number; y: number; angle: number; gun: GunId; born: number }
+  /** An enemy round passed close by `victim` at (`x`, `y`), flying `dir`. */
+  | { kind: 'whizz'; x: number; y: number; dir: number; victim: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, broke: 900, slash: 200, splat: 420, tracer: 240 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, broke: 900, slash: 200, splat: 420, tracer: 240, magdrop: 100, whizz: 420 };
 
 type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
@@ -96,10 +100,12 @@ export type Anim = {
   dashAt: Map<number, number>;
   /** Thrown things already seen, so a new one names who threw it. */
   thrown: Set<number>;
+  /** Soldiers whose magazine is out, so the next one to come out drops once. */
+  magOut: Set<number>;
   remains: Remains[];
 };
 
-export const newAnim = (): Anim => ({ shotAt: new Map(), moves: new Map(), dashAt: new Map(), thrown: new Set(), remains: [] });
+export const newAnim = (): Anim => ({ shotAt: new Map(), moves: new Map(), dashAt: new Map(), thrown: new Set(), magOut: new Set(), remains: [] });
 
 type MenuStatus =
   | { kind: 'idle' }

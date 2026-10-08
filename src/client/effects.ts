@@ -35,6 +35,8 @@ const STRIKE: Record<Material, { chips: 'rubble' | 'splinter' | null; dust: stri
 
 /** Heavier classes leave smoke hanging at the muzzle. */
 const WISPS = new Set(['shotgun', 'sniper', 'lmg']);
+/** Extra spark bursts a round throws off each armour tier. */
+const ARMOR_SPARKS = { none: 0, light: 1, medium: 1, heavy: 2 } as const;
 
 export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: string) {
   const host = spec.kind === 'impact' && spec.victim === null ? hostOf(coverOf(s), spec.x, spec.y) : null;
@@ -44,10 +46,14 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     case 'impact': {
       if (spec.victim !== null) {
         s.hurtAt.set(spec.victim, now);
+        const armor = spec.surface === 'player' ? newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim)?.armorTier ?? 'none' : 'none';
         // The round carries on through: blood sprays out the far side, sparks glance back toward the shooter.
         if (spec.dir !== null) {
           burst(s.particles, 'spark', spec.x, spec.y, spec.dir + Math.PI, now);
-          burst(s.particles, spec.surface === 'zombie' ? 'ichor' : 'blood', spec.x, spec.y, spec.dir, now);
+          // Armour rings and throws plate chips; the heavier it is, the more of the round it takes and the less blood shows.
+          for (let i = 0; i < ARMOR_SPARKS[armor]; i++) burst(s.particles, 'metalSpark', spec.x, spec.y, spec.dir + Math.PI, now);
+          if (armor !== 'none') burst(s.particles, 'rubble', spec.x, spec.y, spec.dir + Math.PI, now, Math.random, '#8a8f98');
+          if (armor !== 'heavy' || Math.random() < 0.4) burst(s.particles, spec.surface === 'zombie' ? 'ichor' : 'blood', spec.x, spec.y, spec.dir, now);
         }
         return;
       }
@@ -92,7 +98,10 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     case 'splat': burst(s.particles, 'gore', spec.x, spec.y, angle, now, Math.random, ZOMBIE_LOOK[spec.zombie].body); return;
     case 'flash':
       s.anim.shotAt.set(spec.owner, now);
-      if (WISPS.has(GUNS[spec.gun].base)) burst(s.particles, 'wisp', spec.x, spec.y, spec.angle, now);
+      if (WISPS.has(GUNS[spec.gun].base)) {
+        burst(s.particles, 'wisp', spec.x, spec.y, spec.angle, now);
+        burst(s.particles, 'wisp', spec.x + Math.cos(spec.angle) * 10, spec.y + Math.sin(spec.angle) * 10, spec.angle, now);
+      }
       return;
     case 'slash':
       s.anim.moves.set(spec.owner, { kind: 'knife', at: now });

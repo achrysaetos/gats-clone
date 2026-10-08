@@ -32,8 +32,8 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'shot':
     case 'hunted':
     case 'life':
-    case 'wiped':
-    case 'whizz': return null;
+    case 'wiped': return null;
+    case 'whizz': return { kind: 'whizz', x: ev.x, y: ev.y, dir: ev.dir, victim: ev.victim };
     case 'kill': {
       const blow = snap.events.filter((d) => d.e === 'dmg' && d.kind === 'player' && d.victim === ev.victimId).at(-1);
       return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId, by: ev.killerId } : null;

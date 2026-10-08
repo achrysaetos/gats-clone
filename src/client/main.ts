@@ -33,7 +33,7 @@ import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
 import { soundsFor, type SoundCue } from './sfx.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
-import { addStop, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
+import { addStop, killZoom, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
 import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, newAnim, type ClientState, type Rejoin, type Session } from './state.ts';
@@ -101,6 +101,7 @@ const audio = createAudio();
 let trauma = 0;
 let kick = NO_KICK;
 let hitstop = NO_HITSTOP;
+let killAt = -Infinity;
 let lastFrameAt = 0;
 let shownView: number = WORLD.viewRadius;
 /** The world starts in the background; Play waits for it, and for the art when pressed before the art lands. */
@@ -470,6 +471,7 @@ function drawFrame(now: number) {
     const stop = stopFor(fx, s.myId);
     if (stop && addStop(hitstop, now, stop) !== hitstop) {
       hitstop = addStop(hitstop, now, stop);
+      if (stop === 'kill') killAt = now;
       noteStop(stop);
     }
   }
@@ -504,7 +506,7 @@ function drawFrame(now: number) {
   kick = settleKick(kick, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
+  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale, scale: aimCamera.scale * killZoom(killAt, now) };
   updateTrails(s, snap, now);
   faceZombies(s.zombieFaces, snap.zombies ?? [], snap.run?.core ?? s.lastSelf);
   easeTurrets(s.turretAims, fxNow);

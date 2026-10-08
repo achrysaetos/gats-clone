@@ -1,7 +1,7 @@
 import { GUNS, type GunId } from '../../shared/defs.ts';
 import { KIT, type PieceId } from '../../shared/kit.ts';
 import type { Effect } from '../state.ts';
-import { CASING } from './catalog.ts';
+import { CASING, GUN_FRAMES } from './catalog.ts';
 
 /**
  * What a fight leaves on the floor: scorch, blood, plank and rubble piles, chunks and casings. A mark may be thrown first:
@@ -43,11 +43,16 @@ export const FADE = { ms: 2000, ranks: 8 } as const;
 
 export type Placed = { m: Mark; x: number; y: number; turn: number; lift: number; alpha: number; flying: boolean };
 
-/** Where a mark is at `now`: eased along its throw, then at rest. */
+/** The share of a throw spent on its first hop; the rest is one small bounce a quarter as high. */
+const FIRST_HOP = 0.72;
+
+/** Where a mark is at `now`: eased along its throw, hopping once and bouncing once, then at rest. */
 export function markAt(m: Mark, now: number): Omit<Placed, 'alpha' | 'm'> {
   const t = m.flyMs > 0 ? Math.min(1, Math.max(0, (now - m.born) / m.flyMs)) : 1;
   const e = 1 - (1 - t) * (1 - t);
-  return { x: m.x0 + (m.x - m.x0) * e, y: m.y0 + (m.y - m.y0) * e, turn: m.turn0 + (m.turn - m.turn0) * e, lift: m.hop * 4 * t * (1 - t), flying: t < 1 };
+  const u = t < FIRST_HOP ? t / FIRST_HOP : (t - FIRST_HOP) / (1 - FIRST_HOP);
+  const lift = m.hop * 4 * u * (1 - u) * (t < FIRST_HOP ? 1 : 0.25);
+  return { x: m.x0 + (m.x - m.x0) * e, y: m.y0 + (m.y - m.y0) * e, turn: m.turn0 + (m.turn - m.turn0) * e, lift, flying: t < 1 };
 }
 
 /** The newest `budget` marks born by `now`, newest first, with the opacity each is drawn at. */
@@ -129,6 +134,28 @@ export function casingMark(gun: GunId, x: number, y: number, angle: number, born
 
 const SPLAT = { death: 'decal.blood', splat: 'decal.ichor' } as const;
 
+/**
+ * What a round leaves on the floor where it struck: blood flicked out behind a soldier it hit, a chip of concrete or a
+ * splinter knocked down from cover. Metal only sparks. One in two rounds leaves one, so a long burst marks without carpeting.
+ */
+export function impactMarks(fx: Extract<Effect, { kind: 'impact' }>, rand: Rand): Mark[] {
+  if (rand() < 0.5) return [];
+  const dir = fx.dir ?? rand() * Math.PI * 2;
+  if (fx.victim !== null) {
+    if (fx.surface !== 'player') return [];
+    return [mark('decal.blood', Math.floor(rand() * 4), fx.x + Math.cos(dir) * (14 + rand() * 10), fx.y + Math.sin(dir) * (14 + rand() * 10), fx.born, { turn: rand() * Math.PI * 2, scale: 0.3 + rand() * 0.15, alpha: 0.8 })];
+  }
+  const back = dir + Math.PI + (rand() - 0.5) * 1.4;
+  if (fx.material === 'wood') return [thrown('fx.plank', 2, fx.x, fx.y, back, 8 + rand() * 14, fx.born, rand, { scale: 0.35 })];
+  if (fx.material === 'concrete' || fx.material === 'planter' || fx.material === undefined) return [thrown('fx.chunk', 2, fx.x, fx.y, back, 8 + rand() * 16, fx.born, rand, { scale: 0.7 })];
+  return [];
+}
+
+/** A spent magazine dropped from a reload: the gun's own magazine frame, falling beside the soldier's left foot. */
+export function magMark(gun: GunId, x: number, y: number, angle: number, born: number, rand: Rand): Mark {
+  return thrown(`gun.${gun}`, GUN_FRAMES.mag, x, y, angle - Math.PI / 2 - 0.4 + (rand() - 0.5) * 0.5, 10 + rand() * 8, born, rand, { hop: 5, turn0: angle, turn: angle + (rand() - 0.5) * 2 });
+}
+
 /** The marks a new effect leaves, by ring: `floor` keeps them for the match, `casings` for a little while. */
 export function marksOf(fx: Effect, walls: readonly (Rect & { material?: string })[], rand: Rand): { floor: Mark[]; casings: Mark[] } {
   switch (fx.kind) {
@@ -136,6 +163,8 @@ export function marksOf(fx: Effect, walls: readonly (Rect & { material?: string 
     case 'broke': return { floor: brokeMarks(fx.piece, fx, fx.born, rand), casings: [] };
     case 'death':
     case 'splat': return { floor: [mark(SPLAT[fx.kind], Math.floor(rand() * 4), fx.x, fx.y, fx.born, { turn: rand() * Math.PI * 2, alpha: 0.85 })], casings: [] };
+    case 'impact': return { floor: impactMarks(fx, rand), casings: [] };
+    case 'magdrop': return { floor: [], casings: [magMark(fx.gun, fx.x, fx.y, fx.angle, fx.born, rand)] };
     case 'flash': return { floor: [], casings: [casingMark(fx.gun, fx.x - Math.cos(fx.angle) * 22, fx.y - Math.sin(fx.angle) * 22, fx.angle, fx.born, rand)] };
     default: return { floor: [], casings: [] };
   }
