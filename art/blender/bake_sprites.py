@@ -1,6 +1,6 @@
 """Bakes every sprite in the catalog.
 
-Usage: blender -b -P art/blender/bake_sprites.py -- art/build/sprites-spec.json <outDir> [name-prefix]
+Usage: blender -b -P art/blender/bake_sprites.py -- art/build/sprites-spec.json <outDir> [name-prefix,...]
 
 Writes <outDir>/<name>/<layer>/<dir>_<frame>.png for each catalog entry, at round(box.w*px) x round(box.h*px)
 with px = pxPerUnit * (scale or 1), covering the entry's box around the sprite's origin.
@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 
 from sprites import common as C  # noqa: E402
-from sprites import fx, guns, props, soldier, zombies  # noqa: E402
+from sprites import fx, guns, kit, props, soldier, zombies  # noqa: E402
 
 BUILDERS = {
     'soldier': soldier.build,
@@ -37,6 +37,8 @@ BUILDERS = {
     'scorch': fx.build_decal,
     'blood': fx.build_decal,
     'ichor': fx.build_decal,
+    'kit': kit.build_piece,
+    'train': kit.build_train,
 }
 
 # How each role's objects take part in a render pass: shown, cut out of the image while still casting light and shadow
@@ -162,16 +164,16 @@ def bake(spec, name, entry, out):
 def main():
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if len(argv) < 2:
-        print('usage: blender -b -P art/blender/bake_sprites.py -- <spec.json> <outDir> [name-prefix]')
+        print('usage: blender -b -P art/blender/bake_sprites.py -- <spec.json> <outDir> [name-prefix,...]')
         sys.exit(2)
     with open(argv[0]) as fh:
         spec = json.load(fh)
     out = argv[1]
-    prefix = argv[2] if len(argv) > 2 else ''
+    prefixes = argv[2].split(',') if len(argv) > 2 else ['']
     started = time.time()
     total = 0
     for name, entry in spec['sprites'].items():
-        if not name.startswith(prefix):
+        if not any(name.startswith(p) for p in prefixes):
             continue
         t = time.time()
         n = bake(spec, name, entry, out)

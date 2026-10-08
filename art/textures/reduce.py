@@ -1,7 +1,7 @@
 """Reduces the downloaded ambientCG sets (see docs/art/CREDITS.md) to the small maps the bake reads.
 
 python3 -I art/textures/reduce.py <dir holding the unzipped 1K-JPG sets>
-Colour maps become greyscale detail maps, so scene.py sets every hue and the texture only adds wear.
+Colour maps become greyscale detail maps; scripts/art/floor.ts turns them into the tiling floor detail textures.
 """
 
 import os
@@ -23,12 +23,5 @@ def detail(asset, name, size=1024):
     im.save(os.path.join(out, name), quality=88)
 
 
-def normal(asset, name, size=512):
-    load(asset, 'NormalGL').convert('RGB').resize((size, size), Image.LANCZOS).save(os.path.join(out, name), quality=90)
-
-
 detail('Concrete044D', 'floor.jpg')
-normal('Concrete044D', 'floor_normal.jpg')
-detail('Concrete034', 'wall.jpg')
-normal('Concrete034', 'wall_normal.jpg')
 ImageOps.invert(load('Asphalt011', 'Opacity').convert('L')).save(os.path.join(out, 'cracks.png'), optimize=True)
