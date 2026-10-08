@@ -321,10 +321,11 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       s.tint = grey(z.light);
       if (z.flash > 0) mark(glowPool.next(), tex.disc, z.x, z.y, ZOMBIES[z.kind].radius * 2.2, 0xffffff, z.flash * 0.7);
       if (scene.dark > 0.3) {
-        const r = ZOMBIES[z.kind].radius;
+        const r = ZOMBIES[z.kind].radius, look = ZOMBIE_LOOK[z.kind], { ahead, apart, lift } = look.eyes;
+        const cos = Math.cos(z.angle), sin = Math.sin(z.angle);
         for (const side of [-1, 1]) {
-          const a = z.angle + side * 0.42;
-          mark(glowPool.next(), tex.glow, z.x + Math.cos(a) * r * 0.55, z.y + Math.sin(a) * r * 0.55, r * 0.7, hex(ZOMBIE_LOOK[z.kind].eye === '#1b1d22' ? '#ff5a3c' : ZOMBIE_LOOK[z.kind].eye), scene.dark);
+          const x = z.x + (cos * ahead - sin * apart * side) * r, y = z.y + (sin * ahead + cos * apart * side - lift) * r;
+          mark(glowPool.next(), tex.glow, x, y, r * 0.7, hex(look.eye === '#1b1d22' ? '#ff5a3c' : look.eye), scene.dark);
         }
       }
     }
