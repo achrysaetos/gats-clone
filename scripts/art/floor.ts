@@ -87,8 +87,8 @@ async function concrete(): Promise<Float32Array> {
   const tone = fbm([[16, 1], [32, 0.6], [64, 0.4]], 5);
   const img = new Float32Array(N * N);
   for (let k = 0; k < img.length; k++) {
-    const crack = Math.max(0, cracks[k]!) * Math.max(0, Math.min(1, (mask[k]! - 0.62) * 6));
-    img[k] = (1 + grain[k]! * 0.42 + tone[k]! * 0.18) * (1 - crack * 0.45);
+    const crack = Math.max(0, cracks[k]!) * Math.max(0, Math.min(1, (mask[k]! - 0.72) * 6));
+    img[k] = (1 + grain[k]! * 0.3 + tone[k]! * 0.1) * (1 - crack * 0.25);
   }
   const r = rng(7);
   for (let i = 0; i < 26; i++) stroke(img, r, 20 + r() * 60, 0.8 + r() * 1.2, 0.05 + r() * 0.06);
@@ -99,9 +99,9 @@ async function concrete(): Promise<Float32Array> {
     const dx = Math.min(x % half, half - (x % half)), dy = Math.min(y % half, half - (y % half));
     const d = Math.min(dx, dy);
     const i = y * N + x;
-    if (d < 1) img[i] = img[i]! * 0.45;
-    else if (d < 2) img[i] = img[i]! * 0.8;
-    else if (d < 3) img[i] = img[i]! * 1.05;
+    if (d < 1) img[i] = img[i]! * 0.78;
+    else if (d < 2) img[i] = img[i]! * 0.93;
+    else if (d < 3) img[i] = img[i]! * 1.03;
   }
   return img;
 }

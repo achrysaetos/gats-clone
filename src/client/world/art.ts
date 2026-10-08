@@ -40,13 +40,13 @@ export const ART = {
   sky: { color: [0.7, 0.75, 0.86] as const, strength: 0.42 },
   floor: {
     slab: 120,
-    a: [0.34, 0.325, 0.305] as const,
-    b: [0.4, 0.385, 0.36] as const,
+    a: [0.33, 0.335, 0.345] as const,
+    b: [0.38, 0.385, 0.395] as const,
     seam: [0.2, 0.19, 0.18] as const,
     /** What collects where walls meet the floor. */
     grime: [0.36, 0.32, 0.27] as const,
     /** The quay outside the map edge. */
-    quay: [0.29, 0.283, 0.27] as const,
+    quay: [0.28, 0.283, 0.29] as const,
     /** Asphalt maps' floor, in place of a and b. */
     asphalt: [0.2, 0.198, 0.192] as const,
   },

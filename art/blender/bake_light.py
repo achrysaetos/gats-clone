@@ -208,7 +208,7 @@ def dressing():
 def lamps(mood):
     for i, l in enumerate(M['lights']):
         z = min(90.0, l['r'] * 0.3)
-        rgb = tuple(0.45 + 0.55 * srgb_to_linear(((l['color'] >> s) & 255) / 255) for s in (16, 8, 0))
+        rgb = tuple(0.6 + 0.4 * srgb_to_linear(((l['color'] >> s) & 255) / 255) for s in (16, 8, 0))
         data = bpy.data.lights.new(f'lamp{i}', 'POINT')
         data.energy = LAMP_POWER * l['strength'] * mood['lamps'] * z * z
         data.color = rgb

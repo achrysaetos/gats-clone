@@ -12,19 +12,19 @@
  "maps": {
   "c76eabae": {
    "id": "warehouse",
-   "light": "maps/warehouse/light.13cce58c86.json"
+   "light": "maps/warehouse/light.9932f6d987.json"
   },
   "992c55d1": {
    "id": "outpost",
-   "light": "maps/outpost/light.75e4bca11f.json"
+   "light": "maps/outpost/light.b4bf8f7025.json"
   },
   "56f759f6": {
    "id": "vault",
-   "light": "maps/vault/light.74e616818b.json"
+   "light": "maps/vault/light.8f6643bc50.json"
   }
  },
  "floors": {
-  "concrete": "floors/concrete.38ff5ee540.webp",
+  "concrete": "floors/concrete.16debbaa7b.webp",
   "asphalt": "floors/asphalt.c2a60a4994.webp"
  },
  "water": "water.b8a9d5793a.webp"
