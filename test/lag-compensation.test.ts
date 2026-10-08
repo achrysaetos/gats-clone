@@ -6,7 +6,7 @@ import { INTERP_DELAY_MS, parseClientMsg, type GameEvent } from '../src/shared/p
 import { setInput, step } from '../src/shared/sim.ts';
 import { MAX_REWIND_MS, rewindCapFor } from '../src/shared/sim/combat.ts';
 import { IDLE_INPUT, type Player, type Wall, type World } from '../src/shared/sim/world.ts';
-import { emptyWorld, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 let seq = 1_000_000;
 function fireSeeing(w: World, shooter: Player, angle: number, viewAt: number | null, rewindCapMs = MAX_REWIND_MS): GameEvent[] {
@@ -108,4 +108,20 @@ test('input parsing keeps a numeric view time and drops anything else', () => {
   assert.equal(viewAtOf(-50), 0);
   assert.equal(viewAtOf('1234'), null);
   assert.equal(viewAtOf(undefined), null);
+});
+
+test('a shooter killed by their own rewound blast round in their tick does not use their ability after dying', () => {
+  const w = emptyWorld();
+  // Cover right at the muzzle: the blast round bursts on it at once, inside the shooter's own tick because it flies through the past.
+  w.walls = [{ x: 540, y: 400, w: 40, h: 200, built: false, material: 'concrete', expiresAt: Infinity }];
+  const p = spawnAt(w, 500, 500);
+  equip(p, 'grenadier');
+  p.perks = { 3: 'grenade' };
+  run(w, 300);
+  if (p.life.k === 'alive') p.life.hp = 1;
+  setInput(w, p.id, seq++, { ...IDLE_INPUT, angle: 0, fire: true, shots: p.input.shots + 1, ability: true }, w.now - 100);
+  step(w, TICK_MS);
+  assert.equal(p.life.k, 'dead', 'the point-blank blast killed its shooter');
+  assert.ok(w.events.some((e) => e.e === 'shot' && e.owner === p.id), 'the round left');
+  assert.equal(w.thrown.length, 0, 'no grenade thrown by the dead');
 });

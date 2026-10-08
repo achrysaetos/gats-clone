@@ -10,7 +10,7 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats, settleSpreadMul, spreadFor } from '../src/shared/sim/stats.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
-import { emptyWorld, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 /** Distance a player covers in `ms` holding right, sprinting or not. */
 function travelled(sprint: boolean, ms: number, loadout: Parameters<typeof spawnAt>[3] = {}, perks: Parameters<typeof grantPerks>[2] = []) {
@@ -22,7 +22,7 @@ function travelled(sprint: boolean, ms: number, loadout: Parameters<typeof spawn
   return p.x - 500;
 }
 
-test('sprinting moves 1.35 times faster than walking, and only while moving', () => {
+test('sprinting moves SPRINT.speedMul times faster than walking, and only while moving', () => {
   const walk = travelled(false, 1000), sprint = travelled(true, 1000);
   assert.ok(Math.abs(sprint / walk - SPRINT.speedMul) < 0.03, `sprint ${sprint.toFixed(1)} vs walk ${walk.toFixed(1)}`);
   const w = emptyWorld();
@@ -267,4 +267,23 @@ test('a single click while a slow gun is coming up after a sprint is not kept: n
   press(w, a, { right: true, fire: true, shots: a.input.shots + 1 });
   for (let i = 0; i < 4; i++) { run(w, TICK_MS); fired += shots(); }
   assert.equal(fired, 1, 'a fresh click once the gun is up fires');
+});
+
+test('a sprint started mid-burst drops the rest of the burst: no round leaves on its own once the gun is back up', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  equip(a, 'machinePistol');
+  let fired = 0;
+  const tick = () => { run(w, TICK_MS); fired += w.events.filter((e) => e.e === 'shot' && e.owner === a.id).length; };
+  // A tap starts a three-round burst; the very next sample lets go of the trigger and holds sprint.
+  press(w, a, { right: true, shots: a.input.shots + 1 });
+  tick();
+  assert.equal(fired, 1, 'the tap fired the burst\'s first round');
+  press(w, a, { right: true, sprint: true, shots: a.input.shots });
+  for (let i = 0; i < 45; i++) tick();
+  assert.equal(snapshotFor(w, a.id).self.sprint, true);
+  assert.equal(fired, 1, 'the lowered gun cut the burst');
+  press(w, a, { right: true, shots: a.input.shots });
+  for (let i = 0; i < Math.ceil((raiseMsOf(GUNS.machinePistol) + 1000) / TICK_MS); i++) tick();
+  assert.equal(fired, 1, 'no click, no shot: the cut burst does not resume when the gun comes up');
 });

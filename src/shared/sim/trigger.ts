@@ -32,6 +32,8 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
     const readyAt = Math.max(now, cooledAt, s.reloadUntil ?? 0, gun.holdUntil ?? 0);
     if (readyAt - now <= PRESS_BUFFER_MS) s.pressUntil = readyAt + PRESS_GRACE_MS;
   }
+  // A lowered gun (a sprint, the round over) drops the rest of a burst, so it never fires on its own once the gun is back up.
+  if (!gun.armed) s.burstLeft = 0;
   const bursting = s.burstLeft > 0;
   const wantsShot = bursting || now <= s.pressUntil || (def.auto && pull.fire);
   if (!gun.armed || now < (gun.holdUntil ?? 0) || !wantsShot || s.reloadUntil !== null || s.ammo <= 0 || now < s.nextFireAt) return false;

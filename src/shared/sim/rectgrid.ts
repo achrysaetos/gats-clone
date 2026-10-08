@@ -110,7 +110,8 @@ export class RectGrid {
     this.begin();
     let n = 0;
     const c0 = this.col(ax), c1 = this.col(bx), r0 = this.row(ay), r1 = this.row(by);
-    if (c0 === c1 || r0 === r1) n = this.addCells(c0, c1, r0, r1, 0);
+    // A point (dx = dy = 0) has no major axis to walk (its slope would be 0 / 0), so it takes the cells of its padded box.
+    if (c0 === c1 || r0 === r1 || (dx === 0 && dy === 0)) n = this.addCells(c0, c1, r0, r1, 0);
     else if (Math.abs(dx) >= Math.abs(dy)) {
       const k = dy / dx;
       for (let i = c0; i <= c1; i++) {

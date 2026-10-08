@@ -264,8 +264,9 @@ test('ability respects its cooldown', () => {
   assert.equal(built(), 1, 'held key during cooldown builds nothing');
   assert.equal(w.wallsVersion, version);
   assert.ok(snapshotFor(w, a.id).self.abilityReadyIn > 0);
-  run(w, ABILITY_COOLDOWN_MS.engineer);
-  assert.ok(built() >= 1 && w.wallsVersion > version, 'ready again after cooldown');
+  // Just past the cooldown and well before the first wall expires (so its expiry cannot stand in for a new build).
+  run(w, ABILITY_COOLDOWN_MS.engineer - 2000 + 2 * TICK_MS);
+  assert.equal(built(), 2, 'ready again after cooldown: a second wall beside the first');
 });
 
 test('engineer wall stops bullets in the aim direction', () => {

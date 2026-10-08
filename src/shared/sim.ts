@@ -134,7 +134,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const ability = abilityOf(p);
-  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
+  // A rewound shot can kill its own shooter (a blast round on cover at point blank) before this point in the tick: the dead throw nothing.
+  if (p.life.k === 'alive' && armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
     p.abilityReadyAt = w.now + abilityCooldownMs(ability, p.perks);
     if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
   }

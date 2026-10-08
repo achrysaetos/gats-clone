@@ -114,6 +114,20 @@ test('the wall grid answers every query exactly as a linear scan does, on every 
   }
 });
 
+test('a zero-length query on a grid cell corner still finds the wall it sits in', () => {
+  // Fixed walls, enough to be indexed; the grid's origin is the leftmost wall less a pixel, so (63, 63) is a cell corner.
+  const walls = Array.from({ length: 30 }, (_, i) => ({ x: i * 300, y: 0, w: 200, h: 200, built: false, expiresAt: Infinity }));
+  const g = prefixGrid(walls)!;
+  assert.ok(g, 'the walls get a grid');
+  assert.equal((63 - g.x0) % g.cell, 0, 'x on a cell edge');
+  assert.equal((63 - g.y0) % g.cell, 0, 'y on a cell edge');
+  for (const [x, y] of [[63, 63], [62.8, 63.3], [70, 70]] as const) {
+    same(() => segmentBlocked(walls, x, y, 0, 0), () => `point (${x}, ${y})`, () => true);
+    same(() => earliestHit(walls, x, y, 0, 0)?.t ?? null, () => `point (${x}, ${y})`, () => 0);
+    same(() => segmentHits(walls, x, y, 0, 0).length, () => `point (${x}, ${y})`, () => 1);
+  }
+});
+
 test('a query finds every wall it crosses, including one it only grazes at a corner', () => {
   const w = createWorld('FFA', 1, 'causeway');
   const solids = solidRects(w);
