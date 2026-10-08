@@ -297,7 +297,7 @@ test('balance smoke: bot duels between the six class guns leave none dominant or
   const add = (gun: GunId, range: number, s: number) => {
     for (const key of [`${gun}`, `${gun}@${range}`]) { const t = score.get(key) ?? { sum: 0, n: 0 }; t.sum += s; t.n++; score.set(key, t); }
   };
-  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) for (const range of ranges) for (const seed of [1, 2, 3, 4]) for (const swap of [false, true]) {
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) for (const range of ranges) for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) for (const swap of [false, true]) {
     const r = duel({ a: ids[i]!, b: ids[j]!, range, seed, swap, armor: 'none' });
     add(ids[i]!, range, r.score);
     add(ids[j]!, range, 1 - r.score);
