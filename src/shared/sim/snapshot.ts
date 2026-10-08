@@ -64,6 +64,7 @@ function selfView(w: World, p: Player): SelfView {
     abilityReadyIn: ability ? Math.max(0, p.abilityReadyAt - w.now) : 0,
     alive: life.k === 'alive',
     dash: life.k === 'alive' ? life.dash : null,
+    ...(life.k === 'alive' && life.shove && { shove: life.shove }),
     // A squad player who bled out waits for dawn, which the run view times.
     respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,

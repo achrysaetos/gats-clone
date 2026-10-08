@@ -68,7 +68,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const life = p.life;
   if (life.k === 'downed') {
     p.angle = p.input.angle;
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null, shove: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     return;
@@ -81,11 +81,12 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const moving = walks(inp) || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p);
-  if (moving) {
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, moveSpeed(w, p), dtMs, MAPS[w.map].size);
+  if (moving || life.shove) {
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, shove: life.shove }, inp, moveSpeed(w, p), dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     life.dash = m.dash;
+    life.shove = m.shove;
   }
 
   const armed = w.match.k === 'playing' && !ceasefire(w);
@@ -99,7 +100,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       const b: Bullet = {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
-        left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
+        range: stats.range, left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
         gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);

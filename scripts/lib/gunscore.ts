@@ -1,6 +1,6 @@
-import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, HP_MULTIPLIER, rulesOf, WEAPON_IDS, WORLD, type ArmorId, type GunId, type WeaponId } from '../../src/shared/defs.ts';
+import { ARMORS, EVOLUTIONS, FEEL, GUN_IDS, GUNS, HP_MULTIPLIER, rulesOf, WEAPON_IDS, WORLD, type ArmorId, type GunId, type WeaponId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
-import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
+import { effectiveStats, knockbackPx, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 import { median } from './stats.ts';
@@ -117,6 +117,10 @@ export function perfectKill(id: GunId, hp: number, armor: ArmorId): { hits: numb
   return { hits, firstToLastMs: shots[hits - 1]!.t - shots[0]!.t };
 }
 
+/**
+ * A shooter standing still loses ground to every shove its hits give the target and wins it back over about `REGAIN_MS`, stepping in
+ * between bursts; one walking steps straight back in, which every gun's shot interval leaves time for.
+ */
 export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, armor: ArmorId = 'none'): number {
   const g = GUNS[id];
   if (d > g.range) return Infinity;
@@ -124,8 +128,12 @@ export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, a
   const shots = heldTriggerShots.get(id)!;
   let odds = [1, ...Array<number>(need).fill(0)];
   let expected = 0;
+  let at = d, lastT = shots[0]!.t;
   for (const shot of shots) {
-    const p = hitChance(d, spreadFor(id, {}, still, shot.spray), g.bulletSpeed);
+    at = d + (at - d) * Math.exp(-(shot.t - lastT) / REGAIN_MS);
+    lastT = shot.t;
+    const p = at > g.range + WORLD.playerRadius ? 0 : hitChance(at, spreadFor(id, {}, still, shot.spray), g.bulletSpeed);
+    if (still) at += Math.min(FEEL.knockback.maxPx, g.pellets * p * knockbackPx(id, g.damage, at, g.range));
     const pellets = Array.from({ length: g.pellets + 1 }, (_, k) => binomial(g.pellets, k) * p ** k * (1 - p) ** (g.pellets - k));
     const next = Array<number>(need + 1).fill(0);
     odds.forEach((o, j) => pellets.forEach((q, k) => { next[Math.min(need, j + k)]! += o * q; }));
@@ -136,6 +144,7 @@ export function aimKillMs(id: GunId, d: number, still: boolean, hp = HUMAN_HP, a
 }
 
 const LIKELY = 0.5;
+const REGAIN_MS = 1000;
 const binomial = (n: number, k: number): number => (k === 0 ? 1 : (binomial(n, k - 1) * (n - k + 1)) / k);
 
 export const aimDps = (id: GunId, d: number, still: boolean): number => (HUMAN_HP * 1000) / aimKillMs(id, d, still);

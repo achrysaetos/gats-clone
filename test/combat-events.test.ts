@@ -25,13 +25,14 @@ test('one bullet hitting a player emits exactly one dmg event naming attacker, v
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 700, 500);
+  const stood = { x: b.x, y: b.y };
   const got = hits(fireAndCollect(w, a));
   assert.equal(got.length, 1, JSON.stringify(got));
   const { hit, ...ev } = got[0] as Extract<GameEvent, { e: 'dmg' }>;
-  assert.deepEqual(ev, { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: b.x, y: b.y, kind: 'player' });
+  assert.deepEqual(ev, { e: 'dmg', attacker: a.id, victim: b.id, amount: PISTOL_DMG, x: stood.x, y: stood.y, kind: 'player' }, 'placed where the victim stood when hit');
   assert.ok(hit, 'a bullet hit says where it struck');
-  assert.ok(Math.abs(Math.hypot(hit.x - b.x, hit.y - b.y) - WORLD.playerRadius) < 0.5, `on the victim's edge, got ${hit.x},${hit.y}`);
-  assert.ok(hit.x < b.x, 'on the side facing the shooter');
+  assert.ok(Math.abs(Math.hypot(hit.x - stood.x, hit.y - stood.y) - WORLD.playerRadius) < 0.5, `on the victim's edge, got ${hit.x},${hit.y}`);
+  assert.ok(hit.x < stood.x, 'on the side facing the shooter');
   assert.ok(Math.abs(hit.dir) < GUNS.pistol.spread + 1e-9, 'flying the way it was fired');
 });
 

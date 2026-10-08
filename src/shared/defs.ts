@@ -173,6 +173,23 @@ export const GUNS: Record<GunId, GunDef> = {
     look: { length: 1.05, width: 1.3, barrels: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
 };
 
+/**
+ * How a landed round moves the body it hits. Every number scales from the round's own damage, so a gun's weight sets its push
+ * and only the per-class factor is tuned; see docs/feel/README.md for why each value is what it is.
+ */
+export const FEEL = {
+  knockback: {
+    /** Px of shove per point of a round's damage: a shotgun blast throws a body back, rifle rounds nudge it, SMG rounds never move it, so spraying stays a tracking duel. */
+    perDamage: { pistol: 0.15, smg: 0, shotgun: 0.32, assault: 0.08, sniper: 0.12, lmg: 0.06 } satisfies Record<WeaponId, number>,
+    /** Share of the shove a round still carries at the end of its range; it falls off in a straight line from the muzzle, so the shotgun's push is a close-range reward. */
+    farMul: 0.2,
+    /** The longest a run of hits can shove a body: two body widths, enough to break an aim and open a gap, never enough to throw someone across a room. */
+    maxPx: 48,
+    /** A shove plays out over this long, about four ticks, so others see a push rather than a jump and the target keeps walking through it. */
+    ms: 120,
+  },
+} as const;
+
 export function byGun<T>(f: (id: GunId) => T): Record<GunId, T> {
   const out: Partial<Record<GunId, T>> = {};
   for (const id of GUN_IDS) out[id] = f(id);

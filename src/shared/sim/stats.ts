@@ -1,5 +1,5 @@
 import {
-  ARMORS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ARMORS, FEEL, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import type { Life, PerkOfTier, Player, World } from './world.ts';
 
@@ -42,6 +42,12 @@ export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, stil
 
 function bloomMul({ bloom }: GunRules, sprayShot: number): number {
   return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * Math.max(0, sprayShot - bloom.free)) : 1;
+}
+
+/** How far a round of `gun` doing `damage` shoves the body it lands on, `travelled` px out of its `range`. */
+export function knockbackPx(gun: GunId, damage: number, travelled: number, range: number): number {
+  const { perDamage, farMul } = FEEL.knockback;
+  return perDamage[GUNS[gun].base] * damage * (1 - (1 - farMul) * Math.min(1, Math.max(0, travelled / range)));
 }
 
 /** Whether a gun has its still spread, `sinceMoveMs` after the last step (0 while walking): at once, the first tick its owner stands. */
@@ -95,7 +101,7 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, pressUntil: -Infinity, hits: [],
+    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, shove: null, pressUntil: -Infinity, hits: [],
   };
 }
 

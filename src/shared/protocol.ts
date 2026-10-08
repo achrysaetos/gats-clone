@@ -72,6 +72,8 @@ export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
+/** A push from landed rounds playing out: `vx`, `vy` px a second for `leftMs` more, on top of walking and through the same collision. */
+export type Shove = { vx: number; vy: number; leftMs: number };
 
 /** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
 export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
@@ -105,6 +107,8 @@ export type SelfView = {
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
+  /** The shove still to play out from rounds that hit you, so prediction moves you with it. */
+  shove?: Shove;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;
