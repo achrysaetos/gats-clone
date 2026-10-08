@@ -60,9 +60,10 @@ test('pulse decays to zero and never stacks above 1', () => {
   assert.equal(decayPulse(1, 2000), 0);
 });
 
-test('vignette reach matches the old strips', () => {
-  // The old strips were 320 css px at the sides and 230 at top and bottom, never past 26% of the screen.
-  const [x, y] = vignetteReach(1600, 900);
-  assert.ok(Math.abs(x - 0.2) < 1e-12 && Math.abs(y - 230 / 900) < 1e-12, `${x}, ${y}`);
-  assert.deepEqual(vignetteReach(800, 600), [0.26, 0.26], 'capped on a small screen');
+test('vignette reach matches the old strips: 320 by 230 css px, but never past 26% of a small screen', () => {
+  const near = (got: readonly number[], want: readonly number[]) => got.forEach((v, i) => assert.ok(Math.abs(v - want[i]!) < 1e-9, `${got} vs ${want}`));
+  near(vignetteReach(1600, 900), [0.2, 230 / 900]);
+  near(vignetteReach(3200, 1800), [0.1, 230 / 1800]);
+  near(vignetteReach(800, 600), [0.26, 0.26]);
+  near(vignetteReach(1600, 600), [0.2, 0.26]);
 });

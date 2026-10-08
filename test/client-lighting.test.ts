@@ -5,6 +5,10 @@ import {
   addLight, addShockwave, ambientFor, blastLights, blocksLight, KEEP_MS, lightLevel, liveShocks, maskTriangles, muzzleLight, occludersOf, parseColor,
   pushOut, resetLighting, resolveLights, selectLights, setLight, setLightClock, setLightCollecting, setLightingEnabled, TIERS, type Occluder, type ResolvedLight,
 } from '../src/client/lighting.ts';
+import '../src/client/lightfeed.ts';
+import { drawPropTops, resetPropFx } from '../src/client/propfx.ts';
+import { PROP_KINDS } from '../src/shared/defs.ts';
+import type { PropView } from '../src/shared/protocol.ts';
 
 const light = (over: Partial<ResolvedLight> = {}): ResolvedLight => ({ x: 0, y: 0, radius: 100, rgb: [1, 1, 1], level: 1, cone: null, size: 5, inside: 10, shadows: true, beam: 0, ...over });
 const view = { x0: 0, y0: 0, x1: 1000, y1: 600 };
@@ -202,4 +206,24 @@ test('shock rings run their life and are dropped', () => {
   assert.ok(liveShocks(100).length <= 4, 'capped');
   resetLighting();
   setLightingEnabled(false);
+});
+
+test('a prop light that moves stays one light: a rocketing tank does not leave a lit trail of every spot it passed', () => {
+  setLightingEnabled(false);
+  resetLighting();
+  resetPropFx();
+  const ctx = new Proxy({}, { get: () => () => ({ addColorStop() {} }), set: () => true }) as unknown as CanvasRenderingContext2D;
+  const tank = PROP_KINDS.indexOf('propane'), lamp = PROP_KINDS.indexOf('lamp');
+  const props = (i: number): PropView[] => [[7, tank, 100 + i * 12, 100, 0], [8, lamp, 900, 900, 1]] as unknown as PropView[];
+  for (let i = 0; i < 10; i++) {
+    setLightClock(1000 + i * 16);
+    drawPropTops(ctx, { props: props(i), thrown: [], players: [] }, 1000 + i * 16, { x0: 0, y0: 0, x1: 2000, y1: 2000 });
+  }
+  const lights = resolveLights(1000 + 9 * 16);
+  const near = (x: number, y: number) => lights.filter((l) => Math.hypot(l.x - x, l.y - y) < 200);
+  assert.equal(near(160, 100).length, 1, 'one light for the tank');
+  assert.equal(near(160, 100)[0]!.x, 100 + 9 * 12, 'where the tank is now');
+  assert.equal(near(906, 916).length, 1, 'and one for the lamp that stood still');
+  resetLighting();
+  resetPropFx();
 });

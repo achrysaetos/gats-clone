@@ -94,6 +94,9 @@ function easeNight(run: RunView | undefined, now: number, dusk = 0): number {
 
 export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const { cam, dpr, snap, s, now } = f;
+  // The frame's light clock first: everything below may set a light (a theme's lamps, a door's glow, a parked vehicle's lamps),
+  // and one stamped with last frame's clock would lapse on a slow frame (a software canvas, a hitch) the moment it is set.
+  setLightClock(now);
   const k = dpr * cam.scale;
   ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
   const tl = screenToWorld(cam, { x: 0, y: 0 });
@@ -149,8 +152,6 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (decor) drawFixtures(ctx, decor, view, fx);
   const airClock = snap.airdrop ? serverNow(s.snaps, now) : null;
   const theme = themeOf(mapOf(snap.match.map)?.theme), themeMap = mapOf(snap.match.map);
-  // The frame's light clock first: a theme's lamps are stamped with it, and on a slow frame (a software canvas) last frame's clock would let them lapse.
-  setLightClock(now);
   if (theme?.under && themeMap) theme.under(ctx, now, view, themeMap);
   // Ambient life (ambient.ts): critters on the floor and wall tops, drawn under every body; the flyers come after the roofs.
   drawAmbientGround(ctx, { snap, s, now, view, dark });

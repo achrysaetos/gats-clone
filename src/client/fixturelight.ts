@@ -103,6 +103,9 @@ export function fixtureLight(f: Fixture, st: FxState): Resolved | null {
 
 export type View = { x0: number; y0: number; x1: number; y1: number };
 
+/** The longest reach of any fixture's light (the floodlight's), for the cheap cull. */
+export const MAX_REACH = 700;
+
 /**
  * The environment's lights for a view: only those whose pool touches it, the nearest `cap` of them, and shadows only on the
  * nearest `shadowCap`. A fixture is a lamp or it is not: this never invents one.
@@ -112,8 +115,8 @@ export function pickDecorLights(plan: DecorPlan, view: View, st: FxState, cap = 
   const seen: { r: Resolved; d: number }[] = [];
   for (const f of plan.fixtures) {
     if (!LIT.has(f.kind)) continue;
-    // Cheap reject before building a spec: no light here reaches further than 600.
-    if (f.lx < view.x0 - 600 || f.lx > view.x1 + 600 || f.ly < view.y0 - 600 || f.ly > view.y1 + 600) continue;
+    // Cheap reject before building a spec: no light here reaches further than a floodlight.
+    if (f.lx < view.x0 - MAX_REACH || f.lx > view.x1 + MAX_REACH || f.ly < view.y0 - MAX_REACH || f.ly > view.y1 + MAX_REACH) continue;
     const r = fixtureLight(f, st);
     if (!r) continue;
     const rad = r.spec.radius;
