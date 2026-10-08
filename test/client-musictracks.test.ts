@@ -242,28 +242,52 @@ test('a radio station replaces the map\'s track, a Zombies night keeps its own s
   assert.equal(pickTrack('range', 'harbor', true), 'harbor', 'only the outpost has a night score');
 });
 
-test('a map change crossfades to the new map\'s track and the old track fades out; a station change does the same', async (t) => {
+/**
+ * A Web Audio stand-in good enough for the music scheduler, for when node-web-audio-api is not installed: every node takes any call and
+ * plays nothing, sample files never decode (the synth voices play), and the clock is the test's own.
+ */
+function fakeAudioContext(now: () => number) {
+  const param = () => { const p: Record<string, unknown> = { value: 0 }; for (const m of ['setValueAtTime', 'linearRampToValueAtTime', 'exponentialRampToValueAtTime', 'setTargetAtTime', 'cancelScheduledValues', 'cancelAndHoldAtTime', 'setValueCurveAtTime']) p[m] = () => p; return p; };
+  const node = (): never => {
+    const n: Record<string, unknown> = { frequency: param(), gain: param(), detune: param(), Q: param(), threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), playbackRate: param(), pan: param(), start() {}, stop() {}, disconnect() {} };
+    n.connect = (x: unknown) => x;
+    return n as never;
+  };
+  return {
+    sampleRate: 8000, get currentTime() { return now(); }, baseLatency: 0, outputLatency: 0, state: 'running', destination: node(), resume: () => Promise.resolve(),
+    createBuffer: (_c: number, l: number) => ({ getChannelData: () => new Float32Array(l), duration: 1 }),
+    createGain: node, createOscillator: node, createBiquadFilter: node, createBufferSource: node, createDynamicsCompressor: node, createConvolver: node, createStereoPanner: node,
+    decodeAudioData: () => Promise.reject(new Error('no samples under test')),
+  };
+}
+
+// Runs on a real offline context when node-web-audio-api is installed, and on the stand-in otherwise, so the scheduler is always exercised.
+test('a map change crossfades to the new map\'s track and the old track fades out; a station change does the same', async () => {
   const waa = loadWaa();
-  if (!waa) { t.skip('node-web-audio-api is not installed'); return; }
-  const real = new waa.OfflineAudioContext(2, 44100 * 5, 44100);
   let clock = 0;
-  const ctx = new Proxy(real, { get: (target, prop) => (prop === 'currentTime' ? clock : typeof (target as never)[prop as never] === 'function' ? ((target as never)[prop as never] as () => unknown).bind(target) : (target as never)[prop as never]) });
+  const real = waa ? new waa.OfflineAudioContext(2, 44100 * 5, 44100) : null;
+  const ctx = real
+    ? new Proxy(real, { get: (target, prop) => (prop === 'currentTime' ? clock : typeof (target as never)[prop as never] === 'function' ? ((target as never)[prop as never] as () => unknown).bind(target) : (target as never)[prop as never]) })
+    : fakeAudioContext(() => clock);
   const music = await import('../src/client/music.ts');
-  music.musicStart(ctx as unknown as AudioContext, real.destination);
+  // The test drives the scheduler itself (musicTick), so the page's own interval is not started.
+  const interval = globalThis.setInterval;
+  globalThis.setInterval = (() => 0) as never;
+  try { music.musicStart(ctx as unknown as AudioContext, (real?.destination ?? (ctx as { destination: AudioNode }).destination) as AudioNode); } finally { globalThis.setInterval = interval; }
   const state = { phase: 'playing', s: { snaps: EMPTY_BUFFER, mapId: 'plaza' } } as never;
   const step = (dt: number) => { clock += dt; music.musicUpdate(state, clock * 1000, false); music.musicTick(); };
   for (let i = 0; i < 20; i++) step(0.1);
   assert.equal(music.getPlayingTrack(), 'march');
   assert.equal(music.getCrossfade(), null);
   (state as { s: { mapId: string } }).s.mapId = 'causeway'; // the harbour
-  let sawFade = false, steps = 0;
+  let steps = 0;
   while (music.getPlayingTrack() !== 'harbor' && steps++ < 400) step(0.1);
   assert.equal(music.getPlayingTrack(), 'harbor', 'the new map\'s track takes over at a bar line');
   assert.deepEqual(music.getCrossfade(), { from: 'march', to: 'harbor' });
-  sawFade = true;
-  for (let i = 0; i < 80 && music.getCrossfade(); i++) step(0.1);
+  let fading = 0;
+  for (; fading < 80 && music.getCrossfade(); fading++) step(0.1);
   assert.equal(music.getCrossfade(), null, 'and the old track is gone once the fade is over');
-  assert.ok(sawFade);
+  assert.ok(fading * 0.1 >= 3 && fading * 0.1 <= 6, `a map change is a slow blend of both tracks, not a cut (${(fading * 0.1).toFixed(1)}s)`);
   // The radio: a station beats the map's track, null hands back.
   music.setRoomStation('wasteland');
   for (let i = 0; i < 400 && music.getPlayingTrack() !== 'wasteland'; i++) step(0.1);

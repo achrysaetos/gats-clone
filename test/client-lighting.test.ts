@@ -37,6 +37,14 @@ test('a transient light fades and then is dropped; a keyed one lives only while 
   assert.equal(resolveLights(1101).filter((l) => l.x === 5).length, 0, 'transient light expired');
   assert.equal(resolveLights(1000 + KEEP_MS - 1).filter((l) => l.x === 9).length, 1);
   assert.equal(resolveLights(1000 + KEEP_MS + 5).length, 0, 'an unrefreshed lamp goes out');
+  // In wall-clock terms: a lamp rides out a few dropped frames, but one whose source is gone is dark within half a second.
+  setLight('torch', { x: 9, y: 9, radius: 160, color: '#fff' });
+  assert.equal(resolveLights(1000 + 150).length, 1, 'still lit 150 ms on');
+  assert.equal(resolveLights(1000 + 500).length, 0, 'out 500 ms on');
+  // Lights too faint or too small to see are not handed to the renderer at all.
+  setLight('ember', { x: 9, y: 9, radius: 160, color: '#fff', intensity: 0.005 });
+  setLight('speck', { x: 9, y: 9, radius: 3, color: '#fff' });
+  assert.deepEqual(resolveLights(1001), []);
   setLightClock(2000);
   setLight('lamp', { x: 9, y: 9, radius: 160, color: '#fff' });
   setLightClock(2200);

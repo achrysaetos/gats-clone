@@ -144,7 +144,7 @@ test('smoke and embers climb as they age, and a scaled burst emits fewer', () =>
   const p = pool.slots[0]!;
   assert.ok(particleAt(p, 1000).y < particleAt(p, 0).y - 20, 'rises');
   const thin = createPool(64);
-  burst(thin, 'hotSparks', 0, 0, 0, 0, Math.random, undefined, 0.2);
+  burst(thin, 'hotSparks', 0, 0, 0, 0, () => 0.5, undefined, 0.2);
   assert.equal(liveCount(thin, 0), 1);
 });
 

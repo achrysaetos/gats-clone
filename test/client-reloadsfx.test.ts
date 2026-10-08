@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { GUN_IDS, GUNS, type GunId, type WeaponId } from '../src/shared/defs.ts';
 import { reloadMsFor } from '../src/shared/sim/stats.ts';
 import { FOLEY, SURFACES, actionCycle, type FoleyId } from '../src/client/foley.ts';
-import { BEATS, MAG_FALL_MS, soundTimeline } from '../src/client/reloadbeats.ts';
+import { MAG_FALL_MS, soundTimeline } from '../src/client/reloadbeats.ts';
 import { CROWD, MAX_CATCHUP_MS, OTHER_GAIN, SELF_GAIN, createReloadFoley, floorAt, heftOf, reloadCues, setFloorProbe, type FoleyEmit } from '../src/client/reloadsfx.ts';
 import { SOUNDS, minGapMs, priorityOf, varianceOf } from '../src/client/sfx.ts';
 import { LEAD_MS, asCue, lastSoundMs, loadWaa, peakOf, renderCues, renderReload, rmsOf } from '../scripts/render-reload-sfx.ts';
@@ -199,7 +199,8 @@ test('a crowd reloading at once is rate limited; you never are; the out-of-earsh
   }
   const others = heard.filter((h) => !h.self), mineHeard = heard.filter((h) => h.self);
   assert.equal(mineHeard.length, soundTimeline('assault').length, 'your own reload is whole');
-  // Any window of CROWD.windowMs holds at most CROWD.max of the crowd's sounds.
+  // Any window of CROWD.windowMs holds at most CROWD.max of the crowd's sounds: a few at a time (a murmur, not one click) over a real stretch of time.
+  assert.ok(CROWD.max >= 3 && CROWD.windowMs >= 150, 'the limit still lets a crowd be heard');
   for (const a of others) assert.ok(others.filter((b) => b.at >= a.at && b.at < a.at + CROWD.windowMs).length <= CROWD.max, 'the crowd is a murmur');
   assert.ok(others.length > 0 && others.length < 30 * soundTimeline('assault').length / 4, 'but not silent');
   // Out of earshot and hidden soldiers make no sound.
@@ -317,10 +318,4 @@ test('offline render: other soldiers\' reloads are quieter than yours, dulled wi
   const mixed = peakOf(await renderCues(waa!, [...shots, ...reloadCues('assault', 1000).map((c) => asCue({ ...c, delayMs: c.delayMs + 200 }, 0, 0, true))], 2));
   assert.ok(mixed < alone * 1.15, `the foley does not push the gunfire's peak (${DB(alone).toFixed(1)} -> ${DB(mixed).toFixed(1)} dBFS)`);
   assert.equal(LEAD_MS > 0, true);
-});
-
-test('the clock constants are sane', () => {
-  assert.ok(CROWD.max >= 3 && CROWD.windowMs >= 150);
-  assert.ok(BEATS.box.release > BEATS.box.grab && BEATS.box.release < BEATS.box.out);
-  assert.ok(BASES.length === 6);
 });

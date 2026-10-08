@@ -44,10 +44,13 @@ test('fallback decisions', () => {
   assert.equal(decideFx({ ...env, search: '?fx', renderer: 'SwiftShader' }).mode, 'full');
 });
 
-test('watchdog trips only on a slow average', () => {
-  const fast = watchdog(5, 10), slow = watchdog(5, 10);
+test('watchdog judges each full window of frames by its average, never a single frame', () => {
+  const fast = watchdog(5, 10), slow = watchdog(5, 10), spiky = watchdog(5, 10);
   assert.ok(![...Array(30)].some(() => fast(1)));
-  assert.ok([...Array(10)].map(() => slow(9)).at(-1));
+  assert.deepEqual([...Array(10)].map(() => slow(9)), [...Array(9).fill(false), true], 'only once the window is full');
+  assert.deepEqual([...Array(10)].map(() => slow(9)).at(-1), true, 'and again for the next window');
+  // One 40 ms hitch among fast frames averages 4.9 ms: not slow.
+  assert.equal([...Array(10)].map((_, i) => spiky(i === 3 ? 40 : 1)).some(Boolean), false);
 });
 
 test('pulse decays to zero and never stacks above 1', () => {
@@ -58,6 +61,8 @@ test('pulse decays to zero and never stacks above 1', () => {
 });
 
 test('vignette reach matches the old strips', () => {
-  assert.deepEqual(vignetteReach(1600, 900), [0.2, 0.2555555555555556].map((v, i) => (i ? Math.min(0.26, 230 / 900) : Math.min(0.26, 320 / 1600))));
-  assert.deepEqual(vignetteReach(800, 600), [0.26, 0.26].map((v, i) => (i ? Math.min(v, 230 / 600) : Math.min(v, 320 / 800))));
+  // The old strips were 320 css px at the sides and 230 at top and bottom, never past 26% of the screen.
+  const [x, y] = vignetteReach(1600, 900);
+  assert.ok(Math.abs(x - 0.2) < 1e-12 && Math.abs(y - 230 / 900) < 1e-12, `${x}, ${y}`);
+  assert.deepEqual(vignetteReach(800, 600), [0.26, 0.26], 'capped on a small screen');
 });

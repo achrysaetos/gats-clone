@@ -149,6 +149,7 @@ test('the profile endpoint is read defensively', () => {
   assert.equal(p.equipped.helmet, 'h_beret');
   assert.equal(p.equipped.camo, DEFAULTS.camo, 'an id under the wrong slot is dropped');
   assert.equal(p.level, 64);
-  assert.ok(p.challenges);
+  assert.deepEqual(p.challenges, { daily: [], weekly: [] });
+  assert.equal(parseProfile({ name: 'x', xp: 5, challenges: { daily: 'nope' } })!.challenges, null, 'malformed challenges are dropped, not trusted');
   assert.equal(parseProfile({ name: 'x', xp: 5 })!.level, 1);
 });

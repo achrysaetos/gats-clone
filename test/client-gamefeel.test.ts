@@ -107,7 +107,7 @@ test('a HUD panel fades toward see-through while a player is under it, and back 
 type Drawn = { text: string; color: unknown };
 
 /** Draws the HUD into a recording context and returns every filled string with its fill color. */
-function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
+function hudTexts(frame: Snapshot, session: Partial<Session> = {}, now = 1000): Drawn[] {
   const drawn: Drawn[] = [];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get(target, prop) {
@@ -121,7 +121,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { Path2D: class {} });
   const s = { myId: 1, worldSize: 3000, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], snaps: EMPTY_BUFFER, ...session } as unknown as Session;
-  drawHud(ctx, 1, makeCamera(s.lastSelf, 1280, 800, WORLD.viewRadius), frame, s, 1000, { x: 0, y: 0 }, null);
+  drawHud(ctx, 1, makeCamera(s.lastSelf, 1280, 800, WORLD.viewRadius), frame, s, now, { x: 0, y: 0 }, null);
   return drawn;
 }
 
@@ -136,6 +136,23 @@ test('the kill feed spells out an evolved gun in its accent color and keeps the 
 test('holding a stage-2 gun shows a HUNTED badge on your HUD', () => {
   assert.equal(hudTexts(snap({ me: { gun: 'phantom', hunted: true } })).filter((d) => d.text === 'HUNTED').length, 1);
   assert.equal(hudTexts(snap({ me: { gun: 'skirmisher' } })).some((d) => d.text === 'HUNTED'), false);
+});
+
+test('the HUD reads your health and magazine off the snapshot: the figure on the tag, rounds over the mag size, RELOAD while reloading', () => {
+  const texts = (frame: Snapshot, now: number) => hudTexts(frame, {}, now).map((d) => d.text);
+  // Seen fresh (a new life, or the first frame in a while), the figures are exact.
+  const fresh = texts(snap({ me: { hp: 73 }, self: { ammo: 7, mag: 12 } }), 50_000);
+  assert.ok(fresh.includes('73'), `health 73 on the tag: ${fresh}`);
+  assert.ok(fresh.includes('7') && fresh.includes('/12'), 'seven rounds of twelve');
+  const reloading = texts(snap({ self: { ammo: 0, mag: 12, reloading: true, reloadFrac: 0.4 } }), 60_000);
+  assert.ok(reloading.includes('RELOAD') && !reloading.includes('/12'), 'a reload replaces the count');
+  // A hit rolls the figure down over a few frames instead of jumping, and lands exactly on the new health.
+  texts(snap({ me: { hp: 100 } }), 70_000);
+  const hit = texts(snap({ me: { hp: 41 } }), 70_016);
+  assert.ok(!hit.includes('41') && hit.some((t) => Number(t) > 41 && Number(t) < 100), `rolling down: ${hit}`);
+  let t = 70_016, last: string[] = [];
+  for (let i = 0; i < 40; i++) last = texts(snap({ me: { hp: 41 } }), (t += 16));
+  assert.ok(last.includes('41'), `settled on 41: ${last}`);
 });
 
 /** Draws the world into a recording context and returns the stroke color of every stroke. */

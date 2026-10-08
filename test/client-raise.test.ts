@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { clickFindsGunDown, NO_FIRING, raiseLeftOf, settle, settleOf, stepTrigger, type ServerGun } from '../src/client/fire.ts';
-import { CARRY, carryAt, createRaiseWatch, gunPhaseOf, RETICLE_RAISE, reticleLook } from '../src/client/raise.ts';
+import { CARRY, carryAt, createRaiseWatch, gunPhaseOf, RETICLE_RAISE, reticleLook, stepCarry } from '../src/client/raise.ts';
 import { GUNS, PRESS_BUFFER_MS, raiseMsOf, settleRulesOf, WORLD } from '../src/shared/defs.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
@@ -106,5 +106,61 @@ test('the soldier\'s gun comes up from the carry over exactly the gun\'s raise t
     assert.ok(Math.min(...past) < -0.05 && Math.min(...past) >= -CARRY.overshoot, 'swings a hair past the aim');
     assert.equal(at(raise + CARRY.overshootMs), 0);
   }
-  assert.equal(carryAt(100, 400, 0.3) <= 0.3, true, 'a short sprint comes up from where it got to');
+  // A short sprint that only got the gun 30% into the carry comes up from there, and swings past the aim only 30% as far.
+  assert.equal(carryAt(0, 400, 0.3), 0.3);
+  assert.ok(Math.abs(carryAt(200, 400, 0.3) - 0.3 * carryAt(200, 400, 1)) < 1e-12);
+  const swing = (from: number) => Math.min(...Array.from({ length: 20 }, (_, i) => carryAt(400 + (i / 20) * CARRY.overshootMs, 400, from)));
+  assert.ok(Math.abs(swing(0.3) - 0.3 * swing(1)) < 1e-12, `overshoot scales with the carry (${swing(0.3)} vs ${swing(1)})`);
+});
+
+test('a body drops into the carry over CARRY.downMs while it sprints and comes back up over its raise; reduced motion snaps', () => {
+  const raise = 400;
+  // id 101: first seen walking, then sprints for 70 ms (half the drop), then stops.
+  assert.equal(stepCarry(101, false, raise, 1000, false), 0);
+  let a = 0;
+  for (let now = 1000; now <= 1070; now += 10) a = stepCarry(101, true, raise, now, false);
+  assert.ok(Math.abs(a - 70 / CARRY.downMs) < 1e-9, `half way down after 70 ms (${a})`);
+  assert.equal(stepCarry(101, false, raise, 1080, false), a, 'the sprint just ended: still where it got to');
+  assert.ok(Math.abs(stepCarry(101, false, raise, 1080 + raise / 2, false) - carryAt(raise / 2, raise, a)) < 1e-12, 'then rises on carryAt from there');
+  assert.equal(stepCarry(101, false, raise, 1080 + raise + CARRY.overshootMs, false), 0, 'and is on the aim once it settles');
+  // Seen sprinting from the first frame, it is already in the carry. With reduced motion, the gun is held down for the raise and then snaps up.
+  assert.equal(stepCarry(102, true, raise, 0, true), 1);
+  assert.equal(stepCarry(102, false, raise, 10, true), 1);
+  assert.equal(stepCarry(102, false, raise, 10 + raise - 1, true), 1, 'no easing');
+  assert.equal(stepCarry(102, false, raise, 10 + raise, true), 0, 'and no overshoot');
+});
+
+test('a sprint the server reports runs no raise clock: the gun is down until it ends, and only then comes up', () => {
+  const settleMs = settleRulesOf(GUNS.assault).ms;
+  const f = settle(NO_FIRING, { ...SERVER, sprint: true, settle: 1 + 300 / settleMs, settleMs }, 10, 0, []).firing;
+  assert.equal(gunPhaseOf(f), 'sprint');
+  assert.equal(raiseLeftOf(f), 0, 'no raise is counted down while still sprinting');
+  assert.equal(clickFindsGunDown(f), true);
+});
+
+test('a click within the press buffer of the gun coming up is kept, not denied; nothing is "down" for the dead or after the round', () => {
+  const settleMs = settleRulesOf(GUNS.assault).ms;
+  const raising = (leftMs: number) => settle(NO_FIRING, { ...SERVER, sprint: false, settle: 1 + leftMs / settleMs, settleMs }, 10, 0, []).firing;
+  assert.equal(clickFindsGunDown(raising(PRESS_BUFFER_MS + 20)), true);
+  assert.equal(gunPhaseOf(raising(PRESS_BUFFER_MS - 20)), 'raising');
+  assert.equal(clickFindsGunDown(raising(PRESS_BUFFER_MS - 20)), false, 'close enough to up that the click is buffered into the first shot');
+  const sprinting = settle(NO_FIRING, { ...SERVER, sprint: true }, 10, 0, []).firing;
+  assert.equal(clickFindsGunDown(settle(sprinting, { ...SERVER, sprint: true, alive: false }, 11, 0, []).firing), false, 'dead');
+  assert.equal(clickFindsGunDown(settle(NO_FIRING, { ...SERVER, sprint: true, armed: false }, 10, 0, []).firing), false, 'round over');
+});
+
+test('the raise watch reads a dead soldier\'s gun as ready, so no click plays at the respawn', () => {
+  const watch = createRaiseWatch();
+  const sprinting = settle(NO_FIRING, { ...SERVER, sprint: true }, 10, 0, []).firing;
+  watch.step(sprinting, 0);
+  assert.equal(watch.phase, 'sprint');
+  const dead = settle(sprinting, { ...SERVER, sprint: true, alive: false }, 11, 0, []).firing;
+  assert.equal(watch.step(dead, 16), false);
+  assert.equal(watch.phase, 'ready');
+});
+
+test('a lowered reticle never draws tighter than the spread itself', () => {
+  const wide = reticleLook('raising', 85, 90, -Infinity, Infinity);
+  assert.equal(wide.gap, 85, 'a spread wider than the lowered share keeps its own gap');
+  assert.equal(reticleLook('raising', 10, 90, -Infinity, Infinity).gap, 90 * RETICLE_RAISE.lowShare);
 });

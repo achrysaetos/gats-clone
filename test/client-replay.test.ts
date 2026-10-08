@@ -106,7 +106,8 @@ test('the round ending extracts a pending moment without waiting for its tail', 
   const buf = createReplayBuffer();
   let h = NO_HIGHLIGHT;
   for (let t = 0; t < 60; t++) { const s = snap(t, t === 59 ? [killBy(1, 2), medal(1, 'quadKill')] : []); recordFrame(buf, s); h = observeHighlight(h, s, buf, t === 59); }
-  assert.ok(h.best);
+  assert.equal(h.best?.kills, 1, 'the kill in the very last snapshot is kept as the round\'s best');
+  assert.ok(h.best!.clip.length > 0 && h.best!.to >= h.best!.from);
   assert.equal(h.want, null);
 });
 

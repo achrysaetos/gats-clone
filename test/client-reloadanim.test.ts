@@ -136,6 +136,13 @@ test('a reload ends on its last ms: the run of frames reaches t = 1 exactly, and
   assert.ok(reloadScene('lmg', R, 0, BEATS.lmg.drop).carried?.big);
   assert.ok(reloadScene('akimbo', R, 0, dropBeats('akimbo')[0]!).carried);
   assert.ok(reloadScene('akimbo', R, 0, dropBeats('akimbo')[1]!).carried);
+  // A reload seen in a jump (a long frame, a snapshot gap) that skips past the drop beat lets no mag fall mid-air.
+  clearReloads();
+  stepReload(4, 'assault', [0.1 * total, total], 0);
+  assert.deepEqual(stepReload(4, 'assault', [0.9 * total, total], 16)!.drops, [], 'a skip of most of the reload drops nothing');
+  clearReloads();
+  stepReload(5, 'assault', [(BEATS.box.drop - 0.05) * total, total], 0);
+  assert.deepEqual(stepReload(5, 'assault', [(BEATS.box.drop + 0.05) * total, total], 16)!.drops, [BEATS.box.drop], 'a small step over the beat does');
 });
 
 test('your own reload follows the predicted trigger: the arms start the moment you press, and end at its reload time', () => {
@@ -146,4 +153,15 @@ test('your own reload follows the predicted trigger: the arms start the moment y
   assert.deepEqual(selfReload(f, 1000), [0, 1300]);
   assert.deepEqual(selfReload(f, 1050), [50, 1300]);
   assert.deepEqual(selfReload(f, 5000), [1300, 1300], 'the reload runs on real time even when no input has gone out for seconds, and stops at its length');
+  assert.equal(selfReload({ ...f, trigger: { ...f.trigger, alive: false } }, 5100), null, 'a dead soldier\'s arms do not reload');
+});
+
+test('your own reload first seen after a long frame starts at most a frame\'s worth in, not wherever the stall left the clock', () => {
+  const sv = { gun: 'smg' as GunId, mag: 30, reloadMs: 1300, ammo: 10, reloading: false, reloadFrac: 0, alive: true, armed: true };
+  const base = settle(NO_FIRING, sv, 0, 0, []).firing;
+  // The press went out on input 5 at page time 1000; the next frame comes half a second later.
+  const f = { ...base, trigger: { ...base.trigger, reloadUntil: 5 * TICK_MS + 1300 }, sent: { seq: 5, at: 1000 } };
+  selfReload(NO_FIRING, 0);
+  assert.deepEqual(selfReload(f, 1500), [100, 1300]);
+  assert.deepEqual(selfReload(f, 1516), [116, 1300], 'and runs on from there frame by frame');
 });

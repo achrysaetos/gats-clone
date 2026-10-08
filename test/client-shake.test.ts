@@ -64,3 +64,17 @@ test('a held minigun rumbles but never pins the shake at full', () => {
   for (let i = 0; i < 60; i++) t = decay(addTrauma(t, traumaFor(cue({ id: 'shot:minigun', self: true }), me, 900)), 33);
   assert.ok(t > 0 && t < 0.5, `trauma ${t}`);
 });
+
+test('your kills punch the camera harder as the streak climbs and hardest for a bounty; dying shakes harder than any hit', () => {
+  const punch = (id: Exclude<SoundId, 'hurt'>) => traumaFor(cue({ id, self: true }), me, 900);
+  const streak = (['kill', 'kill:2', 'kill:3', 'kill:5'] as const).map(punch);
+  assert.ok(streak.every((t, i) => i === 0 || t > streak[i - 1]!), `each kill in a streak punches harder: ${streak}`);
+  assert.ok(punch('bounty') > punch('kill:3'), 'a bounty is a big one');
+  assert.ok(traumaFor(cue({ id: 'death', self: true }), me, 900) > traumaFor(hurt(0.6), me, 900), 'death outshakes a heavy hit');
+});
+
+test('your own silenced shot gives a small kick, someone else\'s gives none', () => {
+  const own = traumaFor(cue({ id: 'shot:silenced', self: true }), me, 900);
+  assert.ok(own > 0 && own < traumaFor(cue({ id: 'shot:shotgun', self: true }), me, 900), `a soft kick (${own})`);
+  assert.equal(traumaFor(cue({ id: 'shot:silenced', self: false }), me, 900), 0);
+});

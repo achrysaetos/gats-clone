@@ -35,3 +35,11 @@ test('lifting a finger releases only its own stick', () => {
   assert.equal(s.move?.id, 1);
   assert.equal(releaseStick(s, 99), s, 'an unknown finger changes nothing');
 });
+
+test('a resting thumb on the move stick walks nowhere; a push past the deadzone walks', () => {
+  let s = pressStick(NO_STICKS, 1, 100, 400, W);
+  s = dragStick(s, 1, 103, 401);
+  assert.deepEqual(touchMoves(s), [], 'a thumb that only settles is not a step');
+  s = dragStick(s, 1, 160, 400);
+  assert.deepEqual(touchMoves(s), ['right']);
+});

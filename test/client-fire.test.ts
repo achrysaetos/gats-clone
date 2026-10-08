@@ -5,7 +5,7 @@ import { GUNS, type GunId } from '../src/shared/defs.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
-import { committed, dueAt, NO_FIRING, sendInput, settle, stepTrigger, type Firing, type ServerGun, type TriggerInput } from '../src/client/fire.ts';
+import { committed, dueAt, NO_FIRING, sendInput, serverGun, settle, stepTrigger, type Firing, type ServerGun, type TriggerInput } from '../src/client/fire.ts';
 import { emptyWorld, equip, grantPerks, spawnAt, TICK_MS } from './helpers.ts';
 
 const held = (shots: number, fire = true, reload = false): TriggerInput => ({ fire, shots, reload });
@@ -199,6 +199,40 @@ test('releasing the trigger after a shot keeps it held for the input the server 
   assert.equal(committed({ ...f, unconfirmed: [] }, released).fire, false, 'nothing owed, so the release goes through');
   f = play(armedWith('hornet'), taps('P')).firing;
   assert.equal(committed(f, released).fire, false, 'holding a hornet one more input would fire a new shot');
+});
+
+test('a gun swap resets the spray, burst and spin-up the old gun had built; the same gun keeps them', () => {
+  const f = play(armedWith('assault'), taps('P' + 'h'.repeat(8))).firing;
+  const same = settle(f, ready('assault', { ammo: GUNS.assault.mag - 5 }), 6, 0, []).firing.trigger;
+  assert.ok(same.spray > 0, `six held inputs of assault fire built spray (${same.spray})`);
+  const swapped = settle(f, ready('smg'), 6, 0, []).firing.trigger;
+  assert.deepEqual([swapped.gun, swapped.spray, swapped.burstLeft, swapped.spin], ['smg', 0, 0, 0]);
+});
+
+test('a reload the server is part way through ends when the server\'s will, not a whole reload later', () => {
+  const f = settle(NO_FIRING, ready('pistol', { ammo: 0, reloading: true, reloadFrac: 0.25 }), 10, 0, []).firing;
+  assert.ok(Math.abs(f.trigger.reloadUntil! - (10 * TICK_MS + 0.75 * GUNS.pistol.reloadMs)) < 1e-9);
+  const done = settle(f, ready('pistol', { ammo: GUNS.pistol.mag }), 12, 0, []).firing;
+  assert.equal(done.trigger.reloadUntil, null, 'and the server saying it is over ends it');
+});
+
+test('a confirmation the server sent many inputs late holds the trigger at most a few inputs, never longer', () => {
+  const f = play(armedWith('pistol'), [held(1, false)]).firing;
+  assert.equal(settle(f, ready('pistol'), 2, 1, []).firing.lag, 1);
+  assert.equal(settle(f, ready('pistol'), 40, 1, []).firing.lag, 3, 'capped below the slack after which a shot is taken back');
+});
+
+test('the server\'s word on your gun: armed only while the round is undecided, alive only while you are on the field', () => {
+  const snapOf = (o: { winner?: unknown; inPlayers?: boolean; alive?: boolean } = {}) => ({
+    self: { id: 1, ammo: 7, mag: 12, reloading: false, reloadFrac: 0, alive: o.alive ?? true, perks: {} },
+    players: o.inPlayers === false ? [] : [{ id: 1, gun: 'shotgun' }],
+    match: { winner: o.winner ?? null },
+  }) as never;
+  const sv = serverGun(snapOf());
+  assert.deepEqual([sv.gun, sv.ammo, sv.mag, sv.alive, sv.armed, sv.reloadMs], ['shotgun', 7, 12, true, true, GUNS.shotgun.reloadMs]);
+  assert.equal(serverGun(snapOf({ winner: { name: 'x', id: 2, note: null } })).armed, false);
+  assert.equal(serverGun(snapOf({ inPlayers: false })).alive, false, 'dropped from the players: nothing to fire');
+  assert.equal(serverGun(snapOf({ alive: false })).alive, false);
 });
 
 test('a reload pressed while a drawn shot is owed waits so the server fires that shot first', () => {

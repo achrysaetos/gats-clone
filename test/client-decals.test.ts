@@ -2,13 +2,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { addCrack, crackFade, CRACKS, createCracks, drawCracks, hostKey, hostOf, inward } from '../src/client/decals.ts';
+import { seeded } from '../src/client/grain.ts';
+
+/** A fixed random stream, so every run checks the same cracks. */
+const rand = seeded(11);
 
 const wall = { x: 100, y: 200, w: 120, h: 50 };
 
 test('a crack starts at the struck edge, runs inward and never leaves the top it lies on', () => {
   const post = { x: 100, y: 200, w: 8, h: 8 };
   const pool = createCracks();
-  for (let i = 0; i < 40; i++) addCrack(pool, post, 100, 201 + (i % 6), 0, Math.random);
+  for (let i = 0; i < 40; i++) addCrack(pool, post, 100, 201 + (i % 6), 0, rand);
   for (const c of pool.slots) {
     if (!c) continue;
     for (let i = 0; i < c.lines.length; i += 2) {
@@ -24,14 +28,14 @@ test('a crack starts at the struck edge, runs inward and never leaves the top it
 
 test('the pool holds at most its cap, reusing the oldest slot first', () => {
   const pool = createCracks(4);
-  for (let i = 0; i < 10; i++) addCrack(pool, { ...wall, x: i * 1000 }, i * 1000, 220, i, Math.random);
+  for (let i = 0; i < 10; i++) addCrack(pool, { ...wall, x: i * 1000 }, i * 1000, 220, i, rand);
   assert.equal(pool.slots.length, 4);
   assert.deepEqual(pool.slots.map((c) => c!.born).sort((a, b) => a - b), [6, 7, 8, 9], 'only the four newest remain');
 });
 
 test('a crack holds, then fades out by the end of its life', () => {
   const pool = createCracks();
-  addCrack(pool, wall, 100, 220, 1000, Math.random);
+  addCrack(pool, wall, 100, 220, 1000, rand);
   const c = pool.slots[0]!;
   assert.equal(crackFade(c, 1000), 1);
   assert.equal(crackFade(c, 1000 + CRACKS.lifeMs - CRACKS.fadeMs), 1, 'whole until the fade begins');
@@ -50,7 +54,7 @@ test('cracks are drawn only while their host stands and they have life left', ()
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   const pool = createCracks();
-  addCrack(pool, wall, 100, 220, 0, Math.random);
+  addCrack(pool, wall, 100, 220, 0, rand);
   const drawn = (now: number, standing: Set<string>) => { segments.length = 0; drawCracks(ctx, pool, now, standing); return segments.length; };
   assert.ok(drawn(10, new Set([hostKey(wall)])) > 0, 'on a standing wall');
   assert.equal(drawn(10, new Set()), 0, 'gone with a broken crate');

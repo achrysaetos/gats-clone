@@ -75,6 +75,8 @@ test('state maps to layers: calm, then combat, hype and the finale stack on top'
   assert.equal(layerTargets(input({ finale: true })).finale, 1);
   const dead = layerTargets(input({ phase: 'dead', streak: 9 }));
   assert.deepEqual([dead.combat, dead.hype, dead.finale], [0, 0, 0]);
+  assert.ok(dead.calm > 0 && dead.calm < 1, 'dead: the calm bed plays on, quieter');
+  assert.ok(layerTargets(input({ phase: 'dead', night: true })).heart > 0 && dead.heart === 0, 'dead at night the heartbeat carries on under it, by day there is none');
 });
 
 test('crossfades are equal power and fades are smooth', () => {
@@ -132,6 +134,10 @@ test('your kills sting once per snapshot, a second inside three seconds is a mul
   const second = observe(first.tracker, snap({ tick: 2, events: [kill(1)], streak: 2 }), 'play', 2000, false);
   assert.equal(second.tracker.input.multi, true);
   assert.deepEqual(observe(NO_TRACKER, snap({ events: [kill(5)] }), 'play', 0, false).cues, [], 'others\' kills do not sting');
+  const late = observe(first.tracker, snap({ tick: 3, events: [kill(1)], streak: 2 }), 'play', 3900, false);
+  assert.equal(late.tracker.input.multi, true, 'two kills 2.9 s apart still count as a multi-kill');
+  const slow = observe(first.tracker, snap({ tick: 3, events: [kill(1)], streak: 2 }), 'play', 4100, false);
+  assert.equal(slow.tracker.input.multi, false, 'over three seconds apart they do not');
 });
 
 test('firing and enemies close by heat the fight, and the menu is idle', () => {
@@ -146,6 +152,8 @@ test('night, the horde and a boss shape the zombie score', () => {
   const night = observe(NO_TRACKER, snap({ run: run('night', 50) }), 'play', 0, false).tracker.input;
   assert.deepEqual([night.night, night.horde, night.mode], [true, 1, 'zombies']);
   assert.equal(observe(NO_TRACKER, snap({ run: run('day', 0) }), 'play', 0, false).tracker.input.day, true);
+  const seen = observe(NO_TRACKER, snap({ run: run('night', 5), zombies: Array.from({ length: 25 }, (_, i) => [i, 0, 0, 0, 10] as [number, number, number, number, number]) }), 'play', 0, false).tracker.input;
+  assert.equal(seen.horde, 0.5, 'the horde in view counts when the run total lags it');
   assert.equal(finaleOf(snap({ run: run('night', 1), zombies: [[1, 5, 0, 0, 10]] })), true, 'a colossus');
   assert.equal(finaleOf(snap({ run: run('night', 1), zombies: [[1, 0, 0, 0, 10]] })), false, 'a walker');
 });

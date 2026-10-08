@@ -206,3 +206,41 @@ test('the shove rides the self snapshot and its replay matches the server while 
   assert.ok(Math.abs(r.pred.afterNewest!.y - r.server.y) < 1e-6);
   assert.ok(r.maxCorrection < 15);
 });
+
+/** A bare snapshot carrying just what selfMotion, solidsOf and predictAbility read. */
+const bareSnap = (o: { me?: object; self?: object; players?: object[]; buildings?: object[] } = {}) => ({
+  self: { id: 1, alive: true, speed: 300, sprintSpeed: 420, dash: null, ability: 'knife', abilityReadyIn: 0, ...o.self },
+  players: [{ id: 1, x: 10, y: 20, alive: true, team: 'red', ...o.me }, ...(o.players ?? [])],
+  match: { winner: null }, crates: [], buildings: o.buildings ?? [],
+}) as unknown as Snapshot;
+
+test('a standing player predicts from the server\'s shove and sprint pace; a crawling one gets neither, and a dead one has no position', () => {
+  const knock = { vx: 90, vy: 0 };
+  const up = selfMotion(bareSnap({ self: { knock } }));
+  assert.deepEqual(up.at, { x: 10, y: 20, dash: null, knock });
+  assert.deepEqual(up.speed, { walk: 300, sprint: 420 });
+  const crawling = selfMotion(bareSnap({ me: { alive: false, downed: { revive: 0, bleedOutAt: 9e9 } }, self: { knock } }));
+  assert.deepEqual(crawling.at, { x: 10, y: 20, dash: null }, 'a downed body is not shoved along by the hit that dropped it');
+  assert.ok(typeof crawling.speed === 'number' && crawling.speed < 300, 'and crawls slower than it walks, with no sprint');
+  assert.equal(selfMotion(bareSnap({ me: { alive: false } })).at, null);
+});
+
+test('a spike strip is walked over; a squad wall stops the predicted player', () => {
+  const rects = solidsOf([], bareSnap({ buildings: [{ kind: 'spikes', cx: 3, cy: 3, hp: 10 }, { kind: 'wall', cx: 5, cy: 3, hp: 10 }] }));
+  assert.equal(rects.length, 1, 'only the wall is solid');
+  const walkInto = (kind: string) => predictInput(at(240, 175), { seq: 1, input: { ...IDLE_INPUT, right: true }, dtMs: 1000, ability: null },
+    solidsOf([], bareSnap({ buildings: [{ kind, cx: 5, cy: 3, hp: 10 }] })), 300, 0, 3000).afterNewest!.x;
+  assert.ok(walkInto('spikes') > 500, 'straight over the spikes');
+  assert.ok(walkInto('wall') < 260, 'stopped at the wall');
+});
+
+test('a knife lunge only homes on enemies: teammates and the dead are not targets, and in free for all everyone else is', () => {
+  const lunge = (team: string | null, others: object[]) => {
+    const a = predictAbility(NO_PREDICTION, { ...IDLE_INPUT, ability: true }, bareSnap({ me: { team }, players: others }));
+    return a?.k === 'knife' ? a.enemies.map((e) => (e as unknown as { id: number }).id) : null;
+  };
+  const others = [{ id: 2, x: 0, y: 0, alive: true, team: 'red' }, { id: 3, x: 0, y: 0, alive: true, team: 'blue' }, { id: 4, x: 0, y: 0, alive: false, team: 'blue' }];
+  assert.deepEqual(lunge('red', others), [3]);
+  assert.deepEqual(lunge(null, others.map((p) => ({ ...p, team: null }))), [2, 3]);
+  assert.equal(predictAbility(NO_PREDICTION, { ...IDLE_INPUT, ability: true }, bareSnap({ self: { abilityReadyIn: 500 } })), null, 'not while it cools down');
+});
