@@ -2,6 +2,17 @@
 
 Skirmish is a top-down multiplayer arena shooter for the browser. Its gameplay is modeled on gats.io. The name, art and code are original.
 
+[![Skirmish gameplay](docs/media/demo.gif)](docs/media/demo.mp4)
+
+[Watch the 48-second demo](docs/media/demo.mp4): from the menu into a free-for-all round, with kills, perks and an evolution.
+
+| | |
+|---|---|
+| ![Menu](docs/media/menu.jpg) | ![Free-for-all](docs/media/ffa.jpg) |
+| Menu: weapon, color, armor and mode | Free-for-all, with a perk pick open |
+| ![Domination](docs/media/dom.jpg) | ![Zombies](docs/media/zom-day.jpg) |
+| Domination, beside zone A | Zombies, day one at the Bastion |
+
 ## Run
 
 ```bash
