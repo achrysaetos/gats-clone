@@ -120,7 +120,7 @@ function outpost(): MapFile {
 }
 
 /**
- * Vault, the extraction map: 3200 square and lopsided on purpose. Defenders start on the north edge beside the vault, a lit room in
+ * Vault, the extraction map: 3200 square and lopsided on purpose. Defenders start on the north edge, a walk from the vault, a lit room in
  * the north-east whose terminal sits under red alarm lights. Attackers start on the south edge; the helipad is in the south-west, so a
  * carrier crosses the whole map from the vault, past the lit bay in the middle, with the defenders' waves coming from behind.
  */
@@ -128,10 +128,10 @@ function vault(): MapFile {
   const d = new Draft();
   const c = canvas(32, 32);
   // The defenders' start and the vault.
-  c.block('S', 13, 4, 3, 1); c.block('S', 18, 4, 3, 1); c.block('K', 21, 1, 2, 2); c.block('b', 11, 1);
-  c.block('R', 23, 3, 7, 7); c.block('d', 23, 5); c.block('d', 23, 6); c.block('d', 26, 9);
+  c.block('S', 13, 4, 3, 1); c.block('S', 18, 4, 3, 1); c.block('K', 21, 1, 2, 2);
+  c.block('R', 23, 3, 7, 7); c.block('d', 23, 5); c.block('d', 23, 6); c.block('d', 25, 9); c.block('d', 26, 9); c.block('d', 29, 6);
   c.block('r', 24, 4); c.block('r', 28, 4); c.block('g', 28, 7); c.block('a', 24, 8); c.block('r', 22, 4); c.block('r', 27, 10);
-  c.block('C', 5, 1, 2, 5); c.block('K', 9, 6, 2, 2); c.block('x', 10, 9); c.block('b', 30, 2); c.block('K', 30, 6, 1, 2); c.block('v', 18, 7);
+  c.block('C', 5, 1, 2, 5); c.block('K', 9, 6, 2, 2); c.block('x', 10, 9); c.block('b', 30, 2); c.block('v', 18, 7);
   c.block('W', 21, 8, 1, 4); c.block('L', 14, 10, 3, 1); c.block('B', 17, 10); c.block('p', 12, 8);
   c.block('C', 1, 7, 1, 3); c.block('K', 16, 6, 2, 1); c.block('B', 13, 6); c.block('C', 8, 3, 3, 1); c.block('K', 2, 2, 1, 1);
   // The middle: a lit bay, container rows and crate piles.
@@ -155,7 +155,7 @@ function vault(): MapFile {
   d.put('pipes', 2500, 1150);
   d.mark('hazard', 175, 2575, 350, 25); d.mark('hazard', 175, 2900, 350, 25); d.mark('chevron', 550, 2400, 200, 100, 2); d.mark('chevron', 850, 2200, 200, 100, 2);
   d.mark('box', 2450, 450, 400, 400); d.mark('line', 0, 1050, 3200, 25); d.mark('line', 0, 2150, 3200, 25); d.mark('box', 1450, 2875, 600, 250);
-  const attack = [{ x: 1500, y: 2900, w: 500, h: 200 }], defend = [{ x: 1400, y: 100, w: 550, h: 200 }];
+  const attack = [{ x: 1500, y: 2900, w: 500, h: 200 }], defend = [{ x: 800, y: 100, w: 500, h: 150 }];
   return d.file('Vault', 3200, {
     symmetry: 'none', light: 'dusk',
     spawns: { red: attack, blue: defend, ffa: [...attack, ...defend] },

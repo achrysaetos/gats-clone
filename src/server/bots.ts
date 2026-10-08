@@ -6,6 +6,7 @@ import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startInte
 import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { crawlThink, royaleThink } from './bot/royale.ts';
 import { DEAD_ZONE, siegeThink } from './bot/siege.ts';
+import { extractThink } from './bot/extract.ts';
 
 export type BotMemory = {
   persona: PersonalityId;
@@ -53,6 +54,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, rand) } : null;
   if (snap.run) return { ...siegeThink(snap, snap.run, me, arena, mem, rand), pick: choice };
   if (snap.royale) return { ...royaleThink(snap, snap.royale, me, arena, mem, rand), pick: choice };
+  if (snap.ext) return { ...extractThink(snap, snap.ext, me, arena, mem, rand), pick: choice };
 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
