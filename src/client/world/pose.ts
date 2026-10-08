@@ -151,3 +151,13 @@ export function bob(st: Stride | undefined): { dx: number; dy: number; scale: nu
   const step = Math.abs(Math.sin(st.phase * Math.PI * 2));
   return { dx: Math.cos(st.heading) * 1.1, dy: Math.sin(st.heading) * 1.1 - step * 0.9, scale: 1 + step * 0.018 };
 }
+
+/** How far a staggered soldier sways side to side, in game units, and how fast. */
+const STUMBLE = { reach: 1.6, ms: 90 } as const;
+
+/** A staggered soldier sways across their aim while the heavy hit slows them; a steady one stays put. */
+export function stumble(staggered: boolean, aim: number, now: number): { dx: number; dy: number } {
+  if (!staggered) return { dx: 0, dy: 0 };
+  const d = STUMBLE.reach * Math.sin((now / STUMBLE.ms) * Math.PI);
+  return { dx: -Math.sin(aim) * d, dy: Math.cos(aim) * d };
+}

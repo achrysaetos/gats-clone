@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SOLDIER } from '../src/client/world/catalog.ts';
-import { actionTravel, legsOf, magIn, reloadFrame, torsoOf, type TorsoInput } from '../src/client/world/pose.ts';
+import { actionTravel, legsOf, magIn, reloadFrame, stumble, torsoOf, type TorsoInput } from '../src/client/world/pose.ts';
 import { addRemains, fallOf, gunAt, liveRemains, remainsAlpha, REMAINS_CAP, REMAINS_LIFE_MS, type Remains } from '../src/client/remains.ts';
 
 const torso = (over: Partial<TorsoInput>) => torsoOf({ gun: 'assault', now: 0, id: 1, reload: null, kick: 0, hit: null, move: null, moving: true, ...over });
@@ -40,6 +40,12 @@ test('a pump is worked after each shotgun blast and on the reload pump beat; a r
   assert.equal(actionTravel('shotgun', null, 0.86), 5, 'on the reload pump beat');
   assert.equal(actionTravel('sniper', 420, null), 3.5);
   assert.equal(actionTravel('assault', 260, 0.86), 0);
+});
+
+test('a staggered soldier sways across their aim, and a steady one does not move', () => {
+  assert.deepEqual(stumble(false, 0, 45), { dx: 0, dy: 0 });
+  const s = stumble(true, 0, 45);
+  assert.ok(Math.abs(s.dx) < 1e-9 && Math.abs(s.dy) > 1, 'facing east, the sway runs north and south');
 });
 
 const remains = (id: number, born: number): Omit<Remains, 'ends'> => ({ id, x: 0, y: 0, turn: 0, fall: 'back', color: '#f00', armor: 'none', gun: 'smg', born, blow: 0, spin: 1 });

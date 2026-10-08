@@ -8,7 +8,7 @@ import { stride } from '../gait.ts';
 import { burst } from '../particles.ts';
 import { reloadFamily } from '../reload.ts';
 import { FALL_MS, gunAt, liveRemains, remainsAlpha, type Fall } from '../remains.ts';
-import { bob, FLINCH_MS, fromFront, gunKick, gunParts, jolt, legsOf, magIn, torsoOf, type GunParts, type Legs, type Torso } from './pose.ts';
+import { bob, FLINCH_MS, fromFront, gunKick, gunParts, jolt, legsOf, magIn, stumble, torsoOf, type GunParts, type Legs, type Torso } from './pose.ts';
 import { SOLDIER, TRAIN, trainSprite } from './catalog.ts';
 import { mapLooks, pieceKey, stageFor, type PieceLook } from './pieces.ts';
 import { cellRect, coreRectAt } from '../../shared/sim/build.ts';
@@ -276,7 +276,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
       const kick = kickAt === undefined ? 0 : 1 - (now - kickAt) / KICK_MS;
       const st = s.strides.get(p.id), hit = hits.get(p.id), move = s.anim.moves.get(p.id), shotAt = s.anim.shotAt.get(p.id), dashAt = s.anim.dashAt.get(p.id);
       const reload = p.reload ?? null;
-      const j = jolt(hit ? { ms: now - hit.born, dir: hit.dir } : null), b = bob(st);
+      const j = jolt(hit ? { ms: now - hit.born, dir: hit.dir } : null), b = bob(st), sway = stumble(!!p.staggered, p.angle, now);
       return {
         id: p.id, x: p.x, y: p.y, angle, gun: p.gun, color: colorOf(p), armor: p.armorTier, alpha: p.hidden ? 0.25 : 1,
         ring: self ? 'self' : p.team === null && p.color === mine?.color ? 'rival' : null,
@@ -286,7 +286,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
         legs: legsOf(st, angle, dashAt === undefined ? null : now - dashAt),
         torso: torsoOf({ gun: p.gun, now, id: p.id, reload, kick, moving: !!st?.moving, hit: hit ? { ms: now - hit.born, front: fromFront(hit.dir, angle) } : null, move: move ? { kind: move.kind, ms: now - move.at } : null }),
         gunKick: gunKick(p.gun, kick), parts: gunParts(p.gun, shotAt === undefined ? null : now - shotAt, reload),
-        dx: j.dx + b.dx, dy: j.dy + b.dy, scale: b.scale * (1 - RECOIL_SQUASH * gunKick(p.gun, kick)),
+        dx: j.dx + b.dx + sway.dx, dy: j.dy + b.dy + sway.dy, scale: b.scale * (1 - RECOIL_SQUASH * gunKick(p.gun, kick)),
       };
     }),
     tags: tagsOf(alive, s, now),

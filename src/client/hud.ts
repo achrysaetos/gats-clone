@@ -75,6 +75,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   const compact = w < 640 || h < 520;
   drawHurtVignette(hud);
   drawNearMisses(hud);
+  drawSuppression(hud);
   drawHurtArcs(hud);
   const boardBottom = drawLeaderboard(hud, compact, fullBoard);
   drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
@@ -140,6 +141,26 @@ function drawNearMisses({ ctx, w, h, s, now, cam, selfAt }: Hud) {
       if (vertical) ctx.fillRect(edge.x <= 0.5 ? 0 : w - d, edge.y - l, d, l * 2);
       else ctx.fillRect(edge.x - l, edge.y <= 0.5 ? 0 : h - d, l * 2, d);
     }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** How far in and how dark suppression closes the screen edges at its full level. */
+const SUPPRESSED_EDGE = { depth: 0.16, alpha: 0.42, bands: 6 } as const;
+
+/** Suppression closes in from every edge as dark smeared bands, deepest at full suppression, so being pinned reads at a glance. */
+function drawSuppression({ ctx, w, h, snap }: Hud) {
+  const level = snap.self.suppression ?? 0;
+  if (level <= 0) return;
+  const depth = Math.min(w, h) * SUPPRESSED_EDGE.depth * (0.4 + 0.6 * level);
+  ctx.fillStyle = 'rgb(18, 20, 26)';
+  ctx.globalAlpha = (SUPPRESSED_EDGE.alpha * level) / SUPPRESSED_EDGE.bands;
+  for (let i = 0; i < SUPPRESSED_EDGE.bands; i++) {
+    const d = depth * (1 - i / SUPPRESSED_EDGE.bands);
+    ctx.fillRect(0, 0, w, d);
+    ctx.fillRect(0, h - d, w, d);
+    ctx.fillRect(0, d, d, h - d * 2);
+    ctx.fillRect(w - d, d, d, h - d * 2);
   }
   ctx.globalAlpha = 1;
 }

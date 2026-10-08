@@ -29,7 +29,7 @@ import { bodyColor, drawBackdrop, drawWorld, initWorld, resizeWorld } from './re
 import { NoWebGL2, type World } from './world/stage.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
-import { createShooting, type Hands } from './shooting.ts';
+import { createShooting, shakenOf, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
 import { roofsOf, soundsFor, stepCues, type SoundCue } from './sfx.ts';
 import { mapLooks } from './world/pieces.ts';
@@ -519,7 +519,7 @@ function drawFrame(now: number) {
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now: fxNow, selfAngle, killerId, ghost });
   playCues(s, stepCues(s.heardSteps, s.strides, snap.players, s.myId), latest.self.viewRadius || WORLD.viewRadius);
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing)) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing), shakenOf(snap.self)) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
