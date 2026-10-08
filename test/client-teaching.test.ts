@@ -14,9 +14,9 @@ import type { Session } from '../src/client/state.ts';
 import { emptyWorld, hpOf, spawnAt, TICK_MS } from './helpers.ts';
 
 test('an empty ability slot says the score that unlocks it, from the level ladder', () => {
-  assert.deepEqual(abilityHint(null), ['Ability', 'at 1100']);
-  assert.deepEqual(abilityHint({ level: 2, k: 'evolve' }), ['Ability', 'at 1100']);
-  assert.deepEqual(abilityHint({ level: 3, k: 'perk', tier: 2 }), ['Ability', 'at 1100']);
+  assert.deepEqual(abilityHint(null), ['Ability', 'at 900']);
+  assert.deepEqual(abilityHint({ level: 2, k: 'evolve' }), ['Ability', 'at 900']);
+  assert.deepEqual(abilityHint({ level: 3, k: 'perk', tier: 2 }), ['Ability', 'at 900']);
   assert.deepEqual(abilityHint({ level: 4, k: 'perk', tier: 3 }), ['Pick an', 'ability'], 'once the ability tier is pending, the slot points at the perk dock');
 });
 

@@ -65,7 +65,7 @@ function botRoom(seed: number, map: MapId, minutes: number): { levels: number[];
   return { levels, perKill };
 }
 
-test('in a room of bots, the score a kill really pays (medals and catch-up included) puts the first evolve at kill 3 to 4 and the second at kill 8 to 10', () => {
+test('in a room of bots, the score a kill really pays (medals and catch-up included) puts the first evolve at kill 2 to 3 and the second at kill 6 to 7', () => {
   // One room gives ~250 lives; ten rooms (~800 lives, ~800 kills) hold the median score per kill within a few points.
   const rooms = Array.from({ length: 10 }, (_, i) => botRoom(i + 1, ROTATION.FFA[i % ROTATION.FFA.length]!, 2));
   const levels = rooms.flatMap((room) => room.levels);
@@ -77,7 +77,7 @@ test('in a room of bots, the score a kill really pays (medals and catch-up inclu
   const ability = reach(LEVELS.findIndex((l) => l.pick?.k === 'perk' && l.pick.tier === 3));
   const shares = `a kill pays ${typical.toFixed(0)} (median of ${perKill.length}): first evolve at kill ${first!.toFixed(1)}, second at kill ${second!.toFixed(1)}; `
     + `first evolve reached by ${(firstEvolve * 100).toFixed(1)}%, ability by ${(ability * 100).toFixed(1)}% of ${levels.length} lives`;
-  assert.ok(first! >= 3 && first! <= 4 && second! >= 8 && second! <= 10, shares);
+  assert.ok(first! >= 2 && first! <= 3 && second! >= 6 && second! <= 7, shares);
   assert.ok(firstEvolve >= 0.03 && ability > 0, `progression has not stalled: ${shares}`);
   assert.ok(LEVELS[1]!.pick?.k === 'perk' && first! - LEVELS[1]!.score / typical >= 1, `the attachment comes a kill or more before the first evolve: ${shares}`);
 });

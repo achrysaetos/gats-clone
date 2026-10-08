@@ -11,7 +11,7 @@ import { emptyWorld, equip, grantPerks, hpOf, offerPerks, press, run, shootOnce,
 const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
 const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
 
-test('four quick kills and ten crates in one life open the attachment and the first evolve, the evolve offered first', () => {
+test('four quick kills and ten crates in one life open the attachment, the first evolve and the tier-2 perk, the evolve offered first', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   for (let i = 0; i < 4; i++) {
@@ -31,20 +31,20 @@ test('four quick kills and ten crates in one life open the attachment and the fi
   // The second kill from the pistol's first magazine is a Double Tap as well.
   const medals = ['firstBlood', 'doubleKill', 'doubleTap', 'tripleKill', 'onFire', 'quadKill'] as const;
   assert.equal(a.score, 4 * WORLD.killScore + medals.reduce((s, m) => s + MEDALS[m].score, 0) + 10 * WORLD.crateScore, 'four quick kills earn their medals too');
-  assert.equal(a.level, 2, 'past the first evolve, short of the tier-2 perk');
+  assert.equal(a.level, 3, 'past the tier-2 perk, short of the ability');
   assert.deepEqual(pendingOf(w, a), { level: 2, k: 'evolve' }, 'the evolve comes before the unchosen attachment');
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   assert.deepEqual(pendingOf(w, a), { level: 1, k: 'perk', tier: 1 }, 'then the attachment');
   assert.ok(choosePick(w, a.id, 1, 'lightweight'));
-  assert.equal(pendingOf(w, a), null);
+  assert.deepEqual(pendingOf(w, a), { level: 3, k: 'perk', tier: 2, offer: a.tier2Offer }, 'then the tier-2 perk');
 });
 
-test('a life of bare kills, with only the streak medals, opens its picks at kills 3, 5, 8, 10 and 12; medals bring them sooner', () => {
+test('a life of bare kills, with only the streak medals, opens its picks at kills 3, 5, 7, 8 and 10; medals bring them sooner', () => {
   const w = emptyWorld();
   w.firstBlood = true;
   const a = spawnAt(w, 500, 500);
   const reachedAt: number[] = [];
-  for (let kill = 1; kill <= 12; kill++) {
+  for (let kill = 1; kill <= 10; kill++) {
     w.now += MEDAL_RULES.multiMs + 1;
     const v = spawnAt(w, 700, 500);
     // No gun on the blow, so no weapon feat; spaced past the multi-kill window, from mid range, at full health.
@@ -52,8 +52,8 @@ test('a life of bare kills, with only the streak medals, opens its picks at kill
     w.players.delete(v.id);
     while (reachedAt.length < a.level) reachedAt.push(kill);
   }
-  assert.deepEqual(reachedAt, [3, 5, 8, 10, 12]);
-  assert.ok(LEVELS[2]!.score > 3 * WORLD.killScore, 'the first evolve takes more than three bare kills');
+  assert.deepEqual(reachedAt, [3, 5, 7, 8, 10]);
+  assert.ok(LEVELS[2]!.score > 4 * WORLD.killScore, 'the first evolve takes more than four bare kills');
 });
 
 test('picks open in ladder order: attachment, evolve, perk, ability, evolve', () => {

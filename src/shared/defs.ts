@@ -335,12 +335,12 @@ export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
-  // A new gun is the best reward there is, so it is earned: the first evolve lands around the third or fourth kill of a life
-  // and the second around the ninth, with the attachment before the first and the two perks between them, so a pick comes
-  // every kill or two. Set on the score a life really has after each kill, medals included (scripts/level-scale.ts prints
-  // it, and test/balance.test.ts holds it).
-  { score: 0, pick: null }, { score: 300, pick: { k: 'perk', tier: 1 } }, { score: 550, pick: { k: 'evolve' } },
-  { score: 850, pick: { k: 'perk', tier: 2 } }, { score: 1100, pick: { k: 'perk', tier: 3 } }, { score: 1500, pick: { k: 'evolve' } },
+  // A new gun is the best reward there is, so it is earned: the first evolve lands around the second or third kill of a life
+  // and the second around the sixth or seventh, with the attachment before the first and the two perks between them, so a
+  // pick comes about every kill. Set on the score a life really has after each kill, medals included
+  // (scripts/level-scale.ts prints it, and test/balance.test.ts holds it).
+  { score: 0, pick: null }, { score: 220, pick: { k: 'perk', tier: 1 } }, { score: 450, pick: { k: 'evolve' } },
+  { score: 700, pick: { k: 'perk', tier: 2 } }, { score: 900, pick: { k: 'perk', tier: 3 } }, { score: 1100, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 type Attachment = (typeof PERK_TIERS)[1][number];
