@@ -1,8 +1,10 @@
 # Art direction and the visual overhaul
 
-`gold-standard.webp` is the art reference for Skirmish (set 2026-10-07; it replaces the earlier minimalist reference). When the game's look and the image disagree, the image wins, as long as gameplay stays readable.
+The art reference for Skirmish is the set of shots in `gold/` (set 2026-10-07). `gold-standard.webp` is the same image as `gold/yard.webp`, kept for the bake tools that compare against it. When the game's look and the references disagree, the references win, as long as gameplay stays readable.
 
-## Scope
+The next stage widens the scope to maps, map scale and gameplay. Its plan is [IMPLEMENTATION.md](IMPLEMENTATION.md). The rest of this file records the first stage: its scope, measurements, decisions and what changed from its plan.
+
+## Scope of the first stage
 
 The overhaul changes only visuals, effects and graphics. The UI and gameplay stay mostly the same.
 
