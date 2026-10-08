@@ -9,16 +9,18 @@ export type Knobs = {
   renderScale: number;
   /** The bloom buffer's size as a divisor of the world's, or null for no bloom. */
   bloomDiv: 2 | 4 | null;
+  /** Whether the glow layer is summed off-screen and rolled off before it lands, which costs a full-size pass; without it glows add straight on. */
+  glowClamp: boolean;
   particles: number;
   decals: number;
   lights: number;
 };
 
 export const QUALITY: Readonly<Record<Tier, Knobs>> = {
-  low: { renderScale: 0.5, bloomDiv: null, particles: 120, decals: 24, lights: 12 },
-  medium: { renderScale: 0.75, bloomDiv: 4, particles: 250, decals: 48, lights: 24 },
-  high: { renderScale: 1, bloomDiv: 4, particles: 500, decals: 90, lights: 48 },
-  ultra: { renderScale: 1, bloomDiv: 2, particles: 500, decals: 160, lights: 96 },
+  low: { renderScale: 0.5, bloomDiv: null, glowClamp: false, particles: 120, decals: 24, lights: 12 },
+  medium: { renderScale: 0.75, bloomDiv: 4, glowClamp: true, particles: 250, decals: 48, lights: 24 },
+  high: { renderScale: 1, bloomDiv: 4, glowClamp: true, particles: 500, decals: 90, lights: 48 },
+  ultra: { renderScale: 1, bloomDiv: 2, glowClamp: true, particles: 500, decals: 160, lights: 96 },
 };
 
 const MODES: readonly string[] = ['auto', ...TIERS];

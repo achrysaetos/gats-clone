@@ -11,6 +11,7 @@ import { loadArt, type Art } from './assets.ts';
 import { ART } from './art.ts';
 import { facing, crateSprite, siegeWallSprite, SPRITES, type Layer } from './catalog.ts';
 import { createGround } from './ground.ts';
+import { createKnee } from './knee.ts';
 import type { BodyLook, Scene } from './scene.ts';
 import { createTextures } from './textures.ts';
 
@@ -84,7 +85,7 @@ function webgl2(canvas: HTMLCanvasElement): { gl: WebGL2RenderingContext; softwa
 export type World = {
   draw(scene: Scene, cam: Camera, now: number, walls: readonly WallView[]): void;
   resize(w: number, h: number, dpr: number): void;
-  probe(): { tiles: number; failedTiles: number; atlas: boolean; drawn: number; software: boolean };
+  probe(): { tiles: number; failedTiles: number; atlas: boolean; drawn: number; software: boolean; floatSums: boolean };
   art: Pick<Art, 'progress' | 'ready' | 'loaded'>;
   software: boolean;
   /** Waits for the GPU to finish the last frame, so a benchmark times the pixels and not just the commands. */
@@ -121,15 +122,30 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   const nightSprite = new Sprite();
   nightSprite.blendMode = 'multiply';
   const glowWorld = new Container({ isRenderGroup: true });
+  // Glow and bloom screen onto the scene rather than add, so a lit floor under a blast brightens toward white without clipping flat.
+  const glowSprite = new Sprite();
+  glowSprite.blendMode = 'screen';
   const bloomSprite = new Sprite();
-  bloomSprite.blendMode = 'add';
-  root.addChild(waterLayer, world, nightSprite, glowWorld, bloomSprite);
+  bloomSprite.blendMode = 'screen';
+  root.addChild(waterLayer, world, nightSprite, glowSprite, bloomSprite);
 
   const lights = new Container({ isRenderGroup: true });
   const lightPool = pool(lights, sprite('add'));
+  // Lights and glows add up past 1 where they overlap; they are summed in half floats where the GPU can render to them, then
+  // rolled off by a knee into the 8-bit buffers that are drawn, so a night blast shades instead of clipping to a white disc.
+  const float = !!renderer.context.extensions.colorBufferFloat;
+  let lightSum: RenderTexture | null = null;
   let lightRT: RenderTexture | null = null;
+  let glowSum: RenderTexture | null = null;
+  let glowFullSum: RenderTexture | null = null;
+  let glowFullRT: RenderTexture | null = null;
   let glowRT: RenderTexture | null = null;
   let bloomRT: RenderTexture | null = null;
+  const lightKnee = createKnee(0.8, 1);
+  /** Bloom adds at most this much to any channel, however many glows stack. */
+  const glowKnee = createKnee(0, 0.5);
+  /** The glow layer itself keeps its colour to 0.6, then rolls off below 0.9, so three stacked fireballs still show their shape. */
+  const glowFullKnee = createKnee(0.6, 0.9);
   const blurSprite = new Sprite();
   const blur = new BlurFilter({ strength: 5, quality: 3 });
   blurSprite.filters = [blur];
@@ -565,11 +581,16 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     renderer.render({ container, target, clear: true, clearColor: clearColor ?? [0, 0, 0, 0], transform: new Matrix(world.scale.x * scale, 0, 0, world.scale.y * scale, world.x * scale, world.y * scale) });
   }
 
-  function sizedRT(rt: RenderTexture | null, w: number, h: number): RenderTexture {
+  function sizedRT(rt: RenderTexture | null, w: number, h: number, sum = false): RenderTexture {
     const W = Math.max(1, Math.round(w)), H = Math.max(1, Math.round(h));
     if (rt && rt.width === W && rt.height === H) return rt;
     rt?.destroy(true);
-    return RenderTexture.create({ width: W, height: H, resolution: 1 });
+    return RenderTexture.create({ width: W, height: H, resolution: 1, ...(sum && float ? { format: 'rgba16float' as const } : {}) });
+  }
+
+  function knee(k: ReturnType<typeof createKnee>, from: RenderTexture, to: RenderTexture) {
+    k.from(from);
+    renderer.render({ container: k.root, target: to, clear: true, clearColor: [0, 0, 0, 0] });
   }
 
   let drawn = 0;
@@ -582,7 +603,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       renderer.resize(w, h, res);
     },
     art, software,
-    probe: () => ({ tiles: ground.loadedTiles(), failedTiles: ground.failedTiles(), atlas: art.loaded() && art.manifest.atlases.length > 0, drawn, software }),
+    probe: () => ({ tiles: ground.loadedTiles(), failedTiles: ground.failedTiles(), atlas: art.loaded() && art.manifest.atlases.length > 0, drawn, software, floatSums: float }),
     finish() { renderer.gl.readPixels(0, 0, 1, 1, renderer.gl.RGBA, renderer.gl.UNSIGNED_BYTE, new Uint8Array(4)); },
     draw(scene, cam, now, walls) {
       k = knobs();
@@ -621,27 +642,41 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       nightSprite.visible = scene.dark > 0;
       if (scene.dark > 0) {
         drawLights(scene, now);
+        lightSum = sizedRT(lightSum, px.w / 2, px.h / 2, true);
         lightRT = sizedRT(lightRT, px.w / 2, px.h / 2);
         const amb = [1 - 0.58 * scene.dark, 1 - 0.53 * scene.dark, 1 - 0.38 * scene.dark, 1] as [number, number, number, number];
-        renderTo(lights, lightRT, res / 2, amb);
+        renderTo(lights, lightSum, res / 2, amb);
+        knee(lightKnee, lightSum, lightRT);
         nightSprite.texture = lightRT;
         nightSprite.scale.set(2 / res);
+      }
+      glowSprite.visible = k.glowClamp;
+      if (k.glowClamp) {
+        glowFullSum = sizedRT(glowFullSum, px.w, px.h, true);
+        glowFullRT = sizedRT(glowFullRT, px.w, px.h);
+        renderTo(glowWorld, glowFullSum, res);
+        knee(glowFullKnee, glowFullSum, glowFullRT);
+        glowSprite.texture = glowFullRT;
+        glowSprite.scale.set(1 / res);
       }
       const div = k.bloomDiv;
       bloomSprite.visible = div !== null;
       if (div !== null) {
+        glowSum = sizedRT(glowSum, px.w / div, px.h / div, true);
         glowRT = sizedRT(glowRT, px.w / div, px.h / div);
         bloomRT = sizedRT(bloomRT, px.w / div, px.h / div);
-        renderTo(glowWorld, glowRT, res / div);
+        renderTo(glowWorld, glowSum, res / div);
+        knee(glowKnee, glowSum, glowRT);
         blurSprite.texture = glowRT;
         // The blur works in the buffer's pixels, so a half-size buffer needs twice the reach to spread as far on screen.
         blur.strength = (5 * 4) / div;
         renderer.render({ container: blurRoot, target: bloomRT, clear: true, clearColor: [0, 0, 0, 0] });
         bloomSprite.texture = bloomRT;
         bloomSprite.scale.set(div / res);
-        bloomSprite.alpha = 0.9;
+        bloomSprite.alpha = 1;
       }
       renderer.render({ container: root });
+      if (!k.glowClamp) renderer.render({ container: glowWorld, clear: false });
       drawn++;
     },
   };
