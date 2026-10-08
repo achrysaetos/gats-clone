@@ -1,7 +1,12 @@
 import { COLORS, CRATE_TIERS, GUNS, RING, WORLD, ZOMBIE_KINDS, ZOMBIES, type ArmorId, type BuildingKind, type CrateTier, type GunId, type ZombieKind } from '../../shared/defs.ts';
 import { ringAt, type BulletView, type ThrownKind, type PlayerView, type RunView, type Snapshot, type WallView } from '../../shared/protocol.ts';
 import { BLAST_RADIUS } from '../../shared/sim/abilities.ts';
-import { KIT } from '../../shared/kit.ts';
+import { KIT, type PieceId } from '../../shared/kit.ts';
+import { MAPS } from '../../shared/maps.ts';
+import { trainAt } from '../../shared/sim/train.ts';
+import { legFrame, stride } from '../gait.ts';
+import { SOLDIER } from './catalog.ts';
+import { mapLooks, pieceKey, stageFor, type PieceLook } from './pieces.ts';
 import { cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { screenToWorld, type Camera } from '../camera.ts';
 import { crackFade, hostKey } from '../decals.ts';
@@ -36,13 +41,19 @@ export type BodyLook = {
   killer: boolean;
   /** 1 in the sun, less inside a wall's shadow. */
   light: number;
+  /** The legs: the way they walk and the frame of the run cycle (`SOLDIER.legs`). */
+  legs: { heading: number; frame: number };
 };
 
 export type Tag = { id: number; x: number; y: number; name: string | null; bar: number; hp: number };
 export type ZoneLook = { x: number; y: number; r: number; color: string; progress: number; progressColor: string; letter: string };
-export type ThrownLook = { id: number; kind: Exclude<ThrownKind, 'gasCloud'>; x: number; y: number };
+export type ThrownLook = { id: number; kind: Exclude<ThrownKind, 'gasCloud' | 'fire'>; x: number; y: number };
 export type Circle = { x: number; y: number; r: number };
-export type CrateLook = { id: number; x: number; y: number; size: number; tier: CrateTier | undefined; wear: number };
+export type CrateLook = Rect & { id: number; key: string; piece: PieceId; height: number; tier: CrateTier | undefined; wear: number };
+/** An overhead piece and whether a body stands under it, so the painter fades it. */
+export type OverheadLook = PieceLook & { under: boolean };
+/** The passing train's cars in map space, nose first; `warn` while its signals flash before it comes. */
+export type TrainLook = { cars: (Rect & { key: string })[]; warn: boolean; axis: 'x' | 'y' };
 export type SiegeLook = Rect & { key: string; kind: BuildingKind; wear: number; ammo: number | null; flash: number; barrel: { angle: number; recoil: number } | null };
 export type ZombieLook = { id: number; kind: ZombieKind; x: number; y: number; angle: number; flash: number; hp: number; bar: boolean; light: number };
 export type DownedLook = { id: number; x: number; y: number; color: string; self: boolean; revive: number; bleedLeft: number | null };
@@ -66,6 +77,12 @@ export type Scene = {
   gas: Circle[];
   trails: ReturnType<typeof trailDashes>;
   crates: CrateLook[];
+  /** The map's standing kit pieces in view. */
+  pieces: PieceLook[];
+  overheads: OverheadLook[];
+  train: TrainLook | null;
+  /** Burning fuel on the floor. */
+  fires: (Circle & { id: number })[];
   engineerWalls: Rect[];
   siege: SiegeLook[];
   core: CoreLook | null;
@@ -178,6 +195,9 @@ export function describeWorld(f: Frame, dark: number): Scene {
   const zombies = (snap.zombies ?? []).filter(([, , x, y]) => near(x, y, 60));
   const clock = snap.royale || snap.run ? serverNow(s.snaps, now) : null;
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
+  const looks = mapLooks(s.map);
+  for (const p of alive) s.strides.set(p.id, stride(s.strides.get(p.id), p.x, p.y, now));
+  if (s.strides.size > alive.length * 2 + 16) for (const id of s.strides.keys()) if (!alive.some((p) => p.id === id)) s.strides.delete(id);
   const standing = new Set([...s.walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })), ...(snap.buildings ?? []).map((b) => cellRect(b.cx, b.cy)), ...(snap.run ? [coreRectAt(snap.run.core)] : [])].map(hostKey));
 
   return {
@@ -190,9 +210,16 @@ export function describeWorld(f: Frame, dark: number): Scene {
     dangers: snap.thrown.flatMap((t) => (t.kind === 'grenade' || t.kind === 'fragGrenade' ? [{ x: t.x, y: t.y, r: BLAST_RADIUS[t.kind] }] : [])),
     gas: snap.thrown.flatMap((t) => (t.kind === 'gasCloud' ? [{ x: t.x, y: t.y, r: t.r }] : [])),
     trails: [...s.trails.values()].flatMap((t) => trailDashes(t, now)),
-    crates: snap.crates.filter((c) => inView(view, c.x, c.y, c.w, c.h)).map((c) => ({
-      id: c.id, x: c.x, y: c.y, size: c.w, tier: c.tier, wear: 1 - c.hp / (c.tier ? CRATE_TIERS[c.tier].hp : KIT[c.piece].breaks?.hp ?? 1),
+    crates: snap.crates.filter((c) => inView(view, c.x, c.y, c.w, c.h + KIT[c.piece].height)).map((c) => {
+      const wear = 1 - c.hp / (c.tier ? CRATE_TIERS[c.tier].hp : KIT[c.piece].breaks?.hp ?? 1);
+      return { id: c.id, key: pieceKey({ p: c.piece, r: c.r }, stageFor(c.piece, wear)), piece: c.piece, x: c.x, y: c.y, w: c.w, h: c.h, height: KIT[c.piece].height, tier: c.tier, wear };
+    }),
+    pieces: looks.standing.filter((p) => inView(view, p.x, p.y, p.w, p.h + p.height)),
+    overheads: looks.overhead.filter((p) => inView(view, p.x, p.y, p.w, p.h + p.height)).map((p) => ({
+      ...p, under: alive.some((b) => b.x > p.x - R && b.x < p.x + p.w + R && b.y > p.y - R && b.y < p.y + p.h + R),
     })),
+    train: trainOf(s, now),
+    fires: snap.thrown.flatMap((t) => (t.kind === 'fire' && near(t.x, t.y, t.r) ? [{ id: t.id, x: t.x, y: t.y, r: t.r }] : [])),
     engineerWalls: s.walls.filter((w) => w.built && inView(view, w.x, w.y, w.w, w.h)).map(({ x, y, w, h }) => ({ x, y, w, h })),
     siege: siegeOf(snap, s, view, now),
     core: coreOf(snap.run, s.coreHitAt, now),
@@ -214,6 +241,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
         hunted: p.hunted && !self, stage: GUNS[p.gun].stage, spawnShield: !!p.spawnShield, shield: p.shield,
         flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS,
         killer: p === killer, light: lightAt(p.x, p.y),
+        legs: legsOf(s.strides.get(p.id)),
       };
     }),
     tags: tagsOf(alive, s, now),
@@ -227,6 +255,37 @@ export function describeWorld(f: Frame, dark: number): Scene {
     effects: s.effects,
     particles: s.particles,
   };
+}
+
+function legsOf(st: ReturnType<typeof stride> | undefined): BodyLook['legs'] {
+  if (!st) return { heading: 0, frame: SOLDIER.legs.stand };
+  return { heading: st.heading, frame: legFrame(st, SOLDIER.legs.stand, SOLDIER.legs.run[0], SOLDIER.legs.run.length) };
+}
+
+/** Train cars in their baked sizes, laid back from the nose along the lane. */
+const TRAIN_CARS = { loco: 300, car: 250 } as const;
+
+function trainOf(s: Session, now: number): TrainLook | null {
+  const train = MAPS[s.map].train;
+  const clock = train ? serverNow(s.snaps, now) : null;
+  if (!train || clock === null) return null;
+  const at = trainAt(train, clock);
+  if (at.k === 'clear') return null;
+  if (at.k === 'warn') return { cars: [], warn: true, axis: train.axis };
+  const nose = ((clock - at.arrivedAt) / 1000) * train.speed;
+  const { lane } = train;
+  const span = train.axis === 'x' ? lane.w : lane.h;
+  const cars: TrainLook['cars'] = [];
+  for (let back = 0, i = 0; back < train.length; i++) {
+    const len = Math.min(i === 0 ? TRAIN_CARS.loco : TRAIN_CARS.car, train.length - back);
+    const from = nose - back - len;
+    const a = train.dir === 1 ? from : span - from - len;
+    const turn = train.axis === 'x' ? 0 : 1;
+    const key = `train.${i === 0 ? 'loco' : 'car'}.${turn}`;
+    cars.push(train.axis === 'x' ? { key, x: lane.x + a, y: lane.y, w: len, h: lane.h } : { key, x: lane.x, y: lane.y + a, w: lane.w, h: len });
+    back += len;
+  }
+  return { cars, warn: false, axis: train.axis };
 }
 
 function ringOf(snap: Snapshot, clock: number): RingLook {

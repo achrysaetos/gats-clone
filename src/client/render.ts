@@ -1,5 +1,6 @@
 import { MAPS } from '../shared/maps.ts';
-import { placed } from '../shared/kit.ts';
+import { KIT, placed } from '../shared/kit.ts';
+import { mapLooks, pieceKey } from './world/pieces.ts';
 import type { RunView, WallView } from '../shared/protocol.ts';
 import type { Camera } from './camera.ts';
 import { createPool } from './particles.ts';
@@ -73,7 +74,8 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const view = { x0: x - w / zoom / 2, y0: y - h / zoom / 2, x1: x + w / zoom / 2, y1: y + h / zoom / 2 };
   const scene: Scene = {
     view, size, layout: mapLayoutKey(backdropWalls), dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
-    crates: !world?.art.loaded() ? [] : BACKDROP_MAP.breakables.map((at, i) => { const { x, y, w } = placed(at).foot; return { id: i, x, y, size: w, tier: undefined, wear: 0 }; }),
+    crates: !world?.art.loaded() ? [] : BACKDROP_MAP.breakables.map((at, i) => ({ id: i, key: pieceKey(at), piece: at.p, ...placed(at).foot, height: KIT[at.p].height, tier: undefined, wear: 0 })),
+    pieces: mapLooks('warehouse').standing, overheads: mapLooks('warehouse').overhead.map((p) => ({ ...p, under: false })), train: null, fires: [],
     engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
     ghost: null, killer: null, numbers: [], effects: [], particles: noParticles,
   };

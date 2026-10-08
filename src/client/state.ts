@@ -1,4 +1,6 @@
 import type { BuildingKind, TurretKind, ZombieKind } from '../shared/defs.ts';
+import type { MapId } from '../shared/maps.ts';
+import type { Stride } from './gait.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
@@ -40,6 +42,7 @@ export type Session = {
   ws: WebSocket;
   rejoin: Rejoin;
   myId: number;
+  map: MapId;
   worldSize: number;
   walls: WallView[];
   snaps: SnapBuffer;
@@ -72,6 +75,8 @@ export type Session = {
   /** Zombies: the time the core last lost health, each zombie's last heading, whether build mode is on and what it puts up. */
   coreHitAt: number;
   zombieFaces: Map<number, { x: number; y: number; a: number }>;
+  /** Each soldier's last drawn spot, the way its legs face and how far through the run cycle they are. */
+  strides: Map<number, Stride>;
   building: boolean;
   buildKind: BuildingKind;
   /** Each turret's aim by cell (`cx,cy`). */

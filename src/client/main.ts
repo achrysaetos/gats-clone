@@ -1,5 +1,6 @@
 import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
+import type { MapId } from '../shared/maps.ts';
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, loadQualityMode, openSquad, saveLoadout, saveMuted, saveName, saveQualityMode, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
@@ -273,19 +274,19 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
-    case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'welcome': s.myId = msg.id; s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
   }
 }
 
-function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; walls: WallView[] }): Session {
+function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: MapId; worldSize: number; walls: WallView[] }): Session {
   return {
-    ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
+    ws, rejoin, myId: welcome.id, map: welcome.map, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 

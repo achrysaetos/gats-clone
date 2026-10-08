@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,8 +29,8 @@ export async function openPage(opts: {
   onClose?: () => void;
 }): Promise<Page> {
   const port = opts.debugPort ?? await freePort();
-  const chrome = killOnExit(spawn(process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
-    '--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), opts.profile))}`,
+  const chrome = killOnExit(spawn(process.env.CHROME ?? defaultChrome(), [
+    '--headless=new', '--mute-audio', ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []), `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), opts.profile))}`,
     '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', ...(opts.args ?? []), 'about:blank',
   ], { stdio: 'ignore' }));
   let target = '';
@@ -133,4 +133,11 @@ export function pathStep(grid: NavGrid, from: Point, to: Point): Dir[] {
   if (Math.abs(dx) > Math.max(AXIS_MIN_PX, len * AXIS_MIN_SHARE)) dirs.push(dx > 0 ? 'right' : 'left');
   if (Math.abs(dy) > Math.max(AXIS_MIN_PX, len * AXIS_MIN_SHARE)) dirs.push(dy > 0 ? 'down' : 'up');
   return dirs;
+}
+
+/** Chrome on a Mac, or the Chromium a Linux container ships for Playwright. */
+function defaultChrome(): string {
+  const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  const linux = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+  return existsSync(mac) || !existsSync(linux) ? mac : linux;
 }
