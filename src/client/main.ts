@@ -1,7 +1,8 @@
 import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
+import type { MapId } from '../shared/maps.ts';
 import { fillSnapshot } from '../shared/wire.ts';
-import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
+import { fetchServers, loadLoadout, loadMuted, loadName, loadQualityMode, openSquad, saveLoadout, saveMuted, saveName, saveQualityMode, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
 import { easeView, makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
@@ -15,7 +16,8 @@ import { actionForKey, assembleInput, perkSlotForKey, type Action } from './inpu
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
-import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
+import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderQuality, renderServers, renderSquad, renderSquadChip } from './menu.ts';
+import { createQuality, parseKnobs, parseMode, type QualityMode } from './quality.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
@@ -24,6 +26,7 @@ import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, initWorld, resizeWorld } from './render.ts';
+import { NoWebGL2, type World } from './world/stage.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
@@ -37,12 +40,22 @@ import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './s
 import { aimTurrets, easeTurrets, faceZombies, nextCoreHitAt } from './siege.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
+const opened = new URLSearchParams(location.search);
+// `?dev&editor=<map>` opens the map editor in place of the game. It is its own bundle, fetched only then, and the game never starts.
+if (opened.has('dev') && opened.has('editor')) {
+  const bundle = './editor.js';
+  const { startEditor } = (await import(bundle)) as typeof import('./editor/main.ts');
+  await startEditor(opened.get('editor') ?? '');
+  await new Promise(() => {});
+}
+
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SESSION_EXPIRED = 'Session expired, log in again.';
 const BAD_INVITE = 'That invite link is broken. Ask your squad for a new one, or start your own.';
 const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one.`;
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
+const NO_WEBGL2 = 'Skirmish needs WebGL 2, which this browser could not start. Turn on hardware acceleration, or try a current Chrome, Edge, Firefox or Safari.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
 /** Bloom is on unless the address says `?bloom=0`, for measuring its cost and for slow GPUs. */
@@ -61,6 +74,9 @@ const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
 const squadEl = $('squad');
 const squadChip = $('squad-chip');
+const artEl = $('art-load');
+const artBar = $('art-bar');
+const artLabel = $('art-label');
 
 let state: ClientState = { phase: 'menu', status: { kind: 'idle' } };
 let loadout: Loadout = loadLoadout();
@@ -87,10 +103,18 @@ let kick = NO_KICK;
 let hitstop = NO_HITSTOP;
 let lastFrameAt = 0;
 let shownView: number = WORLD.viewRadius;
+/** The world starts in the background; Play waits for it, and for the art when pressed before the art lands. */
+let painter: { kind: 'starting' } | { kind: 'ready'; world: World } | { kind: 'failed'; message: string } = { kind: 'starting' };
+let waitingRoom: string | null = null;
+let artShown = '';
 
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
+/** `?quality=<auto|low|medium|high|ultra>` overrides the saved setting for this page only. */
+const quality = createQuality(parseMode(params.get('quality')) ?? loadQualityMode(), bloomWanted(), params.has('dev') ? parseKnobs(params.get('knobs')) : {});
+let lastRafAt = 0;
+let qualityShown = '';
 let ghost: Ghost | null = null;
 
 /** The session whose socket is live. While reconnecting the old session is only drawn, never sent to. */
@@ -130,10 +154,33 @@ function setState(next: ClientState) {
   }
 }
 
+const artPercent = (w: World) => Math.floor(w.art.progress() * 100);
+
 function refreshPlayButton() {
   const connecting = state.phase === 'menu' && state.status.kind === 'connecting';
-  playBtn.disabled = connecting || selectedRoom === null;
-  playBtn.textContent = connecting ? 'Connecting…' : 'Play';
+  const waiting = waitingRoom !== null && painter.kind === 'ready';
+  playBtn.disabled = connecting || waiting || selectedRoom === null || painter.kind !== 'ready';
+  playBtn.textContent = connecting ? 'Connecting…' : waiting && painter.kind === 'ready' ? `Loading art… ${artPercent(painter.world)}%` : 'Play';
+}
+
+/** The menu's art line: progress while the atlases load, or why the game cannot start. */
+function refreshArt() {
+  const shown = painter.kind === 'failed' ? painter.message : painter.kind === 'ready' && !painter.world.art.loaded() ? `Loading art ${artPercent(painter.world)}%` : '';
+  if (shown === artShown) return;
+  artShown = shown;
+  artEl.hidden = shown === '';
+  artEl.classList.toggle('error', painter.kind === 'failed');
+  artLabel.textContent = shown;
+  if (painter.kind === 'ready') artBar.style.width = `${artPercent(painter.world)}%`;
+  refreshPlayButton();
+}
+
+/** Plays at once when the art is in, and otherwise once it lands, showing its progress on the button meanwhile. */
+function requestPlay(room: string) {
+  if (painter.kind !== 'ready') return;
+  if (painter.world.art.loaded()) return play(room);
+  waitingRoom = room;
+  refreshPlayButton();
 }
 
 function setLoadout(next: Loadout) {
@@ -236,19 +283,19 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
-    case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'welcome': s.myId = msg.id; s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
   }
 }
 
-function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; walls: WallView[] }): Session {
+function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: MapId; worldSize: number; walls: WallView[] }): Session {
   return {
-    ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
+    ws, rejoin, myId: welcome.id, map: welcome.map, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 
@@ -401,6 +448,9 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  if (lastRafAt) quality.frame(now - lastRafAt, now);
+  lastRafAt = now;
+  if (state.phase === 'menu') { refreshArt(); showQuality(); }
   const start = performance.now();
   drawFrame(now);
   noteFrameCost(performance.now() - start);
@@ -569,6 +619,8 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('resize', resize);
+// A hidden tab gets no frames; the first interval after it comes back is the time away, not frame time.
+document.addEventListener('visibilitychange', () => { lastRafAt = 0; });
 
 async function pollServers() {
   if (state.phase !== 'menu') return;
@@ -621,7 +673,24 @@ async function startSquad() {
   setSquad(opened.room);
   selectedRoom = opened.room;
   showServers();
-  play(opened.room);
+  requestPlay(opened.room);
+}
+
+/** Auto starts at Low when the browser draws without a GPU. */
+const autoStart = () => (painter.kind === 'ready' && painter.world.software ? 'low' : 'high');
+
+function pickQuality(mode: QualityMode) {
+  quality.set(mode, performance.now(), autoStart());
+  saveQualityMode(mode);
+  showQuality();
+}
+
+function showQuality() {
+  const noGpu = painter.kind === 'ready' && painter.world.software;
+  const key = `${quality.mode()}|${quality.tier()}|${noGpu}`;
+  if (key === qualityShown) return;
+  qualityShown = key;
+  renderQuality($('quality'), quality.mode(), quality.tier(), noGpu, pickQuality);
 }
 
 function toggleMuted(name: string) {
@@ -632,7 +701,7 @@ function toggleMuted(name: string) {
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); noteKick(Math.hypot(kick.x, kick.y)); } });
-installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost, audio: audio.stats });
+installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost, audio: audio.stats, quality: () => ({ mode: quality.mode(), tier: quality.tier(), knobs: quality.knobs(), changes: quality.changes(), software: painter.kind === 'ready' && painter.world.software }) });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),
@@ -643,7 +712,7 @@ nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
+  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) requestPlay(selectedRoom);
 });
 window.addEventListener('pagehide', leave);
 window.addEventListener('online', () => {
@@ -659,10 +728,22 @@ if (invited === 'bad') {
   squad = selectedRoom = invited;
   revealSquad = true;
 }
-await initWorld(worldCanvas, { bloom: bloomWanted() }).catch((err: unknown) => {
-  state = { phase: 'menu', status: { kind: 'error', message: 'Skirmish needs WebGL, which this browser could not start.' } };
-  console.error(err);
-});
 resize();
 setState(state);
 requestAnimationFrame(frame);
+initWorld(worldCanvas, quality.knobs).then((world) => {
+  painter = { kind: 'ready', world };
+  if (world.software && quality.mode() === 'auto') quality.set('auto', performance.now(), 'low');
+  resize();
+  refreshArt();
+  void world.art.ready.then(() => {
+    const room = waitingRoom;
+    waitingRoom = null;
+    refreshArt();
+    if (room !== null && state.phase === 'menu' && state.status.kind !== 'connecting') play(room);
+  });
+}, (err: unknown) => {
+  painter = { kind: 'failed', message: NO_WEBGL2 };
+  refreshArt();
+  if (!(err instanceof NoWebGL2)) console.warn(err);
+});

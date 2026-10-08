@@ -1,12 +1,13 @@
 import { EventEmitter } from 'node:events';
 import type { WebSocket } from 'ws';
 import { EVOLUTIONS, LEVELS, type GunId, type ModeId, type PerkId, type PlayerKind } from '../src/shared/defs.ts';
+import { KIT, type PieceId } from '../src/shared/kit.ts';
 import { ROTATION } from '../src/shared/maps.ts';
 import type { ClientMsg, InputState, Loadout, ServerMsg, Team } from '../src/shared/protocol.ts';
 import { addPlayer, setInput, step } from '../src/shared/sim.ts';
 import type { Rect } from '../src/shared/sim/movement.ts';
 import { choosePick, effectiveStats, pendingPick } from '../src/shared/sim/stats.ts';
-import { createWorld, IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
+import { createWorld, IDLE_INPUT, type Crate, type Player, type World } from '../src/shared/sim/world.ts';
 
 export const TICK_MS = 1000 / 30;
 export const PISTOL: Loadout = { weapon: 'pistol', armor: 'none', color: 'red' };
@@ -16,6 +17,15 @@ export function emptyWorld(mode: ModeId = 'FFA'): World {
   w.walls = [];
   w.crates = [];
   return w;
+}
+
+/** What a plain crate takes to break and pays. */
+export const CRATE_BREAKS = KIT.crate.breaks!;
+
+/** A standing crate of `piece` whose top-left is `x`, `y`, at the full health its piece breaks at. */
+export function crateOf(id: number, x: number, y: number, piece: PieceId = 'crate'): Crate {
+  const { w, h, breaks } = KIT[piece];
+  return { id, piece, r: 0, x, y, w, h, hp: breaks?.hp ?? 1, respawnAt: null };
 }
 
 /** A body placed for a test, its spawn shield already spent unless `shielded`. */

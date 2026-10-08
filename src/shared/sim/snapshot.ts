@@ -4,13 +4,15 @@ import type {
 } from '../protocol.ts';
 import { rankRows, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
+import { KIT } from '../kit.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
-import { isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
+import { carrying, extractView, moveSpeed } from './extract.ts';
+import { isEnemy, sameTeam, type Player, type Royale, type Run, type Thrown, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
@@ -20,7 +22,7 @@ export function wallViews(w: World): WallView[] {
 }
 
 function isHidden(w: World, p: Player): boolean {
-  return p.life.k === 'alive' && !isHunted(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
+  return p.life.k === 'alive' && !isHunted(w, p) && !carrying(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
 }
 
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
@@ -49,7 +51,7 @@ function selfView(w: World, p: Player): SelfView {
     id: p.id,
     ammo: life.k === 'alive' ? life.ammo : 0,
     mag: stats.mag,
-    speed: stats.speed,
+    speed: moveSpeed(w, p),
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
       ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs))
@@ -85,7 +87,9 @@ function matchView(w: World): MatchView {
   };
 }
 
-const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
+const THROWN_RADIUS: Record<Exclude<ThrownKind, 'fire'>, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS };
+/** What players see of a thrown thing; a fuse is a beat too short to show. */
+const shownThrown = (t: Thrown): { kind: ThrownKind; r: number } | null => (t.kind === 'fuse' ? null : t.kind === 'fire' ? { kind: 'fire', r: t.r } : { kind: t.kind, r: THROWN_RADIUS[t.kind] });
 
 export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = VIEW_ASPECT.max): Snapshot {
   const me = w.players.get(id);
@@ -109,16 +113,16 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .filter((b) => (b.turret === null || b.turret === 'bastion') && inView(b.x, b.y, 100))
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
-    .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
-    .map((c) => ({ id: c.id, x: c.x, y: c.y, hp: c.hp, size: c.size, ...(c.tier && { tier: c.tier }) }));
+    .filter((c) => c.respawnAt === null && inView(c.x + c.w / 2, c.y + c.h / 2, Math.max(c.w, c.h)))
+    .map((c) => ({ id: c.id, piece: c.piece, r: c.r, x: c.x, y: c.y, w: c.w, h: c.h, hp: c.hp, ...(c.tier && { tier: c.tier }) }));
   const thrown: ThrownView[] = w.thrown
-    .filter((t) => inView(t.x, t.y, THROWN_RADIUS[t.kind]))
+    .filter((t) => { const shown = shownThrown(t); return !!shown && inView(t.x, t.y, shown.r); })
     .filter((t) => {
       if (t.kind !== 'landMine' || t.owner === me.id || stats.thermal) return true;
       const owner = w.players.get(t.owner);
       return !!owner && !isEnemy(me, owner);
     })
-    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
+    .map((t) => ({ id: t.id, ...shownThrown(t)!, x: t.x, y: t.y, owner: t.owner }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress }));
   const minimap: MinimapMark[] = [];
   for (const p of w.players.values()) {
@@ -136,6 +140,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
+    ...(w.extract && { ext: extractView(w, w.extract) }),
   };
 }
 
@@ -143,7 +148,7 @@ const pipOf = (p: Player): Pip => (p.life.k === 'alive' ? 'up' : p.life.k === 'd
 
 function royaleView(w: World, r: Royale, me: Player): RoyaleView {
   const players = [...w.players.values()];
-  const half = CRATE_TIERS.drop.size / 2;
+  const half = KIT[CRATE_TIERS.drop.piece].w / 2;
   return {
     ring: ringView(r.ring),
     redeploys: redeploysOpen(r),

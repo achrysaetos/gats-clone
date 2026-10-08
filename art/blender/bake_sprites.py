@@ -1,6 +1,6 @@
 """Bakes every sprite in the catalog.
 
-Usage: blender -b -P art/blender/bake_sprites.py -- art/build/sprites-spec.json <outDir> [name-prefix]
+Usage: blender -b -P art/blender/bake_sprites.py -- art/build/sprites-spec.json <outDir> [name-prefix,...]
 
 Writes <outDir>/<name>/<layer>/<dir>_<frame>.png for each catalog entry, at round(box.w*px) x round(box.h*px)
 with px = pxPerUnit * (scale or 1), covering the entry's box around the sprite's origin.
@@ -17,14 +17,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 
 from sprites import common as C  # noqa: E402
-from sprites import fx, guns, props, soldier, zombies  # noqa: E402
+from sprites import fx, guns, kit, props, soldier, zombies  # noqa: E402
 
 BUILDERS = {
     'soldier': soldier.build,
-    'soldier-downed': soldier.build_downed,
     'gun': guns.build,
+    'drop': guns.build_drop,
     'zombie': zombies.build,
-    'crate': props.build_crate,
     'engineer-wall': props.build_engineer_wall,
     'siege-wall': props.build_siege_wall,
     'turret-pad': props.build_pad,
@@ -34,9 +33,14 @@ BUILDERS = {
     'muzzle-flash': fx.build_muzzle,
     'explosion': fx.build_explosion,
     'smoke-puff': fx.build_smoke,
+    'fire': fx.build_fire,
+    'debris': fx.build_debris,
+    'pile': fx.build_pile,
     'scorch': fx.build_decal,
     'blood': fx.build_decal,
     'ichor': fx.build_decal,
+    'kit': kit.build_piece,
+    'train': kit.build_train,
 }
 
 # How each role's objects take part in a render pass: shown, cut out of the image while still casting light and shadow
@@ -134,6 +138,7 @@ def bake(spec, name, entry, out):
         b = Build(spec, name, entry, f, root, colls)
         model = BUILDERS[kind](b)
         b.kit.build(root, colls)
+        parts = C.freeze(colls) if model.freeze else None
         if model.samples:
             bpy.context.scene.cycles.samples = model.samples
         C.add_camera(box, px)
@@ -141,8 +146,14 @@ def bake(spec, name, entry, out):
         sun, contact, bg = C.add_lights(spec, model.overhead)
         lights = (sun, contact, bg, bg.inputs['Strength'].default_value)
         for d in range(entry['dirs']):
-            root.matrix_world = C.frame_matrix(d / entry['dirs'] * 2 * math.pi, model.z_ref, spec['camera']['shear'])
+            angle = d / entry['dirs'] * 2 * math.pi
+            if not parts:
+                root.matrix_world = C.frame_matrix(angle, model.z_ref, spec['camera']['shear'])
             for layer in entry['layers']:
+                if f > 0 and layer in entry.get('still', ()):
+                    continue
+                if parts:
+                    C.place(parts, (C.shadow_matrix if layer == 'shadow' else C.frame_matrix)(angle, model.z_ref, spec['camera']['shear']))
                 folder = os.path.join(out, name, layer)
                 os.makedirs(folder, exist_ok=True)
                 path = os.path.join(folder, f'{d}_{f}.png')
@@ -155,16 +166,16 @@ def bake(spec, name, entry, out):
 def main():
     argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     if len(argv) < 2:
-        print('usage: blender -b -P art/blender/bake_sprites.py -- <spec.json> <outDir> [name-prefix]')
+        print('usage: blender -b -P art/blender/bake_sprites.py -- <spec.json> <outDir> [name-prefix,...]')
         sys.exit(2)
     with open(argv[0]) as fh:
         spec = json.load(fh)
     out = argv[1]
-    prefix = argv[2] if len(argv) > 2 else ''
+    prefixes = argv[2].split(',') if len(argv) > 2 else ['']
     started = time.time()
     total = 0
     for name, entry in spec['sprites'].items():
-        if not name.startswith(prefix):
+        if not any(name.startswith(p) for p in prefixes):
             continue
         t = time.time()
         n = bake(spec, name, entry, out)

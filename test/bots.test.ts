@@ -83,12 +83,12 @@ test('a bot ignores an enemy in the snapshot preload margin beyond its 16:9 view
   assert.ok(looks.every((l) => !l.fire), 'never fires at what a player there could not see');
 });
 
-/** A bot of `persona` at (1000, 1000) fighting a still enemy 400px right in the open, both kept at full health, its inputs fed to the sim. */
-function duel(persona: PersonalityId, seed: number, ticks: number, perks: PerkId[] = [], weapon: WeaponId = 'assault'): InputState[] {
+/** A bot of `persona` at (1000, 1000) fighting a still enemy `range` px right in the open, both kept at full health, its inputs fed to the sim. */
+function duel(persona: PersonalityId, seed: number, ticks: number, perks: PerkId[] = [], weapon: WeaponId = 'assault', range = 267): InputState[] {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon } });
   if (perks.length) grantPerks(w, bot, perks);
-  const enemy = spawnAt(w, 1400, 1000);
+  const enemy = spawnAt(w, 1000 + range, 1000);
   const r = seeded(seed);
   let mem: BotMemory = { ...newBotMemory(r), persona };
   const out: InputState[] = [];
@@ -120,7 +120,7 @@ test('assault bots strafe while they shoot, LMG bots strafe up close and plant o
   assert.ok(close < 0.1, `${(100 * close).toFixed(0)}% of an aggressive LMG's shots at 100px fired standing still`);
   const far = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 600, [], 'lmg')));
   assert.ok(far > 0.5, `${(100 * far).toFixed(0)}% of LMG shots at 600px fired standing still`);
-  const planted = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, [], 'sniper')));
+  const planted = stillShare(Array.from({ length: 10 }, (_, s) => duel('cautious', s + 1, 150, [], 'sniper', 400)));
   assert.ok(planted > 0.6, `${(100 * planted).toFixed(0)}% of sniper shots fired standing still`);
 });
 
@@ -170,7 +170,7 @@ test('out on a peek at long range a marksman plants its feet, while a cautious b
     const w = emptyWorld();
     setWalls(w, [{ x: 940, y: 860, w: 40, h: 100 }]);
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-    const enemy = spawnAt(w, 1650, 1000);
+    const enemy = spawnAt(w, 1433, 1000);
     const r = seeded(5);
     const plan = { k: 'peekAndHide' as const, target: enemy.id, spot: { x: 1000, y: 910 }, peek: { x: 1000, y: 1000 }, phase: 'peek' as const, phaseUntil: 1e9 };
     let mem: BotMemory = { ...newBotMemory(r), persona, intent: { ...plan, since: 0, holdUntil: 1e9 } };

@@ -1,15 +1,20 @@
 import { BlurFilter, Color, Container, Graphics, Matrix, RenderTexture, Sprite, WebGLRenderer, type ColorSource, type Texture } from 'pixi.js';
-import { BUILDINGS, WORLD, ZOM, ZOMBIES, type TurretKind } from '../../shared/defs.ts';
+import { BUILDINGS, GUNS, WORLD, ZOM, ZOMBIES, type TurretKind, type WeaponId } from '../../shared/defs.ts';
+import type { PieceId } from '../../shared/kit.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import type { Camera } from '../camera.ts';
 import { PALETTE, shade, ZOMBIE_LOOK } from '../palette.ts';
-import { isLive, particleAt } from '../particles.ts';
+import { isLive, PARTICLE_CAP, particleAt } from '../particles.ts';
 import { EFFECT_LIFE_MS, type Effect } from '../state.ts';
 import { TURRET_LOOK } from '../siege.ts';
+import type { Knobs } from '../quality.ts';
 import { loadArt, type Art } from './assets.ts';
-import { ART } from './art.ts';
-import { facing, crateSprite, siegeWallSprite, SPRITES, type Layer } from './catalog.ts';
+import { ART, SHADOW_PER_HEIGHT } from './art.ts';
+import { facing, FIRE_FRAMES, siegeWallSprite, SOLDIER, SPRITES, TRAIN, type Layer } from './catalog.ts';
+import { blockLook } from './blocks.ts';
 import { createGround } from './ground.ts';
+import { createKnee } from './knee.ts';
+import { add, clear, createRing, marksOf, visible, type Placed } from './marks.ts';
 import type { BodyLook, Scene } from './scene.ts';
 import { createTextures } from './textures.ts';
 
@@ -17,10 +22,11 @@ const TAU = Math.PI * 2;
 const R = WORLD.playerRadius;
 /** The soldier's baked shadow is as dark as a wall's; at full strength it outweighs the soldier, so it is drawn lighter. */
 const SOLDIER_SHADOW = 0.6;
+/** How far an overhead piece fades while someone is under it, and how quickly. */
+const OVERHEAD_FADED = 0.28;
+const OVERHEAD_EASE_MS = 140;
 const RECOIL = R * 0.22;
 const MARK_Y = -R - 8;
-
-export type Quality = { bloom: boolean };
 
 const colors = new Map<string, number>();
 /** Pixi parses a CSS color on every tint; the palette is small, so parse each once. */
@@ -59,28 +65,65 @@ const sprite = (blend?: 'add' | 'multiply') => () => {
   return s;
 };
 
-type BodyView = { root: Container; ring: Sprite; base: Sprite; team: Sprite; armor: Sprite; gun: Sprite; flash: Sprite; chevrons: Sprite[]; hunted: Sprite; guard: Sprite; shield: Sprite; killer: Sprite };
+type BodyView = { root: Container; ring: Sprite; legs: Sprite; legsTeam: Sprite; base: Sprite; team: Sprite; armor: Sprite; gun: Sprite; flash: Sprite; chevrons: Sprite[]; hunted: Sprite; guard: Sprite; shield: Sprite; killer: Sprite };
 
-type Decal = { name: string; frame: number; x: number; y: number; rotation: number; born: number };
-const DECALS = { cap: 90, lifeMs: 40_000, fadeMs: 6000 } as const;
-/** How strongly each decal marks the ground; the baked soot is opaque at its heart, which reads as a hole rather than a burn. */
-const DECAL_STRENGTH: Record<string, number> = { 'decal.scorch': 0.55, 'decal.blood': 0.85, 'decal.ichor': 0.85 };
+/**
+ * The most marks each ring holds, at the top tier; the tier's budget draws the newest of them. Floor marks (scorch, blood,
+ * piles, rubble) stay for the match, casings for `CASING_LIFE_MS`.
+ */
+const MARK_CAP = 400;
+const CASING_CAP = 300;
+const CASING_LIFE_MS = 14_000;
+/** How each class's flash shows: its size, and the light it throws at night. A suppressor shrinks and dims it. */
+const FLASH: Record<WeaponId, { glow: number; light: number }> = {
+  pistol: { glow: 40, light: 210 }, smg: { glow: 34, light: 190 }, assault: { glow: 48, light: 240 },
+  shotgun: { glow: 64, light: 290 }, sniper: { glow: 60, light: 300 }, lmg: { glow: 56, light: 270 },
+};
+/** How much of each channel full night takes from the day. */
+const NIGHT = { r: 0.9, g: 0.88, b: 0.8 } as const;
+/** A breakable piece's live sun shadow, as dark as the baked ones under the pieces that never break. */
+const LIVE_SHADOW = { color: 0x0e1420, alpha: 0.42 } as const;
+
+/** Thrown when the browser cannot give the world a WebGL2 context; the menu says so and keeps Play off. */
+export class NoWebGL2 extends Error {}
+
+/**
+ * A WebGL2 context, on the GPU when the browser offers one. `software` is true when only a software rasterizer was offered:
+ * the game still runs, at the lowest quality.
+ */
+function webgl2(canvas: HTMLCanvasElement): { gl: WebGL2RenderingContext; software: boolean } {
+  const attrs: WebGLContextAttributes = { alpha: false, premultipliedAlpha: true, antialias: false, stencil: true, powerPreference: 'high-performance' };
+  const gpu = canvas.getContext('webgl2', { ...attrs, failIfMajorPerformanceCaveat: true });
+  if (gpu) return { gl: gpu, software: false };
+  const any = canvas.getContext('webgl2', attrs);
+  if (any) return { gl: any, software: true };
+  throw new NoWebGL2('no WebGL2 context');
+}
 
 export type World = {
   draw(scene: Scene, cam: Camera, now: number, walls: readonly WallView[]): void;
   resize(w: number, h: number, dpr: number): void;
-  quality: Quality;
-  probe(): { tiles: number; atlas: boolean; drawn: number };
+  probe(): { tiles: number; failedTiles: number; atlas: boolean; drawn: number; software: boolean; floatSums: boolean };
+  art: Pick<Art, 'progress' | 'ready' | 'loaded'>;
+  software: boolean;
   /** Waits for the GPU to finish the last frame, so a benchmark times the pixels and not just the commands. */
   finish(): void;
 };
 
-export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<World> {
+/** `knobs` is read every frame, so a tier change takes effect on the next one. */
+export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs): Promise<World> {
+  const { gl, software } = webgl2(canvas);
   const renderer = new WebGLRenderer();
-  await renderer.init({ canvas, width: canvas.clientWidth || 1, height: canvas.clientHeight || 1, resolution: 1, antialias: false, background: '#1d3a4c', powerPreference: 'high-performance' });
-  const art = await loadArt();
+  await renderer.init({ canvas, context: gl, width: canvas.clientWidth || 1, height: canvas.clientHeight || 1, resolution: 1, antialias: false, background: '#1d3a4c', powerPreference: 'high-performance' });
+  if (renderer.context.webGLVersion !== 2) throw new NoWebGL2(`WebGL${renderer.context.webGLVersion}`);
+  const art = loadArt();
   const tex = createTextures();
   let view = { w: 1, h: 1, dpr: 1 };
+  let k = knobs();
+  /** The share of particles, flames and smoke the tier draws. */
+  let density = 1;
+  /** World pixels per CSS pixel: the display's DPR scaled by the tier. */
+  let res = 1;
 
   const root = new Container();
   const waterLayer = new Container();
@@ -95,27 +138,55 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
   const actorLayer = new Container();
   const fxLayer = new Container();
   const over = new Graphics();
-  world.addChild(groundLayer, decalLayer, under, casingLayer, shadowLayer, solidLayer, cracks, actorLayer, fxLayer, over);
+  /** Kit pieces with no baked look yet, drawn as their top and south face. */
+  const blocks = new Graphics();
+  /** Above the actors: the train, then roofs, gantries and pipes, which fade to show who is under them. */
+  const aboveLayer = new Container();
+  const aboveBlocks = new Graphics();
+  world.addChild(groundLayer, decalLayer, under, casingLayer, shadowLayer, blocks, solidLayer, cracks, actorLayer, aboveBlocks, aboveLayer, fxLayer, over);
   const nightSprite = new Sprite();
   nightSprite.blendMode = 'multiply';
   const glowWorld = new Container({ isRenderGroup: true });
+  // Glow and bloom screen onto the scene rather than add, so a lit floor under a blast brightens toward white without clipping flat.
+  const glowSprite = new Sprite();
+  glowSprite.blendMode = 'screen';
   const bloomSprite = new Sprite();
-  bloomSprite.blendMode = 'add';
-  root.addChild(waterLayer, world, nightSprite, glowWorld, bloomSprite);
+  bloomSprite.blendMode = 'screen';
+  root.addChild(waterLayer, world, nightSprite, glowSprite, bloomSprite);
 
   const lights = new Container({ isRenderGroup: true });
   const lightPool = pool(lights, sprite('add'));
+  // Lights and glows add up past 1 where they overlap; they are summed in half floats where the GPU can render to them, then
+  // rolled off by a knee into the 8-bit buffers that are drawn, so a night blast shades instead of clipping to a white disc.
+  const float = !!renderer.context.extensions.colorBufferFloat;
+  let lightSum: RenderTexture | null = null;
   let lightRT: RenderTexture | null = null;
+  let glowSum: RenderTexture | null = null;
+  let glowFullSum: RenderTexture | null = null;
+  let glowFullRT: RenderTexture | null = null;
   let glowRT: RenderTexture | null = null;
   let bloomRT: RenderTexture | null = null;
+  const lightKnee = createKnee(0.8, 1);
+  /** Bloom adds at most this much to any channel, however many glows stack. */
+  const glowKnee = createKnee(0, 0.5);
+  /** The glow layer itself keeps its colour to 0.6, then rolls off below 0.9, so three stacked fireballs still show their shape. */
+  const glowFullKnee = createKnee(0.6, 0.9);
   const blurSprite = new Sprite();
-  blurSprite.filters = [new BlurFilter({ strength: 5, quality: 3 })];
+  const blur = new BlurFilter({ strength: 5, quality: 3 });
+  blurSprite.filters = [blur];
   const blurRoot = new Container({ isRenderGroup: true });
   blurRoot.addChild(blurSprite);
 
   const ground = createGround(art, groundLayer, waterLayer);
-  const decals: Decal[] = [];
+  const floorMarks = createRing(MARK_CAP);
+  const casingMarks = createRing(CASING_CAP, CASING_LIFE_MS);
+  /** The map the marks were left on: a new one wipes the floor. */
+  let markedLayout = '';
   const seen = new WeakSet<Effect>();
+  const liveShadows = new Graphics();
+  shadowLayer.addChild(liveShadows);
+  /** The crates the live shadows were last built for, so a still scene keeps its geometry. */
+  let shadowed = '';
 
   const decalPool = pool(decalLayer, sprite());
   const minePool = pool(casingLayer, sprite());
@@ -128,17 +199,22 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
   const bodyPool = pool(actorLayer, () => makeBody());
   const thrownPool = pool(actorLayer, sprite());
   const fxPool = pool(fxLayer, sprite());
+  const flyPool = pool(fxLayer, sprite());
   const glowPool = pool(glowWorld, sprite('add'));
+  const abovePool = pool(aboveLayer, sprite());
+  /** Each overhead piece's drawn opacity by its key and spot, eased toward shown or faded. */
+  const fades = new Map<string, number>();
+  let lastDraw = 0;
 
   function makeBody(): Container {
     const root = new Container();
     const parts = {
-      ring: new Sprite(tex.ring), base: new Sprite(), team: new Sprite(), armor: new Sprite(), gun: new Sprite(), flash: new Sprite(tex.disc),
+      ring: new Sprite(tex.ring), legs: new Sprite(), legsTeam: new Sprite(), base: new Sprite(), team: new Sprite(), armor: new Sprite(), gun: new Sprite(), flash: new Sprite(tex.disc),
       chevrons: [new Sprite(tex.chevron), new Sprite(tex.chevron)], hunted: new Sprite(tex.brackets), guard: new Sprite(tex.ring), shield: new Sprite(tex.arc), killer: new Sprite(tex.ring),
     };
     for (const s of [parts.ring, parts.flash, parts.hunted, parts.guard, parts.shield, parts.killer, ...parts.chevrons]) s.anchor.set(0.5);
     parts.flash.blendMode = 'add';
-    root.addChild(parts.ring, parts.killer, parts.base, parts.team, parts.armor, parts.gun, parts.flash, parts.hunted, parts.guard, parts.shield, ...parts.chevrons);
+    root.addChild(parts.ring, parts.killer, parts.legs, parts.legsTeam, parts.base, parts.team, parts.armor, parts.gun, parts.flash, parts.hunted, parts.guard, parts.shield, ...parts.chevrons);
     (root as Container & { parts: Omit<BodyView, 'root'> }).parts = parts;
     return root;
   }
@@ -173,11 +249,17 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
     root.alpha = b.alpha;
     const { dir, rest } = facing(b.angle, SPRITES.soldier!.dirs);
     const lit = grey(b.light);
-    place(p.base, 'soldier', 'base', dir, 0, 0, 0, rest);
+    const gait = facing(b.legs.heading, SPRITES['soldier.legs']!.dirs);
+    place(p.legs, 'soldier.legs', 'base', gait.dir, b.legs.frame, 0, 0, gait.rest);
+    p.legs.tint = lit;
+    place(p.legsTeam, 'soldier.legs', 'team', gait.dir, b.legs.frame, 0, 0, gait.rest);
+    const torso = b.kick > 0.5 ? SOLDIER.torso.recoil[0] : b.kick > 0 ? SOLDIER.torso.recoil[1] : SOLDIER.torso.aim;
+    place(p.base, 'soldier', 'base', dir, torso, 0, 0, rest);
     p.base.tint = lit;
-    place(p.team, 'soldier', 'team', dir, 0, 0, 0, rest);
+    place(p.team, 'soldier', 'team', dir, torso, 0, 0, rest);
     const tc = hex(b.color);
     p.team.tint = b.light === 1 ? tc : shadeNum(tc, b.light);
+    p.legsTeam.tint = p.team.tint;
     p.armor.visible = b.armor !== 'none';
     if (p.armor.visible) { place(p.armor, 'soldier', b.armor === 'light' ? 'armorLight' : b.armor === 'medium' ? 'armorMedium' : 'armorHeavy', dir, 0, 0, 0, rest); p.armor.tint = lit; }
     const back = RECOIL * Math.max(0, b.kick);
@@ -233,6 +315,106 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       const r = ZOMBIES[z.kind].radius;
       mark(shadowPool.next(), tex.disc, z.x + sx * r * 0.7, z.y + sy * r * 0.7, r * 2.6, 0x141820, z.light === 1 ? 0.42 : 0.15);
     }
+    // Breakable pieces cast live, since a baked shadow would outlive them. Each sprite is sheared about its top, so its
+    // foot, and the shadow leaving it, sits its south face's depth below the solid.
+    const key = scene.crates.map((c) => `${c.id}:${c.wear}`).join();
+    if (key === shadowed) return;
+    shadowed = key;
+    liveShadows.clear();
+    for (const c of scene.crates) {
+      const h = c.height * (1 - 0.5 * c.wear);
+      const face = h * ART.camera.shear, dx = sx * h * SHADOW_PER_HEIGHT, dy = sy * h * SHADOW_PER_HEIGHT;
+      if (c.piece.startsWith('barrel')) liveShadows.poly(capsule(c.x + c.w / 2, c.y + c.h / 2 + face, c.w / 2, dx, dy));
+      else {
+        // The hull of the foot and its copy cast south-west, the way ART.sun.shadow falls.
+        const x0 = c.x, x1 = c.x + c.w, y0 = c.y + face, y1 = c.y + c.h + face;
+        liveShadows.poly([x0, y0, x1, y0, x1, y1, x1 + dx, y1 + dy, x0 + dx, y1 + dy, x0 + dx, y0 + dy]);
+      }
+      liveShadows.fill({ color: LIVE_SHADOW.color, alpha: LIVE_SHADOW.alpha });
+    }
+  }
+
+  /** A kit piece: its baked look when the atlas has it, else its greybox top and south face. */
+  function piece(into: Pool<Sprite>, grey: Graphics, key: string, p: PieceId, x: number, y: number, w: number, h: number, height: number, alpha: number, mirror = false) {
+    if (SPRITES[key] && art.has(key, 'base')) {
+      for (const [pool, layer] of [[into, 'base'], [solidGlowPool, 'glow']] as const) {
+        if (layer === 'glow' && !art.has(key, 'glow')) continue;
+        const s = pool.next();
+        place(s, key, layer, 0, 0, mirror ? x + w : x, y);
+        if (mirror) s.scale.x *= -1;
+        s.alpha = alpha;
+      }
+      return;
+    }
+    const look = blockLook(p);
+    const face = height * ART.camera.shear;
+    grey.rect(x, y + h - face, w, face).fill({ color: look.face, alpha });
+    grey.rect(x, y - face, w, h).fill({ color: look.top, alpha }).stroke({ width: 2, color: look.edge, alpha: alpha * 0.8 });
+  }
+
+  /** The train, then the overhead pieces, faded toward see-through while someone stands under them. */
+  function drawAbove(scene: Scene, now: number) {
+    const dt = Math.min(100, now - lastDraw);
+    // The cars are baked heading east or south; a westbound train is the eastbound one mirrored, while a northbound one keeps
+    // its south-facing look, since flipping it would put its lit south face on top.
+    const train = scene.train;
+    for (const car of train?.cars ?? []) piece(abovePool, aboveBlocks, car.key, 'container.rust', car.x, car.y, car.w, car.h, TRAIN.height, 1, train!.back && train!.axis === 'x');
+    const seen = new Set<string>();
+    for (const o of scene.overheads) {
+      const id = `${o.key}@${o.x},${o.y}`;
+      seen.add(id);
+      const target = o.under ? OVERHEAD_FADED : 1;
+      const was = fades.get(id) ?? target;
+      const a = was + (target - was) * Math.min(1, dt / OVERHEAD_EASE_MS);
+      fades.set(id, a);
+      piece(abovePool, aboveBlocks, o.key, o.p, o.x, o.y, o.w, o.h, o.height, a);
+    }
+    for (const id of fades.keys()) if (!seen.has(id)) fades.delete(id);
+    lastDraw = now;
+  }
+
+  /**
+   * Flames licking up from spots across a burning patch of radius `r`, each at its own phase of the looping flipbook, with
+   * smoke rising off them and embers. `size` scales the flames; the tier's density thins flames, smoke and embers alike.
+   */
+  function drawFire(x: number, y: number, r: number, seed: number, size: number, now: number) {
+    const flicker = 0.8 + 0.2 * Math.sin(now / 70 + seed) * Math.sin(now / 113 + seed * 3);
+    mark(glowPool.next(), tex.glow, x, y, (r * 2 + 50 * size) * flicker, 0xff8a30, 0.5 * flicker);
+    const flames = Math.max(1, Math.round((1 + r / 10) * density));
+    for (let i = 0; i < flames; i++) {
+      const a = hash(seed, i) * TAU, d = r * 0.6 * Math.sqrt(hash(seed, i + 17));
+      const fx = x + Math.cos(a) * d, fy = y + Math.sin(a) * d * 0.7;
+      const frame = Math.floor(now / 75 + hash(seed, i + 5) * 40) % FIRE_FRAMES;
+      const sc = size * (0.65 + 0.45 * hash(seed, i + 31)) * (0.92 + 0.08 * Math.sin(now / 90 + i));
+      // The flame's own colour first, so it holds its shape over a sunlit floor, then its glow, which blooms.
+      for (const [into, tint, alpha] of [[fxPool, 0xc84a12, 0.6], [glowPool, 0xffffff, 0.95]] as const) {
+        const s = into.next();
+        place(s, 'fx.fire', 'glow', 0, frame, fx, fy);
+        s.scale.x *= sc; s.scale.y *= sc;
+        s.tint = tint;
+        s.alpha = alpha;
+      }
+    }
+    const puffs = Math.max(1, Math.round((1 + r / 30) * 2 * density));
+    for (let i = 0; i < puffs; i++) {
+      const h = hash(seed, i + 50), p = (now / 2600 + i / puffs + h) % 1;
+      const s = fxPool.next();
+      place(s, 'fx.smoke', 'base', 0, (i + seed) & 3, x + (h - 0.5) * r * 0.8 + 30 * p * size, y - 30 * size - 130 * p * size, h * TAU + p);
+      const grow = size * (0.7 + 1.9 * p);
+      s.scale.x *= grow; s.scale.y *= grow;
+      s.tint = 0x34302c;
+      s.alpha = 0.55 * Math.sin(Math.PI * Math.min(1, p * 1.4)) * (1 - p * 0.4);
+    }
+    const embers = Math.round((2 + r / 12) * density);
+    for (let i = 0; i < embers; i++) {
+      const h = hash(seed, i + 90), p = (now / 1100 + i / embers + h) % 1;
+      mark(glowPool.next(), tex.glow, x + (h - 0.5) * r * 1.2 + Math.sin(now / 200 + i) * 6, y - p * 100 * Math.max(0.6, size), 8 * (1 - p), i % 2 ? 0xffc050 : 0xff7020, 1 - p);
+    }
+  }
+
+  function drawFires(scene: Scene, now: number) {
+    for (const f of scene.fires) drawFire(f.x, f.y, f.r, f.id, 1.25, now);
+    for (const p of scene.pieces) if (p.p === 'barrel.fire') drawFire(p.x + p.w / 2, p.y + p.h / 2 - p.height * ART.camera.shear, 6, p.x * 7 + p.y, 0.42, now);
   }
 
   function drawSolids(scene: Scene, now: number) {
@@ -247,7 +429,12 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       }
       if (b.flash > 0) over.rect(b.x, b.y, b.w, b.h).fill({ color: 0xffffff, alpha: 0.7 * b.flash });
     }
-    for (const c of scene.crates) place(solidPool.next(), crateSprite(c.tier, c.wear), 'base', 0, 0, c.x, c.y);
+    for (const p of scene.pieces) piece(solidPool, blocks, p.key, p.p, p.x, p.y, p.w, p.h, p.height, 1);
+    for (const c of scene.crates) piece(solidPool, blocks, c.key, c.piece, c.x, c.y, c.w, c.h, c.height * (1 - 0.5 * c.wear), 1);
+    for (const p of scene.pieces) if (p.p === 'signal') {
+      const on = scene.train ? Math.floor(now / 250) % 2 === 0 : false;
+      mark(solidGlowPool.next(), tex.glow, p.x + p.w / 2, p.y + p.h / 2 - p.height * ART.camera.shear, on ? 90 : 30, 0xff3a2e, on ? 0.9 : 0.35);
+    }
     const core = scene.core;
     if (core) {
       place(solidPool.next(), 'core', 'base', 0, 0, core.x - ZOM.coreHalf, core.y - ZOM.coreHalf);
@@ -372,28 +559,23 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
     }
   }
 
-  function addDecal(name: string, x: number, y: number, now: number) {
-    const spec = SPRITES[name]!;
-    const h = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-    decals.push({ name, frame: Math.floor(h * spec.frames), x, y, rotation: h * TAU, born: now });
-    if (decals.length > DECALS.cap) decals.shift();
-  }
-
-  function drawEffects(scene: Scene, now: number) {
+  function drawEffects(scene: Scene, now: number, walls: readonly WallView[]) {
     for (const fx of scene.effects) {
       const k = Math.max(0, now - fx.born) / EFFECT_LIFE_MS[fx.kind];
       if (!seen.has(fx)) {
         seen.add(fx);
-        if (fx.kind === 'boom') addDecal('decal.scorch', fx.x, fx.y, now);
-        if (fx.kind === 'death') addDecal('decal.blood', fx.x, fx.y, now);
-        if (fx.kind === 'splat') addDecal('decal.ichor', fx.x, fx.y, now);
+        const left = marksOf(fx, walls, Math.random);
+        for (const m of left.floor) add(floorMarks, m);
+        for (const m of left.casings) add(casingMarks, m);
       }
       if (k >= 1) continue;
       switch (fx.kind) {
         case 'impact':
-          if (fx.victim === null) {
+          // Hard cover sparks where the round strikes; wood, sandbags and planters only throw grit.
+          if (fx.victim === null && (fx.material === 'metal' || fx.material === 'concrete' || fx.material === undefined)) {
             const fade = Math.max(0, 1 - k * 2.5);
-            if (fade > 0) mark(glowPool.next(), tex.glow, fx.x, fx.y, 26 * (0.6 + 0.4 * fade), 0xffd56a, fade);
+            const hot = fx.material === 'metal' ? 1.5 : 1;
+            if (fade > 0) mark(glowPool.next(), tex.glow, fx.x, fx.y, 26 * hot * (0.6 + 0.4 * fade), 0xffc04a, fade);
           }
           break;
         case 'boom': {
@@ -407,13 +589,16 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
           place(fire, 'fx.explosion', 'glow', 0, frame, fx.x, fx.y);
           fire.scale.x *= scale; fire.scale.y *= scale;
           const wave = 1 - (1 - k) * (1 - k);
-          over.circle(fx.x, fx.y, fx.r * (0.4 + 0.75 * wave)).stroke({ width: 10 * (1 - k) + 1, color: 0xffffff, alpha: (1 - k) * 0.7 });
+          over.circle(fx.x, fx.y, fx.r * (0.4 + 0.75 * wave)).stroke({ width: 8 * (1 - k) + 1, color: 0xffe2b0, alpha: (1 - k) * 0.4 });
           break;
         }
         case 'flash': {
-          const spec = SPRITES['fx.muzzle']!;
-          place(glowPool.next(), 'fx.muzzle', 'glow', 0, Math.min(spec.frames - 1, Math.floor(k * spec.frames)), fx.x, fx.y, fx.angle);
-          mark(glowPool.next(), tex.glow, fx.x + Math.cos(fx.angle) * 6, fx.y + Math.sin(fx.angle) * 6, 44, 0xffc93a, 0.5 * (1 - k));
+          const base = GUNS[fx.gun].base, quiet = GUNS[fx.gun].silenced ? 0.35 : 1;
+          const s = glowPool.next();
+          place(s, `fx.muzzle.${base}`, 'glow', 0, Math.min(2, Math.floor(k * 3)), fx.x, fx.y, fx.angle);
+          s.scale.x *= 0.5 + 0.5 * quiet; s.scale.y *= 0.5 + 0.5 * quiet;
+          s.alpha = quiet;
+          mark(glowPool.next(), tex.glow, fx.x + Math.cos(fx.angle) * 6, fx.y + Math.sin(fx.angle) * 6, FLASH[base].glow * (0.6 + 0.4 * quiet), 0xffb43a, 0.35 * (1 - k) * quiet);
           break;
         }
         case 'slash': {
@@ -433,7 +618,7 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
         }
         case 'tracer': {
           const ms = now - fx.born;
-          if (ms < 70) place(glowPool.next(), 'fx.muzzle', 'glow', 0, Math.min(3, Math.floor((ms / 70) * 4)), fx.x, fx.y, fx.angle);
+          if (ms < 70) place(glowPool.next(), 'fx.muzzle.lmg', 'glow', 0, Math.min(2, Math.floor((ms / 70) * 3)), fx.x, fx.y, fx.angle);
           const { bulletSpeed, bullet } = BUILDINGS[fx.turret].turret;
           const head = (bulletSpeed * ms) / 1000;
           if (head > fx.reach) break;
@@ -450,42 +635,52 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
           t.alpha = 1;
           break;
         }
+        case 'broke':
+          break;
       }
     }
   }
 
-  function drawDecals(now: number) {
-    for (const d of decals) {
-      const age = now - d.born;
-      if (age >= DECALS.lifeMs) continue;
-      const s = decalPool.next();
-      place(s, d.name, 'base', 0, d.frame, d.x, d.y, d.rotation);
-      s.alpha = (DECAL_STRENGTH[d.name] ?? 1) * Math.min(1, (DECALS.lifeMs - age) / DECALS.fadeMs);
+  /** A mark at rest lies in its floor layer under the cover; one still flying is drawn over everything, lifted by its hop. */
+  function drawMark(p: Placed, rest: Pool<Sprite>, view: Scene['view']) {
+    const { m } = p;
+    if (p.x < view.x0 || p.x > view.x1 || p.y < view.y0 || p.y > view.y1) return;
+    const s = (p.flying ? flyPool : rest).next();
+    place(s, m.sprite, 'base', 0, m.frame, p.x, p.y - p.lift, p.turn);
+    const grow = m.scale * (1 + p.lift / 40);
+    s.scale.x *= grow; s.scale.y *= grow;
+    s.alpha = p.alpha;
+    s.tint = m.tint;
+  }
+
+  function drawMarks(scene: Scene, now: number) {
+    if (scene.layout !== markedLayout) {
+      markedLayout = scene.layout;
+      clear(floorMarks);
+      clear(casingMarks);
     }
-    while (decals.length && now - decals[0]!.born >= DECALS.lifeMs) decals.shift();
+    // Oldest first, so newer marks lie on top.
+    for (const p of visible(floorMarks, k.decals, now).reverse()) drawMark(p, decalPool, scene.view);
+    for (const p of visible(casingMarks, k.casings, now).reverse()) drawMark(p, casingPool, scene.view);
   }
 
   function drawParticles(scene: Scene, now: number) {
-    for (const p of scene.particles.slots) {
+    let left = k.particles;
+    const slots = scene.particles.slots;
+    for (let i = 0; i < slots.length; i++) {
+      const p = slots[i]!;
       if (!isLive(p, now)) continue;
+      // A lower tier keeps an even share of every burst rather than whichever particles come first.
+      if (density < 1 && hash(i, 0.5) >= density) continue;
+      if (left-- <= 0) break;
       const { x, y, k } = particleAt(p, now);
       if (p.shape === 'smoke') {
         const s = fxPool.next();
         place(s, 'fx.smoke', 'base', 0, Math.floor(p.vx * 7 + p.vy * 3) & 3, x, y, p.born * 0.001);
         const grow = (p.size * (1 + p.grow * k)) / 32;
         s.scale.x *= grow; s.scale.y *= grow;
-        s.alpha = 0.6 * (1 - k);
+        s.alpha = 0.6 * Math.min(1, k * 8) * (1 - k);
         s.tint = hex(p.color);
-      } else if (p.shape === 'casing') {
-        const s = casingPool.next();
-        s.texture = tex.casing;
-        s.anchor.set(0.5);
-        s.position.set(x, y);
-        s.width = p.size * 1.4;
-        s.height = p.size * 0.6;
-        s.rotation = Math.atan2(p.vy, p.vx) + Math.hypot(x - p.x, y - p.y) * 0.35;
-        s.alpha = k < 0.75 ? 1 : (1 - k) / 0.25;
-        s.tint = 0xffffff;
       } else if (p.shape === 'chip') {
         const s = fxPool.next();
         const r = p.size * (1 - k * 0.5);
@@ -496,6 +691,9 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
         s.rotation = p.born;
         s.tint = hex(p.color);
         s.alpha = 1 - k * k;
+      } else if (p.shape === 'ember') {
+        const flicker = 0.7 + 0.3 * Math.sin(now / 40 + i);
+        mark(glowPool.next(), tex.glow, x, y - k * 30, p.size * 3.2 * (1 - k * 0.6), hex(p.color), (1 - k) * flicker);
       } else {
         const s = glowPool.next();
         const speed = Math.exp((-p.drag * (now - p.born)) / 1000);
@@ -520,16 +718,23 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
 
   function drawLights(scene: Scene, now: number) {
     lightPool.begin();
-    const light = (x: number, y: number, r: number, color: number, alpha: number) => mark(lightPool.next(), tex.light, x, y, r * 2, color, alpha);
-    for (const b of scene.bodies) light(b.x, b.y, b.ring === 'self' ? 420 : 170, b.ring === 'self' ? 0xfff2dc : 0xc8d4ff, b.ring === 'self' ? 0.95 : 0.5);
+    let left = k.lights;
+    const light = (x: number, y: number, r: number, color: number, alpha: number) => { if (left-- > 0) mark(lightPool.next(), tex.light, x, y, r * 2, color, alpha); };
+    // Most telling first, so a low cap drops other players' and tracers' lights before your own and the blasts.
+    if (scene.core) light(scene.core.x, scene.core.y, 300, 0x4fd1e8, 0.8);
+    for (const b of scene.bodies) if (b.ring === 'self') light(b.x, b.y, 380, 0xfff2dc, 0.9);
     for (const fx of scene.effects) {
       const k = Math.max(0, now - fx.born) / EFFECT_LIFE_MS[fx.kind];
       if (k >= 1) continue;
-      if (fx.kind === 'flash') light(fx.x, fx.y, 230, 0xffc070, 1 - k);
+      if (fx.kind === 'flash') light(fx.x, fx.y, FLASH[GUNS[fx.gun].base].light * (GUNS[fx.gun].silenced ? 0.5 : 1), 0xffb060, 1 - k);
       if (fx.kind === 'boom') light(fx.x, fx.y, fx.r * 3.5, 0xffa050, 1 - k);
     }
-    for (const t of scene.tracers) light(t.x1, t.y1, 70, 0xffd080, 0.6);
-    if (scene.core) light(scene.core.x, scene.core.y, 300, 0x4fd1e8, 0.8);
+    for (const f of scene.fires) light(f.x, f.y, f.r * 4, 0xff8a40, 0.85 + 0.15 * Math.sin(now / 70 + f.id));
+    for (const l of scene.lamps) light(l.x, l.y, l.r * 1.3, l.color, l.strength * (l.pulseMs ? 0.6 + 0.4 * Math.sin((now / l.pulseMs) * TAU) : 1));
+    for (const p of scene.pieces) if (p.p === 'signal' && scene.train && Math.floor(now / 250) % 2 === 0) light(p.x + p.w / 2, p.y + p.h / 2, 160, 0xff3a2e, 1);
+    for (const b of scene.bodies) if (b.ring !== 'self') light(b.x, b.y, 150, 0xc8d4ff, 0.45);
+    for (const fx of scene.effects) if (fx.kind === 'impact' && fx.victim === null && now - fx.born < 120) light(fx.x, fx.y, 60, 0xffc070, 0.8);
+    for (const t of scene.tracers) light(t.x1, t.y1, 80, 0xff9a40, 0.6);
     lightPool.end();
   }
 
@@ -537,25 +742,34 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
     renderer.render({ container, target, clear: true, clearColor: clearColor ?? [0, 0, 0, 0], transform: new Matrix(world.scale.x * scale, 0, 0, world.scale.y * scale, world.x * scale, world.y * scale) });
   }
 
-  function sizedRT(rt: RenderTexture | null, w: number, h: number): RenderTexture {
+  function sizedRT(rt: RenderTexture | null, w: number, h: number, sum = false): RenderTexture {
     const W = Math.max(1, Math.round(w)), H = Math.max(1, Math.round(h));
     if (rt && rt.width === W && rt.height === H) return rt;
     rt?.destroy(true);
-    return RenderTexture.create({ width: W, height: H, resolution: 1 });
+    return RenderTexture.create({ width: W, height: H, resolution: 1, ...(sum && float ? { format: 'rgba16float' as const } : {}) });
+  }
+
+  function knee(k: ReturnType<typeof createKnee>, from: RenderTexture, to: RenderTexture) {
+    k.from(from);
+    renderer.render({ container: k.root, target: to, clear: true, clearColor: [0, 0, 0, 0] });
   }
 
   let drawn = 0;
+  const dprScaled = () => view.dpr * k.renderScale;
 
   return {
-    quality,
     resize(w, h, dpr) {
       view = { w, h, dpr };
-      renderer.resolution = dpr;
-      renderer.resize(w, h, dpr);
+      res = dpr * k.renderScale;
+      renderer.resize(w, h, res);
     },
-    probe: () => ({ tiles: ground.loadedTiles(), atlas: art.manifest.atlases.length > 0, drawn }),
+    art, software,
+    probe: () => ({ tiles: ground.loadedTiles(), failedTiles: ground.failedTiles(), atlas: art.loaded() && art.manifest.atlases.length > 0, drawn, software, floatSums: float }),
     finish() { renderer.gl.readPixels(0, 0, 1, 1, renderer.gl.RGBA, renderer.gl.UNSIGNED_BYTE, new Uint8Array(4)); },
     draw(scene, cam, now, walls) {
+      k = knobs();
+      density = Math.min(1, k.particles / PARTICLE_CAP);
+      if (dprScaled() !== res) { res = dprScaled(); renderer.resize(view.w, view.h, res); }
       world.scale.set(cam.scale);
       world.position.set(cam.w / 2 - cam.x * cam.scale, cam.h / 2 - cam.y * cam.scale);
       glowWorld.scale.copyFrom(world.scale);
@@ -564,9 +778,11 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       under.clear();
       over.clear();
       cracks.clear();
-      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, glowPool]) pool.begin();
-      drawEffects(scene, now);
-      drawDecals(now);
+      blocks.clear();
+      aboveBlocks.clear();
+      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.begin();
+      drawEffects(scene, now, walls);
+      drawMarks(scene, now);
       drawUnder(scene, now);
       drawShadows(scene);
       drawSolids(scene, now);
@@ -581,33 +797,54 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       }
       for (const b of scene.bodies) drawBody(b, now);
       drawThrown(scene, now);
+      drawAbove(scene, now);
+      drawFires(scene, now);
       drawOver(scene, now);
       drawTracers(scene);
       drawParticles(scene, now);
-      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, glowPool]) pool.end();
+      for (const pool of [decalPool, minePool, casingPool, shadowPool, solidPool, solidGlowPool, zombiePool, downedPool, bodyPool, thrownPool, fxPool, flyPool, glowPool, abovePool]) pool.end();
 
-      const px = { w: view.w * view.dpr, h: view.h * view.dpr };
+      const px = { w: view.w * res, h: view.h * res };
       nightSprite.visible = scene.dark > 0;
       if (scene.dark > 0) {
         drawLights(scene, now);
+        lightSum = sizedRT(lightSum, px.w / 2, px.h / 2, true);
         lightRT = sizedRT(lightRT, px.w / 2, px.h / 2);
-        const amb = [1 - 0.58 * scene.dark, 1 - 0.53 * scene.dark, 1 - 0.38 * scene.dark, 1] as [number, number, number, number];
-        renderTo(lights, lightRT, view.dpr / 2, amb);
+        // Full night leaves a tenth of the day's light, moonlit blue, so what no lamp, fire or flash reaches is dark but not void.
+        const amb = [1 - NIGHT.r * scene.dark, 1 - NIGHT.g * scene.dark, 1 - NIGHT.b * scene.dark, 1] as [number, number, number, number];
+        renderTo(lights, lightSum, res / 2, amb);
+        knee(lightKnee, lightSum, lightRT);
         nightSprite.texture = lightRT;
-        nightSprite.scale.set(2 / view.dpr);
+        nightSprite.scale.set(2 / res);
       }
-      bloomSprite.visible = quality.bloom;
-      if (quality.bloom) {
-        glowRT = sizedRT(glowRT, px.w / 4, px.h / 4);
-        bloomRT = sizedRT(bloomRT, px.w / 4, px.h / 4);
-        renderTo(glowWorld, glowRT, view.dpr / 4);
+      glowSprite.visible = k.glowClamp;
+      if (k.glowClamp) {
+        const g = k.glowScale;
+        glowFullSum = sizedRT(glowFullSum, px.w * g, px.h * g, true);
+        glowFullRT = sizedRT(glowFullRT, px.w * g, px.h * g);
+        renderTo(glowWorld, glowFullSum, res * g);
+        knee(glowFullKnee, glowFullSum, glowFullRT);
+        glowSprite.texture = glowFullRT;
+        glowSprite.scale.set(1 / (res * g));
+      }
+      const div = k.bloomDiv;
+      bloomSprite.visible = div !== null;
+      if (div !== null) {
+        glowSum = sizedRT(glowSum, px.w / div, px.h / div, true);
+        glowRT = sizedRT(glowRT, px.w / div, px.h / div);
+        bloomRT = sizedRT(bloomRT, px.w / div, px.h / div);
+        renderTo(glowWorld, glowSum, res / div);
+        knee(glowKnee, glowSum, glowRT);
         blurSprite.texture = glowRT;
+        // The blur works in the buffer's pixels, so a half-size buffer needs twice the reach to spread as far on screen.
+        blur.strength = (5 * 4) / div;
         renderer.render({ container: blurRoot, target: bloomRT, clear: true, clearColor: [0, 0, 0, 0] });
         bloomSprite.texture = bloomRT;
-        bloomSprite.scale.set(4 / view.dpr);
-        bloomSprite.alpha = 0.9;
+        bloomSprite.scale.set(div / res);
+        bloomSprite.alpha = 1;
       }
       renderer.render({ container: root });
+      if (!k.glowClamp) renderer.render({ container: glowWorld, clear: false });
       drawn++;
     },
   };
@@ -623,3 +860,24 @@ function shadeNum(c: number, light: number): number {
   return (Math.round(((c >> 16) & 255) * light) << 16) | (Math.round(((c >> 8) & 255) * light) << 8) | Math.round((c & 255) * light);
 }
 
+
+/** The hull of a circle and its copy moved by (dx, dy), as a flat point list: a round piece's shadow along the floor. */
+function capsule(x: number, y: number, r: number, dx: number, dy: number, n = 10): number[] {
+  const a = Math.atan2(dy, dx);
+  const pts: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = a + Math.PI / 2 + (i / n) * Math.PI;
+    pts.push(x + Math.cos(t) * r, y + Math.sin(t) * r);
+  }
+  for (let i = 0; i <= n; i++) {
+    const t = a - Math.PI / 2 + (i / n) * Math.PI;
+    pts.push(x + dx + Math.cos(t) * r, y + dy + Math.sin(t) * r);
+  }
+  return pts;
+}
+
+/** A stable pseudo-random value in [0, 1) for a pair of numbers, so a fire's flames keep their spots frame to frame. */
+function hash(a: number, b: number): number {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}

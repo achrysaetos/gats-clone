@@ -3,15 +3,19 @@ import { test } from 'node:test';
 import { MODE_IDS, WORLD, ZOM } from '../src/shared/defs.ts';
 import { MAP_IDS, MAPS, ROTATION } from '../src/shared/maps.ts';
 import { rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
-import { CELL, cellsIn, flood, standable } from '../scripts/map-lint.ts';
+import { CELL, cellsIn, flood, standable } from '../src/shared/maplint.ts';
 
 const R = WORLD.playerRadius;
 
 const SIEGE_MAPS = MAP_IDS.filter((id) => MAPS[id].siege);
 
-test('every versus mode rotates through every versus map, and zombies through the siege maps', () => {
-  const versus = MAP_IDS.filter((id) => !MAPS[id].siege).sort();
-  for (const mode of MODE_IDS) assert.deepEqual([...ROTATION[mode]].sort(), mode === 'ZOM' ? SIEGE_MAPS : versus, mode);
+const EXTRACT_MAPS = MAP_IDS.filter((id) => MAPS[id].extract);
+
+test('every map is played, every mode has a map, zombies plays every siege map and extraction every extraction map', () => {
+  for (const id of MAP_IDS) assert.ok(MODE_IDS.some((mode) => ROTATION[mode].includes(id)), `${id} is in no rotation`);
+  for (const mode of MODE_IDS) assert.ok(ROTATION[mode].length > 0, `${mode} has no map`);
+  assert.deepEqual([...ROTATION.ZOM].sort(), [...SIEGE_MAPS].sort());
+  assert.deepEqual([...ROTATION.EXT].sort(), [...EXTRACT_MAPS].sort());
 });
 
 for (const id of SIEGE_MAPS) {

@@ -1,11 +1,14 @@
-import { CRATE_SIZE, MAPS } from '../shared/maps.ts';
+import { MAPS } from '../shared/maps.ts';
+import { KIT, placed } from '../shared/kit.ts';
+import { mapLooks, pieceKey } from './world/pieces.ts';
 import type { RunView, WallView } from '../shared/protocol.ts';
 import type { Camera } from './camera.ts';
 import { createPool } from './particles.ts';
 import { drawLabels } from './world/labels.ts';
 import { mapLayoutKey } from './world/layout.ts';
 import { describeWorld, type Frame, type Scene } from './world/scene.ts';
-import { createWorld, type Quality, type World } from './world/stage.ts';
+import type { Knobs } from './quality.ts';
+import { createWorld, type World } from './world/stage.ts';
 
 export { bodyColor } from './world/scene.ts';
 
@@ -15,8 +18,9 @@ export { bodyColor } from './world/scene.ts';
  */
 let world: World | null = null;
 
-export async function initWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<void> {
-  world = await createWorld(canvas, quality);
+export async function initWorld(canvas: HTMLCanvasElement, knobs: () => Knobs): Promise<World> {
+  world = await createWorld(canvas, knobs);
+  return world;
 }
 
 export const resizeWorld = (w: number, h: number, dpr: number) => world?.resize(w, h, dpr);
@@ -54,11 +58,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
 }
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
-const BACKDROP_MAP = MAPS.plaza;
+const BACKDROP_MAP = MAPS.warehouse;
 const backdropWalls: WallView[] = BACKDROP_MAP.walls.map((w) => ({ ...w, built: false }));
 const noParticles = createPool(1);
 
-/** The menu's view: Plaza's empty ground drifting slowly behind the cards. */
+/** The menu's view: the warehouse's empty ground drifting slowly behind the cards. */
 export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, now: number) {
   clear(ctx);
   const { size } = BACKDROP_MAP;
@@ -70,7 +74,8 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const view = { x0: x - w / zoom / 2, y0: y - h / zoom / 2, x1: x + w / zoom / 2, y1: y + h / zoom / 2 };
   const scene: Scene = {
     view, size, layout: mapLayoutKey(backdropWalls), dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
-    crates: BACKDROP_MAP.crates.map((c, i) => ({ id: i, x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, tier: undefined, wear: 0 })),
+    crates: !world?.art.loaded() ? [] : BACKDROP_MAP.breakables.map((at, i) => ({ id: i, key: pieceKey(at), piece: at.p, ...placed(at).foot, height: KIT[at.p].height, tier: undefined, wear: 0 })),
+    pieces: mapLooks('warehouse').standing, overheads: mapLooks('warehouse').overhead.map((p) => ({ ...p, under: false })), train: null, fires: [], lamps: [],
     engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
     ghost: null, killer: null, numbers: [], effects: [], particles: noParticles,
   };

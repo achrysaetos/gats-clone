@@ -5,7 +5,7 @@ import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 import { median } from './stats.ts';
 
-export const DPS_RANGES = [150, 400, 700, 1000] as const;
+export const DPS_RANGES = [100, 270, 470, 670] as const;
 
 export const AXES = [
   ...DPS_RANGES.map((d) => `still@${d}` as const), ...DPS_RANGES.map((d) => `moving@${d}` as const),
@@ -42,11 +42,9 @@ export function scoreGun(id: GunId): GunScore {
   const g = GUNS[id];
   const firing = g.mag * msPerRound(id);
   const dps = (still: boolean) => DPS_RANGES.map((d) => dpsAt(id, d, still));
-  const [s150, s400, s700, s1000] = dps(true);
-  const [m150, m400, m700, m1000] = dps(false);
+  const still = dps(true), moving = dps(false);
   return {
-    'still@150': s150!, 'still@400': s400!, 'still@700': s700!, 'still@1000': s1000!,
-    'moving@150': m150!, 'moving@400': m400!, 'moving@700': m700!, 'moving@1000': m1000!,
+    ...Object.fromEntries(DPS_RANGES.flatMap((d, i) => [[`still@${d}`, still[i]!], [`moving@${d}`, moving[i]!]])) as Record<`${'still' | 'moving'}@${(typeof DPS_RANGES)[number]}`, number>,
     perPull: g.pellets * (g.damage + (g.blast?.damage ?? 0)) * (g.burst?.count ?? 1),
     magSeconds: firing / 1000, range: g.range, bulletSpeed: g.bulletSpeed,
     moveMul: g.moveMul, uptime: firing / (firing + g.reloadMs), reloadMs: g.reloadMs,
@@ -70,7 +68,7 @@ export function dominatedPairs(stage: 0 | 1 | 2): Pair[] {
 }
 
 export function rangeBeyondView(): { id: GunId; range: number; view: number }[] {
-  const w = createWorld('FFA', 1, 'plaza');
+  const w = createWorld('FFA', 1, 'warehouse');
   return GUN_IDS.flatMap((id) => {
     const p = addPlayer(w, id, { weapon: GUNS[id].base, armor: 'none', color: 'red' });
     p.gun = id;
@@ -142,29 +140,31 @@ const binomial = (n: number, k: number): number => (k === 0 ? 1 : (binomial(n, k
 
 export const aimDps = (id: GunId, d: number, still: boolean): number => (HUMAN_HP * 1000) / aimKillMs(id, d, still);
 
-export const AIM_BANDS = [100, 300, 600, 900] as const;
+export const AIM_BANDS = [70, 200, 400, 600] as const;
+/** The bands by name: close, mid and long; the fourth is the far edge of the view. */
+const [CLOSE, MID, LONG] = AIM_BANDS;
 type Band = (typeof AIM_BANDS)[number];
 
 const DOCTRINE: Record<WeaponId, { cadenceMs: readonly [number, number]; scope: number; fastestKillS: Record<Band, number> }> = {
-  pistol: { cadenceMs: [80, 750], scope: 1, fastestKillS: { 100: 2.5, 300: 4, 600: 7.5, 900: 9.5 } },
-  smg: { cadenceMs: [33, 100], scope: 1, fastestKillS: { 100: 1.9, 300: 4, 600: 7.5, 900: Infinity } },
-  shotgun: { cadenceMs: [250, 900], scope: 1, fastestKillS: { 100: 1.8, 300: 4.5, 600: 7.5, 900: 9.5 } },
-  assault: { cadenceMs: [80, 400], scope: 1.1, fastestKillS: { 100: 2.2, 300: 3.3, 600: 6.5, 900: 9.5 } },
-  sniper: { cadenceMs: [500, 1800], scope: 1.2, fastestKillS: { 100: 2.5, 300: 3, 600: 4.5, 900: 6.5 } },
-  lmg: { cadenceMs: [33, 120], scope: 1, fastestKillS: { 100: 2.3, 300: 3.3, 600: 5.5, 900: 8 } },
+  pistol: { cadenceMs: [80, 750], scope: 1, fastestKillS: { 70: 2.5, 200: 3.2, 400: 5.25, 600: 6.46 } },
+  smg: { cadenceMs: [33, 100], scope: 1, fastestKillS: { 70: 1.9, 200: 3.2, 400: 5.25, 600: Infinity } },
+  shotgun: { cadenceMs: [250, 900], scope: 1, fastestKillS: { 70: 1.8, 200: 3.6, 400: 5.25, 600: 6.46 } },
+  assault: { cadenceMs: [80, 400], scope: 1.1, fastestKillS: { 70: 2.2, 200: 2.64, 400: 4.55, 600: 6.46 } },
+  sniper: { cadenceMs: [500, 1800], scope: 1.2, fastestKillS: { 70: 2.5, 200: 2.4, 400: 3.15, 600: 4.42 } },
+  lmg: { cadenceMs: [33, 120], scope: 1, fastestKillS: { 70: 2.3, 200: 2.64, 400: 3.85, 600: 5.44 } },
 };
 const STAGE_GAIN = [1, 1.15, 1.3] as const;
-export const POSTURE_BY_BAND: Record<Band, 'walking' | 'standing'> = { 100: 'walking', 300: 'walking', 600: 'standing', 900: 'standing' };
-const BAND_OWNERS: Record<Band, readonly WeaponId[]> = { 100: ['smg', 'shotgun'], 300: ['assault'], 600: ['lmg', 'sniper'], 900: ['sniper'] };
+export const POSTURE_BY_BAND: Record<Band, 'walking' | 'standing'> = { 70: 'walking', 200: 'walking', 400: 'standing', 600: 'standing' };
+const BAND_OWNERS: Record<Band, readonly WeaponId[]> = { 70: ['smg', 'shotgun'], 200: ['assault'], 400: ['lmg', 'sniper'], 600: ['sniper'] };
 const OWNER_LEAD = 1.15;
 type Job = { bands: readonly Band[]; targetArmor?: ArmorId };
 const JOB: Partial<Record<GunId, Job>> = {
-  pistol: { bands: [100] },
-  handCannon: { bands: [100, 300], targetArmor: 'heavy' },
-  bulldog: { bands: [300] },
-  slugGun: { bands: [300] },
-  railSlug: { bands: [600] },
-  lightMg: { bands: [100, 300] },
+  pistol: { bands: [CLOSE] },
+  handCannon: { bands: [CLOSE, MID], targetArmor: 'heavy' },
+  bulldog: { bands: [MID] },
+  slugGun: { bands: [MID] },
+  railSlug: { bands: [LONG] },
+  lightMg: { bands: [CLOSE, MID] },
 };
 const jobOf = (id: GunId): Job => {
   const { from, base } = GUNS[id];
@@ -218,14 +218,14 @@ export function doctrineBreaches(): Breach[] {
   for (const stage of [0, 1, 2] as const) {
     const ids = gunsOfStage(stage);
     const killsOf = (keep: (id: GunId) => boolean, d: Band) => ids.filter(keep).map((id) => killAt(id, d));
-    const slowestSmg = Math.max(...killsOf((id) => GUNS[id].base === 'smg', 100));
+    const slowestSmg = Math.max(...killsOf((id) => GUNS[id].base === 'smg', CLOSE));
     for (const id of ids.filter((x) => GUNS[x].base === 'sniper' || GUNS[x].base === 'lmg')) {
-      if (killAt(id, 100) < slowestSmg) breach(id, 'close', `kills in ${killAt(id, 100).toFixed(2)}s at 100px, under an SMG's ${slowestSmg.toFixed(2)}s`);
+      if (killAt(id, CLOSE) < slowestSmg) breach(id, 'close', `kills in ${killAt(id, CLOSE).toFixed(2)}s at ${CLOSE}px, under an SMG's ${slowestSmg.toFixed(2)}s`);
     }
-    const walkingSmg = Math.max(...ids.filter((id) => GUNS[id].base === 'smg').map((id) => aimKillMs(id, 100, false) / 1000));
+    const walkingSmg = Math.max(...ids.filter((id) => GUNS[id].base === 'smg').map((id) => aimKillMs(id, CLOSE, false) / 1000));
     for (const id of ids.filter((x) => GUNS[x].base === 'sniper')) {
-      const kill = aimKillMs(id, 100, false) / 1000;
-      if (kill < SNIPER_CLOSE_LAG * walkingSmg) breach(id, 'hipfire', `kills in ${kill.toFixed(2)}s at 100px walking, under ${SNIPER_CLOSE_LAG}x an SMG's ${walkingSmg.toFixed(2)}s`);
+      const kill = aimKillMs(id, CLOSE, false) / 1000;
+      if (kill < SNIPER_CLOSE_LAG * walkingSmg) breach(id, 'hipfire', `kills in ${kill.toFixed(2)}s at ${CLOSE}px walking, under ${SNIPER_CLOSE_LAG}x an SMG's ${walkingSmg.toFixed(2)}s`);
     }
     const matrix = classes[stage];
     for (const d of AIM_BANDS) {
@@ -234,9 +234,9 @@ export function doctrineBreaches(): Breach[] {
         breach(c, `band@${d}/s${stage}`, `kills in ${matrix[c][d].toFixed(2)}s, within ${OWNER_LEAD}x of ${BAND_OWNERS[d].join('/')}'s ${owned.toFixed(2)}s`);
       }
     }
-    const sniperMid = median(killsOf((id) => GUNS[id].base === 'sniper', 600));
+    const sniperMid = median(killsOf((id) => GUNS[id].base === 'sniper', LONG));
     for (const id of ids.filter((x) => GUNS[x].base === 'smg' || (GUNS[x].base === 'shotgun' && GUNS[x].pellets > 1))) {
-      if (killAt(id, 600) < sniperMid) breach(id, 'falloff', `kills in ${killAt(id, 600).toFixed(2)}s at 600px, under the median sniper's ${sniperMid.toFixed(2)}s`);
+      if (killAt(id, LONG) < sniperMid) breach(id, 'falloff', `kills in ${killAt(id, LONG).toFixed(2)}s at ${LONG}px, under the median sniper's ${sniperMid.toFixed(2)}s`);
     }
   }
   return out;

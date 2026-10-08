@@ -19,7 +19,7 @@ export type LocalRound = { id: number; owner: number; x: number; y: number; vx: 
 export function roundScene(snap: Pick<Snapshot, 'players' | 'crates' | 'zombies'>, walls: readonly WallView[], shooterId: number): RoundScene {
   const team = snap.players.find((p) => p.id === shooterId)?.team ?? null;
   return {
-    solids: [...walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))],
+    solids: [...walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }))],
     bodies: [
       ...snap.players.filter((p) => p.alive && p.id !== shooterId && (team === null || p.team !== team)).map((p) => ({ x: p.x, y: p.y, r: WORLD.playerRadius })),
       ...(snap.zombies ?? []).map(([, k, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[k]!].radius })),

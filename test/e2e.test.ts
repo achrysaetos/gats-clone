@@ -119,7 +119,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   }
 
   const servers = (await (await fetch(base + '/api/servers')).json()) as { id: string; mode: string; players: number; humans: number }[];
-  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0]]);
+  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0], ['ext', 'EXT', 0]]);
   for (const s of servers) assert.equal(s.players, WORLD.minPlayers, 'bots fill the room to minPlayers');
 
   const ffa = conns.ffa;
@@ -145,11 +145,11 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
 
   const tdm = conns.tdm;
   send(tdm, { t: 'chat', text: '  hello team  ' });
+  send(tdm, { t: 'chat', text: 'spam' });
   const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat', 5000, 'chat echo');
   assert.equal(chat.from, 'Tester');
   assert.equal(chat.text, 'hello team');
   assert.ok(chat.team === 'red' || chat.team === 'blue', 'team echoed in TDM');
-  send(tdm, { t: 'chat', text: 'spam' });
   await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Slow down', 5000, 'Slow down');
   assert.ok(!tdm.msgs.some((m) => m.t === 'chat' && m.text === 'spam'), 'rate-limited chat not broadcast');
 

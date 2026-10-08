@@ -5,7 +5,7 @@ import type { GameEvent } from '../src/shared/protocol.ts';
 import { removePlayer, setInput, step } from '../src/shared/sim.ts';
 import { explode } from '../src/shared/sim/combat.ts';
 import { IDLE_INPUT, type Player, type World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { CRATE_BREAKS, crateOf, emptyWorld, equip, hpOf, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 function pressAndCollect(w: World, shooter: Player, ms: number): GameEvent[] {
   const events: GameEvent[] = [];
@@ -77,12 +77,13 @@ test('a blast never reaches a body on the far side of a wall, the struck wall in
 
 test('a blast hurts crates less the farther they sit from its center', () => {
   const w = emptyWorld();
-  const near = { id: 1, x: 500, y: 490, size: 20, hp: WORLD.crateHp, respawnAt: null };
-  const far = { id: 2, x: 550, y: 490, size: 20, hp: WORLD.crateHp, respawnAt: null };
+  const near = crateOf(1, 500, 490);
+  const far = crateOf(2, 550, 490);
+  const full = CRATE_BREAKS.hp;
   w.crates.push(near, far);
   explode(w, 480, 500, 100, 30, { attacker: null, team: null, label: 'test' });
-  assert.equal(near.hp, WORLD.crateHp - 30 * (1 - 20 / 100));
-  assert.equal(far.hp, WORLD.crateHp - 30 * (1 - 70 / 100));
+  assert.equal(near.hp, full - 30 * (1 - 20 / 100));
+  assert.equal(far.hp, full - 30 * (1 - 70 / 100));
 });
 
 test('a lag-compensated blast round bursts on the victim where the shooter saw them, not where they stand now', () => {
@@ -122,11 +123,11 @@ test('a blast hurts its owner for half, never a teammate, and a self-kill earns 
 test('a round or grenade from a player who left still spares their old team', () => {
   const w = emptyWorld('TDM');
   const shooter = spawnAt(w, 500, 500, { team: 'red' });
-  const mate = spawnAt(w, 900, 500, { team: 'red' });
-  const enemy = spawnAt(w, 1200, 500, { team: 'blue' });
+  const mate = spawnAt(w, 767, 500, { team: 'red' });
+  const enemy = spawnAt(w, 967, 500, { team: 'blue' });
   press(w, shooter, { angle: 0, shots: 1 });
   step(w, TICK_MS);
-  w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 900, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
+  w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 767, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
   removePlayer(w, shooter.id);
   run(w, 500);
   assert.equal(hpOf(mate), WORLD.baseHp, 'neither the round nor the blast hurt a teammate');

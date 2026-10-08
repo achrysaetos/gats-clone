@@ -55,7 +55,7 @@ async function openPlayer(label: string, name: string): Promise<Player> {
 }
 
 const selfOf = (p: Player) => p.snap()?.players.find((v) => v.id === p.id());
-const crates = (p: Player): Rect[] => (p.snap()?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }));
+const crates = (p: Player): Rect[] => (p.snap()?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }));
 const solids = (p: Player): Rect[] => [...(p.map()?.walls ?? []), ...crates(p)];
 async function walkToward(p: Player, from: Point, to: Point) {
   const m = p.map();

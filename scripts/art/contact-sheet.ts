@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node scripts/art/contact-sheet.ts <sprites-spec.json> <bakeDir> <outDir>
+// Usage: node scripts/art/contact-sheet.ts <sprites-spec.json> <bakeDir> <outDir> [characters|guns|props|effects|kit]
 // Composites baked frames the way the painter will (shadow, base, tinted team, armor, additive glow) at game scale on
 // concrete, beside crops of the reference, so a person can judge the bake by eye.
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -7,11 +7,11 @@ import { join } from 'node:path';
 import sharp, { type OverlayOptions } from 'sharp';
 
 type Box = { x: number; y: number; w: number; h: number };
-type Entry = { box: Box; dirs: number; frames: number; layers: string[]; scale?: number };
+type Entry = { box: Box; dirs: number; frames: number; layers: string[]; still?: string[]; scale?: number };
 type Spec = { pxPerUnit: number; playerRadius: number; teamColors: Record<string, string>; sprites: Record<string, Entry> };
 type Img = { w: number; h: number; d: Float32Array };
 
-const [specPath, bakeDir, outDir] = process.argv.slice(2);
+const [specPath, bakeDir, outDir, only] = process.argv.slice(2);
 if (!specPath || !bakeDir || !outDir) { console.error('usage: node scripts/art/contact-sheet.ts <spec.json> <bakeDir> <outDir>'); process.exit(2); }
 const spec = JSON.parse(readFileSync(specPath, 'utf8')) as Spec;
 mkdirSync(outDir, { recursive: true });
@@ -58,7 +58,7 @@ type DrawOpts = { tint?: [number, number, number]; rot?: number; blend?: Blend; 
 async function draw(c: Img, name: string, layer: string, d: number, f: number, ox: number, oy: number, o: DrawOpts = {}) {
   const e = spec.sprites[name];
   if (!e) return;
-  const img = await load(join(bakeDir, name, layer, `${d}_${f}.png`));
+  const img = await load(join(bakeDir, name, layer, `${d}_${e.still?.includes(layer) ? 0 : f}.png`));
   if (!img) return;
   const zoom = o.zoom ?? 1;
   const px = spec.pxPerUnit * (e.scale ?? 1);
@@ -80,7 +80,7 @@ async function draw(c: Img, name: string, layer: string, d: number, f: number, o
 }
 
 const FONT = 'font-family="sans-serif" font-size="13" fill="#111"';
-async function save(c: Img, labels: [number, number, string][], ref: { left: number; top: number; width: number; height: number; zoom: number }[], file: string) {
+async function save(c: Img, labels: [number, number, string][], ref: { left: number; top: number; width: number; height: number; zoom: number; src?: string }[], file: string) {
   const buf = Buffer.alloc(c.w * c.h * 4);
   for (let i = 0; i < c.d.length; i++) buf[i] = Math.max(0, Math.min(255, Math.round(c.d[i]! * 255)));
   const svg = `<svg width="${c.w}" height="${c.h}" xmlns="http://www.w3.org/2000/svg">${labels.map(([x, y, t]) => `<text x="${x}" y="${y}" ${FONT}>${t}</text>`).join('')}</svg>`;
@@ -89,23 +89,34 @@ async function save(c: Img, labels: [number, number, string][], ref: { left: num
   for (const r of ref) {
     const w = Math.round(r.width * r.zoom), h = Math.round(r.height * r.zoom);
     rx -= w;
-    layers.push({ input: await sharp('docs/art/gold-standard.webp').extract(r).resize(w, h).png().toBuffer(), left: rx, top: 24 });
+    layers.push({ input: await sharp(r.src ?? 'docs/art/gold-standard.webp').extract({ left: r.left, top: r.top, width: r.width, height: r.height }).resize(w, h).png().toBuffer(), left: rx, top: 24 });
     rx -= 10;
   }
-  await sharp(buf, { raw: { width: c.w, height: c.h, channels: 4 } }).composite(layers).png().toFile(join(outDir, file));
+  await sharp(buf, { raw: { width: c.w, height: c.h, channels: 4 } }).composite(layers).toFormat(file.endsWith('.webp') ? 'webp' : 'png', { quality: 90 }).toFile(join(outDir, file));
   console.log(`wrote ${join(outDir, file)}`);
 }
 
-/** A soldier the way the painter stacks it: shadow, base, tinted team, armor tier, then the gun on top. */
-async function soldierAt(c: Img, x: number, y: number, angle: number, team: string, armor: string | null, gun: string, zoom = 1) {
-  const n = spec.sprites['soldier']!.dirs, ns = spec.sprites['soldier.shadow']!.dirs;
-  const dir = ((Math.round(angle / (2 * Math.PI / n)) % n) + n) % n;
-  const sdir = ((Math.round(angle / (2 * Math.PI / ns)) % ns) + ns) % ns;
-  await draw(c, 'soldier.shadow', 'shadow', sdir, 0, x, y, { zoom });
-  await draw(c, 'soldier', 'base', dir, 0, x, y, { zoom });
-  await draw(c, 'soldier', 'team', dir, 0, x, y, { tint: hex(spec.teamColors[team]!), zoom });
-  if (armor) await draw(c, 'soldier', armor, dir, 0, x, y, { zoom });
-  await draw(c, `gun.${gun}`, 'base', 0, 0, x, y, { rot: angle, zoom });
+const dirOf = (name: string, angle: number) => {
+  const n = spec.sprites[name]!.dirs;
+  return ((Math.round(angle / (2 * Math.PI / n)) % n) + n) % n;
+};
+/** The rest of the turn the painter applies after picking the nearest baked facing. */
+const restOf = (name: string, angle: number) => angle - dirOf(name, angle) * (2 * Math.PI / spec.sprites[name]!.dirs);
+
+type Pose = { move?: number; legs?: number; torso?: number; kick?: number };
+
+/** A soldier the way the painter stacks it: shadow, legs (turned to the movement), torso (turned to the aim) with
+ * tinted team and an armor tier, then the gun at the origin along the aim, pushed back by the kick. */
+async function soldierAt(c: Img, x: number, y: number, angle: number, team: string, armor: string | null, gun: string, zoom = 1, pose: Pose = {}) {
+  const move = pose.move ?? angle, tint = hex(spec.teamColors[team]!);
+  await draw(c, 'soldier.shadow', 'shadow', dirOf('soldier.shadow', angle), 0, x, y, { zoom, rot: restOf('soldier.shadow', angle) });
+  for (const layer of ['base', 'team']) await draw(c, 'soldier.legs', layer, dirOf('soldier.legs', move), pose.legs ?? 0, x, y, { zoom, rot: restOf('soldier.legs', move), tint: layer === 'team' ? tint : undefined });
+  const d = dirOf('soldier', angle), rot = restOf('soldier', angle), f = pose.torso ?? 0;
+  await draw(c, 'soldier', 'base', d, f, x, y, { zoom, rot });
+  await draw(c, 'soldier', 'team', d, f, x, y, { tint, zoom, rot });
+  if (armor) await draw(c, 'soldier', armor, d, f, x, y, { zoom, rot });
+  const back = spec.playerRadius * 0.22 * (pose.kick ?? 0) * S * zoom;
+  await draw(c, `gun.${gun}`, 'base', 0, 0, x - Math.cos(angle) * back, y - Math.sin(angle) * back, { rot: angle, zoom });
 }
 
 /** Lays sprites left to right at a zoom, wrapping rows, each placed by its box so frames never overlap. */
@@ -124,28 +135,42 @@ function flow(c: Img, zoom: number, top: number) {
 }
 
 async function characters() {
-  const c = canvas(1500, 1500);
+  const c = canvas(1500, 2900);
   const labels: [number, number, string][] = [];
   const armors = [null, 'armorLight', 'armorMedium', 'armorHeavy'];
-  labels.push([10, 18, 'soldiers at game scale (2 px/unit), 8 of 32 facings, red and blue, assault rifle; then armor tiers']);
-  for (let t = 0; t < 2; t++) for (let i = 0; i < 8; i++) {
-    await soldierAt(c, 60 + i * 95, 90 + t * 120, (i / 8) * Math.PI * 2, t ? 'blue' : 'red', null, 'assault');
+  const teams = ['red', 'blue'];
+  labels.push([10, 18, 'standing soldiers at game scale (2 px/unit), 8 of 32 aim facings, red and blue, assault rifle']);
+  for (let t = 0; t < 2; t++) for (let i = 0; i < 8; i++) await soldierAt(c, 60 + i * 95, 90 + t * 110, (i / 8) * Math.PI * 2, teams[t]!, null, 'assault');
+  labels.push([10, 290, 'x1.75: no armor, light, medium, heavy, each red then blue']);
+  for (let a = 0; a < 4; a++) for (let t = 0; t < 2; t++) await soldierAt(c, 95 + (a * 2 + t) * 180, 400, -0.6, teams[t]!, armors[a]!, ['assault', 'smg', 'shotgun', 'lmg'][a]!, 1.75);
+  labels.push([10, 520, 'torso strip x1.75 (medium armor): aim, recoil 1-2 (gun kicked 1, 0.5), reload 3-8']);
+  const kicks = [0, 1, 0.5];
+  for (let f = 0; f < 9; f++) await soldierAt(c, 80 + f * 162, 640, 0, 'blue', 'armorMedium', 'assault', 1.75, { torso: f, kick: kicks[f] ?? 0 });
+  labels.push([10, 760, 'legs x1.75: stand, run 1-8 moving east (aim east), then run moving north while aiming east, then the legs alone']);
+  for (let f = 0; f < 9; f++) await soldierAt(c, 80 + f * 162, 870, 0, 'red', null, 'smg', 1.75, { legs: f });
+  for (let f = 1; f < 9; f++) await soldierAt(c, 80 + (f - 1) * 162, 1010, 0, 'red', 'armorLight', 'smg', 1.75, { legs: f, move: -Math.PI / 2 });
+  for (let f = 0; f < 9; f++) for (const layer of ['base', 'team']) await draw(c, 'soldier.legs', layer, 0, f, 80 + f * 162, 1130, { zoom: 1.75, tint: layer === 'team' ? hex(spec.teamColors['red']!) : undefined });
+  labels.push([10, 1215, 'x2: downed, then death poses (red, blue, green), turned by the painter']);
+  for (const [i, name, f, team] of [[0, 'soldier.downed', 0, 'yellow'], [1, 'soldier.dead', 0, 'red'], [2, 'soldier.dead', 1, 'blue'], [3, 'soldier.dead', 2, 'green']] as const) {
+    for (const layer of ['base', 'team']) await draw(c, name, layer, 0, f, 150 + i * 260, 1345, { zoom: 2, rot: -0.5 + i * 0.6, tint: layer === 'team' ? hex(spec.teamColors[team]!) : undefined });
   }
-  for (let a = 0; a < 4; a++) for (let t = 0; t < 2; t++) {
-    await soldierAt(c, 60 + (a * 2 + t) * 95, 350, -0.5, t ? 'blue' : 'red', armors[a]!, ['pistol', 'smg', 'shotgun', 'lmg'][a]!);
+  labels.push([10, 1475, 'dropped guns at x2, by class']);
+  const drops = Object.keys(spec.sprites).filter((n) => n.startsWith('drop.'));
+  for (let i = 0; i < drops.length; i++) {
+    await draw(c, drops[i]!, 'base', 0, 0, 80 + i * 230, 1530, { zoom: 2, rot: -0.15 + i * 0.06 });
+    labels.push([40 + i * 230, 1585, drops[i]!.slice(5)]);
   }
-  labels.push([10, 430, 'zoomed x2.5: no armor, light, medium, heavy; downed (x2)']);
-  for (let a = 0; a < 4; a++) await soldierAt(c, 110 + a * 200, 560, -0.6, a % 2 ? 'blue' : 'red', armors[a]!, 'assault', 2.5);
-  await draw(c, 'soldier.downed', 'base', 0, 0, 1000, 560, { rot: 0.7, zoom: 2 });
-  await draw(c, 'soldier.downed', 'team', 0, 0, 1000, 560, { rot: 0.7, zoom: 2, tint: hex(spec.teamColors['green']!) });
-  labels.push([10, 720, 'zombies at x1.5 (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
-  const place = flow(c, 1.5, 740);
+  labels.push([10, 1690, 'zombies at game scale x1 (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
+  const place = flow(c, 1, 1710);
   for (const k of ['walker', 'brute', 'runner', 'plated', 'bloater', 'colossus']) {
     const e = spec.sprites[`zombie.${k}`];
     if (!e) continue;
-    for (let i = 0; i < 4; i++) { const at = place(`zombie.${k}`); await draw(c, `zombie.${k}`, 'base', i * (e.dirs / 4), 0, at.x, at.y, { zoom: 1.5 }); }
+    for (let i = 0; i < 4; i++) { const at = place(`zombie.${k}`); await draw(c, `zombie.${k}`, 'base', i * (e.dirs / 4), 0, at.x, at.y); }
   }
-  await save(c, labels, [{ left: 440, top: 410, width: 140, height: 110, zoom: 2 }, { left: 1030, top: 820, width: 140, height: 110, zoom: 2 }], 'sheet-characters.png');
+  await save(c, labels, [
+    { left: 430, top: 440, width: 140, height: 110, zoom: 2, src: 'docs/art/gold/warehouse.webp' },
+    { left: 1080, top: 420, width: 120, height: 110, zoom: 2, src: 'docs/art/gold/warehouse.webp' },
+  ], 'sheet-characters.png');
 }
 
 async function guns() {
@@ -207,7 +232,30 @@ async function effects() {
   await save(c, labels, [{ left: 150, top: 160, width: 230, height: 220, zoom: 1 }], 'sheet-fx.png');
 }
 
-await characters();
-await guns();
-await props();
-await effects();
+/** Every kit piece at every baked turn and damage stage, then the train, base with glow added, labelled by catalog key. */
+async function kit() {
+  const names = Object.keys(spec.sprites).filter((n) => (n.startsWith('kit.') || n.startsWith('train.')) && existsSync(join(bakeDir!, n)));
+  const zoom = 0.75, width = 2400;
+  let x = 20, y = 40, rowH = 0;
+  const spots: [string, number, number][] = [];
+  for (const n of names) {
+    const e = spec.sprites[n]!;
+    const w = e.box.w * S * zoom, h = e.box.h * S * zoom + 18;
+    if (x + w > width - 20) { x = 20; y += rowH + 12; rowH = 0; }
+    spots.push([n, x, y]);
+    x += Math.max(w, 110) + 14;
+    rowH = Math.max(rowH, h);
+  }
+  const c = canvas(width, Math.ceil(y + rowH + 20));
+  const labels: [number, number, string][] = [[10, 18, `kit pieces at every turn and stage, then the train (game scale x${zoom}); labels are kit.PIECE.TURN.STAGE without the kit prefix`]];
+  for (const [n, sx, sy] of spots) {
+    const e = spec.sprites[n]!;
+    const ox = sx - e.box.x * S * zoom, oy = sy - e.box.y * S * zoom;
+    await draw(c, n, 'base', 0, 0, ox, oy, { zoom });
+    if (e.layers.includes('glow')) await draw(c, n, 'glow', 0, 0, ox, oy, { zoom, blend: 'add' });
+    labels.push([sx, sy + e.box.h * S * zoom + 13, n.replace(/^kit\./, '')]);
+  }
+  await save(c, labels, [], 'sheet-kit.webp');
+}
+
+for (const [name, sheet] of Object.entries({ characters, guns, props, effects, kit })) if (!only || only === name) await sheet();

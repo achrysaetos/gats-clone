@@ -43,9 +43,11 @@ def scalec(a, k):
 
 class Model:
     """How a built model is baked: the height the shear keeps in place (None = flat), overhead light for sprites the
-    painter rotates, a soft contact shadow in the base layer, and an optional hook run before each layer renders."""
+    painter rotates, a soft contact shadow in the base layer, and an optional hook run before each layer renders.
+    `freeze` bakes the posed meshes into model-space vertices that each facing rewrites (see freeze())."""
 
-    def __init__(self, z_ref=None, overhead=False, contact=False, samples=None, on_layer=None, outline=None, soften=0.0):
+    def __init__(self, z_ref=None, overhead=False, contact=False, samples=None, on_layer=None, outline=None, soften=0.0, freeze=False):
+        self.freeze = freeze
         self.soften = soften
         self.outline = outline
         self.z_ref = z_ref
@@ -182,6 +184,52 @@ def frame_matrix(angle, z_ref, shear):
     k = shear
     sh = Matrix(((1, 0, 0, 0), (0, 1, k, -k * z_ref), (0, 0, 1, 0), (0, 0, 0, 1)))
     return sh @ rot
+
+
+def freeze(colls):
+    """The model's mesh parts as (object, model-space vertices), unparented, for place() to rewrite per facing.
+
+    Blender decomposes an object matrix into location, rotation and scale, so a shear set on the root is lost. Writing
+    the transformed vertices keeps the true shear: height z moves north by shear * (z - z_ref). Text is a curve, so it
+    becomes a mesh first.
+    """
+    bpy.context.view_layer.update()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    for role in ROLES:
+        for o in list(colls[role].all_objects):
+            if o.type == 'FONT':
+                mesh = link(bpy.data.objects.new(o.name, bpy.data.meshes.new_from_object(o.evaluated_get(depsgraph))), colls[role])
+                mesh.matrix_world = o.matrix_world.copy()
+                bpy.data.objects.remove(o)
+    bpy.context.view_layer.update()
+    parts = []
+    for role in ROLES:
+        for o in colls[role].all_objects:
+            if o.type != 'MESH':
+                continue
+            mw = np.array(o.matrix_world, np.float64)
+            co = np.empty(len(o.data.vertices) * 3, np.float32)
+            o.data.vertices.foreach_get('co', co)
+            co = co.reshape(-1, 3) @ mw[:3, :3].T + mw[:3, 3]
+            o.parent = None
+            o.matrix_world = Matrix()
+            parts.append((o, co))
+    return parts
+
+
+def place(parts, m):
+    """Writes each frozen part's vertices through the 4x4 matrix m (which may shear)."""
+    a = np.array(m, np.float64)
+    for o, co in parts:
+        o.data.vertices.foreach_set('co', (co @ a[:3, :3].T + a[:3, 3]).astype(np.float32).ravel())
+        o.data.update()
+
+
+def shadow_matrix(angle, z_ref, shear):
+    """A facing for the sun-shadow pass: turned but not sheared, and moved south as far as the shear moves the floor
+    under the model, so the shadow starts at the drawn feet."""
+    m = Matrix.Rotation(-angle, 4, 'Z')
+    return m if z_ref is None else Matrix.Translation((0, -shear * z_ref, 0)) @ m
 
 
 # ---------------------------------------------------------------- materials

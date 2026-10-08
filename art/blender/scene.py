@@ -1,22 +1,20 @@
-"""Shared scene rules for every Skirmish bake: units, camera, sun, the oblique shear and the materials.
+"""Shared scene rules for the map light-layer bake: units, camera, sun, the oblique shear and the floor materials.
 
 One Blender unit is one game unit. Game x runs east and game y runs south, so Blender X = x and Blender Y = -y.
-Every solid is sheared so its top face lands exactly on its collision rect while its south face shows below it.
-Shading reads world position, so two tiles that share an edge agree pixel for pixel.
+Every caster is sheared about its piece's top, the way the kit sprites are, so its shadow starts at the sprite's drawn foot.
+Shading reads world position, so a layer cut into tiles would meet without seams.
 """
 
 import json
 import math
-import os
 
 import bmesh
 import bpy
 
 from device import use_device
-from mathutils import Matrix, Vector, noise
+from mathutils import Matrix, Vector
 
 SPEC = None
-TEXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'textures')
 
 
 def load_spec(path):
@@ -31,7 +29,7 @@ def reset():
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     use_device(scene)
-    scene.cycles.samples = SPEC['render']['samples']
+    scene.cycles.samples = SPEC['light']['samples']
     scene.cycles.seed = 1
     scene.cycles.use_denoising = True
     scene.cycles.denoiser = 'OPENIMAGEDENOISE'
@@ -42,10 +40,9 @@ def reset():
     scene.cycles.transmission_bounces = 1
     scene.cycles.transparent_max_bounces = 4
     scene.cycles.use_adaptive_sampling = True
-    # A wider pixel filter drops detail finer than the game shows (tiles are drawn at two thirds size), which WebP would otherwise pay for.
-    scene.cycles.filter_width = 2.2
+    scene.cycles.filter_width = 1.5
     scene.cycles.adaptive_threshold = 0.02
-    scene.render.film_transparent = True
+    scene.render.film_transparent = False
     scene.render.image_settings.file_format = 'PNG'
     scene.render.image_settings.color_mode = 'RGBA'
     scene.render.image_settings.color_depth = '8'
@@ -67,12 +64,13 @@ def shear_matrix(top):
     return Matrix(((1, 0, 0, 0), (0, 1, k, -k * top), (0, 0, 1, 0), (0, 0, 0, 1)))
 
 
-def add_sun():
+def add_sun(mood):
+    """The sun and sky, scaled and tinted by the map's `mood` (day or dusk)."""
     sun = SPEC['sun']
     data = bpy.data.lights.new('sun', 'SUN')
-    data.energy = sun['strength']
+    data.energy = sun['strength'] * mood['sun']
     data.angle = math.radians(sun['softness'])
-    data.color = sun['color']
+    data.color = mood.get('sun_color', sun['color'])
     obj = bpy.data.objects.new('sun', data)
     bpy.context.scene.collection.objects.link(obj)
     elev = math.radians(sun['elevation'])
@@ -83,8 +81,8 @@ def add_sun():
     world = bpy.data.worlds.new('sky')
     world.use_nodes = True
     bg = world.node_tree.nodes['Background']
-    bg.inputs['Color'].default_value = (*SPEC['sky']['color'], 1)
-    bg.inputs['Strength'].default_value = SPEC['sky']['strength']
+    bg.inputs['Color'].default_value = (*mood.get('sky_color', SPEC['sky']['color']), 1)
+    bg.inputs['Strength'].default_value = SPEC['sky']['strength'] * mood['sky']
     bpy.context.scene.world = world
     return obj
 
@@ -105,10 +103,6 @@ def add_camera(cx, cy, span, px):
     scene.render.resolution_y = px
     scene.render.resolution_percentage = 100
     return obj
-
-
-def move_camera(obj, cx, cy):
-    obj.location = to_blender(cx, cy, 2000)
 
 
 # ---------------------------------------------------------------- shader graph helpers
@@ -207,19 +201,6 @@ class G:
         self.link(vec, n.inputs['Vector'])
         return n.outputs[out]
 
-    def image(self, name, vec, box=False, out='Color'):
-        n = self.node('ShaderNodeTexImage')
-        path = os.path.join(TEXTURES, name)
-        img = bpy.data.images.get(name) or bpy.data.images.load(path)
-        img.colorspace_settings.name = 'Non-Color'
-        n.image = img
-        n.interpolation = 'Linear'
-        if box:
-            n.projection = 'BOX'
-            n.projection_blend = 0.25
-        self.link(vec, n.inputs['Vector'])
-        return n.outputs[out]
-
     def rgb(self, c):
         n = self.node('ShaderNodeRGB')
         n.outputs[0].default_value = (*c, 1)
@@ -266,12 +247,6 @@ class G:
         n.inputs['Distance'].default_value = distance
         return n.outputs['AO']
 
-    def normal_map(self, name, vec, strength, box=False):
-        nm = self.node('ShaderNodeNormalMap')
-        nm.inputs['Strength'].default_value = strength
-        self.link(self.image(name, vec, box), nm.inputs['Color'])
-        return nm.outputs['Normal']
-
     def bump(self, height, strength, distance=1.0, normal=None):
         b = self.node('ShaderNodeBump')
         b.inputs['Strength'].default_value = strength
@@ -293,6 +268,8 @@ class G:
 
 
 # ---------------------------------------------------------------- materials
+# The light layer is about 0.5 px per game unit, so every material here is low-frequency: tone, stains, grime and paint.
+# Grain, joints and hairline cracks belong to the tiling floor detail the client multiplies over it.
 
 _cache = {}
 
@@ -305,252 +282,86 @@ def material(name):
     return _cache[name]
 
 
-def _slabs(mat, a, b, slab, grime_reach=26, seam_color=None):
-    """Sun-bleached poured slabs: per-slab tone, photo grain, pits, grime pooling where things meet the floor, sparse cracks and oil."""
-    f = SPEC['floor']
-    g = G(mat)
-    p = g.pos()
-    cell = g.vmath('SNAP', p, (slab, slab, 1e6))
-    rnd = g.white(cell, 'Color')
-    rv = g.white(cell)
-    col = g.mix(tuple(a), tuple(b), rv)
-    uv = g.vmath('ADD', g.scaled(p, 1 / 320), g.vmath('SCALE', rnd, scale=7.3))
-    grain = g.image('floor.jpg', uv)
-    col = g.shade(col, g.remap(grain, 0.0, 1.0, 0.75, 1.1))
-    broad = g.noise(g.scaled(p, 1.0), 0.0035, 4, 0.55)
-    col = g.mix(col, g.shade(col, 0.74), g.remap(broad, 0.42, 0.68, 0.0, 1.0, True))
-    # Pits and grit: a few dark specks per square, too small to read as anything but texture.
-    pit_cell = g.voronoi(g.scaled(p, 1.0), 0.17, 'F1', 'Distance')
-    pit_rand = g.voronoi(g.scaled(p, 1.0), 0.17, 'F1', 'Color')
-    pits = g.math('MULTIPLY', g.remap(pit_cell, 0.05, 0.11, 1.0, 0.0), g.math('GREATER_THAN', g.vmath('DOT_PRODUCT', pit_rand, (1, 0, 0)), 0.55))
-    col = g.shade(col, g.math('SUBTRACT', 1.0, g.math('MULTIPLY', pits, 0.35)))
-    # Grime and dust where walls, curbs and planters meet the floor.
-    occl = g.ao(grime_reach, 5)
-    grime = g.mix(col, g.rgb(f['grime']), 1.0, 'MULTIPLY')
-    dirt_noise = g.noise(g.scaled(p, 1.0), 0.06, 3, 0.6)
-    near = g.math('MULTIPLY', g.remap(occl, 0.5, 0.93, 1.0, 0.0), g.remap(dirt_noise, 0.3, 0.7, 0.55, 1.0))
-    col = g.mix(col, grime, near)
-    # Cracks: one photo crack net, shown only where a slow noise lets it through.
-    cracks = g.image('cracks.png', g.vmath('ADD', g.scaled(p, 1 / 520), g.vmath('SCALE', rnd, scale=0.31)))
-    mask = g.remap(g.noise(g.scaled(p, 1.0), 0.0045, 2, 0.5), 0.62, 0.68, 0.0, 1.0)
-    col = g.shade(col, g.math('SUBTRACT', 1.0, g.math('MULTIPLY', g.math('MULTIPLY', cracks, mask), 0.4)))
-    # Oil: sparse soft drips, mostly in a few slabs.
-    oilp = g.noise(g.scaled(p, 1.0, offset=(37, 11, 0)), 0.03, 3, 0.62)
-    oil_mask = g.math('MULTIPLY', g.remap(oilp, 0.66, 0.74, 0.0, 1.0, True), g.remap(rv, 0.7, 0.9, 0.0, 1.0))
-    col = g.mix(col, (0.16, 0.14, 0.12), g.math('MULTIPLY', oil_mask, 0.55))
-    # Seams.
-    bricks = g.node('ShaderNodeTexBrick')
-    bricks.inputs['Scale'].default_value = 1.0
-    bricks.offset = 0.0
-    bricks.squash = 1.0
-    bricks.inputs['Brick Width'].default_value = slab
-    bricks.inputs['Row Height'].default_value = slab
-    bricks.inputs['Mortar Size'].default_value = 1.4
-    bricks.inputs['Mortar Smooth'].default_value = 0.4
-    g.link(p, bricks.inputs['Vector'])
-    seam = bricks.outputs['Fac']
-    col = g.mix(col, tuple(seam_color or f['seam']), g.math('MULTIPLY', seam, 0.8))
-    nrm = g.normal_map('floor_normal.jpg', uv, 0.5)
-    nrm = g.bump(g.math('SUBTRACT', 1.0, seam), 0.5, 1.0, nrm)
-    g.out(col, 0.88, nrm)
-
-
-def _precast(light, wear=0.5, grain_scale=1 / 140):
-    """Cast concrete for cover: photo detail, chipped lighter edges on the bevels, grime rising from the foot, rain streaks on faces."""
+def _floor(a, b, slab, grime_reach=30):
+    """Poured slabs: a tone per slab, broad mottling, oil in a few slabs, and grime pooling where things meet the floor."""
     def build(mat):
+        f = SPEC['floor']
         g = G(mat)
         p = g.pos()
-        n = g.geo('Normal')
-        col = g.rgb(light)
-        det = g.image('wall.jpg', g.scaled(p, grain_scale), box=True)
-        col = g.shade(col, g.remap(det, 0.0, 1.0, 0.7, 1.12))
-        mott = g.noise(g.scaled(p, 1.0), 0.05, 4, 0.6)
-        col = g.shade(col, g.remap(mott, 0.3, 0.7, 0.88, 1.04))
-        # Bevel faces lean off-axis: chip them lighter in patches.
-        sep = g.node('ShaderNodeSeparateXYZ')
-        g.link(n, sep.inputs['Vector'])
-        ax = g.math('MAXIMUM', g.math('ABSOLUTE', sep.outputs['X']), g.math('MAXIMUM', g.math('ABSOLUTE', sep.outputs['Y']), g.math('ABSOLUTE', sep.outputs['Z'])))
-        edge = g.remap(ax, 0.97, 0.8, 0.0, 1.0)
-        chip = g.remap(g.noise(g.scaled(p, 1.0), 0.35, 3, 0.6), 0.45, 0.6, 0.0, 1.0)
-        col = g.mix(col, g.shade(col, 1.35), g.math('MULTIPLY', edge, 0.8))
-        col = g.mix(col, g.shade(col, 0.55), g.math('MULTIPLY', g.math('MULTIPLY', edge, chip), wear))
-        # Vertical faces: streaks and grime toward the foot. Height is world z, which the shear leaves alone.
-        side = g.math('SUBTRACT', 1.0, g.math('ABSOLUTE', sep.outputs['Z']))
-        streak = g.noise(g.scaled(p, 0.6, 0.6, 0.04), 1.0, 3, 0.5)
-        col = g.mix(col, g.shade(col, 0.78), g.math('MULTIPLY', side, g.remap(streak, 0.5, 0.7, 0.0, 0.7)))
-        sepp = g.node('ShaderNodeSeparateXYZ')
-        g.link(p, sepp.inputs['Vector'])
-        foot = g.remap(sepp.outputs['Z'], 0.0, 14.0, 0.62, 1.0, True)
-        col = g.shade(col, foot)
-        nrm = g.normal_map('wall_normal.jpg', g.scaled(p, grain_scale), 0.6, box=True)
-        g.out(col, 0.85, nrm)
+        cell = g.vmath('SNAP', p, (slab, slab, 1e6))
+        rv = g.white(cell)
+        col = g.mix(tuple(a), tuple(b), rv)
+        broad = g.noise(g.scaled(p, 1.0), 0.0035, 4, 0.55)
+        col = g.mix(col, g.shade(col, 0.78), g.remap(broad, 0.42, 0.68, 0.0, 1.0, True))
+        stain = g.noise(g.scaled(p, 1.0, offset=(91, 7, 0)), 0.012, 5, 0.6)
+        col = g.mix(col, g.shade(col, 0.82), g.remap(stain, 0.55, 0.7, 0.0, 0.8, True))
+        occl = g.ao(grime_reach, 8)
+        grime = g.mix(col, g.rgb(f['grime']), 1.0, 'MULTIPLY')
+        dirt = g.noise(g.scaled(p, 1.0), 0.06, 3, 0.6)
+        col = g.mix(col, grime, g.math('MULTIPLY', g.remap(occl, 0.45, 0.95, 1.0, 0.0), g.remap(dirt, 0.3, 0.7, 0.6, 1.0)))
+        oilp = g.noise(g.scaled(p, 1.0, offset=(37, 11, 0)), 0.03, 3, 0.62)
+        oil = g.math('MULTIPLY', g.remap(oilp, 0.66, 0.74, 0.0, 1.0, True), g.remap(rv, 0.6, 0.9, 0.0, 1.0))
+        col = g.mix(col, (0.12, 0.105, 0.09), g.math('MULTIPLY', oil, 0.6))
+        g.out(col, 0.9)
     return build
 
 
-def _blocks(light, dark, course=12.5, block=25):
-    """Dressed stone in courses, each block its own tone, joints recessed."""
+def _paint(color, wear=0.5):
+    """Floor paint faded by sun and traffic: patchy coverage that lets the floor through."""
     def build(mat):
         g = G(mat)
         p = g.pos()
-        sep = g.node('ShaderNodeSeparateXYZ')
-        g.link(p, sep.inputs['Vector'])
-        # Blocks run in x along courses of height z on vertical faces, and in x/y on tops.
-        comb = g.node('ShaderNodeCombineXYZ')
-        g.link(sep.outputs['X'], comb.inputs['X'])
-        n = g.geo('Normal')
-        sn = g.node('ShaderNodeSeparateXYZ')
-        g.link(n, sn.inputs['Vector'])
-        up = g.math('GREATER_THAN', g.math('ABSOLUTE', sn.outputs['Z']), 0.5)
-        g.link(g.math('ADD', g.math('MULTIPLY', up, sep.outputs['Y']), g.math('MULTIPLY', g.math('SUBTRACT', 1.0, up), sep.outputs['Z'])), comb.inputs['Y'])
-        bricks = g.node('ShaderNodeTexBrick')
-        bricks.inputs['Scale'].default_value = 1.0
-        bricks.inputs['Brick Width'].default_value = block
-        bricks.inputs['Row Height'].default_value = course
-        bricks.inputs['Mortar Size'].default_value = 0.7
-        bricks.inputs['Mortar Smooth'].default_value = 0.4
-        bricks.inputs['Color1'].default_value = (*dark, 1)
-        bricks.inputs['Color2'].default_value = (*light, 1)
-        bricks.inputs['Mortar'].default_value = (*[c * 0.55 for c in dark], 1)
-        g.link(comb.outputs['Vector'], bricks.inputs['Vector'])
-        col = bricks.outputs['Color']
-        det = g.image('wall.jpg', g.scaled(p, 1 / 90), box=True)
-        col = g.shade(col, g.remap(det, 0.0, 1.0, 0.8, 1.08))
-        foot = g.remap(sep.outputs['Z'], 0.0, 12.0, 0.65, 1.0, True)
-        col = g.shade(col, foot)
-        nrm = g.bump(g.math('SUBTRACT', 1.0, bricks.outputs['Fac']), 0.6, 1.0, g.normal_map('wall_normal.jpg', g.scaled(p, 1 / 90), 0.5, box=True))
-        g.out(col, 0.9, nrm)
+        n = g.noise(g.scaled(p, 1.0), 0.05, 6, 0.65)
+        g.out(g.rgb(color), 0.7, None, 0.0, g.remap(n, 0.3 * wear, 0.3 * wear + 0.3, 0.25, 0.92))
     return build
-
-
-def _metal(color, rough=0.45, metal=0.6, dirt=0.25):
-    def build(mat):
-        g = G(mat)
-        p = g.pos()
-        n = g.noise(g.scaled(p, 1.0), 0.25, 5, 0.6)
-        col = g.shade(g.rgb(color), g.remap(n, 0.3, 0.7, 1.0 - dirt, 1.0))
-        g.out(col, rough, g.bump(n, 0.08), metal)
-    return build
-
-
-def _grille(mat):
-    """The dark well behind a fan's bars."""
-    g = G(mat)
-    g.out(g.rgb((0.035, 0.037, 0.04)), 0.6, None, 0.4)
-
-
-def _slats(mat):
-    """Bar grating: dark metal with parallel slots that read at a glance."""
-    g = G(mat)
-    p = g.pos()
-    sep = g.node('ShaderNodeSeparateXYZ')
-    g.link(p, sep.inputs['Vector'])
-    wave = g.math('FRACT', g.math('MULTIPLY', sep.outputs['X'], 1 / 3.2))
-    slot = g.math('GREATER_THAN', wave, 0.45)
-    col = g.mix((0.2, 0.205, 0.21), (0.012, 0.012, 0.014), slot)
-    g.out(col, 0.55, g.bump(g.math('SUBTRACT', 1.0, slot), 0.6), 0.6)
 
 
 def _hazard(mat):
+    """Diagonal yellow and black bands about 14 units wide, worn the way floor paint wears."""
     g = G(mat)
     p = g.pos()
     wave = g.node('ShaderNodeTexWave')
     wave.wave_type = 'BANDS'
     wave.bands_direction = 'DIAGONAL'
-    wave.inputs['Scale'].default_value = 0.035
+    wave.inputs['Scale'].default_value = 0.025
     wave.inputs['Distortion'].default_value = 0.0
     g.link(p, wave.inputs['Vector'])
-    col = g.ramp(wave.outputs['Fac'], [(0.5, (0.78, 0.52, 0.05)), (0.5001, (0.04, 0.04, 0.04))], constant=True)
-    worn = g.noise(g.scaled(p, 1.0), 0.4, 6, 0.65)
-    col = g.mix(col, g.rgb((0.42, 0.41, 0.39)), g.remap(worn, 0.62, 0.72, 0.0, 0.8))
-    g.out(col, 0.65, g.bump(worn, 0.15))
+    col = g.ramp(wave.outputs['Fac'], [(0.5, (0.72, 0.48, 0.05)), (0.5001, (0.03, 0.03, 0.03))], constant=True)
+    n = g.noise(g.scaled(p, 1.0), 0.05, 6, 0.65)
+    g.out(col, 0.7, None, 0.0, g.remap(n, 0.2, 0.5, 0.35, 0.95))
 
 
-def _leaf(mat):
-    """Shrubs: leaf clusters from voronoi cells, tone varying per clump, bright new growth on top."""
-    g = G(mat)
-    p = g.pos()
-    clump = g.white(g.vmath('SNAP', p, (9, 9, 9)))
-    cells = g.voronoi(g.scaled(p, 1.0), 0.24, 'F1', 'Distance')
-    cellc = g.voronoi(g.scaled(p, 1.0), 0.24, 'F1', 'Color')
-    sepc = g.node('ShaderNodeSeparateColor')
-    g.link(cellc, sepc.inputs['Color'])
-    leafv = sepc.outputs['Red']
-    base = g.ramp(g.math('ADD', g.math('MULTIPLY', clump, 0.6), g.math('MULTIPLY', leafv, 0.4)),
-                  [(0.0, (0.03, 0.075, 0.015)), (0.4, (0.07, 0.16, 0.025)), (0.75, (0.16, 0.28, 0.04)), (1.0, (0.3, 0.38, 0.06))])
-    nz = g.node('ShaderNodeSeparateXYZ')
-    g.link(g.geo('Normal'), nz.inputs['Vector'])
-    top = g.remap(nz.outputs['Z'], 0.4, 1.0, 0.0, 0.5)
-    col = g.mix(base, g.rgb((0.42, 0.5, 0.1)), g.math('MULTIPLY', top, leafv))
-    col = g.shade(col, g.remap(cells, 0.0, 0.6, 1.05, 0.55))
-    col = g.shade(col, g.remap(g.ao(6, 6), 0.2, 1.0, 0.35, 1.0))
-    mat.node_tree.nodes['Principled BSDF'].inputs['Subsurface Weight'].default_value = 0.0
-    g.out(col, 0.65, g.bump(g.math('SUBTRACT', 1.0, cells), 1.2, 1.0))
-
-
-def _soil(mat):
-    g = G(mat)
-    p = g.pos()
-    n = g.noise(g.scaled(p, 1.0), 0.6, 6, 0.7)
-    col = g.shade(g.rgb((0.06, 0.045, 0.032)), g.remap(n, 0.3, 0.7, 0.6, 1.2))
-    g.out(col, 0.95, g.bump(n, 0.6))
-
-
-def _paint(color, wear=0.5):
-    """Floor paint faded by sun and traffic: patchy coverage, floor grain showing through."""
+def _smudge(color, peak):
+    """A soft-edged dark patch: tyre marks, the grime that seats a grate, the dust round a rubble pile."""
     def build(mat):
         g = G(mat)
         p = g.pos()
-        n = g.noise(g.scaled(p, 1.0), 0.12, 6, 0.65)
-        fine = g.image('floor.jpg', g.scaled(p, 1 / 90))
-        a = g.math('MULTIPLY', g.remap(n, 0.3 * wear, 0.3 * wear + 0.25, 0.0, 0.9), g.remap(fine, 0.15, 0.55, 0.0, 1.0))
-        g.out(g.rgb(color), 0.7, None, 0.0, a)
+        n = g.noise(g.scaled(p, 1.0), 0.12, 5, 0.6)
+        g.out(g.rgb(color), 0.9, None, 0.0, g.remap(n, 0.35, 0.65, 0.0, peak))
     return build
 
 
-def _rubber(mat):
-    """Tyre marks and scuffs: dark, soft-edged, broken up."""
+def _caster(mat):
+    """What stands in for a piece: seen by the sun, the sky and the lamps, never by the camera."""
     g = G(mat)
-    p = g.pos()
-    n = g.noise(g.scaled(p, 1.0), 0.18, 5, 0.6)
-    a = g.remap(n, 0.38, 0.62, 0.0, 0.42)
-    g.out(g.rgb((0.035, 0.032, 0.03)), 0.9, None, 0.0, a)
-
-
-def _glass(mat):
-    g = G(mat)
-    p = g.pos()
-    sep = g.node('ShaderNodeSeparateXYZ')
-    g.link(p, sep.inputs['Vector'])
-    bars = g.math('GREATER_THAN', g.math('FRACT', g.math('MULTIPLY', sep.outputs['X'], 1 / 12)), 0.92)
-    col = g.mix((0.18, 0.26, 0.3), (0.2, 0.2, 0.21), bars)
-    g.out(col, 0.12, None, 0.2)
+    g.out(g.rgb((0.3, 0.3, 0.3)), 0.9)
 
 
 MATERIALS = {
-    'floor': lambda m: _slabs(m, SPEC['floor']['a'], SPEC['floor']['b'], SPEC['floor']['slab']),
-    'quay': lambda m: _slabs(m, SPEC['floor']['quay'], SPEC['floor']['quay'], 40, 26, (0.12, 0.12, 0.12)),
-    'roof': lambda m: _slabs(m, (0.17, 0.172, 0.175), (0.2, 0.2, 0.205), 110, 14, (0.11, 0.11, 0.112)),
-    'concrete': _precast((0.36, 0.358, 0.35)),
-    'concrete_cap': _precast((0.38, 0.375, 0.36), wear=0.8),
-    'concrete_dark': _precast((0.36, 0.36, 0.355), wear=0.3),
-    'building': _precast((0.3, 0.305, 0.31), wear=0.3, grain_scale=1 / 200),
-    'sandstone': _blocks((0.42, 0.35, 0.26), (0.35, 0.29, 0.21)),
-    'sandstone_cap': _precast((0.42, 0.37, 0.3), wear=0.8),
-    'sandstone_cap_b': _precast((0.38, 0.33, 0.27), wear=0.8),
-    'hazard': _hazard,
-    'metal': _metal((0.3, 0.31, 0.32)),
-    'metal_dark': _metal((0.09, 0.095, 0.1), 0.5, 0.5),
-    'metal_light': _metal((0.55, 0.56, 0.56), 0.4, 0.5, 0.15),
-    'rail': _metal((0.78, 0.55, 0.06), 0.45, 0.2, 0.2),
-    'grille': _grille,
-    'slats': _slats,
-    'soil': _soil,
-    'leaf': _leaf,
-    'paint_yellow': _paint((0.56, 0.42, 0.11)),
+    'floor': lambda m: _floor(SPEC['floor']['a'], SPEC['floor']['b'], SPEC['floor']['slab'])(m),
+    'asphalt': lambda m: _floor(SPEC['floor']['asphalt'], [c * 1.12 for c in SPEC['floor']['asphalt']], 360, 24)(m),
+    'quay': lambda m: _floor(SPEC['floor']['quay'], SPEC['floor']['quay'], 40, 26)(m),
+    'paint_yellow': _paint((0.62, 0.45, 0.08)),
     'paint_white': _paint((0.72, 0.71, 0.68), 0.6),
-    'rubber': _rubber,
-    'skylight': _glass,
+    'hazard': _hazard,
+    'rubber': _smudge((0.035, 0.032, 0.03), 0.4),
+    'grime': _smudge((0.05, 0.045, 0.04), 0.7),
+    'dust': _smudge((0.55, 0.53, 0.49), 0.5),
+    'caster': _caster,
 }
+
+# Materials painted onto the floor: they take light and shadow but cast none.
+DECALS = ('paint_yellow', 'paint_white', 'hazard', 'rubber', 'grime', 'dust')
 
 
 # ---------------------------------------------------------------- geometry
@@ -574,7 +385,7 @@ def _commit(part, mat, top, smooth=False):
 
 
 def flush(prefix='geo'):
-    """Turns every material's merged mesh into one object."""
+    """Turns every material's merged mesh into one object; casters stay out of the camera and decals cast nothing."""
     for mat, bm in _meshes.items():
         mesh = bpy.data.meshes.new(f'{prefix}_{mat}')
         bm.to_mesh(mesh)
@@ -582,17 +393,17 @@ def flush(prefix='geo'):
         mesh.materials.append(material(mat))
         obj = bpy.data.objects.new(f'{prefix}_{mat}', mesh)
         bpy.context.scene.collection.objects.link(obj)
+        obj.visible_camera = mat != 'caster'
+        obj.visible_shadow = mat not in DECALS
     _meshes.clear()
 
 
-def box(x, y, w, h, z0, z1, mat, top=None, bevel=0.0, segments=2):
-    """An axis-aligned box over game rect (x, y, w, h) from height z0 to z1, sheared about `top` (its solid's top)."""
+def box(x, y, w, h, z0, z1, mat, top=None):
+    """An axis-aligned box over game rect (x, y, w, h) from height z0 to z1, sheared about `top` (its piece's top)."""
     part = bmesh.new()
     bmesh.ops.create_cube(part, size=1.0)
     bmesh.ops.scale(part, vec=(w, h, z1 - z0), verts=part.verts)
     bmesh.ops.translate(part, vec=to_blender(x + w / 2, y + h / 2, (z0 + z1) / 2), verts=part.verts)
-    if bevel > 0:
-        bmesh.ops.bevel(part, geom=list(part.edges), offset=min(bevel, w / 3, h / 3, (z1 - z0) / 3), segments=segments, affect='EDGES', profile=0.5)
     _commit(part, mat, z1 if top is None else top)
 
 
@@ -601,30 +412,6 @@ def cylinder(x, y, r, z0, z1, mat, top=None, verts=20):
     bmesh.ops.create_cone(part, cap_ends=True, segments=verts, radius1=r, radius2=r, depth=z1 - z0)
     bmesh.ops.translate(part, vec=to_blender(x, y, (z0 + z1) / 2), verts=part.verts)
     _commit(part, mat, z1 if top is None else top, smooth=lambda f: abs(f.normal.z) < 0.5)
-
-
-def hcylinder(x0, y0, x1, y1, r, z, mat, top, verts=12):
-    """A horizontal pipe from (x0, y0) to (x1, y1) at height z."""
-    length = math.hypot(x1 - x0, y1 - y0)
-    part = bmesh.new()
-    bmesh.ops.create_cone(part, cap_ends=True, segments=verts, radius1=r, radius2=r, depth=length)
-    rot = Matrix.Rotation(-math.atan2(y1 - y0, x1 - x0), 4, 'Z') @ Matrix.Rotation(math.pi / 2, 4, 'Y')
-    bmesh.ops.transform(part, matrix=rot, verts=part.verts)
-    bmesh.ops.translate(part, vec=to_blender((x0 + x1) / 2, (y0 + y1) / 2, z), verts=part.verts)
-    _commit(part, mat, top, smooth=True)
-
-
-def blob(x, y, z, r, mat, top, rng, flat=0.6):
-    """A lumpy leaf clump."""
-    part = bmesh.new()
-    bmesh.ops.create_icosphere(part, subdivisions=2, radius=r)
-    sx, sy, sz = 1 + rng.uniform(-0.2, 0.2), 1 + rng.uniform(-0.2, 0.2), flat + rng.uniform(-0.1, 0.2)
-    seed = Vector((rng.uniform(0, 100), rng.uniform(0, 100), rng.uniform(0, 100)))
-    for v in part.verts:
-        n = noise.noise(v.co * (2.2 / r) + seed)
-        v.co = Vector((v.co.x * sx, v.co.y * sy, v.co.z * sz)) * (1 + 0.35 * n)
-    bmesh.ops.translate(part, vec=to_blender(x, y, z), verts=part.verts)
-    _commit(part, mat, top, smooth=True)
 
 
 def poly(points, z, mat):
@@ -652,21 +439,6 @@ def strip(points, width, z, mat):
         right.append(part.verts.new(to_blender(px - nx, py - ny, z)))
     for i in range(len(points) - 1):
         f = part.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
-        f.normal_update()
-        if f.normal.z < 0:
-            f.normal_flip()
-    _commit(part, mat, 0)
-
-
-def ring_paint(cx, cy, r, width, z, mat, segments=96):
-    """A painted annulus on the floor."""
-    part = bmesh.new()
-    angles = [i * math.tau / segments for i in range(segments)]
-    outer = [part.verts.new(to_blender(cx + math.cos(a) * r, cy + math.sin(a) * r, z)) for a in angles]
-    inner = [part.verts.new(to_blender(cx + math.cos(a) * (r - width), cy + math.sin(a) * (r - width), z)) for a in angles]
-    for i in range(segments):
-        j = (i + 1) % segments
-        f = part.faces.new((outer[i], inner[i], inner[j], outer[j]))
         f.normal_update()
         if f.normal.z < 0:
             f.normal_flip()

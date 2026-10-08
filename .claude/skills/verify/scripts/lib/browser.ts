@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +11,8 @@ import type { Rect } from '../../../../../src/shared/sim/movement.ts';
 import { findPath, navGrid, type NavGrid, type Point } from '../../../../../src/server/bot/nav.ts';
 import { killOnExit } from '../../../../../scripts/kill-on-exit.ts';
 
-export type Cdp = (method: string, params?: object) => Promise<any>;
+/** `sessionId` sends to an attached target, such as a worker seen through `Target.setAutoAttach` with `flatten`. */
+export type Cdp = (method: string, params?: object, sessionId?: string) => Promise<any>;
 export type Page = { cdp: Cdp; js: (expr: string) => Promise<any>; exceptions: string[]; close: () => void };
 export type PageProblem = 'page exception' | 'console.error';
 
@@ -23,13 +24,13 @@ export async function openPage(opts: {
   debugPort?: number;
   args?: readonly string[];
   viewport?: { width: number; height: number; dpr?: number };
-  onEvent?: (method: string, params: any) => void;
+  onEvent?: (method: string, params: any, sessionId?: string) => void;
   onProblem?: (kind: PageProblem, detail: string) => void;
   onClose?: () => void;
 }): Promise<Page> {
   const port = opts.debugPort ?? await freePort();
-  const chrome = killOnExit(spawn(process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
-    '--headless=new', '--mute-audio', `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), opts.profile))}`,
+  const chrome = killOnExit(spawn(process.env.CHROME ?? defaultChrome(), [
+    '--headless=new', '--mute-audio', ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []), `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), opts.profile))}`,
     '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', ...(opts.args ?? []), 'about:blank',
   ], { stdio: 'ignore' }));
   let target = '';
@@ -57,9 +58,9 @@ export async function openPage(opts: {
     } else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
       opts.onProblem?.('console.error', JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value)));
     }
-    opts.onEvent?.(m.method, m.params);
+    opts.onEvent?.(m.method, m.params, m.sessionId);
   });
-  const cdp: Cdp = (method, params = {}) => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
+  const cdp: Cdp = (method, params = {}, sessionId) => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })); });
   const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
   await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
   if (opts.viewport) await cdp('Emulation.setDeviceMetricsOverride', { width: opts.viewport.width, height: opts.viewport.height, deviceScaleFactor: opts.viewport.dpr ?? 1, mobile: false });
@@ -70,7 +71,7 @@ export async function openPage(opts: {
 export async function serversListed(page: Page, ms = 6000): Promise<boolean> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    if ((await page.js(`document.querySelectorAll('#servers .server').length`)) === 4) return true;
+    if ((await page.js(`document.querySelectorAll('#servers .server').length`)) >= 4) return true;
     await sleep(100);
   }
   return false;
@@ -132,4 +133,11 @@ export function pathStep(grid: NavGrid, from: Point, to: Point): Dir[] {
   if (Math.abs(dx) > Math.max(AXIS_MIN_PX, len * AXIS_MIN_SHARE)) dirs.push(dx > 0 ? 'right' : 'left');
   if (Math.abs(dy) > Math.max(AXIS_MIN_PX, len * AXIS_MIN_SHARE)) dirs.push(dy > 0 ? 'down' : 'up');
   return dirs;
+}
+
+/** Chrome on a Mac, or the Chromium a Linux container ships for Playwright. */
+function defaultChrome(): string {
+  const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  const linux = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+  return existsSync(mac) || !existsSync(linux) ? mac : linux;
 }

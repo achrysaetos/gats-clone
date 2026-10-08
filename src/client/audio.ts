@@ -1,5 +1,6 @@
 import type { Point } from './camera.ts';
-import { placeCue, SAMPLE_IDS, voiceFor, type Layer, type SampleId, type SampleLayer, type SoundCue, type SoundId } from './sfx.ts';
+import { createSampleLoader, COMMON_SAMPLES } from './samples.ts';
+import { placeCue, voiceFor, type Layer, type SampleId, type SampleLayer, type SoundCue, type SoundId } from './sfx.ts';
 
 const MAX_VOICES = 24;
 const MASTER_GAIN = 0.5;
@@ -7,7 +8,7 @@ const MAX_NOISE_OFFSET_S = 0.5;
 const MUTE_KEY = 'skirmish.muted';
 const SAMPLE_MANIFEST = '/assets/sfx/manifest.json';
 
-export type AudioStats = { decoded: SampleId[]; plays: Partial<Record<SoundId, { sample: number; synth: number }>> };
+export type AudioStats = { decoded: SampleId[]; fetched: number; plays: Partial<Record<SoundId, { sample: number; synth: number }>> };
 
 type Audio = {
   /** Browsers start an AudioContext suspended until a user gesture, so call this from one. */
@@ -25,39 +26,24 @@ function saveMuted(muted: boolean) {
   try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch { /* private mode: mute lasts this tab only */ }
 }
 
-const isSampleId = (k: string): k is SampleId => (SAMPLE_IDS as readonly string[]).includes(k);
-
-/** Downloads every shipped recording. A missing manifest or file leaves that cue on its synth recipe. */
-async function fetchSamples(): Promise<Map<SampleId, ArrayBuffer>> {
-  const out = new Map<SampleId, ArrayBuffer>();
-  const res = await fetch(SAMPLE_MANIFEST).catch(() => null);
-  const files: unknown = res?.ok ? await res.json().catch(() => null) : null;
-  if (typeof files !== 'object' || files === null) return out;
-  const base = new URL(SAMPLE_MANIFEST, location.href);
-  await Promise.all(Object.entries(files).map(async ([id, file]) => {
-    if (!isSampleId(id) || typeof file !== 'string') return;
-    const got = await fetch(new URL(file, base)).catch(() => null);
-    if (got?.ok) out.set(id, await got.arrayBuffer());
-  }));
-  return out;
-}
-
 export function createAudio(): Audio {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
   let noise: AudioBuffer | null = null;
   let voices = 0;
   let muted = loadMuted();
-  const encoded = fetchSamples();
-  const buffers = new Map<SampleId, AudioBuffer>();
+  let samples: ReturnType<typeof createSampleLoader<AudioBuffer>> | null = null;
   const plays: AudioStats['plays'] = {};
 
-  function decodeAll(c: AudioContext) {
-    void encoded.then((files) => {
-      for (const [id, bytes] of files) {
-        c.decodeAudioData(bytes).then((buf) => { buffers.set(id, buf); }, () => { /* undecodable: the synth recipe stays */ });
-      }
+  function loadSamples(c: AudioContext) {
+    const base = new URL(SAMPLE_MANIFEST, location.href);
+    const get = (url: URL) => fetch(url).then((r) => (r.ok ? r : null));
+    samples = createSampleLoader({
+      manifest: () => get(base).then((r) => r?.json() ?? null),
+      bytes: (file) => get(new URL(file, base)).then((r) => r?.arrayBuffer() ?? null),
+      decode: (bytes) => c.decodeAudioData(bytes),
     });
+    if (!muted) samples.want(COMMON_SAMPLES);
   }
 
   function unlock() {
@@ -71,7 +57,7 @@ export function createAudio(): Audio {
       noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const data = noise.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-      decodeAll(ctx);
+      loadSamples(ctx);
     }
     if (ctx.state === 'suspended') void ctx.resume();
   }
@@ -111,7 +97,7 @@ export function createAudio(): Audio {
 
   function sampleVoice(c: AudioContext, layer: SampleLayer, out: AudioNode, done: () => void) {
     const src = c.createBufferSource();
-    src.buffer = buffers.get(layer.sample) ?? null;
+    src.buffer = samples?.buffer(layer.sample) ?? null;
     src.playbackRate.value = layer.rate;
     const level = c.createGain();
     level.gain.value = layer.gain;
@@ -123,8 +109,10 @@ export function createAudio(): Audio {
 
   function play(cues: readonly SoundCue[], listener: Point, viewRadius: number) {
     if (muted || !ctx || !master || ctx.state !== 'running') return;
+    const missing: SampleId[] = [];
+    const decoded = (id: SampleId) => (samples?.buffer(id) ? true : (missing.push(id), false));
     for (const cue of cues) {
-      const voice = voiceFor(cue.id, (id) => buffers.has(id), Math.random);
+      const voice = voiceFor(cue.id, decoded, Math.random);
       const count = voice.kind === 'sample' ? voice.layers.length : voice.recipe.length;
       if (voices + count > MAX_VOICES) continue;
       const placed = placeCue(cue, listener, viewRadius);
@@ -141,15 +129,17 @@ export function createAudio(): Audio {
       if (voice.kind === 'sample') for (const layer of voice.layers) sampleVoice(ctx, layer, gain, done);
       else for (const layer of voice.recipe) synthVoice(ctx, layer, gain, done);
     }
+    if (missing.length) samples?.want(missing);
   }
 
   function toggleMute() {
     muted = !muted;
     saveMuted(muted);
+    if (!muted) samples?.want(COMMON_SAMPLES);
     return muted;
   }
 
-  const stats = (): AudioStats => ({ decoded: [...buffers.keys()], plays: structuredClone(plays) });
+  const stats = (): AudioStats => ({ decoded: samples?.decoded() ?? [], fetched: samples?.fetched() ?? 0, plays: structuredClone(plays) });
 
   return { unlock, play, toggleMute, stats };
 }

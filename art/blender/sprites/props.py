@@ -196,23 +196,6 @@ def metal_crate(b, size, h, stage, body_color, trim=None, label=None):
         debris(kit, b, body, size, 6, h)
 
 
-def build_crate(b):
-    tier, stage = b.arg[0], int(b.arg[1])
-    size = b.entry['box']['w'] - 12
-    h = b.spec['heights']['crate']
-    if tier == 'plain':
-        wood_crate(b, size, h, stage)
-    elif tier == 'loot':
-        wood_crate(b, size, h, stage, lid=C.wood('pine-dark', C.scalec(PINE, 0.7)), label='SUPPLY')
-    elif tier == 'rich':
-        wood_crate(b, size, h, stage, lid=paint('lid-red', (0.55, 0.07, 0.03)))
-    elif tier == 'cache':
-        metal_crate(b, size, h, stage, (0.13, 0.16, 0.07), label='CACHE')
-    else:
-        metal_crate(b, size, h, stage, (0.16, 0.2, 0.26), trim=True)
-    return C.Model(z_ref=h, contact=1.0)
-
-
 # ---------------------------------------------------------------- walls
 
 def jagged(rnd, x0, y0, x1, y1, depth, step=3.0, notches=0):

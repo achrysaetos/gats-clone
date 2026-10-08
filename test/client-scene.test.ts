@@ -10,9 +10,12 @@ import { addCrack, createCracks } from '../src/client/decals.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import { createPool } from '../src/client/particles.ts';
 import type { Session } from '../src/client/state.ts';
+import { mapLooks } from '../src/client/world/pieces.ts';
+import { SOLDIER } from '../src/client/world/catalog.ts';
+import { KIT } from '../src/shared/kit.ts';
 import { ART, SHADOW_PER_HEIGHT } from '../src/client/world/art.ts';
 import { facing } from '../src/client/world/catalog.ts';
-import { tilesFor } from '../src/client/world/ground.ts';
+import { failLoad, LIGHT_RETRY_MS, type LoadFailure } from '../src/client/world/ground.ts';
 import { layoutKey, mapLayoutKey } from '../src/client/world/layout.ts';
 import { describeWorld, inShadow, type Scene } from '../src/client/world/scene.ts';
 
@@ -30,7 +33,7 @@ const snap = (o: { me?: Partial<PlayerView>; players?: PlayerView[]; thrown?: Sn
 
 const session = (over: Partial<Session> = {}): Session => ({
   myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: NO_FEEDBACK,
-  zombieFaces: new Map(), turretAims: new Map(), coreHitAt: -Infinity, lastSelf: { x: 100, y: 0 }, ...over,
+  map: 'warehouse', strides: new Map(), zombieFaces: new Map(), turretAims: new Map(), coreHitAt: -Infinity, lastSelf: { x: 100, y: 0 }, ...over,
 } as unknown as Session);
 
 const describe = (frame: Snapshot, o: { killerId?: number | null; s?: Session; at?: { x: number; y: number } } = {}): Scene =>
@@ -122,19 +125,23 @@ test('the baked facing is the nearest one, and what is left over stays within ha
   }
 });
 
-test('the ground streams the tiles under the view first, a ring past it, and nothing off the map', () => {
-  const map = { span: 640, origin: -64, count: 10 };
-  const ids = tilesFor({ x0: 1000, y0: 1000, x1: 1600, y1: 1500 }, map);
-  assert.equal(ids[0], '2_2', 'the tile under the view centre first');
-  assert.ok(ids.includes('0_0') && ids.includes('3_3'), 'a ring past the view');
-  assert.ok(!ids.includes('4_4'));
-  const corner = tilesFor({ x0: -500, y0: -500, x1: 100, y1: 100 }, map);
-  assert.ok(corner.every((id) => id.split('_').every((v) => Number(v) >= 0)), 'never a tile left or above the map');
+test('a light layer that keeps failing is asked for a handful of times with growing gaps, then never again', () => {
+  const asks: number[] = [];
+  let fail: LoadFailure | undefined;
+  for (let now = 0; now < 10 * 60_000; now += 1000 / 60) {
+    if (now < (fail?.retryAt ?? 0)) continue;
+    asks.push(now);
+    fail = failLoad(fail, now);
+  }
+  assert.equal(asks.length, LIGHT_RETRY_MS.length + 1, `asked ${asks.length} times in ten minutes of frames`);
+  const gaps = asks.slice(1).map((t, i) => t - asks[i]!);
+  assert.ok(gaps.every((g, i) => i === 0 || g > gaps[i - 1]!), `gaps grow: ${gaps.map(Math.round).join(', ')}`);
+  assert.ok(gaps[0]! >= 1000);
 });
 
 test("the ground is keyed by the map's own walls, so an engineer's wall coming or going never swaps it", () => {
   const long: WallView = { x: 0, y: 0, w: 100, h: 50, built: false, material: 'concrete' };
-  const block: WallView = { x: 300, y: 0, w: 50, h: 50, built: false, material: 'sandstone' };
+  const block: WallView = { x: 300, y: 0, w: 50, h: 50, built: false, material: 'metal' };
   const map = [long, block];
   const built: WallView = { x: 500, y: 500, w: 120, h: 40, built: true };
   assert.equal(mapLayoutKey([...map, built]), mapLayoutKey(map));
@@ -149,3 +156,31 @@ test('the key the client computes from the walls the server sends is the key eac
   }
 });
 
+
+test('an overhead piece knows when a body stands under it, so the painter can fade it', () => {
+  const roof = mapLooks('warehouse').overhead[0]!;
+  const at = { x: roof.x + roof.w / 2, y: roof.y + roof.h / 2 };
+  const under = describe(snap({ me: at }), { at }).overheads.find((o) => o.x === roof.x && o.y === roof.y);
+  assert.equal(under?.under, true, 'standing under it');
+  const away = { x: roof.x - 400, y: roof.y + roof.h / 2 };
+  const clear = describe(snap({ me: away }), { at: away }).overheads.find((o) => o.x === roof.x && o.y === roof.y);
+  assert.equal(clear?.under ?? false, false, 'standing off to the side');
+});
+
+test('legs run while a body moves and stand when it stops, facing the way it walked', () => {
+  const s = session();
+  const at = (x: number, now: number) => describeWorld({ snap: snap({ me: { x, y: 0 } }), s, cam: makeCamera({ x, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now, selfAngle: Math.PI, killerId: null }, 0);
+  at(100, 0);
+  const running = body(at(108, 33), 1).legs;
+  assert.notEqual(running.frame, SOLDIER.legs.stand, 'a run frame while moving east');
+  assert.ok(Math.abs(running.heading) < 1e-9, 'legs face east though the body aims west');
+  const stopped = body(at(108, 66), 1).legs;
+  assert.equal(stopped.frame, SOLDIER.legs.stand);
+});
+
+test('a worn crate shows its piece at the damage stage its health has fallen to', () => {
+  const crate = (hp: number) => ({ id: 9, piece: 'crate' as const, r: 0 as const, x: 120, y: 0, w: 50, h: 50, hp });
+  const key = (hp: number) => describe(snap({ crates: [crate(hp)] })).crates[0]!.key;
+  const full = KIT.crate.breaks!.hp;
+  assert.deepEqual([key(full), key(full * 0.5), key(full * 0.1)], ['kit.crate.0.0', 'kit.crate.0.1', 'kit.crate.0.2']);
+});

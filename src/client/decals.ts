@@ -10,7 +10,7 @@ export const hostKey = (r: Rect) => `${r.x},${r.y}`;
 
 export const crackFade = (c: Crack, now: number) => Math.max(0, Math.min(1, (CRACKS.lifeMs - (now - c.born)) / CRACKS.fadeMs));
 
-export const hostOf = (solids: readonly Rect[], x: number, y: number): Rect | null =>
+export const hostOf = <T extends Rect>(solids: readonly T[], x: number, y: number): T | null =>
   solids.find((r) => x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2) ?? null;
 
 export function inward(r: Rect, x: number, y: number): number {

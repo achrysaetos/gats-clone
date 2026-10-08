@@ -5,7 +5,7 @@ import type { GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { crateOf, emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = GUNS.pistol.damage;
 
@@ -60,11 +60,11 @@ test('dmg amount stops at what the target had left', () => {
 test('a crate hit emits one crate-kind dmg event with the crate id', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  w.crates.push({ id: 999, x: 640, y: 478, size: 44, hp: WORLD.crateHp, respawnAt: null });
+  w.crates.push(crateOf(999, 640, 478));
   const got = hits(fireAndCollect(w, a));
   assert.equal(got.length, 1);
   const { hit, ...ev } = got[0] as Extract<GameEvent, { e: 'dmg' }>;
-  assert.deepEqual(ev, { e: 'dmg', attacker: a.id, victim: 999, amount: PISTOL_DMG, x: 662, y: 500, kind: 'crate' });
+  assert.deepEqual(ev, { e: 'dmg', attacker: a.id, victim: 999, amount: PISTOL_DMG, x: 665, y: 503, kind: 'crate' });
   assert.ok(hit && Math.abs(hit.x - 640) < 1e-6, 'struck on the crate face that faced the shooter');
 });
 

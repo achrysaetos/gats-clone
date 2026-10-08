@@ -9,7 +9,7 @@ import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { run, spawnAt, TICK_MS } from './helpers.ts';
 
-const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
+const zomWorld = (): World => createWorld('ZOM', 1, 'yard');
 
 test('a zombies snapshot shows the horde in view as compact tuples, the squad walls and the run', () => {
   const w = zomWorld();
@@ -63,7 +63,7 @@ test('squadmates see a downed player with the revive and bleed-out clocks; nobod
 });
 
 test('versus snapshots carry no zombie fields at all', () => {
-  const w = createWorld('FFA', 1, 'plaza');
+  const w = createWorld('FFA', 1, 'warehouse');
   const p = spawnAt(w, 1500, 1500);
   const snap = snapshotFor(w, p.id);
   assert.deepEqual(['zombies', 'buildings', 'run'].filter((k) => k in snap), []);
@@ -71,11 +71,11 @@ test('versus snapshots carry no zombie fields at all', () => {
 
 test('the wire omits unchanged walls and run, rebuilds them, and keeps a snapshot with 200 zombies in view under 6KB', () => {
   const w = zomWorld();
-  const p = spawnAt(w, 1380, 1500);
+  const p = spawnAt(w, 1420, 1500);
   for (let cx = 24; cx <= 35; cx++) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy: 24, hp: BUILDINGS.wall.hp });
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   for (let i = 0; i < ZOM.maxAlive; i++) {
-    const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 250 + (i % 7) * 40;
+    const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 167 + (i % 7) * 27;
     w.zombies.push({ id: newId(w), kind: i % 9 === 0 ? 'brute' : 'walker', x: 1500 + Math.cos(a) * r * 1.6, y: 1500 + Math.sin(a) * r, hp: 1e6, attackAt: Infinity, vx: 0, vy: 0 });
   }
   const encode = makeSnapshotEncoder();
