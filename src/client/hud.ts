@@ -1358,25 +1358,6 @@ const STATUS = { shield: '#6eb4ff', rush: HEAL, sprint: ACCENT, settle: PALETTE.
 /** Where the vitals plate's origin is on the HUD, so sparks (drawn in HUD space) can start from inside it. */
 const vitalsAt = { x: 0, y: 0 };
 
-/** The held gun's art, baked once per gun, skin and screen scale (the art is dozens of paths; the HUD redraws every frame). */
-const gunSprites = new Map<string, HTMLCanvasElement>();
-function gunSprite(ctx: CanvasRenderingContext2D, gun: GunId, skin: string | undefined, golden: boolean, w: number, h: number): HTMLCanvasElement {
-  const res = Math.max(1, ctx.getTransform?.()?.a ?? 1);
-  const key = `${gun}|${skin ?? ''}|${golden ? 1 : 0}|${w}x${h}@${res.toFixed(2)}`;
-  let sprite = gunSprites.get(key);
-  if (!sprite) {
-    if (gunSprites.size > 24) gunSprites.clear();
-    sprite = document.createElement('canvas');
-    sprite.width = Math.ceil(w * res);
-    sprite.height = Math.ceil(h * res);
-    const g = sprite.getContext('2d')!;
-    g.scale(res, res);
-    drawGunArt(g, gun, 0, 0, w, h, { skin, golden });
-    gunSprites.set(key, sprite);
-  }
-  return sprite;
-}
-
 /** A raised chip with a lip under it: used by the status tabs and the perk icons. */
 function cel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, face: string, r = 4, lip = 2) {
   ctx.lineWidth = 2;
@@ -1780,102 +1761,66 @@ function drawRankRow(ctx: CanvasRenderingContext2D, x: number, y: number, lp: { 
   return px - x;
 }
 
-/** A drawn magazine: a gunmetal body with a window onto brass rounds (one each for small mags, a ticked column for big ones). */
-function drawMagazine(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ammo: number, mag: number, reload: number, tone: string, fresh?: { n: number; glow: number }) {
-  ctx.fillStyle = CEL.shadow;
-  ctx.beginPath();
-  ctx.roundRect(x + 3, y + 4, w, h, 4);
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = CEL.ink;
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, 4);
-  ctx.fillStyle = '#3d4450';
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#5b6371';
-  ctx.fillRect(x + 1.5, y + 1.5, w - 3, 5);
-  const wx = x + 4, wy = y + 9, ww = w - 8, wh = h - 16;
-  ctx.fillStyle = CEL.well;
-  ctx.fillRect(wx, wy, ww, wh);
-  const reloading = reload >= 0;
-  const color = reloading ? PALETTE.gold : tone;
-  if (mag <= 12) {
-    const gap = 2;
-    const rh = (wh - gap * (mag + 1)) / mag;
-    const lit = reloading ? Math.floor(reload * mag) : ammo;
-    for (let i = 0; i < mag; i++) {
-      if (i >= lit) continue;
-      const ry = wy + wh - gap - (i + 1) * rh - i * gap;
-      // Rounds a kill just put in glow white-gold and fade into the rest.
-      ctx.fillStyle = fresh && !reloading && i >= ammo - fresh.n ? mixHex(color, '#fff6c8', Math.min(1, fresh.glow * 1.3)) : color;
-      ctx.beginPath();
-      ctx.roundRect(wx + 2, ry, ww - 4, rh, [rh / 2, rh / 2, 1, 1]);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-      ctx.fillRect(wx + 3, ry + 0.5, ww - 6, Math.max(1, rh * 0.28));
-    }
-  } else {
-    const f = reloading ? reload : ammo / mag;
-    const fh = (wh - 4) * f;
-    if (fh > 0) {
-      ctx.fillStyle = color;
-      ctx.fillRect(wx + 2, wy + wh - 2 - fh, ww - 4, fh);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.fillRect(wx + 3, wy + wh - 2 - fh, Math.max(1.5, (ww - 4) * 0.28), fh);
-    }
-    ctx.fillStyle = CEL.ink;
-    const step = mag > 60 ? 20 : 10;
-    for (let r = step; r < mag; r += step) ctx.fillRect(wx, wy + wh - 2 - ((wh - 4) * r) / mag - 1, ww, 2);
-  }
-  ctx.fillStyle = '#272c34';
-  ctx.fillRect(x + 1.5, y + h - 6, w - 3, 4.5);
-}
-
 /** A kill put `n` rounds back in your mag: the magazine lights them and a "+n" rises off the count (see topup.ts). */
 export function noteTopup(n: number, now: number) { vfx.topN = n; vfx.topAt = now; }
 const TOPUP_HUD_MS = 900;
 
-/** The ammo cluster: the magazine and the count, readable beside the reticle. `left` mirrors it onto the other side. */
-function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, now: number, gun: { id: GunId; skin: string | undefined; golden: boolean } | null, left = false) {
-  const mw = 28, mh = 58;
+/**
+ * The ammo readout beside the reticle: a small inked count over a thin strip of round ticks (a plain fill bar for big mags), so it can be read
+ * in a glance without sitting on the fight. Reloading turns the strip into a gold progress bar.
+ */
+function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, now: number, left = false) {
   const low = self.ammo <= Math.max(1, Math.round(self.mag * 0.25));
   const empty = self.ammo === 0;
   const throb = low && !REDUCED ? 0.5 + 0.5 * Math.sin(now / (empty ? 140 : 240)) : 0;
-  const tone = empty ? AMMO.empty : low ? AMMO.liveLow : AMMO.live;
-  setFont(ctx, 800, 34);
   const reloading = self.reloading;
+  const tone = reloading ? PALETTE.gold : empty ? AMMO.empty : low ? AMMO.liveLow : AMMO.live;
   const label = reloading ? 'RELOAD' : String(self.ammo);
-  const numSize = reloading ? 18 : 40;
+  const numSize = reloading ? 12 : 20;
   setFont(ctx, 800, numSize);
   const numW = ctx.measureText(label).width;
-  const total = mw + 8 + Math.max(numW, 96);
-  const mx = left ? x - total : x;
-  const top = reloading ? 0 : popOf(now - vfx.topAt, TOPUP_HUD_MS);
-  drawMagazine(ctx, mx, y, mw, mh, self.ammo, self.mag, reloading ? self.reloadFrac : -1, tone, top > 0 ? { n: vfx.topN, glow: top } : undefined);
-  const nx = mx + mw + 8;
-  const pop = popOf(now - vfx.ammoAt, 190);
-  const sc = reloading ? 1 : 1 + 0.3 * pop * pop;
+  const sub = reloading ? '' : `/${self.mag}`;
+  setFont(ctx, 700, 11);
+  const subW = sub ? ctx.measureText(sub).width + 3 : 0;
+  const stripW = 44;
+  const total = Math.max(stripW, numW + subW);
+  const x0 = left ? x - total : x;
+  const pop = reloading ? 0 : popOf(now - vfx.ammoAt, 190);
+  const sc = 1 + 0.18 * pop * pop;
   const ink = reloading ? PALETTE.gold : empty ? mixHex(PALETTE.hpBad, '#ffffff', throb * 0.4) : low ? mixHex(ACCENT, '#ffffff', throb * 0.35) : PANEL_INK;
-  ctx.translate(nx, y + 20);
+  const ny = y + 10;
+  ctx.translate(x0, ny);
   ctx.scale(sc, sc);
   inked(ctx, label, 0, 0, numSize, ink, 800);
   ctx.scale(1 / sc, 1 / sc);
-  ctx.translate(-nx, -(y + 20));
-  if (top > 0) {
-    // The rounds just put in: a gold "+n" that pops off the count and drifts up as it fades.
-    ctx.globalAlpha = Math.min(1, top * 2.2);
-    inked(ctx, `+${vfx.topN}`, nx + 2, y + 2 - 16 * (1 - top), 24 + 6 * Math.max(0, top - 0.75) * 4, PALETTE.gold, 800);
-    ctx.globalAlpha = 1;
+  ctx.translate(-x0, -ny);
+  if (sub) inked(ctx, sub, x0 + numW + 3, ny + 3, 11, low ? AMMO.liveLow : PANEL_INK, 700);
+  // The strip: one tick per round for small mags, a fill bar past that; rounds a kill just put back glow and a "+n" rises off the count.
+  const top = reloading ? 0 : popOf(now - vfx.topAt, TOPUP_HUD_MS);
+  const sy = y + 21, sh = 4;
+  ctx.fillStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.roundRect(x0 - 1, sy - 1, stripW + 2, sh + 2, 2);
+  ctx.fill();
+  ctx.fillStyle = '#262a32';
+  ctx.fillRect(x0, sy, stripW, sh);
+  if (reloading) {
+    ctx.fillStyle = PALETTE.gold;
+    ctx.fillRect(x0, sy, stripW * Math.max(0, Math.min(1, self.reloadFrac)), sh);
+  } else if (self.mag <= 30) {
+    const g = 1, rw = (stripW - g * (self.mag - 1)) / self.mag;
+    for (let i = 0; i < self.ammo; i++) {
+      ctx.fillStyle = top > 0 && i >= self.ammo - vfx.topN ? mixHex(tone, '#fff6c8', Math.min(1, top * 1.3)) : tone;
+      ctx.fillRect(x0 + i * (rw + g), sy, rw, sh);
+    }
+  } else {
+    ctx.fillStyle = tone;
+    ctx.fillRect(x0, sy, (stripW * self.ammo) / self.mag, sh);
   }
-  if (!reloading) inked(ctx, `/ ${self.mag}`, nx + 1, y + 47, TYPE.body, low ? AMMO.liveLow : PANEL_INK, 700);
-  if (gun) {
-    setFont(ctx, 700, TYPE.body);
-    const gx = nx + (reloading ? 0 : ctx.measureText(`/ ${self.mag}`).width + 10);
-    const gy = y + (reloading ? 34 : 37);
-    // No DOM (tests, workers): draw the art straight in rather than through the cached sprite.
-    if (typeof document === 'undefined') drawGunArt(ctx, gun.id, gx, gy, 58, 20, { skin: gun.skin, golden: gun.golden });
-    else ctx.drawImage(gunSprite(ctx, gun.id, gun.skin, gun.golden, 58, 20), gx, gy, 58, 20);
+  if (top > 0) {
+    ctx.globalAlpha = Math.min(1, top * 2.2);
+    inked(ctx, `+${vfx.topN}`, x0 + total + 4, ny - 10 * (1 - top), 13, PALETTE.gold, 800);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1965,11 +1910,10 @@ function drawVitals(hud: Hud, compact: boolean) {
   if (me.hunted) cx += drawHuntedBadge(ctx, cx, sy) + 6;
   if (self.streak >= 2) drawStreakBadge(ctx, cx, sy, self.streak, now);
   // Ammo: beside the reticle, or your soldier on a touch screen; mirrored when it would run off the right edge.
-  const gunIcon = { id: me.gun, skin: me.cos?.g, golden: me.golden === true };
   const near = touchScreen || spreadOff;
   const reach = WORLD.playerRadius * cam.scale;
   const gap = Math.max(reticleDrawnGap, 10) + RETICLE.tick;
-  const cw = 132, ch = 62;
+  const cw = 64, ch = 28;
   const hx = near ? selfAt.x : hudCrosshair.x, hy = near ? selfAt.y : hudCrosshair.y;
   const dx = near ? reach + 16 : gap * 0.7 + 14;
   const dy = near ? -8 : gap * 0.5 + 6;
@@ -1980,7 +1924,7 @@ function drawVitals(hud: Hud, compact: boolean) {
     return r0.x > 4 && r0.x + cw < w - 4 && !panels.some((q) => r0.x < q.x + q.w && r0.x + r0.w > q.x && r0.y < q.y + q.h && r0.y + r0.h > q.y);
   };
   const [fx, fy, flip] = spots.find(free) ?? spots[0]!;
-  drawAmmoCluster(ctx, fx, Math.min(h - ch - 8, Math.max(EDGE, fy)), self, now, gunIcon, flip);
+  drawAmmoCluster(ctx, fx, Math.min(h - ch - 8, Math.max(EDGE, fy)), self, now, flip);
   drawSparks(ctx, now);
 }
 let spreadOff = false;

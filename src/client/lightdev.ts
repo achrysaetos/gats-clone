@@ -2,11 +2,11 @@ import { currentMood } from './mood.ts';
 import { lightingStatus, lightState } from './postfx.ts';
 
 /**
- * A small readout of what the shader pass and the lighting are doing and why, for `?dev` or `?fxinfo`: the renderer string,
+ * A small readout of what the shader pass and the lighting are doing and why, for `?fxinfo`: the renderer string,
  * the decision (mode and reason), the lighting tier, the governor's frame average against its limit, the pass's CPU cost,
  * the map's mood and the last few things the governor did. Drawn in screen pixels after the HUD, so it is never processed.
  */
-const SHOW = typeof location !== 'undefined' && /[?&](dev|fxinfo)\b/.test(location.search);
+const SHOW = typeof location !== 'undefined' && /[?&]fxinfo\b/.test(location.search);
 
 export function drawLightingDev(ctx: CanvasRenderingContext2D, dpr: number): void {
   if (!SHOW) return;
