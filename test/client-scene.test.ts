@@ -12,7 +12,7 @@ import { createPool } from '../src/client/particles.ts';
 import type { Session } from '../src/client/state.ts';
 import { ART, SHADOW_PER_HEIGHT } from '../src/client/world/art.ts';
 import { facing } from '../src/client/world/catalog.ts';
-import { failTile, tilesFor, TILE_RETRY_MS, type TileFailure } from '../src/client/world/ground.ts';
+import { failLoad, LIGHT_RETRY_MS, type LoadFailure } from '../src/client/world/ground.ts';
 import { layoutKey, mapLayoutKey } from '../src/client/world/layout.ts';
 import { describeWorld, inShadow, type Scene } from '../src/client/world/scene.ts';
 
@@ -122,25 +122,15 @@ test('the baked facing is the nearest one, and what is left over stays within ha
   }
 });
 
-test('the ground streams the tiles under the view first, a ring past it, and nothing off the map', () => {
-  const map = { span: 640, origin: -64, count: 10 };
-  const ids = tilesFor({ x0: 1000, y0: 1000, x1: 1600, y1: 1500 }, map);
-  assert.equal(ids[0], '2_2', 'the tile under the view centre first');
-  assert.ok(ids.includes('0_0') && ids.includes('3_3'), 'a ring past the view');
-  assert.ok(!ids.includes('4_4'));
-  const corner = tilesFor({ x0: -500, y0: -500, x1: 100, y1: 100 }, map);
-  assert.ok(corner.every((id) => id.split('_').every((v) => Number(v) >= 0)), 'never a tile left or above the map');
-});
-
-test('a ground tile that keeps failing is asked for a handful of times with growing gaps, then never again', () => {
+test('a light layer that keeps failing is asked for a handful of times with growing gaps, then never again', () => {
   const asks: number[] = [];
-  let fail: TileFailure | undefined;
+  let fail: LoadFailure | undefined;
   for (let now = 0; now < 10 * 60_000; now += 1000 / 60) {
     if (now < (fail?.retryAt ?? 0)) continue;
     asks.push(now);
-    fail = failTile(fail, now);
+    fail = failLoad(fail, now);
   }
-  assert.equal(asks.length, TILE_RETRY_MS.length + 1, `asked ${asks.length} times in ten minutes of frames`);
+  assert.equal(asks.length, LIGHT_RETRY_MS.length + 1, `asked ${asks.length} times in ten minutes of frames`);
   const gaps = asks.slice(1).map((t, i) => t - asks[i]!);
   assert.ok(gaps.every((g, i) => i === 0 || g > gaps[i - 1]!), `gaps grow: ${gaps.map(Math.round).join(', ')}`);
   assert.ok(gaps[0]! >= 1000);
