@@ -112,14 +112,16 @@ def broken_wall(p):
         seg = rnd.uniform(12, 28)
         top = H * rnd.uniform(0.45, 1.0) * (1 - 0.2 * p.stage)
         k.poly('solid', m['stone'], jagged(rnd, x, 0, min(w, x + seg), -h, 1.0, step=4.0, notches=1), 0, top, bevel=0.8)
-        k.box('solid', m['hazard'], (x + seg / 2, -h - 0.3, 4.5), (min(seg, w - x) - 1, 0.6, 7))
+        band = min(seg, w - x) - 1
+        k.box('solid', m['hazard'], (x + 0.5 + band / 2, -h - 0.3, 4.5), (band, 0.6, 7))
         x += seg - 0.5
     for _ in range(6):
         bx, by = rnd.uniform(4, w - 4), -rnd.uniform(4, h - 4)
         k.limb('solid', rebar, (bx, by, H * 0.4), (bx + rnd.uniform(-4, 4), by + rnd.uniform(-3, 3), H * rnd.uniform(0.85, 1.0)), 0.6, joints=False)
     for _ in range(4):
         k.box('solid', crack, (rnd.uniform(5, w - 5), -h / 2, H * 0.45 + 0.05), (rnd.uniform(4, 9), 0.5, 0.3), rot=(0, 0, rnd.uniform(-0.6, 0.6)))
-    rubble_pile(p, m, 26 + 16 * p.stage, big=4.5, height=H * 0.25)
+    rubble_pile(p, m, 26, big=4.5, height=H * 0.25)
+    chips(p, m, 10 * p.stage)
 
 
 def rubble_pile(p, m, count, big=4.0, height=0.0):
@@ -127,7 +129,7 @@ def rubble_pile(p, m, count, big=4.0, height=0.0):
     dust = C.mat('dust', (0.5, 0.48, 0.44), rough=1.0, grime=0.4, grime_scale=1.2)
     for _ in range(count):
         s = rnd.uniform(0.8, big)
-        x, y = clamp_in(p, rnd.uniform(-3, p.w + 3), rnd.uniform(-p.h - 3, 3), s * 1.1)
+        x, y = clamp_in(p, rnd.uniform(-3, p.w + 3), rnd.uniform(-p.h - 3, 3), s * 1.3)
         z = s * 0.35 + (height * rnd.random() if 0 < x < p.w and -p.h < y < 0 else 0)
         p.k.box('solid', rnd.choice((m['stone'], m['stone'], m['cap'], m['chip'])), (x, y, z), (s * rnd.uniform(1, 1.8), s * rnd.uniform(0.8, 1.4), s), rot=(rnd.uniform(0, 1), rnd.uniform(0, 1), rnd.uniform(0, 3)), bevel=s * 0.25)
     for _ in range(4):
