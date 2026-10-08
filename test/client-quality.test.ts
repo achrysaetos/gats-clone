@@ -76,6 +76,10 @@ test('the degrader fires only after ten seconds of slow frames, resets on a good
   let fast = false;
   for (let t = 0; t < 30_000; t += 16) if (g.push(16, t)) fast = true;
   assert.equal(fast, false);
+  const h = createDegrader();
+  let capped = false;
+  for (let t = 0; t < 30_000; t += 33.3) if (h.push(33.3, t)) capped = true;
+  assert.equal(capped, false, 'a steady 30 Hz power-saver cap is not slow');
 });
 
 test('the meter reads fps and the slowest recent frame once it has a few', () => {

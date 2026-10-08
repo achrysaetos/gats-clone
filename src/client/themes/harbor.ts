@@ -141,6 +141,7 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
   for (const l of SHIP_LIGHTS) {
     if (!near(l.x, l.y, 260)) continue;
     const dy = bobOf(l.ship, now).dy;
+    waterLights.push({ x: l.x, y: l.y + dy, r: l.lamp ? 240 : 100, k: l.lamp ? 0.5 : 0.4, rgb: l.lamp ? [1, 0.94, 0.82] : [1, 0.78, 0.5] });
     setLight(l.key, l.lamp ? { x: l.x, y: l.y + dy, radius: 300, color: '#fff0d0', intensity: 0.85, size: 8, shadows: false } : { x: l.x, y: l.y + dy, radius: 120, color: '#ffc880', intensity: 0.6, size: 4, flicker: calm ? undefined : 0.06, shadows: false });
   }
   // Hurricane lanterns, swaying on their hooks.

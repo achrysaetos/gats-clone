@@ -120,20 +120,38 @@ export const stepDown = (p: PresetId): PresetId | null => PRESET_IDS[PRESET_IDS.
  */
 export function createDegrader(limitMs = 24, holdMs = 10_000, ignoreMs = 250) {
   let sum = 0, n = 0, bucketAt = -1, badSince = -1;
+  let frames: number[] = [];
   return {
     push(frameMs: number, now: number): boolean {
-      if (frameMs > ignoreMs) { badSince = -1; sum = 0; n = 0; bucketAt = now; return false; }
+      if (frameMs > ignoreMs) { badSince = -1; sum = 0; n = 0; frames = []; bucketAt = now; return false; }
       if (bucketAt < 0) bucketAt = now;
-      sum += frameMs; n++;
+      sum += frameMs; n++; frames.push(frameMs);
       if (now - bucketAt < 1000) return false;
-      const bad = sum / n > limitMs;
-      sum = 0; n = 0; bucketAt = now;
+      // A display held to 30 Hz (power saver) paces every frame at 33 ms, perfectly evenly: that is its refresh, not a slow GPU.
+      const sorted = [...frames].sort((a, b) => a - b), q25 = sorted[Math.floor(sorted.length * 0.25)]!, q75 = sorted[Math.floor(sorted.length * 0.75)]!;
+      const capped = Math.abs(q25 - 33.33) < 3 && q75 - q25 < 3.3;
+      const bad = sum / n > (capped ? Math.max(limitMs, 51) : limitMs);
+      sum = 0; n = 0; frames = []; bucketAt = now;
       if (!bad) { badSince = -1; return false; }
       if (badSince < 0) badSince = now;
       if (now - badSince >= holdMs) { badSince = -1; return true; }
       return false;
     },
-    reset() { sum = 0; n = 0; bucketAt = -1; badSince = -1; },
+    reset() { sum = 0; n = 0; frames = []; bucketAt = -1; badSince = -1; },
+  };
+}
+
+/**
+ * Whether frame times can be trusted yet. A hidden tab draws no frames, and the first moments after it returns are slow while the
+ * page wakes (timers, queued messages, the compositor), none of which says anything about the GPU. So frames are ignored while
+ * hidden and for `settleMs` after becoming visible, and a step-down that gets remembered across visits can never come from there.
+ */
+export function createFrameGate(settleMs = 2000, hiddenAtStart = false) {
+  let until = hiddenAtStart ? Infinity : 0;
+  return {
+    setHidden(hidden: boolean, now: number) { until = hidden ? Infinity : now + settleMs; },
+    /** True when a frame at `now` may be judged. */
+    open: (now: number, hidden = false): boolean => !hidden && now >= until,
   };
 }
 

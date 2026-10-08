@@ -139,10 +139,11 @@ export function lightGovernor(o: { bucketMs?: number; badBuckets?: number; offBu
   const recent: number[] = [];
   let at = -1, n = 0, dtSum = 0, cpuSum = 0, bad = 0, good = 0, floorBad = 0, cpuBad = 0, settle = 0;
   const fails: number[] = [];
-  let lastAvg = 0, lastLimit = 0;
+  let lastAvg = 0, lastLimit = 0, holdUntil = 0;
   return {
     push(dtMs: number, cpuMs: number, now: number, tier: number, lastTier: number, lightsOn: boolean): GovernorStep {
       const none: GovernorStep = { action: 'none', why: '' };
+      if (now < holdUntil) { dtSum = 0; cpuSum = 0; n = 0; at = now; bad = 0; return none; }
       if (at < 0) at = now;
       if (!(dtMs > 0) || dtMs > 250) { dtSum = 0; cpuSum = 0; n = 0; at = now; return none; }
       recent.push(dtMs); if (recent.length > 240) recent.shift();
@@ -173,6 +174,8 @@ export function lightGovernor(o: { bucketMs?: number; badBuckets?: number; offBu
       if (good >= goodBuckets && tier > 0 && (fails[tier - 1] ?? 0) < 2) { good = 0; settle = 1; return { action: 'up', why: `smooth for ${((goodBuckets * bucketMs) / 1000).toFixed(0)} s` }; }
       return none;
     },
+    /** Judges nothing until `now` (a tab just back from hidden is slow while it wakes, which is not the GPU's doing). */
+    holdUntil(now: number) { holdUntil = now; dtSum = 0; cpuSum = 0; n = 0; at = -1; bad = 0; },
     /** The last bucket's average frame interval and the limit it was judged against, for the dev overlay. */
     last: () => ({ avg: lastAvg, limit: lastLimit }),
     reset() { recent.length = 0; at = -1; n = 0; dtSum = 0; cpuSum = 0; bad = 0; good = 0; floorBad = 0; cpuBad = 0; settle = 0; },

@@ -1,6 +1,6 @@
 import { fxCapable, fxRenderer, fxPlanState, setFxPlan } from './postfx.ts';
 import { setWaterPlan } from './themes/harborwater.ts';
-import { PRESET_INFO, autoPick, createDegrader, createMeter, knobs, knobsFor, setKnobs, stepDown, type Env, type Knobs, type PresetId } from './quality.ts';
+import { PRESET_INFO, autoPick, createDegrader, createFrameGate, createMeter, knobs, knobsFor, setKnobs, stepDown, type Env, type Knobs, type PresetId } from './quality.ts';
 import { browserStore, onSettings, settings } from './settings.ts';
 
 /**
@@ -19,6 +19,8 @@ let cap: PresetId | null = null;
 let onResize: (() => void) | null = null;
 let notify: ((message: string) => void) | null = null;
 const meter = createMeter();
+const gate = createFrameGate(2000, typeof document !== 'undefined' && document.hidden);
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { gate.setHidden(document.hidden, performance.now()); degrader.reset(); });
 const degrader = createDegrader();
 let probeSum = 0, probeN = 0, probed = false;
 
@@ -64,8 +66,9 @@ export function initQuality(opts: { resize(): void; toast(message: string): void
 
 /** Called once per drawn frame with its duration. `inMatch` limits the ten-second step-down to real play (the menu scene is not the game). */
 export function frameTick(frameMs: number, now: number, inMatch: boolean): void {
-  meter.push(frameMs);
-  if (!probed && frameMs < 250) {
+  const trusted = gate.open(now, document.hidden);
+  if (trusted) meter.push(frameMs);
+  if (!probed && trusted && frameMs < 250) {
     probeSum += frameMs;
     if (++probeN >= PROBE_FRAMES) {
       probed = true;
@@ -74,7 +77,7 @@ export function frameTick(frameMs: number, now: number, inMatch: boolean): void 
       if (settings().quality === 'auto') applyQuality();
     }
   }
-  if (!inMatch || settings().quality !== 'auto' || document.hidden) { degrader.reset(); return; }
+  if (!inMatch || settings().quality !== 'auto' || !trusted) { degrader.reset(); return; }
   if (!degrader.push(frameMs, now)) return;
   const lower = stepDown(auto.preset);
   if (!lower) return;

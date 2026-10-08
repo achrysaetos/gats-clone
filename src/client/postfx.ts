@@ -114,6 +114,8 @@ let tierIx = 0;
 let captured: { view: ViewRect; occluders: readonly Occluder[] } | null = null;
 let lastLit = 0;
 const governor = lightGovernor();
+// A hidden tab, and the moments after it returns, say nothing about the GPU: the governor waits them out.
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => governor.holdUntil(document.hidden ? Infinity : performance.now() + 2000));
 /** What the governor and the preset did, newest last, for the dev overlay and the dev probe. */
 const fxLog: { at: number; what: string; tier: number; why: string }[] = [];
 let lastCpuMs = 0;

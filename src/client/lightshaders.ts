@@ -203,6 +203,9 @@ void main(){
   float strength = clamp(dot(L, vec3(0.3, 0.59, 0.11)) * 1.5, 0.0, 1.0);
   vec3 lit = b * (amb * a * (1.0 - 0.8 * strength) + L) + L * wx.w;
   vec2 wp = vec2(vw.x + uv.x * vw.z, vw.y + (1.0 - uv.y) * vw.w);
+  // Water sits deep and dark at night, so the lamps on it read.
+  float deep = smoothstep(0.02, 0.1, b.b - b.r) * clamp(1.0 - dot(amb, vec3(0.33)) * 1.4, 0.0, 0.6);
+  lit *= 1.0 - 0.45 * deep;
   if (wx.x > 0.0 && m.r < 0.5) {
     // Wet ground: puddles hold the lights' colour as a sheen, and the stone glints where a lamp's light lands.
     float stone = 1.0 - smoothstep(0.02, 0.1, b.b - b.r);

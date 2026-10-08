@@ -25,6 +25,7 @@ import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { notePropEvents } from './propfx.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
 import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
+import { frameStep, resyncNet, shouldPredict } from './resync.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
@@ -367,12 +368,14 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   const topped = topupOf(prev, snap, s.myId);
   if (topped > 0) onTopup(s, topped, now);
   chatter.onSnap(snap, s.myId, now);
-  s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
+  // No frame drains these while the tab is hidden, so they would pile up and all land on the first frame back.
+  if (!document.hidden) s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   notePropEvents(snap, now);
   noteTargetEvents(snap, snap.tick * TICK_MS);
   rangeUi.update(snap, s.myId);
   s.rounds = s.rounds.filter((r) => roundLive(r, now));
   shooting.settleShots(s, snap, now);
+  if (document.hidden) s.pendingShots = [];
   for (const ev of snap.events) {
     const repeatsKnock = ev.e === 'life' && ev.k === 'downed' && !!snap.royale;
     if ((ev.e === 'kill' || ev.e === 'hunted' || ev.e === 'life' || ev.e === 'wiped' || ev.e === 'airdrop') && !repeatsKnock) s.feed = [...s.feed.slice(-9), { ...ev, at: now }];
@@ -473,7 +476,8 @@ function aimOffset(s: Session): { dx: number; dy: number } {
 setInterval(() => {
   const s = sessionOf(state);
   if (!s) return;
-  const active = takesInput(state.phase, overlays.typing, pause.isOpen());
+  const hidden = document.hidden;
+  const active = !hidden && takesInput(state.phase, overlays.typing, pause.isOpen());
   s.seq++;
   const actions = active ? new Set([...held, ...touchMoves(sticks), ...(abilityTapped ? ['ability' as const] : [])]) : new Set<Action>();
   abilityTapped = false;
@@ -487,6 +491,8 @@ setInterval(() => {
   if (sent.rejected) shooting.takeBack(s, sent.rejected);
   const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
+  // A hidden tab's timer is throttled to about 1 Hz: sending neutral inputs keeps the player alive, but predicting a step for each would drift far from the server.
+  if (!shouldPredict(hidden)) return;
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
   s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest, doorsOf(s)), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
@@ -628,7 +634,7 @@ function drawFrame(realNow: number) {
   }
   releaseQueued(rt, realNow);
   releaseTargetFx(rt, now, layoutOf(latest.match.map));
-  s.predict = decayCorrection(s.predict, now - lastFrameAt);
+  s.predict = decayCorrection(s.predict, frameStep(now, lastFrameAt));
   const drawn = delight.lag > 0.5 ? null : drawnPosition(s.predict, now, INPUT_MS);
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
   noteAssistTargets(s, players);
@@ -642,8 +648,8 @@ function drawFrame(realNow: number) {
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
   const look = delight.look(s.lastSelf, snap.self.viewRadius || WORLD.viewRadius, realNow);
   aimCamera = makeCamera(look.center, view.w, view.h, look.radius);
-  trauma = decay(trauma, now - lastFrameAt);
-  kick = settleKick(kick, now - lastFrameAt);
+  trauma = decay(trauma, frameStep(now, lastFrameAt));
+  kick = settleKick(kick, frameStep(now, lastFrameAt));
   lastFrameAt = now;
   const shake = offset(trauma, now);
   // A kill of yours snaps the view in a few percent and lets it back out.
@@ -813,6 +819,14 @@ for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
 window.addEventListener('blur', () => { wheel.close(); held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; });
+// Hiding the tab lets go of everything held; coming back also drops the stale snapshots and prediction so the next snapshot starts them afresh.
+document.addEventListener('visibilitychange', () => {
+  wheel.close(); held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; abilityTapped = false;
+  lastRaf = 0; lastFrameAt = 0;
+  if (document.hidden) return;
+  const s = sessionOf(state);
+  if (s) Object.assign(s, resyncNet(s));
+});
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   // Suppresses the emulated mousedown so a thumb on the move stick does not also fire.
