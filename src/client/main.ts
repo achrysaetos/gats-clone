@@ -88,6 +88,7 @@ import { createXpCard } from './xpcard.ts';
 import { createChallengeToasts } from './challengetoast.ts';
 import { parseServerMsg, routeServerMsg } from './servermsg.ts';
 import { newlyDone, openChallenges } from './progression.ts';
+import { guestNudge, isUnrecordedNotice, mountEnlist, type Stakes } from './enlist.ts';
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -303,9 +304,10 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     snap: (m) => { const snap = fillSnapshot(m, newestSnap(s.snaps)); if (snap) onSnap(s, snap, now); },
     radio: (m) => onRoomRadio(m.station, now),
     walls: (m) => { s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; },
-    chat: (m) => { s.chat.push({ from: m.from, text: m.text, team: m.team, at: now }); },
+    chat: (m) => { s.chat.push({ from: m.from, text: m.text, team: m.team, at: now }); if (isUnrecordedNotice(m.from, m.text)) noteStakes({ unrecorded: true }); },
     emote: (m) => { noteEmote(m.pid, m.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, m.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); },
     badge: (m) => {
+      noteStakes({ medal: true });
       if (isCenturion(m.badge) && aimCamera) { const at = worldToScreen(aimCamera, s.lastSelf); celebrate.puff(at.x, at.y - 30, bodyColor({ color: loadout.color, team: null })); }
       s.moments = addCareerToast(s.moments, m.badge, m.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
     },
@@ -321,6 +323,7 @@ function onProgress(msg: Extract<ServerMsg, { t: 'progress' }>) {
   for (const c of newlyDone(wardrobe.state().challenges, msg.challenges)) challengeToast(c);
   wardrobe.onProgress(msg);
   xpCard.onProgress(msg);
+  if (msg.levelUps.length) noteStakes({ level: true });
 }
 
 function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; map?: MapId; walls: WallView[] }): Session {
@@ -1102,8 +1105,18 @@ const modeArt = createModeArt(reducedMotion);
 const menuScene = createMenuScene($<HTMLCanvasElement>('menu-scene'), reducedMotion);
 const gearStage = createGearStage($<HTMLCanvasElement>('gear-view'), { loadout: () => loadout, look: () => lookOfEquipped(wardrobe.state().equipped), calm: reducedMotion });
 const flow = createMenuFlow({ menu: menuEl, art: modeArt, stage: gearStage, scene: menuScene });
+/** The enlist plate on the first screen (guests only), and the death card's one quiet line when a guest has something at stake. */
+const enlist = mountEnlist($('enlist'), {
+  auth: (kind, name, pass) => account.auth(kind, name, pass),
+  suggestName: () => (nameInput.value.trim() ? cleanName(nameInput.value) : ''),
+  afterSignIn: () => flow.go('modes'),
+});
+const deathNudge = $('death-enlist'), deathNudgeText = $('death-enlist-text');
+const syncNudge = () => { const line = guestNudge(!!account.current(), enlist.stakes()); deathNudge.hidden = !line; deathNudgeText.textContent = line ?? ''; };
+const noteStakes = (more: Partial<Stakes>) => { if (!account.current()) { enlist.note(more); syncNudge(); } };
+$('death-enlist-go').addEventListener('click', () => { leave(); showTab('tab-deploy'); flow.go('modes', { focus: false }); enlist.open('register'); });
 /** The account chip in the menu's top bar follows who is signed in and their level. */
-const syncAcct = () => flow.setAccount(account.current()?.name ?? null, wardrobe.state().level.level);
+const syncAcct = () => { flow.setAccount(account.current()?.name ?? null, wardrobe.state().level.level); enlist.sync(!!account.current()); syncNudge(); };
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow, { gear: true, peek: (g) => gearStage.peek(g), colorRoot: $('gear-colors') }),
   mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout, skinNow),

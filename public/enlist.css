@@ -1,0 +1,134 @@
+/*
+ * The enlist plate (src/client/enlist.ts): a guest's one invitation to make an account, on the first menu screen between the
+ * title and the mode cards. It is a field-kit plate like the rest of the menu (menu.css): lit top, ink outline, a front lip and a
+ * hard shadow down and to the right, an orange corner bracket, and a stamped steel dog tag for its emblem. Orange is the action,
+ * gold the reward; the benefits are icons and words on the plate itself, never boxed.
+ */
+#menu .enlist { margin: 0 4px 30px; animation: enlist-in 0.22s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+#menu .enlist[hidden] { display: none; }
+@keyframes enlist-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+#menu .enlist-plate {
+  --lip: 6px;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 4px 22px;
+  padding: 14px 22px 14px 18px;
+  background: linear-gradient(var(--m-face) 0 7px, var(--m-body) 7px);
+  border: 2px solid var(--m-ink);
+  border-radius: 7px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.13), 0 var(--lip) 0 0 var(--m-lip), 0 var(--lip) 0 2px var(--m-ink), 8px calc(var(--lip) + 8px) 0 0 var(--m-shadow);
+}
+/* The orange corner bracket of the field kit, top left. */
+#menu .enlist-plate::before {
+  content: ""; position: absolute; left: 6px; top: 6px; width: 16px; height: 16px; pointer-events: none;
+  border-top: 3px solid var(--m-accent); border-left: 3px solid var(--m-accent); border-top-left-radius: 2px;
+}
+#menu .enlist-tag { width: 50px; height: auto; display: block; margin: -4px 0 -2px; transform: rotate(-7deg); }
+
+#menu .enlist-head { min-width: 0; }
+#menu .enlist-title {
+  margin: 0; font: italic 900 32px/0.95 var(--display); letter-spacing: 0.02em; text-transform: uppercase; color: var(--m-text);
+  text-shadow: 0 2px 0 var(--m-ink), 2px 2px 0 var(--m-ink), -1px 0 0 var(--m-ink), 4px 5px 0 var(--m-shadow);
+}
+#menu .enlist.stakes .enlist-title { color: var(--m-gold); }
+#menu .enlist-sub { margin: 6px 0 0; font: 500 15px/1.3 var(--text); color: var(--m-sub); }
+
+#menu .enlist-body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 22px; }
+#menu .enlist[data-form="register"] .enlist-body, #menu .enlist[data-form="login"] .enlist-body { grid-template-columns: minmax(0, 1fr); }
+
+/* Benefits: a stamped icon and a few words each, two by two, ruled off from the headline by an ink seam. */
+#menu .enlist-perks {
+  list-style: none; margin: 0; padding: 2px 0 2px 22px; border-left: 3px solid var(--m-ink);
+  display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 10px 26px;
+}
+#menu .enlist-perks li { display: flex; align-items: center; gap: 10px; font: 700 18px/1.1 var(--display); letter-spacing: 0.03em; color: var(--m-text); white-space: nowrap; }
+#menu .enlist-icon { width: 28px; height: 28px; flex: none; filter: drop-shadow(2px 2px 0 rgba(5, 6, 9, 0.55)); }
+
+#menu .enlist-actions { display: grid; justify-items: center; gap: 10px; padding: 18px 0 0; }
+#menu .enlist-go {
+  padding: 12px 22px 11px !important; font: 900 20px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; color: #160a04 !important;
+  background: linear-gradient(var(--m-accent-hi) 0 6px, var(--m-accent) 6px) !important;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3), 0 var(--lip) 0 0 var(--m-accent-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 5px) 0 0 var(--m-shadow) !important;
+}
+#menu .enlist-go:hover:not(:disabled) { background: linear-gradient(#ff9468 0 6px, var(--m-accent-hi) 6px) !important; }
+#menu .enlist-go:disabled { opacity: 0.75; cursor: progress; }
+#menu .enlist-alt { color: var(--m-accent-text); text-decoration: none; font: 700 16px/1 var(--display); letter-spacing: 0.06em; padding: 4px 2px; cursor: pointer; }
+#menu .enlist-alt:hover { color: #ffc4a6; text-decoration: underline; text-underline-offset: 3px; }
+#menu .enlist-x {
+  position: absolute; right: 16px; top: 9px; padding: 4px 2px; color: var(--m-sub); text-decoration: none; cursor: pointer;
+  font: 700 14px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase;
+}
+#menu .enlist-x:hover { color: var(--m-text); text-decoration: underline; text-underline-offset: 3px; }
+
+/* The inline form: two wells and the orange button on one line, the switch and any error under them. */
+#menu .enlist-form { display: grid; gap: 10px; padding: 8px 0 0 22px; border-left: 3px solid var(--m-ink); width: min(640px, 52vw); }
+#menu .enlist-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+#menu .enlist-field { display: grid; gap: 6px; min-width: 0; }
+#menu .enlist-field > span { font: 800 13px/1 var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--m-sub); }
+#menu .enlist-fields input { min-width: 0; padding: 10px 12px; font: 700 19px/1.1 var(--display); letter-spacing: 0.04em; }
+#menu .enlist-fields input[aria-invalid] { border-color: #ff6b5e; }
+#menu .enlist-form-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; min-height: 22px; }
+#menu .enlist-msg { margin: 0; font: 600 15px/1.25 var(--text); color: var(--m-sub); }
+#menu .enlist-msg:empty { display: none; }
+#menu .enlist-msg.error { color: #ffb0a8; }
+#menu .enlist-msg.error::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 8px; background: #ff6b5e; border: 2px solid var(--m-ink); transform: rotate(45deg); vertical-align: 1px; }
+
+/* The signed-in chip in the top bar stamps in when an account is made from the plate. */
+#menu .acct-chip.in { animation: chip-stamp 0.3s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+@keyframes chip-stamp { from { transform: scale(1.18); } to { transform: none; } }
+
+@media (max-width: 1180px) {
+  #menu .enlist-plate { grid-template-columns: auto minmax(0, 1fr); }
+  #menu .enlist-body { grid-column: 1 / -1; padding-top: 10px; }
+  #menu .enlist-perks, #menu .enlist-form { padding-left: 0; border-left: 0; width: auto; }
+  #menu .enlist-actions, #menu .enlist-form { padding-top: 0; }
+  #menu .enlist-head { padding-right: 90px; }
+}
+@media (max-width: 640px) {
+  #menu .enlist { margin: 0 12px 26px 0; }
+  #menu .enlist-plate { padding: 12px 14px 14px 12px; gap: 4px 12px; }
+  #menu .enlist-tag { width: 36px; }
+  #menu .enlist-title { font-size: 26px; }
+  #menu .enlist-sub { font-size: 14px; }
+  #menu .enlist-head { padding-right: 58px; }
+  #menu .enlist-body { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  #menu .enlist-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; }
+  #menu .enlist-perks li { font-size: 15px; white-space: normal; gap: 8px; }
+  #menu .enlist-icon { width: 22px; height: 22px; }
+  #menu .enlist-actions { grid-template-columns: minmax(0, 1fr) auto; align-items: center; justify-items: stretch; gap: 14px; }
+  #menu .enlist-go { font-size: 18px; padding: 12px 14px 11px !important; }
+  #menu .enlist-fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  #menu .enlist-x { right: 10px; top: 9px; font-size: 13px; }
+}
+/* A phone on its side is short: one row (tag, headline, benefits two by two, the button), no subline. */
+@media (max-height: 520px) and (min-width: 600px) {
+  #menu .enlist { margin-bottom: 20px; }
+  #menu .enlist-plate { grid-template-columns: auto auto minmax(0, 1fr); padding: 8px 14px 10px 12px; gap: 4px 14px; }
+  #menu .enlist-head { padding-right: 0; max-width: 150px; }
+  #menu .enlist-sub { display: none; }
+  #menu .enlist-tag { width: 30px; }
+  #menu .enlist-title { font-size: 24px; }
+  #menu .enlist-body { grid-column: auto; padding-top: 0; gap: 6px 14px; }
+  #menu .enlist-perks, #menu .enlist-form { padding-left: 14px; border-left: 3px solid var(--m-ink); }
+  #menu .enlist-perks { grid-template-columns: repeat(2, max-content); gap: 7px 16px; }
+  #menu .enlist-perks li { font-size: 14px; gap: 7px; }
+  #menu .enlist-icon { width: 20px; height: 20px; }
+  #menu .enlist-actions { padding-top: 16px; gap: 6px; }
+  #menu .enlist-go { font-size: 16px; padding: 9px 14px 8px !important; }
+  #menu .enlist-alt { font-size: 14px; }
+  #menu .enlist-x { top: 6px; right: 12px; font-size: 13px; }
+  #menu .enlist-form { padding-top: 14px; }
+  #menu .enlist-field > span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #menu .enlist, #menu .acct-chip.in { animation: none; }
+}
+
+/* ---- The death card's nudge: one line, an orange word to act on. */
+.death-enlist { margin: 8px 0 0; font: 600 15px/1.3 var(--text); color: var(--muted); }
+.death-enlist[hidden] { display: none; }
+.death-enlist button.link { color: var(--accent); text-decoration: none; font: 800 15px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; }
+.death-enlist button.link:hover { text-decoration: underline; text-underline-offset: 3px; }

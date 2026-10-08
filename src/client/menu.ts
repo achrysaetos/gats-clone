@@ -241,8 +241,18 @@ export function renderSquadChip(root: HTMLElement, code: string | null, link: st
   root.replaceChildren(el('span', {}, `Squad ${code}`), copy);
 }
 
-export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null; expire(message: string): void } {
+export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null; expire(message: string): void; auth(kind: 'login' | 'register', name: string, password: string): Promise<string | null> } {
   let account = loadAccount();
+  /** Logs in or registers (from this sheet or the enlist plate); resolves to the server's error, or null once signed in. */
+  const auth = async (kind: 'login' | 'register', name: string, password: string): Promise<string | null> => {
+    const r = await authenticate(kind, name, password);
+    if ('error' in r) return r.error;
+    account = r;
+    saveAccount(r);
+    onChange(r);
+    showSignedIn(r);
+    return null;
+  };
 
   const showSignedIn = (a: Account) => {
     const stats = el('dl', { className: 'stats' }, el('dd', { className: 'muted' }, 'Loading stats…'));
@@ -267,12 +277,8 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
     const submit = async (kind: 'login' | 'register') => {
       if (!form.reportValidity()) return;
       msg.textContent = kind === 'login' ? 'Logging in…' : 'Creating account…';
-      const r = await authenticate(kind, name.value, pass.value);
-      if ('error' in r) { msg.textContent = r.error; return; }
-      account = r;
-      saveAccount(r);
-      onChange(r);
-      showSignedIn(r);
+      const error = await auth(kind, name.value, pass.value);
+      if (error) msg.textContent = error;
     };
     form.onsubmit = (e) => { e.preventDefault(); void submit('login'); };
     register.onclick = () => void submit('register');
@@ -283,6 +289,7 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
   else showSignedOut();
   return {
     current: () => account,
+    auth,
     expire(message) {
       account = null;
       saveAccount(null);

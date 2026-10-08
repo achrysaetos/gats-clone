@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="range.css">
   <link rel="stylesheet" href="menu.css">
   <link rel="stylesheet" href="pause.css">
+  <link rel="stylesheet" href="enlist.css">
 </head>
 <body>
   <canvas id="fx" hidden aria-hidden="true" style="position:fixed;inset:0;width:100vw;height:100vh;display:block;pointer-events:none"></canvas>
@@ -66,6 +67,7 @@
             <h2 id="modes-title" class="step-title">Choose your fight</h2>
             <p class="step-sub">Pick a mode. You gear up next.</p>
           </div>
+          <section id="enlist" class="enlist" hidden></section>
           <div id="mode-grid" class="mode-grid">
             <div id="servers" class="servers"></div>
             <div class="mc-wrap"><div id="squad" class="squad mode-card plate mc-zom"></div></div>
@@ -134,6 +136,7 @@
         <p id="death-lost" class="death-lost" hidden></p>
         <div id="death-recap" class="recap" hidden></div>
         <p id="death-sub" class="muted"></p>
+        <p id="death-enlist" class="death-enlist" hidden><span id="death-enlist-text"></span> <button id="death-enlist-go" type="button" class="link" title="Leave the match and make a free account">Enlist &#8250;</button></p>
         <div id="loadout-death" class="loadout"></div>
         <button id="respawn" type="button" class="primary">Respawn</button>
       </div>
