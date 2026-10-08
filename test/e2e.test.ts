@@ -119,7 +119,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   }
 
   const servers = (await (await fetch(base + '/api/servers')).json()) as { id: string; mode: string; players: number; humans: number }[];
-  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0]]);
+  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0], ['ext', 'EXT', 0]]);
   for (const s of servers) assert.equal(s.players, WORLD.minPlayers, 'bots fill the room to minPlayers');
 
   const ffa = conns.ffa;
