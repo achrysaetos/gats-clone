@@ -21,7 +21,7 @@ import { createQuality, parseKnobs, parseMode, type QualityMode } from './qualit
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
-import { startEffect } from './effects.ts';
+import { lastSeen, startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
@@ -347,7 +347,7 @@ function hands(s: Session): Hands {
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
   if (spec.kind !== 'death') return undefined;
-  const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
+  const victim = lastSeen(s, spec.victim);
   return victim && bodyColor(victim);
 }
 

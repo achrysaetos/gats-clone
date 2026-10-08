@@ -2,6 +2,7 @@ import { GUNS } from '../shared/defs.ts';
 import { KIT, type Material } from '../shared/kit.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { addCrack, hostOf, inward } from './decals.ts';
+import type { PlayerView } from '../shared/protocol.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { newestSnap } from './interp.ts';
 import { ZOMBIE_LOOK } from './palette.ts';
@@ -83,8 +84,7 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     }
     case 'death': {
       burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint);
-      // The death plays at render time, a few ticks after the newest snapshot has already dropped the victim.
-      const victim = s.snaps.snaps.flatMap((snap) => snap.players.filter((p) => p.id === spec.victim)).at(-1);
+      const victim = lastSeen(s, spec.victim);
       if (!victim) return;
       const blow = s.effects.filter((fx) => fx.kind === 'impact' && fx.victim === spec.victim && fx.dir !== null && now - fx.born < 400).at(-1);
       const blast = s.effects.some((fx) => fx.kind === 'boom' && now - fx.born < 300 && Math.hypot(fx.x - spec.x, fx.y - spec.y) < fx.r + 30);
@@ -111,6 +111,12 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
       return;
   }
 }
+
+/**
+ * A player as the newest snapshot that still lists them showed them. Deaths play at render time, a few ticks after the
+ * newest snapshot has already dropped the dead.
+ */
+export const lastSeen = (s: Session, id: number): PlayerView | undefined => s.snaps.snaps.flatMap((snap) => snap.players.filter((p) => p.id === id)).at(-1);
 
 /** The way a round glances off a face whose outward normal is `normal`: mirrored about it, or straight back when the face is unknown. */
 export function reflect(dir: number, normal: number | null): number {

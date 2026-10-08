@@ -7,7 +7,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from 'node:path';
 import type { GameEvent, PlayerView, Snapshot, WallView } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { hold, key, navGridFor, openPage, pathStep, serversListed, sleep, type Dir } from './lib/browser.ts';
+import { dirKey, key, navGridFor, openPage, pathStep, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node moments.ts <run-dir> [seconds] [weapon-index]'); process.exit(2); }
@@ -48,7 +48,7 @@ const page = await openPage({
     if (!full) return;
     const at = Date.now();
     history.push({ at, players: new Map(full.players.map((p) => [p.id, p])), self: full.self });
-    if (history.length > 400) history.shift();
+    if (history.length > 4000) history.shift();
     for (const ev of full.events) {
       if (ev.e === 'dmg' && ev.kind === 'player' && ev.victim !== myId && ev.hit) hits.push({ at, ev });
       if (ev.e === 'kill' && ev.victimId !== myId) kills.push({ at, ev });
@@ -96,6 +96,20 @@ const clear = (a: { x: number; y: number }, b: { x: number; y: number }) => !(gr
 });
 let step = 0;
 const end = Date.now() + SECONDS * 1000;
+/** Shoots the first hit landing near you within a frame or two of it, while the flinch and flash still show. */
+async function catchHits(self: { x: number; y: number }) {
+  for (; seenHits < hits.length; seenHits++) {
+    const h = hits[seenHits]!;
+    const victim = full!.players.find((p) => p.id === h.ev.victim);
+    if (victim && Date.now() - h.at < 150 && Math.hypot(victim.x - self.x, victim.y - self.y) < 500) await once('hit-reaction', victim);
+  }
+}
+/** Holds the keys for `ms`, watching for hits as it goes. */
+async function walk(dirs: readonly Dir[], self: { x: number; y: number }, ms: number) {
+  for (const d of dirs) await dirKey(page, 'keyDown', d);
+  for (const until = Date.now() + ms; Date.now() < until;) { await catchHits(self); await sleep(15); }
+  for (const d of dirs) await dirKey(page, 'keyUp', d);
+}
 const WANTED = ['hit-reaction', 'death-body', 'reload', 'close-blast', 'suppressed'];
 while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
   const self = me();
@@ -115,19 +129,12 @@ while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
   if (foe && near < RANGE && clear(self, foe)) {
     await mouse('mousePressed', mx, my);
     if (near < 130) { await sleep(25); await once('close-blast', self); }
-    await sleep(60);
+    await walk([], self, 60);
     await mouse('mouseReleased', mx, my);
   } else {
     const g = ground();
     const dirs = foe && g ? pathStep(navGridFor(g.worldSize, g.walls), self, foe) : [KEYS[step++ % 4]!];
-    await hold(page, dirs.length ? dirs : [KEYS[step++ % 4]!], 300);
-  }
-  for (; seenHits < hits.length; seenHits++) {
-    const h = hits[seenHits]!;
-    if (Math.hypot(h.ev.x - self.x, h.ev.y - self.y) < 500) await once('hit-reaction', h.ev.hit ?? h.ev);
-    const before = [...history].reverse().find((s) => s.at < h.at)?.players.get(h.ev.victim);
-    const after = history.find((s) => s.at > h.at + 90)?.players.get(h.ev.victim);
-    if (before && after && h.ev.hit) knock.push(Math.cos(h.ev.hit.dir) * (after.x - before.x) + Math.sin(h.ev.hit.dir) * (after.y - before.y));
+    await walk(dirs.length ? dirs : [KEYS[step++ % 4]!], self, 300);
   }
   for (; seenKills < kills.length; seenKills++) {
     const k = kills[seenKills]!;
@@ -147,6 +154,11 @@ while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
   }
 }
 close();
+for (const h of hits) {
+  const before = [...history].reverse().find((s) => s.at < h.at)?.players.get(h.ev.victim);
+  const after = history.find((s) => s.at > h.at + 90)?.players.get(h.ev.victim);
+  if (before && after?.alive && h.ev.hit && Math.hypot(after.x - before.x, after.y - before.y) < 80) knock.push(Math.cos(h.ev.hit.dir) * (after.x - before.x) + Math.sin(h.ev.hit.dir) * (after.y - before.y));
+}
 
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? NaN;
 log(`moments FFA weapon tile ${WEAPON} ${SECONDS}s at ${new Date().toISOString()}`);

@@ -146,7 +146,7 @@ function drawNearMisses({ ctx, w, h, s, now, cam, selfAt }: Hud) {
 }
 
 /** How far in and how dark suppression closes the screen edges at its full level. */
-const SUPPRESSED_EDGE = { depth: 0.16, alpha: 0.42, bands: 6 } as const;
+const SUPPRESSED_EDGE = { depth: 0.18, alpha: 0.6, bands: 6 } as const;
 
 /** Suppression closes in from every edge as dark smeared bands, deepest at full suppression, so being pinned reads at a glance. */
 function drawSuppression({ ctx, w, h, snap }: Hud) {
