@@ -495,6 +495,27 @@ export const ROYALE = {
   wave: 45,
 } as const;
 
+/**
+ * Extraction, best of `rounds` (first to `roundsToWin`), sides swapping each round. Attackers hack the terminal by standing within
+ * `terminalR` of it with no defender there: `hackMs` of that completes it, and progress holds, never drains, while it is contested or empty.
+ * The hack frees a data case at the terminal; an attacker picks it up by touching it (within `touchR`), carries it at `carrierSpeedMul`
+ * without abilities, and wins the round by standing on the pad. A carrier who dies drops it; a defender's touch, or `returnMs` untouched,
+ * puts it back at the terminal. Defenders win when the round's `roundMs` runs out. The dead come back together every `waveMs`, and
+ * `breakMs` of ceasefire separates rounds.
+ */
+export const EXT = {
+  rounds: 5,
+  roundsToWin: 3,
+  roundMs: 150_000,
+  hackMs: 10_000,
+  terminalR: 110,
+  touchR: 40,
+  carrierSpeedMul: 0.88,
+  returnMs: 20_000,
+  waveMs: 8_000,
+  breakMs: 5_000,
+} as const;
+
 /** What each kind of Last Squad crate pays, how much it takes to break and the kit piece it stands as. A drop also jumps its breaker to their next level pick. */
 export const CRATE_TIERS = {
   loot: { score: 25, hp: 40, piece: 'crate' },

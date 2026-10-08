@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: node scripts/map-lint.ts
 import { fileURLToPath } from 'node:url';
-import { GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
+import { EXT, GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
 import { KIT, placed } from '../src/shared/kit.ts';
 import { MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
@@ -106,7 +106,8 @@ export function lintMap(def: MapDef): string[] {
     if (!inside(c, 0)) problems.push(`crate ${i} leaves the world`);
     if (def.walls.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
   });
-  const spawnSides = Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][];
+  const ext = def.extract;
+  const spawnSides = [...Object.entries(def.spawns), ...(ext ? [['attack', ext.attack], ['defend', ext.defend]] : [])] as [string, readonly Rect[]][];
 
   for (const [side, regions] of spawnSides) {
     if (regions.length === 0) problems.push(`no ${side} spawn region`);
@@ -119,6 +120,9 @@ export function lintMap(def: MapDef): string[] {
 
   const reached = new Uint8Array(n * n);
   flood(free, n, spawnSides.flatMap(([, regions]) => regions.flatMap((r) => cellsIn(r, n))), reached);
+  // Flooding each pocket marks it seen, so what a spawn reaches is kept apart from it.
+  const fromSpawn = reached.slice();
+  const reachedAt = (p: Center) => cellsEitherSide(p.y, n).some((row) => cellsEitherSide(p.x, n).some((col) => fromSpawn[row * n + col]));
   for (let c = 0; c < n * n; c++) {
     if (!free[c] || reached[c]) continue;
     const pocket = flood(free, n, [c], reached);
@@ -127,32 +131,50 @@ export function lintMap(def: MapDef): string[] {
 
   def.zones.forEach((z, i) => {
     if (z.x - ZONE_RADIUS < 0 || z.y - ZONE_RADIUS < 0 || z.x + ZONE_RADIUS > def.size || z.y + ZONE_RADIUS > def.size) problems.push(`zone ${i} at ${where(z)} reaches past the map's edge`);
-    if (!cellsEitherSide(z.y, n).some((row) => cellsEitherSide(z.x, n).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
+    if (!reachedAt(z)) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
     const wall = def.walls.find((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w));
     if (wall) problems.push(`zone ${i} at ${where(z)} overlaps the wall at ${where(wall)}`);
     if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
   });
 
   if (def.siege) return problems;
+  if (ext) {
+    const t = ext.terminal, r = EXT.terminalR;
+    if (t.x - r < 0 || t.y - r < 0 || t.x + r > def.size || t.y + r > def.size) problems.push(`the terminal at ${where(t)} reaches past the map's edge`);
+    if (!reachedAt(t)) problems.push(`the terminal at ${where(t)} cannot be walked to from any spawn`);
+    const blocking = [...def.walls, ...def.fences, ...crates].find((s) => circleHitsRect(t.x, t.y, r, s));
+    if (blocking) problems.push(`the terminal's circle at ${where(t)} overlaps the solid at ${where(blocking)}`);
+    const pad = ext.pad, padCenter = { x: pad.x + pad.w / 2, y: pad.y + pad.h / 2 };
+    if (!inside(pad, 0)) problems.push(`the pad at ${where(pad)} leaves the world`);
+    if (!reachedAt(padCenter)) problems.push(`the pad at ${where(pad)} cannot be walked to from any spawn`);
+    const onPad = [...def.walls, ...def.fences, ...crates].find((s) => rectsOverlap(s, pad));
+    if (onPad) problems.push(`the pad at ${where(pad)} holds the solid at ${where(onPad)}`);
+    sees(problems, ext.attack, ext.defend, n, def, 'attack', 'defend');
+    return problems;
+  }
   if (def.zones.length !== 3) problems.push(`${def.zones.length} zones, DOM needs 3`);
 
-  const red = def.spawns.red.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
-  const blue = def.spawns.blue.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
-  sight: for (const a of red) {
-    for (const b of blue) {
-      if (def.walls.some((w) => crosses(a.x, a.y, b.x, b.y, w))) continue;
-      problems.push(`the red spawn at ${where(a)} can see the blue spawn at ${where(b)}`);
-      break sight;
-    }
-  }
+  sees(problems, def.spawns.red, def.spawns.blue, n, def, 'red', 'blue');
 
   const walls = asymmetryOf(def.walls.map((r) => ({ r, key: MATERIAL_KEY[r.material] })), (k) => k, def.size);
   if (walls) problems.push(`walls are not the same after a half turn around ${where(walls)}`);
-  const spawns = asymmetryOf(spawnSides.flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
+  const spawns = asymmetryOf((Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][]).flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
   for (const c of withoutHalfTurnTwin(crates.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })), def.size)) problems.push(`the breakable at ${where(c)} has no twin at the half turn`);
   for (const z of withoutHalfTurnTwin(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
   return problems;
+}
+
+function sees(problems: string[], one: readonly Rect[], other: readonly Rect[], n: number, def: MapDef, oneName: string, otherName: string) {
+  const red = one.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
+  const blue = other.flatMap((r) => cellsIn(r, n)).map((c) => centerOf(c, n));
+  for (const a of red) {
+    for (const b of blue) {
+      if (def.walls.some((w) => crosses(a.x, a.y, b.x, b.y, w))) continue;
+      problems.push(`the ${oneName} spawn at ${where(a)} can see the ${otherName} spawn at ${where(b)}`);
+      return;
+    }
+  }
 }
 
 function sightlines(def: MapDef): { from: Center; to: Center; length: number }[] {
