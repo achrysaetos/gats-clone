@@ -1,9 +1,10 @@
 /// <reference types="node" />
 // Usage: node scripts/map-lint.ts
 import { fileURLToPath } from 'node:url';
-import { EXT, GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
+import { EXT, GUN_IDS, GUNS, WORLD, ZOM, type ModeId } from '../src/shared/defs.ts';
 import { KIT, placed } from '../src/shared/kit.ts';
-import { MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
+import { MAP_IDS, MAPS, modesOn, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
+import type { TrainDef } from '../src/shared/sim/train.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
 export const CELL = 25;
@@ -90,7 +91,20 @@ function withoutHalfTurnTwin(points: readonly Center[], size: number): Center[] 
   return points.filter((p) => have.get(key({ x: size - p.x, y: size - p.y })) !== have.get(key(p)));
 }
 
-export function lintMap(def: MapDef): string[] {
+/** Last Squad's ring table is scaled for maps this size. */
+export const ROYALE_SIZE = 4000;
+/** Clear ground kept between the train's lane and any spawn, zone, terminal, pad or core. */
+export const LANE_MARGIN = 100;
+/** The longest stretch of lane, from an end or between crossings, that nobody can cross. */
+export const CROSSING_SPACING = 1600;
+/** A crossing's signal or warning light stands within this of the crossing. */
+export const SIGNAL_REACH = 300;
+const SIGNALS = new Set(['signal', 'alarm']);
+
+/** Without a list, a map is judged for the modes its sections suggest: a siege map for zombies, an extraction map for extraction, else the versus modes. */
+const modesFor = (def: MapDef): readonly ModeId[] => (def.siege ? ['ZOM'] : def.extract ? ['EXT'] : ['FFA', 'TDM', 'DOM']);
+
+export function lintMap(def: MapDef, modes: readonly ModeId[] = modesFor(def)): string[] {
   const problems: string[] = [];
   const n = Math.ceil(def.size / CELL);
   const free = standable(def, n);
@@ -137,31 +151,98 @@ export function lintMap(def: MapDef): string[] {
     if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
   });
 
-  if (def.siege) return problems;
-  if (ext) {
-    const t = ext.terminal, r = EXT.terminalR;
-    if (t.x - r < 0 || t.y - r < 0 || t.x + r > def.size || t.y + r > def.size) problems.push(`the terminal at ${where(t)} reaches past the map's edge`);
-    if (!reachedAt(t)) problems.push(`the terminal at ${where(t)} cannot be walked to from any spawn`);
-    const blocking = [...def.walls, ...def.fences, ...crates].find((s) => circleHitsRect(t.x, t.y, r, s));
-    if (blocking) problems.push(`the terminal's circle at ${where(t)} overlaps the solid at ${where(blocking)}`);
-    const pad = ext.pad, padCenter = { x: pad.x + pad.w / 2, y: pad.y + pad.h / 2 };
-    if (!inside(pad, 0)) problems.push(`the pad at ${where(pad)} leaves the world`);
-    if (!reachedAt(padCenter)) problems.push(`the pad at ${where(pad)} cannot be walked to from any spawn`);
-    const onPad = [...def.walls, ...def.fences, ...crates].find((s) => rectsOverlap(s, pad));
-    if (onPad) problems.push(`the pad at ${where(pad)} holds the solid at ${where(onPad)}`);
-    sees(problems, ext.attack, ext.defend, n, def, 'attack', 'defend');
-    return problems;
+  if (def.train) problems.push(...laneProblems(def, def.train, free, n));
+  if (modes.includes('ZOM') && !def.siege) problems.push('zombies needs a siege section: a core and the horde\'s edges');
+  if (modes.includes('BR') && def.size !== ROYALE_SIZE) problems.push(`Last Squad needs a ${ROYALE_SIZE} map for its ring, not ${def.size}`);
+  if (modes.includes('EXT')) {
+    if (ext) extractProblems(problems, def, ext, crates, n, reachedAt, inside);
+    else problems.push('extraction needs an extract section');
   }
-  if (def.zones.length !== 3) problems.push(`${def.zones.length} zones, DOM needs 3`);
+  if (modes.includes('DOM') && def.zones.length !== 3) problems.push(`${def.zones.length} zones, DOM needs 3`);
+  if (modes.includes('TDM') || modes.includes('DOM')) fairness(problems, def, crates, n);
+  return problems;
+}
 
+function extractProblems(problems: string[], def: MapDef, ext: NonNullable<MapDef['extract']>, crates: readonly Rect[], n: number, reachedAt: (p: Center) => boolean, inside: (r: Rect, margin: number) => boolean) {
+  const t = ext.terminal, r = EXT.terminalR;
+  if (t.x - r < 0 || t.y - r < 0 || t.x + r > def.size || t.y + r > def.size) problems.push(`the terminal at ${where(t)} reaches past the map's edge`);
+  if (!reachedAt(t)) problems.push(`the terminal at ${where(t)} cannot be walked to from any spawn`);
+  const blocking = [...def.walls, ...def.fences, ...crates].find((s) => circleHitsRect(t.x, t.y, r, s));
+  if (blocking) problems.push(`the terminal's circle at ${where(t)} overlaps the solid at ${where(blocking)}`);
+  const pad = ext.pad, padCenter = { x: pad.x + pad.w / 2, y: pad.y + pad.h / 2 };
+  if (!inside(pad, 0)) problems.push(`the pad at ${where(pad)} leaves the world`);
+  if (!reachedAt(padCenter)) problems.push(`the pad at ${where(pad)} cannot be walked to from any spawn`);
+  const onPad = [...def.walls, ...def.fences, ...crates].find((s) => rectsOverlap(s, pad));
+  if (onPad) problems.push(`the pad at ${where(pad)} holds the solid at ${where(onPad)}`);
+  sees(problems, ext.attack, ext.defend, n, def, 'attack', 'defend');
+}
+
+/** Two sides that spawn apart and fight on a map that is the same after a half turn, red for blue. */
+function fairness(problems: string[], def: MapDef, crates: readonly Rect[], n: number) {
   sees(problems, def.spawns.red, def.spawns.blue, n, def, 'red', 'blue');
-
   const walls = asymmetryOf(def.walls.map((r) => ({ r, key: MATERIAL_KEY[r.material] })), (k) => k, def.size);
   if (walls) problems.push(`walls are not the same after a half turn around ${where(walls)}`);
   const spawns = asymmetryOf((Object.entries(def.spawns) as [keyof MapDef['spawns'], readonly Rect[]][]).flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
   for (const c of withoutHalfTurnTwin(crates.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })), def.size)) problems.push(`the breakable at ${where(c)} has no twin at the half turn`);
   for (const z of withoutHalfTurnTwin(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
+}
+
+/**
+ * The train's lane runs edge to edge over track and holds nothing that stands; spawns, zones and objectives keep `LANE_MARGIN` clear of it;
+ * and players can cross it at gaps no more than `CROSSING_SPACING` apart, each with a signal or warning light beside it.
+ */
+function laneProblems(def: MapDef, train: TrainDef, free: Uint8Array, n: number): string[] {
+  const problems: string[] = [];
+  const { lane } = train;
+  const alongX = train.axis === 'x';
+  const [from, span] = alongX ? [lane.x, lane.w] : [lane.y, lane.h];
+  if (from !== 0 || span !== def.size) problems.push(`the train's lane runs ${from} to ${from + span}, not edge to edge`);
+  if (lane.x < 0 || lane.y < 0 || lane.x + lane.w > def.size || lane.y + lane.h > def.size) problems.push('the train\'s lane leaves the world');
+  for (const at of def.pieces) {
+    const foot = placed(at).foot;
+    if (KIT[at.p].height > 0 && !KIT[at.p].overhead && rectsOverlap(foot, lane)) problems.push(`${at.p} at ${where(foot)} stands in the train's lane`);
+  }
+  const tracks = def.pieces.filter((at) => at.p === 'track').map((at) => placed(at).foot);
+  for (let d = CELL; d < span; d += CELL * 2) {
+    const p = alongX ? { x: lane.x + d, y: lane.y + lane.h / 2 } : { x: lane.x + lane.w / 2, y: lane.y + d };
+    if (!tracks.some((t) => p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h)) { problems.push(`the train's lane has no track under ${where(p)}`); break; }
+  }
+
+  const clearOf = R + LANE_MARGIN;
+  const ext = def.extract;
+  const regions: [string, readonly Rect[]][] = [...Object.entries(def.spawns), ...(ext ? [['attack', ext.attack], ['defend', ext.defend]] as [string, readonly Rect[]][] : [])];
+  for (const [side, rs] of regions) rs.forEach((r, i) => { if (rectsOverlap(r, lane, clearOf)) problems.push(`${side} spawn ${i} is within ${clearOf} of the train's lane`); });
+  def.zones.forEach((z, i) => { if (circleHitsRect(z.x, z.y, ZONE_RADIUS + LANE_MARGIN, lane)) problems.push(`zone ${i} at ${where(z)} is within ${LANE_MARGIN} of the train's lane`); });
+  if (ext && circleHitsRect(ext.terminal.x, ext.terminal.y, EXT.terminalR + LANE_MARGIN, lane)) problems.push(`the terminal at ${where(ext.terminal)} is within ${LANE_MARGIN} of the train's lane`);
+  if (ext && rectsOverlap(ext.pad, lane, LANE_MARGIN)) problems.push(`the pad at ${where(ext.pad)} is within ${LANE_MARGIN} of the train's lane`);
+  const core = def.siege?.core;
+  if (core && circleHitsRect(core.x, core.y, ZOM.coreHalf * Math.SQRT2 + LANE_MARGIN, lane)) problems.push(`the core at ${where(core)} is within ${LANE_MARGIN} of the train's lane`);
+
+  // A crossing is a run of the lane where a player can stand just off both edges.
+  const standsAt = (p: Center) => p.x >= 0 && p.y >= 0 && p.x < def.size && p.y < def.size && free[Math.floor(p.y / CELL) * n + Math.floor(p.x / CELL)] === 1;
+  const off = R + CELL / 2;
+  const sides = (d: number): [Center, Center] => (alongX
+    ? [{ x: d, y: lane.y - off }, { x: d, y: lane.y + lane.h + off }]
+    : [{ x: lane.x - off, y: d }, { x: lane.x + lane.w + off, y: d }]);
+  const crossings: { a: number; b: number }[] = [];
+  for (let d = from + CELL / 2; d < from + span; d += CELL) {
+    if (!sides(d).every(standsAt)) continue;
+    const last = crossings.at(-1);
+    if (last && last.b === d - CELL) last.b = d; else crossings.push({ a: d, b: d });
+  }
+  const gaps = crossings.filter((c) => c.b - c.a >= CELL);
+  if (gaps.length < 2) problems.push(`the train's lane has ${gaps.length} crossing(s), it needs at least 2`);
+  const stops = [from, ...gaps.flatMap((g) => [g.a, g.b]), from + span];
+  for (let i = 0; i + 1 < stops.length; i += 2) {
+    if (stops[i + 1]! - stops[i]! > CROSSING_SPACING) problems.push(`the train's lane runs ${Math.round(stops[i + 1]! - stops[i]!)} from ${Math.round(stops[i]!)} without a crossing, more than ${CROSSING_SPACING}`);
+  }
+  const signals = def.pieces.filter((at) => SIGNALS.has(at.p)).map((at) => placed(at).foot).filter((f) => !rectsOverlap(f, lane))
+    .map((f) => ({ x: f.x + f.w / 2, y: f.y + f.h / 2 }));
+  for (const g of gaps) {
+    const seg: Rect = alongX ? { x: g.a, y: lane.y, w: g.b - g.a, h: lane.h } : { x: lane.x, y: g.a, w: lane.w, h: g.b - g.a };
+    if (!signals.some((s) => circleHitsRect(s.x, s.y, SIGNAL_REACH, seg))) problems.push(`the crossing at ${where({ x: seg.x + seg.w / 2, y: seg.y + seg.h / 2 })} has no signal or warning light within ${SIGNAL_REACH}`);
+  }
   return problems;
 }
 
@@ -202,7 +283,7 @@ function sightlines(def: MapDef): { from: Center; to: Center; length: number }[]
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const reach = Math.max(...GUN_IDS.map((g) => GUNS[g].range));
   for (const id of MAP_IDS) {
-    const problems = lintMap(MAPS[id]);
+    const problems = lintMap(MAPS[id], modesOn(id));
     console.log(problems.length ? `${id}: ${problems.length} problem(s)\n${problems.map((p) => `  ${p}`).join('\n')}` : `${id}: ok`);
     const lines = sightlines(MAPS[id]).sort((a, b) => b.length - a.length);
     const over = (min: number) => lines.filter((l) => l.length > min).length;

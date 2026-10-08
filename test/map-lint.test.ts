@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
-import { expandMap, MAP_IDS, MAPS, ZONE_RADIUS, type MapDef, type MapFile } from '../src/shared/maps.ts';
+import { expandMap, MAP_IDS, MAPS, modesOn, ZONE_RADIUS, type MapDef, type MapFile } from '../src/shared/maps.ts';
 import { lintMap } from '../scripts/map-lint.ts';
 
 for (const id of MAP_IDS) {
   test(`${MAPS[id].name} passes the map lint`, () => {
-    assert.deepEqual(lintMap(MAPS[id]), []);
+    assert.deepEqual(lintMap(MAPS[id], modesOn(id)), []);
   });
 }
 
@@ -137,4 +137,66 @@ test('attack and defend spawns that see each other are reported', () => {
 
 test('an extraction map without a pad or a helipad fails to load', () => {
   assert.throws(() => expandMap({ ...VAULT, pieces: VAULT.pieces.filter((at) => at.p !== 'helipad') }), /no pad and 0 helipads/);
+});
+
+// A 2000 px half-turn yard split by a train lane at its middle row: fences along both edges with two crossings, each with a signal beside it.
+const LANE = { x: 0, y: 925, w: 2000, h: 150 };
+const TRACKS: MapFile['pieces'] = Array.from({ length: 10 }, (_, i) => ({ p: 'track', x: i * 100, y: LANE.y, r: 0 }));
+const FENCE: MapFile['pieces'] = [0, 200, 600, 800, 1000, 1200, 1600, 1800].map((x) => ({ p: 'wall.long', x, y: 875, r: 0 }));
+const YARD: MapFile = {
+  name: 'Yard test',
+  size: 2000,
+  symmetry: 'halfTurn',
+  light: 'day',
+  pieces: [...TRACKS, ...FENCE, { p: 'signal', x: 362.5, y: 840, r: 0 }],
+  marks: [],
+  spawns: { red: [{ x: 50, y: 50, w: 100, h: 100 }], blue: [], ffa: [{ x: 700, y: 500, w: 100, h: 100 }] },
+  zones: [{ x: 1000, y: 400 }],
+  train: { lane: LANE, axis: 'x', dir: 1, everyMs: 60_000, jitterMs: 10_000, warnMs: 5000, speed: 1600, length: 1200 },
+};
+const yard = (over: Partial<MapFile> = {}) => lintMap(expandMap({ ...YARD, ...over }), ['FFA']);
+
+test('a lane run edge to edge over track, fenced with two signalled crossings and clear of spawns and zones, passes', () => {
+  assert.deepEqual(yard(), []);
+});
+
+test('a piece standing in the lane is reported, and paint or an overhead beam over it is not', () => {
+  assert.deepEqual(yard({ pieces: [...YARD.pieces, { p: 'crate', x: 300, y: 950, r: 0 }] }), ['crate at (300, 950) stands in the train\'s lane', 'crate at (1650, 1000) stands in the train\'s lane']);
+  assert.deepEqual(yard({ pieces: [...YARD.pieces, { p: 'pipes', x: 700, y: 975, r: 0 }, { p: 'rubble', x: 300, y: 950, r: 0 }] }), []);
+});
+
+test('a spawn, zone, terminal or core near the lane is reported', () => {
+  assert.deepEqual(yard({ spawns: { ...YARD.spawns, ffa: [{ x: 700, y: 700, w: 100, h: 110 }] } }), ['ffa spawn 0 is within 124 of the train\'s lane', 'ffa spawn 1 is within 124 of the train\'s lane']);
+  assert.deepEqual(yard({ zones: [{ x: 1000, y: 750 }] }), ['zone 0 at (1000, 750) is within 100 of the train\'s lane']);
+  const objectives = lintMap({ ...expandMap(YARD), extract: { terminal: { x: 300, y: 1250 }, pad: { x: 1500, y: 1150, w: 300, h: 300 }, attack: YARD.spawns.red, defend: YARD.spawns.ffa } }, ['FFA']);
+  assert.deepEqual(objectives, ['the terminal at (300, 1250) is within 100 of the train\'s lane', 'the pad at (1500, 1150) is within 100 of the train\'s lane']);
+  const sieged = lintMap({ ...expandMap(YARD), siege: { core: { x: 300, y: 1200 }, horde: { north: LANE, east: LANE, south: LANE, west: LANE } } }, ['FFA']);
+  assert.deepEqual(sieged, ['the core at (300, 1200) is within 100 of the train\'s lane']);
+});
+
+test('a lane short of an edge, or missing track, is reported', () => {
+  assert.ok(yard({ train: { ...YARD.train!, lane: { ...LANE, w: 1900 } } }).includes('the train\'s lane runs 0 to 1900, not edge to edge'));
+  assert.deepEqual(yard({ pieces: YARD.pieces.filter((at) => !(at.p === 'track' && at.x === 300)) }), ['the train\'s lane has no track under (325, 1000)']);
+});
+
+test('a lane fenced shut has no crossing and too long a stretch', () => {
+  assert.deepEqual(yard({ pieces: [...YARD.pieces, { p: 'wall.long', x: 400, y: 875, r: 0 }] }), [
+    'the train\'s lane has 0 crossing(s), it needs at least 2',
+    'the train\'s lane runs 2000 from 0 without a crossing, more than 1600',
+  ]);
+});
+
+test('a crossing without a signal or warning light near it is reported', () => {
+  assert.deepEqual(yard({ pieces: YARD.pieces.filter((at) => at.p !== 'signal') }), [
+    'the crossing at (500, 1000) has no signal or warning light within 300',
+    'the crossing at (1500, 1000) has no signal or warning light within 300',
+  ]);
+  assert.deepEqual(yard({ pieces: [...YARD.pieces.filter((at) => at.p !== 'signal'), { p: 'alarm', x: 487.5, y: 800, r: 0 }] }), []);
+});
+
+test('each mode a map is played in asks for its own sections', () => {
+  assert.deepEqual(lintMap(clean, ['BR']), ['Last Squad needs a 4000 map for its ring, not 2000']);
+  assert.deepEqual(lintMap(clean, ['ZOM']), ['zombies needs a siege section: a core and the horde\'s edges']);
+  assert.deepEqual(lintMap(clean, ['EXT']), ['extraction needs an extract section']);
+  assert.deepEqual(lintMap(build({ zones: [CLEAN.zones[1]!] }), ['FFA', 'TDM']), []);
 });

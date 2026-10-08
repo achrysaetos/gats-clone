@@ -1,4 +1,4 @@
-import { SIDES, type ModeId, type Side } from './defs.ts';
+import { MODE_IDS, SIDES, type ModeId, type Side } from './defs.ts';
 import { KIT, PIECE_IDS, placed, type Light, type Material, type PieceId, type Placement } from './kit.ts';
 import type { Rect } from './sim/movement.ts';
 import { timetableProblem, type TrainDef } from './sim/train.ts';
@@ -213,6 +213,9 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
   BR: ['warehouse'],
   EXT: ['vault'],
 };
+
+/** The modes that play `id`, which decide what the map lint asks of it. */
+export const modesOn = (id: MapId): ModeId[] => MODE_IDS.filter((m) => ROTATION[m].includes(id));
 
 /** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
 export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity, EXT: Infinity };
