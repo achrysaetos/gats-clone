@@ -3,7 +3,7 @@ import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
 import type { Perception, Threat } from './awareness.ts';
-import { coverNear, pickCover } from './cover.ts';
+import { coverBroke, coverNear, pickCover } from './cover.ts';
 import { between, dist, type Point } from './nav.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
@@ -154,6 +154,16 @@ const losing = (v: Perception, p: Personality) => {
 
 type Interrupt = (cur: Intent, v: Perception, c: IntentCtx) => Plan | null;
 
+/** Cover can break while a bot hides behind it: a peek turns into a straight fight, and a retreat or a reload finds new cover. */
+const leaveBrokenCover: Interrupt = (cur, v, c) => {
+  if ((cur.k !== 'peekAndHide' && cur.k !== 'reloadInCover' && cur.k !== 'retreatAndHeal') || !cur.spot || !coverBroke(c.arena.cover, cur.spot)) return null;
+  if (cur.k === 'peekAndHide') return { k: 'engage', target: cur.target };
+  const threat = v.threats[0] ? pos(v.threats[0]) : cur.threat;
+  const spot = hideFrom(v, c, threat);
+  if (cur.k === 'retreatAndHeal') return { k: 'retreatAndHeal', spot, threat };
+  return spot ? { k: 'reloadInCover', spot, threat } : v.threats[0] ? { k: 'engage', target: v.threats[0].p.id } : searchPlan(v, c, threat);
+};
+
 const fleeLosingFight: Interrupt = (cur, v, c) => {
   const near = v.threats[0];
   if (cur.k === 'retreatAndHeal' || !losing(v, c.persona) || (near && near.d < FLEE_FROM_PX)) return null;
@@ -208,7 +218,7 @@ const duckWhenPinned: Interrupt = (cur, v, c) => {
   return spot && dist(spot, v.me) > ARRIVED_PX ? { k: 'takePosition', spot, facing: from } : null;
 };
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, duckWhenPinned, engageOnSight, investigateGunfire];
+const INTERRUPTS: readonly Interrupt[] = [leaveBrokenCover, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, duckWhenPinned, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {

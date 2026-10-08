@@ -63,7 +63,7 @@ type Pack =
 type PackCtx = { snap: Snapshot; royale: RoyaleView; me: PlayerView; view: Perception; arena: BotArena; circle: Circle; now: number };
 
 function bestLoot({ snap, royale, me, circle }: PackCtx): Point | null {
-  const crates = snap.crates.map((c) => ({ at: { x: c.x + c.w / 2, y: c.y + c.h / 2 }, score: c.tier === 'drop' ? DROP_WORTH : CRATE_TIERS[c.tier ?? 'loot'].score }));
+  const crates = snap.crates.flatMap((c) => (c.tier ? [{ at: { x: c.x + c.w / 2, y: c.y + c.h / 2 }, score: c.tier === 'drop' ? DROP_WORTH : CRATE_TIERS[c.tier].score }] : []));
   const drops = royale.drops.filter((d) => d.landsAt > 0).map((d) => ({ at: d, score: DROP_WORTH }));
   let best: Point | null = null, bestWorth = 0;
   for (const c of [...crates, ...drops]) {

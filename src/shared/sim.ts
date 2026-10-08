@@ -1,10 +1,10 @@
-import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, ZOMBIES, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, tickTrain } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
-import { clamp, moveStep, walks } from './sim/movement.ts';
+import { circleHitsRect, clamp, moveStep, walks, type Rect } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, shakenOf, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { carrying, ceasefire, moveSpeed } from './sim/extract.ts';
@@ -128,6 +128,10 @@ function pingHunted(w: World, p: Player) {
   else if (!p.huntedPing || w.now - p.huntedPing.at >= HUNTED_PING_MS) p.huntedPing = { x: p.x, y: p.y, at: w.now };
 }
 
+/** A broken piece stands again only once its footprint is empty, so it never closes round a body. */
+const nobodyIn = (w: World, r: Rect): boolean =>
+  ![...w.players.values()].some((p) => p.life.k !== 'dead' && circleHitsRect(p.x, p.y, WORLD.playerRadius, r)) && !w.zombies.some((z) => circleHitsRect(z.x, z.y, ZOMBIES[z.kind].radius, r));
+
 export function step(w: World, dtMs: number): void {
   w.events = w.queuedEvents;
   w.queuedEvents = [];
@@ -140,7 +144,7 @@ export function step(w: World, dtMs: number): void {
   tickThrown(w, dt);
   tickTrain(w);
   for (const c of w.crates) {
-    if (c.respawnAt !== null && w.now >= c.respawnAt) { c.respawnAt = null; c.hp = crateHpMax(c); }
+    if (c.respawnAt !== null && w.now >= c.respawnAt && nobodyIn(w, c)) { c.respawnAt = null; c.hp = crateHpMax(c); }
   }
   const wallCount = w.walls.length;
   w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);

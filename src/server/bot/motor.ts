@@ -91,14 +91,15 @@ function awayFrom(me: Point, threat: Point, arena: BotArena, step: number): Poin
   return { x: me.x + Math.cos(h) * step, y: me.y + Math.sin(h) * step };
 }
 
-/** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score; never a fuel barrel whose blast would reach it. */
+/** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score; never cover, and never a fuel barrel whose blast would reach it. */
 function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly Rect[], range: number, sight: { halfW: number; halfH: number }): Point | null {
   let best: Point | null = null, bestD = Infinity;
   for (const c of crates) {
     const at = { x: c.x + c.w / 2, y: c.y + c.h / 2 };
     const d = dist(at, me);
     if (d > range || d >= bestD || Math.abs(at.x - me.x) > sight.halfW || Math.abs(at.y - me.y) > sight.halfH) continue;
-    const blast = KIT[c.piece].breaks?.blast;
+    const { blast, cover } = KIT[c.piece].breaks ?? {};
+    if (cover) continue;
     if (blast && d < blast.radius + WORLD.playerRadius + BLAST_SAFETY_PX) continue;
     if (!clearShot([...walls, ...crates.filter((o) => o.id !== c.id).map(crateRect)], me, at)) continue;
     best = at;

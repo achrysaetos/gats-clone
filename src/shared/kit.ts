@@ -1,4 +1,4 @@
-import type { Blast } from './defs.ts';
+import { FEEL, type Blast } from './defs.ts';
 import type { Rect } from './sim/movement.ts';
 
 /**
@@ -18,6 +18,7 @@ export type Light = { x: number; y: number; r: number; color: number; strength: 
 /**
  * A piece players can wear down. It shows one of `stages` looks by the health it has lost and is gone at 0, leaving its debris.
  * `blast` bursts where it breaks and chains through the blast code; `fire` leaves a burning patch hurting whoever stands in it.
+ * `cover` marks low cover rather than a prize: breaking it scores nothing, holds no loot, and no bot shoots it for its own sake.
  */
 export type Breaks = {
   hp: number;
@@ -27,6 +28,7 @@ export type Breaks = {
   score: number;
   blast?: Blast;
   fire?: { radius: number; dps: number; ms: number };
+  cover?: true;
 };
 
 export type PieceDef = {
@@ -55,6 +57,7 @@ function piece(s: Spec): PieceDef {
 const box = (x: number, y: number, w: number, h: number, blocks: Solid['blocks'] = 'all'): Solid => ({ x, y, w, h, blocks });
 
 const CRATE: Omit<Breaks, 'hp'> = { stages: 3, debris: 'wood', respawnMs: 45_000, score: 10 };
+const cover = (hp: number): Breaks => ({ hp, stages: FEEL.cover.stages, debris: 'concrete', respawnMs: FEEL.cover.respawnMs, score: 0, cover: true });
 const WARM = 0xffd29a;
 const RED = 0xff3a2e;
 
@@ -64,9 +67,9 @@ export const KIT = {
   'wall.short': piece({ name: 'Short wall', w: 50, h: 25, height: 64, material: 'concrete', turns: 2 }),
   'wall.post': piece({ name: 'Pillar', w: 25, h: 25, height: 70, material: 'concrete', turns: 1 }),
   'wall.thick': piece({ name: 'Thick wall', w: 100, h: 50, height: 64, material: 'concrete', turns: 2 }),
-  'wall.broken': piece({ name: 'Broken wall', w: 100, h: 25, height: 36, material: 'concrete' }),
-  'lowwall': piece({ name: 'Barrier', w: 100, h: 25, height: 32, material: 'concrete', turns: 2 }),
-  'sandbags': piece({ name: 'Sandbags', w: 100, h: 25, height: 28, material: 'sandbag', turns: 2 }),
+  'wall.broken': piece({ name: 'Broken wall', w: 100, h: 25, height: 36, material: 'concrete', breaks: cover(FEEL.cover.hp['wall.broken']) }),
+  'lowwall': piece({ name: 'Barrier', w: 100, h: 25, height: 32, material: 'concrete', breaks: cover(FEEL.cover.hp.lowwall), turns: 2 }),
+  'sandbags': piece({ name: 'Sandbags', w: 100, h: 25, height: 28, material: 'sandbag', breaks: cover(FEEL.cover.hp.sandbags), turns: 2 }),
   'railing': piece({ name: 'Railing', w: 100, h: 10, height: 30, material: 'metal', solids: [box(0, 0, 100, 10, 'move')], turns: 2 }),
   'container.blue': piece({ name: 'Container (blue)', w: 100, h: 250, height: 92, material: 'metal' }),
   'container.rust': piece({ name: 'Container (rust)', w: 100, h: 250, height: 92, material: 'metal' }),

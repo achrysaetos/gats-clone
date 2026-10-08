@@ -103,7 +103,8 @@ const SAFE_STEP_PX = 10;
 function buildLayout(size: number, walls: readonly Wall[], crates: readonly Crate[], fences: readonly Rect[]): Layout {
   const solids: Rect[] = [...walls, ...crates.map(crateRect), ...fences];
   const nav = navGrid(size, solids, WORLD.playerRadius);
-  return { walls, crates, nav, cover: coverIndex(nav, solids, WORLD.playerRadius) };
+  const stands = (hug: number) => (crates[hug - walls.length]?.respawnAt ?? null) === null;
+  return { walls, crates, nav, cover: coverIndex(nav, solids, WORLD.playerRadius, stands) };
 }
 
 export function openSpot(a: BotArena, rand: () => number, near?: { at: Point; r: number }): Point {

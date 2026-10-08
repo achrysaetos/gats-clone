@@ -222,6 +222,15 @@ export const FEEL = {
   },
   /** However shaken, by flinch and suppression together, spread grows by at most this much of itself, so a shaken shooter still hits up close. */
   shakenMaxAdd: 0.8,
+  /** Low cover (barriers, sandbags, broken walls) wears down under fire and breaks; tall walls, containers and buildings never do. */
+  cover: {
+    /** Health of each low piece: about a rifle magazine for concrete and two thirds of one for sandbags, so cover outlasts a duel fought over it but falls to a squad's sustained fire or a grenade or two. */
+    hp: { lowwall: 600, 'wall.broken': 600, sandbags: 400 },
+    /** Looks a piece shows as it wears, the same count as a crate, so a chipped barrier reads as one about to go. */
+    stages: 3,
+    /** A broken piece stands again after this long, twice a crate's wait, so a broken lane stays open for most of a fight; Last Squad keeps it broken for the match. */
+    respawnMs: 90_000,
+  },
 } as const;
 
 export function byGun<T>(f: (id: GunId) => T): Record<GunId, T> {
