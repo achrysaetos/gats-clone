@@ -59,9 +59,11 @@ export function createAudio(): Audio {
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       const space = (k: Space) => {
         const ir = impulse(k, ctx!.sampleRate, Math.random);
+        const buffer = ctx!.createBuffer(2, ir[0].length, ctx!.sampleRate);
+        ir.forEach((data, c) => buffer.copyToChannel(data, c));
+        // A convolver takes its impulse when the buffer is assigned, so the buffer is filled first.
         const node = ctx!.createConvolver();
-        node.buffer = ctx!.createBuffer(2, ir[0].length, ctx!.sampleRate);
-        ir.forEach((data, c) => node.buffer!.copyToChannel(data, c));
+        node.buffer = buffer;
         node.connect(master!);
         return node;
       };
