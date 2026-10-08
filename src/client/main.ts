@@ -285,7 +285,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; s.anim.remains = []; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
     case 'welcome': s.myId = msg.id; s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;

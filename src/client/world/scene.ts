@@ -118,6 +118,8 @@ export type Scene = {
   killer: { x: number; y: number; name: string; lift: number } | null;
   numbers: readonly DamageNumber[];
   effects: readonly Effect[];
+  /** Your player id, so only your own kills flash their victim. */
+  myId: number;
   particles: ParticlePool;
 };
 
@@ -297,6 +299,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
     killer: killer ? { x: killer.x, y: killer.y, name: killer.name, lift: GUNS[killer.gun].stage ? 12 + 6 * GUNS[killer.gun].stage : 6 } : null,
     numbers: s.feedback.numbers,
     effects: s.effects,
+    myId: s.myId,
     particles: s.particles,
   };
 }

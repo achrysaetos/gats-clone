@@ -78,6 +78,9 @@ No change stands out from the noise. These numbers are CPU only: this machine re
 - The macOS golden replay hash.
 - Zombie night eyes are each drawn 0.7 of the radius wide and now sit close enough to merge into one glow at night. Shrinking them to about 0.45 would show a pair.
 - Roofs still cover much of the frame when you spawn under them (see the FFA shot).
+- Stagger and knockback scale with a round's damage before shields and armour, so heavy armour does not soften the shove. That keeps the push the same for every target; armour scaling is a tuning choice left open.
+- Bot paths treat broken low cover as solid until it stands again (see "Bots").
+- Low cover now travels with the crates, which are resent whenever one's health changes. Snapshot size under fire at cover was not measured.
 
 ## Combat mechanics
 
@@ -96,13 +99,13 @@ Five mechanics make a hit land on both sides of the fight: knockback, stagger, f
 | lmg | 0.06 | 15 damage, about 0.9px a round |
 | smg | 0 | none, so spraying stays a tracking duel |
 
-Knockback rides on `SelfView.shove`, and `src/client/predict.ts` replays it, so your own pushed position does not snap. A client corrects once, by less than the snap distance, on the tick it first hears of a hit; after that it matches the server exactly.
+Knockback rides on `SelfView.shove`, and `src/client/predict.ts` replays it, so your own pushed position does not snap. A client corrects once, by less than the snap distance, on the tick it first hears of a hit; after that it matches the server to within a pixel, since the wire rounds the shove's speed to whole pixels a second.
 
 **Stagger.** A heavy hit slows its target's walk to `speedMul` 0.5 for `ms` 200. A dash is never slowed. The hit counts as heavy at `damage` 60 raw damage from one attacker in one tick, so a shotgun's pellets count as one blast. Every sniper round, the hand cannon line, slugs and a close shotgun blast with half its pellets on target pass that mark. No new stagger lands within `immuneMs` 800 of one starting, so a target walks at full speed at least three quarters of the time whatever hits it. A test lands a heavy hit every tick for four seconds and finds the target staggered at most a quarter of the time, with a full-pace stretch of at least 600ms after every stagger. Stagger rides on `SelfView.stagger` for prediction and on `PlayerView.staggered` for others to see.
 
 **Flinch.** A hit widens its victim's spread. A hit taking `fullAt` 0.25 of the victim's health flinches fully, and smaller hits add their share. A full flinch adds `spreadAdd` 0.3 of the spread and drains in a straight line over `ms` 450. Values of 0.4 and 0.5 broke the doctrine: Artillery's hip-fire reached into SMG range, and the Ripper upgrade lost its edge at 70px.
 
-**Suppression.** An enemy round passing within `px` 48 of a body without hitting it adds `perPassMs` 300 to a level that drains over `ms` 1500. Five close rounds suppress fully. A full level adds `spreadAdd` 0.3 of the spread. Friendly rounds, lobbed rounds and the round that hits never suppress. The victim alone is sent `{ e: 'whizz', victim, x, y, dir }`, at most once every `whizzGapMs` 333.
+**Suppression.** An enemy round passing within `px` 48 of a body without hitting it adds `perPassMs` 300 to a level that drains over `ms` 1500. Five close rounds suppress fully. Each shotgun pellet counts as a round, so one blast whose pellets pass close can suppress fully on its own. A full level adds `spreadAdd` 0.3 of the spread. Friendly rounds, lobbed rounds and the round that hits never suppress. The victim alone is sent `{ e: 'whizz', victim, x, y, dir }`, at most once every `whizzGapMs` 333.
 
 **Flinch and suppression together** add at most `shakenMaxAdd` 0.8 of the spread, so a shaken shooter still hits up close. `spreadFor` in `src/shared/sim/stats.ts` is the one spread function, covering moving, bloom, flinch and suppression. The server fires with it, and `SelfView` carries `spray`, `flinch` and `suppression` so the client can draw the same cone.
 
@@ -126,7 +129,7 @@ Bot aim reacts to flinch. The hand's wander grows by up to `flinchSigmaAdd` 1 of
 
 Knockback does not pin bots. A bot's walk keeps steering through a shove. In the benches, bots spent 0.0 to 0.1% of their alive time shoved against a solid.
 
-Bots stop using broken cover. Cover points remember the solid they stand beside, and points beside a broken piece drop out of every search until it stands again. A bot hiding behind a piece that breaks turns its peek into a straight fight, and a retreat or a reload finds new cover.
+Bots stop using broken cover. Cover points remember the solid they stand beside, and points beside a broken piece drop out of every search until it stands again. A bot hiding behind a piece that breaks turns its peek into a straight fight, and a retreat or a reload finds new cover. Bot paths still route round a broken piece as if it stood, because the nav grid is built once per layout.
 
 ### Gun audit
 

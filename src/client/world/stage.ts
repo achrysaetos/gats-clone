@@ -640,7 +640,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
         }
         case 'death':
           over.circle(fx.x, fx.y, R * (0.8 + 1.4 * Math.sqrt(k))).stroke({ width: 3 * (1 - k) + 0.5, color: 0xffffff, alpha: (1 - k) * 0.6 });
-          if (now - fx.born < KILL_FLASH_MS) mark(glowPool.next(), tex.disc, fx.x, fx.y, R * 2.6, 0xffffff, 0.85 * (1 - (now - fx.born) / KILL_FLASH_MS));
+          if (fx.by === scene.myId && now - fx.born < KILL_FLASH_MS) mark(glowPool.next(), tex.disc, fx.x, fx.y, R * 2.6, 0xffffff, 0.85 * (1 - (now - fx.born) / KILL_FLASH_MS));
           break;
         case 'splat': {
           const r = ZOMBIES[fx.zombie].radius, color = ZOMBIE_LOOK[fx.zombie].arm;
