@@ -38,7 +38,7 @@ export function duel(spec: DuelSpec): DuelResult {
   const [a, b] = spec.swap ? [rt, l] : [l, rt];
   let engagedMs = Infinity;
   while (w.now < DUEL_CAP_MS) {
-    thinkBots(w, mems, r, { picks: false, respawn: false });
+    thinkBots(w, mems, r, { picks: false, respawn: false, watched: true });
     step(w, TICK_MS);
     if (engagedMs === Infinity && w.events.some((e) => e.e === 'shot')) engagedMs = w.now;
     const aDead = a.life.k !== 'alive', bDead = b.life.k !== 'alive';

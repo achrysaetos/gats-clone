@@ -8,7 +8,7 @@ import type { Point } from './nav.ts';
 export type AimState = { angle: number; spin: number; want: number; err: number };
 
 /** `leadMul` is how this bot judges this target's lead: 1 leads exactly, below under-leads, drawn once per engagement as a person's read of one target. */
-export type Engagement = { id: number; x: number; y: number; vx: number; vy: number; acquiredTick: number; noticeAtTick: number; leadMul: number };
+export type Engagement = { id: number; x: number; y: number; vx: number; vy: number; acquiredTick: number; noticeAtTick: number; leadMul: number; at?: number };
 
 export type Hand = { omega: number; zeta: number; maxSpin: number; maxAccel: number };
 
@@ -49,7 +49,7 @@ export const SHARPNESS: readonly { aimMul: number; reactionMul: number }[] = [
   { aimMul: 0.2, reactionMul: 0.5 },
   { aimMul: 0.15, reactionMul: 0.45 },
 ];
-type Sharpness = (typeof SHARPNESS)[number];
+export type Sharpness = (typeof SHARPNESS)[number];
 export const sharpnessAgainst = (target: PlayerView) =>
   target.kind === 'bot' ? SHARPNESS[0]! : SHARPNESS[target.hunted ? SHARPNESS.length - 1 : Math.min(target.level, SHARPNESS.length - 1)]!;
 
@@ -100,12 +100,15 @@ export function engage(prev: Engagement | null, enemy: Point & { id: number }, s
   if (!prev) {
     const [fastest, slowest] = BOT_AIM.noticeMs.map((ms) => ms * sharpness.reactionMul);
     const noticeAtTick = tick + Math.round((fastest + rand() * (slowest - fastest) + FLASHED.reactionMs * flash) / TICK_MS);
-    return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick, leadMul: leadJudgment(enemy.id, tick) };
+    return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick, leadMul: leadJudgment(enemy.id, tick), at: tick };
   }
-  const k = 1 - Math.exp(-TICK_MS / BOT_AIM.motionTauMs);
-  const vx = prev.vx + k * ((enemy.x - prev.x) * WORLD.tickHz - prev.vx);
-  const vy = prev.vy + k * ((enemy.y - prev.y) * WORLD.tickHz - prev.vy);
-  return { ...prev, id: enemy.id, x: enemy.x, y: enemy.y, vx, vy };
+  // Its read of his motion is over the time since it last looked (`at`), so a bot that looked away a few ticks does not read a burst of speed.
+  const dt = Math.max(1, tick - (prev.at ?? tick - 1));
+  if (prev.at === tick) return prev;
+  const k = 1 - Math.exp(-(dt * TICK_MS) / BOT_AIM.motionTauMs);
+  const vx = prev.vx + k * (((enemy.x - prev.x) * WORLD.tickHz) / dt - prev.vx);
+  const vy = prev.vy + k * (((enemy.y - prev.y) * WORLD.tickHz) / dt - prev.vy);
+  return { ...prev, id: enemy.id, x: enemy.x, y: enemy.y, vx, vy, at: tick };
 }
 
 export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: number, flash = 0): number {

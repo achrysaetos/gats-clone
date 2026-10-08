@@ -1,12 +1,12 @@
 import { WORLD } from '../../shared/defs.ts';
 import type { MapDoor } from '../../shared/geom.ts';
-import { MAPS, type MapId } from '../../shared/maps.ts';
+import { landmarks, MAPS, type MapId } from '../../shared/maps.ts';
 import { doorAuto, doorLeaves, isSwing, mapDoors } from '../../shared/sim/doors.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import { segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { barrelRect, crateRect, createWorld, propRect, propSolid, type Crate, type Wall, type World } from '../../shared/sim/world.ts';
 import { coverIndex, type CoverIndex } from './cover.ts';
-import { isOpen, navGrid, nearestOpenPoint, withSolids, type NavGrid, type Point } from './nav.ts';
+import { addField, isOpen, navGrid, nearestOpenPoint, withSolids, type NavGrid, type Point } from './nav.ts';
 
 export type BotArena = {
   size: number;
@@ -35,7 +35,7 @@ export function takeReplan(a: BotArena, tick: number): boolean {
 
 type Layout = { walls: readonly Wall[]; crates: readonly Crate[]; nav: NavGrid; cover: CoverIndex };
 
-const ARENAS = new WeakMap<World, { arena: BotArena; layout: Layout; solids: readonly Rect[] }>();
+const ARENAS = new WeakMap<World, { arena: BotArena; layout: Layout; solids: readonly Rect[]; wallsVersion: number }>();
 
 const sameLayout = (l: Layout, walls: readonly Wall[], crates: readonly Crate[]) =>
   l.crates === crates && l.walls.length === walls.length && l.walls.every((wall, i) => wall === walls[i]);
@@ -47,6 +47,12 @@ export function arenaFor(w: World): BotArena {
   const cached = ARENAS.get(w);
   const version = w.wallsVersion + w.doorsVersion;
   if (cached && cached.arena.version === version) return cached.arena;
+  if (cached && cached.wallsVersion === w.wallsVersion) {
+    // Only a door leaf moved: the same grid, cover and solids, with the leaves where they are now.
+    const arena = { ...cached.arena, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), replans: { tick: -1, left: 0 } };
+    ARENAS.set(w, { ...cached, arena });
+    return arena;
+  }
   const size = MAPS[w.map].size;
   const mapWalls = w.walls.filter((wall) => !wall.built && wall.door === undefined);
   const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : mapLayout(size, mapWalls, w.crates, w.map);
@@ -57,7 +63,7 @@ export function arenaFor(w: World): BotArena {
   const arena: BotArena = {
     size, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), barrels, cover: layout.cover, replans: { tick: -1, left: 0 }, doors: mapDoors(w.map), nav,
   };
-  ARENAS.set(w, { arena, layout, solids });
+  ARENAS.set(w, { arena, layout, solids, wallsVersion: w.wallsVersion });
   return arena;
 }
 
@@ -100,8 +106,11 @@ export function warmLayouts(maps: readonly MapId[], next: (go: () => void) => vo
 function buildLayout(size: number, walls: readonly Wall[], crates: readonly Crate[], mapId: MapId, doors: readonly Rect[] = []): Layout {
   const solids: Rect[] = [...walls, ...crates.map(crateRect), ...doors];
   const nav = navGrid(size, solids, WORLD.playerRadius);
+  // A distance field to each place bots keep making for (see `flowField` in nav.ts): a route that ends by one is read off it, not searched.
+  for (const at of landmarks(mapId)) addField(nav, at);
   return { walls, crates, nav, cover: coverIndex(nav, solids, WORLD.playerRadius, mapDoors(mapId)) };
 }
+
 
 const NEAR_SNAP_PX = 300;
 

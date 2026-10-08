@@ -114,7 +114,7 @@ const ticks = (ms: number) => Math.max(1, Math.round(ms / TICK_MS));
  * many ticks the round then takes to arrive. A change of direction while it is in the air is what makes a led shot miss. Null for a fast gun.
  */
 export type Cue = { at: number; flight: number };
-const SLOW_GUN_MS = 600;
+export const SLOW_GUN_MS = 600;
 export function boltCue(shot: { x: number; y: number; tick: number; gun: GunId } | null | undefined, me: Point): Cue | null {
   if (!shot) return null;
   const def = GUNS[shot.gun];

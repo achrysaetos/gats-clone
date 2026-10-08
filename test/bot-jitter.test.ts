@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { createWorld, rand, solidRects, type World } from '../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
@@ -64,7 +65,9 @@ test('squad bots shooting at the horde never shuttle back and forth between back
   const turned = new Map<number, number>();
   const shuttles: string[] = [];
   for (let t = 0; t < 180_000 / TICK_MS && w.run!.phase.k !== 'over'; t++) {
-    thinkBots(w, bots, r, { respawn: false, onDecision(id, snap, _before, d) {
+    thinkBots(w, bots, r, { respawn: false, onDecision(id, seen, _before, d) {
+      // A squad bot thinks on a snapshot every tick it acts (see thinkBots); the motor-only ticks are a versus thing.
+      const snap = seen ?? snapshotFor(w, id);
       const kx = +d.input.right - +d.input.left, ky = +d.input.down - +d.input.up;
       if (!snap.players.find((p) => p.id === id)?.alive || !(kx || ky)) return;
       const was = last.get(id);

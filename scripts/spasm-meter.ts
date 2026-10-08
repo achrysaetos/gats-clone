@@ -5,6 +5,7 @@ import { ROTATION } from '../src/shared/maps.ts';
 import type { SnapshotWire } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { createWorld, rand } from '../src/shared/sim/world.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { fillSnapshot, makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { wrapAngle } from '../src/server/bot/aim.ts';
@@ -74,7 +75,9 @@ function play(mode: Exclude<ModeId, 'ZOM'>, map: (typeof ROTATION)['FFA'][number
   const flickPeak = new Map<number, number>();
   for (let tick = 0; tick < (minutes * 60_000) / TICK_MS; tick++) {
     if (w.match.k === 'over') break;
-    thinkBots(w, mems, r, { onDecision(id, snap, mem, decision) {
+    thinkBots(w, mems, r, { onDecision(id, seen, mem, decision) {
+      // Between thinks a bot's motor runs without a snapshot (see thinkBots); the meter reads what that bot's screen would show.
+      const snap = seen ?? snapshotFor(w, id);
       const wire = wires.get(id)!;
       const sent = fillSnapshot(JSON.parse(wire.encode(snap)) as SnapshotWire, wire.last);
       wire.last = sent;

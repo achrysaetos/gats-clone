@@ -18,7 +18,6 @@ import { NO_PROFILES, type Profiles } from './profiles.ts';
 import { applyRangeMsg, isPractice } from './range.ts';
 import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { thinkBots } from './bot/tick.ts';
-import { botsDue } from './botcadence.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
@@ -387,9 +386,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     for (let i = 0; i < stepsPerTick; i++) {
       applyInputs();
       const t0 = performance.now();
-      const due = botsDue(world, bots);
-      thinkBots(world, due, botRand);
-      for (const [botId, mem] of due) if (bots.has(botId)) bots.set(botId, mem);
+      thinkBots(world, bots, botRand);
       const t1 = performance.now();
       step(world, TICK_MS);
       net.botMs += t1 - t0; net.stepMs += performance.now() - t1;

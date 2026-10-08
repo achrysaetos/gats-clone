@@ -12,7 +12,15 @@ export type BotMemory = {
   intent: Intent | null;
   awareness: Awareness;
   motor: Motor;
+  /** When it last thought and last planned, and what it saw then, for the think cadence (see tick.ts). */
+  beat?: Beat;
 };
+
+/** `seen` is how many enemies stood in its view box when it last thought, `zones` who held each zone, `sight` its view box's half extents. */
+export type Beat = { thought: number; planned: number; seen: number; zones: string; sight: { halfW: number; halfH: number } };
+
+/** Whether this think re-plans (see `nextIntent`), and when the bot last did. */
+export type ThinkTier = { strategic?: boolean; lastPlan?: number };
 
 export type BotDecision = { input: InputState; pick: { level: number; option: PickOption } | null; mem: BotMemory; build?: { kind: BuildingKind; cx: number; cy: number; lv?: number }; upgrade?: { cx: number; cy: number } };
 
@@ -51,7 +59,7 @@ export function randomLoadout(rand: () => number): Loadout {
   return { weapon: pick(WEAPON_IDS, rand), armor: pick(ARMOR_IDS, rand), color: pick(COLOR_IDS, rand) };
 }
 
-export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: () => number): BotDecision {
+export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: () => number, tier: ThinkTier = {}): BotDecision {
   const me = snap.players.find((p) => p.id === snap.self.id);
   if (me?.downed && snap.run) {
     const core = snap.run.core;
@@ -70,7 +78,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor } };

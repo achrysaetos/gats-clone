@@ -89,7 +89,7 @@ function botDuel(weapon: WeaponId, range: number, seed: number, swap: boolean) {
   const mems = new Map<number, BotMemory>([[sniper.id, { ...newBotMemory(r), persona: PERSONALITY_IDS[seed % 3]! }], [bot.id, { ...newBotMemory(r), persona: PERSONALITY_IDS[Math.floor(seed / 3) % 3]! }]]);
   const acc = { shots: 0, hits: 0 };
   while (w.now < 20_000) {
-    thinkBots(w, mems, r, { picks: false, respawn: false });
+    thinkBots(w, mems, r, { picks: false, respawn: false, watched: true });
     step(w, TICK_MS);
     tally(w, sniper.id, bot, acc);
     if (sniper.life.k !== 'alive' || bot.life.k !== 'alive') break;

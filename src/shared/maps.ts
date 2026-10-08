@@ -110,6 +110,18 @@ export const MAPS: Record<MapId, MapDef> = {
   }),
 };
 
+/** Where players on a map keep heading, whoever they are: its zones, each team's spawn and the middle of the map. */
+export function landmarks(map: MapId): Center[] {
+  const def = MAPS[map];
+  const centre = (rs: readonly Rect[]): Center[] => {
+    if (rs.length === 0) return [];
+    const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y));
+    const x1 = Math.max(...rs.map((r) => r.x + r.w)), y1 = Math.max(...rs.map((r) => r.y + r.h));
+    return [{ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }];
+  };
+  return [...def.zones, ...centre(def.spawns.red), ...centre(def.spawns.blue), { x: def.size / 2, y: def.size / 2 }];
+}
+
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
   FFA: ['plaza', 'oldtown', 'museum', 'subpen', 'causeway', 'market', 'quarry', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland'],
   TDM: ['causeway', 'plaza', 'market', 'museum', 'subpen', 'quarry', 'oldtown', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland'],

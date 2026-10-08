@@ -1,33 +1,160 @@
-import type { Snapshot } from '../../shared/protocol.ts';
+import { GUNS, WORLD, type GunId } from '../../shared/defs.ts';
+import { DEFAULT_VIEW_ASPECT, viewExtents, type GameEvent, type Snapshot } from '../../shared/protocol.ts';
 import { canRespawn, respawn, setInput } from '../../shared/sim.ts';
+import { flashAmount } from '../../shared/sim/abilities.ts';
 import { build, upgrade } from '../../shared/sim/run.ts';
 import { snapshotFor } from '../../shared/sim/snapshot.ts';
-import { choosePick } from '../../shared/sim/stats.ts';
-import type { World } from '../../shared/sim/world.ts';
+import { abilityOf, choosePick } from '../../shared/sim/stats.ts';
+import { IDLE_INPUT, isEnemy, type Player, type World } from '../../shared/sim/world.ts';
 import { botThink, randomLoadout, type BotDecision, type BotMemory } from '../bots.ts';
 import { arenaFor } from './arena.ts';
+import { BLIND_AT, freshAwareness } from './awareness.ts';
+import { freshMotor, motorTick, motorWake } from './motor.ts';
+import { SLOW_GUN_MS } from './evade.ts';
 
 export type BotTickOptions = {
   picks?: boolean;
   respawn?: boolean;
-  onDecision?: (id: number, snap: Snapshot, before: BotMemory, d: BotDecision, respawned: boolean) => void;
+  /** Every bot counts as on a human's screen (a bench measuring bots as a player watching them would see them fight). */
+  watched?: boolean;
+  /** Called for every bot every tick. `snap` is what the bot thought on, or null on a tick its motor ran on its own (see `thinkBots`). */
+  onDecision?: (id: number, snap: Snapshot | null, before: BotMemory, d: BotDecision, respawned: boolean) => void;
 };
 
-export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => number, { picks = true, respawn: revive = true, onDecision }: BotTickOptions = {}): { respawned: number[]; picked: number } {
+/**
+ * A bot's brain runs in three tiers, as a person's does, staggered by bot id so each tick does about the same work:
+ * - its motor, every tick: walking its route, turning its gun toward what it looks at by the tick's time, tracking its enemy and firing
+ *   once on him, running a dodge leg (`motorTick`); cheap, and read straight off the world;
+ * - a tactical think, `TACTICAL_TICKS` apart (5 a second): what it sees and hears (a snapshot, `perceive`), who it fights, whether
+ *   to dodge, and the reactions (an enemy in sight, a losing fight, a dry gun, a flash);
+ * - a strategic think, every `PLAN_EVERY`th tactical one (under twice a second): the plan itself, where to go and which cover, and routes.
+ * Something that needs it now wakes it early: a hit or a shot fired at it by someone new, an enemy coming into its view, the enemy it
+ * fights gone, a timed leg or peek ending, being stuck, arriving, the door on its way opening or shutting, a zone changing hands. A bot no
+ * human can see, far from every human and on no human's team, thinks a third as often, and only news wakes it early (a hit, a shot at it,
+ * its enemy gone, being stuck): its legs run on and it waits where it arrived. Its motor still runs every tick, so it never stands frozen
+ * pressing stale keys or turns its gun at a third of its speed.
+ * Zombies and Battle Royale squads keep thinking every tick (every third, off every screen): their brains read the run and the ring.
+ */
+export const TACTICAL_TICKS = 6;
+export const PLAN_EVERY = 3;
+export const OFFSCREEN_SLOWER = 3;
+/** Past this far from every human a bot is off every screen: the widest view (a sniper's, on a wide screen) with room to spare. */
+export const OFFSCREEN_PX = WORLD.viewRadius * 2;
+const OFFSCREEN_THINK_EVERY = 3;
+
+type Wake = 'tactical' | 'strategic' | null;
+
+/** The last ticks' events, so a bot that thinks every few ticks still hears every shot and hit since it last thought. */
+const HISTORY = new WeakMap<World, { tick: number; events: readonly GameEvent[] }[]>();
+const HISTORY_TICKS = TACTICAL_TICKS * PLAN_EVERY * OFFSCREEN_SLOWER + 2;
+
+function remember(w: World) {
+  let h = HISTORY.get(w);
+  if (!h) HISTORY.set(w, (h = []));
+  if (h.at(-1)?.tick !== w.tick) h.push({ tick: w.tick, events: w.events });
+  while (h.length > HISTORY_TICKS || (h.length > 0 && h[0]!.tick > w.tick)) h.shift();
+  return h;
+}
+
+function eventsSince(h: readonly { tick: number; events: readonly GameEvent[] }[], tick: number | undefined): readonly GameEvent[] {
+  const fresh = h.filter((x) => tick === undefined ? x === h.at(-1) : x.tick > tick);
+  return fresh.length === 1 ? fresh[0]!.events : fresh.flatMap((x) => x.events);
+}
+
+/** A round fired at `me` this tick: its heading passes within three body widths of him, inside the gun's reach (as `perceive` judges it). */
+function shotAt(e: Extract<GameEvent, { e: 'shot' }>, me: Player): boolean {
+  const d = Math.hypot(e.x - me.x, e.y - me.y);
+  const off = Math.atan2(me.y - e.y, me.x - e.x) - e.angle;
+  return d <= GUNS[e.gun].range && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.atan2(WORLD.playerRadius * 3, d);
+}
+
+const zonesKey = (w: World) => w.zones.map((z) => z.owner ?? '-').join();
+
+/** Enemies standing in a bot's view box (not counting walls): a change wakes it to look properly. */
+function enemiesInView(w: World, me: Player, sight: { halfW: number; halfH: number }): number {
+  let n = 0;
+  for (const p of w.players.values()) if (p.life.k === 'alive' && isEnemy(me, p) && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH) n++;
+  return n;
+}
+
+export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => number, { picks = true, respawn: revive = true, watched = false, onDecision }: BotTickOptions = {}): { respawned: number[]; picked: number } {
   const arena = arenaFor(w);
   const respawned: number[] = [];
   let picked = 0;
+  const history = remember(w);
+  const humans = [...w.players.values()].filter((p) => p.kind === 'human');
+  const onScreen = (p: Player) => watched || humans.some((h) => (h.team !== null && h.team === p.team) || Math.hypot(h.x - p.x, h.y - p.y) <= OFFSCREEN_PX);
+  const tiered = w.run === null && w.royale === null;
+  const hits: Extract<GameEvent, { e: 'dmg' }>[] = [], shots: Extract<GameEvent, { e: 'shot' }>[] = [];
+  for (const e of w.events) {
+    if (e.e === 'dmg' && e.kind === 'player') hits.push(e);
+    else if (e.e === 'shot') shots.push(e);
+  }
+  /**
+   * News that cannot wait for the next think: hit, or shot at, by someone other than the enemy it is already fighting (who it is already
+   * reacting to, round by round), or by a slow gun's round (a bolt it reads to dodge the next one, see `boltCue`).
+   */
+  const news = (p: Player, mem: BotMemory) => {
+    const fighting = mem.motor.hold?.track?.id ?? null;
+    const fresh = (owner: number | null, gun: GunId | null) => owner !== fighting || (gun !== null && GUNS[gun].fireMs >= SLOW_GUN_MS);
+    return hits.some((e) => e.victim === p.id && fresh(e.attacker, e.attacker === null ? null : w.players.get(e.attacker)?.gun ?? null))
+      || shots.some((e) => e.owner !== p.id && fresh(e.owner, e.gun) && isEnemy(p, w.players.get(e.owner) ?? p) && shotAt(e, p));
+  };
+  const zones = zonesKey(w);
+  const doorOpen = (i: number) => (w.doors[i]?.open ?? 0) > 0;
+  const find = (id: number) => { const p = w.players.get(id); return p && p.life.k === 'alive' ? p : null; };
+  /** The enemy it was fighting is gone (dead, or left): it looks round for the next. */
+  const lost = (mem: BotMemory) => { const id = mem.motor.hold?.track?.id; return id !== undefined && find(id) === null; };
+
   for (const [id, mem] of mems) {
-    const snap = snapshotFor(w, id);
-    const d = botThink(snap, arena, mem, rand);
-    mems.set(id, d.mem);
-    setInput(w, id, w.tick, d.input);
-    if (d.build) build(w, id, d.build.kind, d.build.cx, d.build.cy, d.build.lv);
-    if (d.upgrade) upgrade(w, id, d.upgrade.cx, d.upgrade.cy);
-    if (picks && d.pick && choosePick(w, id, d.pick.level, d.pick.option)) picked++;
-    const back = revive && canRespawn(w, id) && respawn(w, id, randomLoadout(rand));
-    if (back) respawned.push(id);
-    onDecision?.(id, snap, mem, d, back);
+    const p = w.players.get(id);
+    const finish = (d: BotDecision, snap: Snapshot | null) => {
+      mems.set(id, d.mem);
+      setInput(w, id, w.tick, d.input);
+      if (d.build) build(w, id, d.build.kind, d.build.cx, d.build.cy, d.build.lv);
+      if (d.upgrade) upgrade(w, id, d.upgrade.cx, d.upgrade.cy);
+      if (picks && d.pick && choosePick(w, id, d.pick.level, d.pick.option)) picked++;
+      const back = revive && canRespawn(w, id) && respawn(w, id, randomLoadout(rand));
+      if (back) respawned.push(id);
+      onDecision?.(id, snap, mem, d, back);
+    };
+    const think = (tier: Wake) => {
+      const snap = snapshotFor(w, id, eventsSince(history, mem.beat?.thought));
+      const strategic = tier === 'strategic';
+      const d = botThink(snap, arena, mem, rand, tiered ? { strategic, lastPlan: mem.beat?.planned } : {});
+      if (tiered && p) {
+        const sight = viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT);
+        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), zones, sight } };
+      }
+      finish(d, snap);
+    };
+    if (!p || !tiered) {
+      // Zombies and royale: the old cadence, every tick on screen and every third off it; a skipped bot keeps pressing what it chose.
+      if (!p || onScreen(p) || (w.tick + id) % OFFSCREEN_THINK_EVERY === 0) think(null);
+      continue;
+    }
+    if (p.life.k !== 'alive') {
+      // Dead: nothing to see or plan. It forgets the life it had, once, and waits to respawn.
+      const forgotten = mem.intent ? { ...mem, intent: null, awareness: freshAwareness(), motor: { ...freshMotor(), shots: mem.motor.shots } } : mem;
+      finish({ input: { ...IDLE_INPUT, shots: mem.motor.shots }, pick: null, mem: forgotten }, null);
+      continue;
+    }
+    const slow = onScreen(p) ? 1 : OFFSCREEN_SLOWER;
+    const phase = (w.tick + id) % (TACTICAL_TICKS * PLAN_EVERY * slow);
+    let wake: Wake = !mem.beat || !mem.intent ? 'strategic' : phase === 0 ? 'strategic' : phase % (TACTICAL_TICKS * slow) === 0 ? 'tactical' : null;
+    if (wake !== 'strategic' && mem.beat) {
+      // As the snapshot rounds it, so the think it wakes sees the same flash.
+      const blind = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
+      const now = motorWake(mem.motor, p, w.tick, arena, doorOpen, slow === 1);
+      if (now === 'strategic' || zones !== mem.beat.zones || (mem.intent?.k === 'blinded' && !blind)) wake = 'strategic';
+      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && enemiesInView(w, p, mem.beat.sight) > mem.beat.seen) || news(p, mem)) wake ??= 'tactical';
+    }
+    if (wake) { think(wake); continue; }
+    const ability = abilityOf(p);
+    const { input, motor } = motorTick(mem.motor, {
+      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, flash: flashAmount(p, w.now), find,
+    }, arena, w.tick, rand);
+    finish({ input, pick: null, mem: { ...mem, motor } }, null);
   }
   return { respawned, picked };
 }

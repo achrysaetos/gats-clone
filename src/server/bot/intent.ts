@@ -84,7 +84,18 @@ export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
 type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
 
-export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point } };
+/**
+ * `strategic` is false on a think that only reacts (see `nextIntent`); `lastPlan` is the tick of this bot's last strategic think, so a rule
+ * that weighs its odds once a tick, or waits for one exact tick, still does over the ticks since then.
+ */
+export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point }; strategic?: boolean; lastPlan?: number };
+
+/** The ticks since this bot last planned (1 when it plans every tick). */
+const sincePlan = (c: IntentCtx) => Math.max(1, Math.min(60, c.tick - (c.lastPlan ?? c.tick - 1)));
+/** Odds `p` a tick, over every tick since the last plan. */
+const overTicks = (p: number, c: IntentCtx) => 1 - (1 - p) ** sincePlan(c);
+/** Whether tick `at` came round since the last plan. */
+const cameRound = (at: number, c: IntentCtx) => c.tick - sincePlan(c) < at && at <= c.tick;
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
   patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0,
@@ -284,7 +295,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
       const hide = peekPlan(v, c, t);
       if (hide) return hide;
     }
-    if (c.band.rushes ||t.d < c.band.headOn * 0.7 || c.rand() >= c.persona.peekOdds) return null;
+    if (c.band.rushes || t.d < c.band.headOn * 0.7 || c.rand() >= overTicks(c.persona.peekOdds, c)) return null;
     return peekPlan(v, c, t);
   },
   peekAndHide: (cur, v, c) => {
@@ -294,7 +305,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
     const crowded = v.allies.some((m) => dist(m, cur.spot) < MATE_COVER_PX * 0.75 && dist(m, cur.spot) < dist(v.me, cur.spot));
     if (crowded && t) return peekPlan(v, c, t);
     const at = t ? pos(t) : v.lastSeen;
-    if (at && v.tick - cur.since === ticks(STALEMATE_MS) && c.rand() < c.persona.flankOdds) return flankPlan(v, c, cur.target, at);
+    if (at && cameRound(cur.since + ticks(STALEMATE_MS), c) && c.rand() < c.persona.flankOdds) return flankPlan(v, c, cur.target, at);
     if (t || (v.lastSeen && v.tick - v.lastSeen.seenTick < ticks(2500))) return null;
     return lostSight(v, c, cur.target);
   },
@@ -332,12 +343,17 @@ function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
   return { ...cur, phase, phaseUntil: v.tick + ticks(ms) };
 }
 
+/**
+ * The intent for this think. The interrupts (a flash, a losing fight, an empty gun, an enemy in sight, gunfire) are reactions and run on
+ * every think; the rules that move a settled intent on to the next (arrived, lost him, healed, waited long enough) are the bot's plan,
+ * and run only on a strategic think (`c.strategic`, a couple of times a second), as a person re-plans rather than re-decides every frame.
+ */
 export function nextIntent(cur: Intent, v: Perception, c: IntentCtx): Intent {
   for (const rule of INTERRUPTS) {
     const plan = rule(cur, v, c);
     if (plan) return startIntent(plan, c);
   }
-  if (c.tick < cur.holdUntil) return advancePeekPhase(cur, v, c);
+  if (c.tick < cur.holdUntil || c.strategic === false) return advancePeekPhase(cur, v, c);
   const plan = (RULES[cur.k] as (cur: Intent, v: Perception, c: IntentCtx) => Plan | null)(cur, v, c);
   return plan ? startIntent(plan, c) : advancePeekPhase(cur, v, c);
 }
