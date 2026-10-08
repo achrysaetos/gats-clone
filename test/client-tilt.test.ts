@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGroundCache, drawSolids, FOOT, LIGHT, LIP, MATERIALS, paintSolids, shadowHull, wallSolids, type Solid } from '../src/client/tilt.ts';
+import { createGroundCache, drawSolids, FACE, FOOT, LIGHT, LIP, MATERIALS, paintSolids, shadowHull, wallSolids, type Solid } from '../src/client/tilt.ts';
 import { MAPS } from '../src/shared/maps.ts';
 
 type Call = { name: string; args: number[]; fill: unknown };
@@ -30,7 +30,8 @@ test('a solid casts its shadow from its own rect, as far along the light as it i
   const crateFar = Math.max(...Array.from({ length: crate.length / 2 }, (_, i) => crate[i * 2]! + crate[i * 2 + 1]!));
   assert.ok(MATERIALS.concrete.height > MATERIALS.planter.height && far > crateFar, 'the taller wall reaches further');
   const [fx, fy] = points.find(([x, y]) => x + y === far)!;
-  const len = Math.hypot(fx! - 160, fy! - 220);
+  // The shadow starts where the wall meets the floor: the foot of its front face.
+  const len = Math.hypot(fx! - 160, fy! - (220 + FACE.concrete));
   assert.ok(Math.abs((fx! - 160) / len - LIGHT.x / Math.hypot(LIGHT.x, LIGHT.y)) < 1e-9, 'it falls along the light');
 });
 

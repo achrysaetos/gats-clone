@@ -7,7 +7,7 @@ import { PALETTE } from './palette.ts';
 import { paintThemedSolids } from './themes/registry.ts';
 
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
-const SHADOW_PER_HEIGHT = 2.2;
+const SHADOW_PER_HEIGHT = 2.7;
 export const LIP = 4;
 
 export type SolidKind = 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core' | 'crate' | 'supply' | 'wood' | 'sandbag' | 'steel' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap';
@@ -23,11 +23,13 @@ const GRAIN: Grain = { specks: 120, blotches: 0, scratches: 0.2, seams: null, ti
 
 /**
  * Every solid is seen slightly from the front: its top face is its collision rect, and below the south edge hangs a darker
- * front face this many px tall. Bodies are drawn over it, so a player standing at a wall's foot is in front of the wall.
+ * front face. Bodies are drawn over it, so a player standing at a wall's foot is in front of the wall. These are the heights
+ * the painters (this file and the theme kits, which mirror them) draw a front face at; `FACE` is how tall it ends up on screen.
  */
-export const FACE: Record<SolidKind, number> = { hangar: 18, cinder: 16, sbags: 13, gse: 12, bunk: 10, pallet: 10, jersey: 12, stall: 14, shopfront: 18, stack: 12, cart: 10, shrine: 16, gallery: 18, marble: 16, vitrine: 14, plinth: 22, counter: 14, sandstone: 15, concrete: 16, slate: 14, brick: 12, planter: 12, crate: 12, supply: 13, pad: 6, curb: 0, core: 0, wood: 10, sandbag: 13, steel: 15, hull: 14, tower: 24, bulkhead: 16, rack: 12, water: 0, hedge: 18, pond: 8, parkstone: 16, trunk: 14, bench: 9, play: 13, terminus: 18, ironwork: 10, boxcar: 16, sleepers: 12, kiosk: 14, coalheap: 10, timber: 18, hearth: 16, bartop: 14, drift: 10, machine: 16, embwall: 16, embglass: 14, embfurn: 12, embrack: 14, embhedge: 18, rubble: 16, scrap: 14 };
-/** How far below its rect a solid's drawing can reach: its front face and the rubble at its foot. */
-export const FOOT = 30;
+export const PAINT_FACE: Record<SolidKind, number> = { hangar: 18, cinder: 16, sbags: 13, gse: 12, bunk: 10, pallet: 10, jersey: 12, stall: 14, shopfront: 18, stack: 12, cart: 10, shrine: 16, gallery: 18, marble: 16, vitrine: 14, plinth: 22, counter: 14, sandstone: 15, concrete: 16, slate: 14, brick: 12, planter: 12, crate: 12, supply: 13, pad: 6, curb: 0, core: 0, wood: 10, sandbag: 13, steel: 15, hull: 14, tower: 24, bulkhead: 16, rack: 12, water: 0, hedge: 18, pond: 8, parkstone: 16, trunk: 14, bench: 9, play: 13, terminus: 18, ironwork: 10, boxcar: 16, sleepers: 12, kiosk: 14, coalheap: 10, timber: 18, hearth: 16, bartop: 14, drift: 10, machine: 16, embwall: 16, embglass: 14, embfurn: 12, embrack: 14, embhedge: 18, rubble: 16, scrap: 14 };
+/** The sprite's own pixel height is untouched until it is baked, then its front face is stretched to this much. */
+const FACE_PER_HEIGHT = 0.5;
+const FACE_MAX = 26;
 
 export const MATERIALS: Record<SolidKind, Material> = {
   // Night Market (themes/market.ts paints these itself; the numbers here drive shadow reach and the loose-sprite size).
@@ -104,6 +106,17 @@ export const MATERIALS: Record<SolidKind, Material> = {
   core: { top: '#4d535f', grain: GRAIN, height: 56 },
 };
 
+/**
+ * How tall each solid's front face is drawn: its height times a constant, never less than the painter's own, so low cover
+ * (crates, sandbags, benches) hangs a short face and full walls and buildings a tall one. A solid's sprite is painted at
+ * `PAINT_FACE` and its face is then stretched to this (spriteOf), whoever painted it, so the theme kits get the volume too.
+ */
+export const FACE: Record<SolidKind, number> = Object.fromEntries(
+  (Object.keys(PAINT_FACE) as SolidKind[]).map((k) => [k, PAINT_FACE[k] ? Math.min(FACE_MAX, Math.max(PAINT_FACE[k], Math.round(MATERIALS[k].height * FACE_PER_HEIGHT))) : 0]),
+) as Record<SolidKind, number>;
+/** How far below its rect a solid's drawing can reach: its front face and the rubble at its foot. */
+export const FOOT = 30 + Math.max(...(Object.keys(FACE) as SolidKind[]).map((k) => FACE[k] - PAINT_FACE[k]));
+
 /** The arena's edge is hazard tape in the interface's orange, so the map is framed like every other piece of kit. */
 const HAZARD = { a: '#2b2e34', b: '#d9541f', band: 12 } as const;
 
@@ -114,10 +127,14 @@ const BEVEL = { light: 'rgba(255, 255, 255, 0.24)', dark: 'rgba(10, 12, 16, 0.32
 
 export type Solid = { kind: SolidKind; x: number; y: number; w: number; h: number; wear?: number };
 
+/**
+ * The shadow a solid throws on the floor: its footprint on the ground (the top face's rect, lowered by the front face)
+ * swept along the key light, as far as the solid is tall. The top rect is kept in the outline so nothing peeks out behind it.
+ */
 export function shadowHull({ kind, x, y, w, h }: Solid): number[] {
   const len = MATERIALS[kind].height * SHADOW_PER_HEIGHT;
-  const dx = LIGHT.x * len, dy = LIGHT.y * len;
-  return [x, y, x + w, y, x + w + dx, y + dy, x + w + dx, y + h + dy, x + dx, y + h + dy, x, y + h];
+  const dx = LIGHT.x * len, dy = LIGHT.y * len, f = FACE[kind];
+  return [x, y, x + w, y, x + w + dx, y + f + dy, x + w + dx, y + h + f + dy, x + dx, y + h + f + dy, x, y + h + f, x, y + h];
 }
 
 const CURB = 18;
@@ -151,8 +168,8 @@ type GroundLayer = { canvas: HTMLCanvasElement; x: number; y: number; scale: num
 const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
 /** Crisp, graphic drop shadows rather than soft photographic ones. */
-const BLUR_PX = 3;
-const SHADOW_ALPHA = 0.32;
+const BLUR_PX = 1.2;
+const SHADOW_ALPHA = 0.42;
 const FLOOR_SEED = 7;
 const AO_COLOR = 'rgba(16, 18, 24, ';
 
@@ -183,7 +200,8 @@ function fillHulls(g: CanvasRenderingContext2D, solids: readonly Solid[]) {
 function fillAO(g: CanvasRenderingContext2D, solids: readonly Solid[], reach = 1) {
   if (!solids.length) return;
   g.save();
-  for (const [grow, blur, alpha] of [[9 * reach, 6, 0.17], [2.5 * reach, 1.6, 0.26]] as const) {
+  // The floor sinks into every wall's foot: a wide soft halo, a tighter shade, and a dark contact line hugging the base.
+  for (const [grow, blur, alpha] of [[8 * reach, 4, 0.16], [3 * reach, 1.4, 0.3]] as const) {
     g.filter = `blur(${blur * LAYER_SCALE}px)`;
     g.fillStyle = `${AO_COLOR}${alpha})`;
     g.beginPath();
@@ -191,6 +209,59 @@ function fillAO(g: CanvasRenderingContext2D, solids: readonly Solid[], reach = 1
     g.fill();
   }
   g.restore();
+}
+
+/* Which solids stand taller than a neighbour and so throw a shadow across its top: worked out once per map, read by spriteOf. */
+const CASTER_CELL = 256;
+let casterGrid = new Map<number, Solid[]>();
+const castersOn = new Map<string, number[][]>();
+const cellKey = (cx: number, cy: number) => cx * 4096 + cy;
+
+function registerCasters(solids: readonly Solid[]): void {
+  casterGrid = new Map();
+  castersOn.clear();
+  for (const s of solids) {
+    if (MATERIALS[s.kind].height <= 0) continue;
+    const hull = shadowHull(s);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < hull.length; i += 2) { x0 = Math.min(x0, hull[i]!); x1 = Math.max(x1, hull[i]!); y0 = Math.min(y0, hull[i + 1]!); y1 = Math.max(y1, hull[i + 1]!); }
+    for (let cx = Math.floor(x0 / CASTER_CELL); cx <= Math.floor(x1 / CASTER_CELL); cx++) {
+      for (let cy = Math.floor(y0 / CASTER_CELL); cy <= Math.floor(y1 / CASTER_CELL); cy++) {
+        const k = cellKey(cx, cy);
+        const list = casterGrid.get(k);
+        if (list) list.push(s); else casterGrid.set(k, [s]);
+      }
+    }
+  }
+}
+
+/** The shadows of every taller registered solid that reach `s`'s top or front face, as polygons. */
+function shadowsOn(s: Solid): number[][] {
+  const key = `${s.kind}${s.x},${s.y},${s.w},${s.h}`;
+  const known = castersOn.get(key);
+  if (known) return known;
+  const out: number[][] = [];
+  const mine = MATERIALS[s.kind].height, bottom = s.y + s.h + FACE[s.kind];
+  const seen = new Set<Solid>();
+  for (let cx = Math.floor(s.x / CASTER_CELL); cx <= Math.floor((s.x + s.w) / CASTER_CELL); cx++) {
+    for (let cy = Math.floor(s.y / CASTER_CELL); cy <= Math.floor(bottom / CASTER_CELL); cy++) {
+      for (const t of casterGrid.get(cellKey(cx, cy)) ?? []) {
+        if (seen.has(t)) continue;
+        seen.add(t);
+        if (t.x === s.x && t.y === s.y && t.w === s.w && t.h === s.h) continue;
+        if (MATERIALS[t.kind].height < mine + 8) continue;
+        const hull = shadowHull(t);
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let i = 0; i < hull.length; i += 2) { x0 = Math.min(x0, hull[i]!); x1 = Math.max(x1, hull[i]!); y0 = Math.min(y0, hull[i + 1]!); y1 = Math.max(y1, hull[i + 1]!); }
+        // Only the part of the shadow beyond the caster's own foot lies on its neighbours.
+        if (x1 <= s.x || x0 >= s.x + s.w || y1 <= s.y || y0 >= bottom) continue;
+        out.push(hull);
+      }
+    }
+  }
+  if (castersOn.size > 6000) castersOn.clear();
+  castersOn.set(key, out);
+  return out;
 }
 
 const solidKey = (solids: readonly Solid[]) => solids.map((s) => `${s.kind}${s.x},${s.y},${s.w},${s.h}`).join('|');
@@ -210,6 +281,7 @@ export function createGroundCache() {
       layout = nextLayout;
       size = worldSize;
       const placed = statics();
+      registerCasters(placed);
       const [f, fg] = layerCanvas(size);
       fg.fillStyle = PALETTE.outside;
       fg.fillRect(-LAYER_PAD, -LAYER_PAD, size + LAYER_PAD * 2, size + LAYER_PAD * 2);
@@ -364,7 +436,7 @@ function craterAt(rand: () => number, s: Solid, thr: number, r: number, cx?: num
 /** A jagged bite out of a corner (or, with `along`, out of an edge), the way a shell or a pry bar leaves one. */
 function biteAt(rand: () => number, base: Solid, thr: number, c: number, corner: number, edgeAt = 0.5): Feature {
   // A bite at a bottom corner is cut through the front face too.
-  const s = corner >= 2 ? { ...base, h: base.h + FACE[base.kind] } : base;
+  const s = corner >= 2 ? { ...base, h: base.h + PAINT_FACE[base.kind] } : base;
   c = Math.min(c, Math.min(s.w, s.h) * 0.45);
   const right = corner === 1 || corner === 3, bottom = corner === 2 || corner === 3;
   const ox = right ? s.x + s.w : s.x, oy = bottom ? s.y + s.h : s.y;
@@ -378,7 +450,7 @@ function biteAt(rand: () => number, base: Solid, thr: number, c: number, corner:
 }
 
 function edgeBiteAt(rand: () => number, base: Solid, thr: number, c: number, side: number): Feature {
-  const s = side === 2 || side === 1 || side === 3 ? { ...base, h: base.h + FACE[base.kind] } : base;
+  const s = side === 2 || side === 1 || side === 3 ? { ...base, h: base.h + PAINT_FACE[base.kind] } : base;
   const t = 0.2 + rand() * 0.6, d = Math.min(c * 0.7, Math.min(s.w, s.h) * 0.35), l = Math.min(c * 1.4, (side % 2 ? s.h : s.w) * 0.4);
   const pts: number[] = [];
   const along = (u: number, v: number): [number, number] => {
@@ -465,8 +537,8 @@ function layoutAt(s: Solid): Layout {
     );
   }
   // Rubble at the foot: a little on old walls, and more of it with every stage of damage.
-  if (FACE[kind] > 0 && kind !== 'pad') {
-    const foot = y + h + FACE[kind];
+  if (PAINT_FACE[kind] > 0 && kind !== 'pad') {
+    const foot = y + h + PAINT_FACE[kind];
     const chunk = (thr: number, big: number) => L.rubble.push(x + 3 + rand() * Math.max(1, w - 6), foot + 1 + rand() * 6, (2.4 + rand() * 2.6) * big, rand() * 6.28, thr);
     if (long >= 90) for (let i = 0, n = Math.floor(rand() * 4); i < n; i++) chunk(-1, 1);
     for (let i = 0; i < 10; i++) chunk(0.18 + i * 0.08, 1 + i * 0.07);
@@ -883,7 +955,7 @@ const FRONT: Record<SolidKind, string> = {
 /** The front faces: flat, darker than the tops, with their own seams, rivets and baseboard, laid before any top so nearer solids cover them. */
 function drawFronts(ctx: CanvasRenderingContext2D, byKind: ReadonlyMap<SolidKind, readonly Solid[]>) {
   for (const [kind, list] of byKind) {
-    const fh = FACE[kind];
+    const fh = PAINT_FACE[kind];
     if (!fh) continue;
     ctx.fillStyle = FRONT[kind];
     ctx.beginPath();
@@ -953,7 +1025,7 @@ function drawFronts(ctx: CanvasRenderingContext2D, byKind: ReadonlyMap<SolidKind
 function drawRubble(ctx: CanvasRenderingContext2D, solids: readonly Solid[]) {
   const pieces: { x: number; y: number; r: number; a: number; kind: SolidKind }[] = [];
   for (const s of solids) {
-    if (!FACE[s.kind] || s.kind === 'pad') continue;
+    if (!PAINT_FACE[s.kind] || s.kind === 'pad') continue;
     const r = layoutOf(s).rubble, wear = s.wear ?? 0;
     for (let i = 0; i < r.length; i += 5) if (r[i + 4]! < 0 || r[i + 4]! < wear) pieces.push({ x: r[i]!, y: r[i + 1]!, r: r[i + 2]!, a: r[i + 3]!, kind: s.kind });
   }
@@ -1136,19 +1208,91 @@ let spritePixels = 0;
 /** Anything this big (the map-edge curbs, the core) is cheaper to paint directly than to cache. */
 const DIRECT = (s: Solid) => s.kind === 'curb' || s.kind === 'core' || s.w > 900 || s.h > 900;
 
+let scratch: HTMLCanvasElement | null = null;
+
+/**
+ * The finishing pass every solid gets after it is painted, whoever painted it: the front face is stretched to its drawn
+ * height, then the light is laid over the whole sprite (only where it already has paint, `source-atop`): a bright rim
+ * along the top face's lit edges, a lift on tall tops so they sit above the floor and lower cover, a darker band at the
+ * foot of the face, and the shadows of any taller neighbour.
+ */
+function finishSprite(g: CanvasRenderingContext2D, s: Solid, scale: number): void {
+  const m = MATERIALS[s.kind], face = FACE[s.kind];
+  if (m.height <= 0) return;
+  g.save();
+  g.setTransform(scale, 0, 0, scale, (SPRITE_PAD - s.x) * scale, (SPRITE_PAD - s.y) * scale);
+  g.globalCompositeOperation = 'source-atop';
+  const { x, y, w, h } = s;
+  // Taller tops are brighter, so full walls and buildings stand out from crates and sandbags and every top from the floor.
+  const lift = Math.max(0, Math.min(1, (m.height - 14) / 44));
+  if (lift > 0) { g.fillStyle = `rgba(255, 246, 228, ${(0.05 + 0.1 * lift).toFixed(3)})`; g.fillRect(x, y, w, h); }
+  if (face > 0) {
+    g.fillStyle = 'rgba(8, 10, 16, 0.2)';
+    g.fillRect(x, y + h + face * 0.55, w, face * 0.45);
+    g.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    g.fillRect(x + 2, y + h + 2, w - 4, 1.5);
+  }
+  // The rim: a hard pale line along the north and west edges (toward the light) and a thin dark seam south and east.
+  g.fillStyle = 'rgba(255, 255, 255, 0.36)';
+  g.fillRect(x + 1, y + 1, w - 2, 2);
+  g.fillRect(x + 1, y + 3, 2, h - 4);
+  g.fillStyle = 'rgba(8, 10, 16, 0.34)';
+  g.fillRect(x + 3, y + h - 2, w - 4, 2);
+  g.fillRect(x + w - 2, y + 3, 2, h - 5);
+  // A raised lip throws a hard inner shadow onto the recessed top, along the edges that face the light.
+  if (m.height >= 30 && w > 24 && h > 24) {
+    const d = Math.min(7, 2 + (m.height - 30) / 6);
+    g.fillStyle = 'rgba(8, 10, 18, 0.2)';
+    g.fillRect(x + 3, y + 3, w - 6, d);
+    g.fillRect(x + 3, y + 3 + d, d, h - 6 - d);
+  }
+  const cast = shadowsOn(s);
+  if (cast.length) {
+    g.beginPath();
+    g.rect(x, y, w, h + face);
+    g.clip();
+    g.fillStyle = 'rgba(8, 10, 18, 0.32)';
+    g.beginPath();
+    for (const hull of cast) { g.moveTo(hull[0]!, hull[1]!); for (let i = 2; i < hull.length; i += 2) g.lineTo(hull[i]!, hull[i + 1]!); g.closePath(); }
+    g.fill();
+  }
+  g.restore();
+}
+
 function spriteOf(s: Solid, scale: number): HTMLCanvasElement {
   const wear = s.wear ? Math.round(s.wear * 20) / 20 : 0;
-  const key = `${s.kind}${s.x},${s.y},${s.w},${s.h}|${wear}|${scale}`;
+  const cast = shadowsOn(s).length;
+  const key = `${s.kind}${s.x},${s.y},${s.w},${s.h}|${wear}|${scale}|${cast}`;
   let image = sprites.get(key);
   if (image) return image;
+  const W = Math.ceil((s.w + LIP + SPRITE_PAD * 2) * scale), H = Math.ceil((s.h + FOOT + LIP + SPRITE_PAD * 2) * scale);
+  const pf = PAINT_FACE[s.kind], extra = FACE[s.kind] - pf;
   image = document.createElement('canvas');
-  image.width = Math.ceil((s.w + LIP + SPRITE_PAD * 2) * scale);
-  image.height = Math.ceil((s.h + FOOT + LIP + SPRITE_PAD * 2) * scale);
-  if (spritePixels + image.width * image.height > SPRITE_BUDGET) { sprites.clear(); spritePixels = 0; }
-  spritePixels += image.width * image.height;
-  const g = image.getContext('2d')!;
+  image.width = W;
+  image.height = H;
+  if (spritePixels + W * H > SPRITE_BUDGET) { sprites.clear(); spritePixels = 0; }
+  spritePixels += W * H;
+  const stretch = pf >= 8 && extra > 0;
+  let g = image.getContext('2d')!;
+  if (stretch) {
+    // Paint at the painter's own face height, then pull the middle of the face down: its top line and its foot stay crisp.
+    scratch ??= document.createElement('canvas');
+    scratch.width = W;
+    scratch.height = H;
+    g = scratch.getContext('2d')!;
+  }
   g.setTransform(scale, 0, 0, scale, (SPRITE_PAD - s.x) * scale, (SPRITE_PAD - s.y) * scale);
   paintSolids(g, [{ ...s, wear }]);
+  if (stretch) {
+    const out = image.getContext('2d')!;
+    const top = Math.round((SPRITE_PAD + s.h + 3) * scale), foot = Math.round((SPRITE_PAD + s.h + pf - 4) * scale), add = Math.round(extra * scale);
+    out.imageSmoothingEnabled = true;
+    out.drawImage(scratch!, 0, 0, W, top, 0, 0, W, top);
+    out.drawImage(scratch!, 0, top, W, foot - top, 0, top, W, foot - top + add);
+    out.drawImage(scratch!, 0, foot, W, H - foot - add, 0, foot + add, W, H - foot - add);
+    scratch!.width = scratch!.height = 1;
+  }
+  finishSprite(image.getContext('2d')!, s, scale);
   sprites.set(key, image);
   return image;
 }

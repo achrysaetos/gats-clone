@@ -160,7 +160,7 @@ export type DecorPlan = {
 };
 
 /** A wall's front face, mirrored from tilt.ts's FACE (a test holds the two together). */
-export const WALL_FACE: Readonly<Record<string, number>> = { concrete: 16, sandstone: 15, planter: 12 };
+export const WALL_FACE: Readonly<Record<string, number>> = { concrete: 23, sandstone: 23, planter: 13 };
 const faceFor = (m: WallMaterial): number => WALL_FACE[m] ?? 14;
 const NORMAL: Record<Side, readonly [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
 const SIDE_ANGLE: Record<Side, number> = { n: -Math.PI / 2, s: Math.PI / 2, e: 0, w: Math.PI };

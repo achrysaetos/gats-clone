@@ -134,16 +134,32 @@ export function drawPolys(g: CanvasRenderingContext2D, info: GeoInfo): void {
   const shapes = polys.map(shapeOf).filter((s) => touches(s, info.view, 40));
   if (!shapes.length) return;
   g.save();
-  g.fillStyle = 'rgba(10,12,18,0.26)';
-  for (const s of shapes) {
-    const h = s.poly.height ?? 14;
-    if (h <= 0 || kitShadowed(s.poly)) continue;
-    const dx = LIGHT.x * h * 0.5, dy = LIGHT.y * h * 0.5;
-    g.beginPath();
-    s.pts.forEach((p, i) => (i ? g.lineTo(p.x + dx, p.y + dy) : g.moveTo(p.x + dx, p.y + dy)));
+  g.lineJoin = 'round';
+  // Contact shade hugging every base, then the cast shadow: the footprint (lowered by the front face) swept along the key light, one flat dark fill.
+  const cast = shapes.filter((s) => (s.poly.height ?? 14) > 0 && !kitShadowed(s.poly));
+  g.strokeStyle = 'rgba(10,12,18,0.10)';
+  g.lineWidth = 16;
+  for (const s of cast) { trace(g, s.pts.map((p) => ({ x: p.x, y: p.y + (s.poly.height ?? 14) * 0.5 }))); g.stroke(); }
+  g.strokeStyle = 'rgba(10,12,18,0.16)';
+  g.lineWidth = 7;
+  for (const s of cast) { trace(g, s.pts.map((p) => ({ x: p.x, y: p.y + (s.poly.height ?? 14) * 0.5 }))); g.stroke(); }
+  g.fillStyle = 'rgba(10,12,18,0.34)';
+  g.beginPath();
+  for (const s of cast) {
+    const h = s.poly.height ?? 14, len = Math.min(120, h * 1.8);
+    const vx = LIGHT.x * len, vy = h + LIGHT.y * len, n = s.pts.length;
+    s.pts.forEach((p, i) => (i ? g.lineTo(p.x + vx, p.y + vy) : g.moveTo(p.x + vx, p.y + vy)));
     g.closePath();
-    g.fill();
+    for (let i = 0; i < n; i++) {
+      const a = s.pts[i]!, b = s.pts[(i + 1) % n]!;
+      const sign = (b.x - a.x) * vy - (b.y - a.y) * vx;
+      // Every subpath wound the same way, so one nonzero fill is the union.
+      if (sign >= 0) { g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(b.x + vx, b.y + vy); g.lineTo(a.x + vx, a.y + vy); }
+      else { g.moveTo(a.x, a.y); g.lineTo(a.x + vx, a.y + vy); g.lineTo(b.x + vx, b.y + vy); g.lineTo(b.x, b.y); }
+      g.closePath();
+    }
   }
+  g.fill('nonzero');
   g.restore();
   const groups = new Map<string, Shape[]>();
   shapes.forEach((s, i) => { const k = s.poly.group ?? `#${i}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push(s); });

@@ -362,8 +362,8 @@ const LX = -LIGHT.x * LH, LY = -LIGHT.y * LH;
 const VY = Math.sin(Math.atan(TILT)), VZ = Math.cos(Math.atan(TILT));
 const HX0 = LX, HY0 = LY + VY, HZ0 = LZ + VZ, HL = Math.hypot(HX0, HY0, HZ0);
 const HX = HX0 / HL, HY = HY0 / HL, HZ = HZ0 / HL;
-/** How far a contact shadow reaches down and right per metre of height: short, so the toy sits on the floor. */
-const SHADOW = 0.2;
+/** How far a contact shadow reaches down and right per metre of height: long enough to read as a cast shadow, like the solids'. */
+const SHADOW = 0.6;
 const INK_RGB = rgbOf('#1c1f26');
 const SHADOW_A = 0.42;
 /** Above this light term a surface takes the lit step. */
