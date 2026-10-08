@@ -5,7 +5,7 @@ import { KIT, type PieceId } from '../../shared/kit.ts';
 import { MAPS } from '../../shared/maps.ts';
 import { trainAt } from '../../shared/sim/train.ts';
 import { legFrame, stride } from '../gait.ts';
-import { SOLDIER } from './catalog.ts';
+import { SOLDIER, TRAIN, trainSprite } from './catalog.ts';
 import { mapLooks, pieceKey, stageFor, type PieceLook } from './pieces.ts';
 import { cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { screenToWorld, type Camera } from '../camera.ts';
@@ -53,7 +53,7 @@ export type CrateLook = Rect & { id: number; key: string; piece: PieceId; height
 /** An overhead piece and whether a body stands under it, so the painter fades it. */
 export type OverheadLook = PieceLook & { under: boolean };
 /** The passing train's cars in map space, nose first; `warn` while its signals flash before it comes. */
-export type TrainLook = { cars: (Rect & { key: string })[]; warn: boolean; axis: 'x' | 'y' };
+export type TrainLook = { cars: (Rect & { key: string })[]; warn: boolean; axis: 'x' | 'y'; back: boolean };
 export type SiegeLook = Rect & { key: string; kind: BuildingKind; wear: number; ammo: number | null; flash: number; barrel: { angle: number; recoil: number } | null };
 export type ZombieLook = { id: number; kind: ZombieKind; x: number; y: number; angle: number; flash: number; hp: number; bar: boolean; light: number };
 export type DownedLook = { id: number; x: number; y: number; color: string; self: boolean; revive: number; bleedLeft: number | null };
@@ -263,7 +263,6 @@ function legsOf(st: ReturnType<typeof stride> | undefined): BodyLook['legs'] {
 }
 
 /** Train cars in their baked sizes, laid back from the nose along the lane. */
-const TRAIN_CARS = { loco: 300, car: 250 } as const;
 
 function trainOf(s: Session, now: number): TrainLook | null {
   const train = MAPS[s.map].train;
@@ -271,21 +270,21 @@ function trainOf(s: Session, now: number): TrainLook | null {
   if (!train || clock === null) return null;
   const at = trainAt(train, clock);
   if (at.k === 'clear') return null;
-  if (at.k === 'warn') return { cars: [], warn: true, axis: train.axis };
+  if (at.k === 'warn') return { cars: [], warn: true, axis: train.axis, back: train.dir === -1 };
   const nose = ((clock - at.arrivedAt) / 1000) * train.speed;
   const { lane } = train;
   const span = train.axis === 'x' ? lane.w : lane.h;
   const cars: TrainLook['cars'] = [];
   for (let back = 0, i = 0; back < train.length; i++) {
-    const len = Math.min(i === 0 ? TRAIN_CARS.loco : TRAIN_CARS.car, train.length - back);
+    const len = Math.min(i === 0 ? TRAIN.loco : TRAIN.car, train.length - back);
     const from = nose - back - len;
     const a = train.dir === 1 ? from : span - from - len;
     const turn = train.axis === 'x' ? 0 : 1;
-    const key = `train.${i === 0 ? 'loco' : 'car'}.${turn}`;
+    const key = trainSprite(i === 0 ? 'loco' : 'car', turn);
     cars.push(train.axis === 'x' ? { key, x: lane.x + a, y: lane.y, w: len, h: lane.h } : { key, x: lane.x, y: lane.y + a, w: lane.w, h: len });
     back += len;
   }
-  return { cars, warn: false, axis: train.axis };
+  return { cars, warn: false, axis: train.axis, back: train.dir === -1 };
 }
 
 function ringOf(snap: Snapshot, clock: number): RingLook {

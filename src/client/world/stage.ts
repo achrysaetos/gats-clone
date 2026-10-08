@@ -10,7 +10,7 @@ import { TURRET_LOOK } from '../siege.ts';
 import type { Knobs } from '../quality.ts';
 import { loadArt, type Art } from './assets.ts';
 import { ART } from './art.ts';
-import { facing, siegeWallSprite, SOLDIER, SPRITES, type Layer } from './catalog.ts';
+import { facing, siegeWallSprite, SOLDIER, SPRITES, TRAIN, type Layer } from './catalog.ts';
 import { blockLook } from './blocks.ts';
 import { createGround } from './ground.ts';
 import { createKnee } from './knee.ts';
@@ -295,11 +295,15 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   }
 
   /** A kit piece: its baked look when the atlas has it, else its greybox top and south face. */
-  function piece(into: Pool<Sprite>, grey: Graphics, key: string, p: PieceId, x: number, y: number, w: number, h: number, height: number, alpha: number) {
+  function piece(into: Pool<Sprite>, grey: Graphics, key: string, p: PieceId, x: number, y: number, w: number, h: number, height: number, alpha: number, mirror = false) {
     if (SPRITES[key] && art.has(key, 'base')) {
-      const s = into.next();
-      place(s, key, 'base', 0, 0, x, y);
-      s.alpha = alpha;
+      for (const [pool, layer] of [[into, 'base'], [solidGlowPool, 'glow']] as const) {
+        if (layer === 'glow' && !art.has(key, 'glow')) continue;
+        const s = pool.next();
+        place(s, key, layer, 0, 0, mirror ? x + w : x, y);
+        if (mirror) s.scale.x *= -1;
+        s.alpha = alpha;
+      }
       return;
     }
     const look = blockLook(p);
@@ -311,7 +315,10 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   /** The train, then the overhead pieces, faded toward see-through while someone stands under them. */
   function drawAbove(scene: Scene, now: number) {
     const dt = Math.min(100, now - lastDraw);
-    for (const car of scene.train?.cars ?? []) piece(abovePool, aboveBlocks, car.key, 'container.rust', car.x, car.y, car.w, car.h, 110, 1);
+    // The cars are baked heading east or south; a westbound train is the eastbound one mirrored, while a northbound one keeps
+    // its south-facing look, since flipping it would put its lit south face on top.
+    const train = scene.train;
+    for (const car of train?.cars ?? []) piece(abovePool, aboveBlocks, car.key, 'container.rust', car.x, car.y, car.w, car.h, TRAIN.height, 1, train!.back && train!.axis === 'x');
     const seen = new Set<string>();
     for (const o of scene.overheads) {
       const id = `${o.key}@${o.x},${o.y}`;
