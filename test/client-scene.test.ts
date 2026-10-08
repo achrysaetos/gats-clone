@@ -134,7 +134,7 @@ test('the ground streams the tiles under the view first, a ring past it, and not
 
 test("the ground is keyed by the map's own walls, so an engineer's wall coming or going never swaps it", () => {
   const long: WallView = { x: 0, y: 0, w: 100, h: 50, built: false, material: 'concrete' };
-  const block: WallView = { x: 300, y: 0, w: 50, h: 50, built: false, material: 'sandstone' };
+  const block: WallView = { x: 300, y: 0, w: 50, h: 50, built: false, material: 'metal' };
   const map = [long, block];
   const built: WallView = { x: 500, y: 500, w: 120, h: 40, built: true };
   assert.equal(mapLayoutKey([...map, built]), mapLayoutKey(map));

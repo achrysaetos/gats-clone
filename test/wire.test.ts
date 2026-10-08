@@ -39,7 +39,7 @@ test('omitting unchanged crates, leaderboard, zones and match reconstructs the s
 });
 
 test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and integers exact', () => {
-  const w = createWorld('FFA', 3, 'plaza');
+  const w = createWorld('FFA', 3, 'warehouse');
   const p = spawnAt(w, 1500.123456, 1500.987654);
   p.angle = 1.23456789;
   const snap = snapshotFor(w, p.id);
@@ -54,7 +54,7 @@ test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and inte
 });
 
 test('a client that never received a sticky field cannot rebuild the snapshot', () => {
-  const w = createWorld('FFA', 3, 'plaza');
+  const w = createWorld('FFA', 3, 'warehouse');
   const p = spawnAt(w, 1500, 1500);
   const { crates: _, ...wire } = snapshotFor(w, p.id);
   assert.equal(fillSnapshot(wire, null), null);

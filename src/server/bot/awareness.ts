@@ -42,7 +42,7 @@ const UNDER_FIRE_MS = 500;
 const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
 
-const crateRect = (c: { x: number; y: number; size: number }): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
+const crateRect = (c: Rect): Rect => ({ x: c.x, y: c.y, w: c.w, h: c.h });
 
 const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
 

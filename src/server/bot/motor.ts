@@ -70,7 +70,7 @@ const SWAY_PAUSE_MS: readonly [number, number] = [100, 250];
 export const MIN_TURN_BACK_MS = 400;
 const MIN_LEG_TICKS = Math.round(MIN_TURN_BACK_MS / TICK_MS);
 
-const crateRect = (c: CrateView): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
+const crateRect = (c: CrateView): Rect => ({ x: c.x, y: c.y, w: c.w, h: c.h });
 
 function retreatHeading(me: Point, away: number, arena: BotArena): number {
   const headings = Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)
@@ -94,7 +94,7 @@ function awayFrom(me: Point, threat: Point, arena: BotArena, step: number): Poin
 function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly Rect[], range: number, sight: { halfW: number; halfH: number }): Point | null {
   let best: Point | null = null, bestD = Infinity;
   for (const c of crates) {
-    const at = { x: c.x + c.size / 2, y: c.y + c.size / 2 };
+    const at = { x: c.x + c.w / 2, y: c.y + c.h / 2 };
     const d = dist(at, me);
     if (d > range || d >= bestD || Math.abs(at.x - me.x) > sight.halfW || Math.abs(at.y - me.y) > sight.halfH) continue;
     if (!clearShot([...walls, ...crates.filter((o) => o.id !== c.id).map(crateRect)], me, at)) continue;

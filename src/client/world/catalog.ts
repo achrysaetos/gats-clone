@@ -1,5 +1,6 @@
 import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId, type TurretKind, type ZombieKind } from '../../shared/defs.ts';
 import { GUN_PARTS } from '../sprites.ts';
+import { KIT } from '../../shared/kit.ts';
 
 /**
  * Every baked sprite the world draws, as one table both sides read: `npm run art` bakes and packs a frame for each entry,
@@ -55,7 +56,7 @@ const entries: [string, SpriteSpec][] = [
   ...GUN_IDS.map((gun): [string, SpriteSpec] => [`gun.${gun}`, { box: gunBox(gun), dirs: 1, frames: 1, layers: ['base'], model: `gun:${gun}` }]),
   ...ZOMBIE_KINDS.map((kind): [string, SpriteSpec] => [`zombie.${kind}`, { box: square(ZOMBIES[kind].radius * 1.9, FACE), dirs: 16, frames: 1, layers: ['base'], model: `zombie:${kind}`, scale: ZOMBIES[kind].radius > 30 ? 0.75 : 1 }]),
   ...(['plain', ...Object.keys(CRATE_TIERS)] as const).flatMap((tier) => {
-    const size = tier === 'plain' ? CRATE_TIERS.loot.size : CRATE_TIERS[tier as CrateTier].size;
+    const size = KIT[tier === 'plain' ? 'crate' : CRATE_TIERS[tier as CrateTier].piece].w;
     return Array.from({ length: CRATE_STAGES }, (_, stage): [string, SpriteSpec] => [`crate.${tier}.${stage}`, { box: footprint(size, size), dirs: 1, frames: 1, layers: ['base'], model: `crate:${tier}:${stage}` }]);
   }),
   ['engineer.wall.h', { box: footprint(140, 24), dirs: 1, frames: 1, layers: ['base'], model: 'engineer-wall' }],

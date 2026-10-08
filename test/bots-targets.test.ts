@@ -8,10 +8,10 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
-import { emptyWorld, equip, hpOf, setWalls, spawnAt, TICK_MS } from './helpers.ts';
+import { KIT } from '../src/shared/kit.ts';
+import { crateOf, emptyWorld, equip, hpOf, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
-const CRATE = 40;
-const addCrate = (w: World, cx: number, cy: number) => w.crates.push({ id: 9000 + w.crates.length, x: cx - CRATE / 2, y: cy - CRATE / 2, size: CRATE, hp: 40, respawnAt: null });
+const addCrate = (w: World, cx: number, cy: number) => w.crates.push(crateOf(9000 + w.crates.length, cx - KIT.crate.w / 2, cy - KIT.crate.h / 2));
 
 const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) % 2147483647) / 2147483647); };
 

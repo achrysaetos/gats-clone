@@ -1,4 +1,5 @@
-import { CRATE_SIZE, MAPS } from '../shared/maps.ts';
+import { MAPS } from '../shared/maps.ts';
+import { placed } from '../shared/kit.ts';
 import type { RunView, WallView } from '../shared/protocol.ts';
 import type { Camera } from './camera.ts';
 import { createPool } from './particles.ts';
@@ -54,11 +55,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
 }
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;
-const BACKDROP_MAP = MAPS.plaza;
+const BACKDROP_MAP = MAPS.warehouse;
 const backdropWalls: WallView[] = BACKDROP_MAP.walls.map((w) => ({ ...w, built: false }));
 const noParticles = createPool(1);
 
-/** The menu's view: Plaza's empty ground drifting slowly behind the cards. */
+/** The menu's view: the warehouse's empty ground drifting slowly behind the cards. */
 export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number, now: number) {
   clear(ctx);
   const { size } = BACKDROP_MAP;
@@ -70,7 +71,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const view = { x0: x - w / zoom / 2, y0: y - h / zoom / 2, x1: x + w / zoom / 2, y1: y + h / zoom / 2 };
   const scene: Scene = {
     view, size, layout: mapLayoutKey(backdropWalls), dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
-    crates: BACKDROP_MAP.crates.map((c, i) => ({ id: i, x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, tier: undefined, wear: 0 })),
+    crates: BACKDROP_MAP.breakables.map((at, i) => { const { x, y, w } = placed(at).foot; return { id: i, x, y, size: w, tier: undefined, wear: 0 }; }),
     engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
     ghost: null, killer: null, numbers: [], effects: [], particles: noParticles,
   };

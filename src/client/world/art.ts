@@ -34,7 +34,7 @@ export const ART = {
     quay: [0.4, 0.39, 0.37] as const,
   },
   render: { samples: 16, exposure: 0.3, view: 'Khronos PBR Neutral', look: 'None' },
-  heights: { concrete: 46, sandstone: 46, planter: 26, curb: 20, crate: 30, slate: 36 },
+  heights: { concrete: 46, sandstone: 46, planter: 26, curb: 20, crate: 30, slate: 36, metal: 60, wood: 40, sandbag: 28 },
 } as const;
 
 /** How far a shadow reaches along the floor per unit of height. */

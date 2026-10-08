@@ -1,5 +1,6 @@
 import { COLOR_IDS, CRATE_TIERS, LEVELS, RING, ROYALE, WORLD, type ColorId, type CrateTier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
+import { KIT } from '../kit.ts';
 import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult, type Team } from '../protocol.ts';
 import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
@@ -49,8 +50,9 @@ function scheduleDrop(w: World, r: Royale, into: Circle) {
 const SCATTER_CLEAR = 90;
 
 function crateAt(w: World, x: number, y: number, tier: CrateTier): Crate {
-  const { size, hp } = CRATE_TIERS[tier];
-  return { id: newId(w), x: x - size / 2, y: y - size / 2, size, hp, respawnAt: null, tier };
+  const { piece, hp } = CRATE_TIERS[tier];
+  const size = KIT[piece].w;
+  return { id: newId(w), piece, r: 0, x: x - size / 2, y: y - size / 2, w: size, h: size, hp, respawnAt: null, tier };
 }
 
 function stockCrates(w: World, spin: number) {
@@ -58,7 +60,7 @@ function stockCrates(w: World, spin: number) {
   w.crates = w.crates.map((c) => ({ ...c, tier: 'loot' }));
   for (let i = 0; i < ROYALE.caches; i++) {
     const a = spin + ((i + 0.5) / ROYALE.caches) * 2 * Math.PI;
-    const at = clearPointNear(coverRects(w), centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, CRATE_TIERS.cache.size, size);
+    const at = clearPointNear(coverRects(w), centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, KIT[CRATE_TIERS.cache.piece].w, size);
     w.crates.push(crateAt(w, at.x, at.y, 'cache'));
   }
   scatter(w, { x: centre, y: centre, r: size }, ROYALE.scatter);
@@ -182,7 +184,7 @@ function advanceRing(w: World, r: Royale) {
 
 function landDrops(w: World, r: Royale) {
   r.drops = r.drops.filter((d) => {
-    const half = CRATE_TIERS.drop.size / 2;
+    const half = KIT[CRATE_TIERS.drop.piece].w / 2;
     const footprint = { x: d.x - half, y: d.y - half, w: half * 2, h: half * 2 };
     if (w.now < d.landsAt || [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(footprint, { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius))) return true;
     w.crates = [...w.crates, crateAt(w, d.x, d.y, 'drop')];

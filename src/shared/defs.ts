@@ -295,8 +295,6 @@ export const WORLD = {
   regenPerSec: 5,
   tickHz: 30,
   viewRadius: 900,
-  crateHp: 40,
-  crateScore: 10,
   killScore: 100,
   bountyScore: 200,
   assistScore: 50,
@@ -469,11 +467,11 @@ export const ZOM = {
  */
 export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number; lives: 'many' | 'last' };
 export const RING: readonly RingPhase[] = [
-  { waitMs: 30_000, shrinkMs: 30_000, radius: 3200, dps: 0.02, lives: 'many' },
-  { waitMs: 55_000, shrinkMs: 25_000, radius: 2500, dps: 0.03, lives: 'many' },
-  { waitMs: 50_000, shrinkMs: 20_000, radius: 1900, dps: 0.05, lives: 'many' },
-  { waitMs: 45_000, shrinkMs: 20_000, radius: 1300, dps: 0.08, lives: 'last' },
-  { waitMs: 35_000, shrinkMs: 15_000, radius: 700, dps: 0.12, lives: 'last' },
+  { waitMs: 30_000, shrinkMs: 30_000, radius: 2130, dps: 0.02, lives: 'many' },
+  { waitMs: 55_000, shrinkMs: 25_000, radius: 1670, dps: 0.03, lives: 'many' },
+  { waitMs: 50_000, shrinkMs: 20_000, radius: 1270, dps: 0.05, lives: 'many' },
+  { waitMs: 45_000, shrinkMs: 20_000, radius: 870, dps: 0.08, lives: 'last' },
+  { waitMs: 35_000, shrinkMs: 15_000, radius: 470, dps: 0.12, lives: 'last' },
   { waitMs: 25_000, shrinkMs: 15_000, radius: 0, dps: 0.2, lives: 'last' },
 ];
 
@@ -487,21 +485,21 @@ export const ROYALE = {
   dropLandMs: 20_000,
   dropNoticeMs: 10_000,
   /** Squads start evenly spaced on a circle this far from the map's centre, where the caches sit `cacheR` out. */
-  edgeR: 2200,
+  edgeR: 1470,
   caches: 4,
-  cacheR: 220,
+  cacheR: 150,
   /** Crates scattered on open ground at the start of each match, on top of the map's own; those within `richR` of the centre pay more. */
-  scatter: 100,
-  richR: 1500,
+  scatter: 45,
+  richR: 1000,
   /** Crates scattered inside each new circle as it is drawn. */
-  wave: 100,
+  wave: 45,
 } as const;
 
-/** What each kind of Last Squad crate pays, how much it takes to break and how big it stands. A drop also jumps its breaker to their next level pick. */
+/** What each kind of Last Squad crate pays, how much it takes to break and the kit piece it stands as. A drop also jumps its breaker to their next level pick. */
 export const CRATE_TIERS = {
-  loot: { score: 25, hp: 40, size: 44 },
-  rich: { score: 60, hp: 60, size: 44 },
-  cache: { score: 100, hp: 160, size: 60 },
-  drop: { score: 25, hp: 300, size: 64 },
-} as const satisfies Record<string, { score: number; hp: number; size: number }>;
+  loot: { score: 25, hp: 40, piece: 'crate' },
+  rich: { score: 60, hp: 60, piece: 'crate' },
+  cache: { score: 100, hp: 160, piece: 'crate.big' },
+  drop: { score: 25, hp: 300, piece: 'crate.drop' },
+} as const satisfies Record<string, { score: number; hp: number; piece: string }>;
 export type CrateTier = keyof typeof CRATE_TIERS;

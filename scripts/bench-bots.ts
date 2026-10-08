@@ -45,7 +45,7 @@ function humanThink(snap: Snapshot, walls: readonly WallView[], mind: HumanMind,
     next.strafe = next.strafe === 1 ? -1 : 1;
     next.flipAtTick = snap.tick + Math.round((300 + r() * 600) / TICK_MS);
   }
-  if (Math.hypot(me.x - next.wanderX, me.y - next.wanderY) < 80) { next.wanderX = r() * MAPS.plaza.size; next.wanderY = r() * MAPS.plaza.size; }
+  if (Math.hypot(me.x - next.wanderX, me.y - next.wanderY) < 80) { next.wanderX = r() * MAPS.warehouse.size; next.wanderY = r() * MAPS.warehouse.size; }
   let angle = Math.atan2(next.wanderY - me.y, next.wanderX - me.x);
   let moveAngle = angle;
   let fire = false, aimDist = 300;
@@ -89,7 +89,7 @@ function arm(p: Player, gun: GunId | null) {
 }
 
 function simulate(seed: number, style: HumanStyle, forcedGun: GunId | null): Tally {
-  const w: World = createWorld('FFA', seed, 'plaza');
+  const w: World = createWorld('FFA', seed, 'warehouse');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers - 1; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
@@ -161,7 +161,7 @@ const ABILITY_KILL_LABEL: Partial<Record<AbilityId, string>> = { grenade: 'Grena
 
 /** Every bot carries `ability` from spawn, so the rule that fires it is measured without waiting for bots to reach tier 3. */
 function abilityArena(ability: AbilityId, seed: number): { uses: number; kills: number; deaths: number } {
-  const w: World = createWorld('FFA', seed, 'plaza');
+  const w: World = createWorld('FFA', seed, 'warehouse');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
@@ -205,7 +205,7 @@ for (const ability of abilityMinutes > 0 ? PERK_TIERS[3] : []) {
 
 /** Each bot life draws one ability at random, so holders of different abilities fight each other and their K/D shows which one wins fights. */
 function mixedArena(seed: number, kills: Map<AbilityId, number>, deaths: Map<AbilityId, number>) {
-  const w: World = createWorld('FFA', seed, 'plaza');
+  const w: World = createWorld('FFA', seed, 'warehouse');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   const holds = new Map<number, AbilityId>();

@@ -14,7 +14,7 @@ function coverOf(s: Session) {
   const snap = newestSnap(s.snaps);
   return [
     ...s.walls,
-    ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
+    ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })),
     ...(snap?.buildings ?? []).map((b) => cellRect(b.cx, b.cy)),
     ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
   ];

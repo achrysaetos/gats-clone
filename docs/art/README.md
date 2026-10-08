@@ -121,3 +121,12 @@ The overhaul followed the plan above: PixiJS behind `drawWorld`, the HUD on Canv
 - **`scripts/map-overview.ts` stitches the baked tiles with sharp** instead of rendering in a browser.
 - **Sounds are sampled MP3s** (CC0, from Freesound) fetched and encoded by `scripts/art/sounds.ts`, with the old synthesizer kept as the fallback while they load.
 - **The sun shadows fall south-west** (`ART.sun.shadow` `[-0.62, 0.78]`, elevation 26°), matching the planters and walls in the reference. The live soldier shadow reads the same values, and is drawn at 60% strength because at full strength it outweighs the soldier.
+
+## Second stage: what departs from IMPLEMENTATION.md, and why
+
+Each entry names the guide's suggestion, what was built instead, and the reason.
+
+- **Map files are JSON placements, with half the map written.** The guide asks for a kit-of-parts format with a typed registry. The registry is `src/shared/kit.ts`; a map (`src/shared/maps/*.json`) lists placements `{p, x, y, r}` and, with `symmetry: "halfTurn"`, only half of them: the loader adds each piece's twin turned about the centre, red spawns become blue ones, and DOM's third zone is A's twin. A versus map is fair by construction, and the editor only ever edits one half.
+- **First drafts come from a block plan.** `scripts/maps/plan.ts` turns a character grid (container stacks, crate piles, roofed rooms with doors, walls, props) into packed placements, varied by a hash of position so a plan fills the same way every run. Hand placement came out far sparser than the references; the plan reaches their density in a few lines. The draft is a starting point; the editor owns the JSON after it.
+- **Fuel barrels chain through a short fuse.** A round that breaks a fuel barrel sets it off at once; a blast that breaks one lights a 160 ms fuse first, so a row of barrels goes up one after another instead of in a single frame. Fuses and burning fuel are `Thrown` kinds, so they reach clients through the existing snapshot path.
+- **The train runs on absolute server time.** Its arrivals are `run × everyMs` plus a hashed delay per run, so the sim and every client compute the same position from the server clock alone, with nothing on the wire and no map-start time to sync. A map whose runs cannot fit their timetable fails to load.

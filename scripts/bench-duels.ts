@@ -24,12 +24,12 @@ const hash = (s: string) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; 
 const personasOf = (seed: number) => [PERSONALITY_IDS[seed % 3]!, PERSONALITY_IDS[Math.floor(seed / 3) % 3]!] as const;
 
 function duel(spec: DuelSpec): DuelResult {
-  const w = createWorld('FFA', hash(`${spec.seed}:${spec.a}:${spec.b}:${spec.range}:${spec.armor}`), 'plaza');
+  const w = createWorld('FFA', hash(`${spec.seed}:${spec.a}:${spec.b}:${spec.range}:${spec.armor}`), 'warehouse');
   w.walls = [];
   w.crates = [];
   w.wallsVersion++;
   const r = () => rand(w);
-  const mid = MAPS.plaza.size / 2;
+  const mid = MAPS.warehouse.size / 2;
   const mems = new Map<number, BotMemory>();
   const personas = personasOf(spec.seed);
   const join = (gun: GunId, x: number) => {

@@ -9,7 +9,7 @@ import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
-import { emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
+import { CRATE_BREAKS, crateOf, emptyWorld, grantPerks, hpOf, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
 const PISTOL_DMG = GUNS.pistol.damage;
 
@@ -240,13 +240,13 @@ test('TDM team reaching tdmWinScore kills wins', () => {
 test('destroying a crate awards crateScore and it respawns later', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  w.crates.push({ id: 999, x: 600, y: 478, size: 44, hp: WORLD.crateHp, respawnAt: null });
-  const shots = Math.ceil(WORLD.crateHp / PISTOL_DMG);
+  w.crates.push(crateOf(999, 600, 478));
+  const shots = Math.ceil(CRATE_BREAKS.hp / PISTOL_DMG);
   for (let i = 0; i < shots; i++) shootOnce(w, a, 0, 300);
-  assert.equal(a.score, WORLD.crateScore);
+  assert.equal(a.score, CRATE_BREAKS.score);
   assert.ok(!snapshotFor(w, a.id).crates.some((c) => c.id === 999), 'destroyed crate hidden');
-  run(w, 20_000);
-  assert.ok(snapshotFor(w, a.id).crates.some((c) => c.id === 999 && c.hp === WORLD.crateHp), 'crate respawned');
+  run(w, CRATE_BREAKS.respawnMs + 1000);
+  assert.ok(snapshotFor(w, a.id).crates.some((c) => c.id === 999 && c.hp === CRATE_BREAKS.hp), 'crate respawned');
 });
 
 test('ability respects its cooldown', () => {
@@ -356,7 +356,7 @@ test('players collide with walls and map edges', () => {
 });
 
 test('bots fighting each other produce a kill within 60 simulated seconds', () => {
-  const w = createWorld('FFA', 3, 'plaza');
+  const w = createWorld('FFA', 3, 'warehouse');
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
@@ -374,7 +374,7 @@ test('bots fighting each other produce a kill within 60 simulated seconds', () =
 });
 
 test('snapshots report the armor tier picked and how far through a reload the player is', () => {
-  const w = createWorld('FFA', 1, 'plaza');
+  const w = createWorld('FFA', 1, 'warehouse');
   w.walls = []; w.crates = [];
   const p = addPlayer(w, 'Tank', { weapon: 'lmg', armor: 'medium', color: 'red' }, { at: { x: 1000, y: 1000 } });
   assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.armorTier, 'medium', 'tier comes from the loadout, not reverse-engineered from points');

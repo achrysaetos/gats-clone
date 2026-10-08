@@ -72,7 +72,7 @@ function makeWorld(mode: ModeId) {
     team: teams ? (i % 2 ? 'blue' : 'red') : null, alive: true, hidden: i === 4, shield: i === 2, dashing: false,
     score: 50 * i, level: 1, armorTier: ARMOR_IDS[i % 4]!, kind: 'bot', hunted: i === 5, phase: i, orbit: 220 + 40 * i, cx: 1500 + (i % 3 - 1) * 250, cy: 1500 + (i < 3 ? -150 : 150), cooldown: 0,
   }));
-  const crates = Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, x: 1100 + (i % 4) * 260, y: 1050 + Math.floor(i / 4) * 450, hp: WORLD.crateHp * ((i % 3) + 1) / 3, size: 50 }));
+  const crates = Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, x: 1100 + (i % 4) * 260, y: 1050 + Math.floor(i / 4) * 450, piece: 'crate' as const, r: 0 as const, hp: 60 * ((i % 3) + 1) / 3, w: 50, h: 50 }));
   const zones: ZoneView[] = mode === 'DOM'
     ? [{ id: 1, x: 1000, y: 1000, r: 160, owner: 'red', capturing: null, progress: 1 }, { id: 2, x: 1500, y: 1500, r: 160, owner: null, capturing: 'blue', progress: 0.4 }, { id: 3, x: 2000, y: 2000, r: 160, owner: 'blue', capturing: null, progress: 1 }]
     : [];
@@ -114,7 +114,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         name = msg.name;
         gun = loadout.weapon;
         me.ammo = GUNS[gun].mag;
-        out({ t: 'welcome', id: myId, mode, worldSize: SIZE, walls: w.walls, account: msg.token?.startsWith('mock-') ? msg.token.slice('mock-'.length) : null });
+        out({ t: 'welcome', id: myId, mode, map: 'warehouse', worldSize: SIZE, walls: w.walls, account: msg.token?.startsWith('mock-') ? msg.token.slice('mock-'.length) : null });
         out({ t: 'chat', from: 'Ash', text: 'gl hf', team: w.bots[0]!.team });
         return;
       case 'input': input = msg.input; ackSeq = msg.seq; return;
@@ -142,7 +142,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         else if (cmd === '/level') pending = !perks[2] ? { level: 3, k: 'perk', tier: 2 } : { level: 4, k: 'perk', tier: 3 };
         else if (cmd === '/evolve') pending = { level: GUNS[gun].stage === 0 ? 2 : 5, k: 'evolve' };
         else if (cmd === '/win') winnerUntil = Date.now() + WORLD.roundRestartMs;
-        else if (cmd === '/walls') { w.walls.push({ x: me.x + 60, y: me.y - 60, w: 30, h: 120, built: true }); out({ t: 'walls', worldSize: SIZE, walls: w.walls }); }
+        else if (cmd === '/walls') { w.walls.push({ x: me.x + 60, y: me.y - 60, w: 30, h: 120, built: true }); out({ t: 'walls', map: 'warehouse', worldSize: SIZE, walls: w.walls }); }
         else out({ t: 'chat', from: name, text: cmd, team: mode === 'FFA' ? null : 'red' });
         return;
       }

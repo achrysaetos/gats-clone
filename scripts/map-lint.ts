@@ -2,7 +2,8 @@
 // Usage: node scripts/map-lint.ts
 import { fileURLToPath } from 'node:url';
 import { GUN_IDS, GUNS, WORLD } from '../src/shared/defs.ts';
-import { CRATE_SIZE, MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
+import { KIT, placed } from '../src/shared/kit.ts';
+import { MAP_IDS, MAPS, ZONE_RADIUS, type Center, type MapDef } from '../src/shared/maps.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
 
 export const CELL = 25;
@@ -12,7 +13,7 @@ export function standable(def: MapDef, n: number): Uint8Array {
   const free = new Uint8Array(n * n);
   const at = (i: number) => (i + 0.5) * CELL;
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) free[j * n + i] = at(i) >= R && at(j) >= R && at(i) <= def.size - R && at(j) <= def.size - R ? 1 : 0;
-  for (const s of [...def.walls, ...crateRects(def)]) {
+  for (const s of [...def.walls, ...def.fences, ...crateRects(def)]) {
     const i0 = Math.max(0, Math.floor((s.x - R) / CELL)), i1 = Math.min(n - 1, Math.floor((s.x + s.w + R) / CELL));
     const j0 = Math.max(0, Math.floor((s.y - R) / CELL)), j1 = Math.min(n - 1, Math.floor((s.y + s.h + R) / CELL));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (circleHitsRect(at(i), at(j), R, s)) free[j * n + i] = 0;
@@ -20,7 +21,9 @@ export function standable(def: MapDef, n: number): Uint8Array {
   return free;
 }
 
-const crateRects = (def: MapDef): Rect[] => def.crates.map((c) => ({ x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, w: CRATE_SIZE, h: CRATE_SIZE }));
+const crateRects = (def: MapDef): Rect[] => def.breakables.flatMap((at) => placed(at).solids);
+/** What a piece stands on, for spotting two pieces drawn into each other: paint and overhead pieces lie in other layers. */
+const standsOn = (def: MapDef) => def.pieces.filter((at) => KIT[at.p].height > 0 && !KIT[at.p].overhead).map((at) => ({ at, foot: placed(at).foot }));
 const centerOf = (c: number, n: number): Center => ({ x: ((c % n) + 0.5) * CELL, y: (Math.floor(c / n) + 0.5) * CELL });
 /** The raster cells on both sides of `v` when it sits on a cell edge, so a zone and its turned twin are judged alike. */
 const cellsEitherSide = (v: number, n: number) => [Math.floor((v - 1) / CELL), Math.floor((v + 1) / CELL)].filter((k) => k >= 0 && k < n);
@@ -76,7 +79,7 @@ function asymmetryOf(rects: readonly { r: Rect; key: number }[], turnKey: (k: nu
   return null;
 }
 
-const MATERIAL_KEY = { concrete: 1, sandstone: 2, planter: 4 } as const;
+const MATERIAL_KEY = { concrete: 1, metal: 2, wood: 4, planter: 8, sandbag: 16 } as const;
 const SPAWN_KEY = { red: 1, blue: 2, ffa: 4 } as const;
 const swapTeams = (k: number) => (k & SPAWN_KEY.ffa) | (k & SPAWN_KEY.red ? SPAWN_KEY.blue : 0) | (k & SPAWN_KEY.blue ? SPAWN_KEY.red : 0);
 
@@ -94,6 +97,11 @@ export function lintMap(def: MapDef): string[] {
   const crates = crateRects(def);
   const inside = (r: Rect, margin: number) => r.x >= margin && r.y >= margin && r.x + r.w <= def.size - margin && r.y + r.h <= def.size - margin;
   def.walls.forEach((w, i) => { if (!inside(w, 0)) problems.push(`wall ${i} leaves the world`); });
+  const feet = standsOn(def);
+  feet.forEach((a, i) => {
+    if (!inside(a.foot, 0)) problems.push(`${a.at.p} at ${where(a.foot)} leaves the world`);
+    for (const b of feet.slice(i + 1)) if (rectsOverlap(a.foot, b.foot)) problems.push(`${a.at.p} at ${where(a.foot)} overlaps ${b.at.p} at ${where(b.foot)}`);
+  });
   crates.forEach((c, i) => {
     if (!inside(c, 0)) problems.push(`crate ${i} leaves the world`);
     if (def.walls.some((w) => rectsOverlap(w, c))) problems.push(`crate ${i} overlaps a wall`);
@@ -104,7 +112,8 @@ export function lintMap(def: MapDef): string[] {
     if (regions.length === 0) problems.push(`no ${side} spawn region`);
     regions.forEach((r, i) => {
       if (!inside(r, R)) problems.push(`${side} spawn ${i} lets a player stand past the edge`);
-      if ([...def.walls, ...crates].some((s) => rectsOverlap(s, r, R))) problems.push(`${side} spawn ${i} lets a player stand in a wall or crate`);
+      const hit = [...def.walls, ...def.fences, ...crates].find((s) => rectsOverlap(s, r, R));
+      if (hit) problems.push(`${side} spawn ${i} lets a player stand in the wall or crate at ${where(hit)}`);
     });
   }
 
@@ -119,7 +128,8 @@ export function lintMap(def: MapDef): string[] {
   def.zones.forEach((z, i) => {
     if (z.x - ZONE_RADIUS < 0 || z.y - ZONE_RADIUS < 0 || z.x + ZONE_RADIUS > def.size || z.y + ZONE_RADIUS > def.size) problems.push(`zone ${i} at ${where(z)} reaches past the map's edge`);
     if (!cellsEitherSide(z.y, n).some((row) => cellsEitherSide(z.x, n).some((col) => reached[row * n + col]))) problems.push(`zone ${i}'s center ${where(z)} cannot be walked to from any spawn`);
-    if (def.walls.some((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w))) problems.push(`zone ${i} at ${where(z)} overlaps a wall`);
+    const wall = def.walls.find((w) => circleHitsRect(z.x, z.y, ZONE_RADIUS, w));
+    if (wall) problems.push(`zone ${i} at ${where(z)} overlaps the wall at ${where(wall)}`);
     if (crates.some((c) => circleHitsRect(z.x, z.y, ZONE_RADIUS, c))) problems.push(`zone ${i} at ${where(z)} overlaps a crate`);
   });
 
@@ -140,7 +150,7 @@ export function lintMap(def: MapDef): string[] {
   if (walls) problems.push(`walls are not the same after a half turn around ${where(walls)}`);
   const spawns = asymmetryOf(spawnSides.flatMap(([side, regions]) => regions.map((r) => ({ r, key: SPAWN_KEY[side] }))), swapTeams, def.size);
   if (spawns) problems.push(`spawns are not the same after a half turn (red for blue) around ${where(spawns)}`);
-  for (const c of withoutHalfTurnTwin(def.crates, def.size)) problems.push(`the crate at ${where(c)} has no twin at the half turn`);
+  for (const c of withoutHalfTurnTwin(crates.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 })), def.size)) problems.push(`the breakable at ${where(c)} has no twin at the half turn`);
   for (const z of withoutHalfTurnTwin(def.zones, def.size)) problems.push(`zone at ${where(z)} has no twin at the half turn`);
   return problems;
 }

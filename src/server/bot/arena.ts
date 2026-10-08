@@ -37,7 +37,7 @@ export function arenaFor(w: World): BotArena {
   if (cached && cached.arena.version === w.wallsVersion) return cached.arena;
   const size = MAPS[w.map].size;
   const mapWalls = w.walls.filter((wall) => !wall.built);
-  const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : buildLayout(size, mapWalls, w.crates);
+  const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : buildLayout(size, mapWalls, w.crates, w.fences);
   const built = w.walls.filter((wall) => wall.built);
   const arena: BotArena = {
     size, version: w.wallsVersion, walls: wallViews(w), cover: layout.cover, replans: { tick: -1, left: 0 },
@@ -47,8 +47,8 @@ export function arenaFor(w: World): BotArena {
   return arena;
 }
 
-function buildLayout(size: number, walls: readonly Wall[], crates: readonly Crate[]): Layout {
-  const solids: Rect[] = [...walls, ...crates.map(crateRect)];
+function buildLayout(size: number, walls: readonly Wall[], crates: readonly Crate[], fences: readonly Rect[]): Layout {
+  const solids: Rect[] = [...walls, ...crates.map(crateRect), ...fences];
   const nav = navGrid(size, solids, WORLD.playerRadius);
   return { walls, crates, nav, cover: coverIndex(nav, solids, WORLD.playerRadius) };
 }

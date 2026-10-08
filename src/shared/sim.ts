@@ -1,13 +1,13 @@
 import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
-import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
+import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, tickTrain } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { crateHpMax, IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
@@ -136,8 +136,9 @@ export function step(w: World, dtMs: number): void {
   for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);
   tickThrown(w, dt);
+  tickTrain(w);
   for (const c of w.crates) {
-    if (c.respawnAt !== null && w.now >= c.respawnAt) { c.respawnAt = null; c.hp = WORLD.crateHp; }
+    if (c.respawnAt !== null && w.now >= c.respawnAt) { c.respawnAt = null; c.hp = crateHpMax(c); }
   }
   const wallCount = w.walls.length;
   w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);

@@ -2,7 +2,8 @@ import {
   ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type ColorId, type CrateTier, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
-import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
+import { MAP_IDS, MAPS, type MapId, type WallMaterial } from './maps.ts';
+import type { PieceId } from './kit.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
 export type Team = ColorId | null;
@@ -61,9 +62,10 @@ export type PlayerView = {
 
 /** `gun` is null for shrapnel. */
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
-export type CrateView = { id: number; x: number; y: number; hp: number; size: number; tier?: CrateTier };
+/** A breakable piece standing: `x`, `y`, `w`, `h` is its solid and `piece`, `r` how it is drawn. */
+export type CrateView = { id: number; piece: PieceId; r: 0 | 1 | 2 | 3; x: number; y: number; w: number; h: number; hp: number; tier?: CrateTier };
 export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
-export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
+export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fire';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
@@ -121,6 +123,8 @@ export type GameEvent =
   /** A round stopped against a wall at (`x`, `y`), flying toward `dir`. */
   | { e: 'impact'; x: number; y: number; dir: number }
   | { e: 'boom'; x: number; y: number; r: number }
+  /** A breakable piece broke, its debris flying from (`x`, `y`), the centre of its solid `w` by `h`. */
+  | { e: 'broke'; piece: PieceId; x: number; y: number; w: number; h: number }
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
   /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
@@ -208,8 +212,9 @@ export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, St
 
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
-  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[]; account: string | null }
-  | { t: 'walls'; worldSize: number; walls: WallView[] }
+  /** `map` names the layout, so the client draws its pieces and knows its railings; `walls` are what stands now, the squad's own included. */
+  | { t: 'welcome'; id: number; mode: ModeId; map: MapId; worldSize: number; walls: WallView[]; account: string | null }
+  | { t: 'walls'; map: MapId; worldSize: number; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
   | { t: 'error'; message: string };

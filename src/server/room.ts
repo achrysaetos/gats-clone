@@ -131,7 +131,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (account) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       clients.set(client.ws, { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, aspect: msg.aspect, encode: makeSnapshotEncoder(), inputs: newInputQueue() });
       balanceBots();
-      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
+      send(client.ws, { t: 'welcome', id: p.id, mode, map: world.map, worldSize: MAPS[world.map].size, walls: wallViews(world), account });
       return;
     }
     const id = client.playerId;
@@ -241,7 +241,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;
         const walls = wallViews(world);
-        for (const c of joined()) send(c.ws, { t: 'walls', worldSize: MAPS[world.map].size, walls });
+        for (const c of joined()) send(c.ws, { t: 'walls', map: world.map, worldSize: MAPS[world.map].size, walls });
       }
       for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
     },

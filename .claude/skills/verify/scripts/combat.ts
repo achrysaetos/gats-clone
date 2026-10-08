@@ -25,7 +25,7 @@ type Player = { id: number; name: string; x: number; y: number; team: Team; aliv
 type Dmg = { e: 'dmg'; attacker: number | null; victim: number; amount: number; kind: 'player' | 'crate' };
 type Snap = {
   t: 'snap'; self: { id: number; viewRadius: number; perks: Record<string, string> }; players: Player[];
-  crates: { id: number; x: number; y: number; size: number }[]; match: { mode: string }; events: { e: string }[];
+  crates: { id: number; x: number; y: number; w: number; h: number }[]; match: { mode: string }; events: { e: string }[];
 };
 const frames = { welcome: null as null | { id: number; mode: string; walls: Rect[] }, last: null as null | Snap, dmg: [] as (Dmg & { at: number })[] };
 let socketId = '';
@@ -61,7 +61,7 @@ log(`combat ${new Date().toISOString()} base=${BASE} rooms=${ROOMS.join(',')}`);
 
 function nearestTarget(self: Player, snap: Snap): { x: number; y: number; what: string } | null {
   const enemies = snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team));
-  const crates = snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 }));
+  const crates = snap.crates.map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 }));
   const d = (p: { x: number; y: number }) => Math.hypot(p.x - self.x, p.y - self.y);
   const clear = (p: { x: number; y: number }) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, p.x - self.x, p.y - self.y, w) !== null);
   const enemy = enemies.filter(clear).sort((a, b) => d(a) - d(b))[0];

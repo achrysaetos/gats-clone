@@ -1,14 +1,14 @@
 import { ARMORS, CRATE_TIERS, HP_MULTIPLIER, WORLD, ZOMBIES } from '../defs.ts';
 import { INTERP_DELAY_MS, type Hit, type Team } from '../protocol.ts';
+import { KIT } from '../kit.ts';
 import { MODES } from './modes.ts';
-import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
+import { angleDiff, circleHitsRect, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
 import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
 import { damageZombie } from './run.ts';
 import { addScore, effectiveStats, isHunted } from './stats.ts';
-import { crateRect, friendly, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
+import { crateRect, friendly, newId, trainBody, type Bullet, type Crate, type Player, type Pose, type Shooter, type Thrown, type Wall, type World } from './world.ts';
 
-const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.33;
 const SHIELD_ARC = (40 * Math.PI) / 180;
 /** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
@@ -27,7 +27,7 @@ const SELF_KILL_CREDIT_MS = 10_000;
 /** Who set the damage in motion; `team` is theirs at the time, and still spares teammates after they leave. */
 type Culprit = { attacker: Player | null; team: Team; label: string; turret?: Shooter | null };
 /** A shield stops only bullets, and only a blast hurts its own attacker. */
-type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'bite'; fromX: number; fromY: number; hit?: Hit };
+type DamageSource = Culprit & { piercing: boolean; via: 'bullet' | 'blast' | 'knife' | 'gas' | 'fire' | 'bite'; fromX: number; fromY: number; hit?: Hit };
 
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k === 'dead' || w.match.k === 'over') return;
@@ -114,18 +114,45 @@ function assistersOf(w: World, victim: Player, killer: Player | null): Player[] 
     });
 }
 
-function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null, hit?: Hit) {
+/** A blast that breaks a fuel barrel sets it off this long after, so a row of barrels goes up one after another. */
+export const CHAIN_MS = 160;
+
+function damageCrate(w: World, c: Crate, amount: number, by: Pick<Culprit, 'attacker' | 'team'>, via: 'bullet' | 'blast', hit?: Hit) {
   if (c.respawnAt !== null) return;
   const dealt = Math.min(c.hp, amount);
   c.hp -= amount;
-  const h = c.size / 2;
-  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate', ...(hit && { hit }) });
+  const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+  const { attacker } = by;
+  w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: cx, y: cy, kind: 'crate', ...(hit && { hit }) });
   if (c.hp > 0) return;
-  c.respawnAt = w.royale ? Infinity : w.now + CRATE_RESPAWN_MS;
-  w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
+  const breaks = KIT[c.piece].breaks!;
+  c.respawnAt = w.royale || c.tier ? Infinity : w.now + breaks.respawnMs;
+  w.events.push({ e: 'broke', piece: c.piece, x: cx, y: cy, w: c.w, h: c.h });
+  if (breaks.blast) {
+    const fuse = { id: newId(w), kind: 'fuse' as const, owner: attacker?.id ?? 0, team: by.team, x: cx, y: cy, explodeAt: w.now + CHAIN_MS, piece: c.piece };
+    if (via === 'blast') w.thrown.push(fuse);
+    else burst(w, fuse);
+  }
   if (!attacker) return;
-  addScore(w, attacker, c.tier ? CRATE_TIERS[c.tier].score : WORLD.crateScore);
+  addScore(w, attacker, c.tier ? CRATE_TIERS[c.tier].score : breaks.score);
   if (c.tier === 'drop') openDrop(w, attacker);
+}
+
+/** A broken fuel barrel going up: its blast, then the burning fuel it leaves, both credited to whoever broke it. */
+export function burst(w: World, f: Extract<Thrown, { kind: 'fuse' }>) {
+  const { blast, fire } = KIT[f.piece].breaks!;
+  const attacker = w.players.get(f.owner) ?? null;
+  const label = KIT[f.piece].name;
+  if (blast) explode(w, f.x, f.y, blast.radius, blast.damage, { attacker, team: f.team, label });
+  if (fire) w.thrown.push({ id: newId(w), kind: 'fire', owner: f.owner, team: f.team, x: f.x, y: f.y, r: fire.radius, dps: fire.dps, expiresAt: w.now + fire.ms });
+}
+
+/** The train kills whatever it meets: the last to hurt a victim it takes still gets the credit. */
+export function tickTrain(w: World) {
+  const body = trainBody(w);
+  if (!body) return;
+  for (const p of w.players.values()) if (p.life.k === 'alive' && circleHitsRect(p.x, p.y, WORLD.playerRadius, body)) kill(w, p, null, 'Train');
+  for (const z of w.zombies) if (circleHitsRect(z.x, z.y, ZOMBIES[z.kind].radius, body)) damageZombie(w, z, z.hp, null, 'blast');
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
@@ -150,7 +177,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
     const nx = clamp(x, r.x, r.x + r.w), ny = clamp(y, r.y, r.y + r.h);
     const d = Math.sqrt(dist2(x, y, nx, ny));
     if (d >= radius || sheltered(view.walls, x, y, nx, ny)) continue;
-    damageCrate(w, c, maxDamage * (1 - d / radius), by.attacker);
+    damageCrate(w, c, maxDamage * (1 - d / radius), by, 'blast');
   }
   for (const z of w.zombies) {
     const r = ZOMBIES[z.kind].radius;
@@ -179,10 +206,11 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
   const dir = Math.atan2(b.vy, b.vx);
+  const train = trainBody(w);
   const candidates: BulletHit[] = [
-    ...view.walls.map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y, dir }); } })),
+    ...[...view.walls, ...(train ? [train] : [])].map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y, dir }); } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
-      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: (x: number, y: number) => damageCrate(w, c, b.damage, owner, { x, y, dir }),
+      t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: (x: number, y: number) => damageCrate(w, c, b.damage, { attacker: owner, team: b.team }, 'bullet', { x, y, dir }),
     })),
     ...[...w.players.values()]
       .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !b.passed.includes(p.id))

@@ -30,7 +30,7 @@ function populate(w: World) {
 
 for (const [mode, winScore, side] of [['TDM', WORLD.tdmWinScore, 'red'], ['DOM', WORLD.domWinScore, 'blue']] as const) {
   test(`${mode}: the round restart loads the next map and moves every living player into its spawns`, () => {
-    const [first, second] = ROTATION[mode];
+    const [first, second = first] = ROTATION[mode];
     const w = createWorld(mode, 1, first);
     populate(w);
     const viewer = [...w.players.values()][0];
@@ -52,7 +52,7 @@ for (const [mode, winScore, side] of [['TDM', WORLD.tdmWinScore, 'red'], ['DOM',
 }
 
 test('FFA announces the next map, then loads it on a timer and moves everyone into its spawns', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second = first] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);
   populate(w);
   const viewer = [...w.players.values()][0];
@@ -69,7 +69,7 @@ test('FFA announces the next map, then loads it on a timer and moves everyone in
 });
 
 test('FFA: the first human to the kill target wins the round, and the next round starts on the next map with kills reset', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second = first] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);
   populate(w);
   const viewer = [...w.players.values()][0];
@@ -129,7 +129,7 @@ test('TDM: when the time limit runs out the team ahead wins, on kills if the sco
   assert.deepEqual(finish(30, 34, 30, 34).winner, { name: 'Blue team', id: null, note: 'Time ran out' });
   assert.equal(finish(30, 30, 12, 9).winner?.name, 'Red team', 'level on score, red has more kills');
   const draw = finish(30, 30, 9, 9);
-  assert.deepEqual([draw.w.match.k, draw.winner, draw.w.map, draw.w.teamScore], ['playing', null, ROTATION.TDM[1], { red: 0, blue: 0 }]);
+  assert.deepEqual([draw.w.match.k, draw.winner, draw.w.map, draw.w.teamScore], ['playing', null, ROTATION.TDM[1] ?? ROTATION.TDM[0], { red: 0, blue: 0 }]);
 });
 
 test('the snapshot carries when the round\'s clock runs out, unchanged through the round, and a fresh time for the next one', () => {
@@ -149,7 +149,7 @@ test('the snapshot carries when the round\'s clock runs out, unchanged through t
 });
 
 test('FFA: a timer finish with no kills starts a fresh round on the next map without a winner', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second = first] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);
   populate(w);
   const [a] = [...w.players.values()];
@@ -175,7 +175,7 @@ test('FFA: a human reaching the kill target behind a bot wins, says why, and kee
 });
 
 test('FFA: when the map timer runs out, the player with the most kills wins the round', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second = first] = ROTATION.FFA;
   const w = createWorld('FFA', 1, first);
   populate(w);
   const [a, b, viewer] = [...w.players.values()];
@@ -203,7 +203,7 @@ test('a map change places players apart on the new map, not apart from where the
 
 test('a joined client receives the new map\'s walls when the round restarts', () => {
   const mode: ModeId = 'TDM';
-  const [first, second] = ROTATION[mode];
+  const [first, second = first] = ROTATION[mode];
   const room = createRoom('tdm', mode, 1, { stats: () => null, credit: () => {} } as unknown as Accounts);
   const ws = fakeSocket();
   room.connect(ws.socket);

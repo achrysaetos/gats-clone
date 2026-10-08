@@ -70,7 +70,7 @@ export function dominatedPairs(stage: 0 | 1 | 2): Pair[] {
 }
 
 export function rangeBeyondView(): { id: GunId; range: number; view: number }[] {
-  const w = createWorld('FFA', 1, 'plaza');
+  const w = createWorld('FFA', 1, 'warehouse');
   return GUN_IDS.flatMap((id) => {
     const p = addPlayer(w, id, { weapon: GUNS[id].base, armor: 'none', color: 'red' });
     p.gun = id;

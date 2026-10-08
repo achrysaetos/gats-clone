@@ -44,7 +44,7 @@ test('squad bots never flip their keys back and forth in place around the Bastio
 });
 
 test('bots never shuffle along a wall for seconds without getting anywhere', () => {
-  const w = createWorld('FFA', 1, 'plaza');
+  const w = createWorld('FFA', 1, 'warehouse');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `b${i}`, randomLoadout(r)).id, newBotMemory(r));

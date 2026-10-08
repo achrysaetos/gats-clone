@@ -1,6 +1,7 @@
 import { COLORS, CRATE_TIERS, GUNS, RING, WORLD, ZOMBIE_KINDS, ZOMBIES, type ArmorId, type BuildingKind, type CrateTier, type GunId, type ZombieKind } from '../../shared/defs.ts';
 import { ringAt, type BulletView, type ThrownKind, type PlayerView, type RunView, type Snapshot, type WallView } from '../../shared/protocol.ts';
 import { BLAST_RADIUS } from '../../shared/sim/abilities.ts';
+import { KIT } from '../../shared/kit.ts';
 import { cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { screenToWorld, type Camera } from '../camera.ts';
 import { crackFade, hostKey } from '../decals.ts';
@@ -177,7 +178,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
   const zombies = (snap.zombies ?? []).filter(([, , x, y]) => near(x, y, 60));
   const clock = snap.royale || snap.run ? serverNow(s.snaps, now) : null;
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
-  const standing = new Set([...s.walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })), ...(snap.buildings ?? []).map((b) => cellRect(b.cx, b.cy)), ...(snap.run ? [coreRectAt(snap.run.core)] : [])].map(hostKey));
+  const standing = new Set([...s.walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })), ...(snap.buildings ?? []).map((b) => cellRect(b.cx, b.cy)), ...(snap.run ? [coreRectAt(snap.run.core)] : [])].map(hostKey));
 
   return {
     view, size: s.worldSize, layout: mapLayoutKey(s.walls), dark,
@@ -189,8 +190,8 @@ export function describeWorld(f: Frame, dark: number): Scene {
     dangers: snap.thrown.flatMap((t) => (t.kind === 'grenade' || t.kind === 'fragGrenade' ? [{ x: t.x, y: t.y, r: BLAST_RADIUS[t.kind] }] : [])),
     gas: snap.thrown.flatMap((t) => (t.kind === 'gasCloud' ? [{ x: t.x, y: t.y, r: t.r }] : [])),
     trails: [...s.trails.values()].flatMap((t) => trailDashes(t, now)),
-    crates: snap.crates.filter((c) => inView(view, c.x, c.y, c.size, c.size)).map((c) => ({
-      id: c.id, x: c.x, y: c.y, size: c.size, tier: c.tier, wear: 1 - c.hp / (c.tier ? CRATE_TIERS[c.tier].hp : WORLD.crateHp),
+    crates: snap.crates.filter((c) => inView(view, c.x, c.y, c.w, c.h)).map((c) => ({
+      id: c.id, x: c.x, y: c.y, size: c.w, tier: c.tier, wear: 1 - c.hp / (c.tier ? CRATE_TIERS[c.tier].hp : KIT[c.piece].breaks?.hp ?? 1),
     })),
     engineerWalls: s.walls.filter((w) => w.built && inView(view, w.x, w.y, w.w, w.h)).map(({ x, y, w, h }) => ({ x, y, w, h })),
     siege: siegeOf(snap, s, view, now),
@@ -218,7 +219,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
     tags: tagsOf(alive, s, now),
     cracks: s.cracks.slots.flatMap((c) => (c && standing.has(c.host) && crackFade(c, now) > 0 ? [{ lines: c.lines, alpha: crackFade(c, now) }] : [])),
     ring: snap.royale && clock !== null ? ringOf(snap, clock) : null,
-    loot: snap.royale ? snap.crates.flatMap((c) => (c.tier === 'rich' || c.tier === 'cache' ? [{ x: c.x, y: c.y, w: c.size, h: c.size, cache: c.tier === 'cache' }] : [])) : [],
+    loot: snap.royale ? snap.crates.flatMap((c) => (c.tier === 'rich' || c.tier === 'cache' ? [{ x: c.x, y: c.y, w: c.w, h: c.h, cache: c.tier === 'cache' }] : [])) : [],
     drops: snap.royale && clock !== null ? snap.royale.drops.map((d) => ({ x: d.x, y: d.y, landsIn: d.landsAt > clock ? d.landsAt - clock : null })) : [],
     ghost: f.ghost && snap.run ? { ghost: f.ghost, self: s.lastSelf, core: snap.run.core } : null,
     killer: killer ? { x: killer.x, y: killer.y, name: killer.name, lift: GUNS[killer.gun].stage ? 12 + 6 * GUNS[killer.gun].stage : 6 } : null,

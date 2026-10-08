@@ -1,6 +1,8 @@
-import { byTurret, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type CrateTier, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { byTurret, CRATE_TIERS, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type CrateTier, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
-import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
+import { MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
+import { KIT, placed, type PieceId, type Placement } from '../kit.ts';
+import { trainAt } from './train.ts';
 import { cellRect, coreRectAt } from './build.ts';
 import { circleHitsRect, dist2, type Rect } from './movement.ts';
 import { newRoyale, farthestEdgeSlot } from './royale.ts';
@@ -83,12 +85,17 @@ export type Bullet = {
 /** What fires at the horde for the squad besides its players. */
 export type Shooter = TurretKind | 'bastion';
 
-export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null; tier?: CrateTier };
+/** A piece that wears down and breaks: a map's breakable kit piece, or a Last Squad loot crate (`tier`). `x`, `y`, `w`, `h` is its solid. */
+export type Crate = { id: number; piece: PieceId; r: Placement['r']; x: number; y: number; w: number; h: number; hp: number; respawnAt: number | null; tier?: CrateTier };
 
 export type Thrown =
   | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
   | { id: number; kind: 'landMine'; owner: number; team: Team; x: number; y: number; armedAt: number; expiresAt: number }
-  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; expiresAt: number };
+  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; expiresAt: number }
+  /** A broken fuel barrel about to burst: a blast that breaks one sets it off a beat later, so a row of them goes up in turn. */
+  | { id: number; kind: 'fuse'; owner: number; team: Team; x: number; y: number; explodeAt: number; piece: PieceId }
+  /** Burning fuel: it hurts everyone standing in it, its lighter included, until it burns out. */
+  | { id: number; kind: 'fire'; owner: number; team: Team; x: number; y: number; r: number; dps: number; expiresAt: number };
 
 export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
@@ -190,6 +197,8 @@ export type World = {
   bullets: Bullet[];
   crates: Crate[];
   walls: Wall[];
+  /** Railings: they stop bodies and let rounds and grenades through. */
+  fences: Rect[];
   wallsVersion: number;
   thrown: Thrown[];
   zones: Zone[];
@@ -233,7 +242,7 @@ export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], walls: [], wallsVersion: 0, thrown: [],
+    players: new Map(), bullets: [], crates: [], walls: [], fences: [], wallsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], history: [],
     zombies: [], buildings: [], buildingsVersion: 0, run: null, royale: null,
   };
@@ -257,7 +266,8 @@ export function loadMap(w: World, map: MapId) {
   w.mapChangeAt = w.now + MAP_MS[w.mode];
   w.walls = def.walls.map((r) => ({ ...r, built: false as const, expiresAt: Infinity }));
   w.wallsVersion++;
-  w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
+  w.crates = def.breakables.map((at) => ({ id: newId(w), piece: at.p, r: at.r, ...placed(at).foot, hp: KIT[at.p].breaks!.hp, respawnAt: null }));
+  w.fences = [...def.fences];
   w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0 })) : [];
   w.bullets = [];
   w.thrown = [];
@@ -268,18 +278,31 @@ export function loadMap(w: World, map: MapId) {
   if (w.mode === 'BR') w.royale = newRoyale(w);
 }
 
-export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
+export const crateHpMax = (c: Pick<Crate, 'piece' | 'tier'>): number => (c.tier ? CRATE_TIERS[c.tier].hp : KIT[c.piece].breaks?.hp ?? 1);
+export const crateRect = (c: Crate): Rect => ({ x: c.x, y: c.y, w: c.w, h: c.h });
 export function coreRect(w: World): Rect | null {
   const core = MAPS[w.map].siege?.core;
   return core ? coreRectAt(core) : null;
 }
 
-/** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. */
-export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
+/** The passing train's body, or null while its lane is clear. */
+export function trainBody(w: World): Rect | null {
+  const train = MAPS[w.map].train;
+  const at = train && trainAt(train, w.now);
+  return at?.k === 'pass' ? at.body : null;
+}
 
-/** What stops bodies: cover, plus the squad's walls and the core in a zombies run. */
+/** What stops grenades: walls, standing crates and a passing train. The squad's own walls and core let them fly over. */
+export function coverRects(w: World): Rect[] {
+  const cover: Rect[] = [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect)];
+  const train = trainBody(w);
+  if (train) cover.push(train);
+  return cover;
+}
+
+/** What stops bodies: cover and railings, plus the squad's walls and the core in a zombies run. */
 export function solidRects(w: World): Rect[] {
-  const solids = coverRects(w);
+  const solids = [...coverRects(w), ...w.fences];
   for (const b of w.buildings) solids.push(cellRect(b.cx, b.cy));
   const core = w.run && coreRect(w);
   if (core) solids.push(core);
