@@ -19,6 +19,8 @@ const BASE = existsSync(join(RUN, 'url'))
 mkdirSync(OUT, { recursive: true });
 
 let myId: number | null = null;
+/** The layout's id, from `welcome` and `walls`: the snapshot's `match.map` is the display name. */
+let mapId: MapId | null = null;
 let full = null as Snapshot | null;
 let booms: { at: number; x: number; y: number; r: number }[] = [];
 const page = await openPage({
@@ -28,6 +30,7 @@ const page = await openPage({
     if (method !== 'Network.webSocketFrameReceived') return;
     const msg = JSON.parse(params.response.payloadData);
     if (msg.t === 'welcome') { myId = msg.id; full = null; }
+    if (msg.t === 'welcome' || msg.t === 'walls') mapId = msg.map;
     if (msg.t === 'snap') {
       full = fillSnapshot(msg, full) ?? full;
       for (const ev of full?.events ?? []) if (ev.e === 'boom') booms.push({ at: Date.now(), x: ev.x, y: ev.y, r: ev.r });
@@ -54,7 +57,8 @@ async function enter(start: string) {
   await openMenu();
   full = null;
   await js(start);
-  for (let i = 0; i < 80 && !me(); i++) await sleep(100);
+  // A loaded machine can take well past 8s to join at high quality, so the wait is generous.
+  for (let i = 0; i < 400 && !me(); i++) await sleep(100);
   if (!me()) throw new Error('never joined');
 }
 
@@ -177,10 +181,10 @@ for (const view of VIEWS) {
     }
     case 'train': {
       await enter(serverOf('ffa'));
-      const id = full?.match.map as MapId | undefined;
-      const train = id && MAPS[id]?.train;
-      if (!train) throw new Error(`the ffa room is on ${id}, which has no train`);
-      const def = MAPS[id];
+      const id = mapId as MapId | null; // set by the socket callback, which narrowing cannot see
+      const def = id ? MAPS[id] : null;
+      const train = def?.train;
+      if (!def || !train) throw new Error(`the ffa room is on ${id}, which has no train`);
       const grid = navGridFor(def.size, [...def.walls, ...def.fences, ...def.breakables.flatMap((at) => placed(at).solids)]);
       const now = () => (full?.tick ?? 0) * (1000 / WORLD.tickHz);
       const spot = { x: train.lane.x + train.lane.w * 0.42, y: train.lane.y - 170 };
