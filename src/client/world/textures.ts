@@ -32,8 +32,6 @@ const ring = (width: number, dash?: [number, number]) => paint(128, 128, (g) => 
   g.stroke();
 });
 
-export type Marks = ReturnType<typeof createTextures>;
-
 export function createTextures() {
   return {
     white: Texture.WHITE,
@@ -61,7 +59,6 @@ export function createTextures() {
     }),
     ring: ring(4),
     ringDashed: ring(4, [14, 10]),
-    ringDotted: ring(8, [1, 22]),
     /** A third of a ring, centred on east: the riot shield's arc. */
     arc: paint(128, 128, (g) => {
       g.strokeStyle = '#fff';
