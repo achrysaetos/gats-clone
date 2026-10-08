@@ -1,5 +1,6 @@
 /// <reference types="node" />
 // Usage: node scripts/art/contact-sheet.ts <sprites-spec.json> <bakeDir> <outDir> [characters|guns|props|effects|kit]
+//        node scripts/art/contact-sheet.ts <sprites-spec.json> <bakeDir> <outDir> variants <label=bakeDir,...>
 // Composites baked frames the way the painter will (shadow, base, tinted team, armor, additive glow) at game scale on
 // concrete, beside crops of the reference, so a person can judge the bake by eye.
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -11,8 +12,9 @@ type Entry = { box: Box; dirs: number; frames: number; layers: string[]; still?:
 type Spec = { pxPerUnit: number; playerRadius: number; teamColors: Record<string, string>; sprites: Record<string, Entry> };
 type Img = { w: number; h: number; d: Float32Array };
 
-const [specPath, bakeDir, outDir, only] = process.argv.slice(2);
-if (!specPath || !bakeDir || !outDir) { console.error('usage: node scripts/art/contact-sheet.ts <spec.json> <bakeDir> <outDir>'); process.exit(2); }
+const [specPath, firstBake, outDir, only, variantArg] = process.argv.slice(2);
+let bakeDir = firstBake!;
+if (!specPath || !firstBake || !outDir) { console.error('usage: node scripts/art/contact-sheet.ts <spec.json> <bakeDir> <outDir>'); process.exit(2); }
 const spec = JSON.parse(readFileSync(specPath, 'utf8')) as Spec;
 mkdirSync(outDir, { recursive: true });
 const S = 2;
@@ -151,7 +153,7 @@ async function characters() {
   for (let f = 1; f < 9; f++) await soldierAt(c, 80 + (f - 1) * 162, 1010, 0, 'red', 'armorLight', 'smg', 1.75, { legs: f, move: -Math.PI / 2 });
   for (let f = 0; f < 9; f++) for (const layer of ['base', 'team']) await draw(c, 'soldier.legs', layer, 0, f, 80 + f * 162, 1130, { zoom: 1.75, tint: layer === 'team' ? hex(spec.teamColors['red']!) : undefined });
   labels.push([10, 1215, 'x2: downed, then death poses (red, blue, green), turned by the painter']);
-  for (const [i, name, f, team] of [[0, 'soldier.downed', 0, 'yellow'], [1, 'soldier.dead', 0, 'red'], [2, 'soldier.dead', 1, 'blue'], [3, 'soldier.dead', 2, 'green']] as const) {
+  for (const [i, name, f, team] of [[0, 'soldier.downed', 0, 'yellow'], [1, 'soldier.die', 5, 'red'], [2, 'soldier.die', 11, 'blue'], [3, 'soldier.die', 17, 'green']] as const) {
     for (const layer of ['base', 'team']) await draw(c, name, layer, 0, f, 150 + i * 260, 1345, { zoom: 2, rot: -0.5 + i * 0.6, tint: layer === 'team' ? hex(spec.teamColors[team]!) : undefined });
   }
   labels.push([10, 1475, 'dropped guns at x2, by class']);
@@ -258,4 +260,25 @@ async function kit() {
   await save(c, labels, [], 'sheet-kit.webp');
 }
 
-for (const [name, sheet] of Object.entries({ characters, guns, props, effects, kit })) if (!only || only === name) await sheet();
+/** The reference shots are about 1.05 px per game unit; 4x of that shows detail while keeping both at one scale. */
+const REF_ZOOM = 1.05 / S;
+
+/** Soldier designs side by side at the reference's scale and at 4x, each beside the same crops of the reference. */
+async function variants() {
+  const list = (variantArg ?? '').split(',').filter(Boolean).map((v) => v.split('='));
+  const c = canvas(2900, Math.max(500, 120 + list.length * 330));
+  const labels: [number, number, string][] = [[10, 18, 'soldier designs at the reference scale (left) and x4, red and blue, light and heavy armour; reference crops at the same scales on the right']];
+  for (const [i, [label, dir]] of list.entries()) {
+    bakeDir = dir!;
+    const y = 120 + i * 330;
+    labels.push([10, y - 70, label!]);
+    for (let t = 0; t < 2; t++) for (let a = 0; a < 3; a++) await soldierAt(c, 30 + a * 60, y - 30 + t * 70, -0.6 + a * 1.4, ['red', 'blue'][t]!, [null, 'armorLight', 'armorHeavy'][a]!, 'assault', REF_ZOOM);
+    for (let t = 0; t < 2; t++) for (let a = 0; a < 3; a++) await soldierAt(c, 300 + (t * 3 + a) * 230, y + 40, [-0.6, 0.8, 2.6][a]!, ['red', 'blue'][t]!, [null, 'armorLight', 'armorHeavy'][a]!, 'assault', REF_ZOOM * 4);
+  }
+  await save(c, labels, [
+    { left: 440, top: 440, width: 120, height: 110, zoom: 4, src: 'docs/art/gold/warehouse.webp' },
+    { left: 1080, top: 420, width: 120, height: 110, zoom: 4, src: 'docs/art/gold/warehouse.webp' },
+  ], 'sheet-variants.png');
+}
+
+for (const [name, sheet] of Object.entries({ characters, guns, props, effects, kit, variants })) if (only ? only === name : name !== 'variants') await sheet();

@@ -253,7 +253,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     place(p.legs, 'soldier.legs', 'base', gait.dir, b.legs.frame, 0, 0, gait.rest);
     p.legs.tint = lit;
     place(p.legsTeam, 'soldier.legs', 'team', gait.dir, b.legs.frame, 0, 0, gait.rest);
-    const torso = b.kick > 0.5 ? SOLDIER.torso.recoil[0] : b.kick > 0 ? SOLDIER.torso.recoil[1] : SOLDIER.torso.aim;
+    const torso = b.kick > 0.5 ? SOLDIER.torso.recoilHeavy[0] : b.kick > 0 ? SOLDIER.torso.recoilHeavy[1] : SOLDIER.torso.aim;
     place(p.base, 'soldier', 'base', dir, torso, 0, 0, rest);
     p.base.tint = lit;
     place(p.team, 'soldier', 'team', dir, torso, 0, 0, rest);

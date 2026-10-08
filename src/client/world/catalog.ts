@@ -59,18 +59,35 @@ export const kitSprite = (id: PieceId, turn: number, stage = 0) => `kit.${id}.${
 export const TRAIN = { across: 150, loco: 300, car: 250, height: 110 } as const;
 export const trainSprite = (part: 'loco' | 'car', turn: 0 | 1) => `train.${part}.${turn}`;
 
+const run = (start: number, n: number) => Array.from({ length: n }, (_, i) => start + i);
+
 /**
- * The split soldier's frame layout. `soldier` is the waist up with arms and gun hands, turned to the aim; `soldier.legs`
- * is the pelvis down, turned to the movement direction. Both share the body's origin and the same shear, so drawn at
- * the same point, legs first, they join at the belt. The gun stays its own sprite: aim, recoil and reload keep the
- * hands on it. Recoil frame `recoil[0]` matches a gun drawn at full kick, `recoil[1]` at half.
+ * The split soldier's frame layout, mirroring STRIPS in art/blender/sprites/soldier.py. `soldier` is the waist up with
+ * the arms and gun hands, turned to the aim; `soldier.act` is the same waist up in the moves that take a hand off the
+ * grip or snap the head, at half the facings since each lasts a moment; `soldier.legs` is the pelvis down, turned to
+ * the way the legs walk. All share the body's origin and shear, so drawn at the same point, legs first, they join at
+ * the belt. The gun is its own sprite drawn under the torso, and every frame that holds it keeps the hands on its grip.
+ * Recoil frames match a gun drawn at full and half kick (`recoilHeavy`) or half and a quarter (`recoilLight`).
  */
 export const SOLDIER = {
-  torso: { frames: 9, aim: 0, recoil: [1, 2], reload: [3, 4, 5, 6, 7, 8] },
-  legs: { frames: 9, stand: 0, run: [1, 2, 3, 4, 5, 6, 7, 8] },
-  /** Death poses, one per frame; the painter picks one and turns it. */
-  dead: { frames: 3 },
+  torso: { frames: 6, aim: 0, breathe: 1, recoilLight: [2, 3], recoilHeavy: [4, 5] },
+  act: {
+    frames: 34,
+    reload: { pistol: run(0, 6), mag: run(6, 6), pump: run(12, 6), box: run(18, 6) },
+    flinchFront: [24, 25], flinchBack: [26, 27], throw: [28, 29, 30], knife: [31, 32, 33],
+  },
+  legs: { frames: 20, stand: 0, run: run(1, 8), strafe: run(9, 8), dash: [17, 18, 19] },
+  downed: { frames: 8, crawl: run(0, 4), revive: run(4, 4) },
+  /** Falls from standing, six frames each, ending in the body that stays; the painter turns them to the blow. */
+  die: { frames: 18, forward: run(0, 6), back: run(6, 6), spin: run(12, 6) },
 } as const;
+
+/**
+ * Each gun's frames, all over the same box so they stack at the gun's origin: the gun without its moving parts, then
+ * the magazine (or ammo box) alone and the pump or bolt alone, which the painter slides, lifts out and hides through
+ * shots and reloads. A gun without one of them bakes that frame empty. A dropped gun is the same three frames on the floor.
+ */
+export const GUN_FRAMES = { frames: 3, body: 0, mag: 1, action: 2 } as const;
 
 export const WALL_STAGES = 3;
 export const FIRE_FRAMES = 8;
@@ -90,15 +107,12 @@ export const CASING: Record<WeaponId, number> = { pistol: 0, smg: 0, assault: 1,
 
 const entries: [string, SpriteSpec][] = [
   ['soldier', { box: square(R * 1.5, FACE), dirs: 32, frames: SOLDIER.torso.frames, layers: ['base', 'team', 'armorLight', 'armorMedium', 'armorHeavy'], still: ['armorLight', 'armorMedium', 'armorHeavy'], model: 'soldier:torso' }],
+  ['soldier.act', { box: square(R * 1.5, FACE), dirs: 16, frames: SOLDIER.act.frames, layers: ['base', 'team'], model: 'soldier:act' }],
   ['soldier.legs', { box: square(R * 1.2, FACE), dirs: 16, frames: SOLDIER.legs.frames, layers: ['base', 'team'], model: 'soldier:legs' }],
   ['soldier.shadow', { box: { x: -R * 4, y: -R * 4, w: R * 8, h: R * 8 }, dirs: 16, frames: 1, layers: ['shadow'], model: 'soldier:full', scale: 0.5 }],
-  ['soldier.downed', { box: square(R * 1.8, 4), dirs: 1, frames: 1, layers: ['base', 'team'], model: 'soldier:downed' }],
-  ['soldier.dead', { box: square(R * 1.9, 4), dirs: 1, frames: SOLDIER.dead.frames, layers: ['base', 'team'], model: 'soldier:dead' }],
-  ...GUN_IDS.map((gun): [string, SpriteSpec] => [`gun.${gun}`, { box: gunBox(gun), dirs: 1, frames: 1, layers: ['base'], model: `gun:${gun}` }]),
-  ...WEAPON_IDS.map((kind): [string, SpriteSpec] => {
-    const g = gunBox(kind), pad = 6;
-    return [`drop.${kind}`, { box: { x: g.x - pad, y: g.y - pad, w: g.w + pad * 2, h: g.h + pad * 2 }, dirs: 1, frames: 1, layers: ['base'], model: `drop:${kind}` }];
-  }),
+  ['soldier.downed', { box: square(R * 1.8, 4), dirs: 1, frames: SOLDIER.downed.frames, layers: ['base', 'team'], model: 'soldier:downed' }],
+  ['soldier.die', { box: square(R * 1.9, 4), dirs: 1, frames: SOLDIER.die.frames, layers: ['base', 'team'], model: 'soldier:die' }],
+  ...GUN_IDS.map((gun): [string, SpriteSpec] => [`gun.${gun}`, { box: gunBox(gun), dirs: 1, frames: GUN_FRAMES.frames, layers: ['base'], model: `gun:${gun}` }]),
   ...ZOMBIE_KINDS.map((kind): [string, SpriteSpec] => [`zombie.${kind}`, { box: square(ZOMBIES[kind].radius * 1.9, FACE), dirs: 16, frames: 1, layers: ['base'], model: `zombie:${kind}`, scale: ZOMBIES[kind].radius > 30 ? 0.75 : 1 }]),
   ['engineer.wall.h', { box: footprint(140, 24), dirs: 1, frames: 1, layers: ['base'], model: 'engineer-wall' }],
   ['engineer.wall.v', { box: footprint(24, 140), dirs: 1, frames: 1, layers: ['base'], model: 'engineer-wall' }],
