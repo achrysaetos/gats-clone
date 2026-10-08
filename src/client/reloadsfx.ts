@@ -16,9 +16,9 @@ import { emitSfxAt } from './sfxbus.ts';
 
 // --- Mix ---------------------------------------------------------------------------------------------------------------------
 
-/** Your own reload is heard at this level; another soldier's at `OTHER_GAIN` of the cue's level before distance takes its share. */
-export const SELF_GAIN = 1;
-export const OTHER_GAIN = 0.5;
+/** Your own reload is heard at this level (twice the foley trim, so the mechanism reads over the fight); another soldier's at `OTHER_GAIN` before distance takes its share. */
+export const SELF_GAIN = 2;
+export const OTHER_GAIN = 1;
 /** Beyond this share of the audible radius (1.2 view radii) a soldier's reload is not voiced at all: it would be near silent and just spend voices. */
 const HEARD_SHARE = 0.8;
 const AUDIBLE_RADII = 1.2;
