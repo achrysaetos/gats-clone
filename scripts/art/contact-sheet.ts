@@ -92,7 +92,7 @@ async function save(c: Img, labels: [number, number, string][], ref: { left: num
     layers.push({ input: await sharp(r.src ?? 'docs/art/gold-standard.webp').extract({ left: r.left, top: r.top, width: r.width, height: r.height }).resize(w, h).png().toBuffer(), left: rx, top: 24 });
     rx -= 10;
   }
-  await sharp(buf, { raw: { width: c.w, height: c.h, channels: 4 } }).composite(layers).png().toFile(join(outDir, file));
+  await sharp(buf, { raw: { width: c.w, height: c.h, channels: 4 } }).composite(layers).toFormat(file.endsWith('.webp') ? 'webp' : 'png', { quality: 90 }).toFile(join(outDir, file));
   console.log(`wrote ${join(outDir, file)}`);
 }
 
@@ -255,7 +255,7 @@ async function kit() {
     if (e.layers.includes('glow')) await draw(c, n, 'glow', 0, 0, ox, oy, { zoom, blend: 'add' });
     labels.push([sx, sy + e.box.h * S * zoom + 13, n.replace(/^kit\./, '')]);
   }
-  await save(c, labels, [], 'sheet-kit.png');
+  await save(c, labels, [], 'sheet-kit.webp');
 }
 
 for (const [name, sheet] of Object.entries({ characters, guns, props, effects, kit })) if (!only || only === name) await sheet();
