@@ -14,13 +14,17 @@
    "id": "warehouse",
    "light": "maps/warehouse/light.9932f6d987.json"
   },
-  "992c55d1": {
-   "id": "outpost",
-   "light": "maps/outpost/light.b4bf8f7025.json"
-  },
   "56f759f6": {
    "id": "vault",
    "light": "maps/vault/light.8f6643bc50.json"
+  },
+  "e30c6a34": {
+   "id": "railyard",
+   "light": "maps/railyard/light.b198cede14.json"
+  },
+  "46478fd9": {
+   "id": "yard",
+   "light": "maps/yard/light.7004c0ee50.json"
   }
  },
  "floors": {
