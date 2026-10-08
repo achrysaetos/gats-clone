@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { EVOLUTIONS, GUN_IDS, GUNS } from '../src/shared/defs.ts';
 import { RELOAD_BEATS, reloadFamily } from '../src/client/reload.ts';
 import { impulse, placeCue, RATE_JITTER, roofsOf, SAMPLE_IDS, SAMPLES, shotCues, SOUNDS, soundsFor, voiceFor, type Hearing, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
-import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
+import type { BuildingView, CrateView, GameEvent, PlayerView, RunView, SelfView, Snapshot, WallView } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -25,10 +25,32 @@ const ids = (prev: Snapshot | null, next: Snapshot) => soundsFor(prev, next).map
 test('kill-confirm plays only when you are the killer, matched by id not name', () => {
   const kill = (killerId: number, victimId: number, killer = `p${killerId}`): GameEvent =>
     ({ e: 'kill', killer, victim: `p${victimId}`, killerId, victimId, weapon: 'Pistol', bounty: false, assisters: [] });
-  assert.deepEqual(ids(snap(), snap({ events: [kill(1, 2)] })), ['kill']);
-  assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3)] })), [], 'someone else scoring a kill is silent');
-  assert.deepEqual(ids(snap(), snap({ events: [kill(2, 3, ME)] })), [], 'another player sharing my name scoring a kill is silent');
-  assert.deepEqual(ids(snap(), snap({ events: [kill(1, 1)] })), [], 'killing yourself is not a kill-confirm');
+  const confirms = (events: GameEvent[]) => ids(snap(), snap({ events })).filter((id) => id !== 'clatter');
+  assert.deepEqual(confirms([kill(1, 2)]), ['kill']);
+  assert.deepEqual(confirms([kill(2, 3)]), [], 'someone else scoring a kill is silent');
+  assert.deepEqual(confirms([kill(2, 3, ME)]), [], 'another player sharing my name scoring a kill is silent');
+  assert.deepEqual(confirms([kill(1, 1)]), [], 'killing yourself is not a kill-confirm');
+});
+
+test('the kill confirm is a thump and then the confirm tone, in recording and synth alike', () => {
+  const [thump, tone] = sampleOf('kill');
+  assert.equal(thump!.sample, 'thump');
+  assert.equal(thump!.delayMs ?? 0, 0);
+  assert.equal(tone!.sample, 'kill');
+  assert.ok((tone!.delayMs ?? 0) > 0, 'the tone follows the thump');
+  assert.deepEqual(sampleOf('bounty').slice(0, 2), sampleOf('kill'), 'a bounty kill confirms the same way before its coins');
+  const [low, ...notes] = SOUNDS.kill;
+  assert.ok(low!.src === 'tone' && low!.pitchHz[0] < 200 && !low!.delayMs, 'the synth opens on a low thump');
+  assert.ok(notes.every((n) => (n.delayMs ?? 0) > 0));
+});
+
+test('a fallen player\'s gun clatters where they fell once it lands, and a knock drops no gun', () => {
+  const kill = (knock: boolean): GameEvent => ({ e: 'kill', killer: 'p3', victim: 'p2', killerId: 3, victimId: 2, weapon: 'Pistol', bounty: false, assisters: [], ...(knock && { knock: true as const }) });
+  const before = snap({ players: [player(2, { x: 340, y: 60 })] });
+  const clatter = soundsFor(before, snap({ events: [kill(false)] })).filter((c) => c.id === 'clatter');
+  assert.deepEqual(clatter.map((c) => [c.x, c.y, c.self]), [[340, 60, false]], 'placed where the victim stood, though they are gone from the snapshot');
+  assert.ok((clatter[0]!.delayMs ?? 0) > 0);
+  assert.deepEqual(soundsFor(before, snap({ events: [kill(true)] })).filter((c) => c.id === 'clatter'), []);
 });
 
 test('hurt plays on damage, and never on regen or respawn', () => {
@@ -201,6 +223,55 @@ test('a zombie bite crunches, your own zombie kills splat, and going down or get
   assert.deepEqual(ids(null, squad(run(), { events: [life('revived', 2, 1)] })), ['revived'], 'you got a squadmate up');
   assert.deepEqual(ids(null, squad(run(), { events: [life('revived', 3, 2)] })), [], 'someone else\'s revive');
   assert.deepEqual(ids(squad(run(), { me: down }), squad(run(), { me: { alive: false, hp: 0 }, events: [life('bledOut', 1)] })), ['death']);
+});
+
+const wall = (x: number, material: 'metal' | 'concrete' | 'wood' | 'sandbag'): WallView => ({ x, y: 0, w: 100, h: 25, built: false, material });
+const WALLS = [wall(0, 'metal'), wall(200, 'concrete'), wall(400, 'sandbag')];
+const impact = (x: number, y = 10): GameEvent => ({ e: 'impact', x, y, dir: 0 });
+const strikes = (o: Parameters<typeof snap>[0] & { crates?: CrateView[] } = {}, walls = WALLS) =>
+  soundsFor(snap(), { ...snap(o), crates: o.crates ?? [] }, walls).filter((c) => /^(impact|tink|flesh)/.test(c.id));
+
+test('a round stopping on cover sounds like what it hit: a ricochet off metal, chips off concrete, a thud in sandbags', () => {
+  assert.deepEqual(strikes({ events: [impact(50)] }).map((c) => [c.id, c.x]), [['impact:metal', 50]]);
+  assert.deepEqual(strikes({ events: [impact(250)] }).map((c) => c.id), ['impact:concrete']);
+  assert.deepEqual(strikes({ events: [impact(450)] }).map((c) => c.id), ['impact:sandbag']);
+  assert.deepEqual(strikes({ events: [impact(150, 200)] }).map((c) => c.id), ['impact:concrete'], 'a wall the client does not know reads as concrete');
+  const crate: CrateView = { id: 40, piece: 'crate', r: 0, x: 600, y: 0, w: 50, h: 50, hp: 60 };
+  assert.deepEqual(strikes({ events: [impact(610)], crates: [crate] }).map((c) => c.id), ['impact:wood'], 'a wooden crate splinters');
+  assert.equal(SAMPLES['impact:metal'][0]!.sample, 'ricochet');
+  assert.equal(SAMPLES['impact:wood'][0]!.sample, 'splinter');
+  assert.equal(SAMPLES['impact:concrete'][0]!.sample, 'chip');
+  const pellets = [impact(20), impact(30), impact(40), impact(250), impact(260)];
+  assert.deepEqual(strikes({ events: pellets }).map((c) => c.id), ['impact:metal', 'impact:concrete'], 'a shotgun blast sounds each material once');
+});
+
+test('shooting a breakable piece sounds its own material, wood or metal', () => {
+  const hitCrate = (id: number): GameEvent => ({ e: 'dmg', attacker: 2, victim: id, amount: 10, x: 0, y: 0, kind: 'crate', hit: { x: 610, y: 5, dir: 0 } });
+  const crates: CrateView[] = [{ id: 40, piece: 'crate', r: 0, x: 600, y: 0, w: 50, h: 50, hp: 60 }, { id: 41, piece: 'crate.drop', r: 0, x: 600, y: 0, w: 75, h: 75, hp: 300 }];
+  assert.deepEqual(strikes({ events: [hitCrate(40)], crates }).map((c) => [c.id, c.x]), [['impact:wood', 610]], 'at the hit point');
+  assert.deepEqual(strikes({ events: [hitCrate(41)], crates }).map((c) => c.id), ['impact:metal']);
+});
+
+test('a bullet into a body sounds flesh, into armour a tink that rings lower and heavier with each tier', () => {
+  const shot = (victim: number): GameEvent => ({ e: 'dmg', attacker: 3, victim, amount: 12, x: 0, y: 0, kind: 'player', hit: { x: 205, y: 0, dir: 0 } });
+  const on = (armorTier: PlayerView['armorTier']) => strikes({ players: [player(2, { armorTier })], events: [shot(2)] }).map((c) => c.id);
+  assert.deepEqual(on('none'), ['flesh']);
+  assert.deepEqual(on('light'), ['tink:light']);
+  assert.deepEqual(on('medium'), ['tink:medium']);
+  assert.deepEqual(on('heavy'), ['tink:heavy']);
+  const tink = (tier: 'light' | 'medium' | 'heavy') => sampleOf(`tink:${tier}`);
+  assert.ok(tink('light')[0]!.rate > tink('medium')[0]!.rate && tink('medium')[0]!.rate > tink('heavy')[0]!.rate, 'heavier plates ring lower');
+  assert.ok(tink('heavy').length > tink('light').length, 'and heavy armour adds the weight of a plate');
+  const blast: GameEvent = { e: 'dmg', attacker: 3, victim: 2, amount: 30, x: 200, y: 0, kind: 'player' };
+  assert.deepEqual(strikes({ players: [player(2)], events: [blast] }), [], 'a blast or a blade carries no bullet strike');
+});
+
+test('a near miss whizzes past only when the round passed you, from the side it passed on', () => {
+  const whizz = (victim: number, x: number): GameEvent => ({ e: 'whizz', victim, x, y: 0, dir: Math.PI / 2 });
+  const heard = soundsFor(null, snap({ events: [whizz(1, 160), whizz(1, 150)] })).filter((c) => c.id === 'whizz');
+  assert.equal(heard.length, 1, 'once a snapshot');
+  assert.ok(placeCue(heard[0]!, open(100))!.pan > 0, 'passing on your right');
+  assert.deepEqual(soundsFor(null, snap({ events: [whizz(2, 160)] })).filter((c) => c.id === 'whizz'), [], 'a round passing someone else is theirs to hear');
 });
 
 const ALL = () => true;

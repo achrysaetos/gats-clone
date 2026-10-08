@@ -313,7 +313,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
   s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
-  const cues = soundsFor(prev, snap);
+  const cues = soundsFor(prev, snap, s.walls);
   playCues(s, cues.filter((c) => c.self), snap.self.viewRadius || WORLD.viewRadius);
   // Other players' sounds wait for the render clock, so a shot is heard as its muzzle flash is drawn.
   s.pendingSounds.push(...cues.filter((c) => !c.self).map((cue) => ({ at: snap.tick * TICK_MS, cue })));

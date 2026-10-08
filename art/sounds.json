@@ -161,6 +161,30 @@
       "url": "https://cdn.freesound.org/previews/773/773860_15468302-hq.mp3",
       "page": "https://freesound.org/people/MrGungus/sounds/773860/",
       "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-rifle-drop": {
+      "title": "Rifle dropped on floor 3x", "author": "serøutōnin--deprivəd",
+      "url": "https://cdn.freesound.org/previews/675/675009_7157894-hq.mp3",
+      "page": "https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/675009/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-bullet-ping": {
+      "title": "HeavyBulletPing.mp3", "author": "wilhellboy",
+      "url": "https://cdn.freesound.org/previews/351/351371_4603244-hq.mp3",
+      "page": "https://freesound.org/people/wilhellboy/sounds/351371/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ricochet": {
+      "title": "Ricochet 2.wav", "author": "morganpurkis",
+      "url": "https://cdn.freesound.org/previews/392/392975_5937039-hq.mp3",
+      "page": "https://freesound.org/people/morganpurkis/sounds/392975/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-flyby": {
+      "title": "Fly-by whiz SFX (subsonic)", "author": "modusmogulus",
+      "url": "https://cdn.freesound.org/previews/789/789222_15956618-hq.mp3",
+      "page": "https://freesound.org/people/modusmogulus/sounds/789222/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
     }
   },
   "sounds": {
@@ -206,6 +230,17 @@
     "boxOpen": { "source": "fs-mg-reload", "start": 0.05, "length": 0.22, "gainDb": -6 },
     "boxClose": { "source": "fs-mg-reload", "start": 1.52, "length": 0.3, "gainDb": -5 },
     "casing": { "source": "fs-brass-drop", "start": 2.31, "length": 0.5, "gainDb": -10, "note": "three bounces of one casing on concrete" },
-    "shellDrop": { "source": "fs-shell-drop", "start": 0.0, "length": 0.5, "gainDb": -9 }
+    "shellDrop": { "source": "fs-shell-drop", "start": 0.0, "length": 0.5, "gainDb": -9 },
+    "ricochet": { "source": "fs-ricochet", "start": 0.0, "length": 0.45, "gainDb": -5, "note": "the whine off metal" },
+    "chip": { "source": "kenney-impact", "member": "Audio/impactMining_002.ogg", "start": 0, "length": 0.25, "gainDb": -6, "note": "concrete chips" },
+    "splinter": { "source": "kenney-impact", "member": "Audio/impactWood_light_000.ogg", "start": 0, "length": 0.22, "gainDb": -6 },
+    "dirt": { "source": "kenney-impact", "member": "Audio/impactSoft_medium_000.ogg", "start": 0, "length": 0.12, "gainDb": -6, "note": "planters" },
+    "sandbag": { "source": "kenney-impact", "member": "Audio/impactSoft_heavy_002.ogg", "start": 0, "length": 0.25, "gainDb": -5 },
+    "flesh": { "source": "fs-visceral-impacts", "start": 1.58, "length": 0.15, "gainDb": -5 },
+    "tink": { "source": "fs-bullet-ping", "start": 0.03, "length": 0.36, "gainDb": -7, "note": "armour; pitched down and layered with a plate for heavier tiers" },
+    "plate": { "source": "kenney-impact", "member": "Audio/impactPlate_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -6 },
+    "whizz": { "source": "fs-flyby", "start": 0.05, "length": 0.35, "gainDb": -3, "note": "a whip swung past the microphone" },
+    "clatter": { "source": "fs-rifle-drop", "start": 0.03, "length": 0.55, "gainDb": -5 },
+    "thump": { "source": "kenney-impact", "member": "Audio/impactSoft_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -3, "note": "the kill confirm opens on it" }
   }
 }

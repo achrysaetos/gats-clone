@@ -1,5 +1,8 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
-import type { SelfView, Snapshot } from '../shared/protocol.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type ArmorId, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
+import { KIT, type Material } from '../shared/kit.ts';
+import type { GameEvent, SelfView, Snapshot, WallView } from '../shared/protocol.ts';
+import { cellRect, coreRectAt } from '../shared/sim/build.ts';
+import { hostOf } from './decals.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
 import { beatsCrossed, cycleOf, reloadFamily, type ReloadCue } from './reload.ts';
@@ -9,6 +12,7 @@ export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
   | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click'
   | `gun:${ReloadCue}` | 'brass:casing' | 'brass:shell'
+  | `impact:${Material}` | 'flesh' | `tink:${Exclude<ArmorId, 'none'>}` | 'whizz' | 'clatter'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'knock' | 'ring';
 
@@ -74,7 +78,7 @@ export const SOUNDS: Record<SoundId, Recipe> = {
     { src: 'noise', filter: 'bandpass', q: 2.5, cutoffHz: [5200, 1400], ms: 150, gain: 0.55 },
     { src: 'tone', wave: 'triangle', pitchHz: [1100, 500], ms: 60, gain: 0.12, delayMs: 50 },
   ],
-  kill: [note(880, 0), note(1320, 70, 160)],
+  kill: [thump(150, 140, 0.6), note(880, 60), note(1320, 130, 160)],
   death: [{ src: 'tone', wave: 'sawtooth', pitchHz: [440, 55], ms: 900, gain: 0.35 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 80], ms: 600, gain: 0.3 }],
   'gun:magOut': [tick(2600, 40, 0.25), tick(1800, 60, 0.2, 50)],
   'gun:magIn': [tick(2200, 30, 0.3), thump(420, 40, 0.25)],
@@ -86,6 +90,17 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   'gun:boxClose': [thump(300, 60, 0.35), tick(2400, 40, 0.3)],
   'brass:casing': [{ src: 'tone', wave: 'triangle', pitchHz: [5200, 4800], ms: 40, gain: 0.08 }, { src: 'tone', wave: 'triangle', pitchHz: [4700, 4500], ms: 30, gain: 0.05, delayMs: 90 }],
   'brass:shell': [tick(900, 40, 0.15), tick(1100, 30, 0.1, 110)],
+  'impact:metal': [tick(3800, 30, 0.3), { src: 'tone', wave: 'sine', pitchHz: [3400, 1900], ms: 320, gain: 0.12, delayMs: 20 }],
+  'impact:concrete': [crack(2400, 50, 0.35), { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1600, 400], ms: 120, gain: 0.2 }],
+  'impact:wood': [tick(1300, 60, 0.35), thump(260, 50, 0.2)],
+  'impact:planter': [{ src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 200], ms: 90, gain: 0.35 }],
+  'impact:sandbag': [{ src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [700, 150], ms: 110, gain: 0.4 }, thump(140, 80, 0.25)],
+  flesh: [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [1100, 300], ms: 80, gain: 0.35 }, thump(180, 60, 0.2)],
+  'tink:light': [{ src: 'tone', wave: 'triangle', pitchHz: [4200, 3900], ms: 120, gain: 0.18 }],
+  'tink:medium': [{ src: 'tone', wave: 'triangle', pitchHz: [3200, 3000], ms: 160, gain: 0.2 }, tick(2400, 30, 0.2)],
+  'tink:heavy': [{ src: 'tone', wave: 'triangle', pitchHz: [2300, 2150], ms: 220, gain: 0.22 }, thump(320, 90, 0.3)],
+  whizz: [{ src: 'noise', filter: 'bandpass', q: 4, cutoffHz: [5200, 1800], ms: 220, gain: 0.35 }],
+  clatter: [tick(2200, 50, 0.3), tick(1700, 60, 0.25, 90), tick(2600, 40, 0.15, 190)],
   levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22)],
   evolve: [
     { src: 'tone', wave: 'sawtooth', pitchHz: [180, 720], ms: 420, gain: 0.16 },
@@ -129,6 +144,7 @@ export const SOUNDS: Record<SoundId, Recipe> = {
 export const SAMPLE_IDS = [
   'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'crack', 'sub',
   'magOut', 'magIn', 'slide', 'bolt', 'shellIn', 'pump', 'boxOpen', 'boxClose', 'casing', 'shellDrop',
+  'ricochet', 'chip', 'splinter', 'dirt', 'sandbag', 'flesh', 'tink', 'plate', 'whizz', 'clatter', 'thump',
   'hit', 'hurt', 'boom', 'slash', 'kill', 'bounty', 'levelup', 'evolve', 'perk', 'click',
   'bite', 'splat', 'wallHit', 'wallUp', 'wallDown', 'coreHit', 'horn', 'chime', 'revived', 'knock', 'ring', 'cannon', 'mortar',
 ] as const;
@@ -169,6 +185,9 @@ function shotSamples(): Record<`shot:${GunId}`, readonly SampleLayer[]> {
   return out as Record<`shot:${GunId}`, readonly SampleLayer[]>;
 }
 
+/** The kill confirm is a thump, then the tone this long after it. */
+const KILL_TONE_MS = 70;
+
 export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
   ...shotSamples(),
   'shot:silenced': [layer('silenced')],
@@ -176,8 +195,8 @@ export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
   hurt: [layer('hurt')],
   boom: [layer('boom')],
   slash: [layer('slash')],
-  kill: [layer('kill')],
-  bounty: [layer('kill'), layer('bounty')],
+  kill: [layer('thump', 1, 0.9), layer('kill', 1, 1, KILL_TONE_MS)],
+  bounty: [layer('thump', 1, 0.9), layer('kill', 1, 1, KILL_TONE_MS), layer('bounty', 1, 1, KILL_TONE_MS)],
   death: [layer('hurt', 0.6)],
   'gun:magOut': [layer('magOut')],
   'gun:magIn': [layer('magIn')],
@@ -189,6 +208,17 @@ export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
   'gun:boxClose': [layer('boxClose')],
   'brass:casing': [layer('casing')],
   'brass:shell': [layer('shellDrop')],
+  'impact:metal': [layer('ricochet')],
+  'impact:concrete': [layer('chip', 1.25)],
+  'impact:wood': [layer('splinter')],
+  'impact:planter': [layer('dirt')],
+  'impact:sandbag': [layer('sandbag')],
+  flesh: [layer('flesh')],
+  'tink:light': [layer('tink', 1.2, 0.6)],
+  'tink:medium': [layer('tink', 1, 0.8)],
+  'tink:heavy': [layer('tink', 0.8, 1), layer('plate', 0.9, 0.7)],
+  whizz: [layer('whizz')],
+  clatter: [layer('clatter')],
   levelup: [layer('levelup')],
   evolve: [layer('evolve')],
   perk: [layer('perk')],
@@ -242,6 +272,7 @@ export function traitsOf(id: SoundId): Trait {
   if (id.startsWith('turret:')) return TRAIT(1.2, 0.25);
   if (id.startsWith('gun:')) return TRAIT(0.6, 0.05);
   if (id.startsWith('brass:')) return TRAIT(0.45, 0, true);
+  if (id.startsWith('impact:') || id.startsWith('tink:') || id === 'flesh' || id === 'clatter') return TRAIT(0.8, 0.1, true);
   return TRAIT(1.2);
 }
 
@@ -341,12 +372,44 @@ function reloadBeats(gun: GunId, from: number | undefined, to: number | undefine
   return beatsCrossed(reloadFamily(gun), from ?? 0, to ?? (alive ? 1 : 0));
 }
 
+type Cover = Rect & { material: Material };
+
+/** What stands where a round stopped, found the way the impact effect finds it, so the sound and the chips agree. */
+function coverOf(walls: readonly WallView[], snap: Snapshot): Cover[] {
+  return [
+    ...walls.map((w) => ({ x: w.x, y: w.y, w: w.w, h: w.h, material: w.built ? 'concrete' as const : w.material })),
+    ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h, material: KIT[c.piece].material })),
+    ...(snap.buildings ?? []).map((b) => ({ ...cellRect(b.cx, b.cy), material: 'concrete' as const })),
+    ...(snap.run ? [{ ...coreRectAt(snap.run.core), material: 'metal' as const }] : []),
+  ];
+}
+
+/** The sound a bullet makes where it struck: the material of the cover, or flesh, or a plate that rings heavier on heavier armour. */
+function strikeOf(ev: Extract<GameEvent, { e: 'impact' } | { e: 'dmg' }>, prev: Snapshot | null, next: Snapshot, cover: () => Cover[]): Exclude<SoundId, 'hurt'> | null {
+  if (ev.e === 'impact') return `impact:${hostOf(cover(), ev.x, ev.y)?.material ?? 'concrete'}`;
+  if (!ev.hit) return null;
+  const find = <T extends { id: number }>(of: (s: Snapshot) => readonly T[]) => of(next).find((v) => v.id === ev.victim) ?? (prev && of(prev).find((v) => v.id === ev.victim));
+  switch (ev.kind) {
+    case 'crate': { const c = find((s) => s.crates); return `impact:${c ? KIT[c.piece].material : 'wood'}`; }
+    case 'player': { const tier = find((s) => s.players)?.armorTier ?? 'none'; return tier === 'none' ? 'flesh' : `tink:${tier}`; }
+    case 'zombie': return 'flesh';
+    case 'building': return null;
+  }
+}
+
+/** A dropped gun lands this long after its owner falls. */
+const CLATTER_MS = 250;
+
 /** The sounds a snapshot's events and changes make. Your own shots are left out: the page voices them as it fires them. */
-export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
+export function soundsFor(prev: Snapshot | null, next: Snapshot, walls: readonly WallView[] = []): SoundCue[] {
   const me = selfOf(next);
   const at = { x: me?.x ?? 0, y: me?.y ?? 0 };
   const cues: SoundCue[] = [];
   const mine = (id: Exclude<SoundId, 'hurt'>) => cues.push({ id, ...at, self: true, gain: 1 });
+  let cover: Cover[] | null = null;
+  const once = (id: Exclude<SoundId, 'hurt'>, x: number, y: number, gain = 1, delayMs?: number) => {
+    if (!cues.some((c) => c.id === id)) cues.push({ id, x, y, self: false, gain, ...(delayMs !== undefined && { delayMs }) });
+  };
   for (const ev of next.events) {
     switch (ev.e) {
       case 'shot':
@@ -359,8 +422,14 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       }
       case 'boom': cues.push({ id: 'boom', x: ev.x, y: ev.y, self: false, gain: 1 }); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;
-      case 'kill':
+      case 'kill': {
         if (ev.killerId === next.self.id && ev.victimId !== next.self.id) mine(ev.bounty ? 'bounty' : ev.knock ? 'knock' : 'kill');
+        const body = !ev.knock && (prev?.players.find((p) => p.id === ev.victimId) ?? next.players.find((p) => p.id === ev.victimId));
+        if (body) cues.push({ id: 'clatter', x: body.x, y: body.y, self: false, gain: 1, delayMs: CLATTER_MS });
+        break;
+      }
+      case 'whizz':
+        if (ev.victim === next.self.id) once('whizz', ev.x, ev.y);
         break;
       case 'zkill':
         if (ev.by === next.self.id) cues.push({ id: 'splat', x: ev.x, y: ev.y, self: true, gain: 1 });
@@ -377,6 +446,11 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     }
   }
   for (const ev of next.events) {
+    if (ev.e === 'impact' || (ev.e === 'dmg' && ev.hit)) {
+      const id = strikeOf(ev, prev, next, () => (cover ??= coverOf(walls, next)));
+      const where = ev.e === 'dmg' && ev.hit ? ev.hit : ev;
+      if (id) once(id, where.x, where.y, 0.7);
+    }
     if (ev.e !== 'dmg') continue;
     if (ev.kind === 'building' && !cues.some((c) => c.id === 'wallHit')) cues.push({ id: 'wallHit', x: ev.x, y: ev.y, self: false, gain: 1 });
     if (ev.kind === 'player' && ev.victim === next.self.id && ev.attacker === null && next.run && !cues.some((c) => c.id === 'bite')) mine('bite');
