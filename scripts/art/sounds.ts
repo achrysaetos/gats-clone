@@ -24,7 +24,8 @@ const CREDITS_START = '<!-- sounds:start (written by scripts/art/sounds.ts) -->'
 const CREDITS_END = '<!-- sounds:end -->';
 
 type Source = { title: string; url: string; page: string; author: string; licence: string; licenceSeen: string };
-type Sound = { source: string; member?: string; start: number; length: number; gainDb: number; note?: string };
+/** `lowpassHz` and `highpassHz` carve one layer out of a full recording, such as the low body of a shot or its first crack. */
+type Sound = { source: string; member?: string; start: number; length: number; gainDb: number; lowpassHz?: number; highpassHz?: number; note?: string };
 type Manifest = { sources: Record<string, Source>; sounds: Record<string, Sound> };
 
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
@@ -40,6 +41,7 @@ function parseManifest(raw: unknown): Manifest {
     if (!/^[A-Za-z]+$/.test(cue)) throw new Error(`sound ${cue}: names are letters only`);
     if (!m.sources[s.source]) throw new Error(`sound ${cue}: unknown source ${s.source}`);
     if (!(s.start >= 0 && s.length > 0 && Number.isFinite(s.gainDb))) throw new Error(`sound ${cue}: bad trim or gain`);
+    for (const hz of [s.lowpassHz, s.highpassHz]) if (hz !== undefined && !(hz > 0)) throw new Error(`sound ${cue}: filter cutoffs are positive Hz`);
   }
   return m;
 }
@@ -73,11 +75,16 @@ function ffmpeg(args: string[]): { out: Buffer; err: string } {
 
 function encode(sound: Sound, file: string): Buffer {
   const trim = ['-ss', String(sound.start), '-t', String(sound.length), '-i', file];
-  const probe = ffmpeg([...trim, '-ac', '1', '-af', 'volumedetect', '-f', 'null', '-']).err;
+  const carve = [
+    ...(sound.highpassHz === undefined ? [] : [`highpass=f=${sound.highpassHz}:poles=2`]),
+    ...(sound.lowpassHz === undefined ? [] : [`lowpass=f=${sound.lowpassHz}:poles=2`]),
+  ];
+  const probe = ffmpeg([...trim, '-ac', '1', '-af', [...carve, 'volumedetect'].join(','), '-f', 'null', '-']).err;
   const peak = Number(/max_volume: (-?[\d.]+) dB/.exec(probe)?.[1]);
   if (!Number.isFinite(peak)) throw new Error(`${file}: volumedetect found no peak in ${sound.start}s+${sound.length}s`);
   const fadeOut = Math.min(MAX_FADE_OUT_S, sound.length * 0.3);
   const filters = [
+    ...carve,
     `volume=${(PEAK_DB - peak + sound.gainDb).toFixed(2)}dB`,
     `afade=t=in:d=${FADE_IN_S}`,
     `afade=t=out:st=${(sound.length - fadeOut).toFixed(3)}:d=${fadeOut.toFixed(3)}`,

@@ -1,5 +1,5 @@
-import { WORLD } from '../defs.ts';
-import type { Dash, InputState } from '../protocol.ts';
+import { FEEL, WORLD } from '../defs.ts';
+import type { Dash, InputState, Shove } from '../protocol.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
@@ -76,7 +76,8 @@ function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: numbe
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
-export type Motion = { x: number; y: number; dash: Dash | null };
+/** `staggerMs` is how long walking stays slowed by a stagger from the start of the next step. */
+export type Motion = { x: number; y: number; dash: Dash | null; shove: Shove | null; staggerMs: number };
 
 const keyAxes = (keys: MoveKeys) => ({ mx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0), my: (keys.down ? 1 : 0) - (keys.up ? 1 : 0) });
 
@@ -133,14 +134,34 @@ export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point
 }
 
 export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number, size: number): Motion {
+  const slowed = Math.min(dtMs, from.staggerMs);
+  const pace = speed * (1 - ((1 - FEEL.stagger.speedMul) * slowed) / dtMs);
+  const walked = { ...stride(solids, from, keys, pace, dtMs, size), staggerMs: from.staggerMs - slowed };
+  const { shove } = from;
+  if (!shove) return walked;
+  const s = Math.min(dtMs, shove.leftMs) / 1000;
+  const leftMs = shove.leftMs - dtMs;
+  return { ...walked, ...slide(solids, walked.x, walked.y, shove.vx * s, shove.vy * s, WORLD.playerRadius, size), shove: leftMs > 0 ? { ...shove, leftMs } : null };
+}
+
+function stride(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number, size: number): Motion {
   const { dash } = from;
   if (dash) {
     const d = (DASH_DISTANCE * Math.min(dtMs, dash.leftMs)) / DASH_MS;
     const leftMs = dash.leftMs - dtMs;
-    return { ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d, WORLD.playerRadius, size), dash: leftMs > 0 ? { ...dash, leftMs } : null };
+    return { ...from, ...slide(solids, from.x, from.y, dash.dirX * d, dash.dirY * d, WORLD.playerRadius, size), dash: leftMs > 0 ? { ...dash, leftMs } : null };
   }
   const { mx, my } = keyAxes(keys);
   if (mx === 0 && my === 0) return from;
   const d = (speed * dtMs) / 1000 / Math.hypot(mx, my);
-  return { ...slide(solids, from.x, from.y, mx * d, my * d, WORLD.playerRadius, size), dash: null };
+  return { ...from, ...slide(solids, from.x, from.y, mx * d, my * d, WORLD.playerRadius, size), dash: null };
+}
+
+/** The shove that `px` more of push along (`dirX`, `dirY`) leaves, folded into what is left of `prev` and capped, so stacked hits add up to one bounded push. */
+export function addShove(prev: Shove | null, dirX: number, dirY: number, px: number, maxPx: number, ms: number): Shove {
+  const left = prev ? prev.leftMs / 1000 : 0;
+  let x = (prev?.vx ?? 0) * left + dirX * px, y = (prev?.vy ?? 0) * left + dirY * px;
+  const len = Math.hypot(x, y);
+  if (len > maxPx) { x *= maxPx / len; y *= maxPx / len; }
+  return { vx: (x * 1000) / ms, vy: (y * 1000) / ms, leftMs: ms };
 }

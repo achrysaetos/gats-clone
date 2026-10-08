@@ -1,5 +1,5 @@
 import { byTurret, CRATE_TIERS, PERK_TIERS, WORLD, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type CrateTier, type GunId, type ModeId, type PlayerKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
-import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
+import type { Circle, Dash, GameEvent, Shove, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { KIT, placed, type PieceId, type Placement } from '../kit.ts';
 import { trainAt } from './train.ts';
@@ -26,6 +26,14 @@ export type Life =
     lastMoveAt: number;
     shieldUntil: number;
     dash: Dash | null;
+    shove: Shove | null;
+    staggerUntil: number;
+    /** The rounds one attacker landed this tick, summed raw, so a shotgun's pellets count as one blast toward a stagger. */
+    blow: { by: number; tick: number; damage: number } | null;
+    flinchUntil: number;
+    suppressedUntil: number;
+    /** When this player was last sent a whizz. */
+    whizzAt: number;
     pressUntil: number;
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];
@@ -72,7 +80,8 @@ export type ChosenPerks = { [T in Tier]?: PerkOfTier<T> };
 export type Bullet = {
   /** `team` is the owner's at the time of firing, so the round still spares teammates after its owner leaves. */
   id: number; owner: number; team: Team; x: number; y: number; vx: number; vy: number;
-  left: number; damage: number; piercing: boolean; label: string;
+  /** `range` is how far it flies in all and `left` how much of that is still to go. */
+  range: number; left: number; damage: number; piercing: boolean; label: string;
   gun: GunId | null;
   /** The turret or the Bastion's survivors that fired it, null for a player's own round. */
   turret: Shooter | null;

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setInput, step } from '../src/shared/sim.ts';
+import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { drift, freshAim, HANDS, turn, wrapAngle, type AimState, type Hand } from '../src/server/bot/aim.ts';
@@ -125,4 +126,28 @@ test('a bot fires only once its gun has come round onto the enemy, so a flick be
     behind += firstShot({ x: 600, y: 1000 }, seed);
   }
   assert.ok(behind / 10 >= ahead / 10 + 150, `first shot ${(ahead / 10).toFixed(0)}ms ahead vs ${(behind / 10).toFixed(0)}ms behind`);
+});
+
+test('a hit shakes a bot\'s aim the way it shakes a person\'s: its gun wanders further off the enemy while the flinch lasts', () => {
+  const offAim = (hit: boolean, seed: number) => {
+    const w = emptyWorld();
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+    const enemy = spawnAt(w, 1350, 1000);
+    const r = seeded(seed);
+    let mem = newBotMemory(r);
+    let off = 0;
+    for (let i = 0; i < 60; i++) {
+      for (const p of [bot, enemy]) if (p.life.k === 'alive') p.life.hp = 100;
+      if (hit && i >= 30 && i % 5 === 0) damagePlayer(w, bot, 25, { attacker: null, team: null, label: 'test', piercing: false, via: 'bullet', fromX: 1350, fromY: 1000 });
+      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+      mem = d.mem;
+      if (i >= 30) off += Math.abs(wrapAngle(d.input.angle - Math.atan2(enemy.y - bot.y, enemy.x - bot.x)));
+      setInput(w, bot.id, i + 1, { ...d.input, fire: false });
+      step(w, TICK_MS);
+    }
+    return off / 30;
+  };
+  let calm = 0, shaken = 0;
+  for (let seed = 1; seed <= 12; seed++) { calm += offAim(false, seed); shaken += offAim(true, seed); }
+  assert.ok(shaken > calm * 1.3, `mean aim error ${(shaken / 12 / DEG).toFixed(2)}° hit against ${(calm / 12 / DEG).toFixed(2)}° calm`);
 });

@@ -81,6 +81,14 @@ LAG=80 node .claude/skills/verify/scripts/guns.ts "$RUN"
 
 One muted browser at a time proves the class gun rules through real input. An assault rifle held for 1.6s must open its reticle to about half again (its bloom cap) (read from `skirmishDev.trigger()`) and close it within 400ms of release. A Minigun held for 2.2s must start with a gap of at least 2.2x its `fireMs` between own shot sounds, reach its `fireMs` by the end, and start slow again once it has spun down (its `downMs`) off the trigger. A sniper's camera must take in its scope's view (`viewMul`, 1.15x the pistol's, from `skirmishDev.toScreen`) standing and walking alike, so it never zooms. Every hold must draw each server shot on time with none taken back. Minigun is a stage-2 gun, so point it at a scratch copy (the rsync recipe in [the progression recipe](features/progression-death-modes.md)) whose `addPlayer` in `src/shared/sim.ts` and `resetProgress` in `src/shared/sim/stats.ts` hand an `lmg` loadout the `minigun`, with `minPlayers` at `0` for a quiet room. Screenshots: `guns-assault-idle`, `guns-assault-held` (3x crops round the reticle), `guns-assault-held-full`, `guns-assault-released`, `guns-minigun-spinning-up`, `guns-minigun-spun`, `guns-sniper-view`, `guns-sniper-walking`. Its log is `$RUN/evidence/guns.log`.
 
+### Moments
+
+```bash
+node .claude/skills/verify/scripts/moments.ts "$RUN" [seconds] [weapon-tile]
+```
+
+One muted browser plays FFA with the shotgun (loadout tile 2 unless another is given), hunting the nearest player. It screenshots each feel moment the instant the server reports it: `moment-hit-reaction`, `moment-death-falling` (260ms after a kill), `moment-death-body` (2.5s later, the body still lying), `moment-reload` (30% in), `moment-close-blast` (a shot within 130px) and `moment-suppressed` (once `self.suppression` passes 0.5). Each comes with a 2x `-crop` round the subject. It fails when no hit, kill and body, or reload is caught, or the page throws. It logs how far each victim moved along the round in the 90ms after a hit (knockback), the peak suppression and the near misses on the driver. Its log is `$RUN/evidence/moments.log`.
+
 ### Last Squad
 
 ```bash

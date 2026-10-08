@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COLOR_IDS, CRATE_TIERS, RING, ROYALE, WORLD, ZOM } from '../src/shared/defs.ts';
 import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
-import { placed } from '../src/shared/kit.ts';
+import { KIT, placed } from '../src/shared/kit.ts';
 import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
@@ -306,7 +306,8 @@ test('rich caches sit round each map\'s centre and pay a level step', () => {
     const lane = MAPS[map].train?.lane.h ?? 0;
     for (const c of caches) assert.ok(Math.hypot(c.x + c.w / 2 - centre, c.y + c.h / 2 - centre) < ROYALE.cacheR + 150 + lane, `${map} cache near the centre, or beside a train lane through it`);
     const own = new Set(MAPS[map].breakables.map((at) => `${placed(at).foot.x},${placed(at).foot.y}`));
-    assert.ok(w.crates.filter((c) => own.has(`${c.x},${c.y}`)).every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
+    const mine = w.crates.filter((c) => own.has(`${c.x},${c.y}`));
+    assert.ok(mine.every((c) => c.tier === (KIT[c.piece].breaks!.cover ? undefined : 'loot')), `${map} map crates are plain loot, and its cover holds none`);
   }
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });

@@ -1,0 +1,172 @@
+/// <reference types="node" />
+// Usage: node moments.ts <run-dir> [seconds] [weapon-index]
+// Plays FFA through real input with the shotgun (or the loadout tile given) and screenshots the feel stage's moments the
+// instant the server says they happened: a hit reaction, a death and the body it leaves, a reload, a close blast, and
+// knockback and suppression, with the measured value beside each shot in moments.log.
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { GameEvent, PlayerView, Snapshot, WallView } from '../../../../src/shared/protocol.ts';
+import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { dirKey, key, navGridFor, openPage, pathStep, serversListed, sleep, type Dir } from './lib/browser.ts';
+
+const RUN = process.argv[2];
+if (!RUN) { console.error('usage: node moments.ts <run-dir> [seconds] [weapon-index]'); process.exit(2); }
+const SECONDS = Number(process.argv[3] ?? 240);
+const WEAPON = Number(process.argv[4] ?? 2);
+const VIEW = { w: 1600, h: 900 };
+const BASE = existsSync(join(RUN, 'url'))
+  ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '')
+  : `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
+const EV = join(RUN, 'evidence');
+mkdirSync(EV, { recursive: true });
+const LOG = join(EV, 'moments.log');
+writeFileSync(LOG, '');
+const log = (line: string) => { console.log(line); appendFileSync(LOG, line + '\n'); };
+let failed = false;
+const check = (ok: boolean, line: string) => { log(`${ok ? 'ok  ' : 'FAIL'} ${line}`); if (!ok) failed = true; };
+
+let myId: number | null = null;
+let full: Snapshot | null = null;
+/** Every snapshot's players by id, newest last, so a hit can be measured against where the victim stood before it. */
+const history: { at: number; players: Map<number, PlayerView>; self: Snapshot['self'] }[] = [];
+const hits: { at: number; ev: Extract<GameEvent, { e: 'dmg' }> }[] = [];
+const kills: { at: number; ev: Extract<GameEvent, { e: 'kill' }> }[] = [];
+let whizzes = 0;
+type Arena = { worldSize: number; walls: WallView[] };
+let arena = null as Arena | null;
+const page = await openPage({
+  profile: 'skirmish-moments-',
+  viewport: { width: VIEW.w, height: VIEW.h },
+  onEvent: (method, params) => {
+    if (method !== 'Network.webSocketFrameReceived') return;
+    const msg = JSON.parse(params.response.payloadData);
+    if (msg.t === 'welcome') myId = msg.id;
+    if (msg.t === 'welcome' || msg.t === 'walls') arena = { worldSize: msg.worldSize, walls: msg.walls };
+    if (msg.t !== 'snap') return;
+    full = fillSnapshot(msg, full) ?? full;
+    if (!full) return;
+    const at = Date.now();
+    history.push({ at, players: new Map(full.players.map((p) => [p.id, p])), self: full.self });
+    if (history.length > 4000) history.shift();
+    for (const ev of full.events) {
+      if (ev.e === 'dmg' && ev.kind === 'player' && ev.victim !== myId && ev.hit) hits.push({ at, ev });
+      if (ev.e === 'kill' && ev.victimId !== myId) kills.push({ at, ev });
+      if (ev.e === 'whizz' && ev.victim === myId) whizzes++;
+    }
+  },
+});
+const { cdp, js, exceptions, close } = page;
+await cdp('Page.navigate', { url: `${BASE}/?dev&quality=high` });
+await js(`localStorage.setItem('skirmish.muted', '1')`);
+await serversListed(page);
+await js(`document.querySelectorAll('#loadout-menu .weapon')[${WEAPON}].click(); document.getElementById('name').value = 'Moments'`);
+await js(`document.querySelector('#servers .server').click(); document.getElementById('play').click()`);
+for (let i = 0; i < 80 && !full; i++) await sleep(100);
+const me = () => full?.players.find((p) => p.id === myId);
+const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
+
+/** A screenshot of the whole view and a 2x crop around a world point, named for the moment. */
+async function shoot(name: string, focus?: { x: number; y: number }) {
+  const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
+  writeFileSync(join(EV, `moment-${name}.png`), Buffer.from(data, 'base64'));
+  if (!focus) return;
+  const at = await js(`skirmishDev.toScreen(${focus.x}, ${focus.y})`);
+  if (!at) return;
+  const cx = at.x as number, cy = at.y as number;
+  const clip = { x: Math.max(0, cx - 200), y: Math.max(0, cy - 130), width: 400, height: 260, scale: 2 };
+  const crop = await cdp('Page.captureScreenshot', { format: 'png', clip });
+  writeFileSync(join(EV, `moment-${name}-crop.png`), Buffer.from(crop.data, 'base64'));
+}
+
+const shots = new Set<string>();
+const once = async (name: string, focus?: { x: number; y: number }) => { if (shots.has(name)) return; shots.add(name); await shoot(name, focus); };
+const knock: number[] = [];
+let suppression = 0;
+let seenHits = 0, seenKills = 0;
+const KEYS: Dir[] = ['right', 'down', 'left', 'up'];
+const RANGE = 300;
+/** Whether the straight line between two points misses every wall, so a shot at the far one can land. */
+const clear = (a: { x: number; y: number }, b: { x: number; y: number }) => !(arena?.walls ?? []).some((w) => {
+  for (let t = 0; t <= 1; t += 0.05) {
+    const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+    if (x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h) return true;
+  }
+  return false;
+});
+let step = 0;
+const end = Date.now() + SECONDS * 1000;
+/** Shoots the first hit landing near you within a frame or two of it, while the flinch and flash still show. */
+async function catchHits(self: { x: number; y: number }) {
+  for (; seenHits < hits.length; seenHits++) {
+    const h = hits[seenHits]!;
+    const victim = full!.players.find((p) => p.id === h.ev.victim);
+    if (victim && Date.now() - h.at < 150 && Math.hypot(victim.x - self.x, victim.y - self.y) < 500) await once('hit-reaction', victim);
+  }
+}
+/** Holds the keys for `ms`, watching for hits as it goes. */
+async function walk(dirs: readonly Dir[], self: { x: number; y: number }, ms: number) {
+  for (const d of dirs) await dirKey(page, 'keyDown', d);
+  for (const until = Date.now() + ms; Date.now() < until;) { await catchHits(self); await sleep(15); }
+  for (const d of dirs) await dirKey(page, 'keyUp', d);
+}
+const WANTED = ['hit-reaction', 'death-body', 'reload', 'close-blast', 'suppressed'];
+while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
+  const self = me();
+  if (!self?.alive) {
+    await js(`document.getElementById('respawn').disabled || document.getElementById('respawn').click()`);
+    await sleep(250);
+    continue;
+  }
+  suppression = Math.max(suppression, full!.self.suppression ?? 0);
+  if (suppression > 0.5) await once('suppressed', self);
+  const foes = full!.players.filter((p) => p.id !== myId && p.alive).sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y));
+  const foe = foes.find((p) => Math.hypot(p.x - self.x, p.y - self.y) < RANGE && clear(self, p)) ?? foes[0];
+  const near = foe ? Math.hypot(foe.x - self.x, foe.y - self.y) : Infinity;
+  const aim = foe && await js(`skirmishDev.toScreen(${foe.x}, ${foe.y})`);
+  const [mx, my] = aim ? [aim.x as number, aim.y as number] : [VIEW.w / 2 + 300, VIEW.h / 2];
+  await mouse('mouseMoved', mx, my);
+  if (foe && near < RANGE && clear(self, foe)) {
+    await mouse('mousePressed', mx, my);
+    if (near < 130) { await sleep(25); await once('close-blast', self); }
+    await walk([], self, 60);
+    await mouse('mouseReleased', mx, my);
+  } else {
+    const g = arena;
+    const dirs = foe && g ? pathStep(navGridFor(g.worldSize, g.walls), self, foe) : [KEYS[step++ % 4]!];
+    await walk(dirs.length ? dirs : [KEYS[step++ % 4]!], self, 300);
+  }
+  for (; seenKills < kills.length; seenKills++) {
+    const k = kills[seenKills]!;
+    const at = [...history].reverse().find((s) => s.at <= k.at && s.players.get(k.ev.victimId)?.alive)?.players.get(k.ev.victimId);
+    if (shots.has('death-body') || !at || Math.hypot(at.x - self.x, at.y - self.y) > 500) continue;
+    await sleep(Math.max(0, 260 - (Date.now() - k.at)));
+    await once('death-falling', at);
+    await sleep(2500);
+    await once('death-body', at);
+  }
+  if (!shots.has('reload') && (seenKills > 0 || Date.now() > end - SECONDS * 500) && full!.self.ammo < full!.self.mag) {
+    await key(page, 'keyDown', 'KeyR', 'r');
+    await key(page, 'keyUp', 'KeyR', 'r');
+    for (let i = 0; i < 40 && !full!.self.reloading; i++) await sleep(20);
+    for (let i = 0; i < 100 && full!.self.reloading && full!.self.reloadFrac < 0.3; i++) await sleep(15);
+    await once('reload', me());
+  }
+}
+close();
+for (const h of hits) {
+  const before = [...history].reverse().find((s) => s.at < h.at)?.players.get(h.ev.victim);
+  const after = history.find((s) => s.at > h.at + 90)?.players.get(h.ev.victim);
+  if (before && after?.alive && h.ev.hit && Math.hypot(after.x - before.x, after.y - before.y) < 80) knock.push(Math.cos(h.ev.hit.dir) * (after.x - before.x) + Math.sin(h.ev.hit.dir) * (after.y - before.y));
+}
+
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? NaN;
+log(`moments FFA weapon tile ${WEAPON} ${SECONDS}s at ${new Date().toISOString()}`);
+check(shots.has('hit-reaction'), `a hit reaction was caught: ${hits.length} hits seen, ${hits.filter((h) => h.ev.attacker === myId).length} by me`);
+check(shots.has('death-body'), `a death and its body were caught: ${kills.length} kills seen, ${kills.filter((k) => k.ev.killerId === myId).length} by me`);
+check(shots.has('reload'), 'a reload was caught');
+log(`${shots.has('close-blast') ? 'ok  ' : 'note'} close blast ${shots.has('close-blast') ? 'caught' : 'not reached (no foe within 130)'}`);
+log(`note knockback along the round, victim moved ${knock.length ? `median ${median(knock).toFixed(1)}, max ${Math.max(...knock).toFixed(1)}` : 'n/a'} units in the 90 ms after ${knock.length} hits`);
+log(`note suppression peak ${suppression.toFixed(2)}, ${whizzes} near misses on me`);
+for (const e of exceptions) check(false, `page exception: ${e}`);
+log(failed ? 'RESULT FAIL' : 'RESULT PASS');
+process.exit(failed ? 1 : 0);

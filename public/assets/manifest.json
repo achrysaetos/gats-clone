@@ -1,30 +1,33 @@
 {
  "atlases": [
-  "sprites/atlas-0.8e768d5b00.json",
-  "sprites/atlas-1.cd521e5d27.json",
-  "sprites/atlas-2.c52c4a72aa.json"
+  "sprites/atlas-0.84dce7fceb.json",
+  "sprites/atlas-1.3b26099636.json",
+  "sprites/atlas-2.bc3c3bf801.json",
+  "sprites/atlas-3.cc5a1d6ce3.json",
+  "sprites/atlas-4.1e3fc16a4d.json",
+  "sprites/atlas-5.4c1da6e245.json"
  ],
  "kit": [
-  "sprites/kit-0.4c33f91204.json",
-  "sprites/kit-1.18d0286991.json",
-  "sprites/kit-2.ee2cf1c03a.json"
+  "sprites/kit-0.52e0b216d1.json",
+  "sprites/kit-1.00fc6ce60a.json",
+  "sprites/kit-2.b500704d09.json"
  ],
  "maps": {
-  "c76eabae": {
-   "id": "warehouse",
-   "light": "maps/warehouse/light.9932f6d987.json"
-  },
-  "56f759f6": {
-   "id": "vault",
-   "light": "maps/vault/light.8f6643bc50.json"
-  },
-  "e30c6a34": {
-   "id": "railyard",
-   "light": "maps/railyard/light.b198cede14.json"
-  },
   "46478fd9": {
    "id": "yard",
-   "light": "maps/yard/light.7004c0ee50.json"
+   "light": "maps/yard/light.06f4b0e03d.json"
+  },
+  "4882df6a": {
+   "id": "warehouse",
+   "light": "maps/warehouse/light.1e0a63c269.json"
+  },
+  "7ca11ae6": {
+   "id": "railyard",
+   "light": "maps/railyard/light.34269a860c.json"
+  },
+  "0b8265f8": {
+   "id": "vault",
+   "light": "maps/vault/light.debb940a99.json"
   }
  },
  "floors": {

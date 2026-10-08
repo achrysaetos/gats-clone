@@ -281,8 +281,20 @@ def _multiply(nt, col, fac_socket):
     return m.outputs[2]
 
 
-def shade(nt, col, ink=0.0, ao=0.0, ao_dist=3.0):
-    """Darkens silhouette edges (an inked look that reads at small sizes) and crevices."""
+def shade(nt, col, ink=0.0, ao=0.0, ao_dist=3.0, rim=0.0):
+    """Darkens silhouette edges (an inked look that reads at small sizes) and crevices, or with `rim` lightens the faces
+    that turn away from the camera (bevels and the flanks of tubes), the light edge a steel part shows under a dark outline."""
+    if rim > 0:
+        lw = nt.nodes.new('ShaderNodeLayerWeight')
+        lw.inputs['Blend'].default_value = 0.5
+        r = _ramp(nt, lw.outputs['Facing'], [(0.2, (0, 0, 0)), (0.7, (rim * 0.5, rim * 0.52, rim * 0.56))])
+        m = nt.nodes.new('ShaderNodeMix')
+        m.data_type = 'RGBA'
+        m.blend_type = 'SCREEN'
+        m.inputs[0].default_value = 1.0
+        nt.links.new(col, m.inputs[6])
+        nt.links.new(r.outputs['Color'], m.inputs[7])
+        col = m.outputs[2]
     if ink > 0:
         lw = nt.nodes.new('ShaderNodeLayerWeight')
         lw.inputs['Blend'].default_value = 0.5
@@ -297,9 +309,9 @@ def shade(nt, col, ink=0.0, ao=0.0, ao_dist=3.0):
     return col
 
 
-def mat(name, color, rough=0.6, metal=0.0, grime=0.25, grime_scale=0.35, emit=None, strength=0.0, coat=0.0, bump=0.0, ink=0.0, ao=0.0):
+def mat(name, color, rough=0.6, metal=0.0, grime=0.25, grime_scale=0.35, emit=None, strength=0.0, coat=0.0, bump=0.0, ink=0.0, ao=0.0, rim=0.0):
     """A Principled material: `grime` darkens it in noisy patches, `emit` makes it glow (shown in glow layers),
-    `ink` darkens its silhouette edges and `ao` its crevices."""
+    `ink` darkens its silhouette edges, `ao` its crevices and `rim` lightens its edges."""
     if name in _cache:
         return _cache[name]
     m, nt, bsdf = _principled(name)
@@ -320,7 +332,7 @@ def mat(name, color, rough=0.6, metal=0.0, grime=0.25, grime_scale=0.35, emit=No
             fine = _noise(nt, grime_scale * 6, 6, 0.7)
             nt.links.new(fine.outputs['Fac'], b.inputs['Height'])
             nt.links.new(b.outputs['Normal'], bsdf.inputs['Normal'])
-    nt.links.new(shade(nt, col, ink, ao), bsdf.inputs['Base Color'])
+    nt.links.new(shade(nt, col, ink, ao, rim=rim), bsdf.inputs['Base Color'])
     if emit is not None:
         bsdf.inputs['Emission Color'].default_value = (*emit, 1)
         bsdf.inputs['Emission Strength'].default_value = strength

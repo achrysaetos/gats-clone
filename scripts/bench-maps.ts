@@ -5,8 +5,9 @@ import { GUN_IDS, GUNS, MODE_IDS, WORLD, type ModeId } from '../src/shared/defs.
 import { MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { circleHitsRect, segmentEntersRectAt, type Rect } from '../src/shared/sim/movement.ts';
-import { effectiveStats } from '../src/shared/sim/stats.ts';
-import { coverRects, createWorld, isEnemy, rand, type Player, type World } from '../src/shared/sim/world.ts';
+import { effectiveStats, shakenOf } from '../src/shared/sim/stats.ts';
+import { PINNED } from '../src/server/bot/awareness.ts';
+import { coverRects, createWorld, isEnemy, rand, solidRects, type Player, type World } from '../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
 import { median, pct, quantile, sec } from './lib/stats.ts';
@@ -53,44 +54,65 @@ function tick({ w, bots, r }: Sim): { respawned: number[]; thinkMs: number; step
 }
 
 type Pulse = { hpFrac: number; seenBy: number; allies: number };
-type Life = { bornAt: number; lastFightAt: number | null; pulses: Pulse[] };
-type Fight = { start: number; last: number; a: number; b: number };
+/** `staggered` and `walled` count the ticks of the stagger, and of the shove into a solid, running now. */
+type Life = { bornAt: number; lastFightAt: number | null; pulses: Pulse[]; staggered: number; walled: number };
+type Fight = { start: number; last: number; a: number; b: number; first: number };
 type Watch = { lives: Map<number, Life>; fights: Map<string, Fight> };
 type Tally = {
   firstContact: number[]; betweenFights: number[]; thinkMs: number[]; stepMs: number[]; tickMs: number[]; dmg: number[]; death: number[]; range: number[];
   lifeMs: number[]; fightMs: number[]; combatTicks: number; coverTicks: number; shots: number; stillShots: number;
   deaths: number; lowDeaths: number; outnumberedDeaths: number; losingDeaths: number;
+  /** Kills that ended a fight between the two, and how many of them went to whoever hit first. */
+  decided: number; firstWon: number;
+  /** Ticks alive, staggered, shoved, and shoved while against a solid, with the longest unbroken run of each kind; combat ticks pinned by suppression and those of them in cover. */
+  aliveTicks: number; staggerTicks: number; staggerRun: number; shoveTicks: number; walledTicks: number; walledRun: number; pinnedTicks: number; pinnedCoverTicks: number;
 };
 const emptyTally = (): Tally => ({
   firstContact: [], betweenFights: [], thinkMs: [], stepMs: [], tickMs: [], dmg: [], death: [], range: [],
-  lifeMs: [], fightMs: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0,
+  lifeMs: [], fightMs: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0, decided: 0, firstWon: 0,
+  aliveTicks: 0, staggerTicks: 0, staggerRun: 0, shoveTicks: 0, walledTicks: 0, walledRun: 0, pinnedTicks: 0, pinnedCoverTicks: 0,
 });
 const addTally = (into: Tally, t: Tally) => {
   for (const k of Object.keys(t) as (keyof Tally)[]) {
     const v = t[k];
-    if (Array.isArray(v)) (into[k] as number[]).push(...v); else (into[k] as number) += v;
+    if (Array.isArray(v)) (into[k] as number[]).push(...v); else if (k === 'staggerRun' || k === 'walledRun') into[k] = Math.max(into[k], v); else (into[k] as number) += v;
   }
 };
-const freshLife = (bornAt: number): Life => ({ bornAt, lastFightAt: null, pulses: [] });
+const freshLife = (bornAt: number): Life => ({ bornAt, lastFightAt: null, pulses: [], staggered: 0, walled: 0 });
 
 const sees = (cover: readonly Rect[], a: Player, b: Player) => !cover.some((r) => segmentEntersRectAt(a.x, a.y, b.x - a.x, b.y - a.y, r) !== null);
 const near = (a: Player, b: Player, px: number) => Math.hypot(a.x - b.x, a.y - b.y) <= px;
 
 function recordBeforeThink(w: World, watch: Watch, t: Tally): Map<number, { x: number; y: number }> {
-  const cover = coverRects(w);
+  const cover = coverRects(w), solids = solidRects(w);
   const players = [...w.players.values()];
   for (const p of players) {
     if (p.life.k !== 'alive') continue;
+    const life = watch.lives.get(p.id)!;
+    t.aliveTicks++;
+    life.staggered = p.life.staggerUntil > w.now ? life.staggered + 1 : 0;
+    const walled = p.life.shove !== null && solids.some((s) => circleHitsRect(p.x, p.y, WORLD.playerRadius + 1, s));
+    life.walled = walled ? life.walled + 1 : 0;
+    if (life.staggered) t.staggerTicks++;
+    if (p.life.shove) t.shoveTicks++;
+    if (walled) t.walledTicks++;
+    t.staggerRun = Math.max(t.staggerRun, life.staggered);
+    t.walledRun = Math.max(t.walledRun, life.walled);
+    const pinned = shakenOf(p.life, w.now).suppression >= PINNED;
     const enemies = players.filter((o) => o.life.k === 'alive' && isEnemy(p, o) && near(p, o, WORLD.viewRadius));
     const seenBy = enemies.filter((o) => sees(cover, o, p)).length;
     const allies = players.filter((o) => o.id !== p.id && o.life.k === 'alive' && !isEnemy(p, o) && near(p, o, WORLD.viewRadius)).length;
-    const ring = watch.lives.get(p.id)!.pulses;
+    const ring = life.pulses;
     ring.push({ hpFrac: p.life.hp / effectiveStats(p).maxHp, seenBy, allies });
     if (ring.length > LOOKBACK_TICKS) ring.shift();
     if (enemies.length === 0) continue;
     t.combatTicks++;
+    if (pinned) t.pinnedTicks++;
     const foe = enemies.reduce((a, b) => (Math.hypot(a.x - p.x, a.y - p.y) <= Math.hypot(b.x - p.x, b.y - p.y) ? a : b));
-    if (cover.some((c) => circleHitsRect(p.x, p.y, WORLD.playerRadius + COVER_HUG_PX, c) && segmentEntersRectAt(foe.x, foe.y, p.x - foe.x, p.y - foe.y, c) !== null)) t.coverTicks++;
+    if (cover.some((c) => circleHitsRect(p.x, p.y, WORLD.playerRadius + COVER_HUG_PX, c) && segmentEntersRectAt(foe.x, foe.y, p.x - foe.x, p.y - foe.y, c) !== null)) {
+      t.coverTicks++;
+      if (pinned) t.pinnedCoverTicks++;
+    }
   }
   return new Map(players.map((p) => [p.id, { x: p.x, y: p.y }]));
 }
@@ -120,7 +142,7 @@ function recordAfterStep(w: World, watch: Watch, t: Tally, respawned: readonly n
       const [a, b] = e.attacker < e.victim ? [e.attacker, e.victim] : [e.victim, e.attacker];
       const key = `${a}:${b}`;
       const f = watch.fights.get(key);
-      if (f) f.last = w.now; else watch.fights.set(key, { start: w.now, last: w.now, a, b });
+      if (f) f.last = w.now; else watch.fights.set(key, { start: w.now, last: w.now, a, b, first: e.attacker });
     } else if (e.e === 'kill') {
       const v = w.players.get(e.victimId);
       if (v) t.death.push(Math.round(v.x), Math.round(v.y));
@@ -134,6 +156,9 @@ function recordAfterStep(w: World, watch: Watch, t: Tally, respawned: readonly n
         if (outnumbered) t.outnumberedDeaths++;
         if (low && outnumbered) t.losingDeaths++;
       }
+      const k = e.killerId;
+      const decided = k !== null && watch.fights.get(k < e.victimId ? `${k}:${e.victimId}` : `${e.victimId}:${k}`);
+      if (decided) { t.decided++; if (decided.first === k) t.firstWon++; }
       for (const [key, f] of watch.fights) if (f.a === e.victimId || f.b === e.victimId) closeFight(key, w.now);
     }
   }
@@ -147,6 +172,13 @@ const lifeReport = (t: Tally) => [
   `in cover ${pct(t.coverTicks, t.combatTicks)}`,
   `still shots ${pct(t.stillShots, t.shots)}`,
   `deaths low ${pct(t.lowDeaths, t.deaths)} outnumbered ${pct(t.outnumberedDeaths, t.deaths)} both ${pct(t.losingDeaths, t.deaths)}`,
+  `first hitter won ${pct(t.firstWon, t.decided)} of ${t.decided}`,
+].join('  ');
+
+const feelReport = (t: Tally) => [
+  `staggered ${pct(t.staggerTicks, t.aliveTicks)} of alive time, longest ${(t.staggerRun * TICK_MS).toFixed(0)}ms`,
+  `shoved ${pct(t.shoveTicks, t.aliveTicks)}, against a solid ${pct(t.walledTicks, t.aliveTicks)}, longest ${(t.walledRun * TICK_MS).toFixed(0)}ms`,
+  `pinned ${pct(t.pinnedTicks, t.combatTicks)} of fighting time, in cover ${pct(t.pinnedCoverTicks, t.pinnedTicks)} of it`,
 ].join('  ');
 
 function holdRoundOpen(w: World, banked: { red: number; blue: number }) {
@@ -204,6 +236,7 @@ for (const map of maps) {
   console.log(`  first contact after spawn: median ${sec(median(t.firstContact))}s  p75 ${sec(quantile(t.firstContact, 0.75))}s  (${t.firstContact.length} lives)`);
   console.log(`  time between fights: median ${sec(median(t.betweenFights))}s  p75 ${sec(quantile(t.betweenFights, 0.75))}s  (${t.betweenFights.length} gaps over ${FIGHT_GAP_MS / 1000}s)`);
   console.log(`  ${lifeReport(t)}`);
+  console.log(`  ${feelReport(t)}`);
   const buckets = RANGE_BUCKETS.map((b, i) => `<${b} ${pct(t.range.filter((d) => d >= (RANGE_BUCKETS[i - 1] ?? 0) && d < b).length, t.range.length, 0)}`);
   console.log(`  shooter to victim on damaging hits: p50 ${quantile(t.range, 0.5).toFixed(0)}  p90 ${quantile(t.range, 0.9).toFixed(0)}  max ${Math.max(...t.range).toFixed(0)}px  ${buckets.join('  ')}`);
   const msAt = (xs: readonly number[], q: number) => `${quantile(xs, q).toFixed(2)}ms`;
@@ -215,4 +248,5 @@ for (const map of maps) {
   }
 }
 console.log(`\nall maps  ${lifeReport(all)}`);
+console.log(`  ${feelReport(all)}`);
 if (target !== undefined) console.log(`  match to ${target}: mean ${sec(mean(wins))}s median ${sec(median(wins))}s, ${SEEDS.length * maps.length - wins.length} of ${SEEDS.length * maps.length} hit the ${capMinutes} min cap`);

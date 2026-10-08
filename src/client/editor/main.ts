@@ -141,8 +141,8 @@ export async function startEditor(requested: string) {
       view, size: f.size, layout: showLight ? baked : `editor:${mapLayoutKey(walls)}`, dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
       crates: crates.filter(inView), pieces: [...flat, ...looks.standing].filter(inView),
       overheads: looks.overhead.filter(inView).map((p) => ({ ...p, under: !showOverhead })), train: null, fires: [],
-      engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
-      ghost: null, killer: null, numbers: [], effects: [], particles: NO_PARTICLES, lamps: [],
+      engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], remains: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
+      ghost: null, killer: null, numbers: [], effects: [], myId: -1, particles: NO_PARTICLES, lamps: [],
     };
     return { scene, walls };
   }

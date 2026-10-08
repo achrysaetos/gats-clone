@@ -1,6 +1,6 @@
 import { STICKY_KEYS, type Snapshot, type SnapshotWire } from './protocol.ts';
 
-const DECIMALS: Readonly<Record<string, number>> = { angle: 2, dir: 2, progress: 2, reloadFrac: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
+const DECIMALS: Readonly<Record<string, number>> = { angle: 2, dir: 2, progress: 2, reloadFrac: 2, reload: 2, flinch: 2, suppression: 2, spray: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
 
 const round = (key: string, v: unknown) => {
   if (typeof v !== 'number' || Number.isInteger(v)) return v;

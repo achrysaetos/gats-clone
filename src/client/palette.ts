@@ -52,12 +52,16 @@ export function glow(hex: string, l: number): string {
 
 export const teamColor = (t: Team) => (t ? TEAM_COLORS[t] : PALETTE.neutral);
 
-/** `bar` shows a health bar over the body. */
-export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; bar: boolean }> = {
-  walker: { body: '#8fb35a', arm: '#6f9440', eye: '#1b1d22', bar: false },
-  brute: { body: '#8a74a3', arm: '#5e4d72', eye: '#ff5a3c', bar: true },
-  runner: { body: '#d9c27a', arm: '#a8914c', eye: '#1b1d22', bar: false },
-  plated: { body: '#8d9aa8', arm: '#5f6b78', eye: '#ffd34d', bar: false },
-  bloater: { body: '#e08a5c', arm: '#b8623c', eye: '#1b1d22', bar: false },
-  colossus: { body: '#8c3f45', arm: '#5e2a2f', eye: '#ffd34d', bar: true },
+/**
+ * `bar` shows a health bar over the body. `eyes` is where the painter puts the night glows, in radius units: `ahead` of
+ * the centre along the facing, `apart` to each side, and `lift` north for the sprite's shear. The zombie bake fails if
+ * the model's eyes drift from it.
+ */
+export const ZOMBIE_LOOK: Record<ZombieKind, { body: string; arm: string; eye: string; bar: boolean; eyes: { ahead: number; apart: number; lift: number } }> = {
+  walker: { body: '#8fb35a', arm: '#6f9440', eye: '#1b1d22', bar: false, eyes: { ahead: 0.72, apart: 0.12, lift: 0.09 } },
+  brute: { body: '#8a74a3', arm: '#5e4d72', eye: '#ff5a3c', bar: true, eyes: { ahead: 0.71, apart: 0.09, lift: 0.07 } },
+  runner: { body: '#d9c27a', arm: '#a8914c', eye: '#1b1d22', bar: false, eyes: { ahead: 0.96, apart: 0.12, lift: 0.12 } },
+  plated: { body: '#8d9aa8', arm: '#5f6b78', eye: '#ffd34d', bar: false, eyes: { ahead: 0.72, apart: 0.12, lift: 0.09 } },
+  bloater: { body: '#e08a5c', arm: '#b8623c', eye: '#1b1d22', bar: false, eyes: { ahead: 0.42, apart: 0.11, lift: 0.08 } },
+  colossus: { body: '#8c3f45', arm: '#5e2a2f', eye: '#ffd34d', bar: true, eyes: { ahead: 0.58, apart: 0.07, lift: 0.03 } },
 };

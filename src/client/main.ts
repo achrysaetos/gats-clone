@@ -21,7 +21,7 @@ import { createQuality, parseKnobs, parseMode, type QualityMode } from './qualit
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
-import { startEffect } from './effects.ts';
+import { lastSeen, startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
@@ -29,14 +29,15 @@ import { bodyColor, drawBackdrop, drawWorld, initWorld, resizeWorld } from './re
 import { NoWebGL2, type World } from './world/stage.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
-import { createShooting, type Hands } from './shooting.ts';
+import { createShooting, shakenOf, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
-import { soundsFor, type SoundCue } from './sfx.ts';
+import { roofsOf, soundsFor, stepCues, type SoundCue } from './sfx.ts';
+import { mapLooks } from './world/pieces.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
-import { addStop, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
+import { addStop, killZoom, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
 import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
-import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
+import { EFFECT_LIFE_MS, newAnim, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, easeTurrets, faceZombies, nextCoreHitAt } from './siege.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
@@ -101,6 +102,7 @@ const audio = createAudio();
 let trauma = 0;
 let kick = NO_KICK;
 let hitstop = NO_HITSTOP;
+let killAt = -Infinity;
 let lastFrameAt = 0;
 let shownView: number = WORLD.viewRadius;
 /** The world starts in the background; Play waits for it, and for the art when pressed before the art lands. */
@@ -283,7 +285,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; s.anim.remains = []; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
     case 'welcome': s.myId = msg.id; s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
@@ -295,13 +297,13 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: M
     ws, rejoin, myId: welcome.id, map: welcome.map, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), anim: newAnim(), heardSteps: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   noteOwnShotSound(cues);
-  audio.play(cues, s.lastSelf, viewRadius);
+  audio.play(cues, { listener: s.lastSelf, viewRadius, roofs: roofsOf(mapLooks(s.map).overhead) });
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
 
@@ -312,7 +314,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
   s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
-  const cues = soundsFor(prev, snap);
+  const cues = soundsFor(prev, snap, s.walls);
   playCues(s, cues.filter((c) => c.self), snap.self.viewRadius || WORLD.viewRadius);
   // Other players' sounds wait for the render clock, so a shot is heard as its muzzle flash is drawn.
   s.pendingSounds.push(...cues.filter((c) => !c.self).map((cue) => ({ at: snap.tick * TICK_MS, cue })));
@@ -345,7 +347,7 @@ function hands(s: Session): Hands {
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
   if (spec.kind !== 'death') return undefined;
-  const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
+  const victim = lastSeen(s, spec.victim);
   return victim && bodyColor(victim);
 }
 
@@ -470,6 +472,7 @@ function drawFrame(now: number) {
     const stop = stopFor(fx, s.myId);
     if (stop && addStop(hitstop, now, stop) !== hitstop) {
       hitstop = addStop(hitstop, now, stop);
+      if (stop === 'kill') killAt = now;
       noteStop(stop);
     }
   }
@@ -504,7 +507,7 @@ function drawFrame(now: number) {
   kick = settleKick(kick, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
+  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale, scale: aimCamera.scale * killZoom(killAt, now) };
   updateTrails(s, snap, now);
   faceZombies(s.zombieFaces, snap.zombies ?? [], snap.run?.core ?? s.lastSelf);
   easeTurrets(s.turretAims, fxNow);
@@ -515,7 +518,8 @@ function drawFrame(now: number) {
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now: fxNow, selfAngle, killerId, ghost });
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing)) : null;
+  playCues(s, stepCues(s.heardSteps, s.strides, snap.players, s.myId), latest.self.viewRadius || WORLD.viewRadius);
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing), shakenOf(snap.self)) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);

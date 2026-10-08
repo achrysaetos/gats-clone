@@ -57,7 +57,7 @@ function crateAt(w: World, x: number, y: number, tier: CrateTier): Crate {
 
 function stockCrates(w: World, spin: number) {
   const size = MAPS[w.map].size, centre = size / 2;
-  w.crates = w.crates.map((c) => ({ ...c, tier: 'loot' }));
+  w.crates = w.crates.map((c) => (KIT[c.piece].breaks?.cover ? c : { ...c, tier: 'loot' }));
   for (let i = 0; i < ROYALE.caches; i++) {
     const a = spin + ((i + 0.5) / ROYALE.caches) * 2 * Math.PI;
     const at = clearPointNear([...coverRects(w), ...keepOff(w)], centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, KIT[CRATE_TIERS.cache.piece].w, size);

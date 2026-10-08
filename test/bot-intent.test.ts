@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import type { World } from '../src/shared/sim/world.ts';
-import { GUNS } from '../src/shared/defs.ts';
+import { FEEL, GUNS } from '../src/shared/defs.ts';
 import { arenaFor, openSpot } from '../src/server/bot/arena.ts';
 import { isOpen } from '../src/server/bot/nav.ts';
 import { freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
@@ -261,4 +261,22 @@ test('an open spot asked for inside a big block is found outside it, not inside'
   const arena = arenaFor(w);
   const r = seeded(3);
   for (let i = 0; i < 20; i++) assert.ok(isOpen(arena.nav, openSpot(arena, r, { at: { x: 1300, y: 1300 }, r: 120 })));
+});
+
+test('a bot pinned by near misses gets behind cover in reach of the shooter, seen or not, and holds its fight when not pinned', () => {
+  const w = emptyWorld();
+  setWalls(w, [pillarWest]);
+  const bot = spawnAt(w, 900, 1000, { loadout: { weapon: 'assault' } });
+  const enemy = spawnAt(w, 1500, 1000);
+  if (bot.life.k !== 'alive') throw new Error('alive');
+  const fight: Intent = { k: 'engage', target: enemy.id, since: 0, holdUntil: Infinity };
+  assert.equal(decide(w, bot.id, fight).k, 'engage', 'unpinned it keeps fighting');
+  bot.life.suppressedUntil = w.now + FEEL.suppression.ms;
+  const pinned = decide(w, bot.id, fight);
+  assert.ok(pinned.k === 'peekAndHide' && pinned.phase === 'hide' && pinned.spot.x < pillarWest.x, `takes the pillar between it and the shooter: ${JSON.stringify(pinned)}`);
+  const ducked = decide(w, bot.id, { ...pinned, phase: 'peek', phaseUntil: Infinity, holdUntil: Infinity });
+  assert.ok(ducked.k === 'peekAndHide' && ducked.phase === 'hide', 'one peeking ducks back early');
+  enemy.x = 3000;
+  const unseen = decide(w, bot.id, { k: 'patrol', goal: { x: 2000, y: 2000 } }, { aware: { ...freshAwareness(), whizzFrom: { x: 1400, y: 1000, tick: w.tick } } });
+  assert.ok(unseen.k === 'takePosition' && unseen.spot.x < pillarWest.x, `hides from where the rounds came: ${JSON.stringify(unseen)}`);
 });

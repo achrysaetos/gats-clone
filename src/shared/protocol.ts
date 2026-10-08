@@ -56,6 +56,10 @@ export type PlayerView = {
   hunted: boolean;
   /** Fresh from a spawn and not yet firing: takes no damage. */
   spawnShield?: true;
+  /** 0..1 through a reload while one runs, so everyone sees the open window. */
+  reload?: number;
+  /** Slowed by a heavy hit right now. */
+  staggered?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
@@ -70,6 +74,8 @@ export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
+/** A push from landed rounds playing out: `vx`, `vy` px a second for `leftMs` more, on top of walking and through the same collision. */
+export type Shove = { vx: number; vy: number; leftMs: number };
 
 /** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
 export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
@@ -103,6 +109,17 @@ export type SelfView = {
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
+  /** The shove still to play out from rounds that hit you, so prediction moves you with it. */
+  shove?: Shove;
+  /** Ms left of a stagger slowing your walk, so prediction slows you with it. */
+  stagger?: number;
+  /**
+   * How far into a spray you are, how shaken by hits (`flinch`) and by enemy rounds passing close (`suppression`), each 0..1: with your
+   * movement, what `spreadFor` needs to draw your real spread.
+   */
+  spray?: number;
+  flinch?: number;
+  suppression?: number;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;
@@ -122,6 +139,8 @@ export type GameEvent =
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind; hit?: Hit }
   /** A round stopped against a wall at (`x`, `y`), flying toward `dir`. */
   | { e: 'impact'; x: number; y: number; dir: number }
+  /** An enemy round passed close by `victim` without hitting: (`x`, `y`) is where it passed nearest, flying toward `dir`. */
+  | { e: 'whizz'; victim: number; x: number; y: number; dir: number }
   | { e: 'boom'; x: number; y: number; r: number }
   /** A breakable piece broke, its debris flying from (`x`, `y`), the centre of its solid `w` by `h`. */
   | { e: 'broke'; piece: PieceId; x: number; y: number; w: number; h: number }
