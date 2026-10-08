@@ -145,11 +145,11 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
 
   const tdm = conns.tdm;
   send(tdm, { t: 'chat', text: '  hello team  ' });
+  send(tdm, { t: 'chat', text: 'spam' });
   const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat', 5000, 'chat echo');
   assert.equal(chat.from, 'Tester');
   assert.equal(chat.text, 'hello team');
   assert.ok(chat.team === 'red' || chat.team === 'blue', 'team echoed in TDM');
-  send(tdm, { t: 'chat', text: 'spam' });
   await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Slow down', 5000, 'Slow down');
   assert.ok(!tdm.msgs.some((m) => m.t === 'chat' && m.text === 'spam'), 'rate-limited chat not broadcast');
 
