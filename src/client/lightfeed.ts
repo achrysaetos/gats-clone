@@ -155,7 +155,7 @@ export function lightBackdrop(ctx: CanvasRenderingContext2D, tl: Point, br: Poin
 setPropLightSink((lights) => {
   for (const l of lights) {
     const cold = l.color === l.core && l.intensity > 0.5;
-    setLight(`prop:${Math.round(l.x)},${Math.round(l.y)},${l.color}`, {
+    setLight(`prop:${l.key}`, {
       x: l.x, y: l.y, radius: l.r, color: l.color, intensity: Math.min(1.3, l.intensity * 1.4), flicker: cold ? 0.05 : 0.25,
       size: Math.min(12, l.r * 0.08), inside: 14, shadows: l.r >= 100,
     });

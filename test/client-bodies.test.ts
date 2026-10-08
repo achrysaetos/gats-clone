@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { angleBucket, GAIT, gaitAmount, stepGait, walkPose, type Gait } from '../src/client/bodies.ts';
+import { angleBucket, drawBodyShadows, GAIT, gaitAmount, stepGait, walkPose, type Gait } from '../src/client/bodies.ts';
 
 test('a body turned to any angle is drawn from the nearest cached bucket, turned by only a small remainder', () => {
   for (let a = -10; a <= 10; a += 0.173) {
@@ -31,4 +31,19 @@ test('the walk cycle follows the distance walked: still bodies stand, walkers st
   assert.equal(jumped.speed, 0, 'a respawn far away is not a stride');
   assert.equal(stepGait(g, g!.x, g!.y, g!.t + 10_000).speed, 0, 'a body unseen for a while starts afresh');
   assert.equal(stepGait(g, g!.x + 5, g!.y, g!.t), g, 'a second draw in the same instant changes nothing');
+});
+
+test('soldiers drawn at two scales in the same frame (the world under a podium or a menu preview) keep their sprites at both', () => {
+  let painted = 0;
+  const ctx = new Proxy({}, { get: () => () => ({ addColorStop() {} }), set: () => true }) as unknown as CanvasRenderingContext2D;
+  Object.assign(globalThis, { document: { createElement: () => { painted++; return { getContext: () => ctx }; } } });
+  const body = [{ x: 0, y: 0, r: 17 }];
+  for (let frame = 0; frame < 10; frame++) {
+    drawBodyShadows(ctx, body, 0.85);
+    drawBodyShadows(ctx, body, 2);
+  }
+  assert.equal(painted, 2, 'one sprite per scale, painted once');
+  for (const k of [1, 1.05, 1.1, 1.15, 1.2]) drawBodyShadows(ctx, body, k);
+  drawBodyShadows(ctx, body, 0.85);
+  assert.equal(painted, 8, 'a zoom through many scales keeps only the latest few');
 });

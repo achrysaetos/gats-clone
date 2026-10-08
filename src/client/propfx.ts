@@ -66,7 +66,8 @@ export function notePropEvents(snap: Pick<Snapshot, 'events' | 'match'>, now: nu
 // ---------------------------------------------------------------------------------------------------------------- lights
 
 /** A light a prop casts: a warm or cold pool at (`x`, `y`) of radius `r`. */
-export type PropLight = { x: number; y: number; r: number; color: string; core: string; intensity: number };
+/** `key` names the source, so a light that moves (a rocketing tank) stays one light rather than leaving a keyed light at every spot it passed. */
+export type PropLight = { x: number; y: number; r: number; color: string; core: string; intensity: number; key: string };
 let lightSink: ((lights: readonly PropLight[]) => void) | null = null;
 /**
  * TODO(lighting): the WebGL lighting pass (another agent's `addLight(...)`, expected in src/client/lighting.ts) is not in the tree yet.
@@ -95,20 +96,20 @@ export function propLights(snap: Pick<Snapshot, 'props' | 'thrown'>, now: number
   const out: PropLight[] = [];
   for (const q of snap.props ?? []) {
     const kind = PROP_KINDS[q[1]]!;
-    if (kind === 'lamp') { const lit = lampLit(q, now); if (lit > 0) out.push({ x: q[2] + 6, y: q[3] + 16, r: 170, color: AMBER, core: '#ffe08a', intensity: 0.3 * lit }); }
-    if (kind === 'generator' && q[4] === 0) out.push({ x: q[2], y: q[3], r: 120, color: EMP, core: EMP, intensity: 0.35 + 0.3 * Math.sin(now / 25) ** 2 });
-    if (kind === 'propane' && q[4] === 0) out.push({ x: q[2], y: q[3], r: 120, color: '#ff9a3c', core: '#ffe08a', intensity: 0.6 });
-    if ((kind === 'medic' || kind === 'ammo') && q[4] === 11) out.push({ x: q[2], y: q[3], r: 56, color: kind === 'medic' ? HEAL : AMBER, core: BONE, intensity: 0.28 });
+    if (kind === 'lamp') { const lit = lampLit(q, now); if (lit > 0) out.push({ x: q[2] + 6, y: q[3] + 16, r: 170, color: AMBER, core: '#ffe08a', intensity: 0.3 * lit, key: `lamp:${q[0]}` }); }
+    if (kind === 'generator' && q[4] === 0) out.push({ x: q[2], y: q[3], r: 120, color: EMP, core: EMP, intensity: 0.35 + 0.3 * Math.sin(now / 25) ** 2, key: `gen:${q[0]}` });
+    if (kind === 'propane' && q[4] === 0) out.push({ x: q[2], y: q[3], r: 120, color: '#ff9a3c', core: '#ffe08a', intensity: 0.6, key: `tank:${q[0]}` });
+    if ((kind === 'medic' || kind === 'ammo') && q[4] === 11) out.push({ x: q[2], y: q[3], r: 56, color: kind === 'medic' ? HEAL : AMBER, core: BONE, intensity: 0.28, key: `pick:${q[0]}` });
   }
-  for (const t of snap.thrown) if (t.kind === 'fireSlick') out.push({ x: t.x, y: t.y, r: t.r * 1.9, color: '#ff9a3c', core: '#ffe08a', intensity: 0.55 + 0.1 * Math.sin(now / 70 + t.id) });
+  for (const t of snap.thrown) if (t.kind === 'fireSlick') out.push({ x: t.x, y: t.y, r: t.r * 1.9, color: '#ff9a3c', core: '#ffe08a', intensity: 0.55 + 0.1 * Math.sin(now / 70 + t.id), key: `slick:${t.id}` });
   for (const b of mem.bursts) {
     const age = now - b.born;
     if (age > 320) continue;
-    const k = 1 - age / 320;
-    if (b.k === 'emp') out.push({ x: b.x, y: b.y, r: b.r + 60, color: EMP, core: EMP, intensity: 0.7 * k });
-    else if (b.k === 'launch') out.push({ x: b.x, y: b.y, r: 150, color: '#ff9a3c', core: '#ffe08a', intensity: 0.8 * k });
-    else if (b.k === 'pop' && b.kind === 'oil') out.push({ x: b.x, y: b.y, r: 160, color: '#ff9a3c', core: '#ffe08a', intensity: 0.9 * k });
-    else if (b.k === 'pop' && b.kind === 'lamp') out.push({ x: b.x, y: b.y - 40, r: 110, color: SPARK, core: '#ffffff', intensity: 0.7 * k });
+    const k = 1 - age / 320, key = `burst:${b.k}:${b.kind}:${Math.round(b.x)},${Math.round(b.y)}`;
+    if (b.k === 'emp') out.push({ x: b.x, y: b.y, r: b.r + 60, color: EMP, core: EMP, intensity: 0.7 * k, key });
+    else if (b.k === 'launch') out.push({ x: b.x, y: b.y, r: 150, color: '#ff9a3c', core: '#ffe08a', intensity: 0.8 * k, key });
+    else if (b.k === 'pop' && b.kind === 'oil') out.push({ x: b.x, y: b.y, r: 160, color: '#ff9a3c', core: '#ffe08a', intensity: 0.9 * k, key });
+    else if (b.k === 'pop' && b.kind === 'lamp') out.push({ x: b.x, y: b.y - 40, r: 110, color: SPARK, core: '#ffffff', intensity: 0.7 * k, key });
   }
   return out;
 }

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WORLD } from '../src/shared/defs.ts';
 import { breath, createFxPool, dropPose, emitFx, footfall, fxCount, glintAt, MOTION, popScale, REST_POSE, turnBetween } from '../src/client/motionfx.ts';
 
 test('the fx pool never grows past its cap and overwrites the oldest', () => {
@@ -12,8 +11,6 @@ test('the fx pool never grows past its cap and overwrites the oldest', () => {
 });
 
 test('drop-in falls from above, lands squashed wide, then rests', () => {
-  const R = WORLD.playerRadius;
-  assert.ok(R > 0);
   assert.equal(dropPose(-5).alpha, 0);
   const air = dropPose(MOTION.dropMs * 0.5);
   assert.ok(air.lift > 0 && air.sy > 1 && air.sx < 1);
@@ -38,7 +35,7 @@ test('pop, footfall, turn and glint helpers', () => {
   assert.notEqual(footfall(0.1), footfall(Math.PI + 0.1));
   assert.ok(turnBetween(0.1, Math.PI * 2 - 0.1) < 0.3);
   assert.ok(turnBetween(0, Math.PI) > 3);
-  assert.ok(glintAt(5, 0) >= 0);
+  assert.equal(glintAt(5, MOTION.glintMs * 3 - 5 * 211), 0, 'dark between glints');
   const peak = Math.max(...Array.from({ length: 100 }, (_, i) => glintAt(7, i * 40)));
   assert.ok(peak > 0.9 && peak <= 1);
 });

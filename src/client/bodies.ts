@@ -9,8 +9,14 @@ const RIM = 1.8;
 const SHADOW_SHIFT = 0.55;
 const SHADOW_FEATHER = 1.3;
 
-const sprites = new Map<string, HTMLCanvasElement>();
-let spritesScale = 0;
+/**
+ * Sprites per drawn scale. The world, a celebration podium and the menu's previews draw soldiers at different scales in the
+ * same frame, so the few most recent scales each keep their own sprites (a zoom only ever adds one at a time) rather than
+ * one cache flushed whenever the scale changes, which repainted every sprite every frame while two scales alternated.
+ */
+const byScale = new Map<number, Map<string, HTMLCanvasElement>>();
+const SCALES_KEPT = 4;
+let lastScale = 0;
 
 function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
@@ -20,7 +26,13 @@ function canvas(side: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
 
 function cached(key: string, pxPerUnit: number, paint: (px: number) => HTMLCanvasElement): HTMLCanvasElement {
   const px = Math.round(pxPerUnit * SCALE_STEP) / SCALE_STEP;
-  if (px !== spritesScale) { sprites.clear(); spritesScale = px; }
+  let sprites = byScale.get(px);
+  if (sprites) { if (lastScale !== px) { byScale.delete(px); byScale.set(px, sprites); } }
+  else {
+    byScale.set(px, (sprites = new Map()));
+    for (const old of byScale.keys()) { if (byScale.size <= SCALES_KEPT) break; byScale.delete(old); }
+  }
+  lastScale = px;
   let image = sprites.get(key);
   if (!image) sprites.set(key, (image = paint(px)));
   return image;

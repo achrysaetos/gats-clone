@@ -73,6 +73,18 @@ test('the lights a view asks for are capped, and only the nearest few cast shado
   assert.equal(wide.length, 3);
 });
 
+test('a fixture whose pool reaches the view from just outside it still lights the view, whatever its kind', () => {
+  const view = { x0: 0, y0: 0, x1: 1000, y1: 600 };
+  for (const kind of ['flood', 'lamp', 'work', 'alarm', 'beacon'] as const) {
+    const base = { id: 1, kind, x: 0, y: 0, lx: 0, ly: 300, angle: Math.PI, phase: 0, region: -1, lamp: '' };
+    const r = fixtureLight(base, { ...night, alarm: true })!.spec.radius;
+    const f = { ...base, lx: view.x1 + r - 20 };
+    const plan = { fixtures: [f] } as unknown as DecorPlan;
+    assert.equal(pickDecorLights(plan, view, { ...night, alarm: true }).length, 1, `a ${kind} ${r - 20} px past the edge reaches ${20} px in`);
+    assert.equal(pickDecorLights(plan, { ...view, x1: view.x1 - 40 }, { ...night, alarm: true }).length, 0, `but not one that falls short`);
+  }
+});
+
 test('reduced motion stills the beacons and the flickering tube, and nothing turns faster than 4 Hz', () => {
   assert.ok(BEACON_HZ < 4);
   const plan = planOf('oldtown');
