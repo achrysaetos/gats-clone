@@ -113,7 +113,7 @@ async function bakeSprites(group: keyof typeof GROUPS): Promise<string[]> {
   const full = JSON.parse(readFileSync(join(BUILD, 'sprites-spec.json'), 'utf8')) as { sprites: Record<string, unknown> };
   const groupSpec = join(BUILD, `sprites-spec.${group}.json`);
   writeFileSync(groupSpec, JSON.stringify({ ...full, sprites: Object.fromEntries(Object.entries(full.sprites).filter(([n]) => g.names(n))) }, null, 1));
-  const scripts = files('art/blender').filter((f) => /bake_sprites\.py$|device\.py$|\/sprites\//.test(f)).filter(g.scripts);
+  const scripts = files('art/blender').filter((f) => /(bake_sprites|device|\/sprites\/\w+)\.py$/.test(f)).filter(g.scripts);
   const inputs = sha(readFileSync(groupSpec), hashFiles([...scripts, ...files('art/sprite-sources')])).slice(0, 16);
   const dir = join(BUILD, group, inputs);
   if (!existsSync(join(dir, '.done'))) {

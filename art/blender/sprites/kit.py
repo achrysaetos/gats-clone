@@ -110,7 +110,7 @@ def broken_wall(p):
     x = 0.0
     while x < w - 2:
         seg = rnd.uniform(12, 28)
-        top = H * rnd.uniform(0.45, 1.0)
+        top = H * rnd.uniform(0.45, 1.0) * (1 - 0.2 * p.stage)
         k.poly('solid', m['stone'], jagged(rnd, x, 0, min(w, x + seg), -h, 1.0, step=4.0, notches=1), 0, top, bevel=0.8)
         k.box('solid', m['hazard'], (x + seg / 2, -h - 0.3, 4.5), (min(seg, w - x) - 1, 0.6, 7))
         x += seg - 0.5
@@ -119,7 +119,7 @@ def broken_wall(p):
         k.limb('solid', rebar, (bx, by, H * 0.4), (bx + rnd.uniform(-4, 4), by + rnd.uniform(-3, 3), H * rnd.uniform(0.85, 1.0)), 0.6, joints=False)
     for _ in range(4):
         k.box('solid', crack, (rnd.uniform(5, w - 5), -h / 2, H * 0.45 + 0.05), (rnd.uniform(4, 9), 0.5, 0.3), rot=(0, 0, rnd.uniform(-0.6, 0.6)))
-    rubble_pile(p, m, 26, big=4.5, height=H * 0.25)
+    rubble_pile(p, m, 26 + 16 * p.stage, big=4.5, height=H * 0.25)
 
 
 def rubble_pile(p, m, count, big=4.0, height=0.0):
@@ -160,6 +160,28 @@ def lowwall(p):
             if 0 < xx < w:
                 k.box('solid', m['groove'], (xx, -h / 2, H / 2), (0.6, h + 0.3, H + 0.3))
     chips(p, m, 4)
+    if p.stage:
+        worn(p, m)
+
+
+def worn(p, m):
+    """Rounds have bitten into a concrete piece: edge chips, dark craters in its top and, worn further, bare rebar and spilled rubble."""
+    w, h, H, k, rnd = p.w, p.h, p.H, p.k, p.rnd
+    crater = C.mat('crater', (0.05, 0.048, 0.045), rough=1.0, grime=0.2, ao=0.6)
+    rebar = C.mat('rebar', (0.12, 0.06, 0.03), rough=0.7, metal=0.6, grime=0.3)
+    chips(p, m, 7 * p.stage)
+    for _ in range(5 * p.stage):
+        x, y, r = rnd.uniform(6, w - 6), -rnd.uniform(3, h - 3), rnd.uniform(2.0, 3.6) * (1 + 0.5 * (p.stage - 1))
+        k.sphere('solid', crater, (x, y, H - r * 0.25), 1.0, scale=(r, r * 0.8, r * 0.5))
+    if p.stage > 1:
+        for _ in range(4):
+            x, y = rnd.uniform(8, w - 8), -rnd.uniform(5, h - 5)
+            k.limb('solid', rebar, (x, y, H * 0.7), (x + rnd.uniform(-3, 3), y + rnd.uniform(-2, 2), H + rnd.uniform(3, 6)), 0.9, joints=False)
+    rubble_pile(p, m, 14 * p.stage, big=3.5)
+
+
+# The share of each course's bags shot away at each wear stage, bottom course first.
+SANDBAG_LOSS = {1: (0.0, 0.15, 0.45), 2: (0.1, 0.45, 0.85)}
 
 
 def sandbags(p):
@@ -171,10 +193,21 @@ def sandbags(p):
         for y in rows:
             x = length / 2 + 0.5 + (length / 2 if ci % 2 else 0)
             while x < w - length / 2 + 0.5:
+                if p.stage and rnd.random() < SANDBAG_LOSS[p.stage][ci]:
+                    x += length
+                    continue
                 k.sphere('solid', rnd.choice(burlap), (x + rnd.uniform(-0.6, 0.6), y + rnd.uniform(-0.5, 0.5), z), 1.0, scale=(length / 2, width / 2, tall / 2 * (1.2 if ci == 2 else 1)), rot=(rnd.uniform(-0.05, 0.05), rnd.uniform(-0.05, 0.05), rnd.uniform(-0.08, 0.08)), segs=14)
                 x += length
             if ci % 2:
                 k.sphere('solid', rnd.choice(burlap), (length / 4 + 0.5, y, z), 1.0, scale=(length / 4, width / 2, tall / 2), segs=12)
+    if p.stage:
+        sand = C.mat('spilled-sand', (0.36, 0.3, 0.19), rough=1.0, grime=0.35, grime_scale=1.6)
+        for _ in range(3 * p.stage):
+            x, y = clamp_in(p, rnd.uniform(6, w - 6), -h + rnd.uniform(-3, 4), 9)
+            k.sphere('solid', sand, (x, y, 0.1), 1.0, scale=(rnd.uniform(6, 10), rnd.uniform(3.5, 5.5), 0.8))
+        for _ in range(2 * p.stage):
+            x, y = clamp_in(p, rnd.uniform(8, w - 8), rnd.choice((1.5, -h - 1.5)), 9)
+            k.sphere('solid', rnd.choice(burlap), (x, y, 1.8), 1.0, scale=(length / 2.3, width / 2.2, 1.8), rot=(0, 0, rnd.uniform(-0.5, 0.5)), segs=12)
 
 
 def railing(p):
