@@ -51,7 +51,7 @@ async function fetchCounted(url: string, onBytes: (n: number, total: number) => 
 async function textureFrom(blob: Blob | null): Promise<Texture | null> {
   if (!blob) return null;
   const url = URL.createObjectURL(blob);
-  try { return await Assets.load<Texture>({ src: url, loadParser: 'loadTextures' }); } catch { return null; } finally { URL.revokeObjectURL(url); }
+  try { return await Assets.load<Texture>({ src: url, parser: 'loadTextures' }); } catch { return null; } finally { URL.revokeObjectURL(url); }
 }
 
 /** Starts loading the art and returns at once; frames read as stand-ins until their atlas lands. */
