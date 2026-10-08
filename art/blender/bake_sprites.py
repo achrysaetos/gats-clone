@@ -22,7 +22,6 @@ from sprites import fx, guns, kit, props, soldier, zombies  # noqa: E402
 BUILDERS = {
     'soldier': soldier.build,
     'gun': guns.build,
-    'drop': guns.build_drop,
     'zombie': zombies.build,
     'engineer-wall': props.build_engineer_wall,
     'siege-wall': props.build_siege_wall,

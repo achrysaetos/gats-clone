@@ -31,7 +31,6 @@ One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the pain
 | `soldier.shadow` | 16 | 1 | shadow | whole body in the aim stance |
 | `soldier.downed` | 1, turned by the painter | 1 | base, team | prone, crawling, overhead lit |
 | `soldier.dead` | 1, turned by the painter | 3 variants | base, team | on the back, face down, on the side |
-| `drop.<class>` | 1, turned by the painter | 1 | base | the class's base gun lying on the floor |
 
 `SOLDIER` in `catalog.ts` holds the frame layout. The gun stays its own sprite: the aim, recoil and reload poses keep the hands on the grip (x 12.5) and fore-end (x 21.5) of a gun drawn at the origin. Recoil frame 1 matches a gun drawn at full kick (`RECOIL`), frame 2 at half.
 
