@@ -11,6 +11,15 @@ const PREFETCH = 1;
 
 export type TileId = `${number}_${number}`;
 
+/** How long a tile that failed to load waits before it is asked for again, by failures so far; past the last it is given up on until the layout changes. */
+export const TILE_RETRY_MS = [1000, 4000, 15_000, 60_000] as const;
+export type TileFailure = { tries: number; retryAt: number };
+
+export function failTile(prev: TileFailure | undefined, now: number): TileFailure {
+  const tries = (prev?.tries ?? 0) + 1;
+  return { tries, retryAt: now + (TILE_RETRY_MS[tries - 1] ?? Infinity) };
+}
+
 /** The tiles covering `view` plus a ring around it, nearest first. */
 export function tilesFor(view: View, map: Pick<MapTiles, 'span' | 'origin' | 'count'>, ring = PREFETCH): TileId[] {
   const cell = (v: number) => Math.floor((v - map.origin) / map.span);
@@ -41,13 +50,14 @@ function plainGround(walls: readonly WallView[], size: number): Graphics {
 }
 
 export function createGround(art: Art, layer: Container, waterLayer: Container) {
-  const water = new TilingSprite({ texture: art.water ?? undefined, width: 1, height: 1 });
-  if (!art.water) water.tint = 0x2c5f7c;
+  const water = new TilingSprite({ texture: undefined, width: 1, height: 1 });
+  water.tint = 0x2c5f7c;
   waterLayer.addChild(water);
   let layout = '';
   let plain: Graphics | null = null;
   const loaded = new Map<string, Texture>();
   const loading = new Set<string>();
+  const failed = new Map<string, TileFailure>();
   const shown = new Map<string, Sprite>();
 
   function setLayout(next: string, walls: readonly WallView[], size: number) {
@@ -57,18 +67,19 @@ export function createGround(art: Art, layer: Container, waterLayer: Container) 
     shown.clear();
     for (const url of loaded.keys()) void Assets.unload(url);
     loaded.clear();
+    failed.clear();
     plain?.destroy();
     plain = plainGround(walls, size);
     layer.addChildAt(plain, 0);
   }
 
-  function stream(view: View) {
+  function stream(view: View, now: number) {
     const map = art.manifest.maps[layout];
     if (!map) return;
     const wanted = tilesFor(view, map).filter((id) => map.tiles[id]);
     for (const id of wanted) {
       const url = ASSET_ROOT + map.tiles[id]!;
-      if (loaded.has(url) || loading.has(url)) continue;
+      if (loaded.has(url) || loading.has(url) || now < (failed.get(url)?.retryAt ?? 0)) continue;
       loading.add(url);
       const forLayout = layout;
       Assets.load<Texture>(url).then((tex) => {
@@ -81,7 +92,10 @@ export function createGround(art: Art, layer: Container, waterLayer: Container) 
         s.scale.set(map.span / tex.width);
         layer.addChild(s);
         shown.set(url, s);
-      }, () => loading.delete(url));
+      }, () => {
+        loading.delete(url);
+        if (forLayout === layout) failed.set(url, failTile(failed.get(url), performance.now()));
+      });
     }
     if (loaded.size <= KEEP) return;
     const keep = new Set(wanted.map((id) => ASSET_ROOT + map.tiles[id]!));
@@ -98,7 +112,8 @@ export function createGround(art: Art, layer: Container, waterLayer: Container) 
     /** Shows `layout`'s ground for `view`, and places the water under the whole screen in step with the world. */
     draw(next: string, walls: readonly WallView[], size: number, view: View, screen: { w: number; h: number; x: number; y: number; scale: number }, now: number) {
       setLayout(next, walls, size);
-      stream(view);
+      if (art.water && water.texture !== art.water) { water.texture = art.water; water.tint = 0xffffff; }
+      stream(view, performance.now());
       water.width = screen.w;
       water.height = screen.h;
       water.tileScale.set((screen.scale * WATER_REPEAT) / water.texture.width);
@@ -106,5 +121,6 @@ export function createGround(art: Art, layer: Container, waterLayer: Container) 
     },
     /** How many tiles of the current layout are on the GPU, for the dev probe. */
     loadedTiles: () => loaded.size,
+    failedTiles: () => failed.size,
   };
 }

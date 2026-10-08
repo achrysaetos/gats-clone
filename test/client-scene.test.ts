@@ -12,7 +12,7 @@ import { createPool } from '../src/client/particles.ts';
 import type { Session } from '../src/client/state.ts';
 import { ART, SHADOW_PER_HEIGHT } from '../src/client/world/art.ts';
 import { facing } from '../src/client/world/catalog.ts';
-import { tilesFor } from '../src/client/world/ground.ts';
+import { failTile, tilesFor, TILE_RETRY_MS, type TileFailure } from '../src/client/world/ground.ts';
 import { layoutKey, mapLayoutKey } from '../src/client/world/layout.ts';
 import { describeWorld, inShadow, type Scene } from '../src/client/world/scene.ts';
 
@@ -130,6 +130,20 @@ test('the ground streams the tiles under the view first, a ring past it, and not
   assert.ok(!ids.includes('4_4'));
   const corner = tilesFor({ x0: -500, y0: -500, x1: 100, y1: 100 }, map);
   assert.ok(corner.every((id) => id.split('_').every((v) => Number(v) >= 0)), 'never a tile left or above the map');
+});
+
+test('a ground tile that keeps failing is asked for a handful of times with growing gaps, then never again', () => {
+  const asks: number[] = [];
+  let fail: TileFailure | undefined;
+  for (let now = 0; now < 10 * 60_000; now += 1000 / 60) {
+    if (now < (fail?.retryAt ?? 0)) continue;
+    asks.push(now);
+    fail = failTile(fail, now);
+  }
+  assert.equal(asks.length, TILE_RETRY_MS.length + 1, `asked ${asks.length} times in ten minutes of frames`);
+  const gaps = asks.slice(1).map((t, i) => t - asks[i]!);
+  assert.ok(gaps.every((g, i) => i === 0 || g > gaps[i - 1]!), `gaps grow: ${gaps.map(Math.round).join(', ')}`);
+  assert.ok(gaps[0]! >= 1000);
 });
 
 test("the ground is keyed by the map's own walls, so an engineer's wall coming or going never swaps it", () => {

@@ -16,6 +16,7 @@ mkdirSync(OUT, { recursive: true });
 
 let myId: number | null = null;
 let full = null as Snapshot | null;
+let booms: { at: number; x: number; y: number; r: number }[] = [];
 const page = await openPage({
   profile: 'skirmish-screens-',
   viewport: { width: VIEW.w, height: VIEW.h },
@@ -23,7 +24,10 @@ const page = await openPage({
     if (method !== 'Network.webSocketFrameReceived') return;
     const msg = JSON.parse(params.response.payloadData);
     if (msg.t === 'welcome') { myId = msg.id; full = null; }
-    if (msg.t === 'snap') full = fillSnapshot(msg, full) ?? full;
+    if (msg.t === 'snap') {
+      full = fillSnapshot(msg, full) ?? full;
+      for (const ev of full?.events ?? []) if (ev.e === 'boom') booms.push({ at: Date.now(), x: ev.x, y: ev.y, r: ev.r });
+    }
   },
 });
 const { cdp, js } = page;
@@ -37,7 +41,7 @@ const shot = async (name: string) => {
 };
 
 async function openMenu() {
-  await cdp('Page.navigate', { url: `${BASE}/?dev` });
+  await cdp('Page.navigate', { url: `${BASE}/?dev${process.env.QUALITY ? `&quality=${process.env.QUALITY}` : ''}` });
   await serversListed(page, 8000);
   await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.getElementById('name').value = 'You'`);
 }
@@ -148,6 +152,23 @@ for (const view of VIEWS) {
       for (let i = 0; i < 1200 && !(full?.run?.phase === 'night' && zombies().length >= 40); i++) await play(300, nearCore, zombies, full?.run?.phase === 'night');
       await play(1500, nearCore, zombies);
       await shot('zom-night');
+      break;
+    }
+    case 'zom-boom': {
+      if (!full?.run) await enter(`document.getElementById('squad-start').click()`);
+      for (let i = 0; i < 1200 && !(full?.run?.phase === 'night' && zombies().length >= 10); i++) {
+        if (i % 20 === 0) console.log(`waiting for the horde: ${full?.run?.phase ?? 'no run'}, ${zombies().length} zombies in view`);
+        await play(300, nearCore, zombies, full?.run?.phase === 'night');
+      }
+      const inView = (b: { x: number; y: number }) => { const self = me(); return !!self && Math.abs(b.x - self.x) < 500 && Math.abs(b.y - self.y) < 280; };
+      for (let n = 1; n <= 3; n++) {
+        booms = [];
+        for (let i = 0; i < 400 && !booms.some(inView); i++) await play(150, nearCore, zombies, full?.run?.phase === 'night');
+        const boom = booms.find(inView);
+        if (!boom) break;
+        console.log(`boom r=${boom.r} at ${Math.round(boom.x - me()!.x)},${Math.round(boom.y - me()!.y)} from the player`);
+        for (const k of ['a', 'b', 'c', 'd']) { await sleep(110); await shot(`zom-boom-${n}${k}`); }
+      }
       break;
     }
     default: console.error(`unknown view ${view}`);

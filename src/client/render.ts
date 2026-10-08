@@ -6,7 +6,8 @@ import { createPool } from './particles.ts';
 import { drawLabels } from './world/labels.ts';
 import { mapLayoutKey } from './world/layout.ts';
 import { describeWorld, type Frame, type Scene } from './world/scene.ts';
-import { createWorld, type Quality, type World } from './world/stage.ts';
+import type { Knobs } from './quality.ts';
+import { createWorld, type World } from './world/stage.ts';
 
 export { bodyColor } from './world/scene.ts';
 
@@ -16,8 +17,9 @@ export { bodyColor } from './world/scene.ts';
  */
 let world: World | null = null;
 
-export async function initWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<void> {
-  world = await createWorld(canvas, quality);
+export async function initWorld(canvas: HTMLCanvasElement, knobs: () => Knobs): Promise<World> {
+  world = await createWorld(canvas, knobs);
+  return world;
 }
 
 export const resizeWorld = (w: number, h: number, dpr: number) => world?.resize(w, h, dpr);
@@ -71,7 +73,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const view = { x0: x - w / zoom / 2, y0: y - h / zoom / 2, x1: x + w / zoom / 2, y1: y + h / zoom / 2 };
   const scene: Scene = {
     view, size, layout: mapLayoutKey(backdropWalls), dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
-    crates: BACKDROP_MAP.breakables.map((at, i) => { const { x, y, w } = placed(at).foot; return { id: i, x, y, size: w, tier: undefined, wear: 0 }; }),
+    crates: !world?.art.loaded() ? [] : BACKDROP_MAP.breakables.map((at, i) => { const { x, y, w } = placed(at).foot; return { id: i, x, y, size: w, tier: undefined, wear: 0 }; }),
     engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
     ghost: null, killer: null, numbers: [], effects: [], particles: noParticles,
   };

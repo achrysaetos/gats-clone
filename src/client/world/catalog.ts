@@ -1,4 +1,4 @@
-import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId, type TurretKind, type ZombieKind } from '../../shared/defs.ts';
+import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId } from '../../shared/defs.ts';
 import { GUN_PARTS } from '../sprites.ts';
 import { KIT } from '../../shared/kit.ts';
 
@@ -87,5 +87,3 @@ export function facing(angle: number, dirs: number): { dir: number; rest: number
 
 export const crateSprite = (tier: CrateTier | undefined, wear: number) => `crate.${tier ?? 'plain'}.${Math.min(CRATE_STAGES - 1, Math.floor(wear * CRATE_STAGES))}`;
 export const siegeWallSprite = (wear: number) => `siege.wall.${Math.min(WALL_STAGES - 1, Math.floor(wear * WALL_STAGES))}`;
-export const zombieSprite = (kind: ZombieKind) => `zombie.${kind}`;
-export const turretSprite = (kind: TurretKind) => `turret.${kind}`;

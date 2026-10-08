@@ -87,6 +87,7 @@ type Page = {
   camera: () => Camera | null;
   ghost: () => Ghost | null;
   audio: () => AudioStats;
+  quality: () => unknown;
 };
 
 export function installDevProbe(page: Page) {
@@ -131,5 +132,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), juice: () => juice.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, world: worldProbe, toScreen, trigger, audio: page.audio } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), juice: () => juice.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, world: worldProbe, toScreen, trigger, audio: page.audio, quality: page.quality } });
 }

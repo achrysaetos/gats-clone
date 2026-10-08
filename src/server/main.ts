@@ -76,8 +76,10 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
     const useGzip = gz !== null && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
     if (useGzip) headers['content-encoding'] = 'gzip';
     if (gz !== null) headers.vary = 'accept-encoding';
+    const body = useGzip ? gz : data;
+    headers['content-length'] = String(body.length);
     res.writeHead(200, headers);
-    res.end(useGzip ? gz : data);
+    res.end(body);
   } catch {
     res.writeHead(404).end('Not found');
   }

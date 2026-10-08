@@ -191,6 +191,15 @@ kbd {
   box-shadow: 0 -8px 14px -10px rgba(30, 32, 38, 0.4);
 }
 .play-actions .status:empty { display: none; }
+.quality-modes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s1); }
+.quality-modes button { padding: var(--s2) 0; font-size: var(--t-label); }
+.quality-now { margin: var(--s2) 0 0; font-size: var(--t-label); }
+.art-load { display: flex; align-items: center; gap: var(--s2); margin-top: 10px; font-size: var(--t-label); color: var(--muted); }
+.art-load[hidden] { display: none; }
+.art-bar { flex: 0 0 96px; height: 4px; border-radius: 2px; background: var(--well); overflow: hidden; }
+.art-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 120ms linear; }
+.art-load.error { color: var(--danger); }
+.art-load.error .art-bar { display: none; }
 
 .field { display: grid; gap: 6px; }
 .field span { font-size: var(--t-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }

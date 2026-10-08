@@ -2,6 +2,9 @@
 // Usage: [BLENDER=<binary>] [ART_GPU=1] npm run art [-- --only maps|sprites|water|sounds] [--maps plaza,oldtown]   ART_GPU=1 renders on the GPU when Blender finds one.
 // Rebuilds every baked asset the client loads and rewrites public/assets/manifest.json. Each bake is keyed by a hash of
 // everything it reads, so an unchanged map or sprite set is reused from art/build instead of rendered again.
+// Needs Blender 4.5 or later for maps and sprites (BLENDER, else `blender` on PATH, else the macOS app bundle), and ffmpeg
+// on PATH plus network access for sounds, which downloads each source once into art/build/sfx-cache.
+// The maps step runs art/blender/check_map.py on each map first and stops on any geometry its collision rects miss.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -15,12 +18,26 @@ import { layoutKey } from '../../src/client/world/layout.ts';
 import { packFrames, type Frame } from './pack.ts';
 import { makeWater } from './water.ts';
 
-const BLENDER = process.env.BLENDER ?? '/opt/blender-dl/blender-4.5.3-linux-x64/blender';
 const BUILD = 'art/build';
 const OUT = 'public/assets';
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
 const pickedMaps = args.includes('--maps') ? (args[args.indexOf('--maps') + 1]!.split(',') as MapId[]) : [...MAP_IDS];
+const runs = (step: 'maps' | 'sprites' | 'water' | 'sounds') => !only || only === step;
+
+const fail = (message: string): never => { console.error(`npm run art: ${message}`); process.exit(1); };
+const answers = (cmd: string, flag: string) => spawnSync(cmd, [flag], { stdio: 'ignore' }).status === 0;
+const MAC_BLENDER = '/Applications/Blender.app/Contents/MacOS/Blender';
+function findBlender(): string {
+  if (process.env.BLENDER) {
+    if (answers(process.env.BLENDER, '--version')) return process.env.BLENDER;
+    fail(`BLENDER=${process.env.BLENDER} does not run. Point it at a Blender 4.5+ binary.`);
+  }
+  for (const cmd of ['blender', MAC_BLENDER]) if (answers(cmd, '--version')) return cmd;
+  return fail(`Blender not found: tried \`blender\` on PATH and ${MAC_BLENDER}. Install Blender 4.5+ or set BLENDER to its binary.`);
+}
+const BLENDER = runs('maps') || runs('sprites') ? findBlender() : '';
+if (runs('sounds') && !answers('ffmpeg', '-version')) fail('ffmpeg not found on PATH; the sounds step encodes with it. Install ffmpeg, or pass --only maps|sprites|water.');
 
 const sha = (...parts: (string | Buffer)[]) => {
   const h = createHash('sha256');
@@ -52,6 +69,10 @@ const spec = JSON.parse(readFileSync(join(BUILD, 'spec.json'), 'utf8')) as { map
 const mapScripts = [...files('art/blender').filter((f) => /bake_map\.py$|scene\.py$/.test(f)), ...files('art/textures')];
 
 async function bakeMap(id: MapId) {
+  const check = spawnSync(BLENDER, ['-b', '-P', 'art/blender/check_map.py', '--', join(BUILD, 'spec.json'), id], { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
+  const verdict = check.stdout.split('\n').filter((l) => /uncovered/.test(l));
+  console.log(verdict.join('\n'));
+  if (check.status !== 0) fail(`${id}: art/blender/check_map.py found geometry its collision rects do not cover (above). Fix the map or bake_map.py before baking.`);
   const key = layoutKey(MAPS[id].walls);
   const { maps: _, ...shared } = spec as Record<string, unknown>;
   const inputs = sha(JSON.stringify(shared), JSON.stringify(spec.maps.find((m) => m.id === id)), hashFiles(mapScripts)).slice(0, 16);
@@ -105,10 +126,10 @@ async function bakeSprites() {
   console.log(`sprites: ${frames.length} frames on ${pages.length} pages, ${(bytes / 1024).toFixed(0)} KB`);
 }
 
-if (!only || only === 'maps') for (const id of pickedMaps) await bakeMap(id);
-if (!only || only === 'sprites') await bakeSprites();
-if (!only || only === 'water') manifest.water = emit('', 'water', 'webp', await makeWater());
-if (!only || only === 'sounds') {
+if (runs('maps')) for (const id of pickedMaps) await bakeMap(id);
+if (runs('sprites')) await bakeSprites();
+if (runs('water')) manifest.water = emit('', 'water', 'webp', await makeWater());
+if (runs('sounds')) {
   const sounds = 'scripts/art/sounds.ts';
   if (existsSync(sounds)) run('node', [sounds]);
 }
