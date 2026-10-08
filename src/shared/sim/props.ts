@@ -21,7 +21,8 @@ export function damageProp(w: World, q: Prop, amount: number, spark: PropSpark, 
   setOff(w, q, spark, dir);
 }
 
-const gone = (w: World, q: Prop) => { q.respawnAt = w.now + PROPS[q.kind].respawnMs; w.wallsVersion++; };
+/** It goes away, and back to its spot on the map to stand again there (a propane tank bursts wherever its flight ends). */
+const gone = (w: World, q: Prop) => { q.respawnAt = w.now + PROPS[q.kind].respawnMs; q.x = q.home.x; q.y = q.home.y; w.wallsVersion++; };
 
 function setOff(w: World, q: Prop, spark: PropSpark, dir: { x: number; y: number }) {
   const owner = spark.attacker?.id ?? -1;

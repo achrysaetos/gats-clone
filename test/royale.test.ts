@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RING, ZOM } from '../src/shared/defs.ts';
+import { RING, WORLD, ZOM } from '../src/shared/defs.ts';
+import { goDown } from '../src/shared/sim/downed.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -85,6 +86,23 @@ test('the last squad standing wins, and every squad reads back the place it went
   const place = (p: Player) => snapshotFor(w, p.id).royale!.result?.place;
   assert.deepEqual([place(shooter), place(red), place(green)], [1, 2, 3]);
   assert.equal(snapshotFor(w, shooter.id).royale!.result!.of, 3);
+});
+
+test('a winner still knocked when the next match starts has the life it ends paid, like those standing', () => {
+  const w = emptyWorld('BR');
+  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
+  const mate = spawnAt(w, 3000, 3000, { team: 'blue' });
+  const green = spawnAt(w, 1200, 1000, { team: 'green' });
+  mate.score = 300;
+  goDown(w, mate, 50);
+  shootUntilDead(w, shooter, green);
+  step(w, TICK_MS);
+  assert.equal(w.match.k, 'over');
+  w.lifeRecords.length = 0;
+  run(w, WORLD.roundRestartMs + 500);
+  assert.equal(w.match.k, 'playing', 'the next match is on');
+  assert.deepEqual(w.lifeRecords.filter((r) => r.id === mate.id).map((r) => r.score), [300], 'the knocked winner\'s life is paid');
+  assert.equal(w.lifeRecords.filter((r) => r.id === shooter.id).length, 1, 'as is the standing one\'s');
 });
 
 test('bullets spare a squadmate but hurt every other squad', () => {

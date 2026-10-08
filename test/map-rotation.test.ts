@@ -223,3 +223,15 @@ test('a joined client receives the new map\'s walls when the round restarts', ()
   assert.equal(walls.length, 1, 'one walls message for the one map change');
   assert.deepEqual(walls[0].t === 'walls' && walls[0].walls, [...MAPS[second].walls, ...polyParts(MAPS[second])].map((r) => ({ ...r, built: false })));
 });
+
+test('DOM: when both teams pass the target in the same tick, the team further ahead wins, not always red', () => {
+  const w = createWorld('DOM', 1, dealt('DOM')[0]);
+  w.teamScore = { red: WORLD.domWinScore + 0.05, blue: WORLD.domWinScore + 0.15 };
+  run(w, TICK_MS);
+  assert.ok(w.match.k === 'over', 'the round is over');
+  assert.equal(w.match.winner.name, 'Blue team');
+  const tie = createWorld('DOM', 1, dealt('DOM')[0]);
+  tie.teamScore = { red: WORLD.domWinScore + 0.1, blue: WORLD.domWinScore + 0.1 };
+  run(tie, TICK_MS);
+  assert.ok(tie.match.k === 'over', 'a dead heat over the target still ends the round');
+});

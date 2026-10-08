@@ -39,11 +39,12 @@ const teamKills = (w: World, team: Team) => [...w.players.values()].reduce((sum,
 
 /** The first team to the target, or once the map's time is up the team ahead, on kills if the score is level. A dead heat crowns nobody. */
 function teamWinner(w: World, target: number): RoundWinner | null {
-  if (w.teamScore.red >= target) return teamWin('red');
-  if (w.teamScore.blue >= target) return teamWin('blue');
+  const lead = () => w.teamScore.red - w.teamScore.blue || teamKills(w, 'red') - teamKills(w, 'blue');
+  // Both teams can pass the target in one tick (zone points accrue to each), so the team further ahead takes it, not whichever is checked first.
+  if (w.teamScore.red >= target || w.teamScore.blue >= target) return teamWin(lead() < 0 ? 'blue' : 'red');
   if (w.now < w.mapChangeAt) return null;
-  const lead = w.teamScore.red - w.teamScore.blue || teamKills(w, 'red') - teamKills(w, 'blue');
-  return lead === 0 ? null : { ...teamWin(lead > 0 ? 'red' : 'blue'), note: 'Time ran out' };
+  const ahead = lead();
+  return ahead === 0 ? null : { ...teamWin(ahead > 0 ? 'red' : 'blue'), note: 'Time ran out' };
 }
 
 /** `present` is the one team standing on the zone, or null when it is empty. Another team's partial capture drains before a capture
@@ -165,7 +166,8 @@ function startRound(w: World) {
   w.teamScore = { red: 0, blue: 0 };
   for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
   for (const p of w.players.values()) {
-    if (p.life.k === 'alive') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+    // A knocked Last Squad player's life ends here too (a dead one's was paid when it ended).
+    if (p.life.k !== 'dead') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
     p.lifeKills = 0;
     p.feats = freshFeats();
     resetProgress(p, w);

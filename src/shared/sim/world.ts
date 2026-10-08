@@ -148,6 +148,8 @@ export type Barrel = { id: number; x: number; y: number; hp: number; fuseAt: num
 export type Prop = {
   id: number; kind: PropKind; x: number; y: number; hp: number; phase: 'stand' | 'active' | 'spent'; at: number; respawnAt: number | null;
   vx: number; vy: number; by: { attacker: number | null; team: Team } | null;
+  /** Its spot on the map, where it stands again: a propane tank bursts wherever its flight ends. */
+  home: { x: number; y: number };
 };
 /** Barrels that burst one after another from one spark, and the kills they made, so a chain of two or more barrels that kills two or more earns Chain Reaction. */
 export type Chain = { by: number | null; barrels: number; kills: number; paid: boolean; at: number };
@@ -349,7 +351,7 @@ export function loadMap(w: World, map: MapId) {
   w.wallsVersion++;
   w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
   w.barrels = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.barrels.map((b) => ({ id: newId(w), x: b.x, y: b.y, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null })) : [];
-  w.props = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.props.map((q) => ({ id: newId(w), kind: q.kind, x: q.x, y: q.y, hp: PROPS[q.kind].hp, phase: 'stand' as const, at: 0, respawnAt: null, vx: 0, vy: 0, by: null })) : [];
+  w.props = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.props.map((q) => ({ id: newId(w), kind: q.kind, x: q.x, y: q.y, hp: PROPS[q.kind].hp, phase: 'stand' as const, at: 0, respawnAt: null, vx: 0, vy: 0, by: null, home: { x: q.x, y: q.y } })) : [];
   w.emps = new Map();
   w.chains = new Map();
   w.airdrops = { due: hasArenaSurprises(w.mode) ? planAirdrops(w) : [], flight: null };

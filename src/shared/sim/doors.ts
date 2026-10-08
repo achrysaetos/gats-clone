@@ -157,6 +157,13 @@ function pushing(w: World, d: MapDoor): { sign: 1 | -1 } | null {
   return null;
 }
 
+/** Whether swinging from leaves `cur` to `cand` would put a leaf on a body it is not already touching (a leaf never crushes). */
+function crushes(w: World, cand: readonly Rect[], cur: readonly Rect[]): boolean {
+  const touches = (p: Body, leaves: readonly Rect[]) => leaves.some((l) => circleHitsRect(p.x, p.y, WORLD.playerRadius, l));
+  for (const p of w.players.values()) if (p.life.k !== 'dead' && touches(p, cand) && !touches(p, cur)) return true;
+  return false;
+}
+
 /** Advances every door one tick. */
 export function tickDoors(w: World, dtMs: number): void {
   const defs = MAPS[w.map].doors;
@@ -194,11 +201,7 @@ export function tickDoors(w: World, dtMs: number): void {
     const step = Math.max(1, Math.round((255 * dtMs) / ms));
     const next = opening ? Math.min(s.target, s.open + step) : Math.max(s.target, s.open - step);
     // A leaf never crushes: if its next shape would touch a body that the current one does not, it waits.
-    const cand = doorLeaves(d, next, s.sign), cur = doorLeaves(d, s.open, s.sign);
-    const touches = (p: Body, leaves: readonly Rect[]) => leaves.some((l) => circleHitsRect(p.x, p.y, WORLD.playerRadius, l));
-    let crush = false;
-    for (const p of w.players.values()) if (p.life.k !== 'dead' && touches(p, cand) && !touches(p, cur)) { crush = true; break; }
-    if (crush) continue;
+    if (crushes(w, doorLeaves(d, next, s.sign), doorLeaves(d, s.open, s.sign))) continue;
     s.open = next;
     reshape(w, s);
   }
@@ -211,10 +214,16 @@ export function blastDoors(w: World, x: number, y: number, radius: number): void
   for (const s of w.doors) {
     const d = defs[s.idx]!;
     if (d.locked || !isSwing(d) || spanDist(d, { x, y }) > radius) continue;
-    s.sign = d.side ?? (-sideOf(d, { x, y }) as 1 | -1);
+    const sign = d.side ?? (-sideOf(d, { x, y }) as 1 | -1), open = Math.max(s.open, 230);
     s.target = 255;
-    s.open = Math.max(s.open, 230);
     s.closeAt = w.now + doorHoldMs(d) + 1500;
+    // Not through a body in its sweep: the leaf then swings open from where it is (`tickDoors`) and stops against them.
+    if (crushes(w, doorLeaves(d, open, sign), doorLeaves(d, s.open, s.sign))) {
+      if (s.open === 0) s.sign = sign;
+      continue;
+    }
+    s.sign = sign;
+    s.open = open;
     reshape(w, s);
   }
 }

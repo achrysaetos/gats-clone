@@ -266,6 +266,9 @@ function restartRun(w: World) {
   const players = [...w.players.values()];
   for (const p of players) { p.x = -Infinity; p.y = -Infinity; }
   for (const p of players) {
+    // The run's life ends here, as a versus round's does at its restart, so what it scored is paid before it is wiped (a squad keeps its progress through a death, so the dead too).
+    w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+    p.lifeKills = 0;
     resetProgress(p, w);
     p.kills = 0;
     p.deaths = 0;

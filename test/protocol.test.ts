@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEFAULT_VIEW_ASPECT, parseClientMsg, VIEW_ASPECT } from '../src/shared/protocol.ts';
+import { clampAspect, cleanName, DEFAULT_VIEW_ASPECT, NAME_MAX, parseClientMsg, VIEW_ASPECT, viewExtents } from '../src/shared/protocol.ts';
 
 const input = { up: true, down: false, left: false, right: false, angle: 1, fire: false, reload: false, ability: false, aimDist: 100 };
 const loadout = { weapon: 'smg', armor: 'light', color: 'blue' };
@@ -41,6 +41,21 @@ test('parseClientMsg accepts well-formed frames and clamps or cleans fields', ()
   const inp = parseClientMsg(JSON.stringify({ t: 'input', seq: 5, input: { ...input, aimDist: 99999 } }));
   assert.ok(inp?.t === 'input');
   assert.equal(inp.input.aimDist, 2000);
+});
+
+test('a name cut to its length never ends in a space or half a character, so a guest cannot wear a padded copy of an account name', () => {
+  assert.equal(cleanName('Abcdefghijklmno xyz'), 'Abcdefghijklmno', 'no trailing space left by the cut');
+  const astral = '\u{1D49C}';
+  assert.equal(cleanName(`${'a'.repeat(15)}${astral}${astral}`), 'a'.repeat(15), 'an astral letter that does not fit is dropped whole, never split');
+  assert.equal(cleanName(astral.repeat(20)), astral.repeat(NAME_MAX / 2), 'whole letters within the length');
+});
+
+test('a non-finite aspect (a 0x0 viewport is 0/0) clamps to the default, never NaN', () => {
+  assert.equal(clampAspect(NaN), DEFAULT_VIEW_ASPECT);
+  assert.equal(clampAspect(Infinity), DEFAULT_VIEW_ASPECT);
+  assert.equal(clampAspect(-Infinity), DEFAULT_VIEW_ASPECT);
+  assert.ok(Number.isFinite(viewExtents(500, 0 / 0).halfH));
+  assert.equal(clampAspect(0.5), VIEW_ASPECT.min, 'finite values still clamp as before');
 });
 
 test('the viewport aspect a client claims is clamped between square and 21:9 at the boundary', () => {
