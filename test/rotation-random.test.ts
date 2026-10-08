@@ -21,6 +21,30 @@ test('the deal is a pure function of the seed, and different seeds deal differen
   assert.ok(orders.size >= 4, 'seeds give varied orders');
 });
 
+test('no repeat across a cycle boundary, over many seeds: a cycle never opens on the map the last one closed with', () => {
+  for (const mode of VERSUS) {
+    const n = ROTATION[mode].length;
+    for (let seed = 0; seed < 300; seed++) {
+      for (let c = 1; c < 4; c++) assert.notEqual(rotationMap(mode, seed, c * n), rotationMap(mode, seed, c * n - 1), `${mode} seed ${seed} cycle ${c}`);
+    }
+  }
+});
+
+test('the shuffle is fair: every map opens a room about as often, and each cycle is dealt afresh', () => {
+  const n = ROTATION.FFA.length;
+  const opens = new Map<string, number>();
+  let sameOrder = 0;
+  const seeds = 100 * n;
+  for (let seed = 0; seed < seeds; seed++) {
+    opens.set(rotationMap('FFA', seed, 0), (opens.get(rotationMap('FFA', seed, 0)) ?? 0) + 1);
+    const cycle = (c: number) => Array.from({ length: n }, (_, i) => rotationMap('FFA', seed, c * n + i)).join();
+    if (cycle(1) === cycle(2)) sameOrder++;
+  }
+  // Each map is expected to open 100 times; a biased shuffle (one that never leaves a map where it started) never opens on the first.
+  for (const map of ROTATION.FFA) assert.ok((opens.get(map) ?? 0) > 50, `${map} opened ${opens.get(map) ?? 0} of ${seeds} rooms`);
+  assert.equal(sameOrder, 0, 'two cycles of a room never repeat the same order');
+});
+
 test('nextMap walks the deal and skips a repeat of the current map', () => {
   const w = { mode: 'TDM' as const, map: rotationMap('TDM', 9, 0), rotationSeed: 9, rotationAt: 0 };
   const a = nextMap(w);

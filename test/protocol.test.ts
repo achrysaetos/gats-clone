@@ -8,6 +8,9 @@ const loadout = { weapon: 'smg', armor: 'light', color: 'blue' };
 test('parseClientMsg rejects malformed frames', () => {
   const bad: unknown[] = [
     '{not json',
+    // JSON has no Infinity, but an overflowing literal parses to one; it must not be clamped into a legal value.
+    '{"t":"input","seq":1,"input":{"up":true,"angle":1e999,"aimDist":100}}',
+    '{"t":"input","seq":1e999,"input":{"up":true,"angle":1,"aimDist":100}}',
     '42',
     'null',
     { t: 'teleport', x: 1 },
@@ -38,6 +41,16 @@ test('parseClientMsg accepts well-formed frames and clamps or cleans fields', ()
   assert.deepEqual(parseClientMsg(JSON.stringify({ t: 'pick', level: 5, option: 'railSlug', extra: 1 })), { t: 'pick', level: 5, option: 'railSlug' });
   const join = parseClientMsg(JSON.stringify({ t: 'join', name: '<b>Ace</b>!!', loadout }));
   assert.deepEqual(join, { t: 'join', name: 'bAceb', loadout, token: undefined, aspect: DEFAULT_VIEW_ASPECT });
+  const nameOf = (name: unknown) => { const m = parseClientMsg(JSON.stringify({ t: 'join', name, loadout })); return m?.t === 'join' ? m.name : null; };
+  assert.equal(nameOf('Abcdefghijklmnopqrstuvwxyz'), 'Abcdefghijklmnop', 'cut to 16 characters');
+  assert.equal(nameOf('  Ze_ro.9-x  '), 'Ze_ro.9-x', 'letters, digits, space, _ . - kept, the ends trimmed');
+  assert.equal(nameOf('Łukasz 東京'), 'Łukasz 東京', 'any script');
+  assert.equal(nameOf('<>{}'), 'Unnamed');
+  assert.equal(nameOf(42), 'Unnamed');
+  const chat = parseClientMsg(JSON.stringify({ t: 'chat', text: `  ${'x'.repeat(200)}  ` }));
+  assert.deepEqual(chat, { t: 'chat', text: 'x'.repeat(120) }, 'chat trimmed and cut to 120 characters');
+  const token = parseClientMsg(JSON.stringify({ t: 'join', name: 'A', loadout, token: 't'.repeat(300) }));
+  assert.equal(token?.t === 'join' && token.token, 't'.repeat(128), 'a token is cut to 128 characters');
   const inp = parseClientMsg(JSON.stringify({ t: 'input', seq: 5, input: { ...input, aimDist: 99999 } }));
   assert.ok(inp?.t === 'input');
   assert.equal(inp.input.aimDist, 2000);

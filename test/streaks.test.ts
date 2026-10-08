@@ -35,7 +35,13 @@ test('a kill refuels the killer with health and ammo, but never past full', () =
   const c = spawnAt(w, 400, 300);
   slay(w, a, c);
   assert.equal(a.life.hp, max, 'capped at max health');
-  assert.ok(a.life.ammo <= mag, 'capped at a full mag');
+  a.life.ammo = mag - 1;
+  slay(w, a, spawnAt(w, 400, 500));
+  assert.equal(a.life.ammo, mag, 'capped at a full mag');
+  a.life.ammo = 0;
+  a.life.reloadUntil = w.now + 1000;
+  slay(w, a, spawnAt(w, 400, 700));
+  assert.equal(a.life.ammo, 0, 'mid-reload the mag is left to the reload');
 });
 
 test('ending a long streak pays a shutdown bonus and tells everyone the streak it ended', () => {

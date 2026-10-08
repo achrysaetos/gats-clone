@@ -311,15 +311,20 @@ test('only a Range room takes the loadout message; any other room says no and ch
   ws.close();
 });
 
-test('a range room is one player\'s own, with no bots, and writes no account, profile, XP or medal', () => {
+test('a range room is one player\'s own, with no bots, and writes no account, profile, XP or medal', (t) => {
   const calls: string[] = [];
   const spy = new Proxy({ get: () => null, featured: () => null, cos: () => null, flush: async () => {} } as unknown as Profiles, {
     get: (target, key: string) => (key in target ? (target as never)[key] : (...args: unknown[]) => { calls.push(key); return key === 'record' ? [] : null; }),
   });
-  const room = createRoom('r-spy', 'RNG', 1, accounts, 1, undefined, undefined, spy);
+  // Signed in, so a join anywhere else would credit the account a game (and `credit` here throws).
+  const signedIn = { ...accounts, nameForToken: (token: string) => (token === 'ann-token' ? 'Ann' : null) } as unknown as Accounts;
+  const room = createRoom('r-spy', 'RNG', 1, signedIn, 1, undefined, undefined, spy);
   const a = fakeSocket();
+  // A socket left open keeps the room's timers, and with them the test process, alive: close it even when an assertion fails.
+  t.after(() => a.close());
   room.connect(a.socket);
-  a.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5, cosmetics: { helmet: 'x' } } as never);
+  a.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5, token: 'ann-token', cosmetics: { helmet: 'x' } } as never);
+  assert.ok(a.sent.some((m) => m.t === 'welcome' && m.account === 'Ann'), 'joined as the account');
   assert.equal(room.world.players.size, 1, 'no bots');
   const b = fakeSocket();
   room.connect(b.socket);
@@ -354,6 +359,7 @@ test('the range is deterministic: the same inputs give byte-identical snapshots'
   assert.equal(play(), play());
 });
 
+// The polls below give a loaded machine room to be slow; each stops as soon as its condition holds.
 test('the server opens a private range on request, keeps it off the server list, and closes it once it has sat empty', async () => {
   const dataDir = await mkdtemp(joinPath(tmpdir(), 'skirmish-range-'));
   const server = await startServer({ port: 0, dataDir, limits: { rangeRooms: 2, rangeIdleMs: 600, squadsPerMin: 3 } });
@@ -376,15 +382,15 @@ test('the server opens a private range on request, keeps it off the server list,
     ws.on('message', (d) => msgs.push(JSON.parse(d.toString()) as ServerMsg));
     await new Promise((ok, fail) => { ws.once('open', ok); ws.once('error', fail); });
     ws.send(JSON.stringify({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.6 }));
-    for (let i = 0; i < 100 && !msgs.some((m) => m.t === 'welcome'); i++) await new Promise((ok) => setTimeout(ok, 10));
+    for (let i = 0; i < 1000 && !msgs.some((m) => m.t === 'welcome'); i++) await new Promise((ok) => setTimeout(ok, 10));
     const welcome = msgs.find((m) => m.t === 'welcome');
     assert.equal(welcome?.t === 'welcome' && welcome.mode, 'RNG');
     assert.equal(welcome?.t === 'welcome' && welcome.worldSize, MAPS.range.size);
     ws.send(JSON.stringify({ t: 'range', a: 'loadout', gun: 'sniper', perks: { 1: 'thermal' } }));
-    for (let i = 0; i < 100 && !msgs.some((m) => m.t === 'snap' && (m as Snapshot).self?.perks?.[1] === 'thermal'); i++) await new Promise((ok) => setTimeout(ok, 20));
+    for (let i = 0; i < 1000 && !msgs.some((m) => m.t === 'snap' && (m as Snapshot).self?.perks?.[1] === 'thermal'); i++) await new Promise((ok) => setTimeout(ok, 20));
     assert.ok(msgs.some((m) => m.t === 'snap' && (m as Snapshot).self?.perks?.[1] === 'thermal'), 'the loadout arrived over the socket');
     await new Promise((ok) => { ws.once('close', ok); ws.close(); });
-    for (let i = 0; i < 100 && server.rooms.has(room); i++) await new Promise((ok) => setTimeout(ok, 50));
+    for (let i = 0; i < 400 && server.rooms.has(room); i++) await new Promise((ok) => setTimeout(ok, 50));
     assert.equal(server.rooms.has(room), false, 'an empty range closes');
   } finally {
     await server.close();

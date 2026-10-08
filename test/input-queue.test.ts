@@ -86,10 +86,10 @@ test('a merge keeps the newer aim and movement and every held button of both', (
   assert.equal(q.waiting[0]!.viewAt, 20);
 });
 
-function standingBacklog(backlog: number, input: Partial<InputState>, deliveredWithNext: number[] = []): number {
+function standingBacklog(backlog: number, input: Partial<InputState>, deliveredWithNext: number[] = [], windows = 1): number {
   const q = newInputQueue();
   let seq = 0, owed = backlog;
-  for (let tick = 0; tick < DRAIN_WINDOW_TICKS; tick++) {
+  for (let tick = 0; tick < windows * DRAIN_WINDOW_TICKS; tick++) {
     owed++;
     if (!deliveredWithNext.includes(tick)) for (; owed > 0; owed--) enqueueInput(q, queued(++seq, input, tick));
     takeInput(q, tick);
@@ -103,6 +103,10 @@ test('a backlog that never ran dry for a whole window drains by one merge', () =
 
 test('a backlog that ran dry in the window is jitter cushion and stays', () => {
   assert.equal(standingBacklog(3, { right: true }, [10, 11, 12]), 3);
+});
+
+test('each window is judged afresh: a backlog that ran dry in one window still drains once it stands through the next', () => {
+  assert.equal(standingBacklog(3, { right: true }, [10, 11, 12], 2), 2);
 });
 
 test('a held trigger is never drained, since merging it would shorten the hold', () => {

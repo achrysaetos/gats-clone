@@ -142,6 +142,16 @@ test('the shove rides the self snapshot through the wire encoder and is gone wit
   assert.equal(snapshotFor(w, b.id).self.knock, null);
 });
 
+test('a hit\'s shove heading reaches the client to the hundredth of a radian, for its flinch', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500), b = spawnAt(w, 600, 560);
+  damagePlayer(w, b, 5, { attacker: a, team: a.team, label: 'Pistol', piercing: false, via: 'bullet', fromX: a.x, fromY: a.y, gun: 'pistol', dirX: 100, dirY: 60 });
+  const snap = { ...snapshotFor(w, a.id), events: w.events };
+  const sent = (JSON.parse(makeSnapshotEncoder()(snap)) as { events: { e: string; push?: number }[] }).events.find((e) => e.e === 'dmg');
+  assert.equal(sent?.push, Math.round(Math.atan2(60, 100) * 100) / 100);
+  assert.notEqual(sent?.push, Math.round(Math.atan2(60, 100)), 'not rounded away to whole radians');
+});
+
 test('knockback is deterministic: two worlds fed the same hits agree to the bit', () => {
   const play = () => {
     const w: World = emptyWorld();

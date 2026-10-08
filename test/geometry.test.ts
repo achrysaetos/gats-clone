@@ -10,7 +10,7 @@ import { MAPS } from '../src/shared/maps.ts';
 import { cargoPlane, place, SHAPES, lShape } from '../src/shared/shapes.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { tickThrown } from '../src/shared/sim/abilities.ts';
-import { circleHitsRect, earliestHit, rectsOverlap, segmentEntersRectAt, slide, moveStep, type Rect } from '../src/shared/sim/movement.ts';
+import { circleHitsRect, earliestHit, rectsOverlap, segmentEntersCircleAt, segmentEntersRectAt, slide, moveStep, type Rect } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import { emptyWorld, spawnAt, press, run, TICK_MS } from './helpers.ts';
@@ -153,4 +153,14 @@ test('prediction replays the server exactly across polygon walls', () => {
 test('convex overlap: touching is not overlapping', () => {
   assert.equal(convexOverlap([0, 0, 10, 0, 10, 10, 0, 10], [10, 0, 20, 0, 20, 10, 10, 10]), false);
   assert.equal(convexOverlap([0, 0, 10, 0, 10, 10, 0, 10], [9, 0, 20, 0, 20, 10, 9, 10]), true);
+});
+
+test('a segment enters a circle where it first crosses the rim, at 0 when it starts inside, and never behind its start or past its end', () => {
+  // A circle of radius 10 at (100, 0); a segment along +x from x = 0.
+  assert.equal(segmentEntersCircleAt(0, 0, 200, 0, 100, 0, 10), 90 / 200, 'crosses the rim at x = 90');
+  assert.equal(segmentEntersCircleAt(0, 0, 50, 0, 100, 0, 10), null, 'ends short of it');
+  assert.equal(segmentEntersCircleAt(150, 0, 100, 0, 100, 0, 10), null, 'the circle lies behind the start');
+  assert.equal(segmentEntersCircleAt(100, 5, 100, 0, 100, 0, 10), 0, 'starting inside is a hit at once');
+  assert.equal(segmentEntersCircleAt(0, 20, 200, 0, 100, 0, 10), null, 'passes beside it');
+  assert.equal(segmentEntersCircleAt(0, 0, 0, 0, 100, 0, 10), null, 'a standing point outside hits nothing');
 });

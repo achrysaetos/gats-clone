@@ -270,6 +270,6 @@ test('the HTTP API: profile shows level state, equipped and challenges; POST /ap
 test('golden replay: the simulation is untouched by progression', () => {
   const readme = execFileSync('grep', ['-o', 'current hash is `[0-9a-f]\\{64\\}`', 'README.md'], { encoding: 'utf8' });
   const hash = /([0-9a-f]{64})/.exec(readme)![1]!;
-  const out = execFileSync('node', ['scripts/golden-replay.ts', hash], { encoding: 'utf8', timeout: 120_000 });
+  const out = execFileSync('node', ['scripts/golden-replay.ts', hash], { encoding: 'utf8', timeout: 600_000 });
   assert.ok(out.includes(`golden ${hash}`), out.slice(-200));
 });

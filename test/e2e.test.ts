@@ -82,9 +82,16 @@ test('serves public/ statically without escaping it', async () => {
   assert.equal((await fetch(base + '/nope.js')).status, 404);
 });
 
-test('unknown room rejects the websocket upgrade', async () => {
-  const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=zzz`);
-  await new Promise<void>((ok) => ws.once('error', () => ok()));
+test('unknown room rejects the websocket upgrade with a 404, and a known room upgrades', { timeout: 10_000 }, async () => {
+  // Resolves with the upgrade's answer: 101 when the socket opens, else the HTTP status the server refused it with.
+  const upgrade = (room: string) => new Promise<number>((ok) => {
+    const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=${room}`);
+    ws.on('error', () => {});
+    ws.once('open', () => { ok(101); ws.close(); });
+    ws.once('unexpected-response', (_req, res) => ok(res.statusCode ?? 0));
+  });
+  assert.equal(await upgrade('zzz'), 404);
+  assert.equal(await upgrade('ffa'), 101);
 });
 
 test('end to end: accounts, three modes, movement, bot kills, chat, persisted stats', async () => {
@@ -137,12 +144,13 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
     c.waitFor((m): m is Snapshot => isSnap(m) && m.events.some((e) => e.e === 'kill'), (60_000 / STEPS_PER_TICK) + 2000, 'a bot kill')));
 
   const tdm = conns.tdm;
+  // Sent back to back, so the second lands inside the chat interval however slowly a loaded machine delivers the first's echo.
   send(tdm, { t: 'chat', text: '  hello team  ' });
+  send(tdm, { t: 'chat', text: 'spam' });
   const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat', 5000, 'chat echo');
   assert.equal(chat.from, 'Tester');
   assert.equal(chat.text, 'hello team');
   assert.ok(chat.team === 'red' || chat.team === 'blue', 'team echoed in TDM');
-  send(tdm, { t: 'chat', text: 'spam' });
   await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Slow down', 5000, 'Slow down');
   assert.ok(!tdm.msgs.some((m) => m.t === 'chat' && m.text === 'spam'), 'rate-limited chat not broadcast');
 

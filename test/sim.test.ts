@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITY_COOLDOWN_MS, GUNS, HP_MULTIPLIER, LEVELS, MEDALS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, GUN_IDS, GUNS, HP_MULTIPLIER, LEVELS, MEDALS, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { addPlayer, canRespawn, respawn, setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { explode } from '../src/shared/sim/combat.ts';
-import { createWorld, rand } from '../src/shared/sim/world.ts';
+import { createWorld, rand, type Player } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { VIEW_PRELOAD_MARGIN } from '../src/shared/protocol.ts';
@@ -88,12 +88,30 @@ test('kills award killScore and open picks at the level thresholds', () => {
   assert.deepEqual(snapshotFor(w, a.id).self.pending, { level: 1, k: 'evolve' }, 'the evolve stays pending until chosen, with the perk behind it');
 });
 
+test('Long range carries a round 40% farther before it drops', () => {
+  const flies = (perks: Player['perks']) => {
+    const w = emptyWorld();
+    const p = spawnAt(w, 300, 500, { loadout: { weapon: 'smg' } });
+    p.perks = perks;
+    press(w, p, { angle: 0, fire: true, shots: 1 });
+    step(w, TICK_MS);
+    const b = w.bullets[0]!;
+    return b.left + (b.flown ?? 0);
+  };
+  assert.ok(Math.abs(flies({}) - GUNS.smg.range) < 1, `${flies({})}`);
+  assert.ok(Math.abs(flies({ 1: 'longRange' }) - 1.4 * GUNS.smg.range) < 1, `${flies({ 1: 'longRange' })}`);
+});
+
 test('extended mag enlarges the magazine', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   assert.equal(snapshotFor(w, a.id).self.mag, GUNS.pistol.mag);
   grantPerks(w, a, ['extended']);
   assert.equal(snapshotFor(w, a.id).self.mag, Math.round(GUNS.pistol.mag * 1.5));
+  // On an odd magazine the half round is dropped, never added.
+  const odd = GUN_IDS.find((g) => GUNS[g].mag % 2 === 1 && GUNS[g].mag > 1)!;
+  a.gun = odd;
+  assert.equal(snapshotFor(w, a.id).self.mag, (3 * GUNS[odd].mag - 1) / 2, `${odd}: ${GUNS[odd].mag} rounds become ${snapshotFor(w, a.id).self.mag}`);
 });
 
 test('a shield blocks 33% of bullets from within 40 degrees of its facing, and nothing else', () => {

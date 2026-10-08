@@ -161,7 +161,9 @@ test('barrels ride the wire as a sticky field and stay unchanged until one is hu
   assert.deepEqual(filled!.barrels, first.barrels);
   damageBarrel(w, w.barrels[0]!, 10, { attacker: me, team: me.team });
   const third = JSON.parse(encode(snapshotFor(w, me.id)));
-  assert.ok(third.barrels);
+  const hurt = w.barrels[0]!.id;
+  assert.ok(third.barrels.find((b: number[]) => b[0] === hurt)[3] < 10, 'the hurt barrel is resent below full health');
+  assert.deepEqual(third.barrels.filter((b: number[]) => b[0] !== hurt), first.barrels.filter((b: number[]) => b[0] !== hurt), 'the others unchanged');
 });
 
 // ---- airdrops
@@ -284,7 +286,8 @@ test('an unclaimed crate is removed after its time, and a crate standing on by a
   assert.equal(f.crateId, null, 'a body on the spot holds it in the air');
   me.x = 100; me.y = 100;
   step(w, TICK_MS);
-  assert.ok(f.crateId !== null);
+  const landed = w.crates.find((c) => c.id === f.crateId);
+  assert.deepEqual(landed && [landed.drop, landed.respawnAt, landed.x + landed.size / 2, landed.y + landed.size / 2], [true, null, f.x, f.y], 'it lands on its spot once the body moves off');
   w.now = f.expiresAt + 1;
   step(w, TICK_MS);
   assert.equal(w.airdrops.flight, null);

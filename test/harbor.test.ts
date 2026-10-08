@@ -5,6 +5,9 @@ import { polyParts } from '../src/shared/mapgeo.ts';
 import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import { BERTHS, DISTRICTS, districtAt, PLACED_SHIPS } from '../src/shared/maps/causewaydata.ts';
 import { EAST_ITEMS, WEST_ITEMS } from '../src/client/themes/harbordecor.ts';
+import { WORLD } from '../src/shared/defs.ts';
+import { circleBlocked } from '../src/shared/sim/movement.ts';
+import { createWorld } from '../src/shared/sim/world.ts';
 
 const map = MAPS.causeway;
 
@@ -18,15 +21,43 @@ test('water stops bodies but not bullets or sight; ships have walkable decks', (
   const water = map.polys!.filter((p) => p.material === 'water');
   assert.ok(water.length >= 6);
   for (const w of water) { assert.equal(w.blocksBullets, false); assert.equal(w.blocksSight, false); }
-  assert.equal(polyParts(map).filter((p) => p.material === 'water').every((p) => p.nb && p.ns), true);
+  const waterParts = polyParts(map).filter((p) => p.material === 'water');
+  assert.equal(waterParts.every((p) => p.nb && p.ns), true);
+  const world = createWorld('FFA', 1, 'causeway');
+  /** The vertex mean of a convex part's flat `[x0, y0, x1, y1, ...]` points: a point inside it. */
+  const centre = (pts: readonly number[]) => {
+    let x = 0, y = 0;
+    for (let i = 0; i < pts.length; i += 2) { x += pts[i]!; y += pts[i + 1]!; }
+    return { x: x / (pts.length / 2), y: y / (pts.length / 2) };
+  };
+  for (const part of waterParts) {
+    const c = centre(part.pts);
+    assert.ok(Number.isFinite(c.x) && Number.isFinite(c.y));
+    assert.ok(circleBlocked(world.walls, c.x, c.y, WORLD.playerRadius), `a body cannot stand in the water at ${c.x.toFixed(0)},${c.y.toFixed(0)}`);
+  }
   for (const s of PLACED_SHIPS) {
-    // The hull's gunwale is wall and the deck inside is open ground a player could stand on.
-    const centre = s.deck.reduce((a, p) => ({ x: a.x + p.x / s.deck.length, y: a.y + p.y / s.deck.length }), { x: 0, y: 0 });
-    assert.ok(s.deck.length > 6);
-    assert.ok(centre.x > 0);
+    // The hull's gunwale is wall and the deck inside is open ground a body can stand on (cabins and cargo take some of it).
+    const xs = s.deck.map((p) => p.x), ys = s.deck.map((p) => p.y);
+    let inside = 0, standable = 0;
+    for (let x = Math.min(...xs); x <= Math.max(...xs); x += 10) for (let y = Math.min(...ys); y <= Math.max(...ys); y += 10) {
+      if (!inPolygon(s.deck, x, y)) continue;
+      inside++;
+      if (!circleBlocked(world.walls, x, y, WORLD.playerRadius)) standable++;
+    }
+    assert.ok(inside > 50 && standable / inside > 0.25, `${s.name}: ${standable} of ${inside} deck spots fit a body`);
   }
   assert.ok(map.polys!.filter((p) => p.material === 'hull').length >= 12, 'six gunwales, each in two or more pieces');
 });
+
+/** Even-odd ray cast: whether (x, y) lies inside the simple polygon `pts`. */
+function inPolygon(pts: readonly { x: number; y: number }[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i]!, b = pts[j]!;
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
 
 test('three ships a side, at least three door kinds, roofs over the rooms', () => {
   assert.equal(BERTHS.length, 3);

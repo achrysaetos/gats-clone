@@ -76,11 +76,22 @@ test('a round passing far off, or a teammate\'s, does not suppress', () => {
   const shooter = spawnAt(w, 300, 500, { team: 'red' });
   const far = spawnAt(w, 700, 500 + 24 + SUPPRESSION.px + 40, { team: 'blue' });
   const mate = spawnAt(w, 700, 500 + 40, { team: 'red' });
+  // A control: an enemy just as close to the line as the teammate, so a shot that never flew cannot pass for one that spared them.
+  const near = spawnAt(w, 900, 500 - 40, { team: 'blue' });
   equip(shooter, 'sniper');
+  run(w, 600);
   fire(w, shooter);
-  run(w, 700);
-  assert.equal(life(far).suppression, 0);
-  assert.equal(life(mate).suppression, 0);
+  // Suppression fades within a second, so take the most each felt while the round flew.
+  const peak = { near: 0, far: 0, mate: 0 };
+  for (let t = 0; t < 700; t += TICK_MS) {
+    step(w, TICK_MS);
+    peak.near = Math.max(peak.near, life(near).suppression);
+    peak.far = Math.max(peak.far, life(far).suppression);
+    peak.mate = Math.max(peak.mate, life(mate).suppression);
+  }
+  assert.ok(peak.near > 0, 'the round flew and suppressed the near enemy');
+  assert.equal(peak.far, 0);
+  assert.equal(peak.mate, 0);
 });
 
 test('heavier armor and heavier guns slow you down more', () => {
