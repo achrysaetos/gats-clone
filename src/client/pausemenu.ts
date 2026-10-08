@@ -2,6 +2,7 @@ import type { createAudio } from './audio.ts';
 import { CONTROLS, TOUCH_NOTES } from './input.ts';
 import { getMusicVolume, isMusicMuted, musicGainNow, setMusicVolume, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { chatterOn, setChatterOn } from './chatter.ts';
+import { copyText } from './menu.ts';
 import { padIntent, type PadSample } from './pausegate.ts';
 import { fxCapable, fxState, lightingStatus } from './postfx.ts';
 import { CRITTER_STEPS, DPR_STEPS, PRESET_IDS, PRESET_INFO, knobs, type Adv } from './quality.ts';
@@ -276,7 +277,8 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
     fpsLine.textContent = q.fps === null ? 'Measuring frame rate...' : `${q.fps} FPS · ${q.ms} ms per frame · slowest ${q.worst} ms`;
   };
   const adv = (patch: Adv) => { setSetting('adv', { ...settings().adv, ...patch }); for (const f of sync) f(); };
-  const advToggle = (key: 'post' | 'lighting' | 'waterGL', id: string) => toggle(() => knobs()[key], (on) => adv({ [key]: on }), id);
+  // Lighting runs inside the shader pass (knobsFor), so switching it on switches the pass on too: alone it would stay Off (Low has no pass).
+  const advToggle = (key: 'post' | 'lighting' | 'waterGL', id: string) => toggle(() => knobs()[key], (on) => adv(key === 'lighting' && on ? { lighting: true, post: true } : { [key]: on }), id);
   const stepsFor = (steps: readonly (readonly [number, string])[], key: 'critters' | 'dprCap', id: string) => segmented<string>({
     id, options: steps.map(([v, label]) => [String(v), label] as const),
     get: () => String(steps.reduce((a, st) => (Math.abs(st[0] - knobs()[key]) < Math.abs(a[0] - knobs()[key]) ? st : a))[0]),
@@ -371,8 +373,9 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
     body.scrollTop = 0;
   }
 
+  // The graphics dropdown and the Advanced disclosure's summary take focus too: left out, Tab and the pad could never reach them (or the knobs inside).
   const focusables = (): HTMLElement[] =>
-    [...root.querySelectorAll<HTMLElement>('button, input, [tabindex]')].filter((e) => !(e as HTMLButtonElement).disabled && e.tabIndex >= 0 && e.getClientRects().length > 0 && !e.closest('[hidden]'));
+    [...root.querySelectorAll<HTMLElement>('button, input, select, summary, [tabindex]')].filter((e) => !(e as HTMLButtonElement).disabled && e.tabIndex >= 0 && e.getClientRects().length > 0 && !e.closest('[hidden]'));
   function focusFirst() {
     const first = tab === 'home' ? (confirming ? stay : resume) : focusables().find((e) => e !== closeBtn && !e.classList.contains('pz-tab')) ?? closeBtn;
     first.focus({ preventScroll: true });
@@ -510,24 +513,6 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
 
 /** `?nofx` in the address pins the effects off whatever the setting says. */
 const nofx = (): boolean => new URLSearchParams(location.search).has('nofx');
-
-async function copyText(text: string, button: HTMLButtonElement) {
-  const label = button.textContent;
-  let ok = false;
-  try {
-    await navigator.clipboard.writeText(text);
-    ok = true;
-  } catch {
-    const scratch = h('textarea');
-    scratch.value = text;
-    document.body.append(scratch);
-    scratch.select();
-    try { ok = document.execCommand('copy'); } catch { ok = false; }
-    scratch.remove();
-  }
-  button.textContent = ok ? 'Copied' : 'Copy failed';
-  setTimeout(() => { button.textContent = label; }, 1600);
-}
 
 /** A chunky eight-tooth cog with a hole, as one even-odd path in a 24x24 box. */
 function gearPath(): string {

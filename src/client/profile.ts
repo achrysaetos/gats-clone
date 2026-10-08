@@ -130,17 +130,26 @@ function render(p: ProfileJson) {
   $('medal-grid').replaceChildren(...MEDAL_IDS.map((id) => medalCard(p, id)));
 }
 
+/** Bumped by every look-up, so an answer to an older one that arrives late never paints over the newer. */
+let loadSeq = 0;
 async function load(name: string) {
+  const seq = ++loadSeq;
+  // The last soldier's preview stops with its page hidden.
+  cancelAnimationFrame(previewRaf);
   $('profile-status').textContent = 'Loading…';
   $('profile-body').hidden = true;
   try {
     const res = await fetch(`/api/profile/${encodeURIComponent(name)}`);
+    if (seq !== loadSeq) return;
     if (res.status === 404) { $('profile-status').textContent = `No one called ${name} has played yet.`; return; }
     if (!res.ok) throw new Error(String(res.status));
-    render(await res.json() as ProfileJson);
+    const body = await res.json() as ProfileJson;
+    if (seq !== loadSeq) return;
+    render(body);
     $('profile-status').textContent = '';
     $('profile-body').hidden = false;
   } catch (err) {
+    if (seq !== loadSeq) return;
     console.error('profile page', String(err), (err as Error)?.stack);
     $('profile-status').textContent = 'Could not load the profile. Try again in a moment.';
   }

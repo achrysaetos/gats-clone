@@ -207,8 +207,14 @@ export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): 
   art?.paint();
 }
 
-async function copyText(text: string, button: HTMLButtonElement) {
-  const label = button.textContent;
+/** Each copy button's resting label and its pending restore, so a second press inside the 1.6 s never takes "Copied" for the label. */
+const copyLabels = new WeakMap<HTMLButtonElement, { label: string; timer: ReturnType<typeof setTimeout> | undefined }>();
+
+/** Copies `text` and says so on `button` for a moment (the menu's invite links and the pause menu's). */
+export async function copyText(text: string, button: HTMLButtonElement) {
+  let st = copyLabels.get(button);
+  if (!st) { st = { label: button.textContent ?? '', timer: undefined }; copyLabels.set(button, st); }
+  const rest = st;
   let ok = false;
   try {
     await navigator.clipboard.writeText(text);
@@ -217,11 +223,12 @@ async function copyText(text: string, button: HTMLButtonElement) {
     const scratch = el('textarea', { value: text });
     document.body.append(scratch);
     scratch.select();
-    ok = document.execCommand('copy');
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
     scratch.remove();
   }
   button.textContent = ok ? 'Copied' : 'Copy failed';
-  setTimeout(() => { button.textContent = label; }, 1600);
+  clearTimeout(rest.timer);
+  rest.timer = setTimeout(() => { button.textContent = rest.label; rest.timer = undefined; }, 1600);
 }
 
 export function renderSquadChip(root: HTMLElement, code: string | null, link: string | null) {
