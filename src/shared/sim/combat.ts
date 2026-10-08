@@ -7,7 +7,7 @@ import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
 import { damageZombie } from './run.ts';
 import { ceasefire } from './extract.ts';
-import { addScore, effectiveStats, isHunted, knockbackPx } from './stats.ts';
+import { addScore, effectiveStats, flinchUntil, isHunted, knockbackPx } from './stats.ts';
 import { crateRect, friendly, newId, trainBody, type Bullet, type Crate, type Player, type Pose, type Shooter, type Thrown, type Wall, type World } from './world.ts';
 
 const SHIELD_BLOCK = 0.33;
@@ -56,6 +56,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   life.hp -= amount;
   life.lastDamageAt = w.now;
   const dealt = before - Math.max(0, life.hp);
+  if (src.via === 'bullet' || src.via === 'blast' || src.via === 'knife') life.flinchUntil = flinchUntil(life.flinchUntil, w.now, dealt / stats.maxHp);
   if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player', ...(src.hit && { hit: src.hit }) });
   if (life.hp <= 0) { kill(w, victim, a, src.label); return; }

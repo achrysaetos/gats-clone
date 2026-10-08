@@ -5,7 +5,7 @@ import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, tickTrain } fr
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
+import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, shakenOf, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { carrying, ceasefire, moveSpeed } from './sim/extract.ts';
 import { crateHpMax, IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
@@ -93,7 +93,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     life.shieldUntil = -Infinity;
     const muzzle = WORLD.playerRadius + 4;
-    const spread = spreadFor(p.gun, p.perks, isSteady(moving ? 0 : w.now - life.lastMoveAt), life.spray);
+    const spread = spreadFor(p.gun, p.perks, isSteady(moving ? 0 : w.now - life.lastMoveAt), life.spray, shakenOf(life, w.now));
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

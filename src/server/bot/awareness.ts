@@ -31,6 +31,8 @@ export type Perception = {
   lastSeen: Contact | null;
   lead: Lead | null;
   underFire: boolean;
+  /** A round hit this bot this tick. */
+  hitNow: boolean;
   zones: readonly ZoneView[];
   solids: readonly Rect[];
   allies: readonly Point[];
@@ -103,7 +105,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     awareness: { contacts: live, heard, mates, hitTick },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
-      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS, zones: snap.zones, solids, allies: mates,
+      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS, hitNow: hitTick === tick, zones: snap.zones, solids, allies: mates,
     },
   };
 }

@@ -199,6 +199,17 @@ export const FEEL = {
     /** From one stagger's start, no new one lands for this long, so a staggered player walks at full speed at least three quarters of the time whatever hits them. */
     immuneMs: 800,
   },
+  /** Being hit shakes your own aim for a moment, so whoever lands first holds the edge. Its level runs 0..1 and drains in a straight line. */
+  flinch: {
+    /** A full flinch drains in this long: a hit you feel through your next shot or two, gone before a duel is decided. */
+    ms: 450,
+    /** A hit taking this share of your health flinches you fully; smaller hits add their share, so an SMG's stream builds it and a sniper round maxes it. */
+    fullAt: 0.25,
+    /** Spread grows by this much of itself at a full flinch: enough to cost the second shooter, small enough that SMGs, which flinch each other most, keep their lead up close (0.4 let a sniper's hip-fire into SMG range). */
+    spreadAdd: 0.3,
+  },
+  /** However shaken, by flinch and suppression together, spread grows by at most this much of itself, so a shaken shooter still hits up close. */
+  shakenMaxAdd: 0.8,
 } as const;
 
 export function byGun<T>(f: (id: GunId) => T): Record<GunId, T> {

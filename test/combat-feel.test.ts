@@ -4,6 +4,7 @@ import { FEEL, GUNS, WORLD, type GunId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { CALM, shakenOf, spreadFor } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, press, run, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -131,4 +132,51 @@ test('heavy hits every tick never stun-lock: each stagger is followed by a stret
   staggered.forEach((on, i) => { if (!on && staggered[i - 1]) gaps.push(0); if (!on && gaps.length) gaps[gaps.length - 1]!++; });
   gaps.pop();
   assert.ok(gaps.length >= 3 && gaps.every((n) => n * TICK_MS >= FEEL.stagger.immuneMs - FEEL.stagger.ms - TICK_MS), `full-pace stretches between staggers: ${gaps.map((n) => Math.round(n * TICK_MS))}ms`);
+});
+
+test('being hit shakes your aim: the flinch shows on your view, widens your spread, and drains within its time', () => {
+  const w = emptyWorld();
+  const b = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
+  const calm = spreadFor('assault', {}, true);
+  heavyHit(w, b, 20);
+  const shaken = snapshotFor(w, b.id).self;
+  assert.ok(shaken.flinch !== undefined && shaken.flinch > 0.5 && shaken.flinch < 1, `a fifth of your health flinches you most of the way (${shaken.flinch})`);
+  assert.ok(Math.abs(spreadFor('assault', {}, true, 0, { ...CALM, flinch: shaken.flinch }) - calm * (1 + FEEL.flinch.spreadAdd * shaken.flinch)) < 1e-12);
+  run(w, FEEL.flinch.ms);
+  assert.equal(snapshotFor(w, b.id).self.flinch, undefined, 'gone once it drains');
+});
+
+test('flinch is bounded: however many hits land, it tops out and drains as fast as one full flinch', () => {
+  const w = emptyWorld();
+  const b = spawnAt(w, 500, 500, { kind: 'human' });
+  for (let i = 0; i < 12; i++) heavyHit(w, b, 30);
+  assert.ok(b.life.k === 'alive');
+  assert.equal(shakenOf(b.life, w.now).flinch, 1);
+  run(w, FEEL.flinch.ms);
+  assert.equal(shakenOf(b.life, w.now).flinch, 0, 'a dozen hits drain as fast as one');
+  const worst = spreadFor('assault', {}, false, 99, { ...CALM, flinch: 1 });
+  assert.ok(worst <= spreadFor('assault', {}, false, 99) * (1 + FEEL.shakenMaxAdd) + 1e-12, 'spread within the cap');
+});
+
+test('the server fires a flinched shooter\'s rounds with the wider spread the view reports', () => {
+  const deviations = (flinched: boolean) => {
+    const w = emptyWorld();
+    const a = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' }, kind: 'human' });
+    const out: number[] = [];
+    for (let i = 0; i < 40 && a.life.k === 'alive'; i++) {
+      a.life.nextFireAt = 0;
+      a.life.ammo = 5;
+      if (flinched) a.life.flinchUntil = w.now + 2 * FEEL.flinch.ms;
+      const before = new Set(w.bullets.map((x) => x.id));
+      fire(w, a);
+      for (const x of w.bullets) if (!before.has(x.id)) out.push(Math.abs(Math.atan2(x.vy, x.vx)));
+    }
+    return out;
+  };
+  const calm = spreadFor('sniper', {}, true);
+  const steady = deviations(false), shaken = deviations(true);
+  assert.ok(steady.length >= 30 && shaken.length >= 30);
+  assert.ok(Math.max(...steady) <= calm + 1e-9, 'calm rounds stay inside the calm cone');
+  assert.ok(Math.max(...shaken) > calm, 'flinched rounds leave it');
+  assert.ok(Math.max(...shaken) <= calm * (1 + FEEL.flinch.spreadAdd) + 1e-9, 'and stay inside the flinched cone');
 });

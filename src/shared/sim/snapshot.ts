@@ -7,7 +7,7 @@ import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { KIT } from '../kit.ts';
 import { GAS_RADIUS } from './abilities.ts';
 import { dist2 } from './movement.ts';
-import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
+import { abilityOf, effectiveStats, isHunted, pendingPick, shakenOf } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
@@ -49,6 +49,7 @@ function selfView(w: World, p: Player): SelfView {
   const life = p.life;
   const stats = effectiveStats(p);
   const ability = abilityOf(p);
+  const shaken = life.k === 'alive' ? shakenOf(life, w.now) : null;
   return {
     id: p.id,
     ammo: life.k === 'alive' ? life.ammo : 0,
@@ -67,6 +68,8 @@ function selfView(w: World, p: Player): SelfView {
     dash: life.k === 'alive' ? life.dash : null,
     ...(life.k === 'alive' && life.shove && { shove: life.shove }),
     ...(life.k === 'alive' && life.staggerUntil > w.now && { stagger: life.staggerUntil - w.now }),
+    ...(life.k === 'alive' && life.spray > 0 && { spray: life.spray }),
+    ...(shaken && shaken.flinch > 0 && { flinch: shaken.flinch }),
     // A squad player who bled out waits for dawn, which the run view times.
     respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,

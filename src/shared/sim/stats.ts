@@ -32,10 +32,21 @@ type Stats = {
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
-/** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks. */
-export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0): number {
+/** How shaken a shooter is, each 0..1: `flinch` from hits taken. */
+export type Shaken = { flinch: number };
+export const CALM: Shaken = { flinch: 0 };
+
+const levelOf = (until: number, now: number, ms: number) => Math.min(1, Math.max(0, (until - now) / ms));
+export const shakenOf = (life: Pick<Extract<Life, { k: 'alive' }>, 'flinchUntil'>, now: number): Shaken => ({ flinch: levelOf(life.flinchUntil, now, FEEL.flinch.ms) });
+
+/**
+ * The real spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and however `shaken` the
+ * shooter is. The server fires with it and the reticle draws it.
+ */
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, shaken: Shaken = CALM): number {
   const rules = rulesOf(GUNS[gun]);
-  let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot);
+  const shake = 1 + Math.min(FEEL.shakenMaxAdd, shaken.flinch * FEEL.flinch.spreadAdd);
+  let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot) * shake;
   for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
   return spread;
 }
@@ -48,6 +59,12 @@ function bloomMul({ bloom }: GunRules, sprayShot: number): number {
 export function knockbackPx(gun: GunId, damage: number, travelled: number, range: number): number {
   const { perDamage, farMul } = FEEL.knockback;
   return perDamage[GUNS[gun].base] * damage * (1 - (1 - farMul) * Math.min(1, Math.max(0, travelled / range)));
+}
+
+/** A hit that took `share` of its victim's health, landing `now`, adds its flinch to what is left of `until`. */
+export function flinchUntil(until: number, now: number, share: number): number {
+  const { ms, fullAt } = FEEL.flinch;
+  return Math.min(now + ms, Math.max(until, now) + ms * Math.min(1, share / fullAt));
 }
 
 /** Whether a gun has its still spread, `sinceMoveMs` after the last step (0 while walking): at once, the first tick its owner stands. */
@@ -101,7 +118,7 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, shove: null, staggerUntil: -Infinity, blow: null, pressUntil: -Infinity, hits: [],
+    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, shove: null, staggerUntil: -Infinity, blow: null, flinchUntil: -Infinity, pressUntil: -Infinity, hits: [],
   };
 }
 

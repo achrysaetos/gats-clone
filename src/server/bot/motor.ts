@@ -3,7 +3,7 @@ import { KIT } from '../../shared/kit.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
-import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, landingErr, leadSeconds, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, flinchedSigma, flinchJolt, freshAim, GRENADES, handFor, HANDS, landingErr, leadSeconds, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
 import { inHazard, safeStep, takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
@@ -305,8 +305,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     const sharp = sharpnessAgainst(t.p);
     engaged = engage(tracked, t.p, sharp, v.tick, c.rand);
     if (v.tick >= engaged.noticeAtTick) {
-      const sigma = aimSigma(engaged, me, sharp, v.tick);
-      const err = v.tick === engaged.noticeAtTick ? landingErr(sigma, c.rand) : drift(before.err, sigma, TICK_MS, c.rand);
+      const flinch = snap.self.flinch ?? 0;
+      const sigma = flinchedSigma(aimSigma(engaged, me, sharp, v.tick), flinch);
+      const err = (v.tick === engaged.noticeAtTick ? landingErr(sigma, c.rand) : drift(before.err, sigma, TICK_MS, c.rand)) + (v.hitNow ? flinchJolt(flinch, c.rand) : 0);
       const flight = leadSeconds(t.d, gun.bulletSpeed);
       const rx = t.p.x + engaged.vx * flight - me.x, ry = t.p.y + engaged.vy * flight - me.y;
       look = { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, engaged.vx - mine.x, engaged.vy - mine.y), hand: handFor(sharp), d: t.d, err };
