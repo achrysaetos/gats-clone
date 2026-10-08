@@ -65,6 +65,9 @@ function hexA(hex: string, a: number): string {
 const SEGS: Record<string, string> = {
   '0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg', '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
   A: 'abcefg', C: 'adef', E: 'adefg', F: 'aefg', H: 'bcefg', L: 'def', P: 'abefg', U: 'bcdef', b: 'cdefg', d: 'bcdeg', J: 'bcde',
+  // The rest of the alphabet, so a painted word never drops letters: i/j are the centre bar's halves, k/o/q/l/m/n the diagonals.
+  B: 'abcdefg', D: 'abcdef', G: 'acdef', I: 'adij', K: 'efqm', M: 'bcefko', N: 'bcefn', O: 'abcdef', R: 'abefm', S: 'acdfg', T: 'aij',
+  V: 'bcdef', W: 'bcdefj', X: 'nl', Y: 'bcdfg', Z: 'adl',
 };
 
 /** Stencils `text` with its top-left at (x, y), `h` tall. The caller sets the fill. */
@@ -82,6 +85,19 @@ export function stencil(g: CanvasRenderingContext2D, text: string, x: number, y:
     if (segs.includes('b')) vert(ox + w - t, y);
     if (segs.includes('e')) vert(ox, y + h / 2 - t / 2);
     if (segs.includes('c')) vert(ox + w - t, y + h / 2 - t / 2);
+    if (segs.includes('i')) g.rect(ox + (w - t) / 2, y + gap, t, h / 2 - t / 2 - gap);
+    if (segs.includes('j')) g.rect(ox + (w - t) / 2, y + h / 2 + t / 2, t, h / 2 - t / 2 - gap);
+    // Diagonals are clockwise parallelograms like the rects, so overlaps never cancel: k and o come from the top corners down
+    // to the centre, q from the top-right to the centre-left, l from the top-right to the bottom-left, m from the centre to the
+    // bottom-right, n from the top-left to the bottom-right.
+    const diag = (x0: number, y0: number, x1: number, y1: number) => { g.moveTo(x0 - t / 2, y0); g.lineTo(x0 + t / 2, y0); g.lineTo(x1 + t / 2, y1); g.lineTo(x1 - t / 2, y1); g.closePath(); };
+    const mid = y + h / 2;
+    if (segs.includes('k')) diag(ox + w - t / 2, y + t, ox + w / 2, mid);
+    if (segs.includes('o')) diag(ox + t / 2, y + t, ox + w / 2, mid);
+    if (segs.includes('q')) diag(ox + w - t / 2, y + t, ox + t * 1.2, mid);
+    if (segs.includes('l')) diag(ox + w - t / 2, y + t, ox + t / 2, y + h - t);
+    if (segs.includes('m')) diag(ox + w * 0.45, mid, ox + w - t / 2, y + h - t);
+    if (segs.includes('n')) diag(ox + t / 2, y + t, ox + w - t / 2, y + h - t);
   }
   g.fill();
 }

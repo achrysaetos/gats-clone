@@ -173,17 +173,17 @@ function radome(g: G, p: MapPoly) {
   g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
   g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.fillStyle = '#7d8793'; g.fill(); g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
   const sy = cy - h * 0.35;
-  g.beginPath(); g.arc(cx, sy, r * 0.94, 0, TAU); g.fillStyle = '#d7dde4'; g.fill();
+  g.beginPath(); g.arc(cx, sy, r * 0.94, 0, TAU); g.fillStyle = '#aeb7c3'; g.fill();
   g.save(); g.beginPath(); g.arc(cx, sy, r * 0.94, 0, TAU); g.clip();
   g.fillStyle = 'rgba(44,56,74,0.3)'; g.beginPath(); g.arc(cx + r * 0.3, sy + r * 0.32, r * 0.92, -Math.PI * 0.12, Math.PI * 0.72); g.lineTo(cx + r * 0.3, sy + r * 0.32); g.fill();
-  g.fillStyle = 'rgba(255,255,255,0.5)'; g.beginPath(); g.arc(cx - r * 0.3, sy - r * 0.32, r * 0.5, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(226,232,240,0.34)'; g.beginPath(); g.arc(cx - r * 0.3, sy - r * 0.32, r * 0.5, 0, TAU); g.fill();
   g.strokeStyle = 'rgba(70,84,104,0.5)'; g.lineWidth = 2;
   for (let k = -3; k <= 3; k++) { g.beginPath(); g.ellipse(cx, sy, r * 0.94 * Math.abs(Math.cos(k * 0.22)), r * 0.94, 0, 0, TAU); g.stroke(); }
   for (let k = -3; k <= 3; k++) { g.beginPath(); g.ellipse(cx, sy, r * 0.94, r * 0.94 * Math.abs(Math.cos(k * 0.22)), 0, 0, TAU); g.stroke(); }
   g.restore();
   g.beginPath(); g.arc(cx, sy, r * 0.94, 0, TAU); g.strokeStyle = INK; g.lineWidth = 2.4; g.stroke();
   g.fillStyle = '#2b2e34'; g.beginPath(); g.arc(cx - r * 0.05, sy - r * 0.55, 10, 0, TAU); g.fill(); g.stroke();
-  g.fillStyle = 'rgba(255,255,255,0.7)'; g.beginPath(); g.arc(cx - r * 0.2, sy - r * 0.6, 12, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(226,232,240,0.6)'; g.beginPath(); g.arc(cx - r * 0.2, sy - r * 0.6, 12, 0, TAU); g.fill();
   g.restore();
 }
 

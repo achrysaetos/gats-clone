@@ -258,7 +258,10 @@ function crossingArm(g: G, p: MapPoly) {
 export function railDrawSetPiece(g: G, merged: readonly MapPoly[], info: GeoInfo): boolean {
   const gid0 = merged[0]!.group ?? '';
   if (!/^(car[1-5]|loco|stored|turntable|water-tower|crossing)$/.test(gid0)) return false;
-  const a = merged.filter((q) => !twin(q.id)), b = merged.filter((q) => twin(q.id));
+  // The renderer culls to the polygons in view, so a piece at the screen edge arrives with parts missing (a turntable without
+  // its hub, a carriage short of its ends): dress it from the whole group, or its sprite would slide as the view scrolls.
+  const whole = info.map.polys?.filter((q) => q.group === gid0) ?? merged;
+  const a = whole.filter((q) => !twin(q.id)), b = whole.filter((q) => twin(q.id));
   if (a.length) one(g, a, gid0, info);
   if (b.length) one(g, b, `${gid0}~`, info);
   return true;

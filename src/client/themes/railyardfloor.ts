@@ -200,7 +200,7 @@ function floor(g: G, size: number, seed: number, plan: FloorPlan) {
     g.strokeStyle = 'rgba(28, 31, 38, 0.6)'; g.lineWidth = 1.5;
     // Painted names.
     label(g, turned, turned ? 'PARCELS' : 'TICKETS', 875, 760, '700 30px "Barlow Condensed", sans-serif', 'rgba(232, 224, 200, 0.28)', 10);
-    label(g, turned, turned ? 'GOODS HALL' : 'CONCOURSE', 875, 1150, '700 44px "Barlow Condensed", sans-serif', 'rgba(232, 224, 200, 0.3)', 12);
+    label(g, turned, turned ? 'GOODS HALL' : 'CONCOURSE', 875, 1235, '700 44px "Barlow Condensed", sans-serif', 'rgba(232, 224, 200, 0.3)', 12);
     label(g, turned, 'WAY OUT', 560, 1275, '700 22px "Barlow Condensed", sans-serif', 'rgba(232, 224, 200, 0.26)', 6);
     // Platforms.
     PLATFORMS.forEach((p, i) => platform(g, p, i, turned));
