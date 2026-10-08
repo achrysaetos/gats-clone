@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
+import { placed } from '../../../../src/shared/kit.ts';
+import { MAPS, type MapId } from '../../../../src/shared/maps.ts';
 import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const [RUN, OUT, ...asked] = process.argv.slice(2);
@@ -17,6 +19,7 @@ mkdirSync(OUT, { recursive: true });
 let myId: number | null = null;
 let full = null as Snapshot | null;
 let booms: { at: number; x: number; y: number; r: number }[] = [];
+let broke: { at: number; x: number; y: number; piece: string }[] = [];
 const page = await openPage({
   profile: 'skirmish-screens-',
   viewport: { width: VIEW.w, height: VIEW.h },
@@ -26,13 +29,17 @@ const page = await openPage({
     if (msg.t === 'welcome') { myId = msg.id; full = null; }
     if (msg.t === 'snap') {
       full = fillSnapshot(msg, full) ?? full;
-      for (const ev of full?.events ?? []) if (ev.e === 'boom') booms.push({ at: Date.now(), x: ev.x, y: ev.y, r: ev.r });
+      for (const ev of full?.events ?? []) {
+        if (ev.e === 'boom') booms.push({ at: Date.now(), x: ev.x, y: ev.y, r: ev.r });
+        if (ev.e === 'broke') broke.push({ at: Date.now(), x: ev.x, y: ev.y, piece: ev.piece });
+      }
     }
   },
 });
 const { cdp, js } = page;
 const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: 1 });
 const me = () => full?.players.find((p) => p.id === myId);
+const inView = (b: { x: number; y: number }) => { const self = me(); return !!self && Math.abs(b.x - self.x) < 500 && Math.abs(b.y - self.y) < 280; };
 const shot = async (name: string) => {
   const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
   const file = join(OUT, `${name}.png`);
@@ -50,7 +57,7 @@ async function enter(start: string) {
   await openMenu();
   full = null;
   await js(start);
-  for (let i = 0; i < 80 && !me(); i++) await sleep(100);
+  for (let i = 0; i < 300 && !me(); i++) await sleep(100);
   if (!me()) throw new Error('never joined');
 }
 
@@ -82,6 +89,8 @@ const enemies = () => full?.players.filter((p) => p.id !== myId && p.alive && (p
 const zombies = () => (full?.zombies ?? []).map(([, , x, y]) => ({ x, y }));
 const serverOf = (mode: string) => `document.querySelector('#servers .server .mode-${mode}').closest('.server').click(); document.getElementById('play').click()`;
 const nearCore = () => { const c = full?.run?.core; return c ? { x: c.x + 220, y: c.y + 160 } : null; };
+/** By night, toward the nearest zombie, so the horde fills the frame; by day, beside the core. */
+const toHorde = () => (full?.run?.phase === 'night' && zombies().length ? null : nearCore());
 const pickFirst = async () => { await key(page, 'keyDown', 'Digit1', '1'); await key(page, 'keyUp', 'Digit1', '1'); };
 
 async function fightShot(name: string, ms: number, goal: (() => { x: number; y: number } | null) | null) {
@@ -140,6 +149,39 @@ for (const view of VIEWS) {
       }
       break;
     }
+    case 'fx': {
+      // Walk to the nearest breakable piece and shoot it apart: the sparks and chips, brass piling up, the planks flying and
+      // the pile they leave. Three breaks, each shot as it happens, just after and once the pieces have landed.
+      await enter(serverOf('ffa'));
+      const dist = (p: { x: number; y: number }) => { const self = me()!; return Math.hypot(p.x - self.x, p.y - self.y); };
+      // The snapshot lists only the pieces in view, so the map's own list leads the walk there. `play` stops walking 260
+      // units short of its goal, so a piece is in reach at 300.
+      const target = () => {
+        const seen = (full?.crates ?? []).map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 }));
+        const mapped = MAPS[full?.match.map as MapId]?.breakables.map((at) => { const f = placed(at).foot; return { x: f.x + f.w / 2, y: f.y + f.h / 2 }; }) ?? [];
+        return [...(seen.length ? seen : mapped)].sort((a, b) => dist(a) - dist(b))[0] ?? null;
+      };
+      for (let n = 1; n <= 3; n++) {
+        broke = [];
+        for (let i = 0; i < 400 && !broke.some(inView); i++) {
+          const self = me(), c = self?.alive ? target() : null;
+          if (i % 20 === 0) console.log(`looking for a piece to break: ${self?.alive ? 'alive' : 'dead'}, ${full?.crates.length ?? 0} in view${c ? `, nearest ${Math.round(dist(c))} away` : ''}`);
+          if (!self?.alive || !c) { await play(300, null, enemies, false); continue; }
+          if (dist(c) > 300 || !full?.crates.length) { await play(300, () => c, () => [c], false); continue; }
+          const [mx, my] = [VIEW.w / 2 + (c.x - self.x) * 0.55, VIEW.h / 2 + (c.y - self.y) * 0.55];
+          await mouse('mouseMoved', mx, my);
+          await mouse('mousePressed', mx, my);
+          await sleep(250);
+          await mouse('mouseReleased', mx, my);
+        }
+        const b = broke.find(inView);
+        if (!b) { console.log('no piece broke'); break; }
+        console.log(`broke ${b.piece} at ${Math.round(b.x - me()!.x)},${Math.round(b.y - me()!.y)} from the player`);
+        let waited = 0;
+        for (const [k, ms] of [['a', 60], ['b', 300], ['c', 1500]] as const) { await sleep(ms - waited); waited = ms; await shot(`fx-break-${n}${k}`); }
+      }
+      break;
+    }
     case 'zom-day': {
       await enter(`document.getElementById('squad-start').click()`);
       for (let i = 0; i < 60 && full?.run?.phase !== 'day'; i++) await sleep(100);
@@ -149,8 +191,11 @@ for (const view of VIEWS) {
     }
     case 'zom-night': {
       if (!full?.run) await enter(`document.getElementById('squad-start').click()`);
-      for (let i = 0; i < 1200 && !(full?.run?.phase === 'night' && zombies().length >= 40); i++) await play(300, nearCore, zombies, full?.run?.phase === 'night');
-      await play(1500, nearCore, zombies);
+      for (let i = 0; i < 1200 && !(full?.run?.phase === 'night' && zombies().length >= 12); i++) {
+        if (i % 20 === 0) console.log(`waiting for the night: ${full?.run?.phase ?? 'no run'}, ${zombies().length} zombies in view of ${full?.run?.aliveZombies ?? 0} alive, ${full?.run?.waveLeft ?? 0} to come`);
+        await play(300, toHorde, zombies, full?.run?.phase === 'night');
+      }
+      await play(1500, toHorde, zombies);
       await shot('zom-night');
       break;
     }
@@ -158,12 +203,11 @@ for (const view of VIEWS) {
       if (!full?.run) await enter(`document.getElementById('squad-start').click()`);
       for (let i = 0; i < 1200 && !(full?.run?.phase === 'night' && zombies().length >= 10); i++) {
         if (i % 20 === 0) console.log(`waiting for the horde: ${full?.run?.phase ?? 'no run'}, ${zombies().length} zombies in view`);
-        await play(300, nearCore, zombies, full?.run?.phase === 'night');
+        await play(300, toHorde, zombies, full?.run?.phase === 'night');
       }
-      const inView = (b: { x: number; y: number }) => { const self = me(); return !!self && Math.abs(b.x - self.x) < 500 && Math.abs(b.y - self.y) < 280; };
       for (let n = 1; n <= 3; n++) {
         booms = [];
-        for (let i = 0; i < 400 && !booms.some(inView); i++) await play(150, nearCore, zombies, full?.run?.phase === 'night');
+        for (let i = 0; i < 400 && !booms.some(inView); i++) await play(150, toHorde, zombies, full?.run?.phase === 'night');
         const boom = booms.find(inView);
         if (!boom) break;
         console.log(`boom r=${boom.r} at ${Math.round(boom.x - me()!.x)},${Math.round(boom.y - me()!.y)} from the player`);
