@@ -26,7 +26,7 @@ import { notePropEvents } from './propfx.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
 import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
 import { frameStep, resyncNet, shouldPredict } from './resync.ts';
-import { nextInputDue } from './inputclock.ts';
+import { nextInputDue, pullsInput } from './inputclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
@@ -502,12 +502,24 @@ function sendInputTick() {
 
 // One input per server tick on average (see inputclock.ts), not setInterval's 30.3 a second.
 let inputDueAt = performance.now();
-(function inputLoop() {
+let inputTimer: ReturnType<typeof setTimeout> | undefined;
+let inputSentAt = -Infinity;
+function inputLoop() {
   inputDueAt = nextInputDue(performance.now(), inputDueAt, INPUT_MS);
   // Scheduled first, so a throw in one tick's input cannot stop the inputs for good.
-  setTimeout(inputLoop, Math.max(0, inputDueAt - performance.now()));
+  inputTimer = setTimeout(inputLoop, Math.max(0, inputDueAt - performance.now()));
+  inputSentAt = performance.now();
   sendInputTick();
-})();
+}
+inputLoop();
+/** A move key changed: send now and restart the schedule from here (see inputclock.ts `pullsInput`). */
+function inputNow() {
+  const now = performance.now();
+  if (!pullsInput(now, inputSentAt, INPUT_MS)) return;
+  clearTimeout(inputTimer);
+  inputDueAt = now - INPUT_MS;
+  inputLoop();
+}
 
 function pick(slot: number) {
   const s = sessionOf(state);
@@ -815,15 +827,19 @@ function onKeyDown(e: KeyboardEvent) {
       noteAbilityDenied(performance.now());
       playClick(s);
     }
+    const fresh = !held.has(action);
     held.add(action);
+    if (fresh && isMove(action)) inputNow();
   }
 }
+
+const isMove = (a: string) => a === 'up' || a === 'down' || a === 'left' || a === 'right';
 
 function onKeyUp(e: KeyboardEvent) {
   if (e.code === 'KeyT') wheel.release();
   if (e.code === 'Tab') fullBoard = false;
   const action = actionForKey(e.code);
-  if (action) held.delete(action);
+  if (action && held.delete(action) && isMove(action) && state.phase === 'playing') inputNow();
 }
 
 for (const type of ['pointerdown', 'keydown'] as const) window.addEventListener(type, () => { audio.unlock(); const bus = audio.bus(); if (bus) musicStart(bus.ctx, bus.out); }, { capture: true });
