@@ -19,7 +19,7 @@ const spec = {
   playerRadius: WORLD.playerRadius,
   teamColors: COLORS,
   sprites: SPRITES,
-  guns: Object.fromEntries(GUN_IDS.map((id) => [id, { base: GUNS[id].base, stage: GUNS[id].stage, accent: GUNS[id].look.accent, parts: GUN_PARTS[id] }])),
+  guns: Object.fromEntries(GUN_IDS.map((id) => [id, { base: GUNS[id].base, stage: GUNS[id].stage, accent: GUNS[id].look.accent, hands: GUNS[id].look.hands ?? 1, parts: GUN_PARTS[id] }])),
   zombies: Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, { radius: ZOMBIES[k].radius, ...ZOMBIE_LOOK[k] }])),
   turrets: TURRET_LOOK,
   kit: Object.fromEntries(Object.entries(KIT).map(([id, d]) => [id, { w: d.w, h: d.h, height: d.height, overhead: !!('overhead' in d && d.overhead) }])),

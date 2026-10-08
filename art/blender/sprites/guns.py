@@ -32,13 +32,13 @@ def gun_model(b, gun, dust=0.0, floor=False):
     accent = C.mat('accent', C.srgb(gun['accent']), rough=0.4, metal=0.3, grime=0.1)
     parts = gun['parts']
     reach = max(p['x'] + p['w'] for p in parts)
-    plain = [p for p in parts if not p.get('accent')]
+    plain = [p for p in parts if p['role'] != 'accent']
     body = plain[0]
     for p in parts:
         x0, x1 = p['x'] * R, (p['x'] + p['w']) * R
         y0, y1 = p['y'] * R, (p['y'] + p['h']) * R
         cx, cy, w, h = (x0 + x1) / 2, -(y0 + y1) / 2, x1 - x0, y1 - y0
-        if p.get('accent'):
+        if p['role'] == 'accent':
             kit.box('solid', accent, (cx, cy, 6.2), (w, h, 1.2), bevel=0.4)
         elif abs(p['x'] + p['w'] - reach) < 1e-6:
             # the barrel: a round tube ending flush with the muzzle, with a brake no longer than the tube
