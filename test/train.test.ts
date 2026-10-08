@@ -3,7 +3,10 @@ import { test } from 'node:test';
 import { MAPS, parseMapFile } from '../src/shared/maps.ts';
 import { arrivalOf, passMs, trainAt, type TrainDef } from '../src/shared/sim/train.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
+import { WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
+import { circleHitsRect, rectsOverlap } from '../src/shared/sim/movement.ts';
+import { createWorld, spawnPoint } from '../src/shared/sim/world.ts';
 import { emptyWorld, hpOf, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 const TRAIN: TrainDef = { lane: { x: 0, y: 1000, w: 4000, h: 150 }, axis: 'x', dir: 1, everyMs: 60_000, jitterMs: 10_000, warnMs: 5000, speed: 1600, length: 1200 };
@@ -75,5 +78,20 @@ test('a passing train stops rounds, and the lane lets them through once it has g
     assert.ok(hpOf(target) < 100, 'the empty lane did not');
   } finally {
     if (was) def.train = was; else delete def.train;
+  }
+});
+
+test('nobody spawns in the lane, even when it is the farthest ground from every rival, and no Last Squad crate or drop lands in it', () => {
+  const lane = MAPS.railyard.train!.lane, size = MAPS.railyard.size;
+  const w = createWorld('FFA', 7, 'railyard');
+  for (const [x, y] of [[300, 300], [size - 300, 300], [300, size - 300], [size - 300, size - 300]] as const) spawnAt(w, x, y);
+  for (let i = 0; i < 100; i++) {
+    const at = spawnPoint(w, null);
+    assert.ok(!circleHitsRect(at.x, at.y, WORLD.playerRadius, lane), `spawned in the lane at (${at.x.toFixed(0)}, ${at.y.toFixed(0)})`);
+  }
+  for (const seed of [1, 2, 3]) {
+    const br = createWorld('BR', seed, 'railyard');
+    assert.deepEqual(br.crates.filter((c) => rectsOverlap(c, lane)), [], `seed ${seed}`);
+    assert.ok(br.royale!.drops.every((d) => !circleHitsRect(d.x, d.y, WORLD.playerRadius, lane)), 'the first drop lands off the lane');
   }
 });

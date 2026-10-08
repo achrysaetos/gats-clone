@@ -303,6 +303,12 @@ export function coverRects(w: World): Rect[] {
   return cover;
 }
 
+/** Ground nothing is put on, though it stops nobody: the train's lane, where a spawn, a drop or a crate would be run down. */
+export function keepOff(w: World): Rect[] {
+  const train = MAPS[w.map].train;
+  return train ? [train.lane] : [];
+}
+
 /** What stops bodies: cover and railings, plus the squad's walls and the core in a zombies run. */
 export function solidRects(w: World): Rect[] {
   const solids = [...coverRects(w), ...w.fences];
@@ -338,7 +344,7 @@ function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number)
 
 export function spawnPoint(w: World, team: Team): Spot {
   const { spawns, siege, size } = MAPS[w.map];
-  const solids = solidRects(w);
+  const solids = [...solidRects(w), ...keepOff(w)];
   if (w.royale) return squadSpawn(w, team, solids, size);
   const sided = team === 'red' || team === 'blue' ? team : null;
   const regions = w.extract && sided ? sideSpawns(w, w.extract, sided) : spawns[sided ?? 'ffa'];

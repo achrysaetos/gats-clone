@@ -303,7 +303,8 @@ test('rich caches sit round each map\'s centre and pay a level step', () => {
     const centre = MAPS[map].size / 2;
     const caches = w.crates.filter((c) => c.tier === 'cache');
     assert.equal(caches.length, ROYALE.caches, map);
-    for (const c of caches) assert.ok(Math.hypot(c.x + c.w / 2 - centre, c.y + c.h / 2 - centre) < ROYALE.cacheR + 150, `${map} cache near the centre`);
+    const lane = MAPS[map].train?.lane.h ?? 0;
+    for (const c of caches) assert.ok(Math.hypot(c.x + c.w / 2 - centre, c.y + c.h / 2 - centre) < ROYALE.cacheR + 150 + lane, `${map} cache near the centre, or beside a train lane through it`);
     const own = new Set(MAPS[map].breakables.map((at) => `${placed(at).foot.x},${placed(at).foot.y}`));
     assert.ok(w.crates.filter((c) => own.has(`${c.x},${c.y}`)).every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
   }

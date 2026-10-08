@@ -6,7 +6,7 @@ import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
-import { clearPointNear, coverRects, crateRect, moveTo, newId, rand, spawnPoint, type Crate, type Player, type Ring, type Royale, type Pose, type RoyaleStats, type World } from './world.ts';
+import { clearPointNear, coverRects, crateRect, keepOff, moveTo, newId, rand, spawnPoint, type Crate, type Player, type Ring, type Royale, type Pose, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
@@ -30,7 +30,7 @@ const ringDps = (ring: Ring) => RING[ring.k === 'closed' ? RING.length - 1 : rin
 function clearSpotIn(w: World, c: Circle, within: number, edge: number): { x: number; y: number } {
   const size = MAPS[w.map].size;
   const margin = Math.max(WORLD.playerRadius * 2, Math.min(edge, size / 2) * 0.6);
-  const solids = coverRects(w);
+  const solids = [...coverRects(w), ...keepOff(w)];
   for (let i = 0; i < 80; i++) {
     const a = rand(w) * 2 * Math.PI, d = Math.sqrt(rand(w)) * within;
     const x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d;
@@ -60,7 +60,7 @@ function stockCrates(w: World, spin: number) {
   w.crates = w.crates.map((c) => ({ ...c, tier: 'loot' }));
   for (let i = 0; i < ROYALE.caches; i++) {
     const a = spin + ((i + 0.5) / ROYALE.caches) * 2 * Math.PI;
-    const at = clearPointNear(coverRects(w), centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, KIT[CRATE_TIERS.cache.piece].w, size);
+    const at = clearPointNear([...coverRects(w), ...keepOff(w)], centre + Math.cos(a) * ROYALE.cacheR, centre + Math.sin(a) * ROYALE.cacheR, KIT[CRATE_TIERS.cache.piece].w, size);
     w.crates.push(crateAt(w, at.x, at.y, 'cache'));
   }
   scatter(w, { x: centre, y: centre, r: size }, ROYALE.scatter);
@@ -68,7 +68,7 @@ function stockCrates(w: World, spin: number) {
 
 function scatter(w: World, within: Circle, count: number) {
   const size = MAPS[w.map].size, centre = size / 2;
-  const solids = coverRects(w);
+  const solids = [...coverRects(w), ...keepOff(w)];
   const crates = [...w.crates];
   const bodies = [...w.players.values()].filter((p) => p.life.k !== 'dead');
   const lo = (c: number) => Math.max(SCATTER_CLEAR, c - within.r), hi = (c: number) => Math.min(size - SCATTER_CLEAR, c + within.r);
