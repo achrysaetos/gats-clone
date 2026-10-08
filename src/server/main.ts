@@ -229,21 +229,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
   wss.on('error', (err) => console.error('websocket server error', err));
   http.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url ?? '/', 'http://x');
+    // A target like `//[` is no URL; thrown here, outside any promise, it would take the whole process down.
+    let url: URL;
+    try { url = new URL(req.url ?? '/', 'http://x'); } catch { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
     const room = url.pathname === '/ws' ? rooms.get(url.searchParams.get('room') ?? '') : undefined;
     if (!room) { socket.end('HTTP/1.1 404 Not Found\r\n\r\n'); return; }
     const ip = ipOf(req);
     const open = socketsByIp.get(ip) ?? 0;
     if (open >= limits.socketsPerIp) { socket.end('HTTP/1.1 429 Too Many Requests\r\n\r\n'); return; }
     socketsByIp.set(ip, open + 1);
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      ws.once('close', () => {
-        const left = (socketsByIp.get(ip) ?? 1) - 1;
-        if (left > 0) socketsByIp.set(ip, left);
-        else socketsByIp.delete(ip);
-      });
-      room.connect(ws);
+    // Counted back when the TCP socket closes, not the websocket: a handshake ws refuses (a bad key, a wrong version) never makes a websocket.
+    socket.once('close', () => {
+      const left = (socketsByIp.get(ip) ?? 1) - 1;
+      if (left > 0) socketsByIp.set(ip, left);
+      else socketsByIp.delete(ip);
     });
+    wss.handleUpgrade(req, socket, head, (ws) => room.connect(ws));
   });
 
   // setInterval drifts late every tick (28.8Hz measured), so game time ran slow and snapshot gaps wobbled.
