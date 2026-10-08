@@ -401,11 +401,14 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   balanceBots();
   let seatedRoyale = world.royale;
+  /** Set by close(): a socket that reaches a closed room is turned away (one still finishing its close handshake was already let go). */
+  let closed = false;
 
   return {
     id,
     world,
     connect(ws) {
+      if (closed) { ws.close(1001, 'room closed'); return; }
       clients.set(ws, { k: 'lobby', ws });
       const allow = makeTokenBucket(limits.messagesPerSec, limits.messageBurst);
       const joinTimer = setTimeout(() => { if (clients.get(ws)?.k === 'lobby') ws.close(1008, 'join timeout'); }, limits.joinTimeoutMs);
@@ -493,7 +496,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       return out;
     },
     close() {
-      for (const ws of clients.keys()) ws.close();
+      // Seated players leave now, so their lives and walks are credited before a shutting-down server flushes and exits;
+      // a 'close' event that comes later (or never, from a peer that ignores the close frame) then finds nothing to do.
+      closed = true;
+      for (const ws of [...clients.keys()]) {
+        disconnect(ws);
+        ws.close();
+      }
     },
   };
 }
