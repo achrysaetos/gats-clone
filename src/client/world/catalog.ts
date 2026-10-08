@@ -1,4 +1,4 @@
-import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId } from '../../shared/defs.ts';
+import { CRATE_TIERS, GUN_IDS, TURRET_KINDS, WEAPON_IDS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type CrateTier, type GunId } from '../../shared/defs.ts';
 import { GUN_PARTS } from '../sprites.ts';
 import { KIT } from '../../shared/kit.ts';
 
@@ -20,6 +20,8 @@ export type SpriteSpec = {
   frames: number;
   /** Layers baked over the same box: `base` is drawn as is, `team` is a white mask the painter tints, `glow` is drawn additively and blooms. */
   layers: readonly Layer[];
+  /** Layers baked at frame 0 only, which every frame shares (the soldier's armor rides the torso, which no frame moves). */
+  still?: readonly Layer[];
   /** What the bake should build, in words a script can branch on. */
   model: string;
   /** Pixels per game unit relative to PX_PER_UNIT, for soft things that need fewer. */
@@ -46,14 +48,33 @@ function gunBox(gun: GunId): Box {
 /** A footprint's frame: origin at the footprint's top-left corner, with room for the south face and a little spill. */
 const footprint = (w: number, h: number, pad = 6): Box => ({ x: -pad, y: -pad, w: w + pad * 2, h: h + pad * 2 + FACE });
 
+/**
+ * The split soldier's frame layout. `soldier` is the waist up with arms and gun hands, turned to the aim; `soldier.legs`
+ * is the pelvis down, turned to the movement direction. Both share the body's origin and the same shear, so drawn at
+ * the same point, legs first, they join at the belt. The gun stays its own sprite: aim, recoil and reload keep the
+ * hands on it. Recoil frame `recoil[0]` matches a gun drawn at full kick, `recoil[1]` at half.
+ */
+export const SOLDIER = {
+  torso: { frames: 9, aim: 0, recoil: [1, 2], reload: [3, 4, 5, 6, 7, 8] },
+  legs: { frames: 9, stand: 0, run: [1, 2, 3, 4, 5, 6, 7, 8] },
+  /** Death poses, one per frame; the painter picks one and turns it. */
+  dead: { frames: 3 },
+} as const;
+
 export const CRATE_STAGES = 3;
 export const WALL_STAGES = 3;
 
 const entries: [string, SpriteSpec][] = [
-  ['soldier', { box: square(R * 1.5, FACE), dirs: 32, frames: 1, layers: ['base', 'team', 'armorLight', 'armorMedium', 'armorHeavy'], model: 'soldier' }],
-  ['soldier.shadow', { box: { x: -R * 4, y: -R * 4, w: R * 8, h: R * 8 }, dirs: 16, frames: 1, layers: ['shadow'], model: 'soldier', scale: 0.5 }],
-  ['soldier.downed', { box: square(R * 1.8, FACE), dirs: 1, frames: 1, layers: ['base', 'team'], model: 'soldier-downed' }],
+  ['soldier', { box: square(R * 1.5, FACE), dirs: 32, frames: SOLDIER.torso.frames, layers: ['base', 'team', 'armorLight', 'armorMedium', 'armorHeavy'], still: ['armorLight', 'armorMedium', 'armorHeavy'], model: 'soldier:torso' }],
+  ['soldier.legs', { box: square(R * 1.2, FACE), dirs: 16, frames: SOLDIER.legs.frames, layers: ['base', 'team'], model: 'soldier:legs' }],
+  ['soldier.shadow', { box: { x: -R * 4, y: -R * 4, w: R * 8, h: R * 8 }, dirs: 16, frames: 1, layers: ['shadow'], model: 'soldier:full', scale: 0.5 }],
+  ['soldier.downed', { box: square(R * 1.8, 4), dirs: 1, frames: 1, layers: ['base', 'team'], model: 'soldier:downed' }],
+  ['soldier.dead', { box: square(R * 1.9, 4), dirs: 1, frames: SOLDIER.dead.frames, layers: ['base', 'team'], model: 'soldier:dead' }],
   ...GUN_IDS.map((gun): [string, SpriteSpec] => [`gun.${gun}`, { box: gunBox(gun), dirs: 1, frames: 1, layers: ['base'], model: `gun:${gun}` }]),
+  ...WEAPON_IDS.map((kind): [string, SpriteSpec] => {
+    const g = gunBox(kind), pad = 6;
+    return [`drop.${kind}`, { box: { x: g.x - pad, y: g.y - pad, w: g.w + pad * 2, h: g.h + pad * 2 }, dirs: 1, frames: 1, layers: ['base'], model: `drop:${kind}` }];
+  }),
   ...ZOMBIE_KINDS.map((kind): [string, SpriteSpec] => [`zombie.${kind}`, { box: square(ZOMBIES[kind].radius * 1.9, FACE), dirs: 16, frames: 1, layers: ['base'], model: `zombie:${kind}`, scale: ZOMBIES[kind].radius > 30 ? 0.75 : 1 }]),
   ...(['plain', ...Object.keys(CRATE_TIERS)] as const).flatMap((tier) => {
     const size = KIT[tier === 'plain' ? 'crate' : CRATE_TIERS[tier as CrateTier].piece].w;
@@ -76,7 +97,11 @@ const entries: [string, SpriteSpec][] = [
 
 export const SPRITES: Readonly<Record<string, SpriteSpec>> = Object.fromEntries(entries);
 
-export const frameKey = (name: string, layer: Layer, dir = 0, frame = 0) => `${name}/${layer}/${dir}/${frame}`;
+/** How many frames a layer of a sprite has: still layers have one. */
+export const layerFrames = (s: SpriteSpec, layer: Layer) => (s.still?.includes(layer) ? 1 : s.frames);
+
+/** The atlas key of a frame; a still layer answers every frame with its one frame. */
+export const frameKey = (name: string, layer: Layer, dir = 0, frame = 0) => `${name}/${layer}/${dir}/${SPRITES[name] && layerFrames(SPRITES[name]!, layer) === 1 ? 0 : frame}`;
 
 /** The baked facing nearest `angle`, and the turn left over for the painter to apply. */
 export function facing(angle: number, dirs: number): { dir: number; rest: number } {

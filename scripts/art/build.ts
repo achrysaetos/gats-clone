@@ -13,7 +13,7 @@ import sharp from 'sharp';
 import { MAP_IDS, MAPS, type MapId } from '../../src/shared/maps.ts';
 import type { Manifest, MapTiles } from '../../src/client/world/assets.ts';
 import { ART } from '../../src/client/world/art.ts';
-import { frameKey, SPRITES, type Layer } from '../../src/client/world/catalog.ts';
+import { frameKey, layerFrames, SPRITES, type Layer } from '../../src/client/world/catalog.ts';
 import { layoutKey } from '../../src/client/world/layout.ts';
 import { packFrames, type Frame } from './pack.ts';
 import { makeWater } from './water.ts';
@@ -109,7 +109,7 @@ async function bakeSprites() {
   } else console.log(`sprites: current (${inputs})`);
   if (existsSync('scripts/art/check-sprites.ts')) run('node', ['scripts/art/check-sprites.ts', join(BUILD, 'sprites-spec.json'), dir]);
   const frames: Frame[] = [];
-  for (const [name, s] of Object.entries(SPRITES)) for (const layer of s.layers as Layer[]) for (let d = 0; d < s.dirs; d++) for (let f = 0; f < s.frames; f++) {
+  for (const [name, s] of Object.entries(SPRITES)) for (const layer of s.layers as Layer[]) for (let d = 0; d < s.dirs; d++) for (let f = 0; f < layerFrames(s, layer); f++) {
     const png = join(dir, name, layer, `${d}_${f}.png`);
     if (existsSync(png)) frames.push({ key: frameKey(name, layer, d, f), file: png });
   }

@@ -13,12 +13,22 @@ INK = (0.05, 0.05, 0.055)
 
 
 def build(b):
-    gun = b.spec['guns'][b.arg[0]]
+    return gun_model(b, b.spec['guns'][b.arg[0]])
+
+
+def build_drop(b):
+    """A gun of the class lying on the floor after its holder died: the class's base gun, dropped flat, a little dusty,
+    with a contact shadow. The painter turns it to wherever it fell."""
+    gun_model(b, b.spec['guns'][b.arg[0]], dust=0.35, floor=True)
+    return C.Model(z_ref=None, overhead=True, contact=0.9, outline=(INK, 0.8))
+
+
+def gun_model(b, gun, dust=0.0, floor=False):
     R = b.R
     kit = b.kit
-    steel = C.mat('steel', STEEL, rough=0.38, metal=0.6, grime=0.15, grime_scale=1.2, ink=0.4)
-    dark = C.mat('dark', DARK, rough=0.45, metal=0.4, grime=0.0)
-    poly = C.mat('poly', POLY, rough=0.75, grime=0.1, ink=0.3)
+    steel = C.mat('steel', STEEL, rough=0.38 + dust, metal=0.6, grime=0.15 + dust, grime_scale=1.2, ink=0.4)
+    dark = C.mat('dark', DARK, rough=0.45 + dust, metal=0.4, grime=dust)
+    poly = C.mat('poly', POLY, rough=0.75, grime=0.1 + dust, ink=0.3)
     accent = C.mat('accent', C.srgb(gun['accent']), rough=0.4, metal=0.3, grime=0.1)
     parts = gun['parts']
     reach = max(p['x'] + p['w'] for p in parts)
@@ -47,4 +57,10 @@ def build(b):
             kit.box('solid', poly, (cx, cy, 1.6), (w, h, 3.2), bevel=min(0.9, w * 0.3))
         else:
             kit.box('solid', steel, (cx, cy, 3.0), (w, h, 3.8), bevel=min(1.0, h * 0.25))
+    if floor:
+        # lower it onto the floor: the held gun floats at grip height
+        low = min(v.z for g in kit.groups.values() for v in g['v'])
+        for g in kit.groups.values():
+            for v in g['v']:
+                v.z -= low
     return C.Model(z_ref=None, overhead=True, outline=(INK, 0.8))

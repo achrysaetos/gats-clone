@@ -1,7 +1,8 @@
 {
  "atlases": [
-  "sprites/atlas-0.d703112eb5.json",
-  "sprites/atlas-1.86f4f6eedd.json"
+  "sprites/atlas-0.8b18e65a05.json",
+  "sprites/atlas-1.e26a83feaa.json",
+  "sprites/atlas-2.7bf2117d60.json"
  ],
  "maps": {
   "652e769d": {

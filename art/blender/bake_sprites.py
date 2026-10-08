@@ -21,8 +21,8 @@ from sprites import fx, guns, props, soldier, zombies  # noqa: E402
 
 BUILDERS = {
     'soldier': soldier.build,
-    'soldier-downed': soldier.build_downed,
     'gun': guns.build,
+    'drop': guns.build_drop,
     'zombie': zombies.build,
     'crate': props.build_crate,
     'engineer-wall': props.build_engineer_wall,
@@ -134,6 +134,7 @@ def bake(spec, name, entry, out):
         b = Build(spec, name, entry, f, root, colls)
         model = BUILDERS[kind](b)
         b.kit.build(root, colls)
+        parts = C.freeze(colls) if model.freeze else None
         if model.samples:
             bpy.context.scene.cycles.samples = model.samples
         C.add_camera(box, px)
@@ -141,8 +142,14 @@ def bake(spec, name, entry, out):
         sun, contact, bg = C.add_lights(spec, model.overhead)
         lights = (sun, contact, bg, bg.inputs['Strength'].default_value)
         for d in range(entry['dirs']):
-            root.matrix_world = C.frame_matrix(d / entry['dirs'] * 2 * math.pi, model.z_ref, spec['camera']['shear'])
+            angle = d / entry['dirs'] * 2 * math.pi
+            if not parts:
+                root.matrix_world = C.frame_matrix(angle, model.z_ref, spec['camera']['shear'])
             for layer in entry['layers']:
+                if f > 0 and layer in entry.get('still', ()):
+                    continue
+                if parts:
+                    C.place(parts, (C.shadow_matrix if layer == 'shadow' else C.frame_matrix)(angle, model.z_ref, spec['camera']['shear']))
                 folder = os.path.join(out, name, layer)
                 os.makedirs(folder, exist_ok=True)
                 path = os.path.join(folder, f'{d}_{f}.png')
