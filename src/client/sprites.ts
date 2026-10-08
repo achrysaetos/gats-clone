@@ -70,6 +70,33 @@ function partsOf(gun: GunId): Part[] {
 
 export const GUN_PARTS: Record<GunId, readonly Part[]> = byGun(partsOf);
 
+/**
+ * What the sprite bake adds to a gun's class model, so each evolution shows what it does (art/SPRITES.md lists them).
+ * Extra barrels and the second pistol come from GUN_PARTS. Muzzle devices end at the muzzle, never past it.
+ */
+export type Attachment =
+  | 'suppressor' | 'compensator' | 'brake' | 'heavyBarrel' | 'coils'
+  | 'extendedMag' | 'drum'
+  | 'redDot' | 'scope' | 'bigScope' | 'laser'
+  | 'stock' | 'shortStock' | 'noStock'
+  | 'foregrip' | 'launcher' | 'bipod' | 'carryHandle'
+  | 'cylinder' | 'motor';
+
+export const GUN_ATTACHMENTS: Record<GunId, readonly Attachment[]> = {
+  pistol: [], handCannon: ['compensator'], machinePistol: ['stock'], executioner: ['compensator', 'laser'],
+  gunslinger: ['cylinder'], akimbo: [], hailstorm: ['stock', 'compensator'],
+  smg: [], skirmisher: ['redDot'], heavySmg: ['foregrip'], phantom: ['redDot', 'suppressor'],
+  hornet: ['redDot', 'extendedMag'], ripper: ['foregrip', 'heavyBarrel', 'brake'], bulldog: ['foregrip', 'drum'],
+  shotgun: [], slugGun: ['redDot', 'heavyBarrel'], doubleBarrel: [], railSlug: ['scope', 'coils'],
+  boomSlug: ['redDot', 'brake'], sawedOff: ['noStock'], streetSweeper: ['drum'],
+  assault: [], battleRifle: ['foregrip', 'brake'], carbine: ['shortStock'], marksman: ['scope', 'heavyBarrel', 'brake'],
+  grenadier: ['launcher', 'brake'], specter: ['shortStock', 'suppressor'], scout: ['shortStock', 'scope'],
+  sniper: [], longshot: ['bigScope'], semiAuto: ['extendedMag'], piercer: ['bigScope', 'heavyBarrel', 'bipod'],
+  artillery: ['bigScope', 'brake', 'bipod'], repeater: ['extendedMag', 'brake'], ghost: ['extendedMag', 'suppressor'],
+  lmg: [], heavyLmg: ['heavyBarrel', 'carryHandle'], lightMg: ['foregrip'], minigun: ['motor'],
+  juggernaut: ['heavyBarrel', 'carryHandle', 'brake'], ranger: ['foregrip', 'redDot'], twinMg: [],
+};
+
 export function drawGun(ctx: CanvasRenderingContext2D, gun: GunId, radius: number, flat?: string) {
   for (const p of GUN_PARTS[gun]) {
     if (flat && p.role === 'accent') continue;

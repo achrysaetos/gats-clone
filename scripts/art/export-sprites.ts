@@ -8,7 +8,8 @@ import { PX_PER_UNIT, SPRITES, TRAIN } from '../../src/client/world/catalog.ts';
 import { KIT } from '../../src/shared/kit.ts';
 import { ZOMBIE_LOOK } from '../../src/client/palette.ts';
 import { TURRET_LOOK } from '../../src/client/siege.ts';
-import { GUN_PARTS } from '../../src/client/sprites.ts';
+import { GUN_ATTACHMENTS, GUN_PARTS } from '../../src/client/sprites.ts';
+import { cycleOf } from '../../src/client/reload.ts';
 
 const out = process.argv[2];
 if (!out) { console.error('usage: node scripts/art/export-sprites.ts <out.json>'); process.exit(2); }
@@ -19,7 +20,7 @@ const spec = {
   playerRadius: WORLD.playerRadius,
   teamColors: COLORS,
   sprites: SPRITES,
-  guns: Object.fromEntries(GUN_IDS.map((id) => [id, { base: GUNS[id].base, stage: GUNS[id].stage, accent: GUNS[id].look.accent, hands: GUNS[id].look.hands ?? 1, parts: GUN_PARTS[id] }])),
+  guns: Object.fromEntries(GUN_IDS.map((id) => [id, { base: GUNS[id].base, stage: GUNS[id].stage, accent: GUNS[id].look.accent, hands: GUNS[id].look.hands ?? 1, cycle: cycleOf(id)?.kind ?? null, attachments: GUN_ATTACHMENTS[id], parts: GUN_PARTS[id] }])),
   zombies: Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, { radius: ZOMBIES[k].radius, ...ZOMBIE_LOOK[k] }])),
   turrets: TURRET_LOOK,
   kit: Object.fromEntries(Object.entries(KIT).map(([id, d]) => [id, { w: d.w, h: d.h, height: d.height, overhead: !!('overhead' in d && d.overhead) }])),
