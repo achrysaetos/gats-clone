@@ -23,7 +23,7 @@ function colorOf(t: Target, twin: boolean): string {
   return COLORS[t.k]!;
 }
 
-export type Overlay = {
+type Overlay = {
   cam: EditorCam;
   size: number;
   grid: number;

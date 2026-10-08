@@ -8,7 +8,7 @@ import type { Rect } from '../../shared/sim/movement.ts';
  * one half: everything the editor shows of the other half is a twin derived here, and editing a twin edits its original.
  */
 
-export type SpawnSide = keyof MapFile['spawns'];
+type SpawnSide = keyof MapFile['spawns'];
 
 /** One editable thing in a map file. */
 export type Target =
@@ -53,7 +53,7 @@ export function geomOf(f: MapFile, t: Target): Geom | null {
 const setAt = <T>(list: readonly T[], i: number, v: T): T[] => list.map((x, j) => (j === i ? v : x));
 
 /** The file with `t` moved or resized to `g`. A piece takes only `g`'s corner: its size comes from the kit. */
-export function withGeom(f: MapFile, t: Target, g: Geom): MapFile {
+function withGeom(f: MapFile, t: Target, g: Geom): MapFile {
   const r = g.kind === 'rect' ? g.rect : { x: g.at.x, y: g.at.y, w: 0, h: 0 };
   const c = g.kind === 'point' ? g.at : { x: r.x + r.w / 2, y: r.y + r.h / 2 };
   const box = { x: r.x, y: r.y, w: r.w, h: r.h };
@@ -92,7 +92,7 @@ function twinOf(f: MapFile, t: Target, g: Geom): Geom | null {
 }
 
 /** Every target in the file, then every twin, so a twin draws over nothing it hides. */
-export function targetsOf(f: MapFile): Target[] {
+function targetsOf(f: MapFile): Target[] {
   const ts: Target[] = [];
   f.marks.forEach((_, i) => ts.push({ k: 'mark', i }));
   for (const side of ['ffa', 'red', 'blue'] as const) f.spawns[side].forEach((_, i) => ts.push({ k: 'spawn', side, i }));
@@ -108,7 +108,7 @@ export function targetsOf(f: MapFile): Target[] {
   return ts;
 }
 
-export function labelOf(f: MapFile, t: Target, twin = false): string {
+function labelOf(f: MapFile, t: Target, twin = false): string {
   switch (t.k) {
     case 'piece': return KIT[f.pieces[t.i]!.p].name;
     case 'mark': return `${f.marks[t.i]!.k} mark`;

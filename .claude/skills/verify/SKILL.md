@@ -97,6 +97,15 @@ node .claude/skills/verify/scripts/zombies-ui.ts "$RUN" [step ...]
 
 One muted headless Chrome plays a zombies squad through real input. Steps: `menu badlink squad build turrets night` by default, plus `ready` (after `night`), and `downed`, `report`, `horde` and `victory`, which need scratch copies (fragile humans and a weak core, a mixed first night, a one-night run). It starts a squad from the menu, follows its invite link, builds and takes down a wall and puts up a sentry with real keys and clicks, reads the ghost and callouts from `skirmishDev.zombies()`, and plays night 1 to dawn, watching the turrets fire and reloading one with E. It checks the warning and dawn forecasts against the night table and that night 1's zombies come only from the forecast side. Its log is `$RUN/evidence/zombies-ui.log`. The recipes and scratch values are in [the zombies feature file](features/zombies.md). `SQUAD=1 frametime.ts` measures frame cost in a squad.
 
+### Map editor
+
+```bash
+SKIRMISH_DEV_MAPS=1 "$RUN/repo/.claude/skills/verify/scripts/launch.sh" "$RUN/run"
+(cd "$RUN/repo" && SAVE_REPO="$RUN/repo" node .claude/skills/verify/scripts/editor.ts "$RUN/run" [map])
+```
+
+The editor (`?dev&editor=<map>`, `src/client/editor/`) writes map files into the repo the server runs from, so drive it from a scratch copy (the rsync recipe in [the progression recipe](features/progression-death-modes.md)) launched with `SKIRMISH_DEV_MAPS=1`. One muted headless Chrome checks that `?editor` without `?dev` keeps the game menu and never fetches `editor.js`, that `?dev&editor` opens the stored file on the baked stage with no game socket, then through real mouse and keys: wheel zoom about the cursor, placing a forklift from the palette onto a container (the live lint pins the overlap), the half-turn twin, grid and Shift-free drags, R, Ctrl+Z and Ctrl+Shift+Z, a spawn's corner resize, L for the light layer, Delete, Download in the stored bytes and, with `SAVE_REPO`, Ctrl+S writing the file and a reload reading it back. `skirmishEditor.file()`, `.problems()`, `.selected()`, `.mode()`, `.toScreen(p)`, `.camera()` and `.world()` read the page's state. It screenshots the placing moment with the lint pin to `$RUN/evidence/editor.webp` (`SHOT=` overrides). Its log is `$RUN/evidence/editor.log`.
+
 ### Extraction
 
 ```bash
