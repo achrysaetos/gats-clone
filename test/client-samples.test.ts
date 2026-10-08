@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createSampleLoader } from '../src/client/samples.ts';
-import { SAMPLE_IDS, voiceFor } from '../src/client/sfx.ts';
+import { COMMON_SAMPLES, createSampleLoader } from '../src/client/samples.ts';
+import { SAMPLE_IDS, voiceFor, type SoundId } from '../src/client/sfx.ts';
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
@@ -67,4 +67,10 @@ test('a sound the manifest lacks is never asked for, and stays on its synth reci
   await f.finishAll();
   assert.deepEqual(f.asked, []);
   assert.equal(loader.buffer('horn'), undefined);
+});
+
+test('the cues a game opens on find every layer they need among the recordings fetched up front', () => {
+  const opening: SoundId[] = ['click', 'hit', 'hurt', 'kill', 'boom', 'step:L', 'step:R', 'gun:magOut', 'gun:magIn', 'brass:casing',
+    'shot:pistol', 'shot:smg', 'shot:assault', 'shot:shotgun', 'shot:sniper'];
+  for (const id of opening) assert.equal(voiceFor(id, (s) => COMMON_SAMPLES.includes(s), () => 0.5).kind, 'sample', id);
 });

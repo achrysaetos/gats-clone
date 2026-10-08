@@ -1,7 +1,7 @@
 import { SAMPLE_IDS, type SampleId } from './sfx.ts';
 
 /** Recordings fetched once the first gesture unlocks audio, before anything asks: what nearly every game plays in its first seconds. */
-export const COMMON_SAMPLES: readonly SampleId[] = ['click', 'hit', 'hurt', 'kill', 'crack', 'sub', 'magOut', 'magIn', 'casing', 'pistol', 'smg', 'assault', 'shotgun', 'sniper', 'boom'];
+export const COMMON_SAMPLES: readonly SampleId[] = ['click', 'hit', 'hurt', 'kill', 'thump', 'crack', 'sub', 'stepL', 'stepR', 'magOut', 'magIn', 'casing', 'pistol', 'smg', 'assault', 'shotgun', 'sniper', 'boom'];
 const PARALLEL = 3;
 
 export type SampleIo<B> = {

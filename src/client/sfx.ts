@@ -1,8 +1,9 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, ZOM, type ArmorId, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, WORLD, ZOM, type ArmorId, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
 import { KIT, type Material } from '../shared/kit.ts';
-import type { GameEvent, SelfView, Snapshot, WallView } from '../shared/protocol.ts';
+import type { GameEvent, PlayerView, SelfView, Snapshot, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { hostOf } from './decals.ts';
+import type { Stride } from './gait.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
 import { beatsCrossed, cycleOf, reloadFamily, type ReloadCue } from './reload.ts';
@@ -12,9 +13,11 @@ export type SoundId =
   | `shot:${GunId}` | 'shot:silenced'
   | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click'
   | `gun:${ReloadCue}` | 'brass:casing' | 'brass:shell'
-  | `impact:${Material}` | 'flesh' | `tink:${Exclude<ArmorId, 'none'>}` | 'whizz' | 'clatter'
+  | `impact:${Material}` | 'flesh' | `tink:${Exclude<ArmorId, 'none'>}` | 'whizz' | 'clatter' | `step:${Foot}`
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'knock' | 'ring';
+
+export type Foot = 'L' | 'R';
 
 type Wave = 'sine' | 'square' | 'sawtooth' | 'triangle';
 type Timing = { ms: number; gain: number; delayMs?: number };
@@ -101,6 +104,8 @@ export const SOUNDS: Record<SoundId, Recipe> = {
   'tink:heavy': [{ src: 'tone', wave: 'triangle', pitchHz: [2300, 2150], ms: 220, gain: 0.22 }, thump(320, 90, 0.3)],
   whizz: [{ src: 'noise', filter: 'bandpass', q: 4, cutoffHz: [5200, 1800], ms: 220, gain: 0.35 }],
   clatter: [tick(2200, 50, 0.3), tick(1700, 60, 0.25, 90), tick(2600, 40, 0.15, 190)],
+  'step:L': [{ src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [900, 250], ms: 70, gain: 0.25 }],
+  'step:R': [{ src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [1000, 280], ms: 70, gain: 0.25 }],
   levelup: [note(523, 0, 120, 0.2), note(659, 90, 120, 0.2), note(784, 180, 260, 0.22)],
   evolve: [
     { src: 'tone', wave: 'sawtooth', pitchHz: [180, 720], ms: 420, gain: 0.16 },
@@ -144,7 +149,7 @@ export const SOUNDS: Record<SoundId, Recipe> = {
 export const SAMPLE_IDS = [
   'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'crack', 'sub',
   'magOut', 'magIn', 'slide', 'bolt', 'shellIn', 'pump', 'boxOpen', 'boxClose', 'casing', 'shellDrop',
-  'ricochet', 'chip', 'splinter', 'dirt', 'sandbag', 'flesh', 'tink', 'plate', 'whizz', 'clatter', 'thump',
+  'ricochet', 'chip', 'splinter', 'dirt', 'sandbag', 'flesh', 'tink', 'plate', 'whizz', 'clatter', 'thump', 'stepL', 'stepR',
   'hit', 'hurt', 'boom', 'slash', 'kill', 'bounty', 'levelup', 'evolve', 'perk', 'click',
   'bite', 'splat', 'wallHit', 'wallUp', 'wallDown', 'coreHit', 'horn', 'chime', 'revived', 'knock', 'ring', 'cannon', 'mortar',
 ] as const;
@@ -219,6 +224,8 @@ export const SAMPLES: Record<SoundId, readonly SampleLayer[]> = {
   'tink:heavy': [layer('tink', 0.8, 1), layer('plate', 0.9, 0.7)],
   whizz: [layer('whizz')],
   clatter: [layer('clatter')],
+  'step:L': [layer('stepL')],
+  'step:R': [layer('stepR')],
   levelup: [layer('levelup')],
   evolve: [layer('evolve')],
   perk: [layer('perk')],
@@ -254,9 +261,9 @@ export function voiceFor(id: SoundId, decoded: (sample: SampleId) => boolean, ra
   return { kind: 'sample', layers: layers.map((l) => ({ ...l, rate: l.rate * jitter })) };
 }
 
-export const MAX_VOICES = 32;
-/** Footsteps, brass and impacts give way first: they take a voice only while this many stay free for shots and hits. */
-const FILLER_HEADROOM = 8;
+export const MAX_VOICES = 48;
+/** Footsteps, brass and impacts give way first: they take a voice only while this many stay free for everything else. */
+const FILLER_HEADROOM = 12;
 
 /** How far off a cue carries, in view radii; how much of it rings into the space around it; and whether it gives way when voices run short. */
 export type Trait = { reach: number; tail: number; filler: boolean };
@@ -272,13 +279,20 @@ export function traitsOf(id: SoundId): Trait {
   if (id.startsWith('turret:')) return TRAIT(1.2, 0.25);
   if (id.startsWith('gun:')) return TRAIT(0.6, 0.05);
   if (id.startsWith('brass:')) return TRAIT(0.45, 0, true);
+  if (id.startsWith('step:')) return TRAIT(1, 0, true);
   if (id.startsWith('impact:') || id.startsWith('tink:') || id === 'flesh' || id === 'clatter') return TRAIT(0.8, 0.1, true);
   return TRAIT(1.2);
 }
 
-/** Whether a cue of `layers` voices may start with `active` already sounding. */
-export const admits = (id: SoundId, layers: number, active: number): boolean =>
-  active + layers <= MAX_VOICES - (traitsOf(id).filler ? FILLER_HEADROOM : 0);
+/**
+ * Whether a cue of `layers` voices may start over `voices` already sounding, and how many of the oldest filler voices it
+ * cuts short to fit: a shot or a hit never waits on brass.
+ */
+export function admit(id: SoundId, layers: number, voices: { all: number; fillers: number }): { play: boolean; steal: number } {
+  if (traitsOf(id).filler) return { play: voices.all + layers <= MAX_VOICES - FILLER_HEADROOM, steal: 0 };
+  const over = voices.all + layers - MAX_VOICES;
+  return over <= 0 ? { play: true, steal: 0 } : over <= voices.fillers ? { play: true, steal: over } : { play: false, steal: 0 };
+}
 
 type Rect = { x: number; y: number; w: number; h: number };
 /** Under a roof the tail is short and close; in the open it rolls off the buildings. */
@@ -395,6 +409,43 @@ function strikeOf(ev: Extract<GameEvent, { e: 'impact' } | { e: 'dmg' }>, prev: 
     case 'zombie': return 'flesh';
     case 'building': return null;
   }
+}
+
+/** Where in the run cycle each heel strikes: the baked run plants the right foot on frame 2 of its 8 and the left on frame 6. */
+export const CONTACTS: readonly { at: number; foot: Foot }[] = [{ at: 0.25, foot: 'R' }, { at: 0.75, foot: 'L' }];
+
+/** The feet that struck the ground between two frames of one body's stride, in order. */
+export function footfalls(was: Stride | undefined, now: Stride): Foot[] {
+  if (!was || !now.moving || now.at <= was.at) return [];
+  const moved = (now.phase - was.phase + 1) % 1;
+  const ahead = (at: number) => (at - was.phase + 1) % 1;
+  return CONTACTS.filter((c) => ahead(c.at) > 0 && ahead(c.at) <= moved).sort((a, b) => ahead(a.at) - ahead(b.at)).map((c) => c.foot);
+}
+
+/** Heavier armour lands heavier. */
+const STEP_RATE: Record<ArmorId, number> = { none: 1.06, light: 1, medium: 0.94, heavy: 0.86 };
+const STEP_GAIN = 0.55;
+
+/**
+ * Footsteps on the run's contact frames for every body drawn this frame, louder the faster it moves; `heard` keeps each
+ * body's stride as of its last footstep check, and `strides` are the ones the legs were just drawn from.
+ */
+export function stepCues(heard: Map<number, Stride>, strides: ReadonlyMap<number, Stride>, players: readonly PlayerView[], myId: number): SoundCue[] {
+  const cues: SoundCue[] = [];
+  for (const p of players) {
+    const now = strides.get(p.id);
+    if (!now || !p.alive || (p.hidden && p.id !== myId)) continue;
+    const was = heard.get(p.id);
+    heard.set(p.id, now);
+    const feet = footfalls(was, now);
+    if (!feet.length || !was) continue;
+    const speed = (Math.hypot(now.x - was.x, now.y - was.y) * 1000) / (now.at - was.at);
+    const pace = Math.min(1.3, Math.max(0.4, speed / WORLD.baseSpeed));
+    const self = p.id === myId;
+    for (const foot of feet) cues.push({ id: `step:${foot}`, x: p.x, y: p.y, self, gain: STEP_GAIN * pace * (self ? 0.5 : 1), rate: STEP_RATE[p.armorTier] });
+  }
+  for (const id of heard.keys()) if (!strides.has(id)) heard.delete(id);
+  return cues;
 }
 
 /** A dropped gun lands this long after its owner falls. */

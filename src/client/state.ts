@@ -81,6 +81,8 @@ export type Session = {
   zombieFaces: Map<number, { x: number; y: number; a: number }>;
   /** Each soldier's last drawn spot, the way its legs face and how far through the run cycle they are. */
   strides: Map<number, Stride>;
+  /** Each soldier's stride when its footsteps were last checked, so each heel strike sounds once. */
+  heardSteps: Map<number, Stride>;
   building: boolean;
   buildKind: BuildingKind;
   /** Each turret's aim by cell (`cx,cy`). */

@@ -1,5 +1,5 @@
 import { createSampleLoader, COMMON_SAMPLES } from './samples.ts';
-import { admits, impulse, placeCue, retune, voiceFor, type Hearing, type Layer, type SampleId, type SampleLayer, type SoundCue, type SoundId, type Space } from './sfx.ts';
+import { admit, impulse, placeCue, retune, traitsOf, voiceFor, type Hearing, type Layer, type SampleId, type SampleLayer, type SoundCue, type SoundId, type Space } from './sfx.ts';
 
 const MASTER_GAIN = 0.5;
 const MAX_NOISE_OFFSET_S = 0.5;
@@ -29,7 +29,8 @@ export function createAudio(): Audio {
   let master: GainNode | null = null;
   let noise: AudioBuffer | null = null;
   let spaces: Record<Space, ConvolverNode> | null = null;
-  let voices = 0;
+  /** Every voice sounding or scheduled, oldest first, and whether it is a filler that a busier cue may cut short. */
+  const live = new Map<AudioScheduledSourceNode, boolean>();
   let muted = loadMuted();
   let samples: ReturnType<typeof createSampleLoader<AudioBuffer>> | null = null;
   const plays: AudioStats['plays'] = {};
@@ -70,7 +71,22 @@ export function createAudio(): Audio {
     if (ctx.state === 'suspended') void ctx.resume();
   }
 
-  function synthVoice(c: AudioContext, layer: Layer, out: AudioNode, at: number, done: () => void) {
+  function track(src: AudioScheduledSourceNode, filler: boolean, cleanup: () => void) {
+    live.set(src, filler);
+    src.onended = () => { live.delete(src); cleanup(); };
+  }
+
+  function steal(count: number) {
+    for (const [src, filler] of live) {
+      if (count <= 0) return;
+      if (!filler) continue;
+      live.delete(src);
+      src.stop();
+      count--;
+    }
+  }
+
+  function synthVoice(c: AudioContext, layer: Layer, out: AudioNode, at: number, filler: boolean, done: () => void) {
     const t0 = at + (layer.delayMs ?? 0) / 1000;
     const t1 = t0 + layer.ms / 1000;
     const env = c.createGain();
@@ -98,20 +114,18 @@ export function createAudio(): Audio {
       buf.start(t0, Math.random() * MAX_NOISE_OFFSET_S);
       src = buf;
     }
-    voices++;
-    src.onended = () => { voices--; env.disconnect(); done(); };
+    track(src, filler, () => { env.disconnect(); done(); });
     src.stop(t1);
   }
 
-  function sampleVoice(c: AudioContext, layer: SampleLayer, out: AudioNode, at: number, done: () => void) {
+  function sampleVoice(c: AudioContext, layer: SampleLayer, out: AudioNode, at: number, filler: boolean, done: () => void) {
     const src = c.createBufferSource();
     src.buffer = samples?.buffer(layer.sample) ?? null;
     src.playbackRate.value = layer.rate;
     const level = c.createGain();
     level.gain.value = layer.gain;
     src.connect(level).connect(out);
-    voices++;
-    src.onended = () => { voices--; level.disconnect(); done(); };
+    track(src, filler, () => { level.disconnect(); done(); });
     src.start(at + (layer.delayMs ?? 0) / 1000);
   }
 
@@ -122,9 +136,12 @@ export function createAudio(): Audio {
     for (const cue of cues) {
       const voice = voiceFor(cue.id, decoded, Math.random);
       const count = voice.kind === 'sample' ? voice.layers.length : voice.recipe.length;
-      if (!admits(cue.id, count, voices)) continue;
       const placed = placeCue(cue, hearing);
       if (!placed) continue;
+      const fits = admit(cue.id, count, { all: live.size, fillers: [...live.values()].filter(Boolean).length });
+      if (!fits.play) continue;
+      steal(fits.steal);
+      const filler = traitsOf(cue.id).filler;
       const tally = (plays[cue.id] ??= { sample: 0, synth: 0 });
       tally[voice.kind]++;
       const bus = placed.cutoffHz === null ? ctx.createGain() : ctx.createBiquadFilter();
@@ -140,8 +157,8 @@ export function createAudio(): Audio {
       const done = () => { if (--playing === 0) { pan.disconnect(); wet?.disconnect(); } };
       const at = ctx.currentTime + (cue.delayMs ?? 0) / 1000;
       const rate = cue.rate ?? 1;
-      if (voice.kind === 'sample') for (const layer of voice.layers) sampleVoice(ctx, { ...layer, rate: layer.rate * rate }, bus, at, done);
-      else for (const layer of voice.recipe) synthVoice(ctx, retune(layer, rate, 0), bus, at, done);
+      if (voice.kind === 'sample') for (const layer of voice.layers) sampleVoice(ctx, { ...layer, rate: layer.rate * rate }, bus, at, filler, done);
+      else for (const layer of voice.recipe) synthVoice(ctx, retune(layer, rate, 0), bus, at, filler, done);
     }
     if (missing.length) samples?.want(missing);
   }

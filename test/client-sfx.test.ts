@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { EVOLUTIONS, GUN_IDS, GUNS } from '../src/shared/defs.ts';
+import { legFrame, stride, type Stride } from '../src/client/gait.ts';
 import { RELOAD_BEATS, reloadFamily } from '../src/client/reload.ts';
-import { impulse, placeCue, RATE_JITTER, roofsOf, SAMPLE_IDS, SAMPLES, shotCues, SOUNDS, soundsFor, voiceFor, type Hearing, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
+import { admit, footfalls, impulse, MAX_VOICES, placeCue, RATE_JITTER, roofsOf, SAMPLE_IDS, SAMPLES, shotCues, SOUNDS, soundsFor, stepCues, traitsOf, voiceFor, type Hearing, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
 import type { BuildingView, CrateView, GameEvent, PlayerView, RunView, SelfView, Snapshot, WallView } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
@@ -386,4 +387,118 @@ test('the shipped sample manifest names one existing file for exactly the record
     assert.match(file, new RegExp(`^${id}\\.[0-9a-f]{8,}\\.mp3$`), 'content-hashed so it can be cached forever');
     assert.ok(existsSync(new URL(file, dir)), `${file} exists`);
   }
+});
+
+/** Runs a body from `from` along x at `speed` units/s for `ms`, a frame every 16 ms, returning each frame's stride and the feet that struck. */
+function jog(ms: number, speed: number, from: Stride | undefined = undefined, x0 = 0) {
+  const frames: { s: Stride; feet: ReturnType<typeof footfalls> }[] = [];
+  let s = from ?? stride(undefined, x0, 0, 0);
+  for (let t = (from?.at ?? 0) + 16; t <= (from?.at ?? 0) + ms; t += 16) {
+    const next = stride(s, s.x + (speed * 16) / 1000, 0, t);
+    frames.push({ s: next, feet: footfalls(s, next) });
+    s = next;
+  }
+  return frames;
+}
+
+test('footsteps fall twice a run cycle, alternating feet, each on the frame the legs plant that foot', () => {
+  const frames = jog(4000, 300);
+  const steps = frames.flatMap((f) => f.feet.map((foot) => ({ foot, frame: legFrame(f.s, -1, 0, 8) })));
+  const cycles = (300 * 4) / 150;
+  assert.ok(Math.abs(steps.length - cycles * 2) <= 1, `${steps.length} steps over ${cycles} cycles`);
+  steps.forEach((st, i) => i > 0 && assert.notEqual(st.foot, steps[i - 1]!.foot, 'feet alternate'));
+  for (const st of steps) assert.equal(st.frame, st.foot === 'R' ? 2 : 6, `the ${st.foot} foot sounds on its contact frame`);
+});
+
+test('standing still, or a jump across the map, makes no footsteps', () => {
+  const still = jog(1000, 0);
+  assert.deepEqual(still.flatMap((f) => f.feet), []);
+  const before = jog(300, 300).at(-1)!.s;
+  const teleported = stride(before, before.x + 2000, 0, before.at + 400);
+  assert.deepEqual(footfalls(before, teleported), []);
+});
+
+test('everyone drawn is heard stepping where they are, you quieter and centred, a hidden enemy silent, heavier armour lower', () => {
+  const bodies = [player(1, { x: 0 }), player(2, { x: 200, armorTier: 'heavy' }), player(3, { x: -200 }), player(4, { x: 300, hidden: true })];
+  const heard = new Map<number, Stride>();
+  const strides = new Map<number, Stride>();
+  const cues: ReturnType<typeof stepCues> = [];
+  for (let t = 0; t <= 2000; t += 16) {
+    for (const p of bodies) strides.set(p.id, stride(strides.get(p.id), p.x + t * 0.3, 0, t));
+    cues.push(...stepCues(heard, strides, bodies, 1));
+  }
+  const of = (id: number) => cues.filter((c) => c.x === bodies.find((p) => p.id === id)!.x);
+  assert.ok(of(1).length >= 7 && of(1).every((c) => c.self), 'your own steps are yours');
+  assert.ok(of(3).length === of(1).length && of(3).every((c) => !c.self));
+  assert.ok(of(1)[0]!.gain < of(3)[0]!.gain, 'your own steps sit under everyone else\'s');
+  assert.deepEqual(of(4), [], 'a hidden enemy makes no sound');
+  assert.ok(of(2)[0]!.rate! < of(3)[0]!.rate!, 'heavy armour lands heavier');
+  const pace = (speed: number) => {
+    const h = new Map<number, Stride>(), st = new Map<number, Stride>();
+    const out: ReturnType<typeof stepCues> = [];
+    for (let t = 0; t <= 1500; t += 16) { st.set(3, stride(st.get(3), t * speed, 0, t)); out.push(...stepCues(h, st, [player(3)], 1)); }
+    return out[0]!.gain;
+  };
+  assert.ok(pace(0.12) < pace(0.3), 'a slow walk is quieter than a run');
+});
+
+const SAMPLE_SECONDS = (JSON.parse(readFileSync(new URL('../art/sounds.json', import.meta.url), 'utf8')) as { sounds: Record<string, { length: number }> }).sounds;
+
+/** Plays cues the way the page does: placed, admitted or refused, cutting the oldest filler voices short, each voice lasting its recording. */
+function mixer(hearing: Hearing) {
+  let voices: { end: number; filler: boolean }[] = [];
+  const log = { most: 0, refused: [] as SoundId[], stolen: 0, played: [] as SoundId[] };
+  const play = (now: number, cues: readonly SoundCue[]) => {
+    voices = voices.filter((v) => v.end > now);
+    for (const cue of cues) {
+      if (!placeCue(cue, hearing)) continue;
+      const voice = voiceFor(cue.id, ALL, MID);
+      const layers = voice.kind === 'sample' ? voice.layers : [];
+      const fits = admit(cue.id, layers.length, { all: voices.length, fillers: voices.filter((v) => v.filler).length });
+      if (!fits.play) { log.refused.push(cue.id); continue; }
+      for (let n = fits.steal; n > 0; n--) voices.splice(voices.findIndex((v) => v.filler), 1);
+      log.stolen += fits.steal;
+      const filler = traitsOf(cue.id).filler;
+      for (const l of layers) voices.push({ end: now + (cue.delayMs ?? 0) + (l.delayMs ?? 0) + (SAMPLE_SECONDS[l.sample]!.length * 1000) / l.rate, filler });
+      log.played.push(cue.id);
+      log.most = Math.max(log.most, voices.length);
+    }
+  };
+  return { play, log };
+}
+
+test('in a busy firefight the voices stay under the cap, every report near you is heard, and brass and footsteps give way first', () => {
+  const gunners = [
+    { id: 2, gun: 'lmg', x: 300, y: 100 }, { id: 3, gun: 'shotgun', x: -250, y: 50 }, { id: 4, gun: 'assault', x: 200, y: -300 }, { id: 5, gun: 'smg', x: 420, y: 0 },
+  ] as const;
+  const runners = [6, 7, 8, 9, 10, 11].map((id, i) => player(id, { x: -300 + i * 110, y: 150, armorTier: i % 2 ? 'heavy' : 'none' }));
+  const mix = mixer(open());
+  const heard = new Map<number, Stride>(), strides = new Map<number, Stride>();
+  const nextShot = new Map<number, number>([[1, 500], ...gunners.map((g) => [g.id, 500 + g.id * 7] as [number, number])]);
+  let stepsWhileQuiet = 0;
+  for (let t = 0; t <= 4000; t += 16) {
+    const cues: SoundCue[] = [];
+    for (const r of runners) strides.set(r.id, stride(strides.get(r.id), r.x + (t * 0.28) % 200, r.y, t));
+    const steps = stepCues(heard, strides, runners, 1);
+    if (t < 500) stepsWhileQuiet += steps.length;
+    cues.push(...steps);
+    if (t >= nextShot.get(1)!) { cues.push(...shotCues('smg', false, { x: 0, y: 0 }, true)); nextShot.set(1, t + GUNS.smg.fireMs); }
+    const events: GameEvent[] = [];
+    for (const g of gunners) {
+      if (t < nextShot.get(g.id)!) continue;
+      nextShot.set(g.id, t + GUNS[g.gun].fireMs);
+      events.push({ e: 'shot', x: g.x, y: g.y, angle: Math.PI, silenced: false, owner: g.id, gun: g.gun });
+      events.push({ e: 'impact', x: 50 + (t % 2) * 200, y: 10, dir: 0 });
+      events.push({ e: 'dmg', attacker: g.id, victim: 7, amount: 10, x: 0, y: 0, kind: 'player', hit: { x: runners[1]!.x, y: 150, dir: 0 } });
+      if (t % 3 === 0) events.push({ e: 'whizz', victim: 1, x: 20, y: 30, dir: Math.PI });
+    }
+    if (events.length) cues.push(...soundsFor(snap({ players: runners }), snap({ players: runners, events }), WALLS));
+    mix.play(t, cues);
+  }
+  assert.ok(stepsWhileQuiet > 0 && mix.log.played.some((id) => id.startsWith('step:')), 'footsteps play while it is quiet');
+  assert.ok(mix.log.most <= MAX_VOICES, `at most ${mix.log.most} voices`);
+  assert.ok(mix.log.most >= MAX_VOICES - 12, `the fight was busy: ${mix.log.most} voices at its height`);
+  assert.deepEqual(mix.log.refused.filter((id) => !traitsOf(id).filler), [], 'no report, whizz or kill gave way');
+  assert.ok(mix.log.refused.length + mix.log.stolen > 0, 'brass, steps and strikes gave way to make room');
+  assert.ok(mix.log.stolen <= mix.log.played.length * 0.05, `fillers keep clear of the top voices, so few are cut off mid-sound: ${mix.log.stolen} of ${mix.log.played.length}`);
 });

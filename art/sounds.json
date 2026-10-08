@@ -241,6 +241,8 @@
     "plate": { "source": "kenney-impact", "member": "Audio/impactPlate_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -6 },
     "whizz": { "source": "fs-flyby", "start": 0.05, "length": 0.35, "gainDb": -3, "note": "a whip swung past the microphone" },
     "clatter": { "source": "fs-rifle-drop", "start": 0.03, "length": 0.55, "gainDb": -5 },
-    "thump": { "source": "kenney-impact", "member": "Audio/impactSoft_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -3, "note": "the kill confirm opens on it" }
+    "thump": { "source": "kenney-impact", "member": "Audio/impactSoft_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -3, "note": "the kill confirm opens on it" },
+    "stepL": { "source": "kenney-impact", "member": "Audio/footstep_concrete_000.ogg", "start": 0, "length": 0.1, "gainDb": -6 },
+    "stepR": { "source": "kenney-impact", "member": "Audio/footstep_concrete_001.ogg", "start": 0, "length": 0.1, "gainDb": -6 }
   }
 }

@@ -30,7 +30,7 @@ Every sound is CC0 1.0 (public domain dedication). Credit is given as thanks, no
 | lmg | LeMudCrab | [Sniper Shot](https://freesound.org/people/LeMudCrab/sounds/163460/) | CC0-1.0 |
 | flesh, hit, splat | u1769092 | [VisceralBulletImpacts.wav](https://freesound.org/people/u1769092/sounds/423301/) | CC0-1.0 |
 | bite | MrPokephile | [Zombie Flesh Bites](https://freesound.org/people/MrPokephile/sounds/155973/) | CC0-1.0 |
-| chip, coreHit, dirt, hurt, knock, plate, sandbag, splinter, thump, wallDown, wallHit, wallUp | Kenney | [Impact Sounds](https://kenney.nl/assets/impact-sounds) | CC0-1.0 |
+| chip, coreHit, dirt, hurt, knock, plate, sandbag, splinter, stepL, stepR, thump, wallDown, wallHit, wallUp | Kenney | [Impact Sounds](https://kenney.nl/assets/impact-sounds) | CC0-1.0 |
 | click, kill, levelup, perk, revived | Kenney | [Interface Sounds](https://kenney.nl/assets/interface-sounds) | CC0-1.0 |
 | evolve | Kenney | [Music Jingles](https://kenney.nl/assets/music-jingles) | CC0-1.0 |
 | bounty, slash | Kenney | [RPG Audio](https://kenney.nl/assets/rpg-audio) | CC0-1.0 |
