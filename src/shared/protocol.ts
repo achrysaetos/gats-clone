@@ -128,7 +128,9 @@ export type CrateView = { id: number; x: number; y: number; hp: number; size: nu
 export type WallView = { x: number; y: number; w: number; h: number; pts?: readonly number[]; nb?: true; ns?: true; pid?: number } & ({ built: false; material: WallMaterial } | { built: true });
 export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fireSlick' | 'flashbang' | 'smokeGrenade' | 'smokeCloud';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
-export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
+/** `crew` (sent only when above 0) is how many of the one team alone on the zone stand on it, which sets how fast it moves (`zoneRate`);
+ * `contested` (sent only when true) is both teams on it, which holds it still. */
+export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number; crew?: number; contested?: true };
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
 

@@ -15,7 +15,8 @@ export type SoundId =
   | 'prop:whoosh' | 'prop:hiss' | 'prop:zap' | 'prop:fire' | 'prop:glass' | 'prop:pickup' | 'prop:splat'
   | 'plane' | 'chute' | 'crate:land' | 'crate:break' | 'crate:gold' | 'crate:supply'
   | 'flashbang' | 'flashRing' | 'smoke' | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework'
-  | 'amb:flutter' | 'amb:caw' | 'amb:gull';
+  | 'amb:flutter' | 'amb:caw' | 'amb:gull'
+  | 'zone:tick' | 'zone:taken' | 'zone:lost' | 'zone:contest';
 
 /** Each kill in a streak sounds two semitones above the last, up to the fifth. */
 export type KillStep = 2 | 3 | 4 | 5;
@@ -332,6 +333,15 @@ const RAW: Record<SoundId, Recipe> = {
   downed: [{ src: 'tone', wave: 'sawtooth', pitchHz: [330, 110], ms: 650, gain: 0.3 }, { src: 'noise', filter: 'lowpass', q: 1, cutoffHz: [700, 120], ms: 400, gain: 0.25 }],
   revived: [note(523, 0, 110, 0.2), note(784, 100, 260, 0.22)],
   knock: [thump(240, 110, 0.45), note(740, 0, 80, 0.2), note(554, 80, 170, 0.2)],
+  // Domination: a glassy tick each tenth of a capture you stand in (pitched up the climb by the cue), a bugle up for a point your
+  // team takes, the same falling for one it loses, and a two-tone buzz while both teams stand on a point.
+  'zone:tick': [ping(1320, 0, 70, 0.2), snap(4200, 0.08, 0, 6), { src: 'tone', wave: 'triangle', pitchHz: [660, 660], ms: 50, gain: 0.08 }],
+  'zone:taken': [note(523, 0, 120, 0.18), note(659, 110, 120, 0.18), note(784, 220, 360, 0.22), bell(1568, 220, 520, 0.09), whoosh(600, 2400, 300, 0.12), ...sparkles(4, 260, 260, 2093, 0.05)],
+  'zone:lost': [note(659, 0, 140, 0.18), note(523, 130, 140, 0.18), note(392, 260, 420, 0.2), thump(140, 260, 0.3), air(900, 200, 380, 0.1, 240)],
+  'zone:contest': [
+    { src: 'tone', wave: 'sawtooth', pitchHz: [196, 190], ms: 150, gain: 0.13 }, { src: 'tone', wave: 'square', pitchHz: [98, 96], ms: 150, gain: 0.06 },
+    { src: 'tone', wave: 'sawtooth', pitchHz: [165, 160], ms: 170, gain: 0.13, delayMs: 170 }, { src: 'tone', wave: 'square', pitchHz: [82, 80], ms: 170, gain: 0.06, delayMs: 170 },
+  ],
   ring: [
     { src: 'tone', wave: 'sawtooth', pitchHz: [82, 62], ms: 1500, gain: 0.16 },
     { src: 'tone', wave: 'triangle', pitchHz: [123, 93], ms: 1500, gain: 0.14 },
@@ -391,7 +401,7 @@ export function priorityOf(cue: { id: SoundId; self: boolean }): 0 | 1 | 2 {
   if (id.startsWith('shot:')) return cue.self ? 1 : 0;
   // Your own reload is part of the feel of the gun; another soldier's is the first thing dropped from a full mix.
   if (id.startsWith('foley:')) return cue.self ? 1 : 0;
-  if (id === 'hit' || id === 'hurt' || id === 'death' || id === 'boom' || id === 'fanfare' || id === 'spawn' || id === 'levelup' || id === 'evolve' || id === 'bounty' || id === 'barrel:burst' || id === 'prop:pickup' || id === 'crate:gold' || id === 'crate:supply' || id.startsWith('medal:') || id.startsWith('kill')) return 2;
+  if (id === 'hit' || id === 'hurt' || id === 'death' || id === 'boom' || id === 'fanfare' || id === 'spawn' || id === 'levelup' || id === 'evolve' || id === 'bounty' || id === 'barrel:burst' || id === 'prop:pickup' || id === 'crate:gold' || id === 'crate:supply' || id === 'zone:taken' || id === 'zone:lost' || id.startsWith('medal:') || id.startsWith('kill')) return 2;
   return 1;
 }
 
@@ -490,6 +500,41 @@ function airdropCues(ev: Extract<Snapshot['events'][number], { e: 'airdrop' }>, 
   return [{ id: 'plane', x: from.x, y: from.y, self: false, gain: 1, delayMs: delay, sweep: { x: to.x, y: to.y, ms: PLANE_MS } }];
 }
 
+/** A capture tick sounds each tenth of the way; the contested buzz repeats this often while you stand in it. */
+const ZONE_TICKS = 10;
+const CONTEST_BUZZ_MS = 1200;
+
+/**
+ * Domination, heard from your side: a tick rising in pitch with the capture of a point you stand in (lower while it drains), a
+ * stinger when your team takes a point (softer for turning an enemy one neutral) or loses one, and a buzz when a point you are
+ * on or near becomes contested, repeated while you hold your ground in it.
+ */
+export function zoneCues(prev: Snapshot, next: Snapshot, viewRadius: number): SoundCue[] {
+  const me = selfOf(next), team = me?.team;
+  if (!team || !next.zones.length) return [];
+  const cues: SoundCue[] = [];
+  for (const z of next.zones) {
+    const was = prev.zones.find((o) => o.id === z.id);
+    if (!was) continue;
+    const at = { x: z.x, y: z.y };
+    if (z.owner !== was.owner) {
+      if (z.owner === team) cues.push(screenCue('zone:taken'));
+      else if (z.owner !== null || was.owner === team) cues.push(screenCue('zone:lost', z.owner ? 0.7 : 1));
+      else if (z.capturing === team) cues.push(screenCue('zone:taken', 0.55));
+      continue;
+    }
+    const d = me ? Math.hypot(me.x - z.x, me.y - z.y) : Infinity;
+    const on = me?.alive === true && d <= z.r;
+    if (on && !z.contested && z.capturing && z.capturing === was.capturing && Math.floor(z.progress * ZONE_TICKS) !== Math.floor(was.progress * ZONE_TICKS)) {
+      const rising = z.progress > was.progress;
+      cues.push({ id: 'zone:tick', ...at, self: true, gain: 0.8, pitch: rising ? 0.85 + 0.75 * z.progress : 0.75 - 0.2 * z.progress });
+    }
+    const buzzBeat = Math.floor((next.tick * TICK_MS) / CONTEST_BUZZ_MS) !== Math.floor((prev.tick * TICK_MS) / CONTEST_BUZZ_MS);
+    if (z.contested && ((!was.contested && d <= Math.max(z.r, viewRadius * 0.7)) || (was.contested && on && buzzBeat))) cues.push({ id: 'zone:contest', ...at, self: on, gain: on ? 0.9 : 0.6 });
+  }
+  return cues;
+}
+
 /** The sounds a snapshot's events and changes make. Your own shots are left out: the page voices them as it fires them. */
 export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   const me = selfOf(next);
@@ -572,6 +617,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
   // Caught by a flashbang: a ring in the ears, as the page muffles the mix until it passes.
   if ((next.self.flash ?? 0) > (prev?.self.flash ?? 0) + 0.05) mine('flashRing');
   if (!prev) return cues;
+  cues.push(...zoneCues(prev, next, next.self.viewRadius));
   for (const t of next.thrown) if (t.kind === 'smokeCloud' && !prev.thrown.some((o) => o.id === t.id)) cues.push({ id: 'smoke', x: t.x, y: t.y, self: false, gain: 1 });
   // A barrel just lit: it hisses until its fuse runs out.
   const lit = (next.barrels ?? []).find((b) => b[3] === 0 && (prev.barrels?.find((p) => p[0] === b[0])?.[3] ?? 0) > 0);

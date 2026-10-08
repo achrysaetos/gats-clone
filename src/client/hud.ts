@@ -4,7 +4,8 @@ import { emitSfxAt } from './sfxbus.ts';
 import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
 import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
-import type { PlayerView, Snapshot, Team } from '../shared/protocol.ts';
+import type { PlayerView, Snapshot, Team, ZoneView } from '../shared/protocol.ts';
+import { flagOf, zoneLetter, zonesOf } from './zoneart.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { clearOfRects, clock, edgePoint, boardRows, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
@@ -178,6 +179,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
       s = { ...s, feed: [...s.feed.filter((x) => now - x.at < FEED_MS), ...lines] };
     }
   }
+  snap = { ...snap, zones: zonesOf(snap.zones) };
   hudScale = hudScaleFor(screenCam.w, screenCam.h);
   const k = hudScale;
   ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
@@ -211,6 +213,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   if (snap.run) drawSiege(hud, snap.run, siegeTop, compact);
   if (snap.royale) drawRoyale(hud, snap.royale, siegeTop);
   drawHuntedArrows(hud);
+  drawZoneArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
   trackAbility(snap.self, now);
@@ -915,7 +918,7 @@ const PING_WAVE_MS = 700;
 const DIAMOND_R = 5;
 
 function drawMinimap(hud: Hud, size: number) {
-  const { ctx, w, h, snap, s, me } = hud;
+  const { ctx, w, h, snap, s, me, now } = hud;
   const k = size / s.worldSize;
   const pad = 8;
   // On a touch screen the bottom right is the aiming thumb's, so the minimap sits top left under the vitals, as in mobile shooters.
@@ -936,11 +939,30 @@ function drawMinimap(hud: Hud, size: number) {
   }
   for (const z of snap.zones) {
     ctx.beginPath();
-    ctx.arc(x + z.x * k, y + z.y * k, Math.max(4, z.r * k), 0, TAU);
+    const zr = Math.max(4, z.r * k), zx = x + z.x * k, zy = y + z.y * k;
+    ctx.arc(zx, zy, zr, 0, TAU);
     ctx.fillStyle = z.owner ? TEAM_COLORS[z.owner] : PALETTE.neutral;
     ctx.globalAlpha = base * 0.45;
     ctx.fill();
     ctx.globalAlpha = base;
+    // The capture as a wedge in the taker's colour, and a flashing two-colour ring while both teams stand on it.
+    if (z.capturing && z.progress > 0.01) {
+      ctx.beginPath();
+      ctx.moveTo(zx, zy);
+      ctx.arc(zx, zy, zr, -Math.PI / 2, -Math.PI / 2 + Math.min(1, z.progress) * TAU);
+      ctx.closePath();
+      ctx.fillStyle = TEAM_COLORS[z.capturing];
+      ctx.globalAlpha = base * 0.85;
+      ctx.fill();
+    }
+    if (z.contested) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = Math.floor(now / 200) % 2 ? TEAM_COLORS.red : TEAM_COLORS.blue;
+      ctx.globalAlpha = base;
+      ctx.beginPath();
+      ctx.arc(zx, zy, zr + 1.5, 0, TAU);
+      ctx.stroke();
+    }
   }
   for (const m of snap.minimap) {
     if (m.pingAge !== null) continue;
@@ -2044,8 +2066,136 @@ function drawTimerToken(hud: Hud, y: number, ms: number, live: boolean, fade = t
 }
 
 /** TDM and DOM: each team's score at its end of a tug-of-war bar that fills toward the win line, with the clock tag under it and, in DOM, a pin for each zone. */
+/**
+ * One DOM point on the objective strip: an enamel pin in its owner's colour that the taker's colour fills like a clock as the
+ * capture runs, a thin flag beside it at the height the world flag flies, pips for the soldiers taking it (faster with more),
+ * a two-colour flash while it is contested, and a bar under the one you stand on.
+ */
+function drawZonePin(ctx: CanvasRenderingContext2D, zx: number, zy: number, r: number, z: ZoneView, letter: string, now: number, on: boolean) {
+  const shake = z.contested && !REDUCED ? Math.sin(now / 30) * 1.2 : 0;
+  zx += shake;
+  pin(ctx, zx, zy, r, z.owner ? COLORS[z.owner] : '#6c7380');
+  if (z.capturing && z.progress > 0.01) {
+    ctx.fillStyle = COLORS[z.capturing];
+    ctx.beginPath();
+    ctx.moveTo(zx, zy);
+    ctx.arc(zx, zy, r, -Math.PI / 2, -Math.PI / 2 + Math.min(1, z.progress) * TAU);
+    ctx.closePath();
+    ctx.fill();
+  }
+  text(ctx, letter, zx, zy + 1, TYPE.label, z.owner || (z.capturing && z.progress > 0.5) ? CEL.ink : PANEL_INK, 'center', 800);
+  // The outer progress ring, or the contested flash.
+  const ring = r + 5;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.arc(zx, zy, ring, 0, TAU);
+  ctx.stroke();
+  if (z.contested) {
+    const flip = Math.floor(now / 180) % 2;
+    for (let q = 0; q < 8; q++) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = (q + flip) % 2 ? COLORS.red : COLORS.blue;
+      ctx.beginPath();
+      ctx.arc(zx, zy, ring, (q / 8) * TAU, ((q + 0.8) / 8) * TAU);
+      ctx.stroke();
+    }
+  } else if (z.capturing && z.progress > 0.01) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = COLORS[z.capturing];
+    ctx.beginPath();
+    ctx.arc(zx, zy, ring, -Math.PI / 2, -Math.PI / 2 + Math.min(1, z.progress) * TAU);
+    ctx.stroke();
+  }
+  // A thin flag up the pin's right: its colour and height match the world flag.
+  const flag = flagOf(z), px = zx + r + 9, top = zy - r - 3, foot = zy + r + 1;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.moveTo(px, foot);
+  ctx.lineTo(px, top - 1);
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#c9ccd3';
+  ctx.stroke();
+  const fy = foot - 7 - (foot - 7 - top) * flag.height;
+  ctx.fillStyle = CEL.ink;
+  ctx.fillRect(px, fy - 1, 9, 8);
+  ctx.fillStyle = flag.team ? COLORS[flag.team] : '#e9e4d6';
+  ctx.fillRect(px + 1, fy, 7, 6);
+  // Pips under the pin for the crew working it: one per soldier, capped where the rate caps.
+  if (z.crew && !z.contested) {
+    const n = Math.min(4, z.crew), hex = z.capturing ? COLORS[z.capturing] : PANEL_INK;
+    for (let q = 0; q < n; q++) {
+      const qx = zx + (q - (n - 1) / 2) * 7, qy = zy + ring + 6;
+      ctx.fillStyle = CEL.ink;
+      ctx.beginPath();
+      ctx.arc(qx, qy, 3.2, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = hex;
+      ctx.beginPath();
+      ctx.arc(qx, qy, 2, 0, TAU);
+      ctx.fill();
+    }
+  }
+  if (on) {
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(zx - 7, zy - ring - 7, 14, 3);
+  }
+}
+
+/**
+ * Edge arrows to the points your team is working off screen: your team's colour toward one it is taking, and a pulsing alarm
+ * toward one of yours being taken or contested. Each carries the point's letter.
+ */
+function drawZoneArrows({ ctx, w, h, snap, now, cam, selfAt, me }: Hud) {
+  const team = me?.team;
+  if (snap.match.mode !== 'DOM' || !team) return;
+  const zs = [...snap.zones].sort((a, b) => a.id - b.id);
+  const pulse = 0.5 + 0.5 * Math.sin(now / 130);
+  zs.forEach((z, i) => {
+    const taking = z.capturing === team && z.progress > 0.02 && !z.contested;
+    const losing = z.owner === team && ((z.capturing !== null && z.capturing !== team && z.progress > 0.02) || z.contested === true);
+    if (!taking && !losing) return;
+    const at = edgePoint(selfAt, worldToScreen(cam, z), w, h, EDGE_INSET + 6);
+    if (!at) return;
+    const clear = clearOfRects(selfAt, at, panels, ARROW_CLEARANCE);
+    const color = losing ? PALETTE.hunted : COLORS[team];
+    ctx.save();
+    ctx.translate(clear.x, clear.y);
+    ctx.rotate(at.angle);
+    ctx.scale(losing ? 1.15 + 0.15 * pulse : 1.05, losing ? 1.15 + 0.15 * pulse : 1.05);
+    ctx.globalAlpha = losing ? 0.75 + 0.25 * pulse : 0.9;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -12);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-8, 12);
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = CEL.ink;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+    const lx = clear.x - Math.cos(at.angle) * 26, ly = clear.y - Math.sin(at.angle) * 26;
+    pin(ctx, lx, ly, 10, z.owner ? COLORS[z.owner] : '#6c7380');
+    if (z.capturing && z.progress > 0.01) {
+      ctx.fillStyle = COLORS[z.capturing];
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.arc(lx, ly, 10, -Math.PI / 2, -Math.PI / 2 + Math.min(1, z.progress) * TAU);
+      ctx.closePath();
+      ctx.fill();
+    }
+    text(ctx, zoneLetter(i), lx, ly + 1, TYPE.label, CEL.ink, 'center', 800);
+    ctx.globalAlpha = 1;
+  });
+}
+
 function drawTeamBanner(hud: Hud, y: number, compact: boolean, left: number | null): number {
-  const { ctx, w, snap, me } = hud;
+  const { ctx, w, snap, me, now } = hud;
   const dom = snap.match.mode === 'DOM';
   const target = dom ? WORLD.domWinScore : WORLD.tdmWinScore;
   const bw = compact ? 236 : 300, ph = compact ? 30 : 36, x = w / 2 - bw / 2, cy = y + ph / 2;
@@ -2083,25 +2233,15 @@ function drawTeamBanner(hud: Hud, y: number, compact: boolean, left: number | nu
   if (left !== null) bottom = drawTimerToken(hud, y + ph + 4, left, true, false);
   if (dom && snap.zones.length) {
     const zs = [...snap.zones].sort((a, b) => a.id - b.id);
-    const r = 11, step = 32, zy = bottom + 8 + r + 2;
+    const r = 12, step = 48, zy = bottom + 8 + r + 4;
+    // A plate behind the pins so they read over any floor, neon or night.
+    panel(ctx, w / 2 - (zs.length * step) / 2 - 2, zy - r - 11, zs.length * step + 8, 2 * r + 26);
     zs.forEach((z, i) => {
       const zx = w / 2 + (i - (zs.length - 1) / 2) * step;
-      pin(ctx, zx, zy, r, z.owner ? COLORS[z.owner] : '#6c7380');
-      text(ctx, String.fromCharCode(65 + i), zx, zy + 1, TYPE.label, z.owner ? CEL.ink : PANEL_INK, 'center', 800);
-      if (z.capturing && z.progress > 0.01) {
-        ctx.lineWidth = 3.5;
-        ctx.strokeStyle = CEL.ink;
-        ctx.beginPath();
-        ctx.arc(zx, zy, r + 5.5, 0, TAU);
-        ctx.stroke();
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = COLORS[z.capturing];
-        ctx.beginPath();
-        ctx.arc(zx, zy, r + 5.5, -Math.PI / 2, -Math.PI / 2 + z.progress * TAU);
-        ctx.stroke();
-      }
+      const on = me?.alive === true && Math.hypot(me.x - z.x, me.y - z.y) <= z.r;
+      drawZonePin(ctx, zx, zy, r, z, zoneLetter(i), now, on);
     });
-    bottom = zy + r + 8;
+    bottom = zy + r + 16;
   }
   return bottom;
 }

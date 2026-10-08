@@ -167,7 +167,8 @@ export type Thrown =
   /** An oil drum's burning slick: it burns whoever stands in it but its spiller (see `PROP_FX.oil`). */
   | { id: number; kind: 'fireSlick'; owner: number; team: Team; x: number; y: number; expiresAt: number };
 
-export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
+/** `crew` is how many of the one team alone on the zone stand on it (0 when it is empty or contested); `contested` is both teams on it. */
+export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number; crew: number; contested: boolean };
 
 export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restartAt: number };
 
@@ -355,7 +356,7 @@ export function loadMap(w: World, map: MapId) {
   w.emps = new Map();
   w.chains = new Map();
   w.airdrops = { due: hasArenaSurprises(w.mode) ? planAirdrops(w) : [], flight: null };
-  w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0 })) : [];
+  w.zones = w.mode === 'DOM' ? def.zones.map((z, id) => ({ id, x: z.x, y: z.y, r: ZONE_RADIUS, owner: null, capturing: null, progress: 0, crew: 0, contested: false })) : [];
   w.bullets = [];
   w.thrown = [];
   w.history = [];

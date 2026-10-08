@@ -1,6 +1,6 @@
 import { COLORS, GUNS, raiseMsOf, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
-import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
+import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
 import { screenToWorld, type Camera, type Point } from './camera.ts';
 import { drawCasings, drawEffects, drawParticles, HIT_FLASH_MS, hitFlashes, kicks, KICK_MS } from './effects.ts';
@@ -15,6 +15,7 @@ import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from '.
 import { stepCarry } from './raise.ts';
 import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
 import { drawRadioOverlay, drawRadios } from './radio.ts';
+import { drawZoneFloor, drawZoneOverlay, zonesOf } from './zoneart.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
 import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
@@ -114,7 +115,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const mine = snap.players.find((p) => p.id === s.myId);
   // The squad shares one team, so each squadmate wears their own color instead.
   const colorOf = (p: PlayerView) => (snap.run ? COLORS[p.color] : bodyColor(p));
-  for (const [i, z] of snap.zones.entries()) drawZone(ctx, z, i);
+  const zones = zonesOf(snap.zones);
+  for (const z of zones) drawZoneFloor(ctx, z, now, dark, reducedMotion());
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
@@ -182,6 +184,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawVignette(ctx, cam.w, cam.h, dpr, 0.36 + 0.2 * dark);
   ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
   drawRadioOverlay(ctx, now, reducedMotion());
+  // Zone flags, capture edges and chevrons stand over the night so a point reads from across the screen.
+  for (const [i, z] of zones.entries()) if (inView(view, z.x - z.r * 1.5, z.y - z.r * 1.5, z.r * 3, z.r * 3)) drawZoneOverlay(ctx, z, i, now, dark, reducedMotion());
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
@@ -275,51 +279,6 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   lightBackdrop(ctx, { x, y }, { x: x + viewW, y: y + viewH }, [...backdropSolids, ...backdropCrates], now);
   drawDust(ctx, { x, y }, { x: x + viewW, y: y + viewH }, now, 0);
   drawVignette(ctx, w, h, dpr, 0.38);
-}
-
-function drawZone(ctx: CanvasRenderingContext2D, z: ZoneView, index: number) {
-  const color = teamColor(z.owner);
-  ctx.beginPath();
-  ctx.arc(z.x, z.y, z.r, 0, TAU);
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.1;
-  ctx.fill();
-  ctx.globalAlpha = 0.6;
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = color;
-  ctx.stroke();
-  ctx.setLineDash([3, 18]);
-  ctx.lineCap = 'round';
-  ctx.lineWidth = 6;
-  ctx.globalAlpha = 0.35;
-  ctx.beginPath();
-  ctx.arc(z.x, z.y, z.r - 14, 0, TAU);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  const progress = Math.min(1, Math.abs(z.progress));
-  if (progress > 0) {
-    ctx.globalAlpha = 0.9;
-    ctx.lineWidth = 8;
-    ctx.lineCap = 'butt';
-    ctx.strokeStyle = teamColor(z.capturing ?? z.owner);
-    ctx.beginPath();
-    ctx.arc(z.x, z.y, z.r - 14, -Math.PI / 2, -Math.PI / 2 + progress * TAU);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 0.88;
-  ctx.beginPath();
-  ctx.roundRect(z.x - 28, z.y - 28, 56, 56, 12);
-  ctx.fillStyle = 'rgba(28, 32, 40, 0.82)';
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = color;
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '800 30px "Barlow Condensed", system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String.fromCharCode(65 + index), z.x, z.y + 2);
 }
 
 function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {

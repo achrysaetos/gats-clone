@@ -179,7 +179,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
       return !!owner && !isEnemy(me, owner);
     })
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: t.kind === 'smokeCloud' ? Math.round(smokeRadius(w.now, t.bornAt, t.expiresAt)) : THROWN_RADIUS[t.kind], owner: t.owner }));
-  const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress }));
+  const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress, ...(z.crew > 0 && { crew: z.crew }), ...(z.contested && { contested: true as const }) }));
   const minimap: MinimapMark[] = [];
   for (const p of w.players.values()) {
     if (p.id === me.id || p.life.k !== 'alive') continue;

@@ -5,10 +5,11 @@ import { emptiestSquad, royaleKill, royaleWinner, startRoyale, tickRoyale } from
 import { tickRun } from './run.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
+import { ZONE_CAPTURE_MS, zoneRate } from '../zonerate.ts';
 import { freshFeats, loadMap, spawnPoint, type Player, type World, type Zone } from './world.ts';
 
-const ZONE_CAPTURE_MS = 3000;
 const ZONE_POINTS_PER_SEC = 5;
+export { ZONE_CAPTURE_MS, ZONE_RATE_CAP, zoneRate } from '../zonerate.ts';
 
 export type ModeRules = {
   assignTeam(w: World): Team;
@@ -47,17 +48,18 @@ function teamWinner(w: World, target: number): RoundWinner | null {
   return ahead === 0 ? null : { ...teamWin(ahead > 0 ? 'red' : 'blue'), note: 'Time ran out' };
 }
 
-/** `present` is the one team standing on the zone, or null when it is empty. Another team's partial capture drains before a capture
- * starts, and an enemy-owned zone turns neutral before it can be taken. */
-function tickZone(z: Zone, present: Team, step: number) {
+/** `present` is the one team standing on the zone (`n` of them), or null when it is empty. Another team's partial capture drains
+ * before a capture starts, and an enemy-owned zone turns neutral before it can be taken. */
+function tickZone(z: Zone, present: Team, n: number, step: number) {
+  const k = step * zoneRate(present ? n : 0);
   if (!present || (z.capturing !== null && z.capturing !== present)) {
-    z.progress = Math.max(0, z.progress - step);
+    z.progress = Math.max(0, z.progress - k);
     if (z.progress === 0) z.capturing = null;
     return;
   }
   if (present === z.owner) return;
   z.capturing = present;
-  z.progress += step;
+  z.progress += k;
   if (z.progress < 1) return;
   z.progress = 0;
   z.owner = z.owner === null ? present : null;
@@ -72,7 +74,10 @@ function tickZones(w: World, dtMs: number) {
       if (p.team === 'red') red++; else if (p.team === 'blue') blue++;
     }
     const present: Team = red > 0 && blue === 0 ? 'red' : blue > 0 && red === 0 ? 'blue' : null;
-    if (present || red + blue === 0) tickZone(z, present, dtMs / ZONE_CAPTURE_MS);
+    // Both teams on it: the zone holds still (contested) until one side is cleared off.
+    z.contested = red > 0 && blue > 0;
+    z.crew = present ? red + blue : 0;
+    if (!z.contested) tickZone(z, present, z.crew, dtMs / ZONE_CAPTURE_MS);
     if (z.owner === 'red' || z.owner === 'blue') w.teamScore[z.owner] += (ZONE_POINTS_PER_SEC * dtMs) / 1000;
   }
 }
@@ -164,7 +169,7 @@ function startRound(w: World) {
   w.match = { k: 'playing' };
   w.firstBlood = false;
   w.teamScore = { red: 0, blue: 0 };
-  for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; }
+  for (const z of w.zones) { z.owner = null; z.capturing = null; z.progress = 0; z.crew = 0; z.contested = false; }
   for (const p of w.players.values()) {
     // A knocked Last Squad player's life ends here too (a dead one's was paid when it ended).
     if (p.life.k !== 'dead') w.lifeRecords.push({ id: p.id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
