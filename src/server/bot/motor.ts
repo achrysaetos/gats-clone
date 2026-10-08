@@ -76,7 +76,7 @@ export type Hold = {
   mag: number;
   rhythm: { windowMs: number; pauseMs: number } | null;
   wakeAt: number;
-  /** A planted gun thinks again the tick after it fires, to move off its spot (see `nextDodge`). */
+  /** A planted gun thinks again the tick after its round leaves (not on every pull of a trigger still cycling), to move off its spot (see `nextDodge`, `thinkBots`). */
   wakeOnFire: boolean;
   /** Whether it stood at `to` when it decided, so only arriving there later wakes it to plan the next move. */
   arrived: boolean;
@@ -782,7 +782,7 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
     input: { ...keys, angle: aim.angle, fire, shots, reload, ability, aimDist: Math.max(1, look.d), use: false, sprint },
     motor: {
       ...m, ...walked(m, me, at, drive, route, tick, false, false), engaged, engagedSeen, aim, shots, ...(tap && { tap }),
-      hold: fire && h.wakeOnFire ? { ...h, wakeAt: tick + 1 } : h,
+      hold: h,
     },
   };
 }

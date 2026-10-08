@@ -100,7 +100,7 @@ const PATHS_KEPT = 256;
  * with the `budget` it was given. A search that finished inside its budget comes out the same with any budget at least that big; one
  * that ran out of budget, only with the same budget.
  */
-type Found = { budget: number; expanded: number; found: boolean; cells: Int32Array };
+type Found = { budget: number; expanded: number; found: boolean; cells: Int32Array; end?: Point };
 const holds = (f: Found, budget: number) => (f.expanded <= f.budget ? budget >= f.expanded : budget === f.budget);
 
 /**
@@ -116,8 +116,14 @@ export function findPath(nav: NavGrid, from: Point, to: Point, maxExpansions = I
   if (walkable(nav, from, end)) return [end];
   const key = start * nav.n * nav.n + goal;
   let hit = nav.paths.get(key);
-  if (hit !== undefined && holds(hit, maxExpansions)) nav.paths.delete(key);
-  else hit = fieldCells(nav, start, goal, end) ?? search(nav, start, goal, maxExpansions);
+  // A route read off a field stops descending where the exact goal point comes into a straight walk, so with a field near, the
+  // answer is remembered for that point (`end`), not for any point in the goal's cell.
+  if (hit !== undefined && holds(hit, maxExpansions) && (hit.end === undefined || (hit.end.x === end.x && hit.end.y === end.y))) nav.paths.delete(key);
+  else {
+    const near = fieldsNear(nav, start, goal);
+    hit = (near.length ? fieldCells(nav, near, start, goal, end) : null) ?? search(nav, start, goal, maxExpansions);
+    if (near.length) hit = { ...hit, end: { x: end.x, y: end.y } };
+  }
   nav.paths.set(key, hit);
   if (nav.paths.size > PATHS_KEPT) nav.paths.delete(nav.paths.keys().next().value!);
   if (hit.cells.length === 0) return hit.found ? [] : null;
@@ -270,18 +276,27 @@ export function addField(nav: NavGrid, at: Point): void {
 /** How near a fixed goal a path's goal must lie for the path to be read off that goal's field. */
 const FIELD_REACH_PX = 320;
 
-/**
- * The cells from `start` toward `goal` read off a distance field to a fixed goal near it: downhill along the field until the real goal is
- * in a straight walk, then the goal. Null when no field lies near, the start cannot reach it, or the way down crosses a cell this grid has
- * shut (the field is the base map's; a barrel or a building may stand on it), so the caller searches instead.
- */
-function fieldCells(nav: NavGrid, start: number, goal: number, end: Point): Found | null {
-  if (nav.fields.size === 0) return null;
-  const { n, open } = nav;
+/** The distance fields to fixed goals near `goal` that both `start` and `goal` can reach, with where each one's goal is. */
+function fieldsNear(nav: NavGrid, start: number, goal: number): { fixedAt: Point; g: Float32Array }[] {
+  if (nav.fields.size === 0) return [];
   const goalAt = centreOf(nav, goal);
+  const out: { fixedAt: Point; g: Float32Array }[] = [];
   for (const [fixed, g] of nav.fields) {
     const fixedAt = centreOf(nav, fixed);
-    if (dist(fixedAt, goalAt) > FIELD_REACH_PX || !Number.isFinite(g[start]!) || !Number.isFinite(g[goal]!)) continue;
+    if (dist(fixedAt, goalAt) <= FIELD_REACH_PX && Number.isFinite(g[start]!) && Number.isFinite(g[goal]!)) out.push({ fixedAt, g });
+  }
+  return out;
+}
+
+/**
+ * The cells from `start` toward `goal` read off a distance field to a fixed goal near it (`fieldsNear`): downhill along the field until the
+ * real goal is in a straight walk, then the goal. Null when the way down crosses a cell this grid has shut (the field is the base map's; a
+ * barrel or a building may stand on it), so the caller searches instead.
+ */
+function fieldCells(nav: NavGrid, fields: readonly { fixedAt: Point; g: Float32Array }[], start: number, goal: number, end: Point): Found | null {
+  const { n, open } = nav;
+  const goalAt = centreOf(nav, goal);
+  for (const { fixedAt, g } of fields) {
     const cells: number[] = [];
     let c = start, ok = true;
     const near = (dist(fixedAt, goalAt) + FIELD_REACH_PX) / nav.cell;

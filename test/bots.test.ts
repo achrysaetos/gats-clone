@@ -240,11 +240,13 @@ test('a bot leads a target moving across its line of fire', () => {
   assert.ok(mean > 0.01, `aims ahead (downward) of a target moving down: mean angle ${mean.toFixed(3)}`);
 });
 
-test('bot names never repeat a name already in the room', () => {
+test('bot names never repeat a name already in the room, even once every plain gamertag is taken', () => {
   const taken = new Set<string>();
-  for (let i = 0; i < 40; i++) {
+  // Past the couple of hundred plain names, so the numbered fallback is exercised too.
+  for (let i = 0; i < 400; i++) {
     const n = botName(taken, rand);
     assert.ok(!taken.has(n), `${n} reused`);
     taken.add(n);
   }
+  assert.ok([...taken].some((n) => / \d\d$/.test(n)), 'ran out of plain names and numbered some');
 });

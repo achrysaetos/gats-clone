@@ -105,6 +105,8 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
   const find = (id: number) => { const p = w.players.get(id); return p && p.life.k === 'alive' ? p : null; };
   /** The enemy it was fighting is gone (dead, or left): it looks round for the next. */
   const lost = (mem: BotMemory) => { const id = mem.motor.hold?.track?.id; return id !== undefined && find(id) === null; };
+  /** A planted gun's round has just left: it moves off its spot (see `Hold.wakeOnFire`). */
+  const fired = (id: number, mem: BotMemory) => !!mem.motor.hold?.wakeOnFire && shots.some((e) => e.owner === id);
 
   for (const [id, mem] of mems) {
     const p = w.players.get(id);
@@ -142,19 +144,23 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
     const slow = onScreen(p) ? 1 : OFFSCREEN_SLOWER;
     const phase = (w.tick + id) % (TACTICAL_TICKS * PLAN_EVERY * slow);
     let wake: Wake = !mem.beat || !mem.intent ? 'strategic' : phase === 0 ? 'strategic' : phase % (TACTICAL_TICKS * slow) === 0 ? 'tactical' : null;
-    if (wake !== 'strategic' && mem.beat) {
+    let beat = mem.beat;
+    if (wake !== 'strategic' && beat) {
       // As the snapshot rounds it, so the think it wakes sees the same flash.
       const blind = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
       const now = motorWake(mem.motor, p, w.tick, arena, doorOpen, slow === 1);
-      if (now === 'strategic' || zones !== mem.beat.zones || (mem.intent?.k === 'blinded' && !blind)) wake = 'strategic';
-      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && enemiesInView(w, p, mem.beat.sight) > mem.beat.seen) || news(p, mem)) wake ??= 'tactical';
+      const inView = slow === 1 ? enemiesInView(w, p, beat.sight) : beat.seen;
+      if (now === 'strategic' || zones !== beat.zones || (mem.intent?.k === 'blinded' && !blind)) wake = 'strategic';
+      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen)) || news(p, mem)) wake ??= 'tactical';
+      // One leaving its view (or falling) lowers the count, so the next to come into it is news too, not only one past the count it last thought on.
+      if (inView < beat.seen) beat = { ...beat, seen: inView };
     }
     if (wake) { think(wake); continue; }
     const ability = abilityOf(p);
     const { input, motor } = motorTick(mem.motor, {
       me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, flash: flashAmount(p, w.now), find,
     }, arena, w.tick, rand);
-    finish({ input, pick: null, mem: { ...mem, motor } }, null);
+    finish({ input, pick: null, mem: { ...mem, beat, motor } }, null);
   }
   return { respawned, picked };
 }

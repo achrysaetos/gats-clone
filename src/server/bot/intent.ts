@@ -329,7 +329,8 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
     return cur.mode === 'spray' ? searchPlan(v, c, cur.at) : idlePlan(v, c);
   },
   search: (cur, v, c) => {
-    if (v.lead && dist(v.lead, cur.at) > 300 && v.lead.tick === v.tick) return searchPlan(v, c, v.lead);
+    // Fresh news since it last planned (heard on a quick think in between counts too), not only news on this very tick.
+    if (v.lead && dist(v.lead, cur.at) > 300 && cameRound(v.lead.tick, c)) return searchPlan(v, c, v.lead);
     return dist(v.me, cur.at) < ARRIVED_PX * 1.5 || v.tick > cur.giveUpAt ? idlePlan(v, c) : null;
   },
 };
