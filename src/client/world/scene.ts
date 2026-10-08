@@ -124,6 +124,8 @@ export type Scene = {
 const R = WORLD.playerRadius;
 const CULL_MARGIN = 120;
 /** A change of heading this sharp between frames at a run, in radians, kicks up dust. */
+/** How much a full kick shrinks the drawn body for a frame, the squash of a heavy gun's shove. */
+const RECOIL_SQUASH = 0.03;
 const SHARP_TURN = 1.2;
 const FOOT_DUST = '#a49c8c';
 const HURT_SHOW_MS = 1800;
@@ -284,7 +286,7 @@ export function describeWorld(f: Frame, dark: number): Scene {
         legs: legsOf(st, angle, dashAt === undefined ? null : now - dashAt),
         torso: torsoOf({ gun: p.gun, now, id: p.id, reload, kick, moving: !!st?.moving, hit: hit ? { ms: now - hit.born, front: fromFront(hit.dir, angle) } : null, move: move ? { kind: move.kind, ms: now - move.at } : null }),
         gunKick: gunKick(p.gun, kick), parts: gunParts(p.gun, shotAt === undefined ? null : now - shotAt, reload),
-        dx: j.dx + b.dx, dy: j.dy + b.dy, scale: b.scale,
+        dx: j.dx + b.dx, dy: j.dy + b.dy, scale: b.scale * (1 - RECOIL_SQUASH * gunKick(p.gun, kick)),
       };
     }),
     tags: tagsOf(alive, s, now),
