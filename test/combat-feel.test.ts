@@ -6,7 +6,8 @@ import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { CALM, shakenOf, spreadFor } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, press, run, setWalls, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, hpOf, press, run, setWalls, spawnAt, TICK_MS } from './helpers.ts';
+import type { GameEvent } from '../src/shared/protocol.ts';
 
 const R = WORLD.playerRadius;
 
@@ -179,4 +180,64 @@ test('the server fires a flinched shooter\'s rounds with the wider spread the vi
   assert.ok(Math.max(...steady) <= calm + 1e-9, 'calm rounds stay inside the calm cone');
   assert.ok(Math.max(...shaken) > calm, 'flinched rounds leave it');
   assert.ok(Math.max(...shaken) <= calm * (1 + FEEL.flinch.spreadAdd) + 1e-9, 'and stay inside the flinched cone');
+});
+
+/** A sniper at (500, 500) firing east past a person standing `offset` px off its line, 300 px out, on `team`s of the caller's choosing. */
+function nearMiss(offset: number, teams: { shooter?: 'red' | 'blue'; target?: 'red' | 'blue' } = {}, mode: 'FFA' | 'TDM' = 'FFA') {
+  const w = emptyWorld(mode);
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' }, team: teams.shooter ?? null });
+  const b = spawnAt(w, 800, 500 + offset, { kind: 'human', team: teams.target ?? null });
+  const events: GameEvent[] = [];
+  fire(w, a);
+  const firedAt = w.now;
+  events.push(...w.events);
+  for (let t = 0; t < 300; t += TICK_MS) { step(w, TICK_MS); events.push(...w.events); }
+  return { w, a, b, firedAt, whizzes: events.filter((e): e is Extract<GameEvent, { e: 'whizz' }> => e.e === 'whizz') };
+}
+
+test('an enemy round passing close without hitting suppresses you and raises one whizz where it passed nearest', () => {
+  const { b, firedAt, whizzes } = nearMiss(55);
+  assert.ok(b.life.k === 'alive' && hpOf(b) === 400, 'it missed');
+  assert.equal(whizzes.length, 1);
+  const [z] = whizzes;
+  assert.equal(z!.victim, b.id);
+  assert.ok(Math.abs(z!.x - b.x) < 1 && Math.abs(z!.y - 500) < 6, `passed nearest at (${z!.x.toFixed(1)}, ${z!.y.toFixed(1)})`);
+  assert.ok(Math.abs(z!.dir) < 0.02, 'flying east');
+  const passedAt = b.life.suppressedUntil - FEEL.suppression.perPassMs;
+  assert.ok(passedAt >= firedAt && passedAt <= firedAt + 200, `one pass adds its share of suppression as the round goes by (at ${passedAt - firedAt}ms)`);
+});
+
+test('no suppression from a round that passes wide, one that hits, or a teammate\'s', () => {
+  assert.equal(nearMiss(110).whizzes.length, 0, 'wide of the reach');
+  const hit = nearMiss(0);
+  assert.ok(hpOf(hit.b) < 400 && hit.whizzes.length === 0 && hit.b.life.k === 'alive' && hit.b.life.suppressedUntil === -Infinity, 'a hit flinches instead');
+  const mate = nearMiss(55, { shooter: 'red', target: 'red' }, 'TDM');
+  assert.equal(mate.whizzes.length, 0, 'a teammate\'s round');
+  assert.ok(mate.b.life.k === 'alive' && mate.b.life.suppressedUntil === -Infinity);
+  assert.equal(nearMiss(55, { shooter: 'red', target: 'blue' }, 'TDM').whizzes.length, 1, 'an enemy team\'s round does');
+});
+
+test('a stream of near misses builds suppression to full, widens spread, is told only to its victim a few times a second, then drains', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'lmg' } });
+  equip(a, 'minigun');
+  const b = spawnAt(w, 800, 560, { kind: 'human' });
+  const bystander = spawnAt(w, 700, 800);
+  let mine = 0, theirs = 0;
+  press(w, a, { angle: 0, fire: true });
+  for (let t = 0; t < 2000; t += TICK_MS) {
+    if (a.life.k === 'alive') a.life.spin = 1;
+    step(w, TICK_MS);
+    mine += snapshotFor(w, b.id, w.events).events.filter((e) => e.e === 'whizz').length;
+    theirs += snapshotFor(w, bystander.id, w.events).events.filter((e) => e.e === 'whizz').length;
+  }
+  assert.ok(b.life.k === 'alive' && hpOf(b) === 400, 'every round missed');
+  const level = snapshotFor(w, b.id).self.suppression ?? 0;
+  assert.ok(level > 0.99, `fully suppressed (${level})`);
+  assert.ok(Math.abs(spreadFor('pistol', {}, true, 0, { ...CALM, suppression: level }) - spreadFor('pistol', {}, true) * (1 + FEEL.suppression.spreadAdd * level)) < 1e-12, 'spread grows by its share');
+  assert.ok(mine >= 4 && mine <= Math.ceil(2000 / FEEL.suppression.whizzGapMs) + 1, `${mine} whizzes in 2s`);
+  assert.equal(theirs, 0, 'a bystander hears of none');
+  press(w, a, { angle: 0 });
+  run(w, FEEL.suppression.ms + 500);
+  assert.equal(snapshotFor(w, b.id).self.suppression, undefined, 'drained once the fire stopped');
 });

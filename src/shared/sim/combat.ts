@@ -7,7 +7,7 @@ import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
 import { damageZombie } from './run.ts';
 import { ceasefire } from './extract.ts';
-import { addScore, effectiveStats, flinchUntil, isHunted, knockbackPx } from './stats.ts';
+import { addScore, effectiveStats, flinchUntil, isHunted, knockbackPx, suppressedUntil } from './stats.ts';
 import { crateRect, friendly, newId, trainBody, type Bullet, type Crate, type Player, type Pose, type Shooter, type Thrown, type Wall, type World } from './world.ts';
 
 const SHIELD_BLOCK = 0.33;
@@ -259,14 +259,45 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   for (const hit of hits) {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
     hit.apply(x, y);
-    if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner, view);
+    if (!hit.victim || b.penetrate === 0) {
+      nearMisses(w, b, dx, dy, hit.t, hit.victim?.id ?? null, view);
+      return stopBullet(w, b, x, y, owner, view);
+    }
     b.penetrate--;
     b.passed.push(hit.victim.id);
   }
+  nearMisses(w, b, dx, dy, 1, null, view);
   b.x += dx;
   b.y += dy;
   b.left -= travel;
   return b.left > 0.5 || stopBullet(w, b, b.x, b.y, owner, view);
+}
+
+const NEAR_MISS_PX = WORLD.playerRadius + FEEL.suppression.px;
+
+/**
+ * Suppresses every enemy of the round it passed within reach of on the first `upTo` of this step's flight (`dx`, `dy`) without hitting.
+ * A round's nearest pass to someone falls inside exactly one step, so each round counts once per player. Rounds that could not hurt them
+ * never do: a teammate's, one in a zombies run, between rounds.
+ */
+function nearMisses(w: World, b: Bullet, dx: number, dy: number, upTo: number, struck: number | null, view: View) {
+  const len2 = dx * dx + dy * dy;
+  if (b.lobbed || len2 === 0 || w.run || w.match.k === 'over' || ceasefire(w)) return;
+  for (const p of w.players.values()) {
+    const life = p.life;
+    if (life.k !== 'alive' || p.id === b.owner || p.id === struck || friendly(b.team, p) || b.passed.includes(p.id) || w.now < life.shieldUntil) continue;
+    const at = view.poseOf(p);
+    if (!at) continue;
+    const t = ((at.x - b.x) * dx + (at.y - b.y) * dy) / len2;
+    if (t < 0 || t >= upTo) continue;
+    const x = b.x + dx * t, y = b.y + dy * t;
+    const d2 = dist2(x, y, at.x, at.y);
+    if (d2 >= NEAR_MISS_PX ** 2 || d2 < WORLD.playerRadius ** 2) continue;
+    life.suppressedUntil = suppressedUntil(life.suppressedUntil, w.now);
+    if (w.now - life.whizzAt < FEEL.suppression.whizzGapMs) continue;
+    life.whizzAt = w.now;
+    w.events.push({ e: 'whizz', victim: p.id, x, y, dir: Math.atan2(dy, dx) });
+  }
 }
 
 function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {

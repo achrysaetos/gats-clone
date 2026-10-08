@@ -70,6 +70,7 @@ function selfView(w: World, p: Player): SelfView {
     ...(life.k === 'alive' && life.staggerUntil > w.now && { stagger: life.staggerUntil - w.now }),
     ...(life.k === 'alive' && life.spray > 0 && { spray: life.spray }),
     ...(shaken && shaken.flinch > 0 && { flinch: shaken.flinch }),
+    ...(shaken && shaken.suppression > 0 && { suppression: shaken.suppression }),
     // A squad player who bled out waits for dawn, which the run view times.
     respawnIn: life.k === 'dead' && Number.isFinite(life.respawnAt) ? Math.max(0, Math.ceil(life.respawnAt - w.now)) : 0,
     kills: p.kills,
@@ -139,8 +140,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
+  // A whizz goes only to the player it passed.
   const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped'
-    || (inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
+    || (e.e === 'whizz' ? e.victim === me.id : inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),

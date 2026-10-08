@@ -197,7 +197,18 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   return searchPlan(v, c, v.lead);
 };
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
+/** Pinned by near misses in the open, a bot gets behind cover from where they come, unless the shooter is too close to hide from; one peeking ducks back early. */
+const duckWhenPinned: Interrupt = (cur, v, c) => {
+  const from = v.pinnedFrom;
+  const covering = cur.k === 'retreatAndHeal' || cur.k === 'reloadInCover' || cur.k === 'peekAndHide' || cur.k === 'takePosition';
+  if (!from || covering || c.band.rushes || dist(v.me, from) < CORNERED_PX) return null;
+  const t = v.threats[0];
+  if (t) return peekPlan(v, c, t);
+  const spot = hideFrom(v, c, from);
+  return spot && dist(spot, v.me) > ARRIVED_PX ? { k: 'takePosition', spot, facing: from } : null;
+};
+
+const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, duckWhenPinned, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -241,6 +252,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
 };
 
 function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
+  if (cur.k === 'peekAndHide' && cur.phase === 'peek' && v.pinnedFrom) return { ...cur, phase: 'hide', phaseUntil: v.tick + ticks(between(c.persona.hideMs, c.rand)) };
   if (cur.k !== 'peekAndHide' || v.tick < cur.phaseUntil) return cur;
   const unansweredPeek = cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target);
   if (unansweredPeek) return cur;

@@ -31,6 +31,9 @@ export type Life =
     /** The rounds one attacker landed this tick, summed raw, so a shotgun's pellets count as one blast toward a stagger. */
     blow: { by: number; tick: number; damage: number } | null;
     flinchUntil: number;
+    suppressedUntil: number;
+    /** When this player was last sent a whizz. */
+    whizzAt: number;
     pressUntil: number;
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];

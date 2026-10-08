@@ -113,9 +113,13 @@ export type SelfView = {
   shove?: Shove;
   /** Ms left of a stagger slowing your walk, so prediction slows you with it. */
   stagger?: number;
-  /** How far into a spray you are and how shaken by hits (`flinch`, 0..1): with your movement, what `spreadFor` needs to draw your real spread. */
+  /**
+   * How far into a spray you are, how shaken by hits (`flinch`) and by enemy rounds passing close (`suppression`), each 0..1: with your
+   * movement, what `spreadFor` needs to draw your real spread.
+   */
   spray?: number;
   flinch?: number;
+  suppression?: number;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;

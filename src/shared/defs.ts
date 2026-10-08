@@ -208,6 +208,18 @@ export const FEEL = {
     /** Spread grows by this much of itself at a full flinch: enough to cost the second shooter, small enough that SMGs, which flinch each other most, keep their lead up close (0.4 let a sniper's hip-fire into SMG range). */
     spreadAdd: 0.3,
   },
+  /** Enemy rounds passing close without hitting shake your aim, so covering fire pins someone without landing. Its level runs 0..1 and drains in a straight line. */
+  suppression: {
+    /** How close past your body a round must pass: two body widths of air, near enough to hear it crack by. */
+    px: 48,
+    /** Each near miss adds this long, and a full level drains over `ms`: five close rounds suppress fully, and it is gone a second and a half after the fire stops. */
+    perPassMs: 300,
+    ms: 1500,
+    /** Spread grows by this much of itself at full suppression: pinned in the open you trade badly, behind cover it costs nothing. */
+    spreadAdd: 0.3,
+    /** At most one whizz event a victim this often, so the wire stays small however much fire passes. */
+    whizzGapMs: 333,
+  },
   /** However shaken, by flinch and suppression together, spread grows by at most this much of itself, so a shaken shooter still hits up close. */
   shakenMaxAdd: 0.8,
 } as const;
