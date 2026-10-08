@@ -15,7 +15,7 @@ import { SOUNDS, soundsFor } from '../src/client/sfx.ts';
 import { emptyWorld, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 function propAt(w: World, kind: PropKind, x: number, y: number): Prop {
-  const q: Prop = { id: w.nextId++, kind, x, y, hp: PROPS[kind].hp, phase: 'stand', at: 0, respawnAt: null, vx: 0, vy: 0, by: null };
+  const q: Prop = { id: w.nextId++, kind, x, y, hp: PROPS[kind].hp, phase: 'stand', at: 0, respawnAt: null, vx: 0, vy: 0, by: null, home: { x, y } };
   w.props.push(q);
   return q;
 }
@@ -62,7 +62,7 @@ test('a standing prop blocks bodies and rounds and a spent pack or flying tank d
   const w = emptyWorld();
   const crate = propAt(w, 'medic', 1000, 1000);
   assert.ok(coverRects(w).some((r) => r.x === propRect(crate).x && r.y === propRect(crate).y), 'cover');
-  assert.ok(solidRects(w).length >= 1);
+  assert.ok(solidRects(w).some((r) => r.x === propRect(crate).x && r.y === propRect(crate).y), 'solid to bodies');
   crate.phase = 'spent';
   assert.ok(!propSolid(crate), 'a pack lies on the floor');
   const lamp = propAt(w, 'lamp', 1200, 1000);
@@ -431,9 +431,9 @@ test('a blast sends a propane tank flying away from it', () => {
   w.barrels.push(barrel);
   const tank = propAt(w, 'propane', 1100, 1000);
   damageBarrel(w, barrel, 100, spark(shooter));
-  run(w, BARREL.fuseMs + 100);
-  assert.ok(tank.phase === 'active' && tank.vx > 0 || tank.respawnAt !== null, 'launched east, away from the burst');
-  assert.ok(tank.x > 1100);
+  const launch = runEvents(w, BARREL.fuseMs + 100).find((e) => e.e === 'prop' && e.k === 'launch');
+  assert.ok(launch?.e === 'prop' && Math.abs(launch.a!) < 0.01, 'launched east, away from the burst');
+  assert.ok(tank.phase === 'active' && tank.vx > 0 && tank.x > 1100, 'and flying east');
 });
 
 test('props respawn after their time', () => {
@@ -449,7 +449,24 @@ test('props respawn after their time', () => {
     assert.equal(q.phase, 'stand');
     assert.equal(q.hp, PROPS[kind].hp);
     assert.equal(q.vx, 0);
+    assert.deepEqual({ x: q.x, y: q.y }, { x: 3000, y: 400 }, `${kind} stands again on its own spot`);
   }
+});
+
+test('a propane tank on a map stands again on its own spot, not where it burst', () => {
+  const w = createWorld('FFA', 5, 'plaza');
+  w.players.clear();
+  const tank = w.props.find((q) => q.kind === 'propane')!;
+  const home = MAPS.plaza.props.find((q) => q.kind === 'propane' && q.x === tank.x && q.y === tank.y)!;
+  assert.ok(home, 'the tank starts on its map spot');
+  const shooter = spawnAt(w, 100, 100);
+  damageProp(w, tank, 1000, spark(shooter), { x: 0, y: 1 });
+  const boom = runEvents(w, 3000).find((e) => e.e === 'boom');
+  assert.ok(tank.respawnAt !== null && boom?.e === 'boom', 'it flew and burst');
+  assert.ok(Math.hypot(boom.x - home.x, boom.y - home.y) > 100, 'it burst well away from home');
+  run(w, PROPS.propane.respawnMs + 500);
+  assert.equal(tank.respawnAt, null, 'it stands again');
+  assert.deepEqual({ x: tank.x, y: tank.y }, { x: home.x, y: home.y });
 });
 
 test('a prop going away or coming back bumps the walls version so bots re-plan', () => {

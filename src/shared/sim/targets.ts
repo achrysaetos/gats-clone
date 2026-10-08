@@ -192,7 +192,7 @@ export function resetRange(w: World, pid: number): void {
   r.stats.set(pid, freshStats());
   for (const t of r.targets) if (!standing(t) || t.hp < t.maxHp) standUp(w, t);
   for (const b of w.barrels) { b.hp = BARREL.hp; b.fuseAt = null; b.respawnAt = null; b.by = null; }
-  for (const q of w.props) { q.hp = PROPS[q.kind].hp; q.respawnAt = null; q.phase = 'stand'; q.vx = 0; q.vy = 0; q.by = null; }
+  for (const q of w.props) { q.hp = PROPS[q.kind].hp; q.respawnAt = null; q.phase = 'stand'; q.vx = 0; q.vy = 0; q.by = null; q.x = q.home.x; q.y = q.home.y; }
   w.wallsVersion++;
 }
 

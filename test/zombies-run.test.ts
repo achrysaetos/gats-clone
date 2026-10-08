@@ -88,6 +88,8 @@ test('the core falling ends the run with the night reached, and the restart wipe
     { phase: phaseOf(w), night: w.run!.night, scrap: w.run!.scrap, core: w.run!.core.hp, buildings: w.buildings.length, score: p.score, level: p.level, kills: p.kills, alive: p.life.k },
     { phase: 'day', night: 1, scrap: ZOM.startScrap, core: ZOM.coreHp, buildings: 0, score: 0, level: 0, kills: 0, alive: 'alive' },
   );
+  // The restart ends the run's life as a versus round's restart ends one, so the score it wipes is still paid to the profile.
+  assert.deepEqual(w.lifeRecords.filter((r) => r.id === p.id).map((r) => ({ score: r.score, died: r.died })), [{ score: LEVELS[3].score, died: false }]);
 });
 
 

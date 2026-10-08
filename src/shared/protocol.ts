@@ -39,7 +39,8 @@ export const VIEW_ASPECT = { min: 1, max: 2.4 } as const;
 /** What a client that sent no (or a garbled) aspect is assumed to have, and what bots see by. */
 export const DEFAULT_VIEW_ASPECT = 16 / 9;
 export const VIEW_PRELOAD_MARGIN = 64;
-export const clampAspect = (aspect: number): number => Math.min(VIEW_ASPECT.max, Math.max(VIEW_ASPECT.min, aspect));
+/** A non-finite aspect (a 0x0 viewport divides 0 by 0) is the default, never NaN, which would poison the camera and the server's culling. */
+export const clampAspect = (aspect: number): number => (Number.isFinite(aspect) ? Math.min(VIEW_ASPECT.max, Math.max(VIEW_ASPECT.min, aspect)) : DEFAULT_VIEW_ASPECT);
 /** The world a player can see: the view radius across, and as much height as the screen's shape allows. Camera, server culling and bot sight all use it, so nobody is hit from off screen. */
 export const viewExtents = (viewRadius: number, aspect: number): { halfW: number; halfH: number } => ({ halfW: viewRadius, halfH: viewRadius / clampAspect(aspect) });
 
@@ -341,7 +342,8 @@ export function parseLoadout(v: unknown): Loadout | null {
 export const NAME_MAX = 16;
 
 export function cleanName(v: unknown): string {
-  const s = typeof v === 'string' ? v.replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, NAME_MAX) : '';
+  // Trimmed after the cut, so a long name never keeps a trailing space (a padded look-alike of another name), and never cut through an astral letter's surrogate pair.
+  const s = typeof v === 'string' ? v.replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, NAME_MAX).replace(/[\uD800-\uDBFF]$/, '').trim() : '';
   return s || 'Unnamed';
 }
 

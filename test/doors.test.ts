@@ -106,6 +106,19 @@ test('a blast throws a swing door open, away from it', () => {
   assert.equal(d.sign, -1);
 });
 
+test('a blast never throws a swing leaf through a body standing in its sweep: the leaf swings open until it meets them', () => {
+  const w = geoWorld();
+  const p = spawnAt(w, 3590, 440);
+  const leaves = () => w.walls.filter((x) => x.door === 'room-3');
+  assert.ok(leaves().every((l) => !circleHitsRect(p.x, p.y, R, l)), 'clear of the shut leaf');
+  explode(w, 3525, 600, 140, 1, { attacker: null, team: null, label: 'Test' });
+  assert.equal(door(w, 'room-3').sign, -1, 'thrown away from the blast');
+  assert.ok(leaves().every((l) => !circleHitsRect(p.x, p.y, R, l)), 'never inside a leaf');
+  run(w, 300);
+  assert.ok(door(w, 'room-3').open > 0, 'it still swings open as far as the body lets it');
+  assert.ok(leaves().every((l) => !circleHitsRect(p.x, p.y, R, l)), 'and stops against them');
+});
+
 test('closed doors block rounds and bodies; glass blocks both but not sight', () => {
   const w = geoWorld();
   const shut = w.walls.filter((x) => x.door === 'room-3');
@@ -146,7 +159,7 @@ test('doors cost a few bytes on the wire and only when they change', () => {
   press(w, p, { up: true });
   run(w, 800);
   const moving = snapshotFor(w, p.id);
-  assert.ok(moving.doors!.length >= 1);
+  assert.deepEqual(moving.doors!.map(([i]) => MAPS['geo-test'].doors![i]!.id), ['room-3'], 'the door pushed open, and no other');
   assert.ok(JSON.stringify(moving.doors).length < 40 * moving.doors!.length);
   assert.ok(wallViews(w).every((x) => !('door' in x)), 'door leaves are not sent as walls');
 });
@@ -158,9 +171,12 @@ test('the client rebuilds the same leaves from the snapshot as the server holds'
   for (let i = 0; i < 30; i++) {
     run(w, 1000 / 30);
     const snap = snapshotFor(w, p.id);
-    const client = solidsOf(wallViews(w), snap, MAPS['geo-test'].doors).filter((r) => r.pts !== undefined || true);
-    const serverLeaves = w.walls.filter((x) => x.door !== undefined);
-    for (const l of serverLeaves) assert.ok(client.some((c) => c.x === l.x && c.y === l.y && c.w === l.w && c.h === l.h), `leaf of ${l.door} on tick ${i}`);
+    const walls = wallViews(w);
+    // The geo-test world has no crates or props, so past the walls the client's solids are exactly its door leaves.
+    const key = (r: { x: number; y: number; w: number; h: number }) => `${r.x},${r.y},${r.w},${r.h}`;
+    const client = solidsOf(walls, snap, MAPS['geo-test'].doors).slice(walls.length).map(key).sort();
+    const server = w.walls.filter((x) => x.door !== undefined).map(key).sort();
+    assert.deepEqual(client, server, `door leaves on tick ${i}`);
   }
 });
 

@@ -16,7 +16,7 @@ const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) 
 const KIND_INDEX: Record<PropKind, number> = { propane: 0, gas: 1, generator: 2, oil: 3, lamp: 4, medic: 5, ammo: 6, paint: 7 };
 
 function addProp(w: World, kind: PropKind, x: number, y: number): Prop {
-  const q: Prop = { id: w.nextId++, kind, x, y, hp: PROPS[kind].hp, phase: 'stand', at: 0, respawnAt: null, vx: 0, vy: 0, by: null };
+  const q: Prop = { id: w.nextId++, kind, x, y, hp: PROPS[kind].hp, phase: 'stand', at: 0, respawnAt: null, vx: 0, vy: 0, by: null, home: { x, y } };
   w.props.push(q);
   w.wallsVersion++;
   return q;
