@@ -72,7 +72,8 @@ function selfView(w: World, p: Player): SelfView {
     speed: stats.speed * empMul(w, p) * rushMul(w, p),
     sprint: life.k === 'alive' && life.sprint,
     sprintSpeed: stats.sprintSpeed * empMul(w, p) * rushMul(w, p),
-    settle: life.k === 'alive' ? Math.round(Math.min(1, life.settleLeft / stats.settleMs) * 100) / 100 : 0,
+    // Rounded up, so a client never thinks the gun is up a tick before the server does (and draws a shot it will not fire).
+    settle: life.k === 'alive' && stats.settleMs > 0 ? Math.max(0, Math.ceil((life.settleLeft / stats.settleMs) * 100 - 1e-9) / 100) : 0,
     settleMs: Math.round(stats.settleMs),
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null

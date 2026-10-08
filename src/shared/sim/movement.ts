@@ -1,6 +1,7 @@
 import { KNOCK, WORLD } from '../defs.ts';
 import type { Dash, InputState } from '../protocol.ts';
 import { boxPts, circleHitsConvex, convexOverlap, pushOutConvex, segmentEntersConvexAt, type Convex } from '../geom.ts';
+import { prefixGrid } from './rectgrid.ts';
 
 /**
  * A solid's box. A convex polygon part also carries its points in `pts` (flat, positive area) and `x, y, w, h` is its bounding box,
@@ -73,55 +74,159 @@ export function segmentEntersRectAt(px: number, py: number, dx: number, dy: numb
   return t0;
 }
 
-/** The solid the segment (p, p + d) enters first, and where along it (0..1), or null. */
+/** The solid the segment (p, p + d) enters first, and where along it (0..1), or null. On a tie the earlier in `solids` wins. */
 export function earliestHit<T extends Rect>(solids: readonly T[], px: number, py: number, dx: number, dy: number): { t: number; b: T } | null {
   let best: { t: number; b: T } | null = null;
-  for (const b of solids) {
+  const g = prefixGrid(solids);
+  let i = 0;
+  if (g) {
+    const n = g.segment(px, py, dx, dy, true);
+    for (let j = 0; j < n; j++) {
+      const b = g.rects[g.buf[j]!] as T;
+      const t = segmentEntersRectAt(px, py, dx, dy, b);
+      if (t !== null && (!best || t < best.t)) best = { t, b };
+    }
+    i = g.k;
+  }
+  for (; i < solids.length; i++) {
+    const b = solids[i]!;
     const t = segmentEntersRectAt(px, py, dx, dy, b);
     if (t !== null && (!best || t < best.t)) best = { t, b };
   }
   return best;
 }
 
-function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: number, size: number): { x: number; y: number } {
-  let x = clamp(nx, r, size - r), y = clamp(ny, r, size - r);
-  let bent = false;
-  for (const b of solids) {
-    const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
-    const d2 = dist2(x, y, cx, cy);
-    if (d2 >= r * r) continue;
-    if (b.pts) {
-      const out = pushOutConvex(x, y, r, b.pts);
-      if (out) { x = out.x; y = out.y; bent = true; }
-      continue;
+/** Whether the segment (p, p + d) enters any of `solids`, leaving out those flagged `skip` (`nb`: rounds fly over, `ns`: sight passes). */
+export function segmentBlocked(solids: readonly Rect[], px: number, py: number, dx: number, dy: number, skip?: 'nb' | 'ns'): boolean {
+  const g = prefixGrid(solids);
+  let i = 0;
+  if (g) {
+    const n = g.segment(px, py, dx, dy, false);
+    for (let j = 0; j < n; j++) {
+      const b = g.rects[g.buf[j]!]!;
+      if (!(skip && b[skip]) && segmentEntersRectAt(px, py, dx, dy, b) !== null) return true;
     }
-    if (d2 > 0) {
-      const d = Math.sqrt(d2);
-      x = cx + ((x - cx) / d) * r;
-      y = cy + ((y - cy) / d) * r;
-    } else {
-      const exits = [
-        { x: b.x - r, y, depth: x - b.x },
-        { x: b.x + b.w + r, y, depth: b.x + b.w - x },
-        { x, y: b.y - r, depth: y - b.y },
-        { x, y: b.y + b.h + r, depth: b.y + b.h - y },
-      ];
-      const shallowest = exits.reduce((m, o) => (o.depth < m.depth ? o : m));
-      x = shallowest.x;
-      y = shallowest.y;
+    i = g.k;
+  }
+  for (; i < solids.length; i++) {
+    const b = solids[i]!;
+    if (!(skip && b[skip]) && segmentEntersRectAt(px, py, dx, dy, b) !== null) return true;
+  }
+  return false;
+}
+
+/** Every solid the segment (p, p + d) enters and where (0..1), in `solids` order, leaving out those flagged `skip`. */
+export function segmentHits<T extends Rect>(solids: readonly T[], px: number, py: number, dx: number, dy: number, skip?: 'nb' | 'ns'): { t: number; b: T }[] {
+  const out: { t: number; b: T }[] = [];
+  const g = prefixGrid(solids);
+  let i = 0;
+  if (g) {
+    const n = g.segment(px, py, dx, dy, true);
+    for (let j = 0; j < n; j++) {
+      const b = g.rects[g.buf[j]!] as T;
+      if (skip && b[skip]) continue;
+      const t = segmentEntersRectAt(px, py, dx, dy, b);
+      if (t !== null) out.push({ t, b });
+    }
+    i = g.k;
+  }
+  for (; i < solids.length; i++) {
+    const b = solids[i]!;
+    if (skip && b[skip]) continue;
+    const t = segmentEntersRectAt(px, py, dx, dy, b);
+    if (t !== null) out.push({ t, b });
+  }
+  return out;
+}
+
+/** Whether a circle at (x, y) of radius `r` overlaps any of `solids`. */
+export function circleBlocked(solids: readonly Rect[], x: number, y: number, r: number): boolean {
+  const g = prefixGrid(solids);
+  let i = 0;
+  if (g) {
+    const n = g.box(x - r, y - r, x + r, y + r, false);
+    for (let j = 0; j < n; j++) if (circleHitsRect(x, y, r, g.rects[g.buf[j]!]!)) return true;
+    i = g.k;
+  }
+  for (; i < solids.length; i++) if (circleHitsRect(x, y, r, solids[i]!)) return true;
+  return false;
+}
+
+/** The circle `resolveCircle` is settling; module state so a push allocates nothing (it never re-enters). */
+let atX = 0, atY = 0, bent = false;
+
+function pushOff(b: Rect, r: number): void {
+  const x = atX, y = atY;
+  const cx = clamp(x, b.x, b.x + b.w), cy = clamp(y, b.y, b.y + b.h);
+  const d2 = dist2(x, y, cx, cy);
+  if (d2 >= r * r) return;
+  if (b.pts) {
+    const out = pushOutConvex(x, y, r, b.pts);
+    if (out) { atX = out.x; atY = out.y; bent = true; }
+    return;
+  }
+  if (d2 > 0) {
+    const d = Math.sqrt(d2);
+    atX = cx + ((x - cx) / d) * r;
+    atY = cy + ((y - cy) / d) * r;
+  } else {
+    const exits = [
+      { x: b.x - r, y, depth: x - b.x },
+      { x: b.x + b.w + r, y, depth: b.x + b.w - x },
+      { x, y: b.y - r, depth: y - b.y },
+      { x, y: b.y + b.h + r, depth: b.y + b.h - y },
+    ];
+    const shallowest = exits.reduce((m, o) => (o.depth < m.depth ? o : m));
+    atX = shallowest.x;
+    atY = shallowest.y;
+  }
+}
+
+function settleOff(b: Rect, r: number): void {
+  if (!b.pts) return;
+  if (dist2(atX, atY, clamp(atX, b.x, b.x + b.w), clamp(atY, b.y, b.y + b.h)) >= r * r) return;
+  const out = pushOutConvex(atX, atY, r, b.pts);
+  if (out) { atX = out.x; atY = out.y; bent = true; }
+}
+
+/**
+ * Runs `visit` over `solids` in order, as a linear pass would, but through the grid: only the solids near the circle. A solid
+ * left out is one the circle cannot reach while it stays inside the box the candidates were taken for, so visiting it would do
+ * nothing; if a push carries the circle out of that box, the pass carries on linearly from there.
+ */
+function sweep(solids: readonly Rect[], r: number, visit: (b: Rect, r: number) => void): void {
+  const g = prefixGrid(solids);
+  let i = 0;
+  if (g) {
+    const reach = 2 * r;
+    const x0 = atX - reach, y0 = atY - reach, x1 = atX + reach, y1 = atY + reach;
+    const n = g.box(x0, y0, x1, y1, true);
+    i = g.k;
+    for (let j = 0; j < n; j++) {
+      const id = g.buf[j]!;
+      visit(g.rects[id]!, r);
+      if (atX - r <= x0 + 0.5 || atX + r >= x1 - 0.5 || atY - r <= y0 + 0.5 || atY + r >= y1 - 0.5) { i = id + 1; break; }
     }
   }
+  // The rest (door leaves, crates, barrels, props) linearly, passing over at a glance any whose box is clear of the circle by a pixel or more.
+  for (; i < solids.length; i++) {
+    const b = solids[i]!;
+    if (b.x > atX + r + 1 || b.y > atY + r + 1 || b.x + b.w < atX - r - 1 || b.y + b.h < atY - r - 1) continue;
+    visit(b, r);
+  }
+}
+
+function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: number, size: number): { x: number; y: number } {
+  atX = clamp(nx, r, size - r);
+  atY = clamp(ny, r, size - r);
+  bent = false;
+  sweep(solids, r, pushOff);
   // Pushed off a polygon, the push can land in a neighbour (an angled hull next to a wall), so settle again.
   for (let pass = 0; bent && pass < 3; pass++) {
     bent = false;
-    for (const b of solids) {
-      if (!b.pts) continue;
-      if (dist2(x, y, clamp(x, b.x, b.x + b.w), clamp(y, b.y, b.y + b.h)) >= r * r) continue;
-      const out = pushOutConvex(x, y, r, b.pts);
-      if (out) { x = out.x; y = out.y; bent = true; }
-    }
+    sweep(solids, r, settleOff);
   }
-  return { x: clamp(x, r, size - r), y: clamp(y, r, size - r) };
+  return { x: clamp(atX, r, size - r), y: clamp(atY, r, size - r) };
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
@@ -177,7 +282,7 @@ function knifeTarget<T extends Point>(at: Point, angle: number, enemies: readonl
     const d = Math.sqrt(dist2(at.x, at.y, v.x, v.y));
     if (d > KNIFE_REACH + WORLD.playerRadius || d >= bestD) continue;
     if (d > WORLD.playerRadius && angleDiff(Math.atan2(v.y - at.y, v.x - at.x), angle) > KNIFE_ARC) continue;
-    if (solids.some((b) => segmentEntersRectAt(at.x, at.y, v.x - at.x, v.y - at.y, b) !== null)) continue;
+    if (segmentBlocked(solids, at.x, at.y, v.x - at.x, v.y - at.y)) continue;
     best = v;
     bestD = d;
   }
@@ -191,7 +296,7 @@ export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point
   let victim = knifeTarget(from, angle, enemies, solids);
   for (let i = 0; i < steps && !victim; i++) {
     const nx = x + sx, ny = y + sy;
-    if (!insideWorld(nx, ny, size) || solids.some((b) => circleHitsRect(nx, ny, WORLD.playerRadius, b))) break;
+    if (!insideWorld(nx, ny, size) || circleBlocked(solids, nx, ny, WORLD.playerRadius)) break;
     x = nx;
     y = ny;
     victim = knifeTarget({ x, y }, angle, enemies, solids);

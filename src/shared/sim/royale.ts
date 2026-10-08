@@ -3,7 +3,7 @@ import { MAPS } from '../maps.ts';
 import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult, type Team } from '../protocol.ts';
 import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
-import { circleHitsRect, dist2, rectsOverlap } from './movement.ts';
+import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
 import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
 import { coverRects, crateRect, freshFeats, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
 
@@ -34,7 +34,7 @@ function clearSpotIn(w: World, c: Circle, within: number, edge: number): { x: nu
     const a = rand(w) * 2 * Math.PI, d = Math.sqrt(rand(w)) * within;
     const x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d;
     if (x < margin || y < margin || x > size - margin || y > size - margin) continue;
-    if (!solids.some((b) => circleHitsRect(x, y, WORLD.playerRadius * 2, b))) return { x, y };
+    if (!circleBlocked(solids, x, y, WORLD.playerRadius * 2)) return { x, y };
   }
   return { x: c.x, y: c.y };
 }

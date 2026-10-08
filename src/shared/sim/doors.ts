@@ -18,6 +18,8 @@ export const DOOR_USE_PX = 80;
 const SLIDE_OPEN_MS = 380, SLIDE_CLOSE_MS = 520, SWING_OPEN_MS = 650, SWING_CLOSE_MS = 900;
 const SLIDE_HOLD_MS = 1400, SWING_HOLD_MS = 2500;
 const USE_COOLDOWN_MS = 500;
+/** A swing leaf open no more than this (about 6 degrees) is pushed round to the pusher's far side rather than into him. */
+const FLIP_OPEN = 16;
 
 export type DoorState = {
   id: string;
@@ -93,6 +95,22 @@ export function doorLeaves(d: MapDoor, open: number, sign: 1 | -1): DoorLeaf[] {
   return out;
 }
 
+/** Where a swing door's leaves are hinged, and how long each is. */
+export function swingHinges(d: MapDoor): { x: number; y: number; len: number }[] {
+  const end = { x: d.x + (d.axis === 'h' ? d.w : 0), y: d.y + (d.axis === 'v' ? d.w : 0) };
+  if (isDouble(d)) return [{ x: d.x, y: d.y, len: d.w / 2 }, { ...end, len: d.w / 2 }];
+  return [(d.hinge ?? 'start') === 'start' ? { x: d.x, y: d.y, len: d.w } : { ...end, len: d.w }];
+}
+
+/**
+ * The hinge of the leaf of swing door `d` that, swinging toward `sign`, sweeps over a body of radius `r` at `p`; null when none does.
+ * A body there stops that leaf where it touches it (leaves never crush; see `tickDoors`).
+ */
+export function swingArcAt(d: MapDoor, sign: 1 | -1, p: Body, r: number): { x: number; y: number; len: number } | null {
+  if (!isSwing(d) || (d.axis === 'h' ? p.y - d.y : p.x - d.x) * sign < -r) return null;
+  return swingHinges(d).find((h) => Math.hypot(p.x - h.x, p.y - h.y) < h.len + r) ?? null;
+}
+
 const leavesOf = (w: World, s: DoorState): DoorLeaf[] => doorLeaves(MAPS[w.map].doors![s.idx]!, s.open, s.sign);
 
 const asWall = (l: DoorLeaf, d: MapDoor): Wall => ({ ...l, built: false, material: d.material as never, expiresAt: Infinity });
@@ -150,7 +168,9 @@ export function tickDoors(w: World, dtMs: number): void {
     if (swing) {
       const push = pushing(w, d);
       if (push) {
-        if (s.open === 0) s.sign = d.side ?? push.sign;
+        // A leaf all but shut swings the way it is pushed: left on its old side it would swing into its pusher and stall on him.
+        const sign = s.open === 0 || s.open <= FLIP_OPEN ? d.side ?? push.sign : s.sign;
+        if (sign !== s.sign) { s.sign = sign; if (s.open > 0) reshape(w, s); }
         s.target = 255;
         s.closeAt = w.now + doorHoldMs(d);
       } else if (s.target === 255 && w.now >= s.closeAt) s.target = 0;

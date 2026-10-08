@@ -1,7 +1,7 @@
 import { BUILDING_KINDS, GUNS, nightOf, rulesOf, SIDES, WORLD, ZOM, type BuildingKind, type Side } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
 import { cellOf, cellRect, coreRectAt, costOf, levelOf, maxLevelOf, upgradeCost } from '../../shared/sim/build.ts';
-import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
+import { circleBlocked, circleHitsRect, segmentBlocked } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, intercept, MUZZLE_PX, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
 import type { BotArena } from './arena.ts';
@@ -168,7 +168,7 @@ function nextBuild(run: RunView, buildings: readonly BuildingView[]): NonNullabl
   const rx = (x - run.core.x) / d, ry = (y - run.core.y) / d;
   const solids = [coreRectAt(run.core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))];
   const spots = [[-ry, rx], [ry, -rx], [-rx, -ry], [rx, ry]].map(([ux, uy]) => ({ x: x + ux! * BUILD_STANDOFF, y: y + uy! * BUILD_STANDOFF }));
-  const stand = spots.find((p) => !solids.some((r) => circleHitsRect(p.x, p.y, WORLD.playerRadius, r))) ?? spots[0]!;
+  const stand = spots.find((p) => !circleBlocked(solids, p.x, p.y, WORLD.playerRadius)) ?? spots[0]!;
   return { act: step.act, kind: step.kind, lv: step.lv, cx, cy, x: stand.x, y: stand.y, cost };
 }
 
@@ -211,7 +211,7 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const zombies = (snap.zombies ?? [])
     .map(([id, , x, y]) => ({ id, x, y, d: Math.hypot(x - me.x, y - me.y) }))
     .filter((z) => Math.abs(z.x - me.x) <= sight.halfW && Math.abs(z.y - me.y) <= sight.halfH
-      && !walls.some((r) => segmentEntersRectAt(me.x, me.y, z.x - me.x, z.y - me.y, r) !== null));
+      && !segmentBlocked(walls, me.x, me.y, z.x - me.x, z.y - me.y));
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);

@@ -4,7 +4,7 @@ import { damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
 import { knifeTargets } from './targets.ts';
 import { nearestEdge } from '../geom.ts';
-import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
+import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentBlocked, startDash } from './movement.ts';
 import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 
 const BUILT_WALL_MS = 12000;
@@ -28,7 +28,7 @@ export function flashAmount(p: Player, now: number): number {
 export function flashMs(w: World, p: Player, x: number, y: number): number {
   const d = Math.hypot(p.x - x, p.y - y);
   if (d > FLASH.radius) return 0;
-  if (solidRects(w).some((b) => segmentEntersRectAt(x, y, p.x - x, p.y - y, b) !== null)) return 0;
+  if (segmentBlocked(solidRects(w), x, y, p.x - x, p.y - y)) return 0;
   const toward = d < 1 ? p.angle : Math.atan2(y - p.y, x - p.x);
   const facing = FLASH.awayMul + (1 - FLASH.awayMul) * (1 + Math.cos(toward - p.angle)) / 2;
   return FLASH.maxMs * (1 - (1 - FLASH.farMul) * (d / FLASH.radius)) * facing;
@@ -168,7 +168,7 @@ export function tickThrown(w: World, dt: number) {
       case 'smokeCloud': {
         if (w.now >= t.expiresAt) break;
         const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
-        if (!coverRects(w).some((b) => segmentEntersRectAt(t.x, t.y, nx - t.x, ny - t.y, b) !== null)) { t.x = nx; t.y = ny; }
+        if (!segmentBlocked(coverRects(w), t.x, t.y, nx - t.x, ny - t.y)) { t.x = nx; t.y = ny; }
         keep.push(t);
         break;
       }

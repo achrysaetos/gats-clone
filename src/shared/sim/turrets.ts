@@ -1,7 +1,7 @@
 import { BASTION_GUN, BUILDINGS, ZOM, ZOMBIES, type TurretDef, type TurretKind } from '../defs.ts';
 import { levelOf, turretDef } from './build.ts';
 import { MODES } from './modes.ts';
-import { dist2, segmentEntersRectAt, type Rect } from './movement.ts';
+import { dist2, segmentBlocked, type Rect } from './movement.ts';
 import { damageZombie } from './run.ts';
 import { coverRects, newId, rand, type Run, type Shooter, type World, type Zombie } from './world.ts';
 
@@ -10,7 +10,7 @@ const plateTooThick = (def: TurretDef, z: Zombie) => !def.lobbed && !def.arc && 
 function targetOf(zombies: readonly Zombie[], cover: readonly Rect[], x: number, y: number, def: TurretDef): Zombie | null {
   const rank = (z: Zombie) => (z.kind === def.prefers ? 0 : 1);
   const inRange = zombies.filter((z) => !plateTooThick(def, z)).map((z) => ({ z, d: dist2(x, y, z.x, z.y) })).filter((c) => c.d <= def.range ** 2).sort((a, b) => rank(a.z) - rank(b.z) || a.d - b.d);
-  return inRange.find(({ z }) => def.lobbed || def.arc || !cover.some((r) => segmentEntersRectAt(x, y, z.x - x, z.y - y, r) !== null))?.z ?? null;
+  return inRange.find(({ z }) => def.lobbed || def.arc || !segmentBlocked(cover, x, y, z.x - x, z.y - y))?.z ?? null;
 }
 
 function leadFor(def: TurretDef, target: Zombie, x: number, y: number) {

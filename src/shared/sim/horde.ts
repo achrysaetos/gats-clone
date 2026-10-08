@@ -1,6 +1,6 @@
 import { WORLD, ZOM, ZOMBIES } from '../defs.ts';
 import { damagePlayer } from './combat.ts';
-import { clamp, decayKnock, dist2, rectsOverlap, segmentEntersRectAt, slide, type Rect } from './movement.ts';
+import { clamp, decayKnock, dist2, rectsOverlap, segmentBlocked, slide, type Rect } from './movement.ts';
 import { aiOf, BOID, buildGrid, LURE, personality, steer, type ZAi } from './boids.ts';
 import { MAPS } from '../maps.ts';
 import { cellRect } from './build.ts';
@@ -141,7 +141,7 @@ const HOLD_MS = 1200, LOS_GRACE_MS = 600, COOL_MS = 3000;
  */
 const RING_NEAR = 0;
 
-const hasLine = (solids: readonly Rect[], ax: number, ay: number, bx: number, by: number) => !solids.some((s) => segmentEntersRectAt(ax, ay, bx - ax, by - ay, s) !== null);
+const hasLine = (solids: readonly Rect[], ax: number, ay: number, bx: number, by: number) => !segmentBlocked(solids, ax, ay, bx - ax, by - ay);
 
 /**
  * Weighs the core against each squad player in sight: a player's pull is the kind's lure at its range, full inside `NEAR` and fading to nothing, against a fixed

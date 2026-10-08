@@ -1,5 +1,6 @@
 import { abilityCooldownMs } from '../shared/sim/stats.ts';
-import { settleOf } from './fire.ts';
+import { raiseWatch, reticleLook } from './raise.ts';
+import { emitSfxAt } from './sfxbus.ts';
 import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
 import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
@@ -213,6 +214,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   drawScorePopups(hud);
   drawCallouts(hud);
   trackAbility(snap.self, now);
+  stepRaise(hud);
   if (spread !== null) drawReticle(hud, crosshair, spread);
   drawHitmarker(hud, crosshair);
   drawAssist(hud, crosshair);
@@ -414,29 +416,31 @@ const deniedShake = (now: number) => {
 
 export const drawnReticleGap = (): number => reticleDrawnGap;
 
-function drawReticle({ ctx, snap, s, selfAt }: Hud, at: Point, spread: number) {
+/** The lowered reticle's grey, while the gun is down after a sprint. */
+const RETICLE_DOWN = '#9aa0aa';
+
+/** Steps your gun's raise watch (see raise.ts) every frame, reticle or not: the moment the gun is up after a sprint, a latch click. */
+function stepRaise({ s, me }: Hud) {
+  if (raiseWatch.step(me?.alive ? s.firing : null, performance.now())) emitSfxAt('gunUp', s.lastSelf.x, s.lastSelf.y, true);
+}
+
+function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
-  const sprinting = snap.self.sprint === true;
-  const settle = sprinting || !s.firing ? 0 : settleOf(s.firing);
-  const gap = sprinting ? RETICLE.maxGap * 0.55 : Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
+  const t = performance.now();
+  // While the gun is down (sprinting, or coming up after) the reticle is lowered: splayed wide, grey, faint and dotless. It snaps in,
+  // with a flash, the moment the gun can fire, onto the post-sprint spread (wide at first, settling over the gun's settle).
+  const spreadGap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
+  const rl = reticleLook(raiseWatch.phase, spreadGap, RETICLE.maxGap, raiseWatch.sinceReady(t), raiseWatch.sinceDenied(t));
+  const gap = rl.gap;
   reticleDrawnGap = gap;
+  at = { x: at.x + rl.shake, y: at.y };
   ctx.lineCap = 'round';
-  // Sprinting, the gun is down: the reticle opens wide and dims. Leaving it, an amber arc round the reticle shrinks as the aim settles.
-  if (sprinting) ctx.globalAlpha = 0.4;
-  if (settle > 0.01) {
-    const r = gap + RETICLE.tick + 6;
-    for (const [width, color] of [[5.5, 'rgba(28, 31, 38, 0.7)'], [3, 'rgba(255, 179, 71, 0.95)']] as const) {
-      ctx.lineWidth = width;
-      ctx.strokeStyle = color;
-      ctx.beginPath();
-      ctx.arc(at.x, at.y, r, -Math.PI / 2, -Math.PI / 2 + settle * TAU);
-      ctx.stroke();
-    }
-  }
+  ctx.globalAlpha = rl.alpha;
   // The pause menu's crosshair options: a style and one of a few paints (the default is the classic bone cross).
   const look = crosshairLook();
+  const paint = rl.grey ? RETICLE_DOWN : rl.flash > 0 ? mixHex(look.color, '#ffffff', rl.flash) : look.color;
   if (look.style === 'classic' || look.style === 'open') {
-    for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.75)'], [1.5, look.color]] as const) {
+    for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.75)'], [1.5 + rl.flash, paint]] as const) {
       ctx.lineWidth = width;
       ctx.strokeStyle = color;
       ctx.beginPath();
@@ -447,7 +451,7 @@ function drawReticle({ ctx, snap, s, selfAt }: Hud, at: Point, spread: number) {
       ctx.stroke();
     }
   } else if (look.style === 'ring') {
-    for (const [width, color] of [[4.5, 'rgba(30, 32, 38, 0.75)'], [2, look.color]] as const) {
+    for (const [width, color] of [[4.5, 'rgba(30, 32, 38, 0.75)'], [2 + rl.flash, paint]] as const) {
       ctx.lineWidth = width;
       ctx.strokeStyle = color;
       ctx.beginPath();
@@ -455,15 +459,16 @@ function drawReticle({ ctx, snap, s, selfAt }: Hud, at: Point, spread: number) {
       ctx.stroke();
     }
   }
-  if (look.style !== 'open') {
-    const half = look.style === 'classic' ? 1 : 2;
+  if (look.style !== 'open' && rl.dot > 0.05) {
+    // No centre dot while the gun is down; it pops in, a size too big for a blink, as the gun comes up.
+    const half = (look.style === 'classic' ? 1 : 2) * rl.dot;
     ctx.fillStyle = 'rgba(30, 32, 38, 0.75)';
-    if (look.style !== 'classic') ctx.fillRect(at.x - half - 1.5, at.y - half - 1.5, half * 2 + 3, half * 2 + 3);
-    ctx.fillStyle = look.color;
+    if (look.style !== 'classic' || rl.dot > 1.05) ctx.fillRect(at.x - half - 1.5, at.y - half - 1.5, half * 2 + 3, half * 2 + 3);
+    ctx.fillStyle = paint;
     ctx.fillRect(at.x - half, at.y - half, half * 2, half * 2);
   }
   ctx.globalAlpha = 1;
-  if (!reloading || sprinting) return;
+  if (!reloading || snap.self.sprint === true) return;
   // The reload sweep is the reticle's own ring: an ink groove with a gold fill running round it.
   ctx.lineWidth = 6;
   ctx.strokeStyle = 'rgba(28, 31, 38, 0.8)';
@@ -1354,7 +1359,7 @@ function stepVitals({ dt, now }: Hud, me: PlayerView, self: SelfView, displayLev
 /** The corner kit's height (the touch minimap sits just below it); see the toy-box vitals below. */
 const VITALS = { height: 138 } as const;
 const AMMO = { live: '#e6b850', liveLow: ACCENT, spent: '#2a2f38', empty: PALETTE.hpBad, pipsMax: 20 } as const;
-const STATUS = { shield: '#6eb4ff', rush: HEAL, sprint: ACCENT, settle: PALETTE.gold } as const;
+const STATUS = { shield: '#6eb4ff', rush: HEAL, sprint: ACCENT } as const;
 /** Where the vitals plate's origin is on the HUD, so sparks (drawn in HUD space) can start from inside it. */
 const vitalsAt = { x: 0, y: 0 };
 
@@ -1374,15 +1379,11 @@ function cel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   ctx.stroke();
 }
 
-/** A coloured status tab with ink text; `fill` (0..1) darkens the part already used up, like a draining bar. Returns its width. */
-function statusTab(ctx: CanvasRenderingContext2D, x: number, cy: number, label: string, color: string, icon: string | null, fill = 1): number {
+/** A coloured status tab with ink text. Returns its width. */
+function statusTab(ctx: CanvasRenderingContext2D, x: number, cy: number, label: string, color: string, icon: string | null): number {
   setFont(ctx, 800, TYPE.micro);
   const w = ctx.measureText(label).width + (icon ? 29 : 14);
   cel(ctx, x, cy - 8, w, 16, color, 4, 2);
-  if (fill < 0.99) {
-    ctx.fillStyle = 'rgba(28, 31, 38, 0.42)';
-    ctx.fillRect(x + 1 + (w - 2) * Math.max(0, fill), cy - 7, (w - 2) * (1 - Math.max(0, fill)), 14);
-  }
   if (icon) strokeIcon(ctx, icon, x + 11, cy, 12, CEL.ink, 2.6);
   text(ctx, label, x + (icon ? 20 : 7), cy + 0.5, TYPE.micro, CEL.ink, 'left', 800);
   return w;
@@ -1903,10 +1904,7 @@ function drawVitals(hud: Hud, compact: boolean) {
   const sy = Y0 + 20;
   if (me.spawnShield || me.shield) cx += statusTab(ctx, cx, sy, me.spawnShield ? 'SPAWN' : 'SHIELD', STATUS.shield, PERK_ICONS.shield) + 6;
   if (me.rush) cx += statusTab(ctx, cx, sy, self.perks[2] === 'secondWind' ? 'WIND' : 'RUSH', STATUS.rush, self.perks[2] === 'secondWind' ? PERK_ICONS.secondWind : PERK_ICONS.adrenaline) + 6;
-  const sprinting = self.sprint === true;
-  const settle = sprinting || !hud.s.firing ? 0 : settleOf(hud.s.firing);
-  if (sprinting) cx += statusTab(ctx, cx, sy, 'SPRINT', STATUS.sprint, PERK_ICONS.marathon) + 6;
-  else if (settle > 0.01) cx += statusTab(ctx, cx, sy, 'SETTLE', STATUS.settle, null, settle) + 6;
+  if (self.sprint === true) cx += statusTab(ctx, cx, sy, 'SPRINT', STATUS.sprint, PERK_ICONS.marathon) + 6;
   if (me.hunted) cx += drawHuntedBadge(ctx, cx, sy) + 6;
   if (self.streak >= 2) drawStreakBadge(ctx, cx, sy, self.streak, now);
   // Ammo: beside the reticle, or your soldier on a touch screen; mirrored when it would run off the right edge.

@@ -11,7 +11,7 @@ import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCall
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
+import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, postSprint, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -91,11 +91,11 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const shoved = life.knock !== null;
   if (w.now - life.suppressedAt >= SUPPRESSION.holdMs) life.suppression = Math.max(0, life.suppression - SUPPRESSION.decayPerSec * dt);
   const stats = effectiveStats(p);
-  // Sprint is held while moving and not firing; a click ends it. Leaving it raises the gun and starts the bloom settle.
+  // Sprint is held while moving and not firing; a click ends it. Leaving it starts the post-sprint clock: the gun comes up, then the bloom settles.
   const sprinting = life.dash === null && sprintWanted(inp) && !pressed;
   if (sprinting !== life.sprint) {
     life.sprint = sprinting;
-    if (!sprinting) { life.settleLeft = stats.settleMs; life.raiseUntil = w.now + raiseMsOf(gun); }
+    if (!sprinting) { life.settleLeft = raiseMsOf(gun) + stats.settleMs; life.raiseUntil = w.now + raiseMsOf(gun); }
   } else if (!sprinting) life.settleLeft = Math.max(0, life.settleLeft - dtMs);
   if (moving || shoved) {
     const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, knock: life.knock }, inp, (sprinting ? stats.sprintSpeed : stats.speed) * empMul(w, p) * rushMul(w, p), dtMs, MAPS[w.map].size);
@@ -114,7 +114,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
     const sinceMove = moving ? 0 : w.now - life.lastMoveAt;
-    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), life.spray, life.suppression, life.settleLeft / stats.settleMs, isDeployed(p.gun, sinceMove));
+    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), life.spray, life.suppression, postSprint(life.settleLeft, stats.settleMs).settle, isDeployed(p.gun, sinceMove));
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

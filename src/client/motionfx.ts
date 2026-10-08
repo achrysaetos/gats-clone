@@ -286,7 +286,7 @@ export function noteStride(id: number, g: GaitLike, x: number, y: number, now: n
       const by = y + R * 0.3 - Math.sin(h) * R * 0.5 + Math.sin(h + Math.PI / 2) * side * R * 0.34;
       // A sprint kicks up a bigger, longer-thrown cloud with every boot.
       const n = reduced() ? 1 : sprint ? 3 : amount > 0.8 ? 2 : 1;
-      for (let i = 0; i < n; i++) puff(bx, by, now, between(3, 4.6) * (0.8 + amount * 0.5) * (sprint ? 1.35 : 1), -Math.cos(h) * between(14, 40) + between(-10, 10), -Math.sin(h) * between(8, 24) + between(-8, 8), between(260, 380), 1.1);
+      for (let i = 0; i < n; i++) puff(bx, by, now, between(3, 4.6) * (0.8 + amount * 0.5) * (sprint ? 1.6 : 1), -Math.cos(h) * between(14, 40) * (sprint ? 1.5 : 1) + between(-10, 10), -Math.sin(h) * between(8, 24) + between(-8, 8), between(260, 380), 1.1);
     }
   }
   const skidding = now - t.lastSkid > MOTION.skidGapMs;

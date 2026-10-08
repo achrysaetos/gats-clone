@@ -5,7 +5,7 @@ import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '
 import { cellRect, coreRectAt } from './build.ts';
 import { loadDoors, type DoorState } from './doors.ts';
 import { polyParts } from '../mapgeo.ts';
-import { circleHitsRect, dist2, type Knock, type Rect } from './movement.ts';
+import { circleBlocked, dist2, type Knock, type Rect } from './movement.ts';
 import type { ZAi } from './boids.ts';
 import { newRoyale } from './royale.ts';
 import { newRange, type RangeSim } from './targets.ts';
@@ -39,7 +39,7 @@ export type Life =
     suppressedAt: number;
     /** Holds an airdrop's golden gun for this life: its rounds hit `AIRDROP.goldMul` as hard. */
     golden: boolean;
-    /** Sprinting this tick (see `SPRINT`); `settleLeft` ms of post-sprint bloom still to ease out, and the gun is down until `raiseUntil`. */
+    /** Sprinting this tick (see `SPRINT`); `settleLeft` ms of the post-sprint clock still to run (the raise, then the bloom settle; see `postSprint`), and the gun is down until `raiseUntil`. */
     sprint: boolean;
     settleLeft: number;
     raiseUntil: number;
@@ -415,7 +415,7 @@ const SQUAD_CANDIDATES = 24;
 
 function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number): Pose {
   const r = WORLD.playerRadius + SPAWN_CLEARANCE;
-  const clear = (x: number, y: number) => x >= r && y >= r && x <= size - r && y <= size - r && !solids.some((b) => circleHitsRect(x, y, r, b));
+  const clear = (x: number, y: number) => x >= r && y >= r && x <= size - r && y <= size - r && !circleBlocked(solids, x, y, r);
   const standing = [...w.players.values()].filter((p) => p.life.k === 'alive' && Number.isFinite(p.x));
   const mates = standing.filter((p) => p.team === team);
   if (mates.length) {
@@ -457,7 +457,7 @@ export function spawnPoint(w: World, team: Team): Pose {
   for (let i = 0, found = 0; i < 200 && found < SPAWN_CANDIDATES; i++) {
     const r = team === null && i % 2 === 1 ? anywhere : regions[Math.floor(rand(w) * regions.length)];
     const x = r.x + rand(w) * r.w, y = r.y + rand(w) * r.h;
-    if (solids.some((b) => circleHitsRect(x, y, WORLD.playerRadius + SPAWN_CLEARANCE, b))) continue;
+    if (circleBlocked(solids, x, y, WORLD.playerRadius + SPAWN_CLEARANCE)) continue;
     found++;
     const s = safety(x, y);
     if (!best || s > best.safety) best = { x, y, safety: s };
@@ -473,7 +473,7 @@ const SQUAD_SPAWN_CHOICES = 12;
 function defendedPoints(solids: readonly Rect[], core: Center, size: number): Pose[] {
   const n = Math.floor(size / ZOM.cell);
   const center = (c: number) => c * ZOM.cell + ZOM.cell / 2;
-  const open = (cx: number, cy: number, r: number) => !solids.some((b) => circleHitsRect(center(cx), center(cy), r, b));
+  const open = (cx: number, cy: number, r: number) => !circleBlocked(solids, center(cx), center(cy), r);
   const seen = new Uint8Array(n * n);
   const x0 = Math.floor((core.x - ZOM.coreHalf) / ZOM.cell) - 1, x1 = Math.floor((core.x + ZOM.coreHalf - 1) / ZOM.cell) + 1;
   const y0 = Math.floor((core.y - ZOM.coreHalf) / ZOM.cell) - 1, y1 = Math.floor((core.y + ZOM.coreHalf - 1) / ZOM.cell) + 1;
@@ -500,7 +500,7 @@ function defendedPoints(solids: readonly Rect[], core: Center, size: number): Po
 
 /** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */
 function clearPointNear(solids: readonly Rect[], x: number, y: number, r: number, size: number): Pose {
-  const clear = (px: number, py: number) => px >= r && py >= r && px <= size - r && py <= size - r && !solids.some((b) => circleHitsRect(px, py, r, b));
+  const clear = (px: number, py: number) => px >= r && py >= r && px <= size - r && py <= size - r && !circleBlocked(solids, px, py, r);
   for (let ring = 0; ring * ZOM.cell < size; ring++) {
     const points: Pose[] = [];
     for (let i = -ring; i <= ring; i++) for (let j = -ring; j <= ring; j++) {

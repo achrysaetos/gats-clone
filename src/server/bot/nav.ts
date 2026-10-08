@@ -1,4 +1,4 @@
-import { circleHitsRect, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
+import { circleHitsRect, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 
 export type Point = { x: number; y: number };
 
@@ -184,6 +184,5 @@ function smooth(nav: NavGrid, from: Point, cells: Point[]): Point[] {
 }
 
 export function clearShot(rects: readonly Rect[], a: Point, b: Point): boolean {
-  for (const r of rects) if (segmentEntersRectAt(a.x, a.y, b.x - a.x, b.y - a.y, r) !== null) return false;
-  return true;
+  return !segmentBlocked(rects, a.x, a.y, b.x - a.x, b.y - a.y);
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { PERK_ICONS } from '../src/client/icons.ts';
-import { GUNS, PERK_INFO, PERK_TIERS, pickOptions, SPRINT, TIER2_OFFER, WORLD, type PerkId } from '../src/shared/defs.ts';
+import { GUNS, PERK_INFO, PERK_TIERS, pickOptions, settleRulesOf, SPRINT, TIER2_OFFER, WORLD, type PerkId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
 import { applyKnock } from '../src/shared/sim/knock.ts';
@@ -99,8 +99,9 @@ test('Marathon: sprint 15% faster and the post-sprint settle half as long', () =
   const p = holding(w, 'marathon');
   const s = effectiveStats(p);
   assert.ok(Math.abs(s.sprintSpeed - s.speed * SPRINT.speedMul * 1.15) < 1e-9);
-  assert.equal(s.settleMs, SPRINT.settleMs / 2);
-  assert.equal(effectiveStats(spawnAt(w, 900, 900)).settleMs, SPRINT.settleMs);
+  assert.equal(s.settleMs, settleRulesOf(GUNS[p.gun]).ms / 2);
+  const plain = spawnAt(w, 900, 900);
+  assert.equal(effectiveStats(plain).settleMs, settleRulesOf(GUNS[plain.gun]).ms);
 });
 
 test('Steady Hands: bloom builds 40% slower, recovers 60% faster, and the settle is a quarter shorter', () => {
@@ -115,7 +116,8 @@ test('Steady Hands: bloom builds 40% slower, recovers 60% faster, and the settle
   };
   assert.ok(sprayAfter(1.6) < sprayAfter(1) - 0.3, 'the bloom drains faster');
   const w = emptyWorld();
-  assert.equal(effectiveStats(holding(w, 'steadyHands')).settleMs, SPRINT.settleMs * 0.75);
+  const held = holding(w, 'steadyHands');
+  assert.equal(effectiveStats(held).settleMs, settleRulesOf(GUNS[held.gun]).ms * 0.75);
 });
 
 test('Second Wind: once a life, dropping under 25% health gives 2 s of +30% speed and half damage', () => {

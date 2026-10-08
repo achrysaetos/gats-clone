@@ -60,11 +60,11 @@ export function coverIndex(nav: NavGrid, cover: readonly Rect[], radius: number,
       for (let i = 0; i <= count; i++) {
         const p = { x: a.x + ((b.x - a.x) * i) / count, y: a.y + ((b.y - a.y) * i) / count };
         if (!isOpen(nav, p) || (doors.length && inDoorway(doors, p))) continue;
-        const near = cover.filter((o) => o.x - SHIELD_PX <= p.x && p.x <= o.x + o.w + SHIELD_PX && o.y - SHIELD_PX <= p.y && p.y <= o.y + o.h + SHIELD_PX);
+        // A ray SHIELD_PX long can only meet what lies within SHIELD_PX, and `clearShot` finds that through the walls' grid.
         let shieldedBearings = 0;
         for (let k = 0; k < BEARINGS; k++) {
           const t = (2 * Math.PI * k) / BEARINGS;
-          if (!clearShot(near, p, { x: p.x + Math.cos(t) * SHIELD_PX, y: p.y + Math.sin(t) * SHIELD_PX })) shieldedBearings |= 1 << k;
+          if (!clearShot(cover, p, { x: p.x + Math.cos(t) * SHIELD_PX, y: p.y + Math.sin(t) * SHIELD_PX })) shieldedBearings |= 1 << k;
         }
         if (shieldedBearings === 0) continue;
         const bx = Math.min(n - 1, Math.floor(p.x / BUCKET_PX)), by = Math.min(n - 1, Math.floor(p.y / BUCKET_PX));

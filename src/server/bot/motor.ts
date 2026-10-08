@@ -1,9 +1,10 @@
 import { GUNS, rulesOf, WORLD, type AbilityId, type GunId } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
-import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
+import { KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
 import { doorCentre, takeReplan, type BotArena } from './arena.ts';
+import { swingArcAt } from '../../shared/sim/doors.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
 import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
 import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
@@ -20,8 +21,8 @@ export type Motor = {
   stance: { step: 0 | 1 | -1; since: number; until: number; heading: number | null; planted: boolean };
   last: Point;
   stuckTicks: number;
-  /** Where the bot last made real headway, and when; see `CRAWL`. */
-  progress: { x: number; y: number; tick: number };
+  /** Where the bot last made real headway, and when, with its walk left then and whether it has run into anything since; see `CRAWL`. */
+  progress: { x: number; y: number; tick: number; left: number; rubbed: boolean };
   /** A sidestep at right angles to the way it wants to go, held until `until`, round something the nav grid does not hold. */
   detour: { side: 1 | -1; until: number } | null;
   /** A squad bot's next step toward its errand, kept a while so two equal ways round a turret never flip it side to side. */
@@ -39,7 +40,7 @@ export type Motor = {
 };
 
 export const freshMotor = (): Motor => ({
-  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, progress: { x: 0, y: 0, tick: 0 }, detour: null, siegeStep: null, tending: null, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
+  route: null, dir: null, dirSince: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity }, stance: { step: 0, since: 0, until: 0, heading: null, planted: true }, last: { x: 0, y: 0 }, stuckTicks: 0, progress: { x: 0, y: 0, tick: 0, left: Infinity, rubbed: false }, detour: null, siegeStep: null, tending: null, engaged: null, engagedSeen: -Infinity, aim: null, shots: 0,
 });
 
 /** What a bot weighs when deciding whether its ability helps right now. `threat` is the enemy it is fighting, once its reaction delay has passed. */
@@ -85,8 +86,8 @@ const REPLAN_PX = 48;
 const NEAR_GOAL_PX = 300;
 const MAX_EXPANSIONS = 6000;
 /**
- * A bot pressing its keys that has not got `px` from where it last made headway within `ticks` is crawling along a wall:
- * the per-tick stuck count misses it, since sliding a pixel along the wall reads as gaining on the waypoint. Its route is
+ * A bot pressing its keys that has made no headway (see `headway`) within `ticks` is crawling along a wall: the per-tick
+ * stuck count misses it, since sliding a pixel along the wall reads as gaining on the waypoint. Its route is
  * then replanned with no search budget, which finds the way round when a far goal outran the budgeted search; and since
  * crates are not in the nav grid, it also sidesteps at right angles for `detourTicks`, alternating sides each time.
  */
@@ -121,7 +122,7 @@ function retreatHeading(me: Point, away: number, arena: BotArena): number {
     const dx = Math.cos(h) * RETREAT_STEP, dy = Math.sin(h) * RETREAT_STEP;
     const ex = me.x + dx, ey = me.y + dy, r = WORLD.playerRadius;
     if (ex < r || ey < r || ex > arena.size - r || ey > arena.size - r) return false;
-    return ![...arena.walls, ...arena.barrels].some((w) => segmentEntersRectAt(me.x, me.y, dx, dy, w) !== null);
+    return !segmentBlocked(arena.walls, me.x, me.y, dx, dy) && !segmentBlocked(arena.barrels, me.x, me.y, dx, dy);
   });
   return clear ?? headings[0] ?? away;
 }
@@ -318,6 +319,31 @@ function spaced(intent: Intent, me: Point & { id: number }, at: Point | null, to
   return k > 0 && isOpen(arena.nav, bent) && walkable(arena.nav, me, bent) ? bent : at;
 }
 
+/** How far past a swing leaf's reach a spot it moves out of its sweep lands. */
+const SWING_CLEAR_PX = 16;
+
+/**
+ * A spot to make for is never in the sweep of a swing door that stands open: a body there stops the leaf where it touches
+ * it (leaves never crush), so a bot parked there holds the door half open and whoever pushed it is left pressing into the
+ * leaf. The spot moves just out of the sweep, straight back from the door or else away from the hinge, onto open ground.
+ */
+function clearOfSwings(to: Point, doors: Snapshot['doors'], arena: BotArena): Point {
+  const r = WORLD.playerRadius;
+  for (const [i, open, sign] of doors ?? []) {
+    const d = arena.doors[i];
+    const h = d && open > 0 ? swingArcAt(d, sign, to, r) : null;
+    if (!d || !h) continue;
+    const reach = h.len + r + SWING_CLEAR_PX;
+    const ux = d.axis === 'h' ? 1 : 0, uy = 1 - ux, nx = uy * sign, ny = ux * sign;
+    const along = (to.x - h.x) * ux + (to.y - h.y) * uy, back = (to.x - h.x) * nx + (to.y - h.y) * ny;
+    const k = Math.hypot(to.x - h.x, to.y - h.y) || 1, push = Math.sqrt(Math.max(0, reach * reach - along * along)) - back;
+    const out = [{ x: to.x + nx * push, y: to.y + ny * push }, { x: h.x + ((to.x - h.x) / k) * reach, y: h.y + ((to.y - h.y) / k) * reach }]
+      .find((p) => p.x > r && p.y > r && p.x < arena.size - r && p.y < arena.size - r && isOpen(arena.nav, p));
+    if (out) return out;
+  }
+  return to;
+}
+
 const DOOR_QUEUE_PX = 150;
 const DOOR_CLEAR_PX = 110;
 const LEVEL_PX = 8;
@@ -370,6 +396,22 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
+/**
+ * Real headway since `m.progress`: its walk left shrank by `CRAWL.px` (or grew by it: a fresh, longer route starts the count
+ * again), or, so long as it has not run into anything since, it got `CRAWL.px` away (a strafe or a dodge goes nowhere along
+ * its route). Sliding to and fro along a wall or a half-open door leaf covers ground too, but it rubs, and gets no nearer.
+ */
+const headway = (m: Motor, me: Point, left: number) =>
+  Math.abs(m.progress.left - left) > CRAWL.px || (!m.progress.rubbed && dist(me, m.progress) > CRAWL.px);
+
+/** How far the bot still has to walk along its route; Infinity with none. */
+function routeLeft(me: Point, route: Motor['route']): number {
+  if (!route?.points.length) return Infinity;
+  let left = dist(me, route.points[0]!);
+  for (let i = 1; i < route.points.length; i++) left += dist(route.points[i - 1]!, route.points[i]!);
+  return left;
+}
+
 const sidestepOctant = (stuckTicks: number) =>
   stuckTicks < 2 * BLOCKED_TICKS ? 0 : Math.floor((stuckTicks - 2 * BLOCKED_TICKS) / MIN_LEG_TICKS) % 2 ? -1 : 1;
 
@@ -413,8 +455,11 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const { steer: s, stance } = steered;
   const dodge = steered.dodge !== undefined ? steered.dodge : dodgeNow;
   const crawling = m.dir !== null && v.tick - m.progress.tick > CRAWL.ticks;
-  const routed = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick, crawling) : { at: null, route: m.route, replanned: false };
-  const bent = spaced(intent, me, routed.at, s.to, v.allies, c.arena);
+  // Out of an open swing door's sweep, whether making for a spot or standing still (see `clearOfSwings`).
+  const off = clearOfSwings(s.to ?? me, snap.doors, c.arena);
+  const to = s.to ? off : off !== me ? off : null;
+  const routed = to ? nextWaypoint(m, me, to, c.arena, v.tick, crawling) : { at: null, route: m.route, replanned: false };
+  const bent = spaced(intent, me, routed.at, to, v.allies, c.arena);
   // On its way somewhere with a long gun shooting at it from afar: it zig-zags there rather than walking his lane.
   const weaving = dodge && dangerAt && bent && WEAVES.has(intent.k) && !(intent.k === 'engage' && fighting);
   const way = { ...routed, at: weaving ? weave(me, bent, dodge, c.arena, v.solids) : bent };
@@ -422,6 +467,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const drive = keysToward({ ...m, detour }, me, way.at, v.tick);
   const gained = way.at ? dist(m.last, way.at) - dist(me, way.at) : 0;
   const pressing = drive.dir !== null;
+  const left = routeLeft(me, way.route);
   const gun = GUNS[me.gun];
 
   const t: Threat | undefined = intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank' ? focus(v, intent.target) : v.threats[0];
@@ -525,7 +571,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     motor: {
       route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
       stuckTicks: pressing && gained < 1 && !way.replanned ? m.stuckTicks + 1 : 0,
-      progress: !pressing || crawling || dist(me, m.progress) > CRAWL.px ? { x: me.x, y: me.y, tick: v.tick } : m.progress, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),
+      progress: !pressing || crawling || headway(m, me, left) ? { x: me.x, y: me.y, tick: v.tick, left, rubbed: false } : { ...m.progress, rubbed: m.progress.rubbed || m.stuckTicks >= BLOCKED_TICKS }, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),
       ...((dodge || m.dodge) && { dodge }),
     },
   };

@@ -35,8 +35,8 @@ function mechanics(id: GunId): Set<string> {
   if (r.shoveMul >= 2) m.add('shove');
   if (r.breach) m.add('breach');
   if (r.suppress >= 0.1 && r.suppress < 0.3) m.add('pins');
-  if (raiseMsOf(g) <= 300) m.add('quickDraw');
-  if (raiseMsOf(g) >= 700) m.add('slowDraw');
+  if (raiseMsOf(g) <= 1000) m.add('quickDraw');
+  if (raiseMsOf(g) >= 2000) m.add('slowDraw');
   if (g.moveMul >= 1.08) m.add('fast');
   if (g.moveMul <= 0.82) m.add('slow');
   if (r.sprintMul < 0.5) m.add('noSprint');
@@ -76,14 +76,14 @@ test('the traits a gun advertises are true of its numbers', () => {
     deploy: (id) => rulesOf(GUNS[id]).deploy !== null,
     breach: (id) => rulesOf(GUNS[id]).breach || GUNS[id].blast !== undefined,
     shove: (id) => rulesOf(GUNS[id]).shoveMul > 1,
-    quickdraw: (id) => raiseMsOf(GUNS[id]) <= 400,
+    quickdraw: (id) => raiseMsOf(GUNS[id]) <= 1200,
     scope: (id) => rulesOf(GUNS[id]).viewMul > 1,
     plant: (id) => rulesOf(GUNS[id]).steadyMs > 0 || rulesOf(GUNS[id]).movingSpreadMul >= 1.2 || rulesOf(GUNS[id]).movingSpreadAdd > 0,
     strafe: (id) => rulesOf(GUNS[id]).movingSpreadMul <= 1 && rulesOf(GUNS[id]).movingSpreadAdd <= 0.05,
     heavy: (id) => GUNS[id].damage >= 30 || GUNS[id].damage * GUNS[id].pellets >= 100 || (GUNS[id].burst !== undefined && GUNS[id].damage * GUNS[id].burst.count >= 90),
     close: (id) => rulesOf(GUNS[id]).falloff !== null || GUNS[id].range <= 440,
     fast: (id) => GUNS[id].moveMul >= 1,
-    slow: (id) => GUNS[id].moveMul <= 0.93 || raiseMsOf(GUNS[id]) >= 700,
+    slow: (id) => GUNS[id].moveMul <= 0.93 || raiseMsOf(GUNS[id]) >= 2000,
     deep: (id) => GUNS[id].mag >= 40 || GUNS[id].pellets > 1 || GUNS[id].mag >= 24,
     reach: (id) => GUNS[id].range >= 800,
     pin: (id) => rulesOf(GUNS[id]).suppress >= 0.09,
@@ -121,7 +121,7 @@ test('stage-2 siblings of one class are also unlike each other across the class,
 
 test('SMG rushes: no accuracy lost on the move, a gun that comes up fast, and rounds that fade hard past 350 px', () => {
   assert.equal(spreadFor('smg', {}, false), spreadFor('smg', {}, true));
-  assert.ok(raiseMsOf(GUNS.smg) <= 400 && raiseMsOf(GUNS.smg) < raiseMsOf(GUNS.assault) / 1.5 && raiseMsOf(GUNS.smg) < SPRINT.raiseMs / 2);
+  assert.ok(raiseMsOf(GUNS.smg) <= 1200 && raiseMsOf(GUNS.smg) < raiseMsOf(GUNS.assault) / 1.5 && raiseMsOf(GUNS.smg) < SPRINT.raiseMs * 0.65);
   assert.equal(falloffMul('smg', 100), 1);
   assert.ok(falloffMul('smg', 350) < 0.55 && falloffMul('smg', 600) <= 0.3 + 1e-9, 'a third of its punch by 350 px, the floor past it');
   assert.ok(dpsAt('smg', 150, false) > dpsAt('assault', 150, false), 'the SMG out-damages the assault rifle up close');
@@ -136,7 +136,7 @@ test('assault anchors: tight when it stands and taps, loose when it runs or spra
   assert.ok(spreadFor('assault', {}, true) < spreadFor('smg', {}, true) / 2, 'standing, it is far tighter than an SMG');
   assert.equal(isSteady('assault', 50), false);
   assert.equal(isSteady('assault', 150), true);
-  assert.ok(raiseMsOf(GUNS.assault) >= 600);
+  assert.ok(raiseMsOf(GUNS.assault) >= 1800);
   assert.ok(GUNS.assault.moveMul < GUNS.smg.moveMul);
   for (const id of ['assault', 'battleRifle', 'carbine'] as const) assert.ok(tapRhythm(id, false), `${id} bots tap`);
   assert.equal(tapRhythm('smg', true), null, 'rushers hose');
@@ -166,14 +166,14 @@ test('shotgun breaks doors: close blasts, a shove, and pellets that blow a swing
 
 test('pistol is the quick sidearm: handles fast, no worse on the move; the Hand Cannon trades rate for a shove', () => {
   assert.equal(spreadFor('pistol', {}, false), spreadFor('pistol', {}, true));
-  assert.ok(raiseMsOf(GUNS.pistol) <= 250);
+  assert.ok(raiseMsOf(GUNS.pistol) <= 800);
   assert.ok(bulletShove('handCannon', GUNS.handCannon.damage) > 2.5 * bulletShove('pistol', GUNS.pistol.damage));
   assert.ok(bulletShove('executioner', GUNS.executioner.damage) >= bulletShove('handCannon', GUNS.handCannon.damage));
   assert.ok(GUNS.handCannon.fireMs > 2 * GUNS.pistol.fireMs);
 });
 
 test('sniper stays the long pick: one shot, planted before it is accurate, slow to bring up; the Ghost plants faster than the Longshot', () => {
-  assert.ok(GUNS.sniper.damage >= WORLD.baseHp && raiseMsOf(GUNS.sniper) >= 800);
+  assert.ok(GUNS.sniper.damage >= WORLD.baseHp && raiseMsOf(GUNS.sniper) >= 2000);
   assert.ok(rulesOf(GUNS.ghost).steadyMs < rulesOf(GUNS.longshot).steadyMs);
   assert.ok(rulesOf(GUNS.repeater).steadyMs < rulesOf(GUNS.semiAuto).steadyMs);
   assert.ok(ttkMs('sniper', 900, 'heavy', true)! === 0, 'one shot through heavy armor at 900 px');
@@ -181,7 +181,7 @@ test('sniper stays the long pick: one shot, planted before it is accurate, slow 
 
 test('LMG suppresses: rev-up, a bipod that plants the gun, the heaviest pinning, and heavy feet; the Minigun cannot sprint', () => {
   const lmg = rulesOf(GUNS.lmg);
-  assert.ok(lmg.spinUp && lmg.suppress >= 0.14 && raiseMsOf(GUNS.lmg) >= 800);
+  assert.ok(lmg.spinUp && lmg.suppress >= 0.14 && raiseMsOf(GUNS.lmg) >= 2000);
   assert.equal(lmg.deploy, null, 'the belt-fed LMG revs but has no bipod; the Heavy LMG brings it');
   assert.equal(isDeployed('heavyLmg', 400), false);
   assert.equal(isDeployed('heavyLmg', 500), true);
@@ -210,7 +210,7 @@ test('LMG suppresses: rev-up, a bipod that plants the gun, the heaviest pinning,
   assert.ok(speed('lightMg') > 1.3, 'a Light MG sprints as well as anyone');
 });
 
-test('a quick draw is up before a slow one: the SMG fires 400 ms after a sprint, the assault rifle not until 650', () => {
+test('a quick draw is up before a slow one: the SMG fires 1.2 s after a sprint, the assault rifle not until about 2 s', () => {
   const firstShot = (gun: GunId) => {
     const w = emptyWorld();
     const p = spawnAt(w, 500, 500, { loadout: { weapon: GUNS[gun].base } });
@@ -220,9 +220,11 @@ test('a quick draw is up before a slow one: the SMG fires 400 ms after a sprint,
     run(w, 400);
     const at = w.now;
     press(w, p, { fire: true, shots: p.input.shots + 1 });
-    for (let t = 0; t < 1500; t += TICK_MS) {
+    for (let t = 0; t < 3000; t += TICK_MS) {
       step1(w);
       if (w.events.some((e) => e.e === 'shot' && e.owner === p.id)) return w.now - at;
+      // A click made while the gun is down is not kept, so a semi-auto keeps clicking.
+      if (!GUNS[gun].auto) press(w, p, { fire: true, shots: p.input.shots + 1 });
     }
     return Infinity;
   };

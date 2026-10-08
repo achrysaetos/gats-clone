@@ -12,6 +12,7 @@ import { drawHordeEyes } from './zombieart.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
+import { stepCarry } from './raise.ts';
 import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
 import { drawRadioOverlay, drawRadios } from './radio.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
@@ -217,6 +218,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     drawPlayer(ctx, { ...p, angle, x: p.x + jolt.x, y: p.y + jolt.y }, colorOf(p), {
       self, rival: !self && p.team === null && p.color === mine?.color,
       flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k, reload,
+      sprint: self && s.firing?.trigger.alive ? s.firing.trigger.sprint : p.sprint === true,
     });
     if (p.golden) drawGoldShine(ctx, p.x, p.y, muzzleTip(p.x, p.y, angle, p.gun, R), p.id, now);
   }
@@ -409,7 +411,8 @@ function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[
   ctx.globalAlpha = 1;
 }
 
-type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number; reload: ReloadFrame | null };
+/** `sprint`: whether the body is sprinting (yours as your own trigger predicts it, so the gun drops and comes up in step with your reticle). */
+type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number; reload: ReloadFrame | null; sprint: boolean };
 const TIER_COLORS = { 1: '#c9ced8', 2: PALETTE.gold } as const;
 /** How far a gun jumps back in the hands when fired; a heavy gun (see `heftOf`) jumps up to `RECOIL_HEAVY` times as far. */
 const RECOIL = 4.5;
@@ -466,27 +469,11 @@ function gaitOf(p: PlayerView, now: number): Gait {
   return g;
 }
 
-/**
- * Each body's sprint pose, 0..1: the gun swings down into the carry quickly, and comes back up over the whole of its gun's `raiseMsOf` (the time the
- * sim keeps it from firing), eased so the pull-out reads: slow off the chest, then snapping up to the shoulder.
- */
-const sprints = new Map<number, { amount: number; t: number }>();
-const SPRINT_EASE_MS = 140;
-
-function sprintOf(p: PlayerView, now: number): number {
-  const prev = sprints.get(p.id);
-  const dt = prev ? Math.min(100, Math.max(0, now - prev.t)) : 0;
-  const target = p.sprint ? 1 : 0;
-  const rate = target > (prev?.amount ?? target) ? SPRINT_EASE_MS : raiseMsOf(GUNS[p.gun]);
-  const amount = reducedMotion() ? target : prev ? prev.amount + Math.sign(target - prev.amount) * Math.min(Math.abs(target - prev.amount), dt / rate) : target;
-  sprints.set(p.id, { amount, t: now });
-  // On the way up, 1 - amount is the raise's progress; ease it in-out so the gun lingers low, then comes up to the shoulder.
-  if (target === 0 && amount > 0) { const k = 1 - amount; return 1 - k * k * (3 - 2 * k); }
-  return amount;
-}
+/** Each body's sprint carry this frame (see raise.ts `stepCarry`): down into the carry while it sprints, back up over its gun's `raiseMsOf` after. */
+const sprintOf = (p: PlayerView, sprinting: boolean, now: number): number => stepCarry(p.id, sprinting, raiseMsOf(GUNS[p.gun]), now, reducedMotion());
 
 /** Adrenaline and Second Wind: a few short streaks trail behind a body that is running on a boost. */
-function drawSpeedLines(ctx: CanvasRenderingContext2D, heading: number, now: number) {
+function drawSpeedLines(ctx: CanvasRenderingContext2D, heading: number, now: number, strength = 1) {
   const back = heading + Math.PI;
   ctx.save();
   ctx.lineCap = 'round';
@@ -495,7 +482,7 @@ function drawSpeedLines(ctx: CanvasRenderingContext2D, heading: number, now: num
     const side = (i - 1.5) * R * 0.5;
     const flick = reducedMotion() ? 0.5 : (now / 90 + i * 0.37) % 1;
     const start = R * (0.9 + 0.5 * flick), len = R * (0.7 + 0.5 * ((i * 7) % 3) / 2);
-    ctx.globalAlpha = 0.75 * (1 - flick);
+    ctx.globalAlpha = 0.75 * strength * (1 - flick);
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(Math.cos(back) * start - Math.sin(back) * side, Math.sin(back) * start + Math.cos(back) * side);
@@ -555,7 +542,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   const hands = (scene?.hands ?? heldHands(p.gun, R, p.angle)).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
   const cos = cosLook(p.cos);
   drawSoldier(ctx, color, 0, 0, R, {
-    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash, noShadow: pose.lift > 0, sprint: sprintOf(p, look.now) * (1 - (look.reload?.k ?? 0)),
+    angle: p.angle, armor: p.armorTier, hands, jump, gait, flash: look.flash, noShadow: pose.lift > 0, sprint: sprintOf(p, look.sprint, look.now) * (1 - (look.reload?.k ?? 0)),
     helmet: cos.helmet, camo: cos.camo, spin: (gait.phase * 3) + (reducedMotion() ? 0 : look.now / 900),
     gun: (g) => {
       g.translate(-jump, 0);
@@ -566,6 +553,8 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   }, look.pxPerUnit);
   ctx.globalAlpha = alpha;
   if (p.rush && gait.speed > 30) drawSpeedLines(ctx, gait.heading, look.now);
+  // A sprinter trails a faint pair of the same streaks, so a sprint reads as fast even standing next to a walker.
+  else if (look.sprint && gait.speed > 250) drawSpeedLines(ctx, gait.heading, look.now, 0.35);
   if (p.reloading && !look.self) drawReloadMark(ctx);
   ctx.globalAlpha = alpha;
   const { stage } = GUNS[p.gun];

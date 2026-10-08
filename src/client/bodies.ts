@@ -360,11 +360,14 @@ export function walkPose(g: Gait | undefined, sprint = 0): { twist: number; stri
   const amount = gaitAmount(g);
   const swing = g ? Math.sin(g.phase) : 0;
   // A sprint swings wider and longer.
-  return { twist: swing * 0.11 * amount * (1 + 0.8 * sprint), stride: swing * SOLDIER.boot.reach * amount * (1 + 0.55 * sprint), amount };
+  return { twist: swing * 0.11 * amount * (1 + 1.2 * sprint), stride: swing * SOLDIER.boot.reach * amount * (1 + 0.8 * sprint), amount };
 }
 
-/** The sprint pose at full: the gun is carried across the chest at `tilt` radians, pulled `pull` radii in, and the head leans `lean` radii forward. */
-export const SPRINT_POSE = { tilt: -0.95, pull: 0.28, lean: 0.16 } as const;
+/**
+ * The sprint pose at full: the gun is carried across the chest at `tilt` radians (well off the aim, so a sprinter reads as unable to
+ * shoot at a glance), pulled `pull` radii in, and the head leans `lean` radii forward.
+ */
+export const SPRINT_POSE = { tilt: -1.2, pull: 0.32, lean: 0.16 } as const;
 
 export type SoldierLook = {
   angle: number; armor: ArmorTier;
@@ -383,18 +386,22 @@ export type SoldierLook = {
   helmet?: string;
   camo?: string;
   spin?: number;
-  /** 0..1, how far into a sprint: the gun swings down across the chest, the stride lengthens and the head leans in (see `SPRINT_POSE`). */
+  /**
+   * 0..1, how far into a sprint: the gun swings down across the chest, the stride lengthens and the head leans in (see `SPRINT_POSE`).
+   * A little below 0 swings the gun just past the aim the other way, the overshoot as it comes up after a sprint (see raise.ts).
+   */
   sprint?: number;
 };
 
 /** Draws a soldier at (`x`, `y`): boots, arms, torso, gun, gloves, helmet, in that order from the ground up. */
 export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number, look: SoldierLook, pxPerUnit: number) {
   const R = radius, ink = SOLDIER.ink * R;
-  const sp = Math.max(0, Math.min(1, look.sprint ?? 0));
+  const swing = Math.max(-0.3, Math.min(1, look.sprint ?? 0));
+  const sp = Math.max(0, swing);
   const pose = walkPose(look.gait, sp);
-  // Sprinting, the whole gun-and-hands assembly turns across the chest and tucks in.
-  const tilt = SPRINT_POSE.tilt * sp, pull = SPRINT_POSE.pull * R * sp;
-  const hands = (sp > 0 ? look.hands.map((h) => ({ x: h.x * Math.cos(tilt) - h.y * Math.sin(tilt) - pull, y: h.x * Math.sin(tilt) + h.y * Math.cos(tilt) })) : look.hands) as SoldierLook['hands'];
+  // Sprinting, the whole gun-and-hands assembly turns across the chest and tucks in; past the aim (below 0), it only turns.
+  const tilt = SPRINT_POSE.tilt * swing, pull = SPRINT_POSE.pull * R * sp;
+  const hands = (swing !== 0 ? look.hands.map((h) => ({ x: h.x * Math.cos(tilt) - h.y * Math.sin(tilt) - pull, y: h.x * Math.sin(tilt) + h.y * Math.cos(tilt) })) : look.hands) as SoldierLook['hands'];
   ctx.save();
   ctx.translate(x, y);
   // A crisp contact shadow where the boots meet the floor, a little down-screen.
@@ -473,7 +480,7 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
   drawTurned(ctx, torsoSprite(color, R, look.armor, index, pxPerUnit, look.camo), R * TORSO_REACH + 2, rest + twist);
   ctx.rotate(look.angle);
   ctx.translate(back, 0);
-  if (sp > 0 && look.gun) {
+  if (swing !== 0 && look.gun) {
     ctx.save();
     ctx.translate(-pull, 0);
     ctx.rotate(tilt);

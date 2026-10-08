@@ -14,6 +14,8 @@ import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
+import { warmLayouts } from './bot/arena.ts';
+import { ROTATION } from '../shared/maps.ts';
 import { planTicks } from './clock.ts';
 
 export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
@@ -308,6 +310,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
   const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1' });
   console.log(`Skirmish listening on http://localhost:${server.port}`);
+  // Lay out every map's bot nav and cover now, a map at a time, so no room stalls a tick building one when it wakes or rotates.
+  warmLayouts([...new Set(Object.values(ROTATION).flat())], (go) => void setTimeout(go, 200).unref());
   const shutdown = async (signal: string) => {
     console.log(`${signal}: saving and shutting down`);
     await server.close();

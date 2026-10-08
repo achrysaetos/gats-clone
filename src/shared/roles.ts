@@ -12,7 +12,7 @@ export const TRAIT_IDS = [
 export type TraitId = (typeof TRAIT_IDS)[number];
 
 export const TRAITS: Record<TraitId, { label: string; hint: string }> = {
-  quickdraw: { label: 'Quick draw', hint: 'Gun is back up almost at once after a sprint' },
+  quickdraw: { label: 'Quick draw', hint: 'Gun is back up fast after a sprint (about a second or less)' },
   strafe: { label: 'Strafes', hint: 'Stays accurate while you move' },
   plant: { label: 'Plant to aim', hint: 'Accurate only when you stop' },
   burst: { label: 'Bursts', hint: 'One press, a short burst' },

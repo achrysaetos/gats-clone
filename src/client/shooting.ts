@@ -11,6 +11,8 @@ import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
 import { shotCue, type SoundCue } from './sfx.ts';
 import { muzzleTip } from './gunart.ts';
 import type { Session } from './state.ts';
+import { raiseWatch } from './raise.ts';
+import { emitSfxAt } from './sfxbus.ts';
 
 type Point = { x: number; y: number };
 type Offset = { dx: number; dy: number };
@@ -80,6 +82,7 @@ export function createShooting(page: Page) {
       const h = page.hands(s);
       const aiming = h.active && h.touchAim !== null;
       if (aiming && !touchAiming) {
+        if (raiseWatch.click(s.firing, performance.now())) emitSfxAt('notReady', s.lastSelf.x, s.lastSelf.y, true);
         s.shots++;
         fireIfDue(s, performance.now());
       }

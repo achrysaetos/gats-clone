@@ -52,6 +52,7 @@ import { emitSfxAt, setSfxSink } from './sfxbus.ts';
 import { startTopup } from './reloadanim.ts';
 import { topupCues, topupOf } from './topup.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput, settleOf } from './fire.ts';
+import { raiseWatch } from './raise.ts';
 import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
 import { drawHeartbeat, drawScreenPulse, reducedMotion, setPulseHook, zoomAt } from './screenfx.ts';
@@ -881,6 +882,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   firing = true;
   if (state.phase !== 'playing' || overlays.typing || pause.isOpen()) return;
+  if (raiseWatch.click(state.s.firing, performance.now())) emitSfxAt('notReady', state.s.lastSelf.x, state.s.lastSelf.y, true);
   state.s.shots++;
   shooting.fireIfDue(state.s, performance.now());
 });

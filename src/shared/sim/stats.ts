@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
@@ -48,6 +48,7 @@ export const PERK_RULES = {
 
 export const hasPerk = (p: Pick<Player, 'perks'>, perk: PerkId): boolean => Object.values(p.perks).includes(perk);
 
+/** `settleMs`: how long the post-sprint settle takes to ease out once the gun is up (the gun's, after perks). */
 type Stats = {
   speed: number; sprintSpeed: number; settleMs: number; maxHp: number; mag: number; range: number; reloadMs: number; regenPerSec: number; regenDelayMs: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
@@ -59,13 +60,23 @@ export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, stil
   if (still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05) return 0;
   const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
   const planted = still && deployed && rules.deploy ? rules.deploy.spreadMul : 1;
-  let spread = (still ? GUNS[gun].spread * planted : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot, bloomBuild) * settleSpreadMul(settle);
+  let spread = (still ? GUNS[gun].spread * planted : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot, bloomBuild) * settleSpreadMul(settle, settleRulesOf(GUNS[gun]).mul);
   for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
   return spread * suppressionMul(suppression);
 }
 
-/** How much the post-sprint settle widens spread, `settle` being the share (0..1) still to ease out: `SPRINT.settleMul` at 1, easing out quadratically to 1 at 0. */
-export const settleSpreadMul = (settle: number): number => 1 + (SPRINT.settleMul - 1) * Math.max(0, Math.min(1, settle)) ** 2;
+/**
+ * How much the post-sprint settle widens spread, `settle` being the share (0..1) still to ease out: `mul` (the gun's, see `settleRulesOf`) at 1,
+ * easing out quadratically to 1 at 0. A share above 1 is the gun still coming up, and counts as 1.
+ */
+export const settleSpreadMul = (settle: number, mul: number = SPRINT.settleMul): number => 1 + (mul - 1) * Math.max(0, Math.min(1, settle)) ** 2;
+
+/**
+ * The post-sprint clock, `left` ms of it to run: the gun comes up over its first `raiseMs`, then the spread settles over the last `settleMs`.
+ * Returns how long the gun is still down and the settle's share (0..1) still to ease out.
+ */
+export const postSprint = (left: number, settleMs: number): { raiseLeft: number; settle: number } =>
+  ({ raiseLeft: Math.max(0, left - settleMs), settle: settleMs > 0 ? Math.max(0, Math.min(1, left / settleMs)) : 0 });
 
 /** How fast spray bloom recovers, as a multiplier (Steady Hands). */
 export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number => Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomRecoverMul ?? 1), 1);
@@ -127,7 +138,7 @@ export function effectiveStats(p: Player): Stats {
   const s: Stats = {
     speed: WORLD.baseSpeed * Math.max(LOAD_SPEED_FLOOR, weapon.moveMul * armor.speedMul),
     sprintSpeed: 0,
-    settleMs: SPRINT.settleMs,
+    settleMs: settleRulesOf(weapon).ms,
     maxHp: WORLD.baseHp,
     mag: weapon.mag,
     range: rangeFor(p.gun, p.perks),

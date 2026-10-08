@@ -3,7 +3,7 @@ import { blastDoors } from './doors.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
-import { angleDiff, clamp, dist2, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
+import { angleDiff, clamp, dist2, segmentBlocked, segmentEntersCircleAt, segmentEntersRectAt, segmentHits } from './movement.ts';
 import { goDown } from './downed.ts';
 import { fall, hurtDowned, openDrop } from './royale.ts';
 import { barrelsInBlast, damageBarrel, payChain } from './barrels.ts';
@@ -297,8 +297,7 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
 type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[]; /** The server time a rewound shot is judged at, for targets that slide; absent for a live view. */ at?: number };
 const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
 
-const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) =>
-  walls.some((wall) => !wall.nb && segmentEntersRectAt(x, y, tx - x, ty - y, wall) !== null);
+const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) => segmentBlocked(walls, x, y, tx - x, ty - y, 'nb');
 
 export function explode(w: World, x: number, y: number, radius: number, maxDamage: number, by: Culprit, view: View = liveView(w)) {
   if (by.attacker && hasPerk(by.attacker, 'demolitions')) { radius *= PERK_RULES.demolitions.radiusMul; maxDamage *= PERK_RULES.demolitions.dealtMul; }
@@ -381,7 +380,8 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   /** What a hit at (x, y) this step keeps of the round's damage once it has flown that far (`GunRules.falloff`). */
   const fell = (x: number, y: number) => (b.gun ? falloffMul(b.gun, from + Math.hypot(x - b.x, y - b.y)) : 1);
   const candidates: BulletHit[] = [
-    ...view.walls.filter((wall) => !wall.nb).map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => {
+    // Only the walls the step enters, in wall order: the same hits, ties and all, as testing every wall.
+    ...segmentHits(view.walls, b.x, b.y, dx, dy, 'nb').map(({ t, b: wall }) => ({ t, victim: null, apply: (x: number, y: number) => {
       w.events.push({ e: 'impact', x, y });
       // A door-breaker's round blows the swing door it strikes open (see `GunRules.breach`).
       if (wall.door && b.gun && rulesOf(GUNS[b.gun]).breach) blastDoors(w, x, y, BREACH_PX);

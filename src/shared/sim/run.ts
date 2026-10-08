@@ -5,7 +5,7 @@ import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
 import { buildingView, buildRefusal, cellRect, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
 import { armorWatch, tickArmor, tickTraps, tickUtilities, trapWatch } from './utility.ts';
-import { circleHitsRect, clamp, dist2, type Rect } from './movement.ts';
+import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { tickDowned } from './downed.ts';
 import { coreRect, coverRects, loadMap, newId, newRun, rand, solidRects, spawnPoint, type HordeUnit, type Player, type Run, type RunStats, type Shooter, type World, type Zombie } from './world.ts';
@@ -215,7 +215,7 @@ function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
     let pack: number | undefined;
     for (let placed = 0, tries = 0; placed < want && tries < 20 * want; tries++) {
       const x = clamp(sx + (rand(w) - 0.5) * (alongX ? PACK_SPREAD : strip.w), strip.x, strip.x + strip.w), y = clamp(sy + (rand(w) - 0.5) * (alongX ? strip.h : PACK_SPREAD), strip.y, strip.y + strip.h);
-      if (solids.some((b) => circleHitsRect(x, y, r, b))) continue;
+      if (circleBlocked(solids, x, y, r)) continue;
       const id = newId(w);
       pack ??= id;
       w.zombies.push({ id, kind, x, y, hp: zombieMaxHp(kind, run.night, run.share), attackAt: 0, vx: 0, vy: 0, pack });
