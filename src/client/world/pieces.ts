@@ -7,25 +7,26 @@ export type PieceLook = { key: string; p: PieceId; x: number; y: number; w: numb
 /** The baked look of a placement at a damage stage: `kit.<piece>.<turn>.<stage>`. */
 export const pieceKey = (at: Pick<Placement, 'p' | 'r'>, stage = 0): string => `kit.${at.p}.${bakedTurn({ ...at, x: 0, y: 0 })}.${stage}`;
 
-const look = (at: Placement): PieceLook => ({ key: pieceKey(at), p: at.p, ...placed(at).foot, height: KIT[at.p].height });
+export const pieceLook = (at: Placement): PieceLook => ({ key: pieceKey(at), p: at.p, ...placed(at).foot, height: KIT[at.p].height });
 
 type MapLooks = { standing: PieceLook[]; overhead: PieceLook[] };
 const cache = new Map<MapId, MapLooks>();
 
 /**
- * The map's pieces split the way they are drawn: standing pieces with the actors, overhead ones above them. Breakable pieces
- * come from the snapshot's crates instead, and flat ones are baked into the map's light layer.
+ * Pieces split the way they are drawn: standing pieces with the actors, overhead ones above them. Breakable pieces come
+ * from the snapshot's crates instead, and flat ones are baked into the map's light layer.
  */
+export function looksOf(pieces: readonly Placement[]): MapLooks {
+  const unbroken = pieces.filter((at) => !KIT[at.p].breaks);
+  return {
+    standing: unbroken.filter((at) => KIT[at.p].height > 0 && !KIT[at.p].overhead).map(pieceLook),
+    overhead: unbroken.filter((at) => KIT[at.p].overhead).map(pieceLook),
+  };
+}
+
 export function mapLooks(id: MapId): MapLooks {
   let got = cache.get(id);
-  if (!got) {
-    const unbroken = MAPS[id].pieces.filter((at) => !KIT[at.p].breaks);
-    got = {
-      standing: unbroken.filter((at) => KIT[at.p].height > 0 && !KIT[at.p].overhead).map(look),
-      overhead: unbroken.filter((at) => KIT[at.p].overhead).map(look),
-    };
-    cache.set(id, got);
-  }
+  if (!got) cache.set(id, (got = looksOf(MAPS[id].pieces)));
   return got;
 }
 

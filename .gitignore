@@ -1,6 +1,8 @@
 node_modules
 public/game.js
 public/game.js.map
+public/editor.js
+public/editor.js.map
 data
 .claude/worktrees
 todo.md
