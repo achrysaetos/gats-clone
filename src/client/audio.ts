@@ -240,7 +240,8 @@ export function createAudio(): Audio {
       sfxOut.connect(out);
       engine = createEngine(c, sfxOut, createNoise(c), () => c.state === 'running');
     }
-    if (ctx.state === 'suspended') void ctx.resume();
+    // Suspended (never started) or, in Safari, 'interrupted' by a call or another app: either way the next gesture wakes it, or every cue stays silent.
+    if (ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume();
   }
 
   function play(cues: readonly SoundCue[], listener: Point, viewRadius: number) {

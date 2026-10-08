@@ -138,7 +138,8 @@ export function createSampleBank(ctx: BaseAudioContext, fetchBytes: (path: strin
         const spec = SAMPLES[inst];
         if (!spec) continue;
         let p = pending.get(inst);
-        if (!p) { p = loadOne(inst, spec).catch(() => { /* the synth voice stays */ }); pending.set(inst, p); }
+        // A failed load (a network blip) is forgotten, so the next track that asks for the instrument fetches it again; meanwhile the synth voice stays.
+        if (!p) { p = loadOne(inst, spec).catch(() => { pending.delete(inst); }); pending.set(inst, p); }
         jobs.push(p);
       }
       return Promise.all(jobs).then(() => undefined);

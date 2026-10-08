@@ -178,3 +178,20 @@ test('a round or run ending plays one cadence, a win or a loss', () => {
   const next = observe(a.tracker, snap({ tick: 3 }), 'play', 100, false);
   assert.equal(next.tracker.ended, false, 'a new round can end again');
 });
+
+test('a sampled instrument whose notes failed to load (a network blip) is fetched again the next time a track asks for it', async () => {
+  const { createSampleBank, SAMPLES } = await import('../src/client/musicsamples.ts');
+  const buffer = { duration: 2, sampleRate: 100, getChannelData: () => Float32Array.from({ length: 200 }, (_, i) => (i > 3 ? 0.5 : 0)) };
+  const ctx = { decodeAudioData: async () => buffer } as unknown as BaseAudioContext;
+  let online = false, fetched = 0;
+  const bank = createSampleBank(ctx, async () => { fetched++; if (!online) throw new Error('offline'); return new ArrayBuffer(8); });
+  await bank.load(['piano']);
+  assert.equal(bank.voice('piano'), null, 'offline: the synth stands in');
+  assert.equal(fetched, SAMPLES.piano!.notes.length);
+  online = true;
+  await bank.load(['piano']);
+  assert.notEqual(bank.voice('piano'), null, 'back online, the next track start brings the samples in');
+  const before = fetched;
+  await bank.load(['piano']);
+  assert.equal(fetched, before, 'a loaded instrument is never fetched twice');
+});

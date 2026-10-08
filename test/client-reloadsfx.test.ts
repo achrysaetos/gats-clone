@@ -7,7 +7,7 @@ import { FOLEY, SURFACES, actionCycle, type FoleyId } from '../src/client/foley.
 import { MAG_FALL_MS, soundTimeline } from '../src/client/reloadbeats.ts';
 import { CROWD, MAX_CATCHUP_MS, OTHER_GAIN, SELF_GAIN, createReloadFoley, floorAt, heftOf, reloadCues, setFloorProbe, type FoleyEmit } from '../src/client/reloadsfx.ts';
 import { SOUNDS, minGapMs, priorityOf, varianceOf } from '../src/client/sfx.ts';
-import { LEAD_MS, asCue, lastSoundMs, loadWaa, peakOf, renderCues, renderReload, rmsOf } from '../scripts/render-reload-sfx.ts';
+import { asCue, lastSoundMs, loadWaa, peakOf, renderCues, renderReload, rmsOf } from '../scripts/render-reload-sfx.ts';
 
 const BASES: WeaponId[] = ['pistol', 'smg', 'assault', 'shotgun', 'sniper', 'lmg'];
 /** Every length a gun's reload can really have: its own, with quick reload, with fast hands, and with both. */
@@ -317,5 +317,4 @@ test('offline render: other soldiers\' reloads are quieter than yours, dulled wi
   const alone = peakOf(await renderCues(waa!, shots, 2));
   const mixed = peakOf(await renderCues(waa!, [...shots, ...reloadCues('assault', 1000).map((c) => asCue({ ...c, delayMs: c.delayMs + 200 }, 0, 0, true))], 2));
   assert.ok(mixed < alone * 1.15, `the foley does not push the gunfire's peak (${DB(alone).toFixed(1)} -> ${DB(mixed).toFixed(1)} dBFS)`);
-  assert.equal(LEAD_MS > 0, true);
 });

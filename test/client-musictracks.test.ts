@@ -347,6 +347,15 @@ test('a bar of any track costs a bounded number of audio nodes', () => {
   }
 });
 
+test('a music volume that is not a number never reaches the bus or the saved setting', async () => {
+  const music = await import('../src/client/music.ts');
+  music.setMusicVolume(0.4);
+  assert.equal(music.getMusicVolume(), 0.4);
+  music.setMusicVolume(Number.NaN);
+  assert.ok(Number.isFinite(music.getMusicVolume()), `volume ${music.getMusicVolume()}`);
+  music.setMusicVolume(1);
+});
+
 test('leaving for the menu leaves the radio behind', async () => {
   const music = await import('../src/client/music.ts');
   music.setRoomStation('harbor');

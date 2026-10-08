@@ -267,8 +267,9 @@ test('medals ring bigger up the tiers and platinum is the biggest, with a lifeti
 });
 
 test('a kill\'s ka-ching rides on the climbing sting, and a bounty gets the biggest', () => {
-  assert.ok(SOUNDS.kill.length > 3 && SOUNDS['kill:3'].length > SOUNDS.kill.length - 1);
-  assert.ok(SOUNDS.bounty.length > SOUNDS.kill.length - 3);
+  const total = (id: SoundId) => SOUNDS[id].reduce((a, l) => a + l.gain, 0);
+  assert.ok(SOUNDS.kill.length > 3 && SOUNDS['kill:3'].length > SOUNDS.kill.length, 'a streak adds to the sting');
+  assert.ok(SOUNDS.bounty.length > SOUNDS['kill:3'].length && total('bounty') > total('kill:3'), 'a bounty outdoes a streak kill');
 });
 
 // ---- the final pass: mix balance and the cues other features shipped without ----
