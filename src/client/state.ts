@@ -88,6 +88,8 @@ export type Session = {
   strides: Map<number, Stride>;
   /** What each soldier did lately, for their frames: their last shot, a throw or knife swing, when a dash began. And the bodies that stay. */
   anim: Anim;
+  /** Each soldier's stride when its footsteps were last checked, so each heel strike sounds once. */
+  heardSteps: Map<number, Stride>;
   building: boolean;
   buildKind: BuildingKind;
   /** Each turret's aim by cell (`cx,cy`). */

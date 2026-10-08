@@ -6,7 +6,7 @@ import { startEffect } from './effects.ts';
 import { dueAt, nextSprayShot, serverGun, settle, type PredictedShot, type TriggerInput } from './fire.ts';
 import { newestSnap, renderTime, sampleAt, TICK_MS } from './interp.ts';
 import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
-import { shotCue, type SoundCue } from './sfx.ts';
+import { shotCues, type SoundCue } from './sfx.ts';
 import { muzzleTip } from './sprites.ts';
 import type { Session } from './state.ts';
 
@@ -39,7 +39,7 @@ export function createShooting(page: Page) {
   function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
     const { aim, sinceMove } = page.hands(s);
     const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(sinceMove), nextSprayShot(s.firing)) };
-    page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
+    page.playCues(s, shotCues(gun, silenced, s.lastSelf, true), snap.self.viewRadius || WORLD.viewRadius);
     const angle = Math.atan2(aim.dy, aim.dx);
     page.recoil(gun, angle);
     return showShot(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);

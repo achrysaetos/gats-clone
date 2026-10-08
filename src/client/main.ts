@@ -31,7 +31,8 @@ import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
-import { soundsFor, type SoundCue } from './sfx.ts';
+import { roofsOf, soundsFor, stepCues, type SoundCue } from './sfx.ts';
+import { mapLooks } from './world/pieces.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
 import { addStop, killZoom, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
 import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
@@ -296,13 +297,13 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: M
     ws, rejoin, myId: welcome.id, map: welcome.map, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
     effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), anim: newAnim(), building: false, buildKind: 'wall', turretAims: new Map(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), anim: newAnim(), heardSteps: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   noteOwnShotSound(cues);
-  audio.play(cues, s.lastSelf, viewRadius);
+  audio.play(cues, { listener: s.lastSelf, viewRadius, roofs: roofsOf(mapLooks(s.map).overhead) });
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
 
@@ -313,7 +314,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
   s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
-  const cues = soundsFor(prev, snap);
+  const cues = soundsFor(prev, snap, s.walls);
   playCues(s, cues.filter((c) => c.self), snap.self.viewRadius || WORLD.viewRadius);
   // Other players' sounds wait for the render clock, so a shot is heard as its muzzle flash is drawn.
   s.pendingSounds.push(...cues.filter((c) => !c.self).map((cue) => ({ at: snap.tick * TICK_MS, cue })));
@@ -517,6 +518,7 @@ function drawFrame(now: number) {
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now: fxNow, selfAngle, killerId, ghost });
+  playCues(s, stepCues(s.heardSteps, s.strides, snap.players, s.myId), latest.self.viewRadius || WORLD.viewRadius);
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing)) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
