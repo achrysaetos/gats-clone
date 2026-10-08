@@ -394,8 +394,9 @@ const TILE = 512;
 const SKIRT = 2;
 const TILE_PX = TILE + 2 * SKIRT;
 const BAND_EDGES = [34, 96, 170, 250, 340, 470] as const;
-const BAND_COLORS = ['#58b7b0', '#47a3a6', '#3a8896', '#2a6173', '#245468', '#1d4658', '#173a4a'] as const;
-const FOAM_RGB = [228, 235, 224] as const, FOAM_LO_RGB = [150, 184, 184] as const;
+// Night-op tones: the plain water sits below the quay in brightness, so the shade and the lamps' pools do the lifting.
+const BAND_COLORS = ['#356f72', '#2e6270', '#285366', '#1d3f52', '#193846', '#143040', '#102836'] as const;
+const FOAM_RGB = [170, 184, 176] as const, FOAM_LO_RGB = [96, 128, 132] as const;
 const rgbOfHex = (h: string): [number, number, number] => { const v = parseInt(h.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
 const BAND_RGB = BAND_COLORS.map(rgbOfHex);
 
@@ -514,9 +515,9 @@ function drawPlain(g: CanvasRenderingContext2D, now: number, view: { x0: number;
     if (x < view.x0 - 60 || x > view.x1 + 60 || y < view.y0 - 30 || y > view.y1 + 30) continue;
     if (!wet(prep, x, y, 40) || !wet(prep, x + 40, y, 40) || !wet(prep, x - 40, y, 40)) continue;
     const a = Math.sin(u * Math.PI), len = 30 + hash2(cx, cy + 7) * 28;
-    g.strokeStyle = `rgba(150, 214, 208, ${(0.55 * a).toFixed(3)})`;
+    g.strokeStyle = `rgba(120, 178, 182, ${(0.34 * a).toFixed(3)})`;
     g.beginPath(); g.moveTo(x - len / 2, y + 2); g.quadraticCurveTo(x, y - 7, x + len / 2, y + 2); g.stroke();
-    g.strokeStyle = `rgba(150, 214, 208, ${(0.32 * a).toFixed(3)})`;
+    g.strokeStyle = `rgba(120, 178, 182, ${(0.2 * a).toFixed(3)})`;
     g.beginPath(); g.moveTo(x - len * 0.28 + 8, y + 12); g.quadraticCurveTo(x + 8, y + 6, x + len * 0.28 + 8, y + 12); g.stroke();
   }
   // Practical lights lay a shimmering streak straight down the water, in short slices that slide a little; only over open water.
