@@ -56,6 +56,8 @@ export type PlayerView = {
   hunted: boolean;
   /** Fresh from a spawn and not yet firing: takes no damage. */
   spawnShield?: true;
+  /** 0..1 through a reload while one runs, so everyone sees the open window. */
+  reload?: number;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };

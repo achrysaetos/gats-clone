@@ -39,6 +39,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
+    ...(alive && life.reloadUntil !== null && { reload: Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs)) }),
     ...(life.k === 'downed' && { downed: { revive: life.reviveProgress / ZOM.reviveMs, bleedOutAt: life.bleedOutAt } }),
   };
 }
