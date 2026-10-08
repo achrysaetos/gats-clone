@@ -111,7 +111,15 @@ Two separate headless Chromes join FFA and walk toward each other along the map'
 node .claude/skills/verify/scripts/frametime.ts "$RUN" [seconds] [width] [height]
 ```
 
-One headless Chrome joins FFA at 1920x1080 through `?dev`, picks the SMG, and holds fire while it strafes toward the nearest player. After a 5s warmup it logs to `frametime.log` how busy the view was (players and bullets per snapshot), `frame cost` (each real frame's draw calls, from `skirmishDev.takeFrameCosts()`) and the `requestAnimationFrame` interval, then how many ground tiles are on the GPU and whether the sprite atlas loaded. The GPU canvas defers rasterizing, so `frame cost` alone misses pixel work. `SOFTWARE=1` turns the GPU canvas off and adds `rastered frame cost`: the current frame redrawn back to back by `skirmishDev.benchFrames(n)`, each waiting for its pixels. Compare both modes before and after any art change, three runs per side, since bot positions vary. `DPR=2` emulates a 2x display and `BLOOM=0` joins with `?bloom=0`; the log's first line names both, so a 2x run with bloom on and off reads as the cost of bloom.
+One headless Chrome joins FFA at 1920x1080 through `?dev`, picks the SMG, and holds fire while it strafes toward the nearest player. After a 5s warmup it logs to `frametime.log` how busy the view was (players and bullets per snapshot), `frame cost` (each real frame's draw calls, from `skirmishDev.takeFrameCosts()`) and the `requestAnimationFrame` interval, then how many ground tiles are on the GPU and whether the sprite atlas loaded. The GPU canvas defers rasterizing, so `frame cost` alone misses pixel work. `SOFTWARE=1` turns the GPU canvas off and adds `rastered frame cost`: the current frame redrawn back to back by `skirmishDev.benchFrames(n)`, each waiting for its pixels. Compare both modes before and after any art change, three runs per side, since bot positions vary. `DPR=2` emulates a 2x display, `BLOOM=0` joins with `?bloom=0` and `QUALITY=<auto|low|medium|high|ultra>` joins with `?quality=`; the log's first line names all three, so a 2x run with bloom on and off reads as the cost of bloom. The next line names the quality tier at the start and end of sampling, from `skirmishDev.quality()`, and every step the auto governor took with the window p90 that moved it. Pin `QUALITY` when comparing builds, since Auto steps down on a slow machine.
+
+### Quality
+
+```bash
+node .claude/skills/verify/scripts/quality.ts "$RUN"
+```
+
+One muted headless Chrome checks the menu's Graphics panel through real clicks: a fresh browser runs on Auto, pressing Medium sets the tier and saves it, Medium draws the world canvas at three quarters of the CSS width, the choice survives a reload, `?quality=ultra` overrides it without saving, `?bloom=0` still turns bloom off, and a bad `?quality=` falls back. Its log is `quality.log`, with `quality-menu.png`.
 
 ### Loading
 

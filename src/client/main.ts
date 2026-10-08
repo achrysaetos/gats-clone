@@ -1,7 +1,7 @@
 import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
-import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
+import { fetchServers, loadLoadout, loadMuted, loadName, loadQualityMode, openSquad, saveLoadout, saveMuted, saveName, saveQualityMode, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
 import { easeView, makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
@@ -15,7 +15,8 @@ import { actionForKey, assembleInput, perkSlotForKey, type Action } from './inpu
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
-import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
+import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderQuality, renderServers, renderSquad, renderSquadChip } from './menu.ts';
+import { createQuality, parseMode, type QualityMode } from './quality.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
@@ -100,6 +101,10 @@ let artShown = '';
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
+/** `?quality=<auto|low|medium|high|ultra>` overrides the saved setting for this page only. */
+const quality = createQuality(parseMode(params.get('quality')) ?? loadQualityMode(), bloomWanted());
+let lastRafAt = 0;
+let qualityShown = '';
 let ghost: Ghost | null = null;
 
 /** The session whose socket is live. While reconnecting the old session is only drawn, never sent to. */
@@ -433,7 +438,9 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 
 function frame(now: number) {
   requestAnimationFrame(frame);
-  if (state.phase === 'menu') refreshArt();
+  if (lastRafAt) quality.frame(now - lastRafAt, now);
+  lastRafAt = now;
+  if (state.phase === 'menu') { refreshArt(); showQuality(); }
   const start = performance.now();
   drawFrame(now);
   noteFrameCost(performance.now() - start);
@@ -602,6 +609,8 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('resize', resize);
+// A hidden tab gets no frames; the first interval after it comes back is the time away, not frame time.
+document.addEventListener('visibilitychange', () => { lastRafAt = 0; });
 
 async function pollServers() {
   if (state.phase !== 'menu') return;
@@ -657,6 +666,23 @@ async function startSquad() {
   requestPlay(opened.room);
 }
 
+/** Auto starts at Low when the browser draws without a GPU. */
+const autoStart = () => (painter.kind === 'ready' && painter.world.software ? 'low' : 'high');
+
+function pickQuality(mode: QualityMode) {
+  quality.set(mode, performance.now(), autoStart());
+  saveQualityMode(mode);
+  showQuality();
+}
+
+function showQuality() {
+  const noGpu = painter.kind === 'ready' && painter.world.software;
+  const key = `${quality.mode()}|${quality.tier()}|${noGpu}`;
+  if (key === qualityShown) return;
+  qualityShown = key;
+  renderQuality($('quality'), quality.mode(), quality.tier(), noGpu, pickQuality);
+}
+
 function toggleMuted(name: string) {
   muted = toggleMute(muted, name);
   saveMuted(muted);
@@ -665,7 +691,7 @@ function toggleMuted(name: string) {
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); noteKick(Math.hypot(kick.x, kick.y)); } });
-installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost, audio: audio.stats });
+installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost, audio: audio.stats, quality: () => ({ mode: quality.mode(), tier: quality.tier(), knobs: quality.knobs(), changes: quality.changes(), software: painter.kind === 'ready' && painter.world.software }) });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),
@@ -695,8 +721,9 @@ if (invited === 'bad') {
 resize();
 setState(state);
 requestAnimationFrame(frame);
-initWorld(worldCanvas, { bloom: bloomWanted() }).then((world) => {
+initWorld(worldCanvas, quality.knobs).then((world) => {
   painter = { kind: 'ready', world };
+  if (world.software && quality.mode() === 'auto') quality.set('auto', performance.now(), 'low');
   resize();
   refreshArt();
   void world.art.ready.then(() => {

@@ -1,4 +1,5 @@
 import { ARMOR_IDS, COLOR_IDS, MODE_IDS, WEAPON_IDS, type ModeId } from '../shared/defs.ts';
+import { parseMode, type QualityMode } from './quality.ts';
 import { parseLoadout, type Loadout } from '../shared/protocol.ts';
 import { parseMuted, serializeMuted, type MutedNames } from './chatmute.ts';
 
@@ -85,6 +86,9 @@ export function loadLoadout(): Loadout {
 }
 
 export const saveLoadout = (l: Loadout) => store.set('skirmish.loadout', JSON.stringify(l));
+
+export const loadQualityMode = () => parseMode(store.get('skirmish.quality')) ?? 'auto';
+export const saveQualityMode = (mode: QualityMode) => store.set('skirmish.quality', mode);
 
 export const loadMuted = () => parseMuted(store.get('skirmish.mutedNames'));
 export const saveMuted = (muted: MutedNames) => store.set('skirmish.mutedNames', serializeMuted(muted));

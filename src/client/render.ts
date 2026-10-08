@@ -5,7 +5,8 @@ import { createPool } from './particles.ts';
 import { drawLabels } from './world/labels.ts';
 import { mapLayoutKey } from './world/layout.ts';
 import { describeWorld, type Frame, type Scene } from './world/scene.ts';
-import { createWorld, type Quality, type World } from './world/stage.ts';
+import type { Knobs } from './quality.ts';
+import { createWorld, type World } from './world/stage.ts';
 
 export { bodyColor } from './world/scene.ts';
 
@@ -15,8 +16,8 @@ export { bodyColor } from './world/scene.ts';
  */
 let world: World | null = null;
 
-export async function initWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<World> {
-  world = await createWorld(canvas, quality);
+export async function initWorld(canvas: HTMLCanvasElement, knobs: () => Knobs): Promise<World> {
+  world = await createWorld(canvas, knobs);
   return world;
 }
 
