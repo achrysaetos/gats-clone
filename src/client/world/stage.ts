@@ -819,12 +819,13 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
       }
       glowSprite.visible = k.glowClamp;
       if (k.glowClamp) {
-        glowFullSum = sizedRT(glowFullSum, px.w, px.h, true);
-        glowFullRT = sizedRT(glowFullRT, px.w, px.h);
-        renderTo(glowWorld, glowFullSum, res);
+        const g = k.glowScale;
+        glowFullSum = sizedRT(glowFullSum, px.w * g, px.h * g, true);
+        glowFullRT = sizedRT(glowFullRT, px.w * g, px.h * g);
+        renderTo(glowWorld, glowFullSum, res * g);
         knee(glowFullKnee, glowFullSum, glowFullRT);
         glowSprite.texture = glowFullRT;
-        glowSprite.scale.set(1 / res);
+        glowSprite.scale.set(1 / (res * g));
       }
       const div = k.bloomDiv;
       bloomSprite.visible = div !== null;

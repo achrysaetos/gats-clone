@@ -17,7 +17,7 @@ import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, t
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderQuality, renderServers, renderSquad, renderSquadChip } from './menu.ts';
-import { createQuality, parseMode, type QualityMode } from './quality.ts';
+import { createQuality, parseKnobs, parseMode, type QualityMode } from './quality.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
@@ -112,7 +112,7 @@ const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
 /** `?quality=<auto|low|medium|high|ultra>` overrides the saved setting for this page only. */
-const quality = createQuality(parseMode(params.get('quality')) ?? loadQualityMode(), bloomWanted());
+const quality = createQuality(parseMode(params.get('quality')) ?? loadQualityMode(), bloomWanted(), params.has('dev') ? parseKnobs(params.get('knobs')) : {});
 let lastRafAt = 0;
 let qualityShown = '';
 let ghost: Ghost | null = null;

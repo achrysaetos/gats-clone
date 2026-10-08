@@ -11,6 +11,8 @@ export type Knobs = {
   bloomDiv: 2 | 4 | null;
   /** Whether the glow layer is summed off-screen and rolled off before it lands, which costs a full-size pass; without it glows add straight on. */
   glowClamp: boolean;
+  /** The clamped glow layer's size as a share of the world's; glows are soft, so they keep their look well below full size. */
+  glowScale: number;
   /** The most particles drawn; below the pool's size a tier draws an even share of every burst. */
   particles: number;
   /** The newest floor marks drawn (scorch, blood, piles, rubble), and the newest casings. */
@@ -20,10 +22,10 @@ export type Knobs = {
 };
 
 export const QUALITY: Readonly<Record<Tier, Knobs>> = {
-  low: { renderScale: 0.5, bloomDiv: null, glowClamp: false, particles: 160, decals: 60, casings: 30, lights: 12 },
-  medium: { renderScale: 0.75, bloomDiv: 4, glowClamp: true, particles: 350, decals: 140, casings: 80, lights: 24 },
-  high: { renderScale: 1, bloomDiv: 4, glowClamp: true, particles: 800, decals: 260, casings: 200, lights: 48 },
-  ultra: { renderScale: 1, bloomDiv: 2, glowClamp: true, particles: 800, decals: 400, casings: 300, lights: 96 },
+  low: { renderScale: 0.5, bloomDiv: null, glowClamp: false, glowScale: 1, particles: 160, decals: 60, casings: 30, lights: 12 },
+  medium: { renderScale: 0.75, bloomDiv: 4, glowClamp: true, glowScale: 1, particles: 350, decals: 140, casings: 80, lights: 24 },
+  high: { renderScale: 1, bloomDiv: 4, glowClamp: true, glowScale: 1, particles: 800, decals: 260, casings: 200, lights: 48 },
+  ultra: { renderScale: 1, bloomDiv: 2, glowClamp: true, glowScale: 1, particles: 800, decals: 400, casings: 300, lights: 96 },
 };
 
 const MODES: readonly string[] = ['auto', ...TIERS];
@@ -81,7 +83,19 @@ export function govern(g: Governor, intervalMs: number, now: number): Governor {
 export type QualityChange = { at: number; from: Tier; to: Tier; p90: number | null; why: 'auto' | 'set' };
 
 /** The page's quality: the mode the player chose, the tier in force, and its knobs with `?bloom=0` applied. */
-export function createQuality(mode: QualityMode, bloomAllowed: boolean) {
+/** A dev-only override of single knobs, as `?knobs=renderScale:0.75,glowClamp:0,bloomDiv:null`, for measuring what each costs. */
+export function parseKnobs(s: string | null): Partial<Knobs> {
+  const out: Record<string, number | boolean | null> = {};
+  for (const pair of (s ?? '').split(',')) {
+    const [name, raw] = pair.split(':');
+    if (!name || raw === undefined || !(name in QUALITY.high)) continue;
+    const was = QUALITY.high[name as keyof Knobs];
+    out[name] = raw === 'null' ? null : typeof was === 'boolean' ? raw !== '0' && raw !== 'false' : Number(raw);
+  }
+  return out as Partial<Knobs>;
+}
+
+export function createQuality(mode: QualityMode, bloomAllowed: boolean, override: Partial<Knobs> = {}) {
   let current = mode;
   let gov = governor(mode === 'auto' ? 'high' : mode);
   const changes: QualityChange[] = [];
@@ -90,7 +104,7 @@ export function createQuality(mode: QualityMode, bloomAllowed: boolean) {
     mode: () => current,
     tier: () => gov.tier,
     knobs(): Knobs {
-      const k = QUALITY[gov.tier];
+      const k = { ...QUALITY[gov.tier], ...override };
       return bloomAllowed ? k : { ...k, bloomDiv: null };
     },
     /** Picks a mode by hand; `auto` restarts the governor from `start`. */

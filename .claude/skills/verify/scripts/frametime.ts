@@ -1,7 +1,7 @@
 /// <reference types="node" />
 // Usage: node frametime.ts <run-dir> [seconds] [width] [height]   Measures client frame cost in a busy FFA room while the driven player fires.
 // SQUAD=1 starts a zombies squad through the menu instead and fires at the nearest zombie; point it at a scratch copy whose night holds a full horde.
-// DPR=2 emulates a 2x display; BLOOM=0 joins with bloom off (`?bloom=0`); QUALITY=<auto|low|medium|high|ultra> joins with `?quality=`.
+// DPR=2 emulates a 2x display; BLOOM=0 joins with bloom off (`?bloom=0`); QUALITY=<auto|low|medium|high|ultra> joins with `?quality=`; KNOBS=<name:value,...> overrides single quality knobs (`?knobs=`).
 // It logs the quality tier when sampling starts and ends, and every step the auto governor took meanwhile.
 // `frame cost` times each real frame's draw calls. With SOFTWARE=1 (no GPU canvas) it also logs `rastered frame cost`, which waits for the pixels,
 // dropping each batch's first redraw, which waits on the compositor. On the GPU canvas the pixel reads would move it to the CPU mid-run and skew every later frame.
@@ -23,6 +23,7 @@ const SQUAD = process.env.SQUAD === '1';
 const DPR = Number(process.env.DPR ?? 1);
 const BLOOM = process.env.BLOOM !== '0';
 const QUALITY = process.env.QUALITY ?? '';
+const KNOBS = process.env.KNOBS ?? '';
 const BASE = existsSync(join(RUN, 'url'))
   ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '')
   : `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
@@ -51,7 +52,7 @@ const page = await openPage({
   },
 });
 const { cdp, js, exceptions, close } = page;
-await cdp('Page.navigate', { url: `${BASE}/?dev${BLOOM ? '' : '&bloom=0'}${QUALITY ? `&quality=${QUALITY}` : ''}` });
+await cdp('Page.navigate', { url: `${BASE}/?dev${BLOOM ? '' : '&bloom=0'}${QUALITY ? `&quality=${QUALITY}` : ''}${KNOBS ? `&knobs=${encodeURIComponent(KNOBS)}` : ''}` });
 await serversListed(page);
 await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.getElementById('name').value = 'Bench'`);
 await js(SQUAD ? `document.getElementById('squad-start').click()` : `document.querySelector('#servers .server').click(); document.getElementById('play').click()`);
@@ -110,7 +111,7 @@ const stats = (xs: number[]) => {
 };
 const fmt = (o: ReturnType<typeof stats>) => `n=${o.n} avg=${o.avg.toFixed(2)} p50=${o.p50.toFixed(2)} p95=${o.p95.toFixed(2)} p99=${o.p99.toFixed(2)} max=${o.max.toFixed(2)}ms`;
 const intervals = stamps.slice(1).map((t, i) => t - stamps[i]!);
-log(`frametime ${VIEW.w}x${VIEW.h} dpr ${DPR} bloom ${BLOOM ? 'on' : 'off'} quality ${QUALITY || 'saved'} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
+log(`frametime ${VIEW.w}x${VIEW.h} dpr ${DPR} bloom ${BLOOM ? 'on' : 'off'} quality ${QUALITY || 'saved'}${KNOBS ? ` knobs ${KNOBS}` : ''} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
 if (qualityBefore && qualityAfter) {
   log(`quality ${qualityAfter.mode}${qualityAfter.software ? ' (no GPU)' : ''}: tier ${qualityBefore.tier} at sampling start, ${qualityAfter.tier} at end; knobs ${JSON.stringify(qualityAfter.knobs)}`);
   for (const c of qualityAfter.changes) log(`  tier ${c.from} -> ${c.to} (${c.why}${c.p90 === null ? '' : `, window p90 ${c.p90.toFixed(1)}ms`}) ${c.at < sampledFrom ? 'before' : 'during'} sampling, at ${(c.at / 1000).toFixed(1)}s`);
