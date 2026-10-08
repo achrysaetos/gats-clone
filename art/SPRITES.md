@@ -17,6 +17,23 @@ node scripts/art/contact-sheet.ts art/build/sprites-spec.json art/build/sprites 
 - `team` renders the near-white team parts with everything else held out. `glow` renders with the sun and sky off, then turns brightness into alpha. `shadow` renders a shadow catcher with the model invisible to the camera.
 - `base` of a model with `contact` also renders a soft overhead contact shadow and puts it under the base. Rotated sprites (guns, turrets, thrown, downed) are lit from above and not sheared.
 - Every PNG goes through `common.write_png`, so output is byte-reproducible for a given render.
+- Characters (`soldier:*`, `zombie:*`) are rigged: `sprites/rig.py` builds a Blender armature from a bone table, parents rigid mesh parts to its bones and poses it from plain data (FK for hips, spine and head, two-bone IK for arms and legs to model-space targets). The posed meshes are then frozen into model-space vertices (`Model(freeze=True)`), and each facing rewrites them through the true shear, because Blender decomposes object matrices into location, rotation and scale and drops a shear set on the root. The sun-shadow pass turns them without shear and moves them south by `shear * z_ref`, so the shadow starts at the drawn feet.
+- A catalog entry's `still` layers are baked at frame 0 only and every frame shares them (`layerFrames`, `frameKey`). The soldier's armour tiers ride the spine, which no torso frame moves.
+
+## The soldier
+
+One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the painter stacks at the body's origin:
+
+| Key | Dirs | Frames | Layers | What |
+| --- | --- | --- | --- | --- |
+| `soldier` | 32 by aim | 0 aim, 1-2 recoil, 3-8 reload | base, team, armor tiers (still) | waist up, arms and gun hands |
+| `soldier.legs` | 16 by movement | 0 stand, 1-8 run | base, team | pelvis down, contact shadow |
+| `soldier.shadow` | 16 | 1 | shadow | whole body in the aim stance |
+| `soldier.downed` | 1, turned by the painter | 1 | base, team | prone, crawling, overhead lit |
+| `soldier.dead` | 1, turned by the painter | 3 variants | base, team | on the back, face down, on the side |
+| `drop.<class>` | 1, turned by the painter | 1 | base | the class's base gun lying on the floor |
+
+`SOLDIER` in `catalog.ts` holds the frame layout. The gun stays its own sprite: the aim, recoil and reload poses keep the hands on the grip (x 12.5) and fore-end (x 21.5) of a gun drawn at the origin. Recoil frame 1 matches a gun drawn at full kick (`RECOIL`), frame 2 at half.
 
 ## Iteration log
 
@@ -34,6 +51,11 @@ node scripts/art/contact-sheet.ts art/build/sprites-spec.json art/build/sprites 
 - Full bake: 405 frames in 594 s (about 10 minutes) on 4 CPU cores. check-sprites passes: every size matches and every gun barrel ends within 1.5 px of its muzzle. Rebaking a sprite gives byte-identical PNGs.
 - check-sprites now also fails on art cut off by the frame edge. It caught crate and wall debris (the shear moves the floor south by shear times the top height), the downed soldier's limbs and the muzzle core. Floor debris is now clamped into the frame with the shear accounted for.
 - The gutted metal crate showed one big black disc. Replaced it with scattered contents and small scorch marks.
+
+- 2026-10-08. The rigged soldier. The first pass had huge shoulder pads and stubby arms hidden under the helmet; shrank the pads (8.4 to 7.2), the helmet (7.7 to 7.0) and the arm radius, lengthened the arms and moved the hands forward. Legs hide under the torso from straight above, so the stride is 17 units each way and the belt is narrower; feet show ahead and behind at the far frames. Heavy armour's forearm guards went, because armour is now one frame per facing and arms move between frames.
+- Zombies on the same rig. Brute and Colossus first came out about 1.4 times their collision circle; trimmed shoulder width and arm spread so they stay near 1.25 times.
+- Timing, 16 samples on 4 shared CPU cores (load 3 to 4 from other jobs). A one-facing test of all soldier segments took 60 to 90 s (about 1 s per layer render). The full bake rendered 1217 frames in 1586 s (26 min): torso 672 renders in 377 s, legs 288 in 182 s (each legs frame renders a second contact pass), shadow 16 in 13 s, zombies 96 frames in 283 s (the Colossus alone 129 s), and the unchanged props and effects the rest. Kept 16 samples: denoised frames showed no noise at game scale, and the whole bake stays under half an hour.
+- Atlas: 1217 frames on three 2048x2048 pages, 2.87 MB of WebP (830 KB, 1187 KB, 924 KB) plus 215 KB of JSON, against 1.63 MB and 72 KB before. Baking armour once per facing instead of per torso frame saved about 1 MB (estimated from per-frame WebP sizes of one facing).
 
 ## Known gaps
 

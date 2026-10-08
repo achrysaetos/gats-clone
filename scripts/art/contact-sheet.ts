@@ -135,7 +135,7 @@ function flow(c: Img, zoom: number, top: number) {
 }
 
 async function characters() {
-  const c = canvas(1500, 2500);
+  const c = canvas(1500, 2900);
   const labels: [number, number, string][] = [];
   const armors = [null, 'armorLight', 'armorMedium', 'armorHeavy'];
   const teams = ['red', 'blue'];
@@ -157,11 +157,11 @@ async function characters() {
   labels.push([10, 1475, 'dropped guns at x2, by class']);
   const drops = Object.keys(spec.sprites).filter((n) => n.startsWith('drop.'));
   for (let i = 0; i < drops.length; i++) {
-    await draw(c, drops[i]!, 'base', 0, 0, 80 + i * 230, 1530, { zoom: 2, rot: -0.3 + i * 0.25 });
+    await draw(c, drops[i]!, 'base', 0, 0, 80 + i * 230, 1530, { zoom: 2, rot: -0.15 + i * 0.06 });
     labels.push([40 + i * 230, 1585, drops[i]!.slice(5)]);
   }
-  labels.push([10, 1615, 'zombies at game scale x1 (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
-  const place = flow(c, 1, 1635);
+  labels.push([10, 1690, 'zombies at game scale x1 (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
+  const place = flow(c, 1, 1710);
   for (const k of ['walker', 'brute', 'runner', 'plated', 'bloater', 'colossus']) {
     const e = spec.sprites[`zombie.${k}`];
     if (!e) continue;
