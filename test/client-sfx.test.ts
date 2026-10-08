@@ -286,6 +286,9 @@ const sampleOf = (id: SoundId, decoded: (s: SampleId) => boolean = ALL, random =
 test('a cue plays its synth recipe until every recording it needs has decoded', () => {
   assert.deepEqual(voiceFor('shot:pistol', () => false, MID), { kind: 'synth', recipe: SOUNDS['shot:pistol'] });
   assert.equal(voiceFor('shot:pistol', (s) => s === 'pistol', MID).kind, 'synth', 'the body alone is not the layered report');
+  const asked: SampleId[] = [];
+  voiceFor('shot:shotgun', (s) => (asked.push(s), false), MID);
+  assert.deepEqual(asked, ['crack', 'shotgun', 'sub'], 'every missing layer is asked after at once');
   assert.deepEqual(sampleOf('shot:pistol', (s) => s === 'pistol' || s === 'crack').map((l) => l.sample), ['crack', 'pistol']);
   const blast = GUN_IDS.find((g) => GUNS[g].blast)!;
   assert.equal(voiceFor(`shot:${blast}`, (s) => s !== 'launcher', MID).kind, 'synth', 'half a layered sound is not played');

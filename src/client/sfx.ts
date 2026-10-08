@@ -253,10 +253,13 @@ export const RATE_JITTER = 0.04;
 
 export type Voice = { kind: 'sample'; layers: readonly SampleLayer[] } | { kind: 'synth'; recipe: Recipe };
 
-/** A cue plays its recording once every layer has decoded, and its synth recipe until then. `random` is in [0, 1). */
+/**
+ * A cue plays its recording once every layer has decoded, and its synth recipe until then. Every layer is asked after, so
+ * a loader that fetches what `decoded` misses fetches a layered cue in one go. `random` is in [0, 1).
+ */
 export function voiceFor(id: SoundId, decoded: (sample: SampleId) => boolean, random: () => number): Voice {
   const layers = SAMPLES[id];
-  if (!layers.every((l) => decoded(l.sample))) return { kind: 'synth', recipe: SOUNDS[id] };
+  if (layers.map((l) => decoded(l.sample)).includes(false)) return { kind: 'synth', recipe: SOUNDS[id] };
   const jitter = 1 + (random() * 2 - 1) * RATE_JITTER;
   return { kind: 'sample', layers: layers.map((l) => ({ ...l, rate: l.rate * jitter })) };
 }
