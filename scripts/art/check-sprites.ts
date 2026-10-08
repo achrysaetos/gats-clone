@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 
 type Box = { x: number; y: number; w: number; h: number };
-type Entry = { box: Box; dirs: number; frames: number; layers: string[]; scale?: number };
+type Entry = { box: Box; dirs: number; frames: number; layers: string[]; still?: string[]; scale?: number };
 type Spec = { pxPerUnit: number; playerRadius: number; sprites: Record<string, Entry>; guns: Record<string, { parts: { x: number; w: number }[] }> };
 
 const [specPath, bakeDir] = process.argv.slice(2);
@@ -25,7 +25,7 @@ let frames = 0;
 for (const [name, e] of Object.entries(spec.sprites)) {
   const px = spec.pxPerUnit * (e.scale ?? 1);
   const w = Math.round(e.box.w * px), h = Math.round(e.box.h * px);
-  for (const layer of e.layers) for (let d = 0; d < e.dirs; d++) for (let f = 0; f < e.frames; f++) {
+  for (const layer of e.layers) for (let d = 0; d < e.dirs; d++) for (let f = 0; f < (e.still?.includes(layer) ? 1 : e.frames); f++) {
     const path = join(bakeDir, name, layer, `${d}_${f}.png`);
     if (!existsSync(path)) { problems.push(`missing ${path}`); continue; }
     const meta = await sharp(path).metadata();
