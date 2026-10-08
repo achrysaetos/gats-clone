@@ -70,6 +70,50 @@ test('Close Call: drop under a tenth of your health and live six more seconds, o
     for (const e of w.events) if (e.e === 'medal' && e.id === a.id) medals.push(e.medal);
   }
   assert.deepEqual(medals, ['closeCall']);
+  const drop = () => { if (a.life.k === 'alive') a.life.hp = effectiveStats(a).maxHp * MEDAL_RULES.closeCallHp * 0.5; };
+  const liveThrough = () => {
+    const got: MedalId[] = [];
+    for (let t = 0; t < MEDAL_RULES.closeCallMs + 500; t += TICK_MS) {
+      step(w, TICK_MS);
+      for (const e of w.events) if (e.e === 'medal' && e.id === a.id) got.push(e.medal);
+    }
+    return got;
+  };
+  // Healed a little, not past the reset, then down again: no second medal.
+  if (a.life.k === 'alive') a.life.hp = effectiveStats(a).maxHp * (MEDAL_RULES.closeCallReset - 0.1);
+  run1(w);
+  drop();
+  assert.deepEqual(liveThrough(), [], 'no second Close Call without healing past half');
+  if (a.life.k === 'alive') a.life.hp = effectiveStats(a).maxHp * MEDAL_RULES.closeCallReset;
+  run1(w);
+  drop();
+  assert.deepEqual(liveThrough(), ['closeCall'], 'healed past half, the next close call counts');
+});
+
+const run1 = (w: World) => step(w, TICK_MS);
+
+test('Ghost: walking 3000px without a shot pays once each time it is covered; a shot or a jump starts the count again', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 300, 1000);
+  const ghosts = (ms: number, keys: { right?: boolean; left?: boolean }) => {
+    let n = 0;
+    for (let t = 0; t < ms; t += TICK_MS) {
+      a.input = { ...a.input, right: !!keys.right, left: !!keys.left };
+      step(w, TICK_MS);
+      n += w.events.filter((e) => e.e === 'medal' && e.id === a.id && e.medal === 'ghost').length;
+    }
+    return n;
+  };
+  const speed = effectiveStats(a).speed;
+  const msFor = (px: number) => (px / speed) * 1000;
+  // Back and forth across the field: 2000px, then a jump, then 2000px more is two counts of 2000, so no Ghost yet.
+  assert.equal(ghosts(msFor(2000), { right: true }), 0);
+  a.x = 300;
+  assert.equal(ghosts(msFor(2000), { right: true }), 0, 'a jump (a respawn, a teleport) starts the count again');
+  assert.equal(ghosts(msFor(1100), { left: true }), 1, 'the 3000th px pays');
+  assert.equal(ghosts(msFor(1500), { right: true }), 0, 'and starts a fresh count');
+  if (a.life.k === 'alive') a.life.firedAt = w.now;
+  assert.equal(ghosts(msFor(1600), { left: true }), 0, 'a shot resets it');
 });
 
 test('streak medals mark 3, 5, 8, 12 and 20 kills in one life', () => {
@@ -112,6 +156,9 @@ test('a sniper\'s one-hit kill from far off earns every medal it qualifies for a
   const third = shot(w, a, spawnAt(w, 900, 500), 'sniper', 10_000);
   assert.ok(third.includes('oneShot') && third.includes('reaper') && third.includes('onFire'), `${third}`);
   w.now += MEDAL_RULES.multiMs + 1;
+  const fourth = shot(w, a, spawnAt(w, 900, 700), 'sniper', 10_000);
+  assert.ok(fourth.includes('oneShot') && !fourth.includes('reaper'), `a fourth one-hit kill is no second Reaper: ${fourth}`);
+  w.now += MEDAL_RULES.multiMs + 1;
   const hurt = spawnAt(w, 900, 600);
   if (hurt.life.k === 'alive') hurt.life.hp = 1;
   assert.ok(!shot(w, a, hurt, 'sniper', 10_000).includes('oneShot'), 'a kill on someone already hurt is not One Shot');
@@ -135,6 +182,8 @@ test('two pistol kills from one magazine are a Double Tap, but not across a relo
   shot(w, a, spawnAt(w, 600, 500), 'pistol', 10_000);
   w.now += MEDAL_RULES.multiMs + 1;
   assert.ok(shot(w, a, spawnAt(w, 600, 600), 'pistol', 10_000).includes('doubleTap'));
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.ok(!shot(w, a, spawnAt(w, 600, 700), 'pistol', 10_000).includes('doubleTap'), 'a third kill from the magazine is no second Double Tap');
   const b = spawnAt(w, 2000, 2000);
   shot(w, b, spawnAt(w, 2100, 2000), 'pistol', 10_000);
   if (b.life.k === 'alive') b.life.ammo = 1;

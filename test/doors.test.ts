@@ -6,12 +6,12 @@ import type { MapDoor } from '../src/shared/geom.ts';
 import { MAPS, type MapDef } from '../src/shared/maps.ts';
 import { makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { explode } from '../src/shared/sim/combat.ts';
-import { doorLeaves, DOOR_THICK } from '../src/shared/sim/doors.ts';
+import { doorLeaves, DOOR_THICK, DOOR_USE_PX } from '../src/shared/sim/doors.ts';
 import { solidsOf } from '../src/client/predict.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
 import { createWorld, type World } from '../src/shared/sim/world.ts';
-import { press, run, spawnAt } from './helpers.ts';
+import { press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 const R = WORLD.playerRadius;
 const geoWorld = (): World => {
@@ -158,8 +158,9 @@ test('the client rebuilds the same leaves from the snapshot as the server holds'
   for (let i = 0; i < 30; i++) {
     run(w, 1000 / 30);
     const snap = snapshotFor(w, p.id);
-    const client = solidsOf(wallViews(w), snap, MAPS['geo-test'].doors).filter((r) => r.pts !== undefined || true);
+    const client = solidsOf(wallViews(w), snap, MAPS['geo-test'].doors).filter((r) => (r as { door?: string }).door !== undefined);
     const serverLeaves = w.walls.filter((x) => x.door !== undefined);
+    assert.equal(client.length, serverLeaves.length, `as many leaves on tick ${i}`);
     for (const l of serverLeaves) assert.ok(client.some((c) => c.x === l.x && c.y === l.y && c.w === l.w && c.h === l.h), `leaf of ${l.door} on tick ${i}`);
   }
 });
@@ -170,4 +171,94 @@ test('door leaves are thin and shaped to the swing', () => {
   assert.equal(shut.h, DOOR_THICK);
   const half = doorLeaves(d, 128, 1)[0]!;
   assert.ok(half.pts && half.h > DOOR_THICK);
+});
+
+test('a manual door answers use only within reach, and not again inside its cooldown', () => {
+  const manual: MapDoor = { id: 'm', kind: 'slide', x: 2250, y: 525, w: 150, axis: 'h', material: 'metal', auto: false };
+  withDoors([manual], () => {
+    const w = geoWorld();
+    const p = spawnAt(w, 2325, 525 + DOOR_USE_PX + 15);
+    const tap = () => { press(w, p, { use: true }); run(w, TICK_MS); press(w, p, { use: false }); };
+    tap();
+    assert.equal(w.doors[0]!.target, 0, 'too far to reach the door');
+    p.y = 525 + DOOR_USE_PX - 15;
+    tap();
+    assert.equal(w.doors[0]!.target, 255, 'in reach: it opens');
+    run(w, 200);
+    tap();
+    assert.equal(w.doors[0]!.target, 255, 'a second press inside the cooldown does nothing');
+    run(w, 500);
+    tap();
+    assert.equal(w.doors[0]!.target, 0, 'after it, a press shuts the door');
+  });
+});
+
+test('a locked door stays shut whoever walks into it or stands by it', () => {
+  const swing: MapDoor = { id: 'ls', kind: 'swing', x: 3450, y: 525, w: 150, axis: 'h', material: 'wood', locked: true };
+  const slide: MapDoor = { id: 'ld', kind: 'slide', x: 2250, y: 525, w: 150, axis: 'h', material: 'metal', locked: true };
+  withDoors([swing, slide], () => {
+    const w = geoWorld();
+    const pusher = spawnAt(w, 3525, 700);
+    spawnAt(w, 2325, 600);
+    press(w, pusher, { up: true });
+    run(w, 2000);
+    assert.deepEqual(w.doors.map((d) => d.open), [0, 0]);
+    assert.ok(pusher.y > 525, `the pusher is held at the door (${pusher.y.toFixed(0)})`);
+  });
+});
+
+test('walking along a shut swing leaf, or away from it, while touching it does not push it open', () => {
+  for (const keys of [{ right: true }, { down: true }]) {
+    const w = geoWorld();
+    const p = spawnAt(w, 3470, 525 + DOOR_THICK / 2 + R + 2);
+    // A crate-like block at his back pins him against the leaf, so pressing away keeps him touching it.
+    w.walls.push({ x: 3440, y: p.y + R, w: 60, h: 20, built: true, expiresAt: Infinity });
+    press(w, p, keys);
+    run(w, 600);
+    assert.equal(door(w, 'room-3').open, 0, JSON.stringify(keys));
+  }
+});
+
+test('an auto slider holds open a while after the last body leaves, then closes', () => {
+  const w = geoWorld();
+  const p = spawnAt(w, 2325, 590);
+  run(w, 600);
+  assert.equal(door(w, 'room-1').open, 255);
+  p.y = 1200;
+  run(w, 800);
+  assert.equal(door(w, 'room-1').open, 255, 'still open 0.8s after');
+  run(w, 2000);
+  assert.equal(door(w, 'room-1').open, 0);
+});
+
+test('a blast throws open only the swing doors within its radius', () => {
+  const w = geoWorld();
+  explode(w, 3525, 525 + 200, 140, 10, { attacker: null, team: null, label: 'Test' });
+  assert.equal(door(w, 'room-3').open, 0, '200px off with a 140px radius');
+  explode(w, 3525, 525 + 120, 140, 10, { attacker: null, team: null, label: 'Test' });
+  assert.ok(door(w, 'room-3').open >= 230, 'inside it');
+});
+
+test('a swing door closes slower than it opens', () => {
+  const w = geoWorld();
+  const s = door(w, 'room-3');
+  const ticksTo = (target: 0 | 255) => {
+    s.target = target;
+    s.closeAt = target === 255 ? Infinity : -Infinity;
+    let n = 0;
+    for (; s.open !== target && n < 200; n++) run(w, TICK_MS);
+    return n;
+  };
+  const opening = ticksTo(255), closing = ticksTo(0);
+  assert.ok(opening >= 15 && opening <= 25, `opens in ${opening} ticks`);
+  assert.ok(closing > opening + 4, `closes in ${closing} ticks, opens in ${opening}`);
+});
+
+test('a slider retracts toward its hinge end: the leaf left half open hugs that end and clears the other', () => {
+  const at = (hinge: 'start' | 'end') => doorLeaves({ id: 's', kind: 'slide', x: 1000, y: 500, w: 200, axis: 'h', material: 'metal', hinge }, 128, 1)[0]!;
+  const start = at('start'), end = at('end');
+  assert.equal(start.x, 1000, 'a start-hinged leaf stays at the start');
+  assert.ok(start.x + start.w < 1110);
+  assert.ok(Math.abs(end.x + end.w - 1200) < 1e-9, 'an end-hinged leaf stays at the end');
+  assert.ok(end.x > 1090);
 });

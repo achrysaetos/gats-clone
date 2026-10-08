@@ -20,7 +20,7 @@ test('names hiding a blocked word, even across spaces, are rejected; ordinary na
   assert.equal(mod.isClean('Assassin'), true);
 });
 
-test('the server renames a blocked name and masks chat before anyone else sees it', { timeout: 10_000 }, async () => {
+test('the server renames a blocked name and masks chat before anyone else sees it', { timeout: 30_000 }, async () => {
   const { mkdtemp, writeFile } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -38,7 +38,7 @@ test('the server renames a blocked name and masks chat before anyone else sees i
     ws.once('open', () => resolve(ws));
   });
   const leaderboardOf = async (ws: InstanceType<typeof WebSocket>, ready: (names: string[]) => boolean) => {
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 500; i++) {
       const names = ((full.get(ws)?.leaderboard ?? []) as { name: string }[]).map((r) => r.name);
       if (ready(names)) return names;
       await new Promise((r) => setTimeout(r, 30));

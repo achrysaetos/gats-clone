@@ -50,7 +50,9 @@ test('skipped snapshots do not advance the delta encoder: a resumed client still
   assert.ok(first.crates && first.leaderboard && first.zones && first.match, 'the first snapshot the client sees is complete');
 });
 
-test('a socket stuck over the cap for stallMs is closed and its player removed; a brief spike is forgiven', async () => {
+test('a socket stuck over the cap for stallMs is closed and its player removed; a brief spike is forgiven', (t) => {
+  // The stall clock is the wall clock; mocked, so a loaded machine cannot stretch a short wait past stallMs.
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
   const room = createRoom('ffa', 'FFA', 13, accounts, 1, { ...LIMITS, minPlayers: 2, stallMs: 120 });
   const spiky = slowClient(room, 'Spiky');
   const stuck = slowClient(room, 'Stuck');
@@ -60,22 +62,22 @@ test('a socket stuck over the cap for stallMs is closed and its player removed; 
   spiky.raw.bufferedAmount = over; stuck.raw.bufferedAmount = over;
   room.tick();
   spiky.raw.bufferedAmount = 0; // drains in time
-  await new Promise((r) => setTimeout(r, 40));
+  t.mock.timers.tick(40);
   room.tick();
   assert.equal(spiky.terminated(), 0);
   stuck.raw.bufferedAmount = over;
-  await new Promise((r) => setTimeout(r, 120));
+  t.mock.timers.tick(120);
   room.tick();
   assert.equal(stuck.terminated(), 1, 'the stalled socket is terminated');
   assert.equal(room.info().humans, 1, 'and its player no longer holds a slot');
   assert.equal([...room.world.players.values()].some((p) => p.name === 'Stuck'), false, 'or a body in the world');
   spiky.raw.bufferedAmount = over;
   room.tick();
-  await new Promise((r) => setTimeout(r, 60));
+  t.mock.timers.tick(60);
   spiky.raw.bufferedAmount = 0;
   room.tick();
   spiky.raw.bufferedAmount = over;
-  await new Promise((r) => setTimeout(r, 90));
+  t.mock.timers.tick(90);
   room.tick();
   assert.equal(spiky.terminated(), 0, 'the clock restarts each time the backlog drains');
 });

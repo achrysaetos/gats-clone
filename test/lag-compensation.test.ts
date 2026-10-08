@@ -4,8 +4,8 @@ import { GUNS, rulesOf, WORLD } from '../src/shared/defs.ts';
 import { flightSec } from '../src/shared/sim/ballistics.ts';
 import { INTERP_DELAY_MS, parseClientMsg, type GameEvent } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { MAX_REWIND_MS, rewindCapFor } from '../src/shared/sim/combat.ts';
-import { IDLE_INPUT, type Player, type Wall, type World } from '../src/shared/sim/world.ts';
+import { flyThroughPast, MAX_REWIND_MS, rewindCapFor } from '../src/shared/sim/combat.ts';
+import { IDLE_INPUT, type Bullet, type Player, type Wall, type World } from '../src/shared/sim/world.ts';
 import { emptyWorld, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 let seq = 1_000_000;
@@ -93,7 +93,7 @@ for (const [label, capMs] of [['the rewind cap', MAX_REWIND_MS], [`a ${RTT_MS}ms
 test('a measured round trip caps the rewind at the round trip plus the render delay and a margin, never above the global cap', () => {
   assert.equal(rewindCapFor(null), MAX_REWIND_MS, 'unmeasured clients get the full cap');
   assert.ok(rewindCapFor(RTT_MS) < MAX_REWIND_MS / 1.5, `a ${RTT_MS}ms round trip caps at ${rewindCapFor(RTT_MS)}ms`);
-  assert.ok(rewindCapFor(RTT_MS) >= RTT_MS + INTERP_DELAY_MS, 'covers the view a lagged client really drew');
+  assert.ok(rewindCapFor(RTT_MS) >= RTT_MS + INTERP_DELAY_MS + 50, 'covers the view a lagged client really drew, with room for jitter');
   assert.equal(rewindCapFor(1000), MAX_REWIND_MS);
 });
 
@@ -108,4 +108,28 @@ test('input parsing keeps a numeric view time and drops anything else', () => {
   assert.equal(viewAtOf(-50), 0);
   assert.equal(viewAtOf('1234'), null);
   assert.equal(viewAtOf(undefined), null);
+});
+
+test('a rewound shot sees a moving victim where it was between two recorded ticks, not snapped to either', () => {
+  const R = WORLD.playerRadius;
+  const graze = (side: -1 | 1) => {
+    const w = emptyWorld();
+    const shooter = spawnAt(w, 100, 100);
+    const victim = spawnAt(w, 700, 400);
+    press(w, victim, { down: true });
+    run(w, 400);
+    const i = w.history.length - 4;
+    const a = w.history[i]!, b = w.history[i + 1]!;
+    const ya = a.poses.get(victim.id)!.y, yb = b.poses.get(victim.id)!.y;
+    assert.ok(yb - ya > 6, 'the victim moved between the two ticks');
+    // A round crossing the victim's path 2px inside its edge as it stood halfway between the ticks; the rewind's first look is one tick after it starts.
+    const mid = (a.at + b.at) / 2;
+    const y = (ya + yb) / 2 + side * (R - 2);
+    const round: Bullet = { id: 9999, owner: shooter.id, team: null, x: 600, y, vx: 1e5, vy: 0, left: 300, damage: 10, piercing: false, label: 'Test', gun: null, turret: null, lobbed: false, penetrate: 0, passed: [], blast: null, volley: 1 };
+    w.events = [];
+    flyThroughPast(w, round, w.now - (mid - TICK_MS));
+    return hitOn(w.events, victim);
+  };
+  assert.equal(graze(-1), true, 'grazing its trailing edge, above');
+  assert.equal(graze(1), true, 'grazing its leading edge, below');
 });

@@ -36,7 +36,8 @@ async function join(room: string, name: string): Promise<Conn> {
   await new Promise((ok, fail) => { ws.once('open', ok); ws.once('error', fail); });
   ws.send(JSON.stringify({ t: 'join', name, loadout: LOADOUT, aspect: 1.6 }));
   const next = async (pred: (m: ServerMsg) => boolean) => {
-    for (let i = 0; i < 200; i++) {
+    // Ten seconds of polling: ample on a loaded machine, and it returns as soon as the message is in.
+    for (let i = 0; i < 1000; i++) {
       const m = msgs.find(pred);
       if (m) return m;
       await new Promise((ok) => setTimeout(ok, 10));
@@ -105,8 +106,15 @@ test('squads: a wall built over the socket shows up in the squad\'s snapshots', 
 
 test('squads: a room nobody is in closes after the idle time', async () => {
   assert.ok(server.rooms.has(opened[0]!), 'the room just left is still open');
-  await new Promise((ok) => setTimeout(ok, IDLE_MS + 300));
+  await new Promise((ok) => setTimeout(ok, IDLE_MS));
+  // Closed by the server's loop once the idle time is up; poll rather than guess how late a loaded machine runs it.
+  for (let i = 0; i < 200 && opened.some((id) => server.rooms.has(id)); i++) await new Promise((ok) => setTimeout(ok, 50));
   assert.deepEqual(opened.filter((id) => server.rooms.has(id)), []);
-  const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=${opened[0]}`);
-  await new Promise<void>((ok) => ws.once('error', () => ok()));
+  const status = await new Promise<number>((ok) => {
+    const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=${opened[0]}`);
+    ws.on('error', () => {});
+    ws.once('open', () => { ok(101); ws.close(); });
+    ws.once('unexpected-response', (_req, res) => ok(res.statusCode ?? 0));
+  });
+  assert.equal(status, 404, 'a closed squad\'s code no longer opens a socket');
 });

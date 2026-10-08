@@ -18,9 +18,10 @@ test('lifetime medals unlock rung by rung as a career stat or a medal count clim
 
 test('distance walked is counted in km, and a best streak only ever rises', () => {
   const p = freshProfile('Bo', 0);
-  applyDelta(p, { distance: CAREER.distance.at[0] * KM_PX }, 1);
+  assert.deepEqual(applyDelta(p, { distance: CAREER.distance.at[0] * KM_PX - 1 }, 1), [], 'a pixel short of the first rung earns nothing');
+  assert.deepEqual(applyDelta(p, { distance: 1 }, 2), [{ track: 'distance', tier: 0 }]);
   assert.equal(trackCount(p, 'distance'), CAREER.distance.at[0]);
-  assert.ok(p.badges['distance:0'] !== undefined);
+  assert.equal(p.badges['distance:0'], 2, 'stamped with when the rung was crossed');
   applyDelta(p, { streak: 7 }, 2);
   applyDelta(p, { streak: 3 }, 3);
   assert.equal(p.bestStreak, 7);

@@ -141,13 +141,15 @@ test('a self-inflicted death credits only damage from the last few seconds, not 
   assert.deepEqual([healed.killer, healed.old.kills], [healed.victim.id, 0], 'a fight half a minute ago credits nobody');
 });
 
-test('a player who blows themselves up untouched credits nobody', () => {
+test('a player who blows themselves up untouched credits nobody, and a hunted one pays no bounty', () => {
   const w = emptyWorld();
   const victim = spawnAt(w, 900, 900);
+  equip(victim, 'executioner');
   const other = spawnAt(w, 300, 300);
   explode(w, victim.x, victim.y, 70, 300, { attacker: victim, team: null, label: 'Boom Slug' });
   const kill = w.events.find((e) => e.e === 'kill');
   assert.ok(kill?.e === 'kill');
   assert.equal(kill.killerId, victim.id);
+  assert.equal(kill.bounty, false, 'no bounty when nobody earned it');
   assert.deepEqual([victim.kills, other.kills, other.score], [0, 0, 0]);
 });

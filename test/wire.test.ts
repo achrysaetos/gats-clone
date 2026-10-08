@@ -81,3 +81,32 @@ test('the minimap rides every third snapshot, or at once when a mark appears or 
   }
   assert.ok(sent >= 60 / MINIMAP_EVERY && sent <= 60 / MINIMAP_EVERY + 2, `minimap sent ${sent}/60`);
 });
+
+test('a sticky field sent as null (the airdrop crate taken) clears what the client held; one left out keeps it', () => {
+  const w = createWorld('FFA', 3, 'plaza');
+  const p = spawnAt(w, 1500, 1500);
+  const snap = snapshotFor(w, p.id);
+  const crate = { x: 900, y: 900, k: 'crate' } as unknown as NonNullable<Snapshot['airdrop']>;
+  const held = fillSnapshot({ ...snap, airdrop: crate }, null)!;
+  assert.deepEqual(held.airdrop, crate);
+  const { airdrop: _, ...omitted } = snap;
+  assert.deepEqual(fillSnapshot(omitted, held)!.airdrop, crate, 'left out: unchanged');
+  assert.equal(fillSnapshot({ ...snap, airdrop: null }, held)!.airdrop, null, 'null: gone');
+});
+
+test('a minimap mark appearing or going rides at once, mid-cycle; marks only moving wait their turn', () => {
+  const w = createWorld('TDM', 3, ROTATION.TDM[0]);
+  const p = spawnAt(w, 1500, 1500, { team: 'red' });
+  const base = snapshotFor(w, p.id);
+  const mark = (x: number) => ({ x, y: 100, team: 'red' as const, pingAge: null });
+  const encode = makeSnapshotEncoder();
+  const sent = (marks: Snapshot['minimap']) => (JSON.parse(encode({ ...base, minimap: marks })) as SnapshotWire).minimap?.map((m) => m.x) ?? null;
+  assert.deepEqual(sent([mark(10)]), [10], 'the first snapshot carries it');
+  assert.equal(sent([mark(20)]), null, 'only moved: waits');
+  assert.deepEqual(sent([mark(30), mark(500)]), [30, 500], 'a second mark appears: sent at once');
+  assert.equal(sent([mark(40), mark(510)]), null, 'only moved: waits again');
+  assert.deepEqual(sent([mark(50)]), [50], 'a mark goes: sent at once');
+  assert.equal(sent([mark(60)]), null);
+  assert.equal(sent([mark(70)]), null);
+  assert.deepEqual(sent([mark(80)]), [80], 'and every third snapshot regardless');
+});

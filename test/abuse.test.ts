@@ -100,21 +100,31 @@ test('limits: flood, sockets per IP, full room, idle lobby, auth attempts', { ti
   }
 });
 
-test('a client that stops answering pings is dropped, a healthy one stays', { timeout: 10_000 }, async () => {
-  const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-heartbeat-')), limits: { heartbeatMs: 150 } });
+/** Rejects after `ms` instead of waiting forever, so a stuck step fails the test and its `finally` still closes the server (a test
+ * that times out mid-await never runs its `finally`, and the open server then keeps the whole test process from exiting). */
+const within = <T>(ms: number, label: string, p: Promise<T>) => Promise.race([p, new Promise<never>((_, fail) => setTimeout(() => fail(new Error(`timed out: ${label}`)), ms).unref())]);
+
+test('a client that stops answering pings is dropped, a healthy one stays', { timeout: 15_000 }, async () => {
+  const HEARTBEAT_MS = 250;
+  const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-heartbeat-')), limits: { heartbeatMs: HEARTBEAT_MS } });
   const humans = async () => ((await (await fetch(`http://localhost:${server.port}/api/servers`)).json()) as { id: string; humans: number }[]).find((r) => r.id === 'ffa')!.humans;
   try {
+    // The silent client answers pings by hand until both have joined, so a slow welcome under load cannot get it dropped before
+    // the test has seen it seated; then it falls silent.
     const silent = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`, { autoPong: false });
+    let answering = true;
+    silent.on('ping', (data) => { if (answering) silent.pong(data); });
     silent.on('error', () => {});
     const silentOpen = new Promise((r) => silent.once('open', r));
-    const healthy = await open(server.port);
-    await silentOpen;
+    const healthy = await within(5000, 'healthy open', open(server.port));
+    await within(5000, 'silent open', silentOpen);
     silent.send(JOIN('Ghost')); healthy.send(JOIN('Alive'));
-    await Promise.all([nextMsg(silent, 'welcome'), nextMsg(healthy, 'welcome')]);
+    await within(5000, 'welcomes', Promise.all([nextMsg(silent, 'welcome'), nextMsg(healthy, 'welcome')]));
     assert.equal(await humans(), 2);
     const dropped = closed(silent);
-    await dropped;
-    await new Promise((r) => setTimeout(r, 600));
+    answering = false;
+    await within(10 * HEARTBEAT_MS, 'the silent client dropped', dropped);
+    await new Promise((r) => setTimeout(r, 4 * HEARTBEAT_MS));
     assert.equal(healthy.readyState, WebSocket.OPEN, 'a client answering pings survives several heartbeats');
     assert.equal(await humans(), 1, 'the silent client no longer holds a human slot');
     healthy.close();

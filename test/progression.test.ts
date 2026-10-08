@@ -267,3 +267,42 @@ test('another attacker who took 30% of the victim\'s health gets the assist scor
   assert.deepEqual(k?.e === 'kill' && k.assisters, [helper.id]);
   assert.deepEqual([helper.score, chipper.score, killer.score], [WORLD.assistScore, 0, WORLD.killScore]);
 });
+
+test('a pick is taken only for the open level: a stale or skipped-ahead pick is refused and changes nothing', () => {
+  const w = emptyWorld();
+  const p = spawnAt(w, 500, 500);
+  p.score = LEVELS[2]!.score;
+  p.level = 2;
+  const option = pickOptions({ k: 'perk', tier: 1 }, p.gun)[0]!;
+  assert.equal(choosePick(w, p.id, 2, option), false, 'level 2 waits behind the open level-1 evolve');
+  assert.deepEqual(p.perks, {});
+  assert.equal(choosePick(w, p.id, 2, 'handCannon'), false, 'the right gun named against the wrong level');
+  assert.equal(p.gun, 'pistol');
+  assert.equal(choosePick(w, p.id, 1, 'handCannon'), true);
+  assert.equal(choosePick(w, p.id, 1, 'handCannon'), false, 'a repeated pick is stale');
+  assert.equal(p.gun, 'handCannon');
+});
+
+test('a player who is dead scores nothing, even for a kill their round lands after they fell', () => {
+  const w = emptyWorld();
+  w.firstBlood = true;
+  const shooter = spawnAt(w, 500, 500);
+  const victim = spawnAt(w, 800, 500);
+  shooter.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
+  damagePlayer(w, victim, 10_000, { attacker: shooter, team: null, label: 'Pistol', piercing: true, via: 'bullet', fromX: shooter.x, fromY: shooter.y });
+  assert.equal(victim.life.k, 'dead');
+  assert.equal(shooter.score, 0);
+});
+
+test('an attacker who died before the kill gets no assist', () => {
+  const w = emptyWorld();
+  const helper = spawnAt(w, 500, 500);
+  const killer = spawnAt(w, 900, 500);
+  const victim = spawnAt(w, 700, 700);
+  w.firstBlood = true;
+  damagePlayer(w, victim, 40, { attacker: helper, team: null, label: 'test', piercing: true, via: 'bullet', fromX: helper.x, fromY: helper.y });
+  helper.life = { k: 'dead', respawnAt: w.now + WORLD.respawnMs };
+  damagePlayer(w, victim, 100, { attacker: killer, team: null, label: 'test', piercing: true, via: 'bullet', fromX: killer.x, fromY: killer.y });
+  const k = w.events.find((e) => e.e === 'kill');
+  assert.deepEqual(k?.e === 'kill' && k.assisters, []);
+});

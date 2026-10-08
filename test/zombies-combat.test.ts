@@ -50,6 +50,19 @@ test('a bullet stops in the first zombie it hits unless the gun pierces', () => 
   assert.equal(1000 - back.hp, GUNS.railSlug.damage, 'a piercing round reaches the second');
 });
 
+test('a plated zombie\'s plate comes off every round, unless the round pierces armor', () => {
+  const w = nightWorld();
+  const p = spawnAt(w, X, Y);
+  const plated = addZombie(w, 'plated', X, Y + 200, 1000);
+  shootOnce(w, p, DOWN);
+  assert.equal(1000 - plated.hp, GUNS.pistol.damage - ZOMBIES.plated.plate);
+  const piercer = spawnAt(w, X + 300, Y);
+  piercer.perks = { 1: 'piercing' };
+  const bare = addZombie(w, 'plated', X + 300, Y + 200, 1000);
+  shootOnce(w, piercer, DOWN);
+  assert.equal(1000 - bare.hp, GUNS.pistol.damage, 'an armor-piercing round takes no notice of the plate');
+});
+
 test('a piercing round that ends a tick inside a zombie hits it once', () => {
   const w = nightWorld();
   const p = spawnAt(w, X, Y);

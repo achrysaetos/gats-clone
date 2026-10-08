@@ -127,3 +127,17 @@ test('a query finds every wall it crosses, including one it only grazes at a cor
     }
   }
 });
+
+test('two wall lists that share their first wall but not the rest each get answers from their own walls', () => {
+  const fixed = (x: number, y: number) => ({ x, y, w: 40, h: 40, built: false, expiresAt: Infinity });
+  const first = fixed(0, 0);
+  // Thirty walls in a row along y = 1000, and thirty in a column along x = 1000: only the first wall is shared.
+  const row = [first, ...Array.from({ length: 30 }, (_, i) => fixed(100 + i * 60, 1000))];
+  const column = [first, ...Array.from({ length: 30 }, (_, i) => fixed(1000, 100 + i * 60))];
+  assert.ok(prefixGrid(row) && prefixGrid(column), 'both are long enough to be gridded');
+  assert.notEqual(prefixGrid(row), prefixGrid(column), 'each its own grid');
+  assert.equal(segmentBlocked(row, 500, 900, 0, 200), true, 'the row crosses x = 500');
+  assert.equal(segmentBlocked(column, 500, 900, 0, 200), false, 'the column does not');
+  assert.equal(segmentBlocked(column, 900, 500, 200, 0), true);
+  assert.equal(segmentBlocked(row, 900, 500, 200, 0), false);
+});

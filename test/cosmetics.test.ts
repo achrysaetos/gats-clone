@@ -137,6 +137,12 @@ test('cosmetics ride the snapshot wire sticky and come out on each PlayerView', 
   assert.deepEqual(t.players.find((p) => p.id === a.id)!.cos, { c: 'c_tiger' });
   b.cos = null;
   assert.equal(tick().players.find((p) => p.id === b.id)!.cos, undefined, 'taking it off clears it');
+  a.cos = null;
+  const bare = tick();
+  assert.deepEqual(bare.players.map((p) => p.cos), [undefined, undefined], 'the last one taken off clears too, though nobody in view wears anything');
+  assert.deepEqual(sentCos.slice(-1), [0], 'by an empty set, sent once');
+  tick();
+  assert.equal(sentCos.at(-1), undefined, 'and not again');
 });
 
 test('in a room, join cosmetics and equip messages are validated against what the profile has unlocked, and bots wear things', async (t) => {

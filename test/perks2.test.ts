@@ -190,6 +190,9 @@ test('Bloodlust: heal 15% of the damage you deal', () => {
   human.perks = { 2: 'bloodlust' };
   hit(w, victim, human, 20);
   assert.ok(Math.abs(hpOf(human) - (100 + 0.15 * 20 * 4)) < 1e-9, 'a human heals in its own bigger health scale');
+  if (p.life.k === 'alive') p.life.hp = effectiveStats(p).maxHp - 1;
+  hit(w, victim, p, 20);
+  assert.equal(hpOf(p), effectiveStats(p).maxHp, 'never past full health');
 });
 
 test('Recon: +15% view radius, and you see enemies reload', () => {
