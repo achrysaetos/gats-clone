@@ -23,3 +23,13 @@ test('the assist only ever nudges: never past its cap, and not at all for a targ
   assert.equal(assistAngle(0, me, 'pistol', 700, [{ x: 900, y: 10, vx: 0, vy: 0 }]), 0, 'out of range');
   assert.equal(assistAngle(0, me, 'pistol', 700, []), 0, 'no one to help with');
 });
+
+test('the assist helps toward the target nearest the aim, and lets go gently toward the edge of its cone', () => {
+  const me = { x: 0, y: 0 };
+  const at = (deg: number) => ({ x: Math.cos(deg * DEG) * 400, y: Math.sin(deg * DEG) * 400, vx: 0, vy: 0 });
+  assert.ok(assistAngle(0, me, 'pistol', 700, [at(-5), at(2)]) > 0, 'two in the cone: it leans to the nearer one');
+  assert.ok(assistAngle(0, me, 'pistol', 700, [at(5), at(-2)]) < 0);
+  const nudge = (deg: number) => assistAngle(0, me, 'pistol', 700, [at(deg)]) / DEG;
+  assert.ok(nudge(6) < nudge(3) * 0.75, `a target near the cone's edge pulls less (${nudge(6).toFixed(2)} vs ${nudge(3).toFixed(2)} deg)`);
+  for (const deg of [0.5, 1, 2, 3, 5, 6.5]) assert.ok(nudge(deg) > 0 && nudge(deg) < deg, `it never swings the aim past a target ${deg} deg off`);
+});

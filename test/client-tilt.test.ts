@@ -1,7 +1,8 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGroundCache, drawSolids, FACE, FOOT, LIGHT, LIP, MATERIALS, paintSolids, shadowHull, wallSolids, type Solid } from '../src/client/tilt.ts';
+import { buildingSolid, crateSolid, createGroundCache, drawSolids, FACE, FOOT, LIGHT, LIP, MATERIALS, paintSolids, shadowHull, standsUp, wallSolids, type Solid } from '../src/client/tilt.ts';
+import { ROYALE, WORLD } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 
 type Call = { name: string; args: number[]; fill: unknown };
@@ -33,6 +34,9 @@ test('a solid casts its shadow from its own rect, as far along the light as it i
   // The shadow starts where the wall meets the floor: the foot of its front face.
   const len = Math.hypot(fx! - 160, fy! - (220 + FACE.concrete));
   assert.ok(Math.abs((fx! - 160) / len - LIGHT.x / Math.hypot(LIGHT.x, LIGHT.y)) < 1e-9, 'it falls along the light');
+  // The sun stands up-screen and a little left, the same for every solid: shadows fall down-screen, leaning right.
+  const deg = (Math.atan2(fy! - (220 + FACE.concrete), fx! - 160) * 180) / Math.PI;
+  assert.ok(deg > 45 && deg < 60, `the shadow falls ${deg.toFixed(1)} degrees below the horizontal`);
 });
 
 test('each top face is exactly its collision rect, and nothing of a solid is drawn past its lip, its front face and the rubble at its foot', () => {
@@ -96,6 +100,19 @@ test('a map wall is drawn in its own material whatever its shape, and a built wa
     { ...long, built: false, material: 'sandstone' }, { ...square, built: false, material: 'concrete' }, { ...square, built: true },
   ]).map((s) => s.kind);
   assert.deepEqual(kinds, ['sandstone', 'concrete', 'slate']);
+  const poly = { ...square, built: false as const, material: 'concrete' as const, pts: [0, 0, 100, 0, 50, 80], pid: 0 };
+  assert.deepEqual(wallSolids([poly, { ...long, built: false, material: 'sandstone' }]).map((s) => s.kind), ['sandstone'], 'a polygon part is left to the polygon art, never drawn as its bounding box');
+});
+
+test('crates show their wear, a squad wall its upgrade, and a spike strip lies flat', () => {
+  assert.deepEqual(crateSolid({ id: 1, x: 10, y: 20, hp: WORLD.crateHp / 4, size: 40 }), { kind: 'crate', x: 10, y: 20, w: 40, h: 40, wear: 0.75 });
+  assert.equal(crateSolid({ id: 2, x: 0, y: 0, hp: ROYALE.dropHp, size: 60, drop: true }).wear, 0, 'a full supply drop is unmarked');
+  assert.equal(crateSolid({ id: 2, x: 0, y: 0, hp: ROYALE.dropHp, size: 60, drop: true }).kind, 'supply');
+  const wall = (lv?: number) => buildingSolid({ kind: 'wall', cx: 3, cy: 4, hp: 10, ...(lv ? { lv } : {}) } as never).kind;
+  assert.deepEqual([wall(), wall(2), wall(3)], ['wood', 'sandbag', 'steel']);
+  assert.equal(buildingSolid({ kind: 'wall', cx: 3, cy: 4, hp: 4 } as never).wear, 0.6);
+  assert.equal(standsUp({ kind: 'spikes', cx: 0, cy: 0, hp: 10 } as never), false);
+  assert.equal(standsUp({ kind: 'wall', cx: 0, cy: 0, hp: 10 } as never), true);
 });
 
 test('Outpost keeps the look its shapes gave it: blocky walls sandstone, long walls concrete', () => {

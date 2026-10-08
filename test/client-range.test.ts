@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Snapshot } from '../src/shared/protocol.ts';
-import { RANGE, TARGETS, targetPos } from '../src/shared/range.ts';
+import { RANGE, targetPos } from '../src/shared/range.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt, stateOf, targetPose } from '../src/client/targetart.ts';
 import { addFeedback, NO_FEEDBACK } from '../src/client/feedback.ts';
@@ -73,9 +73,16 @@ test('a hit on a target sounds a hit marker for the shooter, and a fall is a kil
 });
 
 test('a slider is where the shared clock puts it, in step on both sides of the wire', () => {
+  // The server and the page both place it with targetPos from the shared clock alone: a pure function of time, on its rail, at its speed.
   const slider = layout.targets.find((t) => t.rail)!;
-  for (const t of [0, 1234, 98_765]) assert.deepEqual(targetPos(slider, t), targetPos(slider, t));
-  const xs = Array.from({ length: 200 }, (_, k) => targetPos(slider, k * 50).y);
-  assert.ok(Math.max(...xs) - Math.min(...xs) > slider.rail!.reach * 1.8, 'it covers its rail');
-  assert.ok(TARGETS.rail.hp > 0);
+  const rail = slider.rail!;
+  const along = (t: number) => (rail.axis === 'x' ? targetPos(slider, t).x - slider.x : targetPos(slider, t).y - slider.y);
+  const across = (t: number) => (rail.axis === 'x' ? targetPos(slider, t).y - slider.y : targetPos(slider, t).x - slider.x);
+  const period = (4 * rail.reach / rail.speed) * 1000;
+  const xs = Array.from({ length: 400 }, (_, k) => along(k * 25));
+  assert.ok(xs.every((x) => Math.abs(x) <= rail.reach + 1e-9) && Array.from({ length: 50 }, (_, k) => across(k * 97)).every((x) => x === 0), 'it stays on its rail');
+  assert.ok(Math.max(...xs) - Math.min(...xs) > rail.reach * 1.8, 'it covers its rail');
+  for (const t of [0, 1234, 98_765]) assert.ok(Math.abs(along(t) - along(t + period)) < 1e-6, 'back and forth with a fixed period');
+  const steps = xs.slice(1).map((x, k) => Math.abs(x - xs[k]!) / 0.025);
+  assert.ok(steps.every((v) => v <= rail.speed + 1e-6) && steps.filter((v) => Math.abs(v - rail.speed) < 1e-6).length > steps.length * 0.9, 'gliding at its rail speed');
 });

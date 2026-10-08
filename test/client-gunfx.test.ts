@@ -60,8 +60,12 @@ test('flesh and ichor differ in colour and a hit marks the floor briefly', () =>
 });
 
 test('a casing arcs, bounces lower each time, lands and lies still before it fades', () => {
-  const peak = (vz: number) => Math.max(...Array.from({ length: 200 }, (_, i) => casingHeight(vz, i / 200)));
-  assert.ok(peak(200) > 0);
+  const hs = Array.from({ length: 3000 }, (_, i) => casingHeight(200, i / 1000));
+  const peaks = hs.filter((h, i) => i > 0 && h > 0.01 && h >= hs[i - 1]! && h > (hs[i + 1] ?? 0));
+  assert.ok(peaks.length >= 2, `it bounces (${peaks.length} arcs)`);
+  assert.ok(Math.abs(peaks[0]! - (200 * 200) / (2 * CASING.gravity)) < 0.5, `the first arc is a thrown arc (${peaks[0]})`);
+  assert.ok(peaks.every((p, i) => i === 0 || p < peaks[i - 1]! * 0.8), `each bounce lower: ${peaks.map((p) => p.toFixed(1))}`);
+  assert.ok(hs.every((h) => h >= 0), 'never through the floor');
   assert.equal(casingHeight(200, 3), 0);
   const fx = createGunFx(caps);
   muzzleFlash(fx, { x: 50, y: 50 }, 0, 'pistol', 0, () => 0.5);

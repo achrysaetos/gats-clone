@@ -35,7 +35,10 @@ test('a timer a whole step late sends one input and carries on, never a burst', 
 });
 
 test('a move key sends at once unless an input went out under half a tick ago, and a few key changes a second barely add inputs', () => {
-  assert.equal(pullsInput(100, 100 - STEP / 2, STEP), true);
+  // Exactly half a tick ago counts (a 20 ms tick keeps the boundary exact in floating point).
+  assert.equal(pullsInput(100, 90, 20), true);
+  assert.equal(pullsInput(100, 90.5, 20), false);
+  assert.equal(pullsInput(100, 100 - STEP / 2 - 0.01, STEP), true);
   assert.equal(pullsInput(100, 100 - STEP / 2 + 1, STEP), false);
   // Ten seconds of the timer with four key changes a second pulling the schedule forward: about one input a tick, plus at most one per change.
   let due = 0, sentAt = -Infinity, sent = 0, next = 0;

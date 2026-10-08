@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  EMPTY_BUFFER, lerpAngle, MAX_EXTRAPOLATE_MS, newestSnap, pushSnap, renderTime, sampleAt, TICK_MS, type SnapBuffer,
+  EMPTY_BUFFER, lerpAngle, MAX_EXTRAPOLATE_MS, newestSnap, pushSnap, renderTime, sampleAt, serverNow, TICK_MS, type SnapBuffer,
 } from '../src/client/interp.ts';
 import { INTERP_DELAY_MS, type PlayerView, type Snapshot } from '../src/shared/protocol.ts';
 
@@ -188,4 +188,45 @@ test('a server that lost a second of ticks is drawn interpolated again within th
   for (; at < resumed + 3000; tick++, at += TICK_MS) buf = pushSnap(buf, walking(tick), at);
   const ahead = aheadOfNewest(buf, at);
   assert.ok(ahead < 0, `drawn ${ahead.toFixed(0)}ms past the newest snapshot three seconds after the pause`);
+});
+
+test('a burst after a stall is late delivery, not a slower server: the clock estimate barely moves and the drawn moment stays in step', () => {
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 19; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS);
+  const before = buf.serverClockOffset!;
+  // The server kept its clock: ticks 20..50 were only held up for a second and arrive together, then delivery resumes on time.
+  const at = 19 * TICK_MS + 1000;
+  for (let tick = 20; tick <= 50; tick++) buf = pushSnap(buf, walking(tick), at);
+  assert.ok(buf.serverClockOffset! - before > -100, `the estimate fell ${(before - buf.serverClockOffset!).toFixed(0)}ms for a burst`);
+  let tick = 51, worst = 0;
+  for (let now = at; now < at + 3000; now += 16) {
+    while (tick * TICK_MS <= now) { buf = pushSnap(buf, walking(tick), tick * TICK_MS); tick++; }
+    worst = Math.min(worst, renderTime(buf, now) - (now + before - INTERP_DELAY_MS));
+  }
+  assert.ok(worst > -100, `the drawn moment fell ${(-worst).toFixed(0)}ms behind after the burst`);
+});
+
+test('the server clock is the newest estimate with no interpolation delay, and unknown before the first snapshot', () => {
+  assert.equal(serverNow(EMPTY_BUFFER, 1000), null);
+  let buf = EMPTY_BUFFER;
+  for (let tick = 1; tick <= 10; tick++) buf = pushSnap(buf, walking(tick), tick * TICK_MS + 40);
+  assert.ok(Math.abs(serverNow(buf, 10 * TICK_MS + 40)! - 10 * TICK_MS) < 1e-9, 'the moment the newest snapshot arrived is its tick\'s time');
+  assert.ok(Math.abs(serverNow(buf, 10 * TICK_MS + 140)! - (10 * TICK_MS + 100)) < 1e-9, 'and it runs on with the wall clock');
+});
+
+test('bullets glide between snapshots by id; thrown grenades and facing stop at the newest snapshot instead of extrapolating', () => {
+  const at = (tick: number, x: number, angle: number): Snapshot => ({
+    ...snap(tick, [player(1, 0, 0), player(2, 0, 0, angle)]),
+    bullets: [{ id: 9, x, y: 0, vx: 900, vy: 0, owner: 2, gun: 'pistol' }],
+    thrown: [{ id: 4, kind: 'grenade', x, y: 0, r: 8, owner: 2 }],
+  });
+  const snaps = [at(1, 0, 0), at(2, 30, 0.6)];
+  const mid = sampleAt(snaps, 1.5 * TICK_MS)!;
+  assert.ok(Math.abs(mid.bullets[0]!.x - 15) < 1e-9, `bullet drawn halfway (x=${mid.bullets[0]!.x})`);
+  assert.ok(Math.abs(mid.thrown[0]!.x - 15) < 1e-9, `grenade drawn halfway (x=${mid.thrown[0]!.x})`);
+  assert.ok(Math.abs(mid.players.find((p) => p.id === 2)!.angle - 0.3) < 1e-9, 'facing turns halfway');
+  const past = sampleAt(snaps, 2 * TICK_MS + 50)!;
+  assert.ok(past.bullets[0]!.x > 30, 'a bullet flies on past the newest snapshot');
+  assert.equal(past.thrown[0]!.x, 30, 'a grenade is not thrown past where the server last had it (it may have landed)');
+  assert.equal(past.players.find((p) => p.id === 2)!.angle, 0.6, 'a soldier is not turned past the aim the server last sent');
 });

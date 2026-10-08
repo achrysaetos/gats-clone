@@ -69,3 +69,14 @@ test('a turret\'s shot draws its round on the render clock from the barrel tip t
   const blocked = scheduleEffects({ ...snapWith([shot]), zombies: [[7, 0, 100, 400, 10], [8, 0, 100, 300, 10]] }, 700)[0]!.fx;
   assert.ok(blocked.kind === 'tracer' && Math.abs(blocked.reach - (300 - ZOMBIES.walker.radius - 200 - muzzle)) < 1e-6, JSON.stringify(blocked));
 });
+
+test('a hit on a zombie names it for the hit flash; a range target\'s hit is left to the target art; a zombie kill splats', () => {
+  const fx = scheduleEffects(snapWith([
+    { e: 'dmg', attacker: ME, victim: 60, amount: 12, x: 4, y: 4, kind: 'zombie' },
+    { e: 'dmg', attacker: ME, victim: 900, amount: 25, x: 9, y: 9, kind: 'target' },
+    { e: 'zkill', id: 60, kind: 'walker', x: 4, y: 4, by: ME },
+  ]), 300).map((p) => p.fx);
+  assert.deepEqual(fx.map((f) => f.kind), ['impact', 'splat']);
+  assert.ok(fx[0]!.kind === 'impact' && fx[0]!.victim === 60 && fx[0]!.surface === 'zombie');
+  assert.deepEqual(fx[1], { kind: 'splat', x: 4, y: 4, zombie: 'walker', by: ME });
+});

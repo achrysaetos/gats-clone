@@ -82,14 +82,34 @@ test('the degrader fires only after ten seconds of slow frames, resets on a good
   assert.equal(capped, false, 'a steady 30 Hz power-saver cap is not slow');
 });
 
-test('the meter reads fps and the slowest recent frame once it has a few', () => {
+test('a degrader reset (the page was hidden) forgets the slow seconds before it', () => {
+  const d = createDegrader();
+  let fired = false, t = 0;
+  for (; t < 9_000; t += 40) if (d.push(40, t)) fired = true;
+  d.reset();
+  for (const end = t + 4_000; t < end; t += 40) if (d.push(40, t)) fired = true;
+  assert.equal(fired, false, 'nine slow seconds, a reset, then four more is not ten in a row');
+  for (const end = t + 8_000; t < end; t += 40) if (d.push(40, t)) fired = true;
+  assert.equal(fired, true, 'but twelve after the reset is');
+});
+
+test('the meter reads fps and the slowest recent frame once it has a few, over its last 60 frames only', () => {
   const m = createMeter();
   assert.equal(m.read(), null);
-  for (let i = 0; i < 10; i++) m.push(20);
+  for (let i = 0; i < 4; i++) m.push(20);
+  assert.equal(m.read(), null, 'four frames are too few to say');
+  for (let i = 0; i < 6; i++) m.push(20);
   m.push(50);
   const r = m.read()!;
   assert.equal(r.worst, 50);
-  assert.ok(r.fps > 40 && r.fps < 50);
+  assert.ok(Math.abs(r.ms - 250 / 11) < 1e-9, `the mean frame (${r.ms})`);
+  assert.ok(Math.abs(r.fps - 1000 / (250 / 11)) < 1e-9);
+  for (let i = 0; i < 60; i++) m.push(10);
+  assert.deepEqual(m.read(), { fps: 100, ms: 10, worst: 10 }, 'the old slow frame has rolled out of the window');
+  m.push(0);
+  m.push(-3);
+  m.push(5000);
+  assert.deepEqual(m.read(), { fps: 100, ms: 10, worst: 10 }, 'zero, negative and stall-length frames are not frames');
 });
 
 test('advanced overrides are snapped to the steps on offer', () => {

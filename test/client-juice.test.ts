@@ -24,6 +24,13 @@ test('a hit-stop is capped, extends while running, and cannot be chained by a he
   assert.ok(requestStop(c, 100, 500));
   assert.equal(c.until - 100, HITSTOP.maxMs, 'capped');
   assert.ok(!requestStop(c, 120, 30), 'a shorter one inside it adds nothing');
+  // A run of kills extends a stop, but never past maxMs from when it began.
+  const k = newClock(0);
+  requestStop(k, 1000, 30);
+  assert.ok(requestStop(k, 1020, 30), 'a second kill inside it extends it');
+  assert.equal(k.until, 1050);
+  requestStop(k, 1045, 55);
+  assert.equal(k.until, 1000 + HITSTOP.maxMs, 'chained stops are capped from the first one\'s start');
   stepClock(c, 200);
   assert.ok(!requestStop(c, 210, 40), 'cooldown');
   assert.ok(requestStop(c, 160 + HITSTOP.cooldownMs + 60, 40));

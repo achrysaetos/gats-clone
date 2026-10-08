@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FIXED_RADIO, hiddenRadios, RADIO_REACH } from '../src/shared/radio.ts';
+import { FIXED_RADIO, hiddenRadios, RADIO_REACH, STATION_IDS } from '../src/shared/radio.ts';
 import type { ClientMsg, Snapshot } from '../src/shared/protocol.ts';
 import { getPersonalStation, getRoomStation, getStation, setPersonalStation, setRoomStation } from '../src/client/music.ts';
 import { __test, onRoomRadio, radioDebug, radioFinds, radioPress, radioUpdate, stationLabel } from '../src/client/radio.ts';
@@ -49,8 +49,13 @@ test('E at a hidden radio cycles your own music through the map default and Off,
   assert.equal(radioPress(state, 700, () => {}), true);
   assert.equal(getPersonalStation(), 'oldtown');
   assert.equal(radioFinds(), 1, 'one radio counts once');
-  for (let i = 0; i < 20; i++) radioPress(state, 1000 + i * 400, () => {});
-  assert.ok(['march', 'oldtown', 'quarry', 'harbor', 'market', 'museum', 'subpen', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland', 'range', 'outpost', 'off', null].includes(getPersonalStation()));
+  // Round the whole dial: every station after the old town in order, then Off, then back to the map's own track.
+  const dial: (string | null)[] = [];
+  for (let i = 0; i < STATION_IDS.length - 1; i++) { radioPress(state, 1000 + i * 400, () => {}); dial.push(getPersonalStation()); }
+  assert.deepEqual(dial, [...STATION_IDS.slice(STATION_IDS.indexOf('oldtown') + 1), null]);
+  assert.ok(STATION_IDS.includes('off'), 'Off is on the dial');
+  assert.equal(getStation(), null, 'the map default again');
+  assert.match(stationLabel(null, 'harbor'), /\(map default\)/);
   assert.deepEqual(sent, [], 'no message for a personal radio');
   // Nowhere near a radio: E is not ours.
   radioUpdate(stateOf(snapAt({ mode: 'TDM', x: 5, y: 5, round: 77 }), 'plaza'), 20_000, () => {});
@@ -84,6 +89,18 @@ test('the fixed radio turns at once and tells the server, and the squad\'s stati
   assert.deepEqual(sent, [{ t: 'radio', station: 'range' }], 'the dial goes on to the next station after wasteland');
 });
 
+test('a dead soldier lying beside a radio gets no prompt and cannot tune it', () => {
+  reset();
+  const spot = hiddenRadios('plaza', 77)[0]!;
+  const snap = snapAt({ mode: 'TDM', x: spot.x + 20, y: spot.y, round: 77 });
+  (snap.players[0] as { alive: boolean }).alive = false;
+  const state = stateOf(snap, 'plaza');
+  radioUpdate(state, 0, () => {});
+  assert.equal(radioDebug().near, null);
+  assert.equal(radioPress(state, 100, () => {}), false);
+  assert.equal(getPersonalStation(), null);
+});
+
 test('a round through a radio makes it sputter, and the range radio stands where the range says', () => {
   reset();
   const at = FIXED_RADIO.range!;
@@ -94,15 +111,40 @@ test('a round through a radio makes it sputter, and the range radio stands where
   assert.ok(radioDebug().placed[0]!.sputtering < 9000, 'it settles again');
 });
 
-test('the radio and its prompt draw without error in every state', () => {
-  const calls: string[] = [];
-  const g: Record<string, unknown> = new Proxy({}, { get: (_t, k) => { if (k === 'measureText') return () => ({ width: 80 }); if (k === 'createRadialGradient') return () => ({ addColorStop() {} }); return (..._a: unknown[]) => { calls.push(String(k)); }; }, set: () => true });
-  const ctx = g as unknown as CanvasRenderingContext2D;
-  for (const o of [{ off: false, sputter: 0, near: true }, { off: true, sputter: 0, near: false }, { off: false, sputter: 0.8, near: false }]) {
-    drawRadio(ctx, { x: 10, y: 10, scale: 1.5, now: 1234, pulse: 0.6, dark: 0.5, needle: 0.4, quiet: false, reduced: false, ...o });
-    drawRadio(ctx, { x: 10, y: 10, scale: 1.1, now: 99, pulse: 0, dark: 0, needle: 1, quiet: true, reduced: true, ...o });
-  }
-  drawRadioPrompt(ctx, 0, 0, 100, 'Radio · Toy March', 'E', false, 1.45);
-  drawRadioPrompt(ctx, 0, 0, 100, 'Radio · Off', 'TAP', true);
-  assert.ok(calls.length > 100);
+/** A recording context: every fill's colour, every string drawn, and the glow's brightest stop. */
+function radioRecorder() {
+  const fills: unknown[] = [], texts: string[] = [], glow: number[] = [];
+  const target: Record<string | symbol, unknown> = {};
+  const ctx = new Proxy(target, {
+    get: (t, k) => {
+      if (k in t) return t[k];
+      if (k === 'measureText') return () => ({ width: 80 });
+      if (k === 'fill' || k === 'fillRect') return () => { fills.push(t.fillStyle); };
+      if (k === 'fillText') return (s: string) => { texts.push(s); };
+      if (k === 'createRadialGradient') return () => ({ addColorStop: (at: number, c: string) => { const a = /^rgba\(255, 190, 90, ([\d.]+)\)$/.exec(c); if (at === 0 && a) glow.push(Number(a[1])); } });
+      return () => {};
+    },
+    set: (t, k, v) => { t[k] = v; return true; },
+  }) as unknown as CanvasRenderingContext2D;
+  return { ctx, fills, texts, glow };
+}
+
+test('a radio playing lights its amber lamp and glows; one turned off or sputtering goes dark; the prompt names the station and the key', () => {
+  const draw = (o: { off: boolean; sputter: number }) => {
+    const r = radioRecorder();
+    drawRadio(r.ctx, { x: 10, y: 10, scale: 1.5, now: 1234, pulse: 0.6, dark: 0.5, needle: 0.4, quiet: false, reduced: false, near: false, ...o });
+    return r;
+  };
+  const DARK_LAMP = '#6b4a2c';
+  const on = draw({ off: false, sputter: 0 }), off = draw({ off: true, sputter: 0 }), hit = draw({ off: false, sputter: 0.8 });
+  assert.equal(on.fills.includes(DARK_LAMP), false, 'tuned in: the lamp is lit');
+  assert.equal(off.fills.includes(DARK_LAMP), true, 'off: the lamp is dark');
+  assert.equal(hit.fills.includes(DARK_LAMP), true, 'shot: the lamp goes out while it sputters');
+  assert.ok(off.glow[0]! < on.glow[0]! * 0.5, `an off radio barely glows (${off.glow[0]} vs ${on.glow[0]})`);
+  const prompt = radioRecorder();
+  drawRadioPrompt(prompt.ctx, 0, 0, 100, 'Radio · Toy March', 'E', false, 1.45);
+  assert.ok(prompt.texts.includes('Radio · Toy March') && prompt.texts.includes('E'), `drew ${prompt.texts}`);
+  const touch = radioRecorder();
+  drawRadioPrompt(touch.ctx, 0, 0, 100, 'Radio · Off', 'TAP', true);
+  assert.ok(touch.texts.includes('Radio · Off') && touch.texts.includes('TAP'));
 });
