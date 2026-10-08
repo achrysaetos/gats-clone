@@ -209,10 +209,11 @@ export const LOAD_SPEED_FLOOR = 0.58;
 
 /**
  * Sprint: held with movement, it multiplies move speed by `speedMul` (after the loadout floor, so Lightweight stacks) and lowers the gun.
- * You cannot fire while sprinting (a click ends the sprint), but you can reload. Leaving sprint raises the gun for `raiseMs` (no shot) and starts a
- * settle: spread is `settleMul` times normal and eases out (quadratically) to normal over `settleMs`.
+ * You cannot fire while sprinting (a click ends the sprint), but you can reload. Leaving sprint pulls the gun back up over `raiseMs`, with no shot
+ * until it is up (a click made that early is not kept; a held trigger fires once the gun is up), and starts a settle: spread is `settleMul` times
+ * normal and eases out (quadratically) to normal over `settleMs`.
  */
-export const SPRINT = { speedMul: 1.35, settleMul: 2.2, settleMs: 2000, raiseMs: 150 } as const;
+export const SPRINT = { speedMul: 1.35, settleMul: 2.2, settleMs: 2000, raiseMs: 1000 } as const;
 /** How many of the tier-2 pool a level-up offers, drawn per life. */
 export const TIER2_OFFER = 4;
 

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { polyParts } from '../src/shared/mapgeo.ts';
 import { test } from 'node:test';
 import { WORLD, type ModeId } from '../src/shared/defs.ts';
-import { MAP_MS, MAP_NOTICE_MS, MAPS, ROTATION, type MapId } from '../src/shared/maps.ts';
+import { MAP_MS, MAP_NOTICE_MS, MAPS, ROTATION, rotationMap, type MapId } from '../src/shared/maps.ts';
+
+/** The first two maps a seed-1 room deals (the rotation is a seeded shuffle; see `rotationMap`). */
+const dealt = (mode: keyof typeof ROTATION): [MapId, MapId] => [rotationMap(mode, 1, 0), rotationMap(mode, 1, 1)];
 import { addPlayer } from '../src/shared/sim.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
 import { snapshotFor, wallViews } from '../src/shared/sim/snapshot.ts';
@@ -31,7 +34,7 @@ function populate(w: World) {
 
 for (const [mode, winScore, side] of [['TDM', WORLD.tdmWinScore, 'red'], ['DOM', WORLD.domWinScore, 'blue']] as const) {
   test(`${mode}: the round restart loads the next map and moves every living player into its spawns`, () => {
-    const [first, second] = ROTATION[mode];
+    const [first, second] = dealt(mode);
     const w = createWorld(mode, 1, first);
     populate(w);
     const viewer = [...w.players.values()][0];
@@ -53,7 +56,7 @@ for (const [mode, winScore, side] of [['TDM', WORLD.tdmWinScore, 'red'], ['DOM',
 }
 
 test('FFA announces the next map, then loads it on a timer and moves everyone into its spawns', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second] = dealt('FFA');
   const w = createWorld('FFA', 1, first);
   populate(w);
   const viewer = [...w.players.values()][0];
@@ -70,7 +73,7 @@ test('FFA announces the next map, then loads it on a timer and moves everyone in
 });
 
 test('FFA: the first human to the kill target wins the round, and the next round starts on the next map with kills reset', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second] = dealt('FFA');
   const w = createWorld('FFA', 1, first);
   populate(w);
   const viewer = [...w.players.values()][0];
@@ -91,7 +94,7 @@ test('FFA: the first human to the kill target wins the round, and the next round
 });
 
 test('FFA: a bot at the kill target does not end the round', () => {
-  const w = createWorld('FFA', 1, ROTATION.FFA[0]);
+  const w = createWorld('FFA', 1, rotationMap('FFA', 1, 0));
   populate(w);
   const bot = [...w.players.values()][0]!;
   bot.kills = WORLD.ffaWinKills + 5;
@@ -102,7 +105,7 @@ test('FFA: a bot at the kill target does not end the round', () => {
 });
 
 test('FFA: a timer finish with tied kills goes to the player with fewer deaths', () => {
-  const w = createWorld('FFA', 1, ROTATION.FFA[0]);
+  const w = createWorld('FFA', 1, rotationMap('FFA', 1, 0));
   populate(w);
   const [a, b] = [...w.players.values()];
   a!.kills = 6;
@@ -117,7 +120,7 @@ test('FFA: a timer finish with tied kills goes to the player with fewer deaths',
 
 test('TDM: when the time limit runs out the team ahead wins, on kills if the score is level, and a dead heat starts a fresh round', () => {
   const finish = (red: number, blue: number, redKills: number, blueKills: number) => {
-    const w = createWorld('TDM', 1, ROTATION.TDM[0]);
+    const w = createWorld('TDM', 1, rotationMap('TDM', 1, 0));
     const [r, b] = [addPlayer(w, 'r', PISTOL, { team: 'red' }), addPlayer(w, 'b', PISTOL, { team: 'blue' })];
     r.kills = redKills;
     b.kills = blueKills;
@@ -130,11 +133,11 @@ test('TDM: when the time limit runs out the team ahead wins, on kills if the sco
   assert.deepEqual(finish(30, 34, 30, 34).winner, { name: 'Blue team', id: null, note: 'Time ran out' });
   assert.equal(finish(30, 30, 12, 9).winner?.name, 'Red team', 'level on score, red has more kills');
   const draw = finish(30, 30, 9, 9);
-  assert.deepEqual([draw.w.match.k, draw.winner, draw.w.map, draw.w.teamScore], ['playing', null, ROTATION.TDM[1], { red: 0, blue: 0 }]);
+  assert.deepEqual([draw.w.match.k, draw.winner, draw.w.map, draw.w.teamScore], ['playing', null, rotationMap('TDM', 1, 1), { red: 0, blue: 0 }]);
 });
 
 test('the snapshot carries when the round\'s clock runs out, unchanged through the round, and a fresh time for the next one', () => {
-  const w = createWorld('TDM', 1, ROTATION.TDM[0]);
+  const w = createWorld('TDM', 1, rotationMap('TDM', 1, 0));
   const viewer = addPlayer(w, 'v', PISTOL, { team: 'red' });
   const endsAt = () => snapshotFor(w, viewer.id).match.roundEndsAt;
   assert.equal(endsAt(), MAP_MS.TDM);
@@ -145,12 +148,12 @@ test('the snapshot carries when the round\'s clock runs out, unchanged through t
   assert.equal(endsAt(), null, 'no clock under the winner banner');
   run(w, WORLD.roundRestartMs + 100);
   assert.ok(endsAt()! - w.now > MAP_MS.TDM - 1000, 'the next round starts a full clock');
-  const dom = createWorld('DOM', 1, ROTATION.DOM[0]);
+  const dom = createWorld('DOM', 1, rotationMap('DOM', 1, 0));
   assert.equal(snapshotFor(dom, addPlayer(dom, 'd', PISTOL).id).match.roundEndsAt, MAP_MS.DOM, 'DOM runs a clock too');
 });
 
 test('FFA: a timer finish with no kills starts a fresh round on the next map without a winner', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second] = dealt('FFA');
   const w = createWorld('FFA', 1, first);
   populate(w);
   const [a] = [...w.players.values()];
@@ -164,7 +167,7 @@ test('FFA: a timer finish with no kills starts a fresh round on the next map wit
 });
 
 test('FFA: a human reaching the kill target behind a bot wins, says why, and keeps a place on the board', () => {
-  const w = createWorld('FFA', 1, ROTATION.FFA[0]);
+  const w = createWorld('FFA', 1, rotationMap('FFA', 1, 0));
   for (let i = 0; i < 12; i++) addPlayer(w, `bot${i}`, PISTOL).kills = 30 + i;
   const human = addPlayer(w, 'Kestrel', PISTOL, { kind: 'human' });
   human.kills = WORLD.ffaWinKills;
@@ -176,7 +179,7 @@ test('FFA: a human reaching the kill target behind a bot wins, says why, and kee
 });
 
 test('FFA: when the map timer runs out, the player with the most kills wins the round', () => {
-  const [first, second] = ROTATION.FFA;
+  const [first, second] = dealt('FFA');
   const w = createWorld('FFA', 1, first);
   populate(w);
   const [a, b, viewer] = [...w.players.values()];
@@ -192,7 +195,7 @@ test('FFA: when the map timer runs out, the player with the most kills wins the 
 test('a map change places players apart on the new map, not apart from where the others stood on the old one', () => {
   const close: string[] = [];
   for (let seed = 1; seed <= 60; seed++) {
-    const w = createWorld('FFA', seed, ROTATION.FFA[0]);
+    const w = createWorld('FFA', seed, rotationMap('FFA', seed, 0));
     for (let i = 0; i < 8; i++) addPlayer(w, `p${i}`, PISTOL);
     w.mapChangeAt = w.now;
     run(w, TICK_MS);
@@ -204,7 +207,7 @@ test('a map change places players apart on the new map, not apart from where the
 
 test('a joined client receives the new map\'s walls when the round restarts', () => {
   const mode: ModeId = 'TDM';
-  const [first, second] = ROTATION[mode];
+  const [first, second] = dealt(mode);
   const room = createRoom('tdm', mode, 1, { stats: () => null, credit: () => {} } as unknown as Accounts);
   const ws = fakeSocket();
   room.connect(ws.socket);

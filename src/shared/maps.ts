@@ -123,7 +123,42 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
 export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity, RNG: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
-export function nextMap(mode: ModeId, current: MapId): MapId {
-  const order = ROTATION[mode];
-  return order[(order.indexOf(current) + 1) % order.length];
+const mix = (s: number): number => {
+  let t = s | 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/** One cycle of the mode's rotation in a seeded shuffle: every map once. A cycle never opens on the map the previous one closed with. */
+function rotationBag(mode: ModeId, seed: number, cycle: number): MapId[] {
+  const shuffled = (c: number): MapId[] => {
+    const bag = [...ROTATION[mode]];
+    let s = (seed ^ Math.imul(c + 1, 0x9e3779b1)) | 0;
+    for (let k = bag.length - 1; k > 0; k--) {
+      s = (s + 0x6d2b79f5) | 0;
+      const j = Math.floor(mix(s) * (k + 1));
+      [bag[k], bag[j]] = [bag[j]!, bag[k]!];
+    }
+    return bag;
+  };
+  const bag = shuffled(cycle);
+  if (cycle > 0 && bag.length > 2 && bag[0] === shuffled(cycle - 1)[bag.length - 1]) [bag[0], bag[1]] = [bag[1]!, bag[0]!];
+  return bag;
+}
+
+/**
+ * The `i`th map a room plays: a random rotation, dealt like a shuffled deck so every map comes up once before any repeats and none plays twice
+ * running. It is a pure function of the room's seed (no draw from the world's rng), so a replay deals the same maps.
+ */
+export function rotationMap(mode: ModeId, seed: number, i: number): MapId {
+  const n = ROTATION[mode].length;
+  return n < 2 ? ROTATION[mode][0]! : rotationBag(mode, seed, Math.floor(i / n))[i % n]!;
+}
+
+/** The map after the one a world is on, and its place in the deal (skipping a repeat of the current map, which a dev-chosen start can cause). */
+export function nextMap(w: { mode: ModeId; map: MapId; rotationSeed: number; rotationAt: number }): { map: MapId; at: number } {
+  let at = w.rotationAt + 1;
+  if (ROTATION[w.mode].length > 1 && rotationMap(w.mode, w.rotationSeed, at) === w.map) at++;
+  return { map: rotationMap(w.mode, w.rotationSeed, at), at };
 }

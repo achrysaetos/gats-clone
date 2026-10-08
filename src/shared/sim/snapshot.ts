@@ -105,7 +105,7 @@ function matchView(w: World): MatchView {
   return {
     mode: w.mode,
     map: MAPS[w.map].name,
-    nextMap: MAPS[nextMap(w.mode, w.map)].name,
+    nextMap: MAPS[nextMap(w).map].name,
     mapChangeIn: untilChange <= MAP_NOTICE_MS ? Math.max(0, untilChange) : 0,
     teamScore: { red: Math.floor(w.teamScore.red), blue: Math.floor(w.teamScore.blue) },
     winner: w.match.k === 'over' ? w.match.winner : null,

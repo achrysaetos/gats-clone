@@ -1,4 +1,4 @@
-import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
+import { COLORS, GUNS, ROYALE, SPRINT, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
@@ -456,7 +456,10 @@ function gaitOf(p: PlayerView, now: number): Gait {
   return g;
 }
 
-/** Each body's sprint pose, eased 0..1 so the gun swings down and back instead of snapping. */
+/**
+ * Each body's sprint pose, 0..1: the gun swings down into the carry quickly, and comes back up over the whole `SPRINT.raiseMs` (the time the
+ * sim keeps it from firing), eased so the pull-out reads: slow off the chest, then snapping up to the shoulder.
+ */
 const sprints = new Map<number, { amount: number; t: number }>();
 const SPRINT_EASE_MS = 140;
 
@@ -464,8 +467,11 @@ function sprintOf(p: PlayerView, now: number): number {
   const prev = sprints.get(p.id);
   const dt = prev ? Math.min(100, Math.max(0, now - prev.t)) : 0;
   const target = p.sprint ? 1 : 0;
-  const amount = reducedMotion() ? target : prev ? prev.amount + Math.sign(target - prev.amount) * Math.min(Math.abs(target - prev.amount), dt / SPRINT_EASE_MS) : target;
+  const rate = target > (prev?.amount ?? target) ? SPRINT_EASE_MS : SPRINT.raiseMs;
+  const amount = reducedMotion() ? target : prev ? prev.amount + Math.sign(target - prev.amount) * Math.min(Math.abs(target - prev.amount), dt / rate) : target;
   sprints.set(p.id, { amount, t: now });
+  // On the way up, 1 - amount is the raise's progress; ease it in-out so the gun lingers low, then comes up to the shoulder.
+  if (target === 0 && amount > 0) { const k = 1 - amount; return 1 - k * k * (3 - 2 * k); }
   return amount;
 }
 
@@ -582,15 +588,15 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
     drawShieldShimmer(ctx, look.now, alpha);
   }
   if (p.shield) {
+    // The Shield perk's front guard: a faint, narrow sliver, so a perk half the lobby picks reads as a detail, not a halo round everyone.
     ctx.beginPath();
-    ctx.arc(0, 0, R + 6, p.angle - 1.05, p.angle + 1.05);
-    ctx.lineWidth = 6.5;
+    ctx.arc(0, 0, R + 4, p.angle - 0.55, p.angle + 0.55);
+    ctx.lineWidth = 2.2;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = INK;
-    ctx.stroke();
-    ctx.lineWidth = 3.5;
+    ctx.globalAlpha = alpha * 0.55;
     ctx.strokeStyle = PALETTE.shield;
     ctx.stroke();
+    ctx.globalAlpha = alpha;
   }
   ctx.restore();
   ctx.restore();

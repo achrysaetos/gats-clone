@@ -53,15 +53,15 @@ test('a sprinting player cannot fire; a click ends the sprint and the shot waits
   const clickAt = w.now;
   press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
   let firstShotMs: number | null = null;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < Math.ceil(SPRINT.raiseMs / TICK_MS) + 10; i++) {
     run(w, TICK_MS);
     fired += shots();
     if (fired > 0 && firstShotMs === null) firstShotMs = w.now - clickAt;
   }
   assert.equal(snapshotFor(w, a.id).self.sprint, false, 'the click ended the sprint even with the key still held');
-  assert.ok(firstShotMs !== null, 'the click still fires once the gun is up');
+  assert.ok(firstShotMs !== null, 'the held trigger fires once the gun is up');
   assert.ok(firstShotMs! >= SPRINT.raiseMs - TICK_MS, `no shot before the gun is raised (${firstShotMs}ms)`);
-  assert.ok(firstShotMs! <= SPRINT.raiseMs + 2 * TICK_MS + 1, `a buffered click fires right as it comes up (${firstShotMs}ms)`);
+  assert.ok(firstShotMs! <= SPRINT.raiseMs + 2 * TICK_MS + 1, `a held trigger fires right as it comes up (${firstShotMs}ms)`);
 });
 
 test('sprinting never fires, however long the trigger is held without a click ending it', () => {
@@ -142,7 +142,7 @@ test('the client trigger mirrors the sprint: no shot while sprinting, the raise 
   assert.equal(t.sprint, false);
   assert.equal(t.settleLeft, SPRINT.settleMs);
   let firedAfter: number | null = null;
-  for (let i = 0; i < 10 && firedAfter === null; i++) {
+  for (let i = 0; i < Math.ceil(SPRINT.raiseMs / TICK_MS) + 10 && firedAfter === null; i++) {
     now += TICK_MS;
     step = stepTrigger(t, { ...moving, right: false, fire: true, shots: 1, sprint: true }, now);
     t = step.t;
@@ -204,4 +204,23 @@ test('a bot sprints to travel and walks the moment an enemy is in sight, so it c
     run(fight, TICK_MS);
   }
   assert.ok(fires > 0, 'it fought');
+});
+
+test('a single click while the gun is coming up after a sprint is not kept: no shot until it is up and you click again', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'pistol' } });
+  spawnAt(w, 1500, 900);
+  press(w, a, { right: true, sprint: true });
+  run(w, 400);
+  const shots = () => w.events.filter((e) => e.e === 'shot' && e.owner === a.id).length;
+  let fired = 0;
+  // The click ends the sprint; release it at once (a pistol does not fire on a held trigger).
+  press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
+  run(w, TICK_MS); fired += shots();
+  press(w, a, { right: true, sprint: false, fire: false, shots: a.input.shots });
+  for (let i = 0; i < Math.ceil((SPRINT.raiseMs + 300) / TICK_MS); i++) { run(w, TICK_MS); fired += shots(); }
+  assert.equal(fired, 0, 'the click made while the gun was down never fires');
+  press(w, a, { right: true, fire: true, shots: a.input.shots + 1 });
+  for (let i = 0; i < 4; i++) { run(w, TICK_MS); fired += shots(); }
+  assert.equal(fired, 1, 'a fresh click once the gun is up fires');
 });

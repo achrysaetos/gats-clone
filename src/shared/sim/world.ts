@@ -250,6 +250,9 @@ export type World = {
   mode: ModeId;
   map: MapId;
   mapChangeAt: number;
+  /** The random map rotation: the seed it is dealt from and where in the deal this map is (see `rotationMap`). */
+  rotationSeed: number;
+  rotationAt: number;
   now: number;
   tick: number;
   rng: number;
@@ -315,7 +318,7 @@ export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b
 
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
-    mode, map, mapChangeAt: Infinity, now: 0, tick: 0, rng: seed | 0, nextId: 1,
+    mode, map, mapChangeAt: Infinity, rotationSeed: seed | 0, rotationAt: 0, now: 0, tick: 0, rng: seed | 0, nextId: 1,
     players: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, doors: [], doorsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
     zombies: [], buildings: [], floor: [], buildingsVersion: 0, run: null, royale: null,

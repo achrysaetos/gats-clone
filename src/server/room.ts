@@ -1,7 +1,7 @@
 import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
 import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
-import { MAPS, ROTATION, type MapId } from '../shared/maps.ts';
+import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
@@ -54,7 +54,7 @@ const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g])
 export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES): Room {
   // SKIRMISH_MAP=geo-test starts the versus rooms on the geometry test range (dev only; it is in no rotation).
   const devMap = process.env.SKIRMISH_MAP;
-  const world = createWorld(mode, seed, (devMap && devMap in MAPS && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM') ? devMap : ROTATION[mode][0]) as MapId);
+  const world = createWorld(mode, seed, (devMap && devMap in MAPS && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM') ? devMap : rotationMap(mode, seed, 0)) as MapId);
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
   const clients = new Map<WebSocket, Client>();

@@ -67,6 +67,8 @@ const KNIFE_CHASE_PX = 300;
 /** A smoke grenade is thrown this far toward the enemy, so the cloud blooms over the bot and the ground between. */
 const SMOKE_THROW_PX = 100;
 const REACQUIRE_TICKS = Math.round(600 / TICK_MS);
+/** Leaving a sprint keeps the gun down for `SPRINT.raiseMs`, so a bot only breaks into one after this long out of any fight (no flicking it on and off at the edge of one). */
+const SPRINT_CALM_TICKS = Math.round(3000 / TICK_MS);
 const RETREAT_STEP = 240 + WORLD.playerRadius;
 const WAYPOINT_PX = 16;
 const ARRIVED_PX = 14;
@@ -463,7 +465,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && (s.reload || (!t && snap.self.ammo < snap.self.mag / 2));
   // A bot sprints only to travel: with no enemy in sight (or its fight just ended) or when running to cover to heal. Anything else, it walks, so it can fire.
   const travelling = keys.up || keys.down || keys.left || keys.right;
-  const sprint = travelling && !fire && !wantsFire && wanted === null && (intent.k === 'retreatAndHeal' || (!t && engaged === null && v.threats.length === 0));
+  const calm = v.tick - m.engagedSeen > SPRINT_CALM_TICKS;
+  const sprint = travelling && !fire && !wantsFire && wanted === null && (intent.k === 'retreatAndHeal' || (!t && engaged === null && v.threats.length === 0 && calm));
   return {
     input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false, sprint },
     motor: {
