@@ -1,4 +1,5 @@
 import { clampAspect, viewExtents } from '../shared/protocol.ts';
+import { LOOK_AHEAD } from '../shared/lookahead.ts';
 
 export type Camera = { x: number; y: number; scale: number; w: number; h: number; viewHalfW: number; viewHalfH: number };
 export type Point = { x: number; y: number };
@@ -26,3 +27,40 @@ export const screenToWorld = (c: Camera, p: Point): Point => ({
   x: (p.x - c.w / 2) / c.scale + c.x,
   y: (p.y - c.h / 2) / c.scale + c.y,
 });
+
+// ---- aim look-ahead (shared/lookahead.ts): the camera leans toward where you aim ----
+
+/** How far the cursor is pushed from the middle of the screen, 0..1: 1 at `fullAt` of the screen's shorter half and beyond. */
+export function cursorPush(cursor: Point, w: number, h: number, fullAt: number = LOOK_AHEAD.fullAt): number {
+  const r = (Math.min(w, h) / 2) * fullAt;
+  if (!(r > 0)) return 0;
+  const d = Math.hypot(cursor.x - w / 2, cursor.y - h / 2) / r;
+  return Number.isFinite(d) ? Math.min(1, d) : 0;
+}
+
+/**
+ * The lean in world px: exactly along the aim (the angle the server has, so its widened interest covers it), `reach` long at a full push,
+ * eased so a cursor near the middle (or a thumb resting on the stick) barely moves the view.
+ */
+export function lookAhead(aim: Point, push: number, reach: number, ease: number = LOOK_AHEAD.ease): Point {
+  const len = Math.hypot(aim.x, aim.y);
+  const t = Math.min(1, Math.max(0, Number.isFinite(push) ? push : 0));
+  if (!(len > 1e-6) || !(reach > 0) || t === 0) return { x: 0, y: 0 };
+  const mag = reach * t ** ease;
+  return { x: (aim.x / len) * mag, y: (aim.y / len) * mag };
+}
+
+/** The lean the camera has now, and the eye it leaned from (a jump of the eye, or another eye, snaps the lean instead of easing it). */
+export type LookCam = { x: number; y: number; eye: Point | null; key: string | null; snap: boolean };
+export const NO_LOOKCAM: LookCam = { x: 0, y: 0, eye: null, key: null, snap: true };
+
+/**
+ * One frame of the lean's exponential follow toward `target`, the same after one 33 ms step as after two of 16.5 (frame-rate independent).
+ * It snaps when asked (`snap`, after a hidden tab or a killcam), on a new eye or map (`key`), or when the eye jumped past `snapPx`.
+ */
+export function followLook(c: LookCam, eye: Point, key: string, target: Point, dtMs: number, rate: number, snapPx: number = LOOK_AHEAD.snapPx): LookCam {
+  const at = { x: eye.x, y: eye.y };
+  if (c.snap || !c.eye || c.key !== key || Math.hypot(eye.x - c.eye.x, eye.y - c.eye.y) > snapPx) return { x: target.x, y: target.y, eye: at, key, snap: false };
+  const k = 1 - Math.exp((-rate * Math.max(0, Number.isFinite(dtMs) ? dtMs : 0)) / 1000);
+  return { x: c.x + (target.x - c.x) * k, y: c.y + (target.y - c.y) * k, eye: at, key, snap: false };
+}

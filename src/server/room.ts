@@ -7,7 +7,8 @@ import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.
 import { rewindCapFor } from '../shared/sim/combat.ts';
 import { benchUntilNextMatch, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
 import { build, demolish, toggleReady, upgrade } from '../shared/sim/run.ts';
-import { snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
+import { interestLook, snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
+import { holdLook, NO_LOOK, type LookSides } from '../shared/lookahead.ts';
 import { addScore, choosePick } from '../shared/sim/stats.ts';
 import { MODES, TEAM_NAME } from '../shared/sim/modes.ts';
 import { createWorld, rand, type World } from '../shared/sim/world.ts';
@@ -39,7 +40,7 @@ export const UNRECORDED_NOTICE = "Your stats aren't being saved for new names ri
 type Client =
   | { k: 'lobby'; ws: WebSocket; ip: string }
   /** `guest` is the name a guest's play is recorded under, fixed at join; null for an account, or a guest playing unrecorded. */
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; guest: string | null; lastChatAt: number; lastEmoteAt: number; lastRadioAt: number; aspect: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; guest: string | null; lastChatAt: number; lastEmoteAt: number; lastRadioAt: number; aspect: number; look: LookSides | null; lookAt: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -291,7 +292,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       if (account && !practice) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
       // A guest name with no profile yet would make a permanent one: each address may make only so many (LIMITS.newProfile*).
       const unrecorded = !account && !practice && !registered(name) && profiles.get(name) === null && newProfiles !== null && !newProfiles.take(client.ip, Date.now());
-      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, guest: account || unrecorded ? null : name, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
+      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, guest: account || unrecorded ? null : name, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, look: null, lookAt: world.now, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
       const key = profileKey(joinedClient, name);
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
@@ -491,7 +492,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
           continue;
         }
         backlogSince.delete(ws);
-        const data = c.encode(snapshotFor(world, c.playerId, events, c.aspect));
+        // The aim look-ahead's widening is held per client as its camera eases (lookahead.ts), stepped only for snapshots that go out.
+        const me = world.players.get(c.playerId);
+        c.look = holdLook(c.look, me ? interestLook(world, me) : NO_LOOK, world.now - c.lookAt);
+        c.lookAt = world.now;
+        const data = c.encode(snapshotFor(world, c.playerId, events, c.aspect, c.look));
         net.bytes += data.length;
         net.snaps++;
         ws.send(data);

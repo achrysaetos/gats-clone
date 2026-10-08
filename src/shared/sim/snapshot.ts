@@ -3,6 +3,7 @@ import type {
   AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
+import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { flashAmount, GAS_RADIUS, SMOKE } from './abilities.ts';
 import { doorViews } from './doors.ts';
@@ -126,14 +127,30 @@ const airdropView = (w: World): AirdropView | null => {
 
 const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS, fireSlick: PROP_FX.oil.radius, flashbang: 10, smokeGrenade: 10, smokeCloud: SMOKE.radius };
 
-export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = DEFAULT_VIEW_ASPECT): Snapshot {
+/**
+ * How far `me`'s camera may lean toward their aim this tick (lookahead.ts): the full lean along their angle while they are alive and
+ * watching themselves, none while they are down, dead or watching a squadmate (the client leans only for a live soldier of its own).
+ */
+export function interestLook(w: World, me: Player): LookSides {
+  if (me.life.k !== 'alive' || w.royale?.watching.has(me.id)) return NO_LOOK;
+  return lookSides(me.angle, lookReach(effectiveStats(me).viewRadius, me.gun));
+}
+
+/**
+ * `look` widens the interest rectangle past the aimed edges (the room holds it per client with `holdLook`), so an enemy that only the
+ * camera's aim look-ahead brings on screen is sent; smoke and hiding still cull it. Bots and the replay see by the centred view.
+ */
+export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = DEFAULT_VIEW_ASPECT, look: LookSides = NO_LOOK): Snapshot {
   const me = w.players.get(id);
   if (!me) throw new Error(`no player ${id}`);
   const stats = effectiveStats(me);
   const visible = viewExtents(stats.viewRadius, aspect);
   const halfW = visible.halfW + VIEW_PRELOAD_MARGIN, halfH = visible.halfH + VIEW_PRELOAD_MARGIN;
   const eye = w.players.get(w.royale?.watching.get(me.id) ?? -1) ?? me;
-  const inView = (x: number, y: number, pad = 0) => Math.abs(x - eye.x) <= halfW + pad && Math.abs(y - eye.y) <= halfH + pad;
+  const inView = (x: number, y: number, pad = 0) => {
+    const dx = x - eye.x, dy = y - eye.y;
+    return dx <= halfW + look.r + pad && -dx <= halfW + look.l + pad && dy <= halfH + look.d + pad && -dy <= halfH + look.u + pad;
+  };
 
   // Smoke stops sight, not bullets: an enemy whose line from the eye crosses a cloud is not sent at all, so nothing on the wire sees through it.
   const smoke = smokeDisks(w.thrown, w.now);

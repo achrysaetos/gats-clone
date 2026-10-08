@@ -8,8 +8,8 @@ import { fxCapable, fxState, lightingStatus } from './postfx.ts';
 import { CRITTER_STEPS, DPR_STEPS, PRESET_IDS, PRESET_INFO, knobs, type Adv } from './quality.ts';
 import { effectivePreset, qualityState } from './qualityrt.ts';
 import {
-  CROSSHAIR_COLORS, CROSSHAIR_IDS, SHAKE_IDS, MOTION_IDS, UI_PERCENT, gainOfPercent, percentOfGain, resetSettings, setSetting, settings,
-  type CrosshairColor, type CrosshairStyle, type EffectsQuality, type MotionMode, type ShakeMode,
+  CROSSHAIR_COLORS, CROSSHAIR_IDS, LOOK_AHEAD_IDS, SHAKE_IDS, MOTION_IDS, UI_PERCENT, gainOfPercent, percentOfGain, resetSettings, setSetting, settings,
+  type CrosshairColor, type CrosshairStyle, type EffectsQuality, type LookAheadMode, type MotionMode, type ShakeMode,
 } from './settings.ts';
 
 /**
@@ -342,6 +342,7 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
         icon: (v, g) => { g.fillStyle = CROSSHAIR_COLORS[v]; g.strokeStyle = '#1c1f26'; g.lineWidth = 3; g.beginPath(); g.arc(20, 20, 11, 0, Math.PI * 2); g.stroke(); g.fill(); },
       })),
       row('Touch aim assist', 'phones', toggle(() => settings().touchAssist, (on) => setSetting('touchAssist', on), 'set-assist')),
+      row('Aim look-ahead', null, segmented<LookAheadMode>({ id: 'set-lookahead', options: LOOK_AHEAD_IDS.map((m) => [m, m === 'off' ? 'Off' : m === 'low' ? 'Low' : 'Normal'] as const), get: () => settings().lookAhead, set: (v) => setSetting('lookAhead', v) })),
     ),
   );
   const reset = plate('pz-reset', 'Reset to defaults');

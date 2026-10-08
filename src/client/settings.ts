@@ -14,6 +14,8 @@ export type ShakeMode = 'on' | 'reduced' | 'off';
 export type MotionMode = 'system' | 'on' | 'off';
 export type CrosshairStyle = 'classic' | 'dot' | 'ring' | 'open';
 export type CrosshairColor = 'bone' | 'orange' | 'gold' | 'mint';
+/** How far the camera leans toward where you aim (shared/lookahead.ts): not at all, half way, or the full reach. */
+export type LookAheadMode = 'off' | 'low' | 'normal';
 
 export type Settings = {
   /** The graphics preset (quality.ts): Auto picks from the device and steps down if frames stay slow. */
@@ -29,9 +31,10 @@ export type Settings = {
   crosshair: CrosshairStyle;
   crosshairColor: CrosshairColor;
   touchAssist: boolean;
+  lookAhead: LookAheadMode;
 };
 
-export const DEFAULTS: Readonly<Settings> = { quality: 'auto', adv: {}, shake: 'on', motion: 'system', uiScale: 0, damageNumbers: true, crosshair: 'classic', crosshairColor: 'bone', touchAssist: true };
+export const DEFAULTS: Readonly<Settings> = { quality: 'auto', adv: {}, shake: 'on', motion: 'system', uiScale: 0, damageNumbers: true, crosshair: 'classic', crosshairColor: 'bone', touchAssist: true, lookAhead: 'normal' };
 
 export const UI_PERCENT = { min: 80, max: 150, step: 10 } as const;
 export const SETTINGS_KEY = 'skirmish.settings';
@@ -40,6 +43,7 @@ export const QUALITY_IDS: readonly EffectsQuality[] = ['auto', 'low', 'medium', 
 export const SHAKE_IDS: readonly ShakeMode[] = ['on', 'reduced', 'off'];
 export const MOTION_IDS: readonly MotionMode[] = ['system', 'on', 'off'];
 export const CROSSHAIR_IDS: readonly CrosshairStyle[] = ['classic', 'dot', 'ring', 'open'];
+export const LOOK_AHEAD_IDS: readonly LookAheadMode[] = ['off', 'low', 'normal'];
 /** Reticle paints, all from the art bible's palette: bone, signal orange, gold, heal mint. */
 export const CROSSHAIR_COLORS: Readonly<Record<CrosshairColor, string>> = { bone: '#ffffff', orange: '#ff5a1f', gold: '#ffd34d', mint: '#8ff0c4' };
 
@@ -60,6 +64,7 @@ export function sanitize(raw: unknown): Settings {
     crosshair: oneOf(CROSSHAIR_IDS, r.crosshair, DEFAULTS.crosshair),
     crosshairColor: oneOf(Object.keys(CROSSHAIR_COLORS) as CrosshairColor[], r.crosshairColor, DEFAULTS.crosshairColor),
     touchAssist: typeof r.touchAssist === 'boolean' ? r.touchAssist : DEFAULTS.touchAssist,
+    lookAhead: oneOf(LOOK_AHEAD_IDS, r.lookAhead, DEFAULTS.lookAhead),
   };
 }
 
@@ -85,6 +90,9 @@ export const percentOfGain = (gain: number): number => (Number.isFinite(gain) ? 
 
 /** How much of the camera shake and gun recoil kick to keep. */
 export const shakeFactor = (mode: ShakeMode): number => (mode === 'off' ? 0 : mode === 'reduced' ? 0.35 : 1);
+
+/** The share of the aim look-ahead's full reach to use. */
+export const lookAheadFactor = (mode: LookAheadMode): number => (mode === 'off' ? 0 : mode === 'low' ? 0.5 : 1);
 
 /** Whether to treat motion as reduced, given the setting and what the system asks for. */
 export const motionReduced = (mode: MotionMode, systemPrefers: boolean): boolean => (mode === 'on' ? true : mode === 'off' ? false : systemPrefers);
@@ -134,4 +142,5 @@ export function useStore(next: Store | null): void {
 export const damageNumbersOn = (): boolean => settings().damageNumbers;
 export const touchAssistOn = (): boolean => settings().touchAssist;
 export const shakeScale = (): number => shakeFactor(settings().shake);
+export const lookAheadScale = (): number => lookAheadFactor(settings().lookAhead);
 export const crosshairLook = (): { style: CrosshairStyle; color: string } => ({ style: settings().crosshair, color: CROSSHAIR_COLORS[settings().crosshairColor] });

@@ -4,7 +4,8 @@ import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMs
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
-import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
+import { cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, screenToWorld, viewAspect, worldToScreen, type Camera, type LookCam, type Point } from './camera.ts';
+import { LOOK_AHEAD, lookReach } from '../shared/lookahead.ts';
 import { createAudio } from './audio.ts';
 import { musicDuck, musicProbe, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
@@ -20,7 +21,7 @@ import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbili
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, keyRepeats, perkSlotForKey, type Action } from './input.ts';
-import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
+import { NO_STICKS, dragStick, pressStick, releaseStick, stickVector, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { notePropEvents } from './propfx.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
@@ -65,7 +66,7 @@ import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, nextTier, squadFromS
 import { trackRootScale } from './uiscale.ts';
 import { createPauseMenu, showToast } from './pausemenu.ts';
 import { escapeAction, takesInput } from './pausegate.ts';
-import { onSettings, shakeScale, touchAssistOn } from './settings.ts';
+import { lookAheadScale, onSettings, shakeScale, touchAssistOn } from './settings.ts';
 import { frameTick, initQuality, qualityProbe } from './qualityrt.ts';
 import { MODE_INFO } from './modecards.ts';
 import { createCelebration } from './celebrate.ts';
@@ -471,6 +472,40 @@ function aimOffset(s: Session): { dx: number; dy: number } {
   return { dx: (mouse.x - self.x) / aimCamera.scale, dy: (mouse.y - self.y) / aimCamera.scale };
 }
 
+/** The aim look-ahead's camera lean (camera.ts `followLook`), eased on the real clock so a slow motion does not drag it. */
+let lookCam: LookCam = NO_LOOKCAM;
+let lookFrameAt = 0;
+
+/** Where the lean wants to be: along your aim, as far as the cursor (or the aim stick) is pushed, for your own live soldier only. */
+function leanTarget(s: Session, me: PlayerView, viewRadius: number): Point {
+  const scale = lookAheadScale();
+  if (!scale) return { x: 0, y: 0 };
+  const reduced = reducedMotion();
+  const reach = lookReach(viewRadius, me.gun) * scale * (reduced ? 0.5 : 1);
+  // Reduced motion: a shorter lean on a flatter curve, so small cursor moves leave the view still.
+  const ease = reduced ? 1.8 : LOOK_AHEAD.ease;
+  const { dx, dy } = aimOffset(s);
+  if (sticks.aim && touchAim(sticks)) return lookAhead({ x: dx, y: dy }, stickVector(sticks.aim).mag, reach, ease);
+  if (!mouseAiming || touchScreen) return { x: 0, y: 0 };
+  return lookAhead({ x: dx, y: dy }, cursorPush(mouse, view.w, view.h), reach, ease);
+}
+
+/**
+ * This frame's lean: it holds still while the soldier takes no input (a menu, the chat line) or builds (the cell under the cursor must
+ * not slide while you place), and eases home when you are not playing.
+ */
+function stepLean(s: Session, snap: Snapshot, me: PlayerView | undefined, eye: PlayerView | undefined, realNow: number): Point {
+  const dt = lookFrameAt ? Math.min(250, realNow - lookFrameAt) : 0;
+  lookFrameAt = realNow;
+  if (!eye) return { x: lookCam.x, y: lookCam.y };
+  const own = state.phase === 'playing' && !!me?.alive && eye === me;
+  const active = takesInput(state.phase, overlays.typing, pause.isOpen()) && !s.building;
+  const target = !own ? { x: 0, y: 0 } : active ? leanTarget(s, me!, snap.self.viewRadius || WORLD.viewRadius) : { x: lookCam.x, y: lookCam.y };
+  const quick = own && (firing || isDeployed(me!.gun, sinceMove(s)));
+  lookCam = followLook(lookCam, eye, `${eye.id}|${s.mapId}`, target, dt, quick ? LOOK_AHEAD.aimRate : LOOK_AHEAD.rate);
+  return { x: lookCam.x, y: lookCam.y };
+}
+
 function sendInputTick() {
   const s = sessionOf(state);
   if (!s) return;
@@ -666,7 +701,9 @@ function drawFrame(realNow: number) {
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
-  const look = delight.look(s.lastSelf, snap.self.viewRadius || WORLD.viewRadius, realNow);
+  // The camera leans toward your aim; the aim, the crosshair and the HUD all map through this same camera, so the gun still points at the cursor.
+  const lean = stepLean(s, snap, me, eye, realNow);
+  const look = delight.look({ x: s.lastSelf.x + lean.x, y: s.lastSelf.y + lean.y }, snap.self.viewRadius || WORLD.viewRadius, realNow);
   aimCamera = makeCamera(look.center, view.w, view.h, look.radius);
   trauma = decay(trauma, frameStep(now, lastFrameAt));
   kick = settleKick(kick, frameStep(now, lastFrameAt));
@@ -852,7 +889,7 @@ window.addEventListener('blur', () => { wheel.close(); held.clear(); firing = fa
 // Hiding the tab lets go of everything held; coming back also drops the stale snapshots and prediction so the next snapshot starts them afresh.
 document.addEventListener('visibilitychange', () => {
   wheel.close(); held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; abilityTapped = false;
-  lastRaf = 0; lastFrameAt = 0;
+  lastRaf = 0; lastFrameAt = 0; lookCam = { ...lookCam, snap: true };
   if (document.hidden) return;
   const s = sessionOf(state);
   if (s) { Object.assign(s, resyncNet(s)); clearHits(); }
