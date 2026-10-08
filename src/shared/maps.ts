@@ -136,20 +136,52 @@ export function parseMapFile(v: unknown): MapFile {
 }
 
 const footprint = (at: Placement): Rect => placed(at).foot;
+const xywh = ({ x, y, w, h }: Rect): Rect => ({ x, y, w, h });
+const xy = ({ x, y }: Center): Center => ({ x, y });
+
+/**
+ * The text a map file is stored as, as the editor saves it: one-space indents and every key in one order whatever order
+ * the object was built in, so a save diffs only what changed.
+ */
+export function serializeMapFile(f: MapFile): string {
+  const ordered: MapFile = {
+    name: f.name,
+    size: f.size,
+    symmetry: f.symmetry,
+    light: f.light,
+    pieces: f.pieces.map(({ p, x, y, r }) => ({ p, x, y, r })),
+    marks: f.marks.map(({ k, x, y, w, h, r }) => ({ k, x, y, w, h, r })),
+    spawns: { red: f.spawns.red.map(xywh), blue: f.spawns.blue.map(xywh), ffa: f.spawns.ffa.map(xywh) },
+    zones: f.zones.map(xy),
+    ...(f.siege && { siege: { core: xy(f.siege.core), horde: Object.fromEntries(SIDES.map((s) => [s, xywh(f.siege!.horde[s])])) as Record<Side, Rect> } }),
+    ...(f.train && { train: { lane: xywh(f.train.lane), axis: f.train.axis, dir: f.train.dir, everyMs: f.train.everyMs, jitterMs: f.train.jitterMs, warnMs: f.train.warnMs, speed: f.train.speed, length: f.train.length } }),
+    ...(f.extract && { extract: { terminal: xy(f.extract.terminal), ...(f.extract.pad && { pad: xywh(f.extract.pad) }), attack: f.extract.attack.map(xywh), defend: f.extract.defend.map(xywh) } }),
+  };
+  return JSON.stringify(ordered, null, 1) + '\n';
+}
+
+/** A rect's place after a half turn about the centre of a map `size` wide. */
+export const halfTurnRect = <T extends Rect>(size: number, r: T): T => ({ ...r, x: size - r.x - r.w, y: size - r.y - r.h });
+
+/** A piece's twin on a half-turn map, or null when the twin would land on the piece itself and look the same. */
+export function halfTurnPiece(size: number, at: Placement): Placement | null {
+  const foot = halfTurnRect(size, footprint(at));
+  const turned: Placement = { p: at.p, x: foot.x, y: foot.y, r: ((at.r + 2) % 4) as Placement['r'] };
+  return turned.x === at.x && turned.y === at.y && KIT[at.p].turns <= 2 ? null : turned;
+}
 
 /** The map's every piece, mark, spawn and zone, with the half turn's twins added. A twin that lands on its original is kept once. */
 export function expandMap(file: MapFile): MapDef {
   const { size } = file;
   const twin = file.symmetry === 'halfTurn';
-  const turnRectAbout = <T extends Rect>(r: T): T => ({ ...r, x: size - r.x - r.w, y: size - r.y - r.h });
+  const turnRectAbout = <T extends Rect>(r: T): T => halfTurnRect(size, r);
   const same = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
   const withTwins = <T extends Rect>(items: readonly T[], turned: (t: T) => T): T[] => (twin ? [...items, ...items.flatMap((t) => (same(turned(t), t) ? [] : [turned(t)]))] : [...items]);
 
   const pieces: Placement[] = [...file.pieces];
   if (twin) for (const at of file.pieces) {
-    const foot = turnRectAbout(footprint(at));
-    const turned: Placement = { p: at.p, x: foot.x, y: foot.y, r: ((at.r + 2) % 4) as Placement['r'] };
-    if (!(turned.x === at.x && turned.y === at.y && KIT[at.p].turns <= 2)) pieces.push(turned);
+    const turned = halfTurnPiece(size, at);
+    if (turned) pieces.push(turned);
   }
   const walls: MapWall[] = [];
   const fences: Rect[] = [];

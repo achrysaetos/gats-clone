@@ -4,7 +4,7 @@
 // source: edit it in the map editor (?dev&editor), and only rerun a draft (with --force) to throw those edits away.
 import { existsSync, writeFileSync } from 'node:fs';
 import { KIT, placed, type PieceId, type Placement } from '../../src/shared/kit.ts';
-import type { MapFile, MapMark } from '../../src/shared/maps.ts';
+import { serializeMapFile, type MapFile, type MapMark } from '../../src/shared/maps.ts';
 import type { Rect } from '../../src/shared/sim/movement.ts';
 import { canvas, Filler } from './plan.ts';
 
@@ -170,5 +170,5 @@ const draft = id && DRAFTS[id];
 if (!draft) { console.error(`usage: node scripts/maps/draft.ts <${Object.keys(DRAFTS).join('|')}> [--force]`); process.exit(2); }
 const out = `src/shared/maps/${id}.json`;
 if (existsSync(out) && force !== '--force') { console.error(`${out} exists; it may hold editor changes. Pass --force to overwrite.`); process.exit(1); }
-writeFileSync(out, JSON.stringify(draft(), null, 1) + '\n');
+writeFileSync(out, serializeMapFile(draft()));
 console.log(`wrote ${out}`);
