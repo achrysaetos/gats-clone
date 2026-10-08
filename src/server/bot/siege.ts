@@ -4,7 +4,7 @@ import { cellOf, cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
-import type { BotArena } from './arena.ts';
+import { inHazard, safeStep, type BotArena } from './arena.ts';
 import { findPath, withSolids, type NavGrid } from './nav.ts';
 import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
 
@@ -179,8 +179,10 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     && (Math.abs(kept.at.x - me.x) > DEAD_ZONE || Math.abs(kept.at.y - me.y) > DEAD_ZONE);
   const step = keep ? kept.at : wayTo(arena, run.core, snap.buildings ?? [], me, errand);
   const siegeStep = keep ? kept : { to: { x: errand.x, y: errand.y }, at: step, tick: snap.tick, kite };
-  const mx = step.x - me.x, my = step.y - me.y;
-  const still = errand.use;
+  const burning = inHazard(arena, me);
+  const safe = safeStep(arena, me, burning ? errand : step) ?? me;
+  const mx = safe.x - me.x, my = safe.y - me.y;
+  const still = errand.use && !burning;
   const input: InputState = {
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
     angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,

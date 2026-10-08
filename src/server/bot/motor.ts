@@ -1,9 +1,10 @@
 import { GUNS, rulesOf, WORLD, type AbilityId } from '../../shared/defs.ts';
+import { KIT } from '../../shared/kit.ts';
 import { VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, landingErr, leadSeconds, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Look } from './aim.ts';
-import { takeReplan, type BotArena } from './arena.ts';
+import { inHazard, safeStep, takeReplan, type BotArena } from './arena.ts';
 import { focus, type Perception, type Threat } from './awareness.ts';
 import { justLost, type Intent, type IntentCtx } from './intent.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
@@ -90,18 +91,45 @@ function awayFrom(me: Point, threat: Point, arena: BotArena, step: number): Poin
   return { x: me.x + Math.cos(h) * step, y: me.y + Math.sin(h) * step };
 }
 
-/** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score. */
+/** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score; never a fuel barrel whose blast would reach it. */
 function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly Rect[], range: number, sight: { halfW: number; halfH: number }): Point | null {
   let best: Point | null = null, bestD = Infinity;
   for (const c of crates) {
     const at = { x: c.x + c.w / 2, y: c.y + c.h / 2 };
     const d = dist(at, me);
     if (d > range || d >= bestD || Math.abs(at.x - me.x) > sight.halfW || Math.abs(at.y - me.y) > sight.halfH) continue;
+    const blast = KIT[c.piece].breaks?.blast;
+    if (blast && d < blast.radius + WORLD.playerRadius + BLAST_SAFETY_PX) continue;
     if (!clearShot([...walls, ...crates.filter((o) => o.id !== c.id).map(crateRect)], me, at)) continue;
     best = at;
     bestD = d;
   }
   return best;
+}
+
+/** An enemy this deep inside a fuel barrel's blast takes most of it. */
+const BLAST_REACH = 0.8;
+/** How far past the blast's edge the bot and its mates must stand before it sets one off. */
+const BLAST_SAFETY_PX = 20;
+
+/**
+ * A fuel barrel in range and in the clear with the most enemies in sight standing deep in its blast, and neither the bot nor a mate
+ * anywhere in it: one round there does more than a round at any of them.
+ */
+function barrelToShoot(me: Point, v: Perception, crates: readonly CrateView[], walls: readonly Rect[], range: number): Point | null {
+  let best: { at: Point; hit: number; d: number } | null = null;
+  for (const c of crates) {
+    const blast = KIT[c.piece].breaks?.blast;
+    if (!blast) continue;
+    const at = { x: c.x + c.w / 2, y: c.y + c.h / 2 }, d = dist(at, me);
+    const clearOf = blast.radius + WORLD.playerRadius + BLAST_SAFETY_PX;
+    if (d > range || d < clearOf || v.allies.some((a) => dist(a, at) < clearOf)) continue;
+    const hit = v.threats.filter((t) => dist(t.p, at) <= blast.radius * BLAST_REACH && clearShot(walls, at, t.p)).length;
+    if (hit === 0 || (best && (hit < best.hit || (hit === best.hit && d >= best.d)))) continue;
+    if (!clearShot([...walls, ...crates.filter((o) => o.id !== c.id).map(crateRect)], me, at)) continue;
+    best = { at, hit, d };
+  }
+  return best?.at ?? null;
 }
 
 type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean };
@@ -255,7 +283,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const readyAbility = snap.self.abilityReadyIn === 0 ? snap.self.ability : null;
   const { steer: s, stance } = steer(intent, v, c, m, readyAbility);
   const way = s.to ? nextWaypoint(m, me, s.to, c.arena, v.tick) : { at: null, route: m.route, replanned: false };
-  const drive = keysToward(m, me, way.at, v.tick);
+  const toward = way.at ?? (inHazard(c.arena, me) ? me : null);
+  const drive = keysToward(m, me, toward && safeStep(c.arena, me, toward), v.tick);
   const gained = way.at ? dist(m.last, way.at) - dist(me, way.at) : 0;
   const pressing = drive.dir !== null;
   const gun = GUNS[me.gun];
@@ -285,6 +314,11 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
       threat = { d: t.d };
       const fuse = GRENADE_FUSE_MS / 1000;
       throwAt = { x: t.p.x + engaged.vx * fuse, y: t.p.y + engaged.vy * fuse, err };
+      const barrel = barrelToShoot(me, v, snap.crates, c.arena.walls, gun.range * 0.95);
+      if (barrel) {
+        look = { ...look, want: Math.atan2(barrel.y - me.y, barrel.x - me.x) + err, spin: 0, d: dist(barrel, me) };
+        wantsFire = true;
+      }
     }
   } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
     const crate = crateInSight(me, snap.crates, c.arena.walls, gun.range * 0.95, viewExtents(snap.self.viewRadius, VIEW_ASPECT.max));

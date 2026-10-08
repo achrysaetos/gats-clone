@@ -10,5 +10,5 @@ test('bot code reads the map and its size in one place, the arena, and everythin
   const uses = files.flatMap((f) => readFileSync(f, 'utf8').split('\n')
     .filter((l) => /\bMAPS\[|\bWORLD\.size\b|\bmapSize\b|\.map\]\.size/.test(l))
     .map((l) => `${f.pathname.split('/src/')[1]}: ${l.trim()}`));
-  assert.deepEqual(uses, ['server/bot/arena.ts: const size = MAPS[w.map].size;']);
+  assert.deepEqual(uses, ['server/bot/arena.ts: const { size, train } = MAPS[w.map];']);
 });
