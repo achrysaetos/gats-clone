@@ -32,7 +32,7 @@ export function createShooting(page: Page) {
     const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextLocalRoundId);
     nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
-    startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner }, now);
+    startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner, gun: shot.gun }, now);
     return rounds.map((r) => r.id);
   }
 

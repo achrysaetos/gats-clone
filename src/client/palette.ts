@@ -5,10 +5,9 @@ export const INK = '#1c1f26';
 
 export const PALETTE = {
   letterbox: '#16181d',
-  tracerGlow: '#ffc65a',
-  tracer: '#ffe6a6',
-  tracerHot: '#fffcf0',
-  casing: '#5d616a',
+  tracerGlow: '#ff8526',
+  tracer: '#ffad55',
+  tracerHot: '#ffe9c4',
   label: '#2a2e36',
   hpGood: '#35c46a',
   hpBad: '#e5484d',
