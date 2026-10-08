@@ -26,14 +26,35 @@ One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the pain
 
 | Key | Dirs | Frames | Layers | What |
 | --- | --- | --- | --- | --- |
-| `soldier` | 32 by aim | 0 aim, 1-2 recoil, 3-8 reload | base, team, armor tiers (still) | waist up, arms and gun hands |
-| `soldier.legs` | 16 by movement | 0 stand, 1-8 run | base, team | pelvis down, contact shadow |
+| `soldier` | 32 by aim | 0 aim, 1 breathe, 2-3 light recoil, 4-5 heavy recoil | base, team, armor tiers (still) | waist up, arms and gun hands |
+| `soldier.act` | 16 by aim | 0-23 reloads (pistol, mag, pump, box, 6 each), 24-27 flinch front and back, 28-30 throw, 31-33 knife | base, team | the waist up in moves that take a hand off the grip or snap the head |
+| `soldier.legs` | 16 by the way the legs face | 0 stand, 1-8 run, 9-16 strafe left, 17-19 dash | base, team | pelvis down, contact shadow |
 | `soldier.shadow` | 16 | 1 | shadow | whole body in the aim stance |
-| `soldier.downed` | 1, turned by the painter | 1 | base, team | prone, crawling, overhead lit |
-| `soldier.dead` | 1, turned by the painter | 3 variants | base, team | on the back, face down, on the side |
-| `drop.<class>` | 1, turned by the painter | 1 | base | the class's base gun lying on the floor |
+| `soldier.downed` | 1, turned by the painter | 0-3 crawl, 4-7 revive | base, team | prone, overhead lit |
+| `soldier.die` | 1, turned by the painter | 0-5 fall forward, 6-11 fall back, 12-17 spin; the last of each is the body | base, team | from standing to the body that stays |
 
-`SOLDIER` in `catalog.ts` holds the frame layout. The gun stays its own sprite: the aim, recoil and reload poses keep the hands on the grip (x 12.5) and fore-end (x 21.5) of a gun drawn at the origin. Recoil frame 1 matches a gun drawn at full kick (`RECOIL`), frame 2 at half.
+`SOLDIER` in `catalog.ts` holds the frame layout and mirrors `STRIPS`. The painter draws the legs, then the gun (`gun.<id>` frames: body, magazine, action), then the torso and its armour over it, so the baked hands sit on the gun. Strafing right plays the strafe strip backwards; backpedalling plays the run backwards with the legs facing the aim.
+
+### The design, picked from four
+
+Four scripted designs were baked on the same rig at game scale beside the reference soldiers ([sheet](../docs/feel/shots/soldier-variants.webp), made with `contact-sheet.ts variants`):
+
+- A, plate: rounded team pauldrons and lame, team chest shell and backpack, glossy black helmet with a team stripe and visor, team arms and bracers. **Picked.** It reads closest to the gold shots: team colour dominates the silhouette, the helmet is the dark focal point, and the forms are round and glossy.
+- B, shell: the same as boxes. The pauldrons read as bricks with black gaps between them.
+- C, trooper: olive cloth torso with team colour on the panels only. The team read weakens at game scale.
+- D, bulk: A scaled up 15%. It crowds the collision circle and hides the arms.
+
+The built version of A has smaller, lower pauldrons than the variant so the arms and hands show, and a larger helmet. Armour tiers lie over the chest, collar and flanks: light is straps and pouches, medium adds a steel chest plate and collar, heavy adds flank plates and a neck guard. None covers the pauldrons, arms, backpack or helmet stripe, so the team still reads at heavy.
+
+### The swap contract
+
+A different soldier model can replace this one without touching the painter if it keeps:
+
+- **Footprint and scale.** Built at the 24-unit player radius, origin at the collision circle's centre on the floor, facing +X, shoulder height `SHOULDER` (22) as the shear's reference.
+- **Grips.** `GRIP` in `soldier.py`: right hand at (12.5, -6, 19.5), left at (21.5, 1.5, 20). Every gun model puts its pistol grip and fore-end there. A pose lists the hands that hold the gun in `holds`, and a pose that moves the gun (recoil, breathing) says by how much in `gun`. `check_grips` fails the bake when a held hand ends more than 1 unit (2 px) from its grip.
+- **Poses as data.** `ACTIONS` names each strip; `STRIPS` orders them per segment; `SOLDIER` in `catalog.ts` mirrors the order.
+- **Bones.** The names in `BONES` (`hips`, `spine`, `head`, `upper_arm`/`forearm`/`hand`/`thigh`/`shin`/`foot` with `.R` and `.L`) and the two-bone limbs in `LIMBS`. Poses address limbs by these names.
+- **Layers by name.** Geometry carries a role: `solid` (base), `team` (the white mask the painter tints), and one role per armour tier. Armour rides only the spine, and no torso or act frame moves the spine.
 
 ## Iteration log
 
