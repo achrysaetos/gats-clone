@@ -167,6 +167,11 @@ function switchTrack(t: number, id: TrackId) {
 function tick() {
   if (!ctx || !rig || !current) return;
   const now = ctx.currentTime;
+  // A stall (a long frame while a map loads, a throttled timer) can leave the next bar behind the clock. Start it now instead: a bar
+  // scheduled in the past sounds all its overdue notes at once, and a crossfade curve begun in the past overlaps the new deck's own
+  // automation (Chrome throws, every tick, until the clock is a whole fade past it, leaking a deck each time).
+  if (nextBarT < now) nextBarT = now + 0.02;
+  if (leaving && leaving.nextT < now) leaving.nextT = now + 0.02;
   // The radio retunes at once; a new map's track waits for the bar line and crossfades.
   if (wantTrack !== current.track.id && current.map === mapTrack && current.station !== effectiveStation()) retune(now + 0.02, wantTrack);
   while (nextBarT < now + LOOKAHEAD_S) {
@@ -322,7 +327,7 @@ export function toggleMusicMuted(): boolean {
 }
 /** Music volume 0..1, kept under the effects by the bus gain. */
 export function setMusicVolume(v: number) {
-  volume = Math.min(1, Math.max(0, v));
+  volume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
   store.set(MUSIC_VOL_KEY, String(volume));
   applyVolume();
 }

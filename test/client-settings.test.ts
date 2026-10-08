@@ -127,3 +127,26 @@ test('the master and effects sliders reach separate gain nodes; the music bus is
   audio.setMuted(false);
   assert.equal(audio.isMuted(), false);
 });
+
+test('a gesture wakes an audio context that Safari interrupted (a call, Siri, another app), not only one that never started', async () => {
+  fakeAudio();
+  const Base = (globalThis as { AudioContext?: new () => { state: string } }).AudioContext!;
+  const made: { ctx: { state: string; resumes: number } | null } = { ctx: null };
+  (globalThis as { AudioContext?: unknown }).AudioContext = class extends Base {
+    resumes = 0;
+    constructor() { super(); made.ctx = this; }
+    resume() { this.resumes++; this.state = 'running'; return Promise.resolve(); }
+  };
+  const { createAudio } = await import('../src/client/audio.ts');
+  const audio = createAudio();
+  audio.unlock();
+  const ctx = made.ctx!;
+  assert.equal(ctx.resumes, 0, 'already running: nothing to do');
+  for (const stopped of ['suspended', 'interrupted']) {
+    ctx.state = stopped;
+    const before: number = ctx.resumes;
+    audio.unlock();
+    assert.equal(ctx.resumes, before + 1, `a ${stopped} context is resumed by the next gesture`);
+    assert.equal(ctx.state, 'running');
+  }
+});

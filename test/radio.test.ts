@@ -1,7 +1,6 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { WORLD } from '../src/shared/defs.ts';
 import { MAPS, ROTATION, ZONE_RADIUS, type MapId } from '../src/shared/maps.ts';
 import { parseClientMsg, type ServerMsg } from '../src/shared/protocol.ts';
 import { cycleStation, FIXED_RADIO, HIDDEN_RADIOS, hiddenRadios, isStationId, RADIO_INTERVAL_MS, STATION_IDS, TRACK_IDS, roundKeyOf } from '../src/shared/radio.ts';
@@ -153,7 +152,6 @@ test('the fixed radios stand on walkable ground, off the spawn pads', () => {
     const free = standable(def, n);
     assert.ok(free[Math.floor(p.y / CELL) * n + Math.floor(p.x / CELL)], `${id} radio is on open floor`);
     for (const r of [...def.spawns.red, ...def.spawns.ffa]) assert.ok(!(p.x > r.x - 24 && p.x < r.x + r.w + 24 && p.y > r.y - 24 && p.y < r.y + r.h + 24), `${id} radio is off the pads`);
-    assert.ok(Math.hypot(p.x - WORLD.playerRadius, p.y) > 0);
   }
   const core = MAPS.outpost.siege!.core;
   assert.ok(Math.hypot(FIXED_RADIO.outpost!.x - core.x, FIXED_RADIO.outpost!.y - core.y) < 260, 'the outpost radio stands by the core');

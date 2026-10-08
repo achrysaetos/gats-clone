@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FIXED_RADIO, hiddenRadios, RADIO_REACH } from '../src/shared/radio.ts';
+import { FIXED_RADIO, hiddenRadios, RADIO_REACH, STATION_IDS, type StationId } from '../src/shared/radio.ts';
 import type { ClientMsg, Snapshot } from '../src/shared/protocol.ts';
 import { getPersonalStation, getRoomStation, getStation, setPersonalStation, setRoomStation } from '../src/client/music.ts';
 import { __test, onRoomRadio, radioDebug, radioFinds, radioPress, radioUpdate, stationLabel } from '../src/client/radio.ts';
@@ -49,8 +49,12 @@ test('E at a hidden radio cycles your own music through the map default and Off,
   assert.equal(radioPress(state, 700, () => {}), true);
   assert.equal(getPersonalStation(), 'oldtown');
   assert.equal(radioFinds(), 1, 'one radio counts once');
-  for (let i = 0; i < 20; i++) radioPress(state, 1000 + i * 400, () => {});
-  assert.ok(['march', 'oldtown', 'quarry', 'harbor', 'market', 'museum', 'subpen', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland', 'range', 'outpost', 'off', null].includes(getPersonalStation()));
+  // Round the dial: the stations, Off, the map default, and on round again (seventeen stops), a step per press.
+  const dial: (StationId | null)[] = [null, ...STATION_IDS];
+  for (let i = 0; i < 20; i++) {
+    radioPress(state, 1000 + i * 400, () => {});
+    assert.equal(getPersonalStation(), dial[(dial.indexOf('oldtown') + i + 1) % dial.length], `press ${i + 3}`);
+  }
   assert.deepEqual(sent, [], 'no message for a personal radio');
   // Nowhere near a radio: E is not ours.
   radioUpdate(stateOf(snapAt({ mode: 'TDM', x: 5, y: 5, round: 77 }), 'plaza'), 20_000, () => {});

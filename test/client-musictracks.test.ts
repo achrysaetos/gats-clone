@@ -256,14 +256,12 @@ test('a map change crossfades to the new map\'s track and the old track fades ou
   assert.equal(music.getPlayingTrack(), 'march');
   assert.equal(music.getCrossfade(), null);
   (state as { s: { mapId: string } }).s.mapId = 'causeway'; // the harbour
-  let sawFade = false, steps = 0;
+  let steps = 0;
   while (music.getPlayingTrack() !== 'harbor' && steps++ < 400) step(0.1);
   assert.equal(music.getPlayingTrack(), 'harbor', 'the new map\'s track takes over at a bar line');
   assert.deepEqual(music.getCrossfade(), { from: 'march', to: 'harbor' });
-  sawFade = true;
   for (let i = 0; i < 80 && music.getCrossfade(); i++) step(0.1);
   assert.equal(music.getCrossfade(), null, 'and the old track is gone once the fade is over');
-  assert.ok(sawFade);
   // The radio: a station beats the map's track, null hands back.
   music.setRoomStation('wasteland');
   for (let i = 0; i < 400 && music.getPlayingTrack() !== 'wasteland'; i++) step(0.1);
@@ -321,6 +319,15 @@ test('a bar of any track costs a bounded number of audio nodes', () => {
     for (let n = 0; n < (id === 'march' ? 64 : TRACKS[id].formBars[mode]); n++) { count = 0; rig.playBar(TRACKS[id].bar(1, mode, n), 0, 0.5, 2, deck); worst = Math.max(worst, count); }
     assert.ok(worst <= 900, `${id} ${mode}: ${worst} nodes in its busiest bar with every layer on`);
   }
+});
+
+test('a music volume that is not a number never reaches the bus or the saved setting', async () => {
+  const music = await import('../src/client/music.ts');
+  music.setMusicVolume(0.4);
+  assert.equal(music.getMusicVolume(), 0.4);
+  music.setMusicVolume(Number.NaN);
+  assert.ok(Number.isFinite(music.getMusicVolume()), `volume ${music.getMusicVolume()}`);
+  music.setMusicVolume(1);
 });
 
 test('leaving for the menu leaves the radio behind', async () => {
