@@ -177,6 +177,34 @@ The readout (`Snapshot.range`) shows the last hit's damage and distance, damage 
 
 L (or the Loadout button) opens the loadout panel: every gun with its evolutions in a column per class, the four armors, and every perk of tiers 1 to 3 with a None chip to clear a tier. A click sends `{ t: 'range', a: 'loadout', gun?, armor?, perks?: { 1?, 2?, 3? } }` (a tier left out stays as it is, `null` clears it). The server takes it only in a Range room, parses and validates every id against its own tier (`parseClientMsg`, then `validLoadout` again), refuses it anywhere else with an error message, and applies it at once with a full health bar, magazine and ability. Any tier-1 perk goes on any gun, whether or not the class lists it as an attachment. The panel and readout (`src/client/rangeui.ts`, `public/range.css`) wear the field kit and sit in the HUD, so `--ui` scales them; the targets, their fall and spring and the floor markings are `src/client/targetart.ts`.
 
+### Music and radios
+
+The soundtrack is synthesized in the browser from oscillators, filtered noise and envelopes (no audio files), in one adaptive framework: a calm layer (always), a combat layer that swells with the fight, a hype layer (the lead melody, on a streak, a multi-kill or being hunted), a finale layer (the last 60 seconds, or a boss) and, in the Zombies night, a heartbeat layer. Kills ring a sting in the track's own bell or pluck and key, and a round's end plays a win or loss cadence in the track's key. **Shift+M** turns the music off and on; **M** mutes everything. Every map has its own composition (`src/client/musictracks.ts`), picked by the map id the server sends, and a map change crossfades to the new map's track over 3.5 s at a bar line (`music.ts`: two decks, equal-power curves). The menu plays the calm Toy March.
+
+| Map | Track | Key and tempo | Voices |
+|---|---|---|---|
+| Plaza | Toy March | seeded key, 132 bpm | brass lead and stabs, bells, snare march; a bridge and a breakdown every 32 bars |
+| Old Town | Cobblestone Fife | F, 124 bpm | the march with a fife, harp, accordion stabs, rim clicks and snare ruffs |
+| Quarry | Quarry Clank | D minor, 112 bpm | the march, heavy: growling bass, anvil clanks, scrapes |
+| Causeway (harbour) | Harbour Shanty | D dorian, 108, 12/8 | tuba oom-pah, accordion, foghorn, gull lead, ship's bell |
+| Night Market | Lantern Night | E-flat, 100, swung sixteenths | electric piano, pluck bass, koto hooks on a pentatonic, lantern chimes |
+| Museum | After Hours | C minor, 112, triplet swing | walking upright, brushes, muted trumpet, vibraphone |
+| Sub Pen | Deep Sonar | C-sharp phrygian, 118 | sonar pings, pulsing bass, four on the floor, hull metal, acid line |
+| Park | Picnic Parade | G, 124 | ukulele strums, tuba bounce, hand claps, whistle, marimba |
+| Rail Yard | Night Freight | A blues, 120, shuffle | brush chug, boom-chick bass, harmonica, crossing bell, twelve-bar form |
+| Summit | Alpine Bells | D, 116 | sleigh bells, glockenspiel, airy pad, yodel leaps |
+| Embassy | Diplomatic Cover | A harmonic minor, 120 | surf twang, bongos and rim clicks, a prowling bass |
+| Airbase | Runway Anthem | B-flat, 130 | propeller hum, rolling snares, brass stabs, horn lead |
+| Wasteland | Dust and Wire | E minor pentatonic, 98 | baritone guitar, stomp and clap, lonesome whistle, wind |
+| Range | Practice Lane | F, 96, lo-fi | electric piano, soft kick, vinyl dust; thin on purpose |
+| Outpost (Zombies) | Bastion | day D mixolydian 112; night D phrygian 124 | day: marimba ostinato, hammer clanks, harp tune; night: dread pads, grinding bass, hull metal, scrapes, heartbeat |
+
+Each written track is a form of sections (intro, A, A2, B, bridge, breakdown or build, outro) of 150 to 170 seconds before it comes round, with seeded chord substitutions, motif-based melodies that read one of three variants by the round's seed and the pass, and a fill every four or eight bars, so a ten-minute round never loops audibly (`musicgen.ts` writes the bars, `musictracksa.ts` and `musictracksb.ts` hold the tracks, `musicvoices.ts` the extra voices). `node scripts/render-music.ts <outDir>` renders each track through the real music rig and master bus offline (a tour of every intensity state, with kill stings and the win cadence; `XFADE=1` adds map-change crossfades); headless Chrome's `OfflineAudioContext` is the faithful loudness measure (its compressor is the players'), and the tracks are trimmed to match within 2 dB integrated.
+
+**Radios.** The range and the Zombies outpost each have one chunky toy radio (by the range booth, and beside the Bastion core): a warm light, a speaker that thumps on the beat, a moving dial and music notes drifting up. Walk up and an **E** keycap prompt shows "Radio - station" (on a phone, a Radio button appears); E cycles through all fifteen tracks and Off (the first press goes to the first track), with a tune-in burst of static and a dial click. The client sends `{ t: 'radio', station }`; the server accepts it only in ZOM and RNG rooms, at most once per 350 ms per client, and tells everyone in the room (and a late joiner), so a squad hears one station. In the range the choice is saved in `localStorage` (`skirmish.radio.station`). In Zombies a night keeps the Bastion's night score whatever the radio plays (its heartbeat and menace are the night's alarm) and the station returns at dawn; Off stays off. A round through a radio makes it sputter for a moment. Bots ignore radios, and a radio has no collision.
+
+On every versus map (FFA, TDM, DOM, Last Squad) two to four smaller **hidden radios** sit tucked into corners and alcoves, re-rolled every round: `scripts/radio-pool.ts` picks 30 spots per map (walkable and reachable from a spawn by the map-lint rasters, a wall within 100 px on a run of three to five compass directions and never on opposite sides, 220 px clear of spawn pads and zone-radius plus 160 px clear of zones) into `src/shared/radiopool.ts`, and each client picks from them with a generator seeded by the map and the round's name (`match.roundEndsAt`, or `royale.round` in Last Squad), so every player sees the same radios and the sim's random numbers are untouched. A hidden radio retunes only you (client only, no message): the tracks, "Map default" and Off, until the round ends. The first radio found in a session says "Found a radio!"; finds are counted (`radioFinds()`) for a possible future challenge, with no XP or medal yet.
+
 ## Progression
 
 Every human has an account-level profile (a signed-in account's, or a guest's under their name) that levels up and unlocks things to show off. None of it touches the simulation: it lives in `src/server/profiles.ts`, `src/server/progression.ts` and `src/server/room.ts`, with the catalog and rules shared in `src/shared/cosmetics.ts` and `src/shared/challenges.ts` (the contract is documented at the top of `cosmetics.ts`).

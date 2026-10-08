@@ -35,14 +35,24 @@ export const CONTROLS: readonly [string, string][] = [
   ['1-9, 0', 'Pick perk or evolution'],
   ['B', 'Zombies: build by day; 1-9 pick (1 again, Q or the wheel steps wall tiers), right click takes down'],
   ['U', 'Zombies: upgrade the wall, turret or utility under the cursor (or nearest, outside build mode)'],
-  ['E', 'Zombies: hold to revive, repair or reload'],
+  ['E', 'Zombies: hold to revive, repair or reload; beside a radio, press to change its station'],
   ['L', 'Shooting range: open the loadout panel (any gun, evolution, armor and perk)'],
   ['Tab', 'Hold for the whole leaderboard'],
   ['Enter', 'Chat'],
   ['T', 'Hold for the emote wheel, flick toward a plate, let go'],
   ['M', 'Mute sound'],
+  ['Shift+M', 'Music on or off'],
   ['C', 'Soldier chatter on or off'],
+  ['Esc', 'Pause menu: volume, graphics, gameplay options, controls, leave the match (the match keeps running)'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],
+];
+
+/** Notes for the Controls page on a phone, where there are no keys. */
+export const TOUCH_NOTES: readonly string[] = [
+  'Left thumb moves; push the stick out to its outer ring to sprint.',
+  'Right thumb aims and fires while it is held.',
+  'Reload and the ability have their own buttons; GG opens the emote wheel, then tap a plate.',
+  'The cog in the top corner opens this menu.',
 ];
 
 export const MAX_AIM_DIST = 2000;

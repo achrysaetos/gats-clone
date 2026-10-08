@@ -20,6 +20,7 @@ import { drawGunArt, skinInk } from './gunart.ts';
 import { drawFlashOverlay } from './flashsmoke.ts';
 import type { Session } from './state.ts';
 import { uiScaleFor } from './uiscale.ts';
+import { crosshairLook } from './settings.ts';
 
 /** The kit's condensed face (style.css), with the system face standing in until it loads. */
 const HUD_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
@@ -432,18 +433,35 @@ function drawReticle({ ctx, snap, s, selfAt }: Hud, at: Point, spread: number) {
       ctx.stroke();
     }
   }
-  for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.75)'], [1.5, '#ffffff']] as const) {
-    ctx.lineWidth = width;
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      ctx.moveTo(at.x + dx * gap, at.y + dy * gap);
-      ctx.lineTo(at.x + dx * (gap + RETICLE.tick), at.y + dy * (gap + RETICLE.tick));
+  // The pause menu's crosshair options: a style and one of a few paints (the default is the classic bone cross).
+  const look = crosshairLook();
+  if (look.style === 'classic' || look.style === 'open') {
+    for (const [width, color] of [[3.5, 'rgba(30, 32, 38, 0.75)'], [1.5, look.color]] as const) {
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        ctx.moveTo(at.x + dx * gap, at.y + dy * gap);
+        ctx.lineTo(at.x + dx * (gap + RETICLE.tick), at.y + dy * (gap + RETICLE.tick));
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+  } else if (look.style === 'ring') {
+    for (const [width, color] of [[4.5, 'rgba(30, 32, 38, 0.75)'], [2, look.color]] as const) {
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, Math.max(5, gap + RETICLE.tick * 0.5), 0, TAU);
+      ctx.stroke();
+    }
   }
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(at.x - 1, at.y - 1, 2, 2);
+  if (look.style !== 'open') {
+    const half = look.style === 'classic' ? 1 : 2;
+    ctx.fillStyle = 'rgba(30, 32, 38, 0.75)';
+    if (look.style !== 'classic') ctx.fillRect(at.x - half - 1.5, at.y - half - 1.5, half * 2 + 3, half * 2 + 3);
+    ctx.fillStyle = look.color;
+    ctx.fillRect(at.x - half, at.y - half, half * 2, half * 2);
+  }
   ctx.globalAlpha = 1;
   if (!reloading || sprinting) return;
   // The reload sweep is the reticle's own ring: an ink groove with a gold fill running round it.
@@ -1301,7 +1319,7 @@ function sheen(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
 /** What the vitals plate remembers between frames so its numbers roll and its cues fire once. */
 const vfx = {
   id: -1, at: -1e9, hp: 0, shownHp: 0, trail: 1, hold: 0, hurtAt: -1e9, healAt: -1e9,
-  ammo: 0, ammoAt: -1e9, level: 0, levelAt: -1e9, shownFrac: 0, shownScore: 0, streak: 0, streakAt: -1e9, abilitySpark: -1, levelBurst: false,
+  ammo: 0, ammoAt: -1e9, topN: 0, topAt: -1e9, level: 0, levelAt: -1e9, shownFrac: 0, shownScore: 0, streak: 0, streakAt: -1e9, abilitySpark: -1, levelBurst: false,
 };
 
 function stepVitals({ dt, now }: Hud, me: PlayerView, self: SelfView, displayLevel: number, frac: number) {
@@ -1763,7 +1781,7 @@ function drawRankRow(ctx: CanvasRenderingContext2D, x: number, y: number, lp: { 
 }
 
 /** A drawn magazine: a gunmetal body with a window onto brass rounds (one each for small mags, a ticked column for big ones). */
-function drawMagazine(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ammo: number, mag: number, reload: number, tone: string) {
+function drawMagazine(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, ammo: number, mag: number, reload: number, tone: string, fresh?: { n: number; glow: number }) {
   ctx.fillStyle = CEL.shadow;
   ctx.beginPath();
   ctx.roundRect(x + 3, y + 4, w, h, 4);
@@ -1789,7 +1807,8 @@ function drawMagazine(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
     for (let i = 0; i < mag; i++) {
       if (i >= lit) continue;
       const ry = wy + wh - gap - (i + 1) * rh - i * gap;
-      ctx.fillStyle = color;
+      // Rounds a kill just put in glow white-gold and fade into the rest.
+      ctx.fillStyle = fresh && !reloading && i >= ammo - fresh.n ? mixHex(color, '#fff6c8', Math.min(1, fresh.glow * 1.3)) : color;
       ctx.beginPath();
       ctx.roundRect(wx + 2, ry, ww - 4, rh, [rh / 2, rh / 2, 1, 1]);
       ctx.fill();
@@ -1813,6 +1832,10 @@ function drawMagazine(ctx: CanvasRenderingContext2D, x: number, y: number, w: nu
   ctx.fillRect(x + 1.5, y + h - 6, w - 3, 4.5);
 }
 
+/** A kill put `n` rounds back in your mag: the magazine lights them and a "+n" rises off the count (see topup.ts). */
+export function noteTopup(n: number, now: number) { vfx.topN = n; vfx.topAt = now; }
+const TOPUP_HUD_MS = 900;
+
 /** The ammo cluster: the magazine and the count, readable beside the reticle. `left` mirrors it onto the other side. */
 function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, now: number, gun: { id: GunId; skin: string | undefined; golden: boolean } | null, left = false) {
   const mw = 28, mh = 58;
@@ -1828,7 +1851,8 @@ function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, se
   const numW = ctx.measureText(label).width;
   const total = mw + 8 + Math.max(numW, 96);
   const mx = left ? x - total : x;
-  drawMagazine(ctx, mx, y, mw, mh, self.ammo, self.mag, reloading ? self.reloadFrac : -1, tone);
+  const top = reloading ? 0 : popOf(now - vfx.topAt, TOPUP_HUD_MS);
+  drawMagazine(ctx, mx, y, mw, mh, self.ammo, self.mag, reloading ? self.reloadFrac : -1, tone, top > 0 ? { n: vfx.topN, glow: top } : undefined);
   const nx = mx + mw + 8;
   const pop = popOf(now - vfx.ammoAt, 190);
   const sc = reloading ? 1 : 1 + 0.3 * pop * pop;
@@ -1838,6 +1862,12 @@ function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, se
   inked(ctx, label, 0, 0, numSize, ink, 800);
   ctx.scale(1 / sc, 1 / sc);
   ctx.translate(-nx, -(y + 20));
+  if (top > 0) {
+    // The rounds just put in: a gold "+n" that pops off the count and drifts up as it fades.
+    ctx.globalAlpha = Math.min(1, top * 2.2);
+    inked(ctx, `+${vfx.topN}`, nx + 2, y + 2 - 16 * (1 - top), 24 + 6 * Math.max(0, top - 0.75) * 4, PALETTE.gold, 800);
+    ctx.globalAlpha = 1;
+  }
   if (!reloading) inked(ctx, `/ ${self.mag}`, nx + 1, y + 47, TYPE.body, low ? AMMO.liveLow : PANEL_INK, 700);
   if (gun) {
     setFont(ctx, 700, TYPE.body);

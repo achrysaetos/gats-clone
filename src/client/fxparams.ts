@@ -119,3 +119,62 @@ export function tierGovernor(limitMs = 21, frames = 75) {
     return tier >= lastTier ? -1 : tier + 1;
   };
 }
+
+const DISPLAY_PERIODS = [6.94, 8.33, 11.11, 16.67, 33.33] as const;
+export type GovernorAction = 'none' | 'down' | 'up' | 'off' | 'plain';
+export type GovernorStep = { action: GovernorAction; why: string };
+
+/**
+ * The lighting governor: steps the lighting tier down only when frames stay slow for a sustained stretch, steps it back up after
+ * a long good one, and gives the lights up (then the whole shader pass) only as the last resort. It replaces a hair trigger
+ * (one 1.5 s window averaging over 21 ms, or the pass's CPU cost averaging over 5 ms, switched lighting off for good) that a
+ * 30 Hz power-saver display, a HiDPI canvas upload or one alt-tab could trip.
+ *
+ * Feed it every lit frame's interval and the pass's CPU cost. Judgement is by wall-clock buckets (`bucketMs`), so it does not
+ * depend on the frame rate; a frame interval is judged against the display's own refresh (the quarter-fastest frames), so a
+ * display held to 30 Hz is not "slow". Stalls (a hidden tab, a GC pause, over 250 ms) are not frame times and are skipped.
+ */
+export function lightGovernor(o: { bucketMs?: number; badBuckets?: number; offBuckets?: number; goodBuckets?: number; cpuLimitMs?: number } = {}) {
+  const bucketMs = o.bucketMs ?? 2000, badBuckets = o.badBuckets ?? 3, offBuckets = o.offBuckets ?? 4, goodBuckets = o.goodBuckets ?? 10, cpuLimit = o.cpuLimitMs ?? 14;
+  const recent: number[] = [];
+  let at = -1, n = 0, dtSum = 0, cpuSum = 0, bad = 0, good = 0, floorBad = 0, cpuBad = 0, settle = 0;
+  const fails: number[] = [];
+  let lastAvg = 0, lastLimit = 0;
+  return {
+    push(dtMs: number, cpuMs: number, now: number, tier: number, lastTier: number, lightsOn: boolean): GovernorStep {
+      const none: GovernorStep = { action: 'none', why: '' };
+      if (at < 0) at = now;
+      if (!(dtMs > 0) || dtMs > 250) { dtSum = 0; cpuSum = 0; n = 0; at = now; return none; }
+      recent.push(dtMs); if (recent.length > 240) recent.shift();
+      dtSum += dtMs; cpuSum += cpuMs; n++;
+      if (now - at < bucketMs || n < 8) return none;
+      const avg = dtSum / n, cpu = cpuSum / n;
+      dtSum = 0; cpuSum = 0; n = 0; at = now;
+      const sorted = [...recent].sort((a, b) => a - b);
+      const q25 = sorted[Math.floor(sorted.length * 0.25)]!, q75 = sorted[Math.floor(sorted.length * 0.75)]!;
+      // The display's own period, if the fast frames sit on one of the usual ones (and a slow one is perfectly regular: a power-saver cap, not a struggling GPU).
+      const period = DISPLAY_PERIODS.find((p) => Math.abs(q25 - p) < p * 0.1 && (p < 20 || q75 - q25 < p * 0.1)) ?? 16.7;
+      const limit = Math.max(26, period * 1.55);
+      lastAvg = avg; lastLimit = limit;
+      if (settle > 0) { settle--; return none; }
+      const slow = avg > limit, heavy = cpu > cpuLimit;
+      if (slow || heavy) { bad++; good = 0; if (heavy) cpuBad++; else cpuBad = 0; } else { bad = 0; floorBad = 0; cpuBad = 0; good++; }
+      if (!lightsOn) {
+        // Lighting is already off: only a CPU-heavy pass can still justify dropping the shaders altogether.
+        return cpuBad >= 6 ? { action: 'plain', why: `shader pass cost ${cpu.toFixed(1)} ms of CPU a frame` } : none;
+      }
+      if (bad >= badBuckets) {
+        bad = 0; settle = 1;
+        if (tier < lastTier) { fails[tier] = (fails[tier] ?? 0) + 1; floorBad = 0; return { action: 'down', why: `${slow ? `frames averaged ${avg.toFixed(0)} ms (limit ${limit.toFixed(0)})` : `lighting CPU cost ${cpu.toFixed(1)} ms`} for ${((badBuckets * bucketMs) / 1000).toFixed(0)} s` }; }
+        floorBad++;
+        if (floorBad >= Math.ceil(offBuckets / badBuckets) + 1) { floorBad = 0; fails[tier] = (fails[tier] ?? 0) + 1; return { action: 'off', why: `still ${avg.toFixed(0)} ms a frame at the lowest tier` }; }
+        return none;
+      }
+      if (good >= goodBuckets && tier > 0 && (fails[tier - 1] ?? 0) < 2) { good = 0; settle = 1; return { action: 'up', why: `smooth for ${((goodBuckets * bucketMs) / 1000).toFixed(0)} s` }; }
+      return none;
+    },
+    /** The last bucket's average frame interval and the limit it was judged against, for the dev overlay. */
+    last: () => ({ avg: lastAvg, limit: lastLimit }),
+    reset() { recent.length = 0; at = -1; n = 0; dtSum = 0; cpuSum = 0; bad = 0; good = 0; floorBad = 0; cpuBad = 0; settle = 0; },
+  };
+}

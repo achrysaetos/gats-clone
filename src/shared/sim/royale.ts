@@ -51,6 +51,7 @@ export function newRoyale(w: World): Royale {
   const circle = { x: size / 2, y: size / 2, r: Math.hypot(size, size) / 2 + WORLD.playerRadius * 4 };
   const next = nextCircle(w, circle, RING[0]!.radius);
   const r: Royale = {
+    startedAt: w.now,
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
     squads: [], out: [], redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
   };

@@ -820,8 +820,8 @@ function drawBeacons(ctx: CanvasRenderingContext2D, now: number, view: ThemeView
       ctx.fill();
     }
     ctx.restore();
-    setLight(`subpen:beacon:${i}`, { x: b.x, y: b.y, radius: 320, color: BEACON, intensity: 0.8, cone: { angle: a, half: 0.45 }, size: 6, inside: 16, shadows: false });
-    setLight(`subpen:beacon:${i}b`, { x: b.x, y: b.y, radius: 320, color: BEACON, intensity: 0.8, cone: { angle: a + Math.PI, half: 0.45 }, size: 6, inside: 16, shadows: false });
+    setLight(`subpen:beacon:${i}`, { x: b.x, y: b.y, radius: 520, color: BEACON, intensity: 1.3, cone: { angle: a, half: 0.4 }, beam: 1, size: 6, inside: 16, shadows: false });
+    setLight(`subpen:beacon:${i}b`, { x: b.x, y: b.y, radius: 520, color: BEACON, intensity: 1.3, cone: { angle: a + Math.PI, half: 0.4 }, beam: 1, size: 6, inside: 16, shadows: false });
     // The lamp itself: a drum with a red dome and a spark of white.
     ctx.fillStyle = '#3a3f48';
     ctx.beginPath(); ctx.arc(b.x, b.y + 3, 8, 0, TAU); ctx.fill();
@@ -872,7 +872,7 @@ function ctx_puff(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
 
 registerTheme('subpen', {
   ...subpenGeo({ bulkhead: paintBulkhead }),
-  dusk: 0.4,
+  dusk: 0.3,
   floor: paintDeckFloor,
   walls: { hull: paintHull, tower: paintTower, bulkhead: paintBulkhead, rack: paintRack, water: paintWater },
   under(ctx, now, view, map) {

@@ -269,16 +269,16 @@ function paintLabels(g: G) {
     const at = (x: number, y: number) => T(x, y);
     const put = (kind: 'inlay' | 'paint', id: string, x: number, y: number, size: number, rot = 0) => { const p = at(x, y); (kind === 'inlay' ? inlay : paint)(west ? name(id) : name(id), p.x, p.y, size, rot + R); };
     if (west) {
-      put('inlay', 'flaggallery', 1500, 2850, 30); put('inlay', 'lobby', 1700, 3180, 30); put('paint', 'checkpoint', 1700, 4060, 30);
+      put('inlay', 'flaggallery', 1640, 2850, 30); put('inlay', 'lobby', 1700, 3180, 30); put('paint', 'checkpoint', 1690, 4075, 16);
       put('paint', 'drive', 1500, 5640, 34); put('paint', 'staging', 340, 5500, 26); put('paint', 'lawn', 2500, 4400, 36);
-      put('paint', 'westcourt', 400, 3350, 22); put('paint', 'northterrace', 3000, 2150, 24); put('paint', 'steps', 2780, 3550, 22);
+      put('paint', 'westcourt', 430, 3215, 22); put('paint', 'northterrace', 3000, 2150, 24); put('paint', 'steps', 2780, 3550, 22);
     } else {
-      put('inlay', 'portraits', 1500, 2850, 30); put('inlay', 'kitchen', 1700, 3180, 30); put('paint', 'staff', 1700, 4060, 30);
+      put('inlay', 'portraits', 1640, 2850, 30); put('inlay', 'kitchen', 1700, 3180, 30); put('paint', 'staff', 1690, 4075, 16);
       put('paint', 'dock', 1500, 5640, 34); put('paint', 'servicegate', 340, 5500, 26); put('paint', 'servicelot', 2500, 4400, 36);
-      put('paint', 'eastcourt', 400, 3350, 22); put('paint', 'southterrace', 3000, 2150, 24); put('paint', 'backsteps', 2780, 3550, 22);
+      put('paint', 'eastcourt', 430, 3215, 22); put('paint', 'southterrace', 3000, 2150, 24); put('paint', 'backsteps', 2780, 3550, 22);
     }
   }
-  lettering(g, 'ATRIUM', 3000, 3000 + 440, 26, BRASS_HI, { alpha: 0.5, spacing: 0.4 });
+  lettering(g, 'ATRIUM', 2870, 3000 + 440, 26, BRASS_HI, { alpha: 0.5, spacing: 0.4 });
 }
 
 function parkingLines(g: G, west: boolean) {

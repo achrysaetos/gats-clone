@@ -37,13 +37,23 @@ const WEST: Source[] = [
   { key: 'doors', x: 1000, y: 5780, radius: 300, color: '#ffd9a0', intensity: 0.5, size: 20 },
   { key: 'hut', x: 2520, y: 4240, radius: 260, color: '#ffb347', intensity: 0.5, flicker: 0.2, size: 12 },
   { key: 'dome', x: 2300, y: 5300, radius: 380, color: '#ffa04a', intensity: 0.4, size: 40 },
+  { key: 'staging', x: 225, y: 4875, radius: 380, color: '#ffd08a', intensity: 0.45, flicker: 0.05, size: 10 },
   { key: 'lot', x: 1250, y: 4400, radius: 520, color: '#ffd08a', intensity: 0.4, size: 60 },
   { key: 'rink-a', x: 2330, y: 2570, radius: 640, color: '#dcefff', intensity: 0.55, size: 20 },
   { key: 'rink-b', x: 2330, y: 3430, radius: 640, color: '#dcefff', intensity: 0.55, size: 20 },
 ];
 /** The east half is not a copy: its lights are the other place's colours. */
-const EAST_COLOR: Record<string, string> = { hearth: '#ffb27a', hall: '#a8f0e0', bar: '#9fe8c0', shop: '#d8f4f0', wing: '#a8f0e0', tubs: '#8fd8ff', strings: '#ff9a62', beacon: '#8fd8ff', gate: '#9fe0ff', cabin: '#ffc470', elder: '#ff8a7a', garage: '#d6ecff', doors: '#d6ecff', hut: '#e8f2ff', dome: '#bcd0ff', lot: '#cfe6ff' };
-const SOURCES: Source[] = WEST.flatMap((s) => [s, { ...turn(s), color: EAST_COLOR[s.key] ?? s.color }]);
+const EAST_COLOR: Record<string, string> = { hearth: '#ffb27a', hall: '#a8f0e0', bar: '#9fe8c0', shop: '#d8f4f0', wing: '#a8f0e0', tubs: '#8fd8ff', strings: '#ff9a62', beacon: '#8fd8ff', gate: '#9fe0ff', cabin: '#ffc470', elder: '#ff8a7a', garage: '#d6ecff', doors: '#d6ecff', hut: '#e8f2ff', dome: '#bcd0ff', lot: '#cfe6ff', staging: '#cfe6ff' };
+/** Lamps under a roof: the roof hangs over the lit hot-spot, so keep it a pin-prick rather than a white orb floating on the shingles. */
+const UNDER_ROOF = new Set(['hearth', 'hall', 'bar', 'shop', 'wing', 'cabin', 'garage', 'dome']);
+const SOURCES: Source[] = WEST.flatMap((s) => (UNDER_ROOF.has(s.key) ? { ...s, size: 3 } : s)).flatMap((s) => [s, { ...turn(s), color: EAST_COLOR[s.key] ?? s.color }]);
+/** The spa's own warm lamps, each tied to a paper lantern painted on the floor (summitspa.ts `lantern`), in east-half coordinates. */
+const SPA_LANTERNS: readonly [string, number, number, number][] = [
+  ['hot-a', 5032, 3040, 300], ['hot-b', 5032, 2590, 300],
+  ['hall-a', 4900, 3340, 250], ['hall-b', 4100, 3340, 250], ['hall-c', 4100, 2610, 250],
+  ...[2150, 2500, 2850, 3200, 3550].map((ry, i) => [`room-${i}`, SIZE - 522, SIZE - (ry + 270), 200] as [string, number, number, number]),
+];
+for (const [k, x, y, radius] of SPA_LANTERNS) SOURCES.push({ key: `spa-${k}`, x, y, radius, color: '#ffc27a', intensity: 0.42, flicker: 0.08, size: 3, shadows: false });
 
 const inView = (v: ThemeView, x: number, y: number, r: number) => x + r >= v.x0 && x - r <= v.x1 && y + r >= v.y0 && y - r <= v.y1;
 

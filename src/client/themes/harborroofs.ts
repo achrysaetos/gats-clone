@@ -85,7 +85,7 @@ function paintRoof(g: G, roof: MapRoof, id: string): void {
     }
     case 'stores': {
       corrugated(g, x0, y0, w, h, 28, 'rgba(0,0,0,0.2)', true);
-      g.fillStyle = 'rgba(230,226,210,0.5)'; g.font = '800 70px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = 'rgba(214,210,194,0.32)'; g.font = '800 70px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(east ? 'CG' : 'N4', x0 + w / 2, y0 + h * 0.7);
       break;
     }
@@ -110,7 +110,7 @@ function paintRoof(g: G, roof: MapRoof, id: string): void {
   } else if (nm && !shipOfRoof(id)) {
     const size = Math.min(54, (w / Math.max(5, nm.length)) * 1.45);
     if (base === 'cafe') plate(g, nm, x0 + w / 2, y0 + h * 0.5, 30, '#fff4dc', '#7a2c20', '#f2ead6');
-    else painted(g, nm, x0 + w / 2, y0 + h * 0.34, size, hexA('#f2ecd8', 0.78), 0, 0.16);
+    else painted(g, nm, x0 + w / 2, y0 + h * 0.34, size, hexA('#d6d0bc', 0.4), 0, 0.16);
   }
 }
 

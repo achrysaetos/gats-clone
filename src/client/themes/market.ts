@@ -155,7 +155,7 @@ function under(g: G, now: number, view: ThemeView, map: typeof MAPS.market) {
     const cx = x + w / 2, cy = y + h / 2;
     if (!inView(view, cx, cy, 220)) continue;
     const d = m.d;
-    setLight(`mk-mark-${x}-${y}`, { x: cx, y: cy + h * 0.6, radius: 230, color: d.id === 'fish' ? '#9fd8ff' : d.id === 'arcade' ? '#6fb8ff' : d.light, intensity: 0.65, flicker: d.id === 'grill' ? 0.3 : d.id === 'arcade' ? 0.2 : 0.1, shadows: false });
+    setLight(`mk-mark-${x}-${y}`, { x: cx, y: cy + h * 0.6, radius: 300, color: d.id === 'fish' ? '#9fd8ff' : d.id === 'arcade' ? '#6fb8ff' : d.light, intensity: 0.9, flicker: d.id === 'grill' ? 0.3 : d.id === 'arcade' ? 0.2 : 0.1, shadows: false });
     if (d.id === 'temple') { steam(g, x + 28, y + h - 24, now, 0.3, '210,205,195', 0.8); steam(g, x + 33, y + h - 24, now, 0.6, '210,205,195', 0.6); }
     if (d.id === 'noodle' || d.id === 'grill') steam(g, cx, y + 14, now, 0.4, d.id === 'grill' ? '70,64,60' : '255,255,255', 1.3);
     if (d.id === 'fish') { // fish drift through the tank, one slow lap each
@@ -200,7 +200,7 @@ function under(g: G, now: number, view: ThemeView, map: typeof MAPS.market) {
     if (s.h < 0.55) continue;
     const d = s.d, nx = x + w / 2, ny = y + h + 30;
     const col = s.h > 0.8 ? d.neon : d.neon2;
-    setLight(`mk-shop-${x}-${y}`, { x: nx, y: ny, radius: 170, color: col, intensity: 0.42, flicker: 0.08, shadows: false });
+    setLight(`mk-shop-${x}-${y}`, { x: nx, y: ny, radius: 250, color: col, intensity: 0.8, flicker: 0.08, shadows: false });
     glow(g, nx, ny - 6, 90, col, 0.1);
   }
   // stall bulbs
@@ -208,7 +208,7 @@ function under(g: G, now: number, view: ThemeView, map: typeof MAPS.market) {
     const { x, y, w, h } = s.w;
     if (!inView(view, x + w / 2, y, 150)) continue;
     const north = awningNorth(s.w, map.size);
-    setLight(`mk-stall-${x}-${y}`, { x: x + w / 2, y: north ? y + h + 30 : y - 30, radius: 190, color: '#ffc27a', intensity: 0.7, flicker: 0.12, shadows: false });
+    setLight(`mk-stall-${x}-${y}`, { x: x + w / 2, y: north ? y + h + 30 : y - 30, radius: 250, color: '#ffc27a', intensity: 0.95, flicker: 0.12, shadows: false });
   }
 }
 
@@ -381,7 +381,7 @@ function over(g: G, now: number, view: ThemeView, map: typeof MAPS.market) {
     if (!inView(view, cx, cy, 440)) continue;
     drawString(g, st, now, plated.get(st) ?? null);
     const key = `mk-lan-${Math.round(st.x0)}-${Math.round(st.y0)}`;
-    setLight(key, { x: cx, y: cy + 30, radius: Math.max(210, Math.hypot(st.x1 - st.x0, st.y1 - st.y0) * 0.75), color: st.d.lantern, intensity: 0.55, flicker: 0.1, shadows: false });
+    setLight(key, { x: cx, y: cy + 30, radius: Math.max(260, Math.hypot(st.x1 - st.x0, st.y1 - st.y0) * 0.8), color: st.d.lantern, intensity: 0.85, flicker: 0.1, shadows: false });
   }
   // a balloon a child let go of, caught on a lantern wire in Lantern Alley
   const lanternStrings = D.strings.filter((s) => s.d.id === 'lantern' && Math.abs(s.y1 - s.y0) < 10);
@@ -401,10 +401,10 @@ function over(g: G, now: number, view: ThemeView, map: typeof MAPS.market) {
       g.strokeStyle = hexA(col, 0.55 * flick); g.lineWidth = lw; g.beginPath(); g.arc(3000, 3000 + 40, r, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
     }
     g.font = font(54); g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = hexA('#3fe0d0', 0.6 * flick); g.fillText('NEON CROSSING', 3000, 3000 - 392);
-    glow(g, 3000, 3000 - 390, 260, '#ff4fd0', 0.1 * flick);
-    setLight('mk-gate-a', { x: 3000, y: 3000 - 300, radius: 380, color: '#ff4fd0', intensity: 0.5, flicker: 0.06, shadows: false });
-    setLight('mk-gate-b', { x: 3000, y: 3000 + 260, radius: 360, color: '#3fe0d0', intensity: 0.4, flicker: 0.06, shadows: false });
+    g.fillStyle = hexA('#3fe0d0', 0.6 * flick); g.fillText('NEON CROSSING', 3000, 3000 - 492);
+    glow(g, 3000, 3000 - 492, 260, '#ff4fd0', 0.1 * flick);
+    setLight('mk-gate-a', { x: 3000, y: 3000 - 300, radius: 520, color: '#ff4fd0', intensity: 0.95, flicker: 0.06, shadows: false });
+    setLight('mk-gate-b', { x: 3000, y: 3000 + 260, radius: 500, color: '#3fe0d0', intensity: 0.85, flicker: 0.06, shadows: false });
   }
 }
 

@@ -13,6 +13,7 @@ import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawS
 import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
 import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
+import { drawRadioOverlay, drawRadios } from './radio.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
 import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
@@ -27,9 +28,11 @@ import { fillIcon, strokeIcon, UI_ICONS } from './icons.ts';
 import { careerImage } from './medals.ts';
 import type { Session } from './state.ts';
 import { buildingSolid, standsUp, coreSolid, crateSolid, createGroundCache, curbSolids, drawGround, drawLooseShadows, drawSolids, FOOT, LIP, wallSolids, type Solid } from './tilt.ts';
-import { drawDust, drawNight, drawVignette, nightLights } from './ambience.ts';
+import { drawDust, drawVignette } from './ambience.ts';
+import { moodOf, setMood } from './mood.ts';
+import { drawNightFx } from './nightfx.ts';
 import { lightBackdrop, lightWorld } from './lightfeed.ts';
-import { decorNightLights, drawFixtures } from './fixtures.ts';
+import { drawFixtures } from './fixtures.ts';
 import { floorPlanOf } from './floor.ts';
 import { doorOccluders, drawDoors, drawGeoDebug, drawPolys, drawRoofs, geoDebug, polyOccluders, type GeoInfo } from './geoart.ts';
 import { leavesFromViews } from '../shared/sim/doors.ts';
@@ -94,7 +97,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const tl = screenToWorld(cam, { x: 0, y: 0 });
   const br = screenToWorld(cam, { x: cam.w, y: cam.h });
   const view: View = { x0: tl.x - CULL_MARGIN, y0: tl.y - CULL_MARGIN, x1: br.x + CULL_MARGIN, y1: br.y + CULL_MARGIN };
-  const dark = easeNight(snap.run, now, themeOf(mapOf(snap.match.map)?.theme)?.dusk);
+  const mood = moodOf(snap.match.map);
+  setMood(mood);
+  const dark = easeNight(snap.run, now, mood?.dusk ?? themeOf(mapOf(snap.match.map)?.theme)?.dusk);
   const siege = snap.run ? [...(snap.buildings ?? []).filter(standsUp).map(buildingSolid), coreSolid(snap.run)] : 'static';
   drawGround(ctx, ground.get(`${snap.match.map}|${mapWallsKey(s.walls)}`, s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
   // A theme's ground-level animation (water, decks) goes under every wall, shadow and body.
@@ -147,6 +152,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawAmbientGround(ctx, { snap, s, now, view, dark });
   drawBarrels(ctx, snap, now, view);
   drawProps(ctx, snap, now, view);
+  drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);
   drawPlaneShadow(ctx, snap.airdrop, airClock, view);
@@ -164,12 +170,13 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   // With the shader pass on, the world so far is handed to it to be lit (shadows, lamps, night); the rest of the frame is its overlay.
   const lit = lightWorld(ctx, { snap, selfId: s.myId, selfAngle: f.selfAngle, tl, br, dark, now, airLanded: !!snap.airdrop && airClock !== null && airClock >= snap.airdrop.landAt, solids: [...walls, ...standing, ...crates], occluders: geo ? [...polyOccluders(geoMap!, view), ...doorOccluders(leaves, view)] : undefined, decor, fx });
   if (dark > 0) {
-    if (!lit) drawNight(ctx, tl, br, dark, [...nightLights(snap, s.myId, f.selfAngle), ...(decor ? decorNightLights(decor, view, fx) : [])]);
+    if (!lit) drawNightFx(ctx, tl, br, dark, now, mood);
     if (zombies.length) drawHordeEyes(ctx, dark);
   }
   drawDust(ctx, tl, br, now, dark);
   drawVignette(ctx, cam.w, cam.h, dpr, 0.36 + 0.2 * dark);
   ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
+  drawRadioOverlay(ctx, now, reducedMotion());
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);

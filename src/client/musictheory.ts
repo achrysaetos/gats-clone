@@ -6,7 +6,12 @@
 export type LayerId = 'calm' | 'combat' | 'hype' | 'finale' | 'heart';
 export const LAYER_IDS: readonly LayerId[] = ['calm', 'combat', 'hype', 'finale', 'heart'];
 export type Mode = 'major' | 'minor';
-export type Inst = 'kick' | 'snare' | 'hat' | 'tom' | 'bass' | 'pad' | 'glock' | 'stab' | 'lead' | 'heart';
+export type Inst =
+  | 'kick' | 'snare' | 'hat' | 'tom' | 'bass' | 'pad' | 'glock' | 'stab' | 'lead' | 'heart'
+  // Voices added for the per-map scores (musicvoices.ts).
+  | 'fife' | 'harp' | 'accordion' | 'foghorn' | 'gull' | 'koto' | 'chime' | 'epiano' | 'vibes' | 'trumpet' | 'upright' | 'sonar' | 'tbass' | 'acid'
+  | 'metal' | 'whistle' | 'uke' | 'marimba' | 'harmonica' | 'rbell' | 'yodel' | 'twang' | 'bgtr' | 'tuba' | 'fbass' | 'padair' | 'dread' | 'clank'
+  | 'brush' | 'swirl' | 'clap' | 'bongo' | 'sleigh' | 'shaker' | 'rim' | 'chug' | 'ohat' | 'stomp' | 'wind' | 'scrape' | 'drone' | 'dust';
 
 export const STEPS_PER_BAR = 16;
 export const BARS_PER_PHRASE = 8;
@@ -58,13 +63,25 @@ export const PROGRESSIONS: Record<Mode, readonly (readonly Deg[])[]> = {
 
 export const keyOfSeed = (seed: number) => KEYS[hash(seed, 7) % KEYS.length]!;
 
-/** The chord under `barNo`, the phrase's last bar turning to the dominant so each phrase leans back into the next. */
-export function chordAt(seed: number, mode: Mode, barNo: number): { chord: Chord; degree: number } {
-  const tonic = keyOfSeed(seed);
+/** Every fourth phrase is a bridge: its own set of loops that start away from the tonic. */
+const BRIDGES: Record<Mode, readonly (readonly Deg[])[]> = {
+  major: [[vi, IV, I, V], [IV, iii, vi, V], [ii, V, iii, vi]],
+  minor: [[VI, VII, i, V], [iv, VI, III, VII], [VI, iv, i, V]],
+};
+
+/** Which part of the long form a phrase is: 0 and 1 the tune, 2 the bridge, 3 the breakdown and build. */
+export const phraseForm = (phrase: number) => phrase % 4;
+
+/** The chord under `barNo`, the phrase's last bar turning to the dominant so each phrase leans back into the next. A bar halfway through a phrase may swap to the ii (iv in minor). */
+export function chordAt(seed: number, mode: Mode, barNo: number, tonicOverride?: number): { chord: Chord; degree: number } {
+  const tonic = tonicOverride ?? keyOfSeed(seed);
   const phrase = Math.floor(barNo / BARS_PER_PHRASE);
-  const prog = PROGRESSIONS[mode][hash(seed, phrase, mode === 'major' ? 1 : 2) % PROGRESSIONS[mode].length]!;
+  const bridge = phraseForm(phrase) === 2;
+  const list = bridge ? BRIDGES[mode] : PROGRESSIONS[mode];
+  const prog = list[hash(seed, phrase, mode === 'major' ? 1 : 2) % list.length]!;
   const inPhrase = barNo % BARS_PER_PHRASE;
   let deg = prog[inPhrase % 4]!;
+  if (inPhrase === 5 && !bridge && hash(seed, phrase, 13) % 2 === 0) deg = mode === 'major' ? ii : iv;
   if (inPhrase === BARS_PER_PHRASE - 1) deg = V;
   return { chord: { rootPc: (tonic + deg[0]) % 12, tones: deg[1] }, degree: deg[0] };
 }
@@ -118,12 +135,20 @@ function leadFor(seed: number, mode: Mode, barNo: number, chord: Chord, tonic: n
   return events;
 }
 
-/** The generated bar: the pure source of the whole soundtrack. Same (seed, mode, barNo) always returns the same bar. */
-export function generateBar(seed: number, mode: Mode, barNo: number): Bar {
-  const tonic = keyOfSeed(seed);
-  const { chord, degree } = chordAt(seed, mode, barNo);
+/** The yard march comes in three flavours: the plaza's brass band, the old town's fife and snare, the quarry's heavy industrial one. */
+export type MarchStyle = 'plaza' | 'oldtown' | 'quarry';
+/** Fixed keys for the flavours that have one; the plaza's key still comes from the seed. */
+export const MARCH_TONIC: Partial<Record<MarchStyle, number>> = { oldtown: 5, quarry: 2 };
+
+/** The generated bar: the pure source of the whole soundtrack. Same (seed, mode, barNo, style) always returns the same bar. */
+export function generateBar(seed: number, mode: Mode, barNo: number, style: MarchStyle = 'plaza'): Bar {
+  if (style === 'quarry') mode = 'minor';
+  const tonic = MARCH_TONIC[style] ?? keyOfSeed(seed);
+  const { chord, degree } = chordAt(seed, mode, barNo, tonic);
   const phrase = Math.floor(barNo / BARS_PER_PHRASE);
   const inPhrase = barNo % BARS_PER_PHRASE;
+  const form = phraseForm(phrase);
+  const bridge = form === 2, breakdown = form === 3 && inPhrase < 4, build = form === 3 && inPhrase >= 4;
   const r = rng(hash(seed, barNo, mode === 'major' ? 3 : 4));
   const pr = rng(hash(seed, phrase, 99));
   const ev: MusicEvent[] = [];
@@ -132,18 +157,19 @@ export function generateBar(seed: number, mode: Mode, barNo: number): Bar {
   const fifth = root + 7;
   const third = root + chord.tones[1]!;
   const fill = inPhrase === 7, miniFill = inPhrase === 3;
-  const bassStyle = Math.floor(pr() * 3);
+  const smallFill = (inPhrase === 1 || inPhrase === 5) && hash(seed, phrase, inPhrase, 41) % 3 === 0;
+  const bassStyle = bridge ? 1 : Math.floor(pr() * 3);
   const march = Math.floor(pr() * 3);
 
   // calm: pad, bouncy bass, brushed kick and hats, glockenspiel sparkles.
-  for (const t of chord.tones) add('calm', 'pad', 0, 16, 60 + chord.rootPc + t - (chord.rootPc > 6 ? 12 : 0), 0.5);
+  for (const t of chord.tones) add('calm', 'pad', 0, 16, 60 + chord.rootPc + t - (chord.rootPc > 6 ? 12 : 0), bridge ? 0.65 : 0.5);
   if (bassStyle === 0) { add('calm', 'bass', 0, 3, root, 1); add('calm', 'bass', 4, 2, fifth, 0.8); add('calm', 'bass', 8, 3, root, 0.95); add('calm', 'bass', 12, 2, third, 0.8); add('calm', 'bass', 14, 2, fifth, 0.75); }
   else if (bassStyle === 1) { for (let s = 0; s < 16; s += 4) { add('calm', 'bass', s, 2, root, s === 0 ? 1 : 0.8); add('calm', 'bass', s + 2, 2, s % 8 === 4 ? fifth : root + 12, 0.7); } }
   else { add('calm', 'bass', 0, 2, root, 1); add('calm', 'bass', 3, 1, root + 12, 0.7); add('calm', 'bass', 6, 2, fifth, 0.85); add('calm', 'bass', 8, 2, root, 0.95); add('calm', 'bass', 11, 1, root + 12, 0.7); add('calm', 'bass', 14, 2, fifth, 0.85); }
   add('calm', 'kick', 0, 1, 0, 0.55); add('calm', 'kick', 8, 1, 0, 0.45);
-  for (let s = 2; s < 16; s += 4) add('calm', 'hat', s, 1, 0, 0.35);
+  for (let s = 2; s < 16; s += 4) add('calm', 'hat', s, 1, 0, bridge ? 0.5 : 0.35);
   const spark = chordNotes(chord, MID_C + 12, MID_C + 31);
-  const nSpark = 3 + Math.floor(r() * 3);
+  const nSpark = (breakdown ? 5 : 3) + Math.floor(r() * 3);
   const used = new Set<number>();
   for (let k = 0; k < nSpark; k++) {
     let s = Math.floor(r() * 16);
@@ -152,16 +178,25 @@ export function generateBar(seed: number, mode: Mode, barNo: number): Bar {
     add('calm', 'glock', s, 2, pick(r, spark), 0.5 + r() * 0.3);
   }
 
-  // combat: snare march, oom-pah brass stabs, driving kick.
+  // combat: snare march, oom-pah brass stabs, driving kick. The breakdown drops to a half-time thump, the build rolls back in.
   const snareMarch: readonly (readonly number[])[] = [[4, 12, 7, 15], [4, 12, 6, 7, 14, 15], [3, 4, 11, 12, 14]];
-  add('combat', 'kick', 0, 1, 0, 0.8); add('combat', 'kick', 8, 1, 0, 0.75); add('combat', 'kick', 10, 1, 0, 0.55);
-  add('combat', 'snare', 4, 1, 0, 0.9); add('combat', 'snare', 12, 1, 0, 0.95);
-  for (const s of snareMarch[march]!) if (s !== 4 && s !== 12) add('combat', 'snare', s, 1, 0, 0.4);
-  for (const s of [2, 6, 10, 14]) for (const t of chord.tones) add('combat', 'stab', s, 1, 55 + ((((chord.rootPc + t - 55) % 12) + 12) % 12), 0.45);
+  if (breakdown) {
+    add('combat', 'kick', 0, 1, 0, 0.85); add('combat', 'kick', 8, 1, 0, 0.8);
+    add('combat', 'snare', 12, 1, 0, 0.8); add('combat', 'tom', 4, 1, 45, 0.5);
+  } else {
+    add('combat', 'kick', 0, 1, 0, 0.8); add('combat', 'kick', 8, 1, 0, 0.75); add('combat', 'kick', 10, 1, 0, 0.55);
+    add('combat', 'snare', 4, 1, 0, 0.9); add('combat', 'snare', 12, 1, 0, 0.95);
+    for (const s of snareMarch[march]!) if (s !== 4 && s !== 12) add('combat', 'snare', s, 1, 0, 0.4);
+    for (const s of [2, 6, 10, 14]) for (const t of chord.tones) add('combat', 'stab', s, 1, 55 + ((((chord.rootPc + t - 55) % 12) + 12) % 12), build && inPhrase === 4 ? 0.3 : 0.45);
+  }
   if (miniFill) for (let s = 12; s < 16; s++) add('combat', 'snare', s, 1, 0, 0.5 + (s - 12) * 0.12);
+  if (smallFill) { add('combat', 'tom', 14, 1, 50, 0.7); add('combat', 'tom', 15, 1, 45, 0.75); }
+  if (build && inPhrase >= 6) for (let s = inPhrase === 7 ? 0 : 8; s < 16; s++) add('combat', 'snare', s, 1, 0, 0.3 + s * 0.04);
 
-  // hype: the brass lead, bell doubling, a snare roll into each phrase turn.
-  for (const e of leadFor(seed, mode, barNo, chord, tonic)) { ev.push(e); if (e.dur >= 3) add('hype', 'glock', e.step, 2, e.midi + 12, 0.45); }
+  // hype: the brass lead, bell doubling, a snare roll into each phrase turn. The bridge adds a bell arpeggio under it; the breakdown rests the lead for two bars.
+  const leadOn = !(breakdown && inPhrase < 2);
+  if (leadOn) for (const e of leadFor(seed, mode, barNo, chord, tonic)) { ev.push(e); if (e.dur >= 3) add('hype', 'glock', e.step, 2, e.midi + 12, 0.45); }
+  if (bridge) { const arp = chordNotes(chord, MID_C + 12, MID_C + 28); for (let s = 0; s < 16; s += 2) add('hype', 'glock', s, 2, arp[(s / 2 + inPhrase) % arp.length]!, 0.3); }
   if (fill) for (let s = 8; s < 16; s++) add('hype', 'snare', s, 1, 0, 0.35 + (s - 8) * 0.09);
   if (fill) add('hype', 'tom', 15, 1, 43, 0.9);
   if (inPhrase === 0) add('hype', 'tom', 0, 1, 50, 0.8);
@@ -169,7 +204,7 @@ export function generateBar(seed: number, mode: Mode, barNo: number): Bar {
   // finale: sixteenth hats, octave-pumping bass, the lead's harmony a third up, tom rolls.
   for (let s = 0; s < 16; s++) add('finale', 'hat', s, 1, 0, s % 4 === 0 ? 0.5 : 0.3);
   for (let s = 0; s < 16; s += 2) add('finale', 'bass', s, 1, root + (s % 4 === 2 ? 12 : 0), 0.7);
-  for (const e of leadFor(seed, mode, barNo, chord, tonic)) add('finale', 'lead', e.step, e.dur, e.midi + (mode === 'major' ? 4 : 3), 0.55);
+  if (leadOn) for (const e of leadFor(seed, mode, barNo, chord, tonic)) add('finale', 'lead', e.step, e.dur, e.midi + (mode === 'major' ? 4 : 3), 0.55);
   add('finale', 'tom', 6, 1, 45, 0.6); add('finale', 'tom', 14, 1, 40, 0.65); if (fill) for (let s = 12; s < 16; s++) add('finale', 'tom', s, 1, 55 - (s - 12) * 4, 0.8);
 
   // heart: lub-dub on the beat, thickening with tiers (see heartTier).
@@ -181,7 +216,38 @@ export function generateBar(seed: number, mode: Mode, barNo: number): Bar {
   // A dark pedal under the night: the root, two octaves down.
   if (mode === 'minor') add('heart', 'bass', 0, 16, root - 12 + (root - 12 < 24 ? 12 : 0), 0.6, 0);
 
-  return { barNo, mode, tonic, chord, degree, events: ev };
+  return { barNo, mode, tonic, chord, degree, events: style === 'plaza' ? ev : flavour(style, ev, inPhrase, root, r) };
+}
+
+/** Re-voices the march for the old town (fife, harp, rim-clicks and snare ruffs on the cobbles) or the quarry (growling bass, anvil clanks). */
+function flavour(style: Exclude<MarchStyle, 'plaza'>, ev: MusicEvent[], inPhrase: number, root: number, r: () => number): MusicEvent[] {
+  const out: MusicEvent[] = [];
+  const add = (layer: LayerId, inst: Inst, step: number, dur: number, midi: number, vel: number) => out.push({ layer, inst, step, dur, midi, vel });
+  if (style === 'oldtown') {
+    for (const e of ev) {
+      if (e.inst === 'lead') out.push({ ...e, inst: 'fife', midi: e.midi + 12 });
+      else if (e.inst === 'glock' && e.layer === 'calm') out.push({ ...e, inst: 'harp' });
+      else if (e.inst === 'bass' && e.layer === 'calm') out.push({ ...e, inst: 'tuba' });
+      else if (e.inst === 'stab') out.push({ ...e, inst: 'accordion', vel: e.vel * 1.3 });
+      else out.push(e);
+      // a ruff (grace stroke) before every backbeat snare
+      if (e.inst === 'snare' && (e.step === 4 || e.step === 12) && e.layer === 'combat') add('combat', 'snare', e.step - 0.4, 1, 0, 0.25);
+    }
+    add('calm', 'rim', 4, 1, 0, 0.6); add('calm', 'rim', 12, 1, 0, 0.6);
+    if (r() < 0.5) add('calm', 'rim', 14, 1, 0, 0.35);
+    return out;
+  }
+  for (const e of ev) {
+    if (e.inst === 'bass') out.push({ ...e, inst: 'tbass', vel: Math.min(1, e.vel * 1.2) });
+    else if (e.inst === 'glock' && e.layer === 'calm') out.push({ ...e, inst: 'clank', midi: e.midi + (r() < 0.5 ? 0 : 7), vel: Math.min(1, e.vel * 0.9) });
+    else out.push(e);
+  }
+  add('calm', 'clank', 0, 1, 52, 0.7); add('calm', 'clank', 8, 1, 55, 0.55);
+  for (const s of [2, 6, 10, 14]) add('combat', 'clank', s, 1, s % 8 === 2 ? 64 : 67, 0.5);
+  add('combat', 'kick', 4, 1, 0, 0.6); add('combat', 'kick', 12, 1, 0, 0.6);
+  if (inPhrase % 4 === 3) add('combat', 'scrape', 12, 3, 0, 0.7);
+  for (let s = 0; s < 16; s += 4) add('finale', 'clank', s + 1, 1, 60 + (s % 8), 0.5);
+  return out;
 }
 
 /** How many heartbeat tiers are voiced for a horde of 0..1. */

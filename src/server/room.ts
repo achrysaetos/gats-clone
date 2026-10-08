@@ -23,6 +23,7 @@ import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
 import { EMOTE_INTERVAL_MS, EMOTE_RANGE } from '../shared/emotes.ts';
+import { RADIO_INTERVAL_MS, RADIO_MODES, type StationId } from '../shared/radio.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
@@ -35,7 +36,7 @@ const BOTS_PER_HUMAN = 3;
 
 type Client =
   | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; lastEmoteAt: number; aspect: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; lastEmoteAt: number; lastRadioAt: number; aspect: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
@@ -58,7 +59,11 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   const botRand = () => rand(world);
   const bots = new Map<number, BotMemory>();
   const clients = new Map<WebSocket, Client>();
+  /** When each socket's unsent backlog first went over the cap, for sockets still over it. */
+  const backlogSince = new Map<WebSocket, number>();
   let wallsVersion = world.wallsVersion;
+  /** The room's radio: the squad's in Zombies, the lone player's in the range. Null until someone tunes it (each map then plays its own track). */
+  let radioStation: StationId | null = null;
 
   const send = (ws: WebSocket, msg: ServerMsg) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg)); };
   const joined = () => [...clients.values()].filter((c): c is Extract<Client, { k: 'joined' }> => c.k === 'joined');
@@ -272,12 +277,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account && !practice) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, lastEmoteAt: -Infinity, aspect: msg.aspect, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
+      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
       const key = profileKey(joinedClient, name);
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account });
+      if (radioStation) send(client.ws, { t: 'radio', station: radioStation, by: null });
       profile(p.id, { games: 1 });
       if (key) {
         // Looking is free in practice; changing a profile, or reading its news (which clears it), is not.
@@ -323,6 +329,16 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         }
         return;
       }
+      case 'radio': {
+        // Only the squad's room and the range have a radio; anything else, or a client tuning too fast, is dropped without a word.
+        const now = Date.now();
+        const p = world.players.get(id);
+        if (!RADIO_MODES.includes(mode) || !p || now - client.lastRadioAt < RADIO_INTERVAL_MS) return;
+        client.lastRadioAt = now;
+        radioStation = msg.station;
+        for (const c of joined()) send(c.ws, { t: 'radio', station: radioStation, by: p.name });
+        return;
+      }
       case 'chat': {
         const now = Date.now();
         if (now - client.lastChatAt < CHAT_INTERVAL_MS) { send(client.ws, { t: 'error', message: 'Slow down' }); return; }
@@ -339,6 +355,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function disconnect(ws: WebSocket) {
     const c = clients.get(ws);
     clients.delete(ws);
+    backlogSince.delete(ws);
     if (c?.k !== 'joined') return;
     const left = world.players.get(c.playerId);
     if (mode === 'BR' && left?.team && seatOpen(left.team)) takeSeat(world, addBot(left.team), left);
@@ -430,7 +447,21 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const walls = wallViews(world);
         for (const c of joined()) send(c.ws, { t: 'walls', worldSize: MAPS[world.map].size, map: world.map, walls });
       }
-      for (const c of joined()) if (c.ws.readyState === c.ws.OPEN) c.ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
+      const now = Date.now();
+      for (const c of joined()) {
+        const ws = c.ws;
+        if (ws.readyState !== ws.OPEN) continue;
+        // A reader that has stopped (a throttled or frozen tab, a dead link) must not be fed: every queued snapshot is stale by the time it is read,
+        // and the backlog is memory and write work the room keeps paying for. The encoder runs only for snapshots that go out, so its deltas stay true.
+        if (ws.bufferedAmount > limits.maxBufferedBytes) {
+          const since = backlogSince.get(ws) ?? now;
+          backlogSince.set(ws, since);
+          if (now - since >= limits.stallMs) ws.terminate();
+          continue;
+        }
+        backlogSince.delete(ws);
+        ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
+      }
     },
     info() {
       return { id, mode, players: world.players.size, humans: joined().length };

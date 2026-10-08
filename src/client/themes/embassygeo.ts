@@ -47,7 +47,8 @@ function vehicle(g: G, p: MapPoly, _pts: Pt[], info: GeoInfo) {
   const isTwin = twin(p);
   const o = { x: isTwin ? 6000 - v.x : v.x, y: isTwin ? 6000 - v.y : v.y, rot: v.rot + (isTwin ? Math.PI : 0), t: clock(info.now), polys: [p] };
   const kind = isTwin ? (v.kind === 'limo' ? 'reefer' : 'van') : v.kind;
-  drawVehicle(g, kind, o);
+  // The motorcade is pale (a white limousine, silver SUVs): near-black cars vanished into the asphalt at dusk.
+  drawVehicle(g, kind, isTwin ? o : { ...o, livery: v.kind === 'limo' ? 'white' : 'silver' });
   for (const l of vehicleLights(kind, { ...o, id: poolOf(p) })) setLight(l.key, { x: l.x, y: l.y, radius: l.radius, color: l.color, intensity: l.intensity, size: l.size, shadows: false });
 }
 

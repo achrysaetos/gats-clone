@@ -2,11 +2,13 @@ import { AIRDROP, BARREL, ZOM } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
 import type { Point } from './camera.ts';
 import { CORE_GLOW } from './coreart.ts';
+import { currentMood, setMood } from './mood.ts';
+import { reducedMotion } from './screenfx.ts';
 import { occludersOf, setLight, setLightClock, type Occluder } from './lighting.ts';
 import { setPropLightSink } from './propfx.ts';
 import type { DecorPlan } from './decor.ts';
 import { pickDecorLights, type FxState } from './fixturelight.ts';
-import { captureBase, lightingActive } from './postfx.ts';
+import { captureBase, lightingActive, lightingBudget } from './postfx.ts';
 import { FACE, type Solid } from './tilt.ts';
 
 /**
@@ -15,6 +17,8 @@ import { FACE, type Solid } from './tilt.ts';
  * (muzzle flashes, blasts, sparks) call `addLight` where they happen.
  */
 
+/** Fixture lights the plain canvas paints (they cost a gradient each, not a shader pass). */
+const PLAIN_DECOR = 10;
 const LAMP = '#ffc47e';
 const AMBER = '#ffb347';
 const GOLD = '#ffd34d';
@@ -49,8 +53,9 @@ function feedNight(w: LitWorld) {
   for (const p of snap.players) {
     if (!p.alive || p.hidden) continue;
     const angle = p.id === w.selfId && w.selfAngle !== null ? w.selfAngle : p.angle;
-    setLight(`lamp:${p.id}`, { x: p.x, y: p.y, radius: 170, color: LAMP, intensity: 0.7 * dark, size: 10, inside: 16, flicker: 0.04 });
-    setLight(`beam:${p.id}`, { x: p.x, y: p.y, radius: 400, color: '#ffd9a0', intensity: 0.7 * dark, cone: { angle, half: 0.4 }, size: 6, inside: 16 });
+    const me = p.id === w.selfId;
+    setLight(`lamp:${p.id}`, { x: p.x, y: p.y, radius: me ? 190 : 140, color: LAMP, intensity: (me ? 0.85 : 0.5) * dark, size: 10, inside: 16, flicker: 0.04, priority: me ? 40 : 6 });
+    setLight(`beam:${p.id}`, { x: p.x, y: p.y, radius: me ? 460 : 400, color: '#ffd9a0', intensity: (me ? 0.85 : 0.65) * dark, cone: { angle, half: 0.4 }, size: 6, inside: 16, beam: me ? 0.22 : 0.12, priority: me ? 20 : 3 });
   }
   for (const b of snap.buildings ?? []) {
     const color = TURRET_LIGHT[b.kind];
@@ -86,17 +91,41 @@ function feedAlways(w: LitWorld) {
 }
 
 /**
+ * A storm's lightning: every dozen seconds or so the sky flashes twice and the whole view lights blue-white for an instant. The
+ * moment comes from the clock alone, so every client sees the same strike; reduced motion has none (no flashes).
+ */
+export function lightningLevel(now: number): number {
+  const period = 12_000, slot = Math.floor(now / period);
+  const h = Math.sin(slot * 12.9898) * 43758.5453, at = (h - Math.floor(h)) * 7000 + 1500, t = now - slot * period - at;
+  if (t < 0 || t > 520) return 0;
+  const pulse = (d: number, w: number) => Math.max(0, 1 - Math.abs(t - d) / w);
+  return Math.max(pulse(40, 60), pulse(300, 90) * 0.7);
+}
+
+function feedWeather(w: LitWorld, reduced: boolean) {
+  const m = currentMood();
+  if (!m?.lightning || reduced) return;
+  const k = lightningLevel(w.now) * m.lightning;
+  if (k <= 0.02) return;
+  const cx = (w.tl.x + w.br.x) / 2, cy = (w.tl.y + w.br.y) / 2, r = Math.max(w.br.x - w.tl.x, w.br.y - w.tl.y) * 0.9;
+  setLight('storm:flash', { x: cx, y: cy, radius: r, color: '#d4e4ff', intensity: 1.15 * k, size: r * 0.4, shadows: false, priority: 50 });
+}
+
+/**
  * Feeds this frame's lights and, when the lighting pass is running, captures the world drawn so far as the lit base and
  * clears the canvas so the rest of the frame draws as an unlit overlay. Returns true when it did, and drawWorld then
  * skips ambience.ts's 2D night shade. Does nothing (and returns false) for any canvas but the game's, or with the pass off.
  */
 export function lightWorld(ctx: CanvasRenderingContext2D, w: LitWorld): boolean {
-  if (!lightingActive() || ctx.canvas.id !== 'game') return false;
+  if (ctx.canvas.id !== 'game') return false;
+  // The lights are fed whether or not the shader pass runs: the plain canvas paints the same ones (nightfx.ts).
   setLightClock(w.now);
   feedNight(w);
   feedAlways(w);
-  if (w.decor && w.fx) for (const { key, spec } of pickDecorLights(w.decor, { x0: w.tl.x, y0: w.tl.y, x1: w.br.x, y1: w.br.y }, w.fx)) setLight(key, spec);
+  feedWeather(w, reducedMotion());
   const view = { x0: w.tl.x, y0: w.tl.y, x1: w.br.x, y1: w.br.y };
+  if (w.decor && w.fx) for (const { key, spec } of pickDecorLights(w.decor, view, w.fx, lightingActive() ? lightingBudget().decor : PLAIN_DECOR)) setLight(key, spec);
+  if (!lightingActive()) return false;
   if (!captureBase(ctx.canvas, view, [...occludersOf(w.solids, view, (k) => FACE[k]), ...(w.occluders ?? [])])) return false;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -108,6 +137,7 @@ export function lightWorld(ctx: CanvasRenderingContext2D, w: LitWorld): boolean 
 /** The menu's backdrop: no lamps, but the walls still ground themselves with the pass's contact shadow. */
 export function lightBackdrop(ctx: CanvasRenderingContext2D, tl: Point, br: Point, solids: readonly Solid[], now: number): boolean {
   if (!lightingActive() || ctx.canvas.id !== 'game') return false;
+  setMood(undefined);
   setLightClock(now);
   const view = { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y };
   if (!captureBase(ctx.canvas, view, occludersOf(solids, view, (k) => FACE[k]))) return false;

@@ -10,6 +10,7 @@ import { cachedSprite, storeSprite } from './vehiclecache.ts';
 import type { BakeJob } from './vehicleworker.ts';
 import type { MapPoly } from '../shared/geom.ts';
 import { claimShadows } from './vehicleshadow.ts';
+import { knobs } from './quality.ts';
 
 export { VEHICLE_KINDS, type VehicleKind };
 export type VehicleOpts = {
@@ -27,7 +28,7 @@ const calm = (() => { try { return typeof matchMedia === 'function' && matchMedi
 /** Sprite px per world px: crisp on a high-density screen, smaller for the very big pieces so a bake stays a few MB. */
 function resFor(m: Model, scale: number, lod: number): number {
   const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
-  let r = Math.min(1.5, Math.max(1, dpr * 0.9)) * lod;
+  let r = Math.min(1.5, Math.max(1, dpr * 0.9)) * lod * knobs().vehicleRes;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (let i = 0; i < m.pos.length; i += 3) { x0 = Math.min(x0, m.pos[i]!); x1 = Math.max(x1, m.pos[i]!); y0 = Math.min(y0, m.pos[i + 1]!); y1 = Math.max(y1, m.pos[i + 1]!); }
   const span = Math.max(x1 - x0, y1 - y0) * PX_PER_M * scale * 1.2;

@@ -4,6 +4,7 @@ import { unflat } from '../../shared/geom.ts';
 import { DOOR_HEIGHT, drawExtruded, type GeoInfo, type PolyLook } from '../geoart.ts';
 import { INK } from '../palette.ts';
 import { drawVehicle, vehicleSprite } from '../vehicleart.ts';
+import { paintDome, paintGable } from './summitroof.ts';
 import { C, SIZE, TAU, baseId, ell, hash, hexA, isTwin, shade, type G } from './summitkit.ts';
 
 /**
@@ -380,84 +381,11 @@ function hazardStrip(g: G, b: Bounds) { g.save(); g.beginPath(); g.rect(b.x0, b.
 
 /* -- roofs ------------------------------------------------------------------------------------------------------------------ */
 
-const ROOF_NAMES: Record<string, [string, string]> = { hall: ['SUMMIT LODGE', 'ALPINE SPA'], lift: ['SUMMIT EXPRESS', 'ICE GARDEN'], bay: ['SNOWCAT GARAGE', 'CABLE CAR TERMINAL'], cabin: ['', 'SAWMILL'] };
-
-/** A roof is snow on shingles: the blanket, a ridge, icicles along the eave, and the building's name on a board. */
+/** A roof is a pitched roof (summitroof.ts), painted once into a sprite; only the night tint is applied per frame. */
 export function drawSummitRoof(g: G, r: MapRoof, alpha: number, info: GeoInfo): boolean {
-  const id = baseId(r.id), tw = isTwin(r.id), pts = r.points, b = bounds(pts);
-  if (id === 'dome') {
-    const c = centroid(pts), R = (b.x1 - b.x0) / 2;
-    if (!tw) {
-      // The fuel house: a tin cone with a vent cap.
-      const gr = g.createRadialGradient(c.x - R * 0.3, c.y - R * 0.3, R * 0.05, c.x, c.y, R); gr.addColorStop(0, '#9aa4ae'); gr.addColorStop(1, '#566470');
-      g.fillStyle = gr; ell(g, c.x, c.y, R, R); g.fill(); g.strokeStyle = INK; g.lineWidth = 3; g.stroke();
-      for (let k = 0; k < 16; k++) { const a = (k / 16) * TAU; g.strokeStyle = 'rgba(20, 28, 36, 0.4)'; g.lineWidth = 2; g.beginPath(); g.moveTo(c.x, c.y); g.lineTo(c.x + Math.cos(a) * R, c.y + Math.sin(a) * R); g.stroke(); }
-      g.fillStyle = C.steelLo; ell(g, c.x, c.y, 22, 22); g.fill(); g.stroke();
-    } else {
-      // The observatory dome: segmented plaster, a slit in it for the telescope, snow on the crown.
-      const gr = g.createRadialGradient(c.x - R * 0.35, c.y - R * 0.35, R * 0.05, c.x, c.y, R); gr.addColorStop(0, '#e8e4d8'); gr.addColorStop(1, '#8a8678');
-      g.fillStyle = gr; ell(g, c.x, c.y, R, R); g.fill(); g.strokeStyle = INK; g.lineWidth = 3; g.stroke();
-      g.strokeStyle = 'rgba(40, 40, 36, 0.35)'; g.lineWidth = 2; for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; g.beginPath(); g.moveTo(c.x, c.y); g.lineTo(c.x + Math.cos(a) * R, c.y + Math.sin(a) * R); g.stroke(); } for (const f of [0.35, 0.68]) { ell(g, c.x, c.y, R * f, R * f); g.stroke(); }
-      g.save(); g.translate(c.x, c.y); g.rotate(-0.5);
-      g.fillStyle = '#1a2236'; g.fillRect(-R * 0.1, -R, R * 0.2, R * 1.05); g.fillStyle = 'rgba(160, 190, 255, 0.35)'; g.fillRect(-R * 0.1, -R, R * 0.04, R * 1.05); g.strokeStyle = INK; g.lineWidth = 2; g.strokeRect(-R * 0.1, -R, R * 0.2, R * 1.05);
-      g.restore();
-      g.fillStyle = hexA(C.snowCap, 0.7); ell(g, c.x - R * 0.35, c.y - R * 0.4, R * 0.3, R * 0.18, -0.6); g.fill();
-      for (let k = 0; k < 12; k++) { const a = (k / 12) * TAU; g.fillStyle = k % 2 ? 'rgba(10, 14, 30, 0.14)' : 'rgba(255, 255, 255, 0.08)'; g.beginPath(); g.moveTo(c.x, c.y); g.arc(c.x, c.y, R, a, a + TAU / 12); g.closePath(); g.fill(); }
-      g.fillStyle = 'rgba(8, 12, 30, 0.3)'; g.beginPath(); g.arc(c.x, c.y, R, -0.3, 1.9); g.arc(c.x - R * 0.12, c.y - R * 0.1, R * 0.92, 1.9, -0.3, true); g.closePath(); g.fill();
-      g.fillStyle = 'rgba(255,255,255,0.9)'; ell(g, c.x - R * 0.42, c.y - R * 0.46, 6, 6); g.fill(); g.fillStyle = 'rgba(255,255,255,0.35)'; ell(g, c.x - R * 0.36, c.y - R * 0.4, 20, 10, -0.7); g.fill();
-    }
-    return true;
-  }
-  const tin = r.material === 'tin';
-  const base = tw ? (id === 'lift' ? '#9ccfe2' : id === 'bay' ? '#aebdc8' : id === 'hall' ? '#6a8a78' : '#7a6a4a') : tin ? '#7e8a96' : '#5a4636';
-  g.save();
-  trace(g, pts); g.fillStyle = 'rgba(10, 12, 24, 0.3)'; g.translate(5, 9); g.fill(); g.translate(-5, -9);
-  trace(g, pts); g.fillStyle = base; g.fill();
-  g.clip();
-  // Courses of shingle (staggered tabs) or tin ribs, in two tones.
-  const w = b.x1 - b.x0, h = b.y1 - b.y0;
-  if (tin || tw) {
-    for (let x = b.x0, i = 0; x < b.x1; x += 14, i++) { g.fillStyle = i % 2 ? 'rgba(255,255,255,0.1)' : 'rgba(10,14,28,0.18)'; g.fillRect(x, b.y0, 14, h); }
-  } else {
-    for (let y = b.y0, r = 0; y < b.y1; y += 18, r++) {
-      g.fillStyle = r % 2 ? 'rgba(255, 230, 200, 0.07)' : 'rgba(10, 6, 4, 0.2)'; g.fillRect(b.x0, y, w, 18);
-      g.strokeStyle = 'rgba(14, 8, 6, 0.55)'; g.lineWidth = 2; g.beginPath(); g.moveTo(b.x0, y + 17); g.lineTo(b.x1, y + 17); g.stroke();
-      for (let x = b.x0 + (r % 2 ? 12 : 0); x < b.x1; x += 24) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 17); g.stroke(); }
-    }
-  }
-  // The snow blanket: the north slope under a thick lumpy cap with a lit top and a shaded edge, the south slope bare shingle with patches.
-  const edge = (x: number) => b.y1 - h * 0.46 - hash(x, b.y0, 2) * 16;
-  g.fillStyle = C.snowDeep; g.beginPath(); g.moveTo(b.x0, b.y0); for (let x = b.x0; x <= b.x1; x += 24) g.lineTo(x, edge(x) + 8); g.lineTo(b.x1, b.y0); g.closePath(); g.fill();
-  g.fillStyle = hexA(C.snowCap, 0.96); g.beginPath(); g.moveTo(b.x0, b.y0); for (let x = b.x0; x <= b.x1; x += 24) g.quadraticCurveTo(x - 6, edge(x) + 4, x, edge(x)); g.lineTo(b.x1, b.y0); g.closePath(); g.fill();
-  g.fillStyle = 'rgba(255, 255, 255, 0.35)'; g.fillRect(b.x0, b.y0, w, h * 0.07);
-  for (let i = 0; i < w / 90; i++) { g.fillStyle = hexA(C.snowCap, 0.7); ell(g, b.x0 + hash(b.x0, i, 4) * w, b.y1 - h * (0.06 + hash(b.y0, i, 5) * 0.3), 18 + hash(i, b.x0, 6) * 24, 6, 0.1); g.fill(); }
-  // Ridge cap: a dark board with a lit edge along the crest.
-  g.fillStyle = 'rgba(20, 12, 8, 0.7)'; g.fillRect(b.x0, b.y0 + h * 0.3 - 6, w, 12); g.fillStyle = 'rgba(255, 255, 255, 0.3)'; g.fillRect(b.x0, b.y0 + h * 0.3 - 6, w, 2);
-  if (info.dark > 0) { g.fillStyle = `rgba(20, 28, 60, ${0.4 * info.dark})`; g.fillRect(b.x0, b.y0, w, h); }
-  g.restore();
-  trace(g, pts); g.strokeStyle = INK; g.lineWidth = 3; g.lineJoin = 'round'; g.stroke();
-  // Icicles along the south eave.
-  g.fillStyle = 'rgba(214, 238, 250, 0.85)';
-  for (let x = b.x0 + 14; x < b.x1 - 10; x += 26 + hash(x, b.y1) * 20) { const l = 8 + hash(x, b.y1, 4) * 12; g.beginPath(); g.moveTo(x - 3, b.y1); g.lineTo(x + 3, b.y1); g.lineTo(x, b.y1 + l); g.closePath(); g.fill(); }
-  const chimney = { hall: [1125, 3025], cabin: [790, 660] }[id as 'hall' | 'cabin'];
-  if (chimney) {
-    const [cx0, cy0] = tw ? [SIZE - chimney[0]!, SIZE - chimney[1]!] : chimney;
-    g.fillStyle = 'rgba(10, 12, 24, 0.35)'; g.fillRect(cx0 - 20 + 6, cy0 - 20 + 8, 44, 44);
-    g.fillStyle = C.stone; g.fillRect(cx0 - 22, cy0 - 22, 44, 44); g.strokeStyle = INK; g.lineWidth = 2.5; g.strokeRect(cx0 - 22, cy0 - 22, 44, 44);
-    g.fillStyle = C.stoneHi; g.fillRect(cx0 - 22, cy0 - 22, 44, 5);
-    g.fillStyle = '#1a1c20'; g.fillRect(cx0 - 12, cy0 - 12, 24, 24); g.fillStyle = tw ? 'rgba(255, 140, 70, 0.3)' : 'rgba(255, 150, 60, 0.45)'; g.fillRect(cx0 - 10, cy0 - 10, 20, 20);
-  }
-  const name = ROOF_NAMES[id]?.[tw ? 1 : 0];
-  if (name) {
-    g.save(); g.translate((b.x0 + b.x1) / 2, b.y0 + (b.y1 - b.y0) * 0.45);
-    const bw = Math.min(w - 40, name.length * 15 + 36);
-    g.fillStyle = 'rgba(10, 12, 24, 0.4)'; g.fillRect(-bw / 2 + 3, -13, bw, 30);
-    g.fillStyle = tw ? '#2f3f50' : '#4a3220'; g.fillRect(-bw / 2, -16, bw, 30); g.strokeStyle = INK; g.lineWidth = 2; g.strokeRect(-bw / 2, -16, bw, 30);
-    g.strokeStyle = C.brass; g.lineWidth = 1.6; g.strokeRect(-bw / 2 + 4, -12, bw - 8, 22);
-    g.fillStyle = '#ece6d6'; g.font = '700 21px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    (g as unknown as { letterSpacing: string }).letterSpacing = '3px'; g.fillText(name, 0, -1);
-    g.restore();
-  }
+  const dome = baseId(r.id) === 'dome';
+  cached(g, r, r.points, 20, (cg) => (dome ? paintDome(cg, r) : paintGable(cg, r)));
+  if (info.dark > 0) { trace(g, r.points); g.fillStyle = `rgba(20, 28, 60, ${0.4 * info.dark})`; g.fill(); }
   void alpha;
   return true;
 }

@@ -60,40 +60,40 @@ export function fixtureLight(f: Fixture, st: FxState): Resolved | null {
   const at = { x: f.lx, y: f.ly };
   switch (f.kind) {
     case 'lamp':
-      return { key, spec: { ...at, radius: 260, color: lampColor(f), intensity: 0.85 * k, flicker: flick, size: 9, inside: 18 } };
+      return { key, spec: { ...at, radius: 340, color: lampColor(f), intensity: 1.05 * k, flicker: flick, size: 10, inside: 18 } };
     case 'boothlamp':
-      return { key, spec: { ...at, radius: 300, color: LAMP_COLOR, intensity: 0.9 * k, flicker: flick * 0.5, size: 12, inside: 36 } };
+      return { key, spec: { ...at, radius: 360, color: LAMP_COLOR, intensity: 1.05 * k, flicker: flick * 0.5, size: 12, inside: 36 } };
     case 'lanepost':
-      return { key, spec: { ...at, radius: 240, color: lampColor(f), intensity: 0.8 * k, flicker: flick, size: 8, inside: 12 } };
+      return { key, spec: { ...at, radius: 310, color: lampColor(f), intensity: 1 * k, flicker: flick, size: 8, inside: 12 } };
     case 'work':
-      return { key, spec: { ...at, radius: 330, color: f.region >= 0 ? lampColor(f) : WORK_COLOR, intensity: 0.95 * k, size: 10, inside: 16, cone: { angle: f.angle, half: 0.8 } } };
+      return { key, spec: { ...at, radius: 400, color: f.region >= 0 ? lampColor(f) : WORK_COLOR, intensity: 1.1 * k, size: 10, inside: 16, cone: { angle: f.angle, half: 0.8 } } };
     case 'tube': {
       if (!tubeOn(f, st.now, st.reduced)) return null;
       return { key, spec: { ...at, radius: 250, color: TUBE_COLOR, intensity: 0.7 * k, size: 14, inside: 14, cone: { angle: f.angle, half: 1.1 } } };
     }
     case 'window':
-      return { key, spec: { ...at, radius: 270, color: WINDOW_COLOR, intensity: 0.75 * k, size: 12, inside: 14, cone: { angle: f.angle, half: 0.85 } } };
+      return { key, spec: { ...at, radius: 330, color: WINDOW_COLOR, intensity: 0.95 * k, size: 12, inside: 14, cone: { angle: f.angle, half: 0.85 } } };
     case 'exit':
       return { key, spec: { ...at, radius: 120, color: EXIT_COLOR, intensity: 0.55, size: 6, inside: 10, shadows: false } };
     case 'uplight':
-      return { key, spec: { ...at, radius: 170, color: lampColor(f), intensity: 0.6 * k, size: 8, inside: 14, shadows: false } };
+      return { key, spec: { ...at, radius: 230, color: lampColor(f), intensity: 0.85 * k, size: 8, inside: 14, shadows: false } };
     case 'beacon': {
       // A sweeping amber cone, plus a steady glow so the beacon is a lit thing even when the cone faces away.
       const sweep = spinAt(f, st.now, st.reduced);
-      return { key, spec: { ...at, radius: 280, color: BEACON_COLOR, intensity: st.reduced ? 0.5 : 0.95 * k, size: 8, inside: 14, shadows: false, cone: { angle: sweep, half: st.reduced ? Math.PI : 0.55 } } };
+      return { key, spec: { ...at, radius: 380, color: BEACON_COLOR, intensity: st.reduced ? 0.5 : 1.2 * k, size: 8, inside: 14, shadows: false, ...(st.reduced ? {} : { beam: 0.8 }), cone: { angle: sweep, half: st.reduced ? Math.PI : 0.5 } } };
     }
     case 'flood': {
       const on = smooth(0.08, 0.5, st.dark);
       if (on <= 0.01) return null;
-      return { key, spec: { ...at, radius: 560, color: FLOOD_COLOR, intensity: 1.05 * on, size: 16, inside: 40, cone: { angle: f.angle, half: 0.62 } } };
+      return { key, spec: { ...at, radius: 700, color: FLOOD_COLOR, intensity: 1.3 * on, size: 16, inside: 40, beam: 0.7 * on, cone: { angle: f.angle, half: 0.55 } } };
     }
     case 'alarm': {
       if (!st.alarm) return null;
       const sweep = spinAt(f, st.now, st.reduced, 0.7);
-      return { key, spec: { ...at, radius: 340, color: ALARM_COLOR, intensity: 1, size: 8, inside: 20, shadows: false, cone: { angle: sweep, half: st.reduced ? Math.PI : 0.6 } } };
+      return { key, spec: { ...at, radius: 460, color: ALARM_COLOR, intensity: 1.3, size: 8, inside: 20, shadows: false, ...(st.reduced ? {} : { beam: 1 }), cone: { angle: sweep, half: st.reduced ? Math.PI : 0.5 } } };
     }
     case 'lantern':
-      return { key, spec: { ...at, radius: 130, color: '#ffb35a', intensity: 0.8 * k, flicker: st.reduced ? 0 : 0.3, size: 6, inside: 8, shadows: false } };
+      return { key, spec: { ...at, radius: 190, color: '#ffb35a', intensity: 1 * k, flicker: st.reduced ? 0 : 0.3, size: 6, inside: 8, shadows: false } };
     case 'scoreboard':
       return { key, spec: { ...at, radius: 200, color: '#ffd9a0', intensity: 0.55 * k, size: 14, inside: 24, shadows: false, cone: { angle: f.angle, half: 1.1 } } };
     default:

@@ -233,7 +233,7 @@ function mosaics(g: CanvasRenderingContext2D) {
   // Ocean hall south: a whale in teal tile, its tail toward the rotunda.
   const wx = 3000, wy = 5000;
   g.save(); g.translate(wx, wy); g.rotate(Math.PI / 2);
-  g.fillStyle = 'rgba(40, 110, 130, 0.55)'; g.strokeStyle = hexA(BRASS, 0.6); g.lineWidth = 4;
+  g.fillStyle = 'rgba(86, 112, 118, 0.42)'; g.strokeStyle = hexA(BRASS, 0.6); g.lineWidth = 4;
   g.beginPath(); g.moveTo(-300, 0); g.quadraticCurveTo(-260, -90, -90, -90); g.quadraticCurveTo(120, -90, 230, -20); g.lineTo(330, -80); g.quadraticCurveTo(320, -20, 300, 0); g.quadraticCurveTo(320, 20, 330, 80); g.lineTo(230, 20); g.quadraticCurveTo(120, 80, -90, 70); g.quadraticCurveTo(-260, 60, -300, 0); g.closePath(); g.fill(); g.stroke();
   g.beginPath(); g.moveTo(-40, 70); g.quadraticCurveTo(0, 150, 70, 160); g.quadraticCurveTo(60, 100, 40, 66); g.fill(); g.stroke();
   g.fillStyle = hexA(BRASS, 0.7); g.beginPath(); g.arc(-220, -30, 7, 0, TAU); g.fill();

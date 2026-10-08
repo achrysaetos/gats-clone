@@ -13,6 +13,7 @@ import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
+import { planTicks } from './clock.ts';
 
 export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
 export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; close(): Promise<void> };
@@ -248,12 +249,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let nextTickAt = performance.now();
   let timer: NodeJS.Timeout;
   const loop = () => {
-    const now = performance.now();
-    if (now - nextTickAt > 250) nextTickAt = now;
-    while (now >= nextTickAt) {
-      for (const r of rooms.values()) r.tick();
-      nextTickAt += TICK_MS;
-    }
+    const plan = planTicks(performance.now(), nextTickAt, TICK_MS);
+    nextTickAt = plan.nextAt;
+    for (let i = 0; i < plan.ticks; i++) for (const r of rooms.values()) r.tick();
     closeIdleSquads(Date.now());
     timer = setTimeout(loop, nextTickAt - performance.now());
   };

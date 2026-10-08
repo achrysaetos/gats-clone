@@ -7,6 +7,10 @@ export const LIMITS = {
   joinTimeoutMs: 10_000,
   heartbeatMs: 10_000,
   rttPingMs: 2_000,
+  /** A socket whose unsent backlog tops this many bytes (a stalled tab, a dead link) is skipped, not queued to: it always gets the latest snapshot, never a queue of stale ones. */
+  maxBufferedBytes: 64 * 1024,
+  /** A socket whose backlog stays over the cap this long is closed, and its player leaves. */
+  stallMs: 8_000,
   messagesPerSec: 60,
   messageBurst: 120,
   authPerMin: 10,

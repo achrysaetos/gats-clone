@@ -30,6 +30,8 @@ const LANTERNS = [
 ];
 
 /** The two lighthouses and their sweep. */
+/** The quay lamps burn sodium orange against the cold teal of the harbour. */
+const SODIUM = '#ffa94d';
 const LIGHTHOUSES = [{ x: 520, y: 800 }, { x: SIZE - 520, y: SIZE - 800 }];
 /** Nav lights at each bow: red to port, green to starboard. */
 const navLights = PLACED_SHIPS.flatMap((s) => {
@@ -41,6 +43,20 @@ const navLights = PLACED_SHIPS.flatMap((s) => {
     { id: `${s.id}:p`, x: cx - 52, y: bowY + dir * 120, color: '#ff4a40', ship: s.id },
     { id: `${s.id}:s`, x: cx + 52, y: bowY + dir * 120, color: '#46e08a', ship: s.id },
   ];
+});
+
+/**
+ * Lamps on every deck and a row of portholes along the quay side of each hull: the ships are lit things at night, warm
+ * windows over cold water. Computed once from the hulls; each rides the same swell as the ship (bobOf).
+ */
+const SHIP_LIGHTS = PLACED_SHIPS.flatMap((s) => {
+  let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+  for (const p of s.hull) { top = Math.min(top, p.y); bottom = Math.max(bottom, p.y); left = Math.min(left, p.x); right = Math.max(right, p.x); }
+  const cx = (left + right) / 2, quaySide = s.east ? left + 16 : right - 16;
+  const out: { key: string; ship: string; x: number; y: number; lamp: boolean }[] = [];
+  for (let y = top + 150, i = 0; y < bottom - 100; y += 250, i++) out.push({ key: `hb:deck:${s.id}:${i}`, ship: s.id, x: cx, y, lamp: true });
+  for (let y = top + 110, i = 0; y < bottom - 80; y += 170, i++) out.push({ key: `hb:port:${s.id}:${i}`, ship: s.id, x: quaySide, y, lamp: false });
+  return out;
 });
 
 /* -- the ground: water, quay faces, decks ----------------------------------------------------------------------- */
@@ -103,7 +119,7 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
     const d = districtAt(l.x, l.y).d;
     const flick = calm ? 1 : 0.94 + 0.06 * Math.sin(t * 0.002 + i * 1.7) * Math.sin(t * 0.00077 + i);
     if (near(l.x, l.y, 140)) lampPost(ctx, l.x, l.y, d.light, flick);
-    setLight(`hb:l${i}${l.east ? 'e' : ''}`, { x: l.x, y: l.y - 36, radius: 360, color: d.light, intensity: 0.7 * flick, size: 10, shadows: true });
+    setLight(`hb:l${i}${l.east ? 'e' : ''}`, { x: l.x, y: l.y - 36, radius: 470, color: SODIUM, intensity: 1.1 * flick, size: 12, shadows: true });
     waterLights.push({ x: l.x, y: l.y - 10, r: 300, k: 0.7 * flick, rgb: rgbOf(d.light) });
   }
   // The rooms' lit windows light the floor round them and the yards beside them.
@@ -116,10 +132,16 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
   for (const n of navLights) {
     if (!near(n.x, n.y, 160)) continue;
     const dy = bobOf(n.ship, now).dy;
-    setLight(`hb:n${n.id}`, { x: n.x, y: n.y + dy, radius: 110, color: n.color, intensity: 0.45, size: 6, shadows: false });
+    setLight(`hb:n${n.id}`, { x: n.x, y: n.y + dy, radius: 170, color: n.color, intensity: 0.85, size: 6, shadows: false });
     waterLights.push({ x: n.x, y: n.y + dy, r: 150, k: 0.65, rgb: rgbOf(n.color) });
     ctx.fillStyle = '#23272d'; ctx.beginPath(); ctx.arc(n.x, n.y + dy, 8, 0, TAU); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
     ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(n.x, n.y + dy, 4.2, 0, TAU); ctx.fill();
+  }
+  // Deck lamps and portholes.
+  for (const l of SHIP_LIGHTS) {
+    if (!near(l.x, l.y, 260)) continue;
+    const dy = bobOf(l.ship, now).dy;
+    setLight(l.key, l.lamp ? { x: l.x, y: l.y + dy, radius: 300, color: '#fff0d0', intensity: 0.85, size: 8, shadows: false } : { x: l.x, y: l.y + dy, radius: 120, color: '#ffc880', intensity: 0.6, size: 4, flicker: calm ? undefined : 0.06, shadows: false });
   }
   // Hurricane lanterns, swaying on their hooks.
   for (const [i, l] of LANTERNS.entries()) {
@@ -127,7 +149,7 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
     const dy = bobOf(l.ship, now).dy, sw = calm ? 0 : Math.sin(t * 0.0017 + i * 2.1) * 0.14;
     const hx = l.x, hy = l.y - 30 + dy, lx = hx + Math.sin(sw) * 30, ly = hy + Math.cos(sw) * 30;
     const glow = calm ? 1 : 0.9 + 0.1 * Math.sin(t * 0.004 + i);
-    setLight(`hb:lan${i}`, { x: lx, y: ly + 20, radius: 170, color: '#ffb347', intensity: 0.55 * glow, size: 6, flicker: calm ? undefined : 0.15, shadows: false });
+    setLight(`hb:lan${i}`, { x: lx, y: ly + 20, radius: 240, color: '#ffb347', intensity: 0.95 * glow, size: 6, flicker: calm ? undefined : 0.15, shadows: false });
     ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(lx, ly); ctx.stroke();
     ctx.fillStyle = '#2f343c'; ctx.beginPath(); ctx.arc(hx, hy, 4, 0, TAU); ctx.fill();
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
@@ -140,8 +162,9 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
   for (const [i, lh] of LIGHTHOUSES.entries()) {
     if (!near(lh.x, lh.y, 1400)) continue;
     const a = calm ? 0.9 : t * 0.00039 + i * Math.PI;
-    setLight(`hb:lh${i}`, { x: lh.x, y: lh.y, radius: 900, color: '#ffe9b0', intensity: 0.75, size: 30, cone: { angle: a, half: 0.2 }, shadows: false });
-    setLight(`hb:lg${i}`, { x: lh.x, y: lh.y, radius: 300, color: '#ffe9b0', intensity: 0.4, size: 30, shadows: false });
+    setLight(`hb:lh${i}`, { x: lh.x, y: lh.y, radius: 1500, color: '#ffe9b0', intensity: 1.35, size: 30, cone: { angle: a, half: 0.13 }, beam: 1.4, shadows: false });
+    setLight(`hb:lh${i}b`, { x: lh.x, y: lh.y, radius: 700, color: '#bfe0ff', intensity: 0.5, size: 30, cone: { angle: a + Math.PI, half: 0.09 }, beam: 0.5, shadows: false });
+    setLight(`hb:lg${i}`, { x: lh.x, y: lh.y, radius: 420, color: '#ffe9b0', intensity: 0.8, size: 30, shadows: false });
     waterLights.push({ x: lh.x, y: lh.y + 60, r: 420, k: 0.8, rgb: rgbOf('#ffe9b0') });
   }
   // The gantry cranes carry a slow red warning light.
@@ -149,7 +172,7 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
     const [cx, cy] = east ? [SIZE - 957, SIZE - 2927] : [957, 2927];
     if (!near(cx, cy, 700)) continue;
     const on = calm || Math.floor(t / 1100) % 2 === 0;
-    if (on) setLight(`hb:cr${east ? 'e' : 'w'}`, { x: cx, y: cy, radius: 160, color: '#ff4a40', intensity: 0.4, size: 8, shadows: false });
+    if (on) setLight(`hb:cr${east ? 'e' : 'w'}`, { x: cx, y: cy, radius: 260, color: '#ff4a40', intensity: 0.8, size: 8, shadows: false });
   }
   drawHarborDecor(ctx, now, view);
 }
@@ -210,20 +233,6 @@ function crane(ctx: Ctx, east: boolean, t: number, view: ThemeView): void {
   ctx.fillStyle = east ? '#e8c040' : '#c24a38'; ctx.beginPath(); ctx.moveTo(fx, fy - 56); ctx.lineTo(fx + 34, fy - 48 + flap); ctx.lineTo(fx, fy - 38); ctx.closePath(); ctx.fill(); ctx.stroke();
 }
 
-function beam(ctx: Ctx, t: number, view: ThemeView): void {
-  for (const [i, lh] of LIGHTHOUSES.entries()) {
-    if (!inView(view, lh.x, lh.y, 1300)) continue;
-    const a = calm ? 0.9 : t * 0.00039 + i * Math.PI;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const g = ctx.createRadialGradient(lh.x, lh.y, 20, lh.x, lh.y, 1200);
-    g.addColorStop(0, 'rgba(255,236,170,0.20)'); g.addColorStop(0.5, 'rgba(255,236,170,0.07)'); g.addColorStop(1, 'rgba(255,236,170,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.moveTo(lh.x, lh.y - 40); ctx.arc(lh.x, lh.y - 40, 1200, a - 0.11, a + 0.11); ctx.closePath(); ctx.fill();
-    ctx.restore();
-  }
-}
-
 function signposts(ctx: Ctx, view: ThemeView): void {
   for (const s of SIGNPOSTS) {
     if (!inView(view, s.x, s.y, 200)) continue;
@@ -251,7 +260,6 @@ function over(ctx: Ctx, now: number, view: ThemeView): void {
   const t = clock(now);
   crane(ctx, false, t, view);
   crane(ctx, true, t, view);
-  beam(ctx, t, view);
   signposts(ctx, view);
   drawHarborDecorOver(ctx, now, view);
 }

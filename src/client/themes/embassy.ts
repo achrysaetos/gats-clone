@@ -111,6 +111,11 @@ function embassyUnder(ctx: CanvasRenderingContext2D, now: number, view: ThemeVie
     if (!inView(view, s.x, s.y, s.radius + 120)) continue;
     setLight(s.key, { x: s.x, y: s.y, radius: s.radius, color: s.color, intensity: s.intensity, ...(s.flicker !== undefined && !reduced && { flicker: s.flicker }), ...(s.size !== undefined && { size: s.size }), shadows: s.shadows ?? false });
   }
+  // Searchlights over the grounds: two white beams sweeping the lawns and the facade, slow enough to read as a gala's.
+  for (const [i, sl] of [{ x: 700, y: 5500, a: -0.9 }, { x: 5300, y: 500, a: Math.PI - 0.9 }].entries()) {
+    const a = sl.a + (reduced ? 0 : Math.sin(t * 0.00027 + i * 2.4) * 0.7);
+    if (inView(view, sl.x + Math.cos(a) * 900, sl.y + Math.sin(a) * 900, 1600)) setLight(`emb:search${i}`, { x: sl.x, y: sl.y, radius: 1700, color: '#f4f0ff', intensity: 1.1, size: 20, cone: { angle: a, half: 0.1 }, beam: 1.2, shadows: false });
+  }
   // Server racks: rows of status LEDs, a few blinking, never faster than about 2 Hz.
   for (const r of racks) {
     if (!inView(view, r.x + r.w / 2, r.y + r.h / 2, 120)) continue;

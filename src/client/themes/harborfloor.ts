@@ -269,7 +269,7 @@ export function paintHarborFloor(g: G, size: number, seed: number, plan: FloorPl
   });
 
   // The dry dock's pit: a sunken floor of dark concrete, a drain down the middle, keel blocks under the hull, steps at the gates.
-  both(g, () => {
+  both(g, (east) => {
     g.fillStyle = set.concrete!; g.fillRect(1964, 294, 592, 912);
     g.fillStyle = 'rgba(8, 10, 14, 0.38)'; g.fillRect(1964, 294, 592, 912);
     g.fillStyle = 'rgba(8, 10, 14, 0.5)'; g.fillRect(2250, 294, 20, 912);
@@ -279,12 +279,12 @@ export function paintHarborFloor(g: G, size: number, seed: number, plan: FloorPl
     for (let k = 0; k < 4; k++) { g.fillRect(1964, 700 + k * 24, 30 - k * 6, 20); g.fillRect(2556 - 30 + k * 6, 700 + k * 24, 30 - k * 6, 20); }
     g.fillStyle = hexA(C.paint, 0.55);
     for (let x = 1980; x < 2540; x += 36) g.fillRect(x, 1182, 18, 6);
-    painted(g, 'DOCK 2 · 32 FT', 2410, 1130, 26, hexA(C.paintWhite, 0.5), 0, 0.14);
+    painted(g, 'DOCK 2 · 32 FT', 2410, 1130, 26, hexA(C.paintWhite, 0.38), east ? Math.PI : 0, 0.14);
   });
 
   // Painted names, large enough to read from the air.
   both(g, (east) => {
-    const stencilAt = (text: string, x: number, y: number, size: number, rot: number, color = hexA('#928d7f', 0.42)) => painted(g, text, x, y, size, color, rot, 0.16);
+    const stencilAt = (text: string, x: number, y: number, size: number, rot: number, color = hexA('#928d7f', 0.42)) => painted(g, text, x, y, size, color, rot + (east ? Math.PI : 0), 0.16);
     stencilAt(east ? 'BERTH 4' : 'BERTH 1', 1110, 2300, 96, -Math.PI / 2);
     stencilAt(east ? 'BERTH 5' : 'BERTH 2', 1110, 4440, 86, -Math.PI / 2);
     stencilAt(east ? 'BERTH 6' : 'BERTH 3', 1110, 1470, 80, -Math.PI / 2);

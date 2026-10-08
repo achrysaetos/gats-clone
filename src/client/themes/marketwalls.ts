@@ -468,7 +468,6 @@ const LAND: Record<string, (g: G, s: Solid, d: District) => void> = {
     const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
     disc(g, cx, cy + 20, 26, '#6a625a');
     for (let i = 0; i < 3; i++) paperLantern(g, cx, cy + 12 - i * 22, 20 - i * 3, i === 1 ? '#f1d9a0' : d.lantern);
-    text(g, 'FESTIVAL', cx, cy + 52, 15, 'rgba(250,240,200,0.8)');
   },
   fish: (g, s) => { // a tank wall: water, weed and slow fish
     slab(g, s.x + 8, s.y + 10, s.w - 16, s.h - 20, '#1f5a6e', 2);
@@ -515,13 +514,30 @@ const LAND: Record<string, (g: G, s: Solid, d: District) => void> = {
   },
 };
 
-export function paintLandmark(g: G, s: Solid) {
+export function paintLandmark(g: G, s: Solid, round = false) {
   const d = districtAt(s.x + s.w / 2, s.y + s.h / 2);
   const base = d.id === 'fish' ? '#8fa3ad' : d.id === 'arcade' ? '#3a4452' : d.id === 'grill' ? '#4a3f3a' : '#8a8478';
   box(g, s, base, shade(base, -0.42));
-  (LAND[d.id] ?? LAND.temple!)(g, s, d);
-  // stone kerb and a district plaque on the front face
-  const f = FACE.shrine;
-  text(g, d.name, s.x + s.w / 2, s.y + s.h + f / 2 + 1, Math.min(13, s.w / (d.name.length * 0.5)), hexA(d.neon2, 0.9));
+  const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+  if (round) {
+    // A round post: the art was drawn for a square, so it is shrunk to the square that fits inside the circle and set on a stone
+    // plinth ring, instead of being cut off by the clip.
+    const r = Math.min(s.w, s.h) / 2;
+    g.fillStyle = shade(base, 0.12); g.beginPath(); g.arc(cx, cy, r - 3, 0, TAU); g.fill();
+    g.fillStyle = shade(base, -0.18); g.beginPath(); g.arc(cx, cy, r - 3, 0, TAU); g.arc(cx - 1.5, cy - 1.5, r - 9, 0, TAU, true); g.fill('evenodd');
+    ink(g, 1.6); g.beginPath(); g.arc(cx, cy, r - 9, 0, TAU); g.stroke();
+    const k = 0.66;
+    g.save(); g.translate(cx, cy); g.scale(k, k); g.translate(-cx, -cy);
+    (LAND[d.id] ?? LAND.temple!)(g, s, d);
+    g.restore();
+  } else {
+    (LAND[d.id] ?? LAND.temple!)(g, s, d);
+  }
+  // The district plaque: a small plate low on the top face. (On the front face it was cut to a sliver by the round post's clip.)
+  g.font = font(10);
+  const pw = Math.min(g.measureText(d.name).width + 10, 82), py = s.y + s.h - 14;
+  g.fillStyle = 'rgba(20, 22, 28, 0.86)'; rr(g, cx - pw / 2, py - 7, pw, 14, 3); g.fill();
+  ink(g, 1.4); g.stroke();
+  text(g, d.name, cx, py + 0.5, 10, hexA(d.neon2, 0.95));
   outline(g, s);
 }

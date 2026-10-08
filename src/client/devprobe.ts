@@ -11,6 +11,8 @@ import type { SoundCue } from './sfx.ts';
 import { TRACER } from './rounds.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { muzzleTip } from './gunart.ts';
+import { reloadTrackOf, selfReload } from './reloadanim.ts';
+import { tapReloadFoley } from './reloadsfx.ts';
 import { EFFECT_LIFE_MS, type Session } from './state.ts';
 import { useHint, type Ghost } from './zombies.ts';
 
@@ -29,6 +31,18 @@ const fireFeel: { cue: FeelCue; at: number }[] = [];
 const feltFlashes = new Set<number>();
 const feltKicks = new Set<number>();
 
+/** Dev probe: every reload sound voiced and, each frame a soldier is mid-reload, where its clock and arms are. */
+const reloadLog: { at: number; what: string; who?: number; t?: number; k?: number; clock?: number }[] = [];
+if (DEV) tapReloadFoley((id, _x, _y, self) => { if (reloadLog.length < 4000) reloadLog.push({ at: performance.now(), what: id, ...(self ? { who: -1 } : {}) }); });
+function noteReloads(s: Session, snap: Snapshot, now: number) {
+  const mine = s.firing.trigger.alive ? selfReload(s.firing, now) : null;
+  const rows: [number, readonly [number, number] | null | undefined][] = [[s.myId, mine], ...snap.players.filter((p) => p.id !== s.myId).map((p) => [p.id, p.rl] as [number, typeof p.rl])];
+  for (const [id, rl] of rows) {
+    const tr = reloadTrackOf(id);
+    if ((rl || tr) && reloadLog.length < 4000) reloadLog.push({ at: now, what: 'frame', who: id, clock: rl ? rl[0] / rl[1] : -1, ...(tr ?? {}) });
+  }
+}
+
 const feel = (cue: FeelCue) => { if (DEV) fireFeel.push({ cue, at: performance.now() }); };
 export const noteOwnShotSound = (cues: readonly SoundCue[]) => { if (cues.some((c) => c.self && c.id.startsWith('shot:'))) feel('sound'); };
 export const noteLateShot = () => feel('late');
@@ -42,6 +56,7 @@ export function noteFrame(s: Session, snap: Snapshot, cam: Camera, selfAngle: nu
   if (!DEV) return;
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
   drawnOthers = snap.players.filter((p) => p.id !== s.myId).map((p) => ({ id: p.id, x: p.x, y: p.y, screen: worldToScreen(cam, p) }));
+  noteReloads(s, snap, now);
   noteFirstRounds(snap, s.myId, selfAngle);
   noteOwnFlashesAndKicks(s, now);
 }
@@ -115,5 +130,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { forceVitals, drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
+  Object.assign(window, { skirmishDev: { forceVitals, drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger, reloadLog: () => reloadLog.splice(0) } });
 }

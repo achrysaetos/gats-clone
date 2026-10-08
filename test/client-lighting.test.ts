@@ -3,21 +3,26 @@ import { test } from 'node:test';
 import { tierGovernor } from '../src/client/fxparams.ts';
 import {
   addLight, addShockwave, ambientFor, blastLights, blocksLight, KEEP_MS, lightLevel, liveShocks, maskTriangles, muzzleLight, occludersOf, parseColor,
-  pushOut, resetLighting, resolveLights, selectLights, setLight, setLightClock, setLightingEnabled, TIERS, type Occluder, type ResolvedLight,
+  pushOut, resetLighting, resolveLights, selectLights, setLight, setLightClock, setLightCollecting, setLightingEnabled, TIERS, type Occluder, type ResolvedLight,
 } from '../src/client/lighting.ts';
 
-const light = (over: Partial<ResolvedLight> = {}): ResolvedLight => ({ x: 0, y: 0, radius: 100, rgb: [1, 1, 1], level: 1, cone: null, size: 5, inside: 10, shadows: true, ...over });
+const light = (over: Partial<ResolvedLight> = {}): ResolvedLight => ({ x: 0, y: 0, radius: 100, rgb: [1, 1, 1], level: 1, cone: null, size: 5, inside: 10, shadows: true, beam: 0, ...over });
 const view = { x0: 0, y0: 0, x1: 1000, y1: 600 };
 
-test('nothing is stored while the shader pass is off', () => {
+test('lights are collected for the plain canvas too, but shock rings need the shader pass', () => {
   setLightingEnabled(false);
   resetLighting();
+  setLightClock(1000);
   addLight({ x: 1, y: 1, radius: 100, color: '#fff' });
   setLight('k', { x: 1, y: 1, radius: 100, color: '#fff' });
   addShockwave({ x: 1, y: 1, radius: 100 });
-  setLightingEnabled(true);
-  assert.deepEqual(resolveLights(0), []);
-  assert.deepEqual(liveShocks(0), []);
+  assert.equal(resolveLights(1010).length, 2, 'the plain path paints the same lights');
+  assert.deepEqual(liveShocks(1010), []);
+  setLightCollecting(false);
+  resetLighting();
+  addLight({ x: 1, y: 1, radius: 100, color: '#fff' });
+  assert.deepEqual(resolveLights(1010), [], 'collecting can be switched off');
+  setLightCollecting(true);
 });
 
 test('a transient light fades and then is dropped; a keyed one lives only while refreshed', () => {

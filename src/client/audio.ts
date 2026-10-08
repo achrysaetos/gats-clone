@@ -8,6 +8,7 @@ const MASTER_GAIN = 0.8;
 const NOISE_SECONDS = 2;
 const MUTE_KEY = 'skirmish.muted';
 const VOLUME_KEY = 'skirmish.volume';
+const SFX_VOLUME_KEY = 'skirmish.sfx.volume';
 const ATTACK_S = 0.0015;
 /** A far-off sound is dulled as well as quieted: its low-pass cutoff falls from open to this. */
 const FAR_CUTOFF_HZ = 1400;
@@ -21,6 +22,17 @@ type Audio = {
   unlock(): void;
   play(cues: readonly SoundCue[], listener: Point, viewRadius: number): void;
   toggleMute(): boolean;
+  /** The sound effects' own volume 0..1 (the music has `setMusicVolume` in music.ts); kept in localStorage and applied at once. */
+  setSfxVolume(v: number): void;
+  getSfxVolume(): number;
+  /** The whole mix's volume 0..1 (`skirmish.volume`), music included; applied at once. */
+  setMasterVolume(v: number): void;
+  getMasterVolume(): number;
+  isMuted(): boolean;
+  /** Sets the sound mute (M) to a given state; `toggleMute` flips it. */
+  setMuted(muted: boolean): void;
+  /** The live gain values of the master bus and the effects' bus (null before the first gesture unlocks audio), for the `?dev` probe. */
+  gains(): { master: number; sfx: number } | null;
   /** The shared context and master bus, for the soundtrack to join once unlocked. */
   bus(): { ctx: AudioContext; out: AudioNode } | null;
   /** Dulls the whole mix, music included, as through a wall: the killcam. */
@@ -42,6 +54,18 @@ function loadVolume(): number {
     const v = Number(localStorage.getItem(VOLUME_KEY));
     return localStorage.getItem(VOLUME_KEY) !== null && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
   } catch { return 1; }
+}
+
+function loadSfxVolume(): number {
+  try {
+    const raw = localStorage.getItem(SFX_VOLUME_KEY);
+    const v = Number(raw);
+    return raw !== null && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+  } catch { return 1; }
+}
+
+function saveVolume(v: number) {
+  try { localStorage.setItem(VOLUME_KEY, String(v)); } catch { /* the setting lasts this tab only */ }
 }
 
 function saveMuted(muted: boolean) {
@@ -199,15 +223,22 @@ export function createEngine(ctx: BaseAudioContext, master: AudioNode, noise: Au
 export function createAudio(): Audio {
   let ctx: AudioContext | null = null;
   let engine: Engine | null = null;
-  let out: AudioNode | null = null;
+  let out: GainNode | null = null;
   let muted = loadMuted();
+  let masterVolume = loadVolume();
+  let sfxVolume = loadSfxVolume();
+  let sfxOut: GainNode | null = null;
 
   function unlock() {
     if (!ctx) {
       ctx = new AudioContext();
       const c = ctx;
-      out = createBus(c, c.destination, loadVolume());
-      engine = createEngine(c, out, createNoise(c), () => c.state === 'running');
+      out = createBus(c, c.destination, masterVolume);
+      // The effects reach the master bus through their own gain, so their slider leaves the music alone.
+      sfxOut = c.createGain();
+      sfxOut.gain.value = sfxVolume;
+      sfxOut.connect(out);
+      engine = createEngine(c, sfxOut, createNoise(c), () => c.state === 'running');
     }
     if (ctx.state === 'suspended') void ctx.resume();
   }
@@ -223,5 +254,25 @@ export function createAudio(): Audio {
     return muted;
   }
 
-  return { unlock, play, toggleMute, bus: () => (ctx && out ? { ctx, out } : null), muffle: (on) => { if (ctx && out) setMuffle(ctx, out, on); } };
+  function setSfxVolume(v: number) {
+    sfxVolume = Math.max(0, Math.min(1, Number.isFinite(v) ? v : 1));
+    try { localStorage.setItem(SFX_VOLUME_KEY, String(sfxVolume)); } catch { /* the setting lasts this tab only */ }
+    if (sfxOut && ctx) sfxOut.gain.setTargetAtTime(sfxVolume, ctx.currentTime, 0.03);
+  }
+
+  function setMasterVolume(v: number) {
+    masterVolume = Math.max(0, Math.min(1, Number.isFinite(v) ? v : 1));
+    saveVolume(masterVolume);
+    if (out && ctx) out.gain.setTargetAtTime(MASTER_GAIN * masterVolume, ctx.currentTime, 0.03);
+  }
+
+  function setMuted(next: boolean) {
+    muted = next;
+    saveMuted(muted);
+  }
+
+  return {
+    setMasterVolume, getMasterVolume: () => masterVolume, isMuted: () => muted, setMuted,
+    gains: () => (out && sfxOut ? { master: out.gain.value, sfx: sfxOut.gain.value } : null),
+    unlock, play, toggleMute, setSfxVolume, getSfxVolume: () => sfxVolume, bus: () => (ctx && out ? { ctx, out } : null), muffle: (on) => { if (ctx && out) setMuffle(ctx, out, on); } };
 }

@@ -1,4 +1,5 @@
 import { pushOutConvex, segmentEntersConvexAt } from '../shared/geom.ts';
+import type { Fog, Mood } from './mood.ts';
 import type { Solid } from './tilt.ts';
 
 /**
@@ -7,7 +8,9 @@ import type { Solid } from './tilt.ts';
  * Every bright thing in the world is a light: muzzle flashes, blasts, fires, lamps, the core, a player's lamp and aim cone,
  * a beacon, a golden glint. Transient lights come from `addLight` (they live `life` ms); persistent ones come from
  * `setLight(key, ...)`, which a source calls every frame it exists (a light not refreshed for a moment simply goes out, so
- * a lamp on a destroyed turret never lingers). While the shader pass is off (`enabled` false) every call is a no-op.
+ * a lamp on a destroyed turret never lingers). Lights are collected whether or not the shader pass runs: with it, lightgl.ts
+ * draws them with shadows and beams; without it, nightfx.ts paints the same lights as coloured pools on the plain canvas,
+ * so a map's lamps, beacons and lighthouses are there on every device.
  */
 
 export type RGB = readonly [number, number, number];
@@ -26,34 +29,55 @@ export type LightSpec = {
   /** 0..1 shimmer: 0.15 for a lamp, 0.5 for a fire. */
   flicker?: number;
   cone?: Cone;
+  /** 0..1.5: draws the cone as a visible shaft of light through the air (a lighthouse, a floodlight, a searchlight). Needs `cone`. */
+  beam?: number;
   /** How big the source is, in world units: wider means softer shadow edges. */
   size?: number;
   /** Radius around the source ignored when testing for cover, so a lamp on a pad or a muzzle at a wall is not in its own shadow. */
   inside?: number;
   /** False for a light too small or too brief to be worth casting shadows. */
   shadows?: boolean;
+  /** Multiplies the light's rank when the frame's light budget is short: a player's own lamp must never lose to a far lamp post. */
+  priority?: number;
 };
 export type ActiveLight = LightSpec & { born: number; seed: number; key?: string; seen: number };
 /** What the renderer gets: colour and falloff already folded with the light's envelope. */
-export type ResolvedLight = { x: number; y: number; radius: number; rgb: RGB; level: number; cone: Cone | null; size: number; inside: number; shadows: boolean };
+export type ResolvedLight = { x: number; y: number; radius: number; rgb: RGB; level: number; cone: Cone | null; size: number; inside: number; shadows: boolean; beam: number; pri?: number };
 
 const TRANSIENT_CAP = 64;
 /** A keyed light that has not been refreshed for this long goes out. */
 export const KEEP_MS = 300;
 
+/** The shader pass is lighting the frame. */
 let enabled = false;
+/** Lights are being collected (always, unless a test or `?nolights` turns it off). */
+let collecting = true;
 let clock = 0;
+let prunedAt = 0;
 const transient: ActiveLight[] = [];
 const keyed = new Map<string, ActiveLight>();
 
-/** The shader pass turns lighting on once its programs compiled, and off again if it breaks. */
+/** The shader pass turns lighting on once its programs compiled, and off again if it breaks. Lights are still collected for the plain path. */
 export function setLightingEnabled(on: boolean): void {
   enabled = on;
-  if (!on) { transient.length = 0; keyed.clear(); shocks.length = 0; }
+  if (!on) shocks.length = 0;
 }
 export const lightingEnabled = (): boolean => enabled;
+/** Tests and `?nolights`: stop (and forget) collecting lights altogether. */
+export function setLightCollecting(on: boolean): void {
+  collecting = on;
+  if (!on) { transient.length = 0; keyed.clear(); }
+}
 /** The frame clock lights are stamped with (hit-stop aware), set once per frame by the renderer. */
-export function setLightClock(now: number): void { clock = now; }
+export function setLightClock(now: number): void {
+  clock = now;
+  // Nobody resolves the lights on a bright day, so drop the unrefreshed ones here, once a second.
+  if (now - prunedAt > 1000 || now < prunedAt) {
+    prunedAt = now;
+    for (const [key, l] of keyed) if (now - l.seen > KEEP_MS * 4) keyed.delete(key);
+    for (let i = transient.length - 1; i >= 0; i--) if (now - transient[i]!.born >= (transient[i]!.life ?? 120)) transient.splice(i, 1);
+  }
+}
 
 const parsed = new Map<string, RGB>();
 export function parseColor(c: string | RGB): RGB {
@@ -70,7 +94,7 @@ export function parseColor(c: string | RGB): RGB {
 
 /** A transient light: a flash, a blast, a spark. Cheap to call anywhere; ignored when the shader pass is off. */
 export function addLight(spec: LightSpec): void {
-  if (!enabled) return;
+  if (!collecting) return;
   const l: ActiveLight = { ...spec, life: spec.life ?? 120, born: clock || performance.now(), seed: Math.random() * 100, seen: 0 };
   if (transient.length >= TRANSIENT_CAP) transient.shift();
   transient.push(l);
@@ -78,7 +102,7 @@ export function addLight(spec: LightSpec): void {
 
 /** A persistent light named by `key`; call it every frame the source exists. Moving it is just calling it again. */
 export function setLight(key: string, spec: LightSpec): void {
-  if (!enabled) return;
+  if (!collecting) return;
   const old = keyed.get(key);
   keyed.set(key, { ...spec, key, born: old?.born ?? clock, seed: old?.seed ?? hashKey(key), seen: clock });
 }
@@ -120,6 +144,7 @@ export function resolveLights(now: number): ResolvedLight[] {
     out.push({
       x: l.x, y: l.y, radius: l.radius, rgb: parseColor(l.color), level, cone: l.cone ?? null,
       size: l.size ?? Math.min(14, l.radius * 0.07), inside: l.inside ?? 10, shadows: l.shadows ?? true,
+      beam: l.cone ? l.beam ?? 0 : 0, ...(l.priority ? { pri: l.priority } : {}),
     });
   };
   for (let i = transient.length - 1; i >= 0; i--) {
@@ -146,7 +171,7 @@ export const lightWeight = (l: Pick<ResolvedLight, 'radius' | 'level'>): number 
 export function selectLights(lights: readonly ResolvedLight[], view: ViewRect, max: number, shadowMax: number): ResolvedLight[] {
   const cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2;
   const seen = lights.filter((l) => l.x + l.radius > view.x0 && l.x - l.radius < view.x1 && l.y + l.radius > view.y0 && l.y - l.radius < view.y1);
-  const rank = (l: ResolvedLight) => lightWeight(l) / (1 + Math.hypot(l.x - cx, l.y - cy) * 0.0005);
+  const rank = (l: ResolvedLight) => lightWeight(l) * (l.pri ?? 1) / (1 + Math.hypot(l.x - cx, l.y - cy) * 0.0005);
   const top = seen.sort((a, b) => rank(b) - rank(a)).slice(0, max);
   return top.map((l, i) => (l.shadows && i >= shadowMax ? { ...l, shadows: false } : l));
 }
@@ -226,20 +251,35 @@ export type Ambient = {
   ao: number;
   /** Strength of the light shafts. */
   shafts: number;
+  /** The map's low fog, wet ground and rain (mood.ts); fog is null when the map has none. */
+  fog: Required<Fog> | null;
+  wet: number;
+  rain: number;
+  /** Multiplier on the bloom. */
+  glow: number;
 };
 
 const NIGHT_AMBIENT: RGB = [0.28, 0.34, 0.62];
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/** The ambient for a moment. `night` is the renderer's eased 0..1 dusk, so lighting fades in step with it and never pops. */
-export function ambientFor(night: number, storm = false): Ambient {
+/**
+ * The ambient for a moment. `night` is the renderer's eased 0..1 dusk, so lighting fades in step with it and never pops.
+ * A map's `mood` supplies its own night colour, how hard its lights hit, its fog, wet ground and rain.
+ */
+export function ambientFor(night: number, storm = false, mood?: Mood): Ambient {
   const t = Math.min(1, Math.max(0, night));
   const day: RGB = storm ? [0.97, 0.99, 1] : [1, 1, 1];
+  const dark = mood?.ambient ?? NIGHT_AMBIENT;
+  const fog = mood?.fog;
   return {
-    rgb: [mix(day[0], NIGHT_AMBIENT[0], t), mix(day[1], NIGHT_AMBIENT[1], t), mix(day[2], NIGHT_AMBIENT[2], t)],
-    gain: mix(0.5, 1, t),
+    rgb: [mix(day[0], dark[0], t), mix(day[1], dark[1], t), mix(day[2], dark[2], t)],
+    gain: mix(0.5, 1, t) * (mood?.gain ?? 1),
     ao: mix(0.14, 0.3, t),
     shafts: Math.max(0, (t - 0.35) / 0.65) * 0.9,
+    fog: fog ? { rgb: fog.rgb, density: fog.density, scale: fog.scale ?? 520, drift: fog.drift ?? [10, 4] } : null,
+    wet: mood?.wet ?? 0,
+    rain: mood?.rain ?? 0,
+    glow: mood?.glow ?? 1,
   };
 }
 
@@ -266,11 +306,11 @@ export function liveShocks(now: number): (Shock & { k: number })[] {
 }
 
 /** Quality tiers the frame-time governor steps down through; each is cheaper than the one before. */
-export type Tier = { lights: number; shadowLights: number; steps: number; rays: number; ao: boolean; shafts: number; shocks: boolean };
+export type Tier = { lights: number; shadowLights: number; steps: number; rays: number; ao: boolean; shafts: number; shocks: boolean; /** Visible beams drawn per frame. */ beams: number; /** Fog, wet ground and rain in the composite. */ weather: boolean; /** Decor lights a map may feed (lightfeed.ts). */ decor: number };
 export const TIERS: readonly Tier[] = [
-  { lights: 32, shadowLights: 14, steps: 24, rays: 3, ao: true, shafts: 2, shocks: true },
-  { lights: 24, shadowLights: 8, steps: 16, rays: 1, ao: true, shafts: 1, shocks: true },
-  { lights: 14, shadowLights: 4, steps: 10, rays: 1, ao: false, shafts: 0, shocks: false },
+  { lights: 40, shadowLights: 14, steps: 24, rays: 3, ao: true, shafts: 2, shocks: true, beams: 6, weather: true, decor: 16 },
+  { lights: 28, shadowLights: 8, steps: 16, rays: 1, ao: true, shafts: 1, shocks: true, beams: 4, weather: true, decor: 12 },
+  { lights: 16, shadowLights: 4, steps: 10, rays: 1, ao: false, shafts: 0, shocks: false, beams: 2, weather: true, decor: 8 },
 ];
 
 const MUZZLE: Record<string, { radius: number; life: number; intensity: number }> = {
@@ -286,8 +326,8 @@ const MUZZLE: Record<string, { radius: number; life: number; intensity: number }
 export function muzzleLight(at: { x: number; y: number }, angle: number, base: string, silenced = false): LightSpec {
   const m = MUZZLE[base] ?? MUZZLE.pistol!;
   return {
-    x: at.x + Math.cos(angle) * 5, y: at.y + Math.sin(angle) * 5, radius: m.radius * (silenced ? 0.7 : 1), color: '#ffc46b',
-    intensity: m.intensity * (silenced ? 0.35 : 1), life: m.life, size: 5, inside: 16, flicker: 0.12,
+    x: at.x + Math.cos(angle) * 5, y: at.y + Math.sin(angle) * 5, radius: m.radius * 1.3 * (silenced ? 0.7 : 1), color: '#ffc46b',
+    intensity: m.intensity * 1.5 * (silenced ? 0.35 : 1), life: m.life, size: 5, inside: 16, flicker: 0.12,
   };
 }
 

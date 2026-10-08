@@ -2,24 +2,33 @@
  * The voices of the soundtrack. Everything is synthesized, and everything takes a BaseAudioContext, so the same rig plays live
  * and renders offline (the offline render is how the mix is measured).
  */
-import { LAYER_IDS, MID_C, midiToHz, STEPS_PER_BAR, type Bar, type Chord, type LayerId, type Mode, type MusicEvent } from './musictheory.ts';
+import { LAYER_IDS, MID_C, midiToHz, STEPS_PER_BAR, type Bar, type Chord, type Inst, type LayerId, type Mode } from './musictheory.ts';
+import { createVoices } from './musicvoices.ts';
+
+/** One track's set of layer gains. A map change crossfades between two decks; each fades under its own gain. */
+export type Deck = { layers: Record<LayerId, GainNode>; trim: GainNode; fade: GainNode };
 
 export type Rig = {
   ctx: BaseAudioContext;
-  layers: Record<LayerId, GainNode>;
+  /** A fresh deck for a track, with the track's loudness `trim`. Dispose it once it has faded out. */
+  newDeck(trim: number): Deck;
+  disposeDeck(deck: Deck): void;
   /** Ducks the layers (not stings or cadences) for big sound effects. */
   duck: GainNode;
   /** The muffle used when you are dead: a lowpass whose cutoff the engine moves. */
   tone: BiquadFilterNode;
   /** Music volume and mute; the only node that meets the outside world. */
   volume: GainNode;
-  playBar(bar: Bar, t0: number, spb: number, heartTier: 0 | 1 | 2): void;
-  playSting(chord: Chord, mode: Mode, streak: number, t: number, bounty?: boolean): void;
+  /** Radio sounds (tune-in static, dial clicks): they skip the music's own gate so turning the radio Off still clicks. */
+  fx: GainNode;
+  playTuneIn(t: number): void;
+  playBar(bar: Bar, t0: number, spb: number, heartTier: 0 | 1 | 2, deck: Deck): void;
+  playSting(chord: Chord, mode: Mode, streak: number, t: number, bounty?: boolean, inst?: Inst): void;
   /** Plays the round's closing phrase in the key and returns how long it lasts, in seconds. */
   playCadence(kind: 'win' | 'loss', tonic: number, t: number): number;
 };
 
-const LEVEL: Record<MusicEvent['inst'], number> = { kick: 0.9, snare: 0.55, hat: 0.2, tom: 0.7, bass: 0.55, pad: 0.07, glock: 0.2, stab: 0.07, lead: 0.12, heart: 0.9 };
+const LEVEL: Partial<Record<Inst, number>> & Record<'kick' | 'snare' | 'hat' | 'tom' | 'bass' | 'pad' | 'glock' | 'stab' | 'lead' | 'heart', number> = { kick: 0.9, snare: 0.55, hat: 0.2, tom: 0.7, bass: 0.55, pad: 0.07, glock: 0.2, stab: 0.07, lead: 0.12, heart: 0.9 };
 
 function makeNoise(ctx: BaseAudioContext): AudioBuffer {
   const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -62,9 +71,23 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
   tone.connect(comp);
   tone.connect(verbIn).connect(verb).connect(verbOut).connect(comp);
   comp.connect(volume).connect(out);
+  const fx = ctx.createGain();
+  fx.gain.value = 1;
+  fx.connect(out);
 
-  const layers = {} as Record<LayerId, GainNode>;
-  for (const id of LAYER_IDS) { layers[id] = ctx.createGain(); layers[id].gain.value = 0; layers[id].connect(sum); }
+  function newDeck(trimGain: number): Deck {
+    const layers = {} as Record<LayerId, GainNode>;
+    const trim = ctx.createGain();
+    trim.gain.value = trimGain;
+    const fade = ctx.createGain();
+    trim.connect(fade).connect(sum);
+    for (const id of LAYER_IDS) { layers[id] = ctx.createGain(); layers[id].gain.value = 0; layers[id].connect(trim); }
+    return { layers, trim, fade };
+  }
+  function disposeDeck(deck: Deck) {
+    for (const id of LAYER_IDS) deck.layers[id].disconnect();
+    deck.trim.disconnect(); deck.fade.disconnect();
+  }
 
   const env = (dest: AudioNode, t: number, peak: number, attack: number, hold: number, release: number) => {
     const g = ctx.createGain();
@@ -174,13 +197,15 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
     osc('sine', midiToHz(midi), t, t + dur + 1, g);
   }
 
-  function playBar(bar: Bar, t0: number, spb: number, heartTier: 0 | 1 | 2) {
+  const extra = createVoices({ ctx, noise, env, osc });
+
+  function playBar(bar: Bar, t0: number, spb: number, heartTier: 0 | 1 | 2, deck: Deck) {
     const step = (spb * 4) / STEPS_PER_BAR;
     const dark = bar.mode === 'minor';
     for (const e of bar.events) {
       if (e.tier !== undefined && e.tier > heartTier) continue;
       const t = t0 + e.step * step;
-      const dest = layers[e.layer];
+      const dest = deck.layers[e.layer];
       const dur = e.dur * step;
       switch (e.inst) {
         case 'kick': kick(t, e.vel, dest); break;
@@ -193,25 +218,27 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
         case 'stab': brass(t, e.midi, step * 0.9, e.vel, LEVEL.stab, dark, dest, false); break;
         case 'lead': brass(t, e.midi, dur, e.vel, LEVEL.lead * (e.layer === 'finale' ? 0.8 : 1), dark, dest); break;
         case 'heart': heart(t, e.vel, dest); break;
+        default: extra[e.inst]?.(t, e.midi, dur, e.vel, dest);
       }
     }
   }
 
   /** Chord tones climbing from the chord's root, so a kill rings in the key the march is in. */
-  function playSting(chord: Chord, mode: Mode, streak: number, t: number, bounty = false) {
+  function playSting(chord: Chord, mode: Mode, streak: number, t: number, bounty = false, inst: Inst = 'glock') {
+    const bell = (tt: number, m: number, v: number) => (inst === 'glock' ? glock(tt, m, v, direct) : extra[inst]?.(tt, m, 0.3, v, direct) ?? glock(tt, m, v, direct));
     const root = MID_C + 12 + ((chord.rootPc - 0) % 12);
     const climb: number[] = [];
     const count = 3 + Math.min(3, Math.max(0, streak - 1));
     for (let k = 0; k < count; k++) climb.push(root + chord.tones[k % chord.tones.length]! + 12 * Math.floor(k / chord.tones.length));
     climb.forEach((m, k) => {
       const tt = t + k * 0.055;
-      glock(tt, m, 0.9, direct);
+      bell(tt, m, 0.9);
       const g = env(direct, tt, 0.05, 0.004, 0.02, 0.14);
       osc('square', midiToHz(m - 12), tt, tt + 0.25, g);
     });
     const last = climb[climb.length - 1]!;
     brass(t + (count - 1) * 0.055, last - 12, 0.28, 1, 0.09, mode === 'minor', direct, false);
-    if (bounty) { glock(t + count * 0.055, last + 12, 1, direct); glock(t + count * 0.055 + 0.07, last + 19, 0.8, direct); }
+    if (bounty) { bell(t + count * 0.055, last + 12, 1); bell(t + count * 0.055 + 0.07, last + 19, 0.8); }
   }
 
   function playCadence(kind: 'win' | 'loss', tonic: number, t: number): number {
@@ -265,5 +292,34 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode): Rig {
     return spb * 6;
   }
 
-  return { ctx, layers, duck, tone, volume, playBar, playSting, playCadence };
+  /** A radio being tuned: static swept across the band in crackling bursts, with a dial click either end. */
+  function playTuneIn(t: number) {
+    const click = (tt: number, hz: number) => {
+      const g = env(fx, tt, 0.22, 0.001, 0, 0.03);
+      osc('square', hz, tt, tt + 0.06, g);
+      noiseHit(tt, 0.02, 'highpass', 3000, 0.5, 0.12, fx);
+    };
+    click(t, 1500);
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(3600, t + 0.2); f.frequency.exponentialRampToValueAtTime(1100, t + 0.42);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    // Crackle: the static is gated in short bursts that thin out as the station comes in.
+    for (let i = 0; i < 9; i++) {
+      const a = t + 0.02 + i * 0.045;
+      g.gain.setValueAtTime(0.0001, a);
+      g.gain.linearRampToValueAtTime(0.2 * (1 - i / 11), a + 0.006);
+      g.gain.setValueAtTime(0.2 * (1 - i / 11), a + 0.024);
+      g.gain.exponentialRampToValueAtTime(0.0001, a + 0.04);
+    }
+    src.connect(f).connect(g).connect(fx);
+    src.start(t, 0, 0.5); src.stop(t + 0.5);
+    click(t + 0.44, 1100);
+  }
+
+  return { ctx, newDeck, disposeDeck, duck, tone, volume, fx, playTuneIn, playBar, playSting, playCadence };
 }

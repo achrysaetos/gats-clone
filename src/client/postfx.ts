@@ -1,4 +1,5 @@
-import { addPulse, decayPulse, decideFx, gradeFor, tierGovernor, vignetteReach, watchdog, type Context, type FxMode, type Grade } from './fxparams.ts';
+import { addPulse, decayPulse, decideFx, gradeFor, lightGovernor, vignetteReach, type Context, type FxMode, type Grade } from './fxparams.ts';
+import { currentMood } from './mood.ts';
 import { createLightGL, type LightGL } from './lightgl.ts';
 import { addLight, addShockwave, ambientFor, liveShocks, pushOut, resolveLights, selectLights, setLightingEnabled, TIERS, type Occluder, type ViewRect } from './lighting.ts';
 
@@ -94,7 +95,6 @@ let sized = '';
 let shown = false;
 let pulseNow = 0, pulseAt = 0;
 let vigStrength = 0.4;
-let wasSlow = watchdog();
 let chosen: FxMode = 'off';
 let broken = false;
 let forced = false;
@@ -102,19 +102,108 @@ let lightGL: LightGL | null = null;
 let baseTex: WebGLTexture | null = null;
 let sceneTex: WebGLTexture | null = null;
 let lightBroken = false;
+/** The pause menu's Effects option (settings.ts `fxPlan`): lighting switched off by choice, and the frame-time governors held back. */
+let lightOff = false;
+let holdGovernors = false;
+/** Multipliers from the graphics preset (quality.ts) on the lights, their shadows, the glow and the grain. */
+let rendererName: string | undefined;
+/** The GPU's name as the browser reports it (undefined when hidden), for the graphics menu. */
+export const fxRenderer = (): string | undefined => rendererName;
+let plan = { lightMul: 1, shadowMul: 1, bloom: 1, grain: 1 };
 let tierIx = 0;
 let captured: { view: ViewRect; occluders: readonly Occluder[] } | null = null;
 let lastLit = 0;
-const governor = tierGovernor();
+const governor = lightGovernor();
+/** What the governor and the preset did, newest last, for the dev overlay and the dev probe. */
+const fxLog: { at: number; what: string; tier: number; why: string }[] = [];
+let lastCpuMs = 0;
+let lastDecision = 'not started';
+/** When lighting was given up for being slow, and when to try it again at the lowest tier. */
+let retryAt = 0;
+let retried = 0;
+function note(what: string, why: string): void {
+  fxLog.push({ at: Math.round(performance.now()), what, tier: tierIx, why });
+  if (fxLog.length > 40) fxLog.shift();
+  lastDecision = `${what}: ${why}`;
+}
 
 /** True while the shaders own the vignette, so ambience.ts leaves it out of the 2D canvas. */
 export function owningVignette(): boolean { return mode !== 'off'; }
 /** The vignette strength the 2D path would have painted this frame. */
 export function setVignette(strength: number): void { vigStrength = strength; }
 /** True while the lighting pass can take the night and the shadows from the 2D path this frame. */
-export function lightingActive(): boolean { return mode !== 'off' && !!lightGL && !lightBroken; }
+export function lightingActive(): boolean { return mode !== 'off' && !!lightGL && !lightBroken && !lightOff; }
 /** Dev probe: the lighting tier and what the last lit frame drew. */
 export function lightState(): { on: boolean; tier: number; stats: ReturnType<LightGL['stats']> | null } { return { on: lightingActive(), tier: tierIx, stats: lightGL?.stats() ?? null }; }
+
+/**
+ * The lighting tier in force: 0 is the richest (TIERS[0]), `TIERS.length - 1` the leanest, and -1 when the lights are off for
+ * any reason (no shader pass, the Low preset, a fault, or the governor gave them up). The pause menu reads this.
+ */
+export function lightingTier(): number { return lightingActive() ? tierIx : -1; }
+/** How many lighting tiers there are, richest first. */
+export const lightingTierCount = (): number => TIERS.length;
+/**
+ * Sets the lighting tier (clamped) and holds the frame-time governor at it until `setLightingTier(null)` hands it back (Auto).
+ * No effect on a device whose shader pass is not running. Lighting stays off if the preset switched it off.
+ */
+export function setLightingTier(tier: number | null): void {
+  if (tier === null) { pinnedBy = null; holdGovernors = presetHold; governor.reset(); return; }
+  tierIx = Math.min(TIERS.length - 1, Math.max(0, Math.round(tier)));
+  holdGovernors = true;
+  pinnedBy = 'api';
+  if (lightBroken) { lightBroken = false; setLightingEnabled(lightingActive()); }
+  note('pinned', `tier ${tierIx}`);
+}
+let pinnedBy: 'api' | null = null;
+/** Whether the graphics preset itself holds the governor (any preset but Auto). */
+let presetHold = false;
+/** The numbers the active tier allows (lights, shadow casters, decor lights), for the feed and the menu. */
+export const lightingBudget = (): { lights: number; shadowLights: number; decor: number } => {
+  const t = TIERS[tierIx]!;
+  return { lights: Math.max(1, Math.round(t.lights * plan.lightMul)), shadowLights: Math.round(t.shadowLights * plan.shadowMul), decor: t.decor };
+};
+/**
+ * One line saying what the lighting is doing and why, for the pause menu's graphics panel and the dev overlay, plus the facts behind it.
+ */
+export function lightingStatus(): { on: boolean; tier: number; tiers: number; line: string; renderer: string | null; decision: string; cpuMs: number; frameMs: number; limitMs: number; log: readonly { at: number; what: string; tier: number; why: string }[] } {
+  const on = lightingActive();
+  const g = governor.last();
+  let line: string;
+  if (on) line = `Lighting on, tier ${tierIx + 1} of ${TIERS.length}${holdGovernors ? ' (fixed)' : ''}`;
+  else if (mode === 'off') line = `Plain picture: ${reason}`;
+  else if (lightOff) line = 'Lighting off by the graphics preset';
+  else line = `Lighting off: ${reason}`;
+  return { on, tier: on ? tierIx : -1, tiers: TIERS.length, line, renderer: rendererName ?? null, decision: `${mode}/${reason}${lastDecision ? ` | ${lastDecision}` : ''}`, cpuMs: lastCpuMs, frameMs: g.avg, limitMs: g.limit, log: fxLog };
+}
+
+/** Whether the shader pass could run on this device at all (WebGL up, not software, not `?nofx`, not faulted): the Effects option only has a say then. */
+export function fxCapable(): boolean { return !broken && !!gl && chosen !== 'off'; }
+
+/**
+ * Applies the graphics preset live (quality.ts `Knobs`). A device that never started the pass (no WebGL, software GL, `?nofx`) stays
+ * plain whatever is asked. `hold` stops the pass stepping its own lighting tier down: only Auto lets it.
+ */
+export function setFxPlan(p: { post: boolean; lighting: boolean; tier: number; lightMul: number; shadowMul: number; bloom: number; grain: number; hold: boolean }): void {
+  plan = { lightMul: p.lightMul, shadowMul: p.shadowMul, bloom: p.bloom, grain: p.grain };
+  lightOff = !p.lighting;
+  presetHold = p.hold;
+  holdGovernors = p.hold || pinnedBy === 'api';
+  if (pinnedBy !== 'api') {
+    tierIx = Math.min(TIERS.length - 1, Math.max(0, p.tier));
+    // A preset change is a fresh start: forgive earlier slow stretches, so Auto gets to try the lights again.
+    if (lightBroken && p.lighting && lightGL) { lightBroken = false; reason = 'ok'; }
+    governor.reset();
+  }
+  if (!p.post || !fxCapable()) mode = 'off';
+  else mode = chosen;
+  setLightingEnabled(lightingActive());
+  note('preset', `${p.post ? (p.lighting ? `lights tier ${p.tier}` : 'post only') : 'plain'}${p.hold ? ', fixed' : ', auto'}`);
+  if (mode === 'off') skipFrame();
+}
+
+/** Dev probe: the preset multipliers in force. */
+export const fxPlanState = () => ({ ...plan, lightOff, holdGovernors, tier: tierIx, mode });
 
 /** Why the pass is on or off, for the dev probe and tests. */
 export function fxState(): { mode: FxMode; reason: string } { return { mode, reason }; }
@@ -176,13 +265,15 @@ export function initPostfx(el: HTMLCanvasElement): FxMode {
     gl = el.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' }) as WebGLRenderingContext | null;
     const info = gl?.getExtension('WEBGL_debug_renderer_info');
     if (gl && info) renderer = String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL));
+    rendererName = renderer;
   } catch { gl = null; }
   const decision = decideFx({ search: location.search, reducedMotion, saveData: !!nav.connection?.saveData, deviceMemory: nav.deviceMemory, renderer, glOk: !!gl });
   forced = new URLSearchParams(location.search).has('fx');
   mode = chosen = decision.mode;
   reason = decision.reason;
+  note('decide', `${decision.mode}: ${decision.reason}${renderer ? ` (${renderer})` : ''}`);
   // Dev only: flip the pass at runtime to compare the same scene with and without it.
-  if (new URLSearchParams(location.search).has('dev')) (window as unknown as { __postfx: unknown }).__postfx = { set: (on: boolean) => { mode = on && !broken ? chosen : 'off'; setLightingEnabled(mode !== 'off' && !!lightGL && !lightBroken); if (!on) skipFrame(); }, state: fxState, light: lightState, addLight, addShockwave, lighting: (on: boolean) => { lightBroken = !on; setLightingEnabled(on && mode !== 'off' && !!lightGL); } };
+  if (new URLSearchParams(location.search).has('dev')) (window as unknown as { __postfx: unknown }).__postfx = { status: lightingStatus, setTier: setLightingTier, log: () => fxLog, set: (on: boolean) => { mode = on && !broken ? chosen : 'off'; setLightingEnabled(mode !== 'off' && !!lightGL && !lightBroken); if (!on) skipFrame(); }, state: fxState, light: lightState, addLight, addShockwave, lighting: (on: boolean) => { lightBroken = !on; setLightingEnabled(on && mode !== 'off' && !!lightGL); } };
   if (mode !== 'off' && gl) {
     try {
       progs = {
@@ -226,6 +317,7 @@ function disable(why: string) {
   setLightingEnabled(false);
   broken = true;
   reason = why;
+  note('shaders off', why);
   if (canvas) canvas.hidden = true;
   shown = false;
 }
@@ -268,6 +360,7 @@ function disableLighting(why: string) {
   lightBroken = true;
   setLightingEnabled(false);
   reason = `lighting off: ${why}`;
+  note('lights off', why);
 }
 
 /**
@@ -293,15 +386,16 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   if (cap && lightGL && baseTex) {
     try {
       const tier = TIERS[tierIx]!;
-      const lights = selectLights(resolveLights(now), cap.view, tier.lights, tier.shadowLights).map((l) => ({ ...l, ...pushOut(l.x, l.y, cap.occluders) }));
-      sceneTex = lightGL.render({ w, h, view: cap.view, occluders: cap.occluders, lights, ambient: ambientFor(c.night, c.storm), tier, shocks: liveShocks(now), now }, baseTex, srcTex);
+      const lights = selectLights(resolveLights(now), cap.view, Math.max(1, Math.round(tier.lights * plan.lightMul)), Math.round(tier.shadowLights * plan.shadowMul)).map((l) => ({ ...l, ...pushOut(l.x, l.y, cap.occluders) }));
+      sceneTex = lightGL.render({ w, h, view: cap.view, occluders: cap.occluders, lights, ambient: ambientFor(c.night, c.storm, currentMood()), tier, shocks: liveShocks(now), now }, baseTex, srcTex);
       if (sceneTex) scene = sceneTex;
-      // Frame pacing is the honest GPU meter: when lit frames come in slow, step down a tier, then give the lights up.
+      // Frame pacing is the honest GPU meter, but only a sustained stretch of slow frames counts (lightGovernor): step down a tier, then give the lights up.
       const t = performance.now();
-      if (lastLit && t - lastLit < 250 && !forced) {
-        const next = governor(t - lastLit, tierIx, TIERS.length - 1);
-        if (next === -1) disableLighting('too slow');
-        else tierIx = next;
+      if (lastLit && !forced && !holdGovernors) {
+        const step = governor.push(t - lastLit, lastCpuMs, t, tierIx, TIERS.length - 1, true);
+        if (step.action === 'down') { tierIx++; note('step down', step.why); }
+        else if (step.action === 'up') { tierIx--; note('step up', step.why); }
+        else if (step.action === 'off') { disableLighting(step.why); retryAt = t + 45_000 * (retried + 1); }
       }
       lastLit = t;
     } catch (err) {
@@ -331,10 +425,10 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   g.useProgram(p.p);
   const pl = pulseNow > 0 ? decayPulse(pulseNow, now - pulseAt) : 0;
   const [rx, ry] = vignetteReach(cssW, cssH);
-  g.uniform1f(u.bloom, grade.bloomStrength);
+  g.uniform1f(u.bloom, grade.bloomStrength * plan.bloom * (currentMood()?.glow ?? 1) * (1 + 0.35 * Math.min(1, c.night)));
   g.uniform1f(u.ca, pl * 0.012);
   g.uniform1f(u.vig, vigStrength);
-  g.uniform1f(u.grain, grade.grain);
+  g.uniform1f(u.grain, grade.grain * plan.grain);
   g.uniform1f(u.seed, mode === 'calm' ? 7 : Math.floor(now / 100) % 997);
   g.uniform1f(u.gamma, grade.gamma);
   g.uniform1f(u.sat, grade.sat);
@@ -343,7 +437,18 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   g.uniform3f(u.lift, ...grade.lift);
   g.uniform3f(u.gain, ...grade.gain);
   pass(g, p, null, w, h, [scene, h0.tex, q0.tex], ['src', 'bloomA', 'bloomB']);
-  if (wasSlow(performance.now() - t0) && !forced) disable('too slow');
+  lastCpuMs = lastCpuMs * 0.9 + (performance.now() - t0) * 0.1;
+  if (!forced && !holdGovernors) {
+    const t = performance.now();
+    if (lightBroken && !lightOff && retryAt && t > retryAt && retried < 2) {
+      // Lights were given up for being slow; a long while later, try the leanest tier once more.
+      retried++; retryAt = 0; lightBroken = false; tierIx = TIERS.length - 1; governor.reset(); setLightingEnabled(lightingActive());
+      note('retry', `lights back on at tier ${tierIx} after a quiet spell`);
+    } else if (!lightingActive()) {
+      // Lighting is off: a pass that still costs the CPU too much is dropped altogether.
+      if (governor.push(16, lastCpuMs, t, tierIx, TIERS.length - 1, false).action === 'plain') disable(`too slow (${lastCpuMs.toFixed(1)} ms of CPU a frame)`);
+    }
+  }
   return true;
 }
 

@@ -98,7 +98,7 @@ export function drawShips(g: CanvasRenderingContext2D, now: number, view: { x0: 
     const span = y1 - y0;
     const cx = (x0 + x1) / 2, cy = s.east ? y0 + span * 0.2 : y0 + span * 0.78;
     const size = Math.min(70, (x1 - x0) * 0.28);
-    if (s.kind === 'trawler') painted(g, name, cx, cy + dy, size, hexA('#e8e4d0', 0.5), -Math.PI / 2 * (s.east ? -1 : 1), 0.2);
+    if (s.kind === 'trawler') painted(g, name, cx, cy + dy, size, hexA('#d8d4c0', 0.3), -Math.PI / 2 * (s.east ? -1 : 1), 0.2);
     g.restore();
   }
 }

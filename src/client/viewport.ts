@@ -1,3 +1,4 @@
+import { knobs } from './quality.ts';
 /** Everything about the physical screen: its size (as the browser really shows it) and the notch and home-bar insets. */
 
 export type Insets = { l: number; t: number; r: number; b: number };
@@ -26,7 +27,7 @@ export function measureLayout(): Layout {
   const vv = window.visualViewport;
   const w = Math.round(vv && vv.scale === 1 ? vv.width : window.innerWidth);
   const h = Math.round(vv && vv.scale === 1 ? vv.height : window.innerHeight);
-  return { w, h, dpr: Math.min(window.devicePixelRatio || 1, MAX_DPR), safe: readSafeInsets() };
+  return { w, h, dpr: Math.min(window.devicePixelRatio || 1, MAX_DPR, knobs().dprCap), safe: readSafeInsets() };
 }
 
 export const isIos = (): boolean => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

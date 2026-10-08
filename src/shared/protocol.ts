@@ -5,6 +5,7 @@ import {
 import { MAP_IDS, MAPS, type MapId, type WallMaterial } from './maps.ts';
 import type { DoorView } from './sim/doors.ts';
 import { isEmoteId, type EmoteId } from './emotes.ts';
+import { isStationId, type StationId } from './radio.ts';
 import type { RangeView, TargetView } from './range.ts';
 import { isCosmeticId, isSlot, parsePicks, type Cos, type Equipped, type Picks, type ProgressMsg, type Slot } from './cosmetics.ts';
 
@@ -53,6 +54,8 @@ export type ClientMsg =
   | { t: 'chat'; text: string }
   /** A cosmetic quick emote; the server rate-limits it and fans it out to nearby players and the emoter's team. */
   | { t: 'emote'; id: EmoteId }
+  /** Zombies and the range: tune the room's radio. The server drops it in any other room and rate-limits it. */
+  | { t: 'radio'; station: StationId }
   | { t: 'respawn'; loadout: Loadout }
   /** Zombies: put a building on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. A wall's `lv` is its tier (1 when absent). */
   | { t: 'build'; kind: BuildingKind; cx: number; cy: number; lv?: number }
@@ -240,6 +243,8 @@ export type RoyaleResult = { place: number; of: number; kills: number; knocks: n
  * `drops` are supply drops about to land or landed and still standing; `watch` is the player your camera follows while you are dead.
  */
 export type RoyaleView = {
+  /** The server time the round began; the clients place their hidden radios by it. */
+  round: number;
   ring: RingView; redeploys: boolean; squads: SquadView[]; redeployAt: number | null;
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
 };
@@ -311,6 +316,8 @@ export type ServerMsg =
   | { t: 'chat'; from: string; text: string; team: Team }
   /** Player `pid` is doing emote `id`. */
   | { t: 'emote'; pid: number; id: EmoteId }
+  /** The room's radio is tuned to `station` (null: back to each map's own track), by `by`; sent to everyone in the room and to a player who joins. */
+  | { t: 'radio'; station: StationId | null; by: string | null }
   /** You just earned a lifetime medal (`CAREER`), and the score it paid. */
   | { t: 'badge'; badge: Badge; score: number }
   /** Your XP, level, unlocks and challenges; see `ProgressMsg`. */
@@ -382,6 +389,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return typeof v.text === 'string' && v.text.trim() ? { t: 'chat', text: v.text.trim().slice(0, 120) } : null;
     case 'emote':
       return isEmoteId(v.id) ? { t: 'emote', id: v.id } : null;
+    case 'radio':
+      return isStationId(v.station) ? { t: 'radio', station: v.station } : null;
     case 'respawn': {
       const loadout = parseLoadout(v.loadout);
       return loadout ? { t: 'respawn', loadout } : null;

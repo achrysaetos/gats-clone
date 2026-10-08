@@ -1,4 +1,5 @@
 import type { MapDef, MapWall, WallMaterial } from '../shared/maps.ts';
+import { knobs, scaled } from './quality.ts';
 import { placeVignettes, type VKind, type Vignette } from './vignettes.ts';
 
 /**
@@ -169,6 +170,9 @@ const SIDES: readonly Side[] = ['n', 's', 'e', 'w'];
 export const CAPS: Record<FixtureKind, number> = {
   lamp: 90, work: 24, beacon: 18, exit: 10, tube: 14, window: 18, uplight: 24, fan: 14, steam: 8, flood: 4, alarm: 4, boothlamp: 8, lanepost: 14, scoreboard: 1, lantern: 6,
 };
+
+/** The cap for a kind, thinned by the graphics preset's decor knob (a kind with a cap of one or more keeps at least one). */
+const fixtureCap = (k: FixtureKind): number => (CAPS[k] > 0 && knobs().decor > 0 ? Math.max(1, scaled(CAPS[k], knobs().decor)) : CAPS[k]);
 
 function rng(seed: number): () => number {
   let a = seed >>> 0;
@@ -425,13 +429,13 @@ export function planDecor(map: MapDef): DecorPlan {
   // ---- Fluorescent tubes, windows, exit signs and vent fans: all on south faces, where a face shows.
   const south = open.filter((s) => s.side === 's' && s.wall.material === 'concrete' && s.wall.w >= 100 && s.t > 30 && s.t < s.len - 30);
   for (const s of shuffled(south, rand)) {
-    if (count('window') >= CAPS.window) break;
+    if (count('window') >= fixtureCap('window')) break;
     const below = outward(s, 40);
     if (!apart(s.px, s.py, 700, 'window') || keep.inWall(below.x, below.y, 16)) continue;
     wallFixture('window', s, 6, { w: 30, h: 10, y: s.py - 1 });
   }
   for (const s of shuffled(south, rand)) {
-    if (count('tube') >= CAPS.tube) break;
+    if (count('tube') >= fixtureCap('tube')) break;
     if (!apart(s.px, s.py, 700, 'tube')) continue;
     wallFixture('tube', s, 6, { w: 36, h: 5 });
   }
@@ -441,11 +445,11 @@ export function planDecor(map: MapDef): DecorPlan {
     const near = south.filter((s) => dist({ x: s.px, y: s.py }, c) < 650 && apart(s.px, s.py, 220));
     near.sort((a, b) => dist({ x: a.px, y: a.py }, c) - dist({ x: b.px, y: b.py }, c));
     const pick = near[Math.floor(rand() * Math.min(2, near.length))];
-    if (pick && count('exit') < CAPS.exit && pi % 2 === 0) wallFixture('exit', pick, 4, { w: 28, h: 11 });
+    if (pick && count('exit') < fixtureCap('exit') && pi % 2 === 0) wallFixture('exit', pick, 4, { w: 28, h: 11 });
   }
   const fanSpots = open.filter((s) => !landWalls.has(s.wi) && s.wall.material === 'concrete' && (s.side === 'n' || s.side === 's') && s.t > 40 && s.t < s.len - 40);
   for (const s of shuffled(fanSpots, rand)) {
-    if (count('fan') >= CAPS.fan) break;
+    if (count('fan') >= fixtureCap('fan')) break;
     if (!apart(s.px, s.wall.y + s.wall.h / 2, 800, 'fan')) continue;
     // A fan sits mid-top of its wall, not on the edge, so it never reaches over the floor.
     add({ kind: 'fan', x: s.px, y: s.wall.y + s.wall.h / 2, lx: s.px, ly: s.wall.y + s.wall.h / 2, angle: 0, phase: rand(), w: Math.min(26, s.wall.h - 14), h: Math.min(26, s.wall.h - 14) });
@@ -454,7 +458,7 @@ export function planDecor(map: MapDef): DecorPlan {
   // ---- Floor work lights: a tripod lamp at a wall foot, aimed out into the open. Hugs the wall so it is never in a lane.
   const feet = open.filter((s) => openness(s, walls, map.size) >= 3 && (s.side === 'n' || s.side === 's'));
   for (const s of shuffled(feet, rand)) {
-    if (count('work') >= CAPS.work) break;
+    if (count('work') >= fixtureCap('work')) break;
     const p = outward(s, 18);
     if (!apart(p.x, p.y, 900, 'work') || keep.blocked(p.x, p.y, 10)) continue;
     add({ kind: 'work', x: p.x, y: p.y, lx: p.x + NORMAL[s.side][0] * 16, ly: p.y + NORMAL[s.side][1] * 16, angle: SIDE_ANGLE[s.side], phase: rand(), side: s.side });
@@ -463,7 +467,7 @@ export function planDecor(map: MapDef): DecorPlan {
   // ---- Wall lamps: caged bulbs on the lane-facing edge of walls, spaced so the yard reads as pools of light with dark between.
   const lampMin = flavour === 'siege' ? 380 : 560;
   for (const s of shuffled(open, rand)) {
-    if (count('lamp') >= CAPS.lamp) break;
+    if (count('lamp') >= fixtureCap('lamp')) break;
     const p = outward(s, 20);
     if (!apart(s.px, s.py, lampMin * (versus ? regions[regionAt(s.px, s.py, map.size)]!.spacing : 1), 'lamp')) continue;
     if (keep.inWall(p.x, p.y, 14)) continue;
@@ -484,7 +488,7 @@ export function planDecor(map: MapDef): DecorPlan {
       ? [[p.x - 34, p.y - 34], [p.x + p.w + 34, p.y + p.h + 34]]
       : [[p.x + p.w + 34, p.y - 34], [p.x - 34, p.y + p.h + 34]];
     for (const [x, y] of corners) {
-      if (count('uplight') >= CAPS.uplight || keep.inWall(x, y, 14)) continue;
+      if (count('uplight') >= fixtureCap('uplight') || keep.inWall(x, y, 14)) continue;
       add({ kind: 'uplight', x, y, lx: x, ly: y, angle: Math.atan2(y - (p.y + p.h / 2), x - (p.x + p.w / 2)), phase: rand(), team });
     }
   }
@@ -492,7 +496,7 @@ export function planDecor(map: MapDef): DecorPlan {
   // ---- Steam vents: a grate and a slow tiny plume, tucked at a wall foot in the quietest corners.
   const quiet = shuffled(open.filter((s) => s.side === 'n' || s.side === 's'), rand);
   for (const s of quiet) {
-    if (count('steam') >= CAPS.steam) break;
+    if (count('steam') >= fixtureCap('steam')) break;
     const p = outward(s, 26);
     if (!apart(p.x, p.y, 1200, 'steam') || keep.blocked(p.x, p.y, 20)) continue;
     add({ kind: 'steam', x: p.x, y: p.y, lx: p.x, ly: p.y, angle: 0, phase: rand() });

@@ -195,6 +195,7 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
   return {
     ring: ringView(r.ring),
     redeploys: redeploysOpen(r),
+    round: r.startedAt,
     squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team) })),
     redeployAt: r.redeployAt.get(me.id) ?? null,
     drops: [

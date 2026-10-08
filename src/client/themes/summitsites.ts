@@ -32,7 +32,7 @@ function deck(g: G, v: Variant) {
     // The mat by the bar door.
     g.fillStyle = '#26282c'; rr(g, 1440, 2052, 120, 44, 6); g.fill(); g.strokeStyle = C.ink; g.lineWidth = 2; g.stroke();
     label(g, v, 'APRES SKI', 1500, 2074, 15, hexA(C.yellow, 0.7), { spacing: 3 });
-    label(g, v, 'HOT TUBS  •  TOWELS AT THE BAR', 1000, 1560, 20, 'rgba(232, 214, 176, 0.4)', { spacing: 5 });
+    label(g, v, 'HOT TUBS  •  TOWELS AT THE BAR', 900, 2052, 20, 'rgba(232, 214, 176, 0.4)', { spacing: 5 });
   } else {
     flags(g, x, y, w, h, '#5a6168', 105);
     g.strokeStyle = 'rgba(10, 12, 18, 0.6)'; g.lineWidth = 5; g.strokeRect(x, y, w, h);
@@ -44,7 +44,7 @@ function deck(g: G, v: Variant) {
       blotch(g, tx, ty, 220, '190, 230, 255', 0.14);
     }
     blotch(g, 1620, 1650, 220, '255, 130, 80', 0.12);
-    label(g, v, 'COLD PLUNGE  •  3 MIN', 1000, 1560, 20, 'rgba(200, 235, 250, 0.45)', { spacing: 5 });
+    label(g, v, 'COLD PLUNGE  •  3 MIN', 900, 2052, 20, 'rgba(200, 235, 250, 0.45)', { spacing: 5 });
     // A bucket and a ladle left by the door, a birch whisk drying.
     g.fillStyle = '#6a4a2c'; ell(g, 1420, 1990, 12, 12); g.fill(); g.strokeStyle = C.ink; g.lineWidth = 1.6; g.stroke();
   }
@@ -230,6 +230,34 @@ function lot(g: G, v: Variant) {
   }
 }
 
+/* -- the staging yard / the loading yard ------------------------------------------------------------------------------------- */
+
+/** The south-west corner where the first squad used to muster: a ploughed apron, bay lines half buried, sled tracks running north from the lamp. */
+function staging(g: G, v: Variant) {
+  const x = 110, y = 4440, w = 520, h = 540;
+  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+  if (v === 0) {
+    g.fillStyle = 'rgba(46, 54, 70, 0.62)'; g.fillRect(x, y, w, h);
+    g.strokeStyle = 'rgba(14, 18, 28, 0.45)'; g.lineWidth = 2;
+    for (let tx = x; tx <= x + w; tx += 130) { g.beginPath(); g.moveTo(tx, y); g.lineTo(tx, y + h); g.stroke(); }
+    for (let ty = y; ty <= y + h; ty += 135) { g.beginPath(); g.moveTo(x, ty); g.lineTo(x + w, ty); g.stroke(); }
+    // Bays for the pickup and the sleds, half under snow.
+    g.strokeStyle = 'rgba(210, 218, 232, 0.38)'; g.lineWidth = 4;
+    g.strokeRect(188, 4440, 148, 340); g.strokeRect(392, 4716, 82, 180); g.strokeRect(482, 4716, 82, 180);
+    // Two lines of track from the sled bays, and the pickup's tyre prints, in the snow of the apron's edge.
+    g.strokeStyle = 'rgba(40, 54, 82, 0.34)'; g.lineWidth = 7; g.lineCap = 'round';
+    for (const dx of [-9, 9]) { g.beginPath(); g.moveTo(437 + dx, 4900); g.bezierCurveTo(440 + dx, 4800, 520 + dx, 4620, 600 + dx, 4440); g.stroke(); }
+    blotch(g, 262, 4780, 120, '30, 40, 64', 0.2); blotch(g, 480, 4830, 110, '30, 40, 64', 0.2);
+  } else {
+    flags(g, x, y, w, h, '#5c646c', 191);
+    g.strokeStyle = hexA(C.yellow, 0.5); g.lineWidth = 5; g.setLineDash([36, 24]); g.strokeRect(x + 14, y + 14, w - 28, h - 28); g.setLineDash([]);
+    g.strokeStyle = 'rgba(14, 18, 24, 0.4)'; g.lineWidth = 3; g.strokeRect(188, 4440, 148, 340); g.strokeRect(392, 4716, 82, 180); g.strokeRect(482, 4716, 82, 180);
+    blotch(g, 262, 4780, 120, '20, 24, 32', 0.2);
+  }
+  g.restore();
+  label(g, v, v === 0 ? 'PATROL STAGING' : 'LOADING YARD', 160, 4700, 20, v === 0 ? 'rgba(232, 220, 190, 0.3)' : hexA(C.yellow, 0.34), { spacing: 6, rot: -Math.PI / 2 });
+}
+
 /* -- the fishing hut / the Zamboni shed -------------------------------------------------------------------------------------- */
 
 function hut(g: G, v: Variant) {
@@ -260,6 +288,6 @@ function hut(g: G, v: Variant) {
 }
 
 export function paintSites(g: G, _size: number, _seed: number) {
-  both(g, (gg, v) => { woods(gg, v); deck(gg, v); lift(gg, v); lot(gg, v); garage(gg, v); dome(gg, v); hut(gg, v); });
+  both(g, (gg, v) => { woods(gg, v); deck(gg, v); lift(gg, v); lot(gg, v); staging(gg, v); garage(gg, v); dome(gg, v); hut(gg, v); });
   void contact; void planks; void hexA;
 }

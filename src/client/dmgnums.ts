@@ -1,5 +1,6 @@
 import type { DamageKind } from '../shared/protocol.ts';
 import { INK, PALETTE, shade } from './palette.ts';
+import { damageNumbersOn } from './settings.ts';
 
 /**
  * Chunky toy numbers over what you hit. Hits on one victim inside `windowMs` of each other stack into one number that
@@ -96,6 +97,7 @@ function chunkyText(ctx: CanvasRenderingContext2D, label: string, x: number, y: 
 }
 
 export function drawNums(ctx: CanvasRenderingContext2D, list: readonly Num[], now: number, markY: number, reduced = false) {
+  if (!damageNumbersOn()) return;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';

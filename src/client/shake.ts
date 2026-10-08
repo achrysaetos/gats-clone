@@ -47,8 +47,8 @@ export const RECOIL_KICK = { px: 16, maxPx: 20, ms: 100 } as const;
 
 export type Kick = { x: number; y: number };
 
-export function addKick(k: Kick, gun: GunId, angle: number): Kick {
-  const push = RECOIL_KICK.px * heftOf(gun);
+export function addKick(k: Kick, gun: GunId, angle: number, scale = 1): Kick {
+  const push = RECOIL_KICK.px * heftOf(gun) * scale;
   const x = k.x - Math.cos(angle) * push, y = k.y - Math.sin(angle) * push;
   const len = Math.hypot(x, y);
   const cap = len > RECOIL_KICK.maxPx ? RECOIL_KICK.maxPx / len : 1;

@@ -166,6 +166,8 @@ export const SUMMIT_POLYS: MapPoly[] = [
   car('car-1', 760, 4130, 0.05), car('car-2', 1180, 4170, -0.04), car('car-3', 1600, 4120, 0.02), car('car-4', 900, 4620, Math.PI + 0.06), car('car-5', 1480, 4600, Math.PI - 0.03),
   sled('sled-1', 1560, 5330, 1.57), sled('sled-2', 1560, 5420, 1.57), sled('sled-3', 1560, 5510, 1.57), sled('sled-4', 1660, 5380, 1.2),
   ...groomer('cat', 780, 5400, -0.1),
+  // The staging yard in the south-west, where the first squad used to muster: a pickup nosed to the bank and two sleds under a lamp.
+  car('car-6', 262, 4600, Math.PI / 2 + 0.05), sled('sled-5', 430, 4800, 1.57), sled('sled-6', 520, 4800, 1.57),
   // The observatory on its ridge (a round fuel house in the turn).
   ...roundHouse(2300, 5300),
 ];

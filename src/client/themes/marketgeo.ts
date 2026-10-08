@@ -75,7 +75,7 @@ function clipped(g: G, p: MapPoly, paint: (g: G, s: Solid) => void, kind: 'cart'
 export const marketGeo: Pick<Theme, 'drawPoly' | 'door' | 'roof'> = {
   drawPoly(g: G, p: MapPoly): boolean {
     if (p.shape === 'cart') { clipped(g, p, paintCart, 'cart', FACE.cart); return true; }
-    if (p.shape === 'shrine') { clipped(g, p, paintLandmark, 'shrine', FACE.shrine); return true; }
+    if (p.shape === 'shrine') { clipped(g, p, (c, sd) => paintLandmark(c, sd, true), 'shrine', FACE.shrine); return true; }
     if (p.material === 'shop') {
       drawExtruded(g, p.points, p.height ?? 22, PLASTER);
       // A lit trim along the top of every wall that faces south, in the district's neon.

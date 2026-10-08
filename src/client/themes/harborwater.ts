@@ -181,10 +181,12 @@ float vnoise(vec2 p){
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
+// Two swells running in different directions at different scales, then two layers of chop moving the other way.
 float hgt(vec2 p){
   float t = uT;
   float h = sin(p.x * 0.018 + t * 0.5 + sin(p.y * 0.012 + t * 0.27) * 1.6) * 0.5;
   h += sin((p.x * 0.55 + p.y * 0.83) * 0.03 - t * 0.41) * 0.35;
+  h += sin((p.x * -0.8 + p.y * 0.35) * 0.052 + t * 0.62) * 0.2;
   h += (vnoise(p * 0.02 + vec2(t * 0.07, -t * 0.045)) - 0.5) * 0.9;
   h += (vnoise(p * 0.055 - vec2(t * 0.11, t * 0.09)) - 0.5) * 0.4;
   return h;
@@ -195,8 +197,10 @@ void main(){
   float sd = (m.r - 0.5) * 2.0 * MAXD;
   if (sd < -1.0) { gl_FragColor = vec4(0.0); return; }
   float shore = m.g * SHORE;
-  float hullD = m.b * HULLR;
   vec2 p = vW;
+  // A hull rides the swell: its distance field breathes a pixel or two with it.
+  float bob = sin(uT * 0.8 + p.y * 0.008) * 1.6 + sin(uT * 1.3 + p.x * 0.01) * 0.8;
+  float hullD = max(0.0, m.b * HULLR + bob);
   float e = 5.0;
   float h0 = hgt(p);
   vec2 g = vec2(hgt(p + vec2(e, 0.0)) - h0, hgt(p + vec2(0.0, e)) - h0) / e;
@@ -204,48 +208,74 @@ void main(){
   float d = dot(n, normalize(vec3(-0.62, -0.78, 0.9)));
   float lvl = step(0.67, d) + step(0.8, d);
 
-  // Three cel tones for each of three depths: the shallows are turquoise, the deep is ink-blue.
+  // Depth steps follow the nearest shore or hull: four palettes, each in three cel tones, with a fine dark seam between steps.
+  float dep = min(shore, hullD * 1.15 + 14.0);
   vec3 c;
-  if (shore < 130.0)      c = lvl < 0.5 ? vec3(0.227, 0.561, 0.596) : (lvl < 1.5 ? vec3(0.290, 0.655, 0.667) : vec3(0.400, 0.753, 0.733));
-  else if (shore < 330.0) c = lvl < 0.5 ? vec3(0.165, 0.392, 0.463) : (lvl < 1.5 ? vec3(0.204, 0.478, 0.537) : vec3(0.263, 0.569, 0.616));
-  else                    c = lvl < 0.5 ? vec3(0.106, 0.255, 0.322) : (lvl < 1.5 ? vec3(0.137, 0.329, 0.408) : vec3(0.180, 0.416, 0.494));
+  if (dep < 34.0)       c = lvl < 0.5 ? vec3(0.290, 0.655, 0.667) : (lvl < 1.5 ? vec3(0.349, 0.718, 0.690) : vec3(0.470, 0.800, 0.760));
+  else if (dep < 130.0) c = lvl < 0.5 ? vec3(0.227, 0.561, 0.596) : (lvl < 1.5 ? vec3(0.290, 0.655, 0.667) : vec3(0.400, 0.753, 0.733));
+  else if (dep < 250.0) c = lvl < 0.5 ? vec3(0.165, 0.392, 0.463) : (lvl < 1.5 ? vec3(0.204, 0.478, 0.537) : vec3(0.263, 0.569, 0.616));
+  else if (dep < 400.0) c = lvl < 0.5 ? vec3(0.106, 0.255, 0.322) : (lvl < 1.5 ? vec3(0.137, 0.329, 0.408) : vec3(0.180, 0.416, 0.494));
+  else                  c = lvl < 0.5 ? vec3(0.070, 0.180, 0.245) : (lvl < 1.5 ? vec3(0.095, 0.245, 0.320) : vec3(0.130, 0.320, 0.400));
+  float seam = 0.0;
+  seam = max(seam, 1.0 - smoothstep(0.8, 2.2, abs(dep - 34.0)));
+  seam = max(seam, 1.0 - smoothstep(0.8, 2.2, abs(dep - 130.0)));
+  seam = max(seam, 1.0 - smoothstep(0.8, 2.2, abs(dep - 250.0)));
+  seam = max(seam, 1.0 - smoothstep(0.8, 2.2, abs(dep - 400.0)));
+  c *= 1.0 - 0.16 * seam;
+  // Colour depth: the far water sinks toward ink-blue, a gentle vignette on the open sea.
+  c = mix(c, vec3(0.04, 0.12, 0.19), smoothstep(380.0, 640.0, shore) * 0.35);
 
-  // Caustics: a slow network of bright lines over the shallows.
+  // Caustics: two slow networks of bright lines dancing over the shallows.
   float cs = sin(p.x * 0.05 + sin(p.y * 0.04 + uT * 0.4) * 2.0) + sin(p.y * 0.047 - uT * 0.33 + sin(p.x * 0.035) * 2.1);
-  float caus = (1.0 - smoothstep(0.05, 0.1, abs(cs))) * (1.0 - smoothstep(70.0, 360.0, shore));
-  c = mix(c, vec3(0.56, 0.84, 0.80), step(0.5, caus) * 0.3);
+  float cs2 = sin(p.x * 0.083 - uT * 0.5 + sin(p.y * 0.06) * 1.7) + sin(p.y * 0.071 + uT * 0.41 + sin(p.x * 0.05) * 1.9);
+  float shal = 1.0 - smoothstep(70.0, 360.0, shore);
+  float caus = (1.0 - smoothstep(0.11, 0.2, abs(cs))) * (0.55 + 0.45 * step(0.0, cs2)) * shal;
+  c = mix(c, vec3(0.62, 0.90, 0.84), step(0.5, caus) * 0.26);
 
-  // The rings a moored hull makes: thin concentric lines that fade with distance and drift outward.
+  // The rings a moored hull makes: crisp concentric lines that drift outward and fade, broken by noise.
   float ring = abs(fract(hullD * 0.045 - uT * 0.12) - 0.5);
-  float wake = (1.0 - smoothstep(0.0, 70.0, hullD)) * smoothstep(12.0, 18.0, hullD) * (1.0 - smoothstep(0.045, 0.045 + uPx * 0.05, ring)) * step(0.45, vnoise(p * 0.02 + 3.0));
-  c = mix(c, vec3(0.80, 0.90, 0.88), wake * 0.55);
+  float wake = (1.0 - smoothstep(0.0, 78.0, hullD)) * smoothstep(12.0, 18.0, hullD) * (1.0 - smoothstep(0.045, 0.045 + uPx * 0.05, ring)) * step(0.4, vnoise(p * 0.02 + 3.0 + uT * 0.05));
+  c = mix(c, vec3(0.82, 0.92, 0.90), wake * 0.6);
 
-  // Practical lights lay stretched streaks on the water, broken into slices that shimmer sideways.
+  // Reflections of every lamp: stretched, sliced streaks that shimmer sideways, in the lamp's colour.
   vec3 glow = vec3(0.0);
   for (int i = 0; i < ${MAX_LIGHTS}; i++) {
     if (float(i) >= uN) break;
     vec4 L = uL[i];
     float dy = p.y - L.y, dx = p.x - L.x;
-    if (dy > 4.0 && dy < L.z && abs(dx) < 90.0) {
-      float xo = (vnoise(vec2(p.y * 0.05, uT * 0.55 + float(i) * 7.0)) - 0.5) * 22.0 + sin(p.y * 0.21 + uT * 1.6) * 3.0;
-      float w = 9.0 + dy * 0.045;
+    if (dy > 4.0 && dy < L.z && abs(dx) < 110.0) {
+      float xo = (vnoise(vec2(p.y * 0.05, uT * 0.55 + float(i) * 7.0)) - 0.5) * 26.0 + sin(p.y * 0.21 + uT * 1.6) * 3.5;
+      float w = 9.0 + dy * 0.05;
       float strip = 1.0 - smoothstep(w - 1.5, w + 1.5, abs(dx + xo));
       float cut = step(0.3 + (dy / L.z) * 0.5, fract(p.y / 16.0 + vnoise(vec2(float(i), p.x * 0.02)) * 3.0));
       float k = strip * cut * (1.0 - dy / L.z) * L.w;
-      glow += uLc[i] * (step(0.12, k) * 0.28 + step(0.45, k) * 0.2);
+      glow += uLc[i] * (step(0.12, k) * 0.3 + step(0.45, k) * 0.22);
     }
   }
   c = min(vec3(1.0), c + glow * 0.9);
 
-  // Foam: a solid line at the shore with a wobble, then a second broken line behind it.
+  // Glints: a few tiny four-point sparkles that twinkle on the lit crests, never more than a handful on screen.
+  vec2 gc = floor(p / 30.0);
+  float gh = hash(gc);
+  vec2 gp = (p - (gc + vec2(0.3 + 0.4 * hash(gc + 7.0), 0.3 + 0.4 * hash(gc + 13.0))) * 30.0);
+  float tw = pow(max(0.0, sin(uT * 2.4 + gh * 60.0)), 6.0);
+  float star = max(step(abs(gp.x), 1.1) * step(abs(gp.y), 4.5 * tw + 0.5), step(abs(gp.y), 1.1) * step(abs(gp.x), 4.5 * tw + 0.5));
+  c = mix(c, vec3(0.92, 0.98, 0.95), step(0.986, gh) * star * step(0.5, lvl) * step(26.0, shore + sd) * tw);
+
+  // Foam: a bright line on every edge that wobbles, thickens and thins as the tide swells, with a second line behind it that breaks.
+  float swell = sin(uT * 0.33) * 2.2 + sin(uT * 0.21 + p.x * 0.004) * 1.2;
   float wob = sin(p.y * 0.05 + uT * 0.8 + p.x * 0.03) * 1.6 + (vnoise(p * 0.06 + uT * 0.15) - 0.5) * 5.0;
   float fd = sd + wob;
-  float foamA = 1.0 - smoothstep(6.0 - uPx, 6.0 + uPx, fd);
-  float rdist = abs(fd - (17.0 + 3.0 * sin(uT * 0.7 + p.x * 0.01)));
-  float foamB = (1.0 - smoothstep(1.5 - uPx, 1.5 + uPx, rdist)) * step(0.4, vnoise(p * 0.045 + vec2(uT * 0.1, 0.0)));
+  float thick = 5.0 + 2.6 * vnoise(p * 0.035 + vec2(uT * 0.22, 0.0));
+  float foamA = 1.0 - smoothstep(thick + swell - uPx, thick + swell + uPx, fd);
+  float rdist = abs(fd - (17.0 + 3.0 * sin(uT * 0.7 + p.x * 0.01) + swell));
+  float foamB = (1.0 - smoothstep(1.5 - uPx, 1.5 + uPx, rdist)) * step(0.42, vnoise(p * 0.045 + vec2(uT * 0.1, 0.0)));
+  float hf = hullD - 3.0 - swell * 0.4;
+  float foamH = 1.0 - smoothstep(4.0 - uPx, 4.0 + uPx, hf + wob * 0.4);
+  float foamH2 = (1.0 - smoothstep(1.4 - uPx, 1.4 + uPx, abs(hullD - 13.0 - swell * 0.6 - wob * 0.3))) * step(0.4, vnoise(p * 0.05 + vec2(0.0, uT * 0.12)));
   vec3 foam = vec3(0.894, 0.922, 0.878);
-  c = mix(c, foam * 0.78, foamB * 0.9);
-  c = mix(c, foam, foamA);
+  c = mix(c, foam * 0.78, max(foamB, foamH2) * 0.9);
+  c = mix(c, foam, max(foamA, foamH));
   float a = smoothstep(-0.9, 0.9, sd);
   gl_FragColor = vec4(c * a, a);
 }`;
@@ -254,8 +284,11 @@ type GlState = { canvas: HTMLCanvasElement; gl: WebGLRenderingContext; prog: Web
 let gl: GlState | null = null;
 let glFailed = false;
 let glMap = '';
-const slow = watchdog(5, 90);
+const slow = watchdog(9, 60);
 let tier = 0;
+/** The graphics preset's say (quality.ts): GPU water or the plain 2D water, and the sharpest resolution tier it may use. */
+let gpuWater = true;
+export function setWaterPlan(p: { gl: boolean; tier: number }): void { gpuWater = p.gl; tier = Math.min(TIER_SCALE.length - 1, Math.max(0, p.tier)); }
 const TIER_SCALE = [0.75, 0.5, 0.34] as const;
 
 export type WaterMode = 'gl' | '2d';
@@ -350,59 +383,153 @@ function drawGL(ctx: CanvasRenderingContext2D, now: number, view: { x0: number; 
 
 /* -- the plain canvas ------------------------------------------------------------------------------------------- */
 
+/*
+ * The fallback is the same toon picture drawn without a shader, and cached: the static part (cel depth bands that follow the
+ * distance from every shore and hull, a crisp unbroken foam line along every edge with a second, mostly-continuous line behind it)
+ * is baked per 512 px tile from the very distance field the shader uses, a couple of tiles per frame, and blitted from then on.
+ * Over it each frame draws only a handful of short wavelet arcs that rise and fade, and the lights' streaks.
+ */
+const TILE = 512;
+/** Each baked tile carries a 2 px skirt of its neighbours' pixels so a fractional camera scale never opens a seam between tiles. */
+const SKIRT = 2;
+const TILE_PX = TILE + 2 * SKIRT;
+const BAND_EDGES = [34, 96, 170, 250, 340, 470] as const;
+const BAND_COLORS = ['#58b7b0', '#47a3a6', '#3a8896', '#2a6173', '#245468', '#1d4658', '#173a4a'] as const;
+const FOAM_RGB = [228, 235, 224] as const, FOAM_LO_RGB = [150, 184, 184] as const;
+const rgbOfHex = (h: string): [number, number, number] => { const v = parseInt(h.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
+const BAND_RGB = BAND_COLORS.map(rgbOfHex);
+
+const fields = new WeakMap<WaterPrep, Uint8Array>();
+const fieldOf = (prep: WaterPrep): Uint8Array => { let f = fields.get(prep); if (!f) { f = field(prep); fields.set(prep, f); } return f; };
+const tiles = new Map<string, HTMLCanvasElement>();
+let prepSeq = 0;
+const prepIds = new WeakMap<WaterPrep, number>();
+const prepId = (p: WaterPrep): number => { let i = prepIds.get(p); if (i === undefined) { i = ++prepSeq; prepIds.set(p, i); } return i; };
+const TILE_LIMIT = 36;
+
+/** Bilinear samples of the distance field at a world point: [signed shore distance, distance to land, distance to hull], all in world px. */
+function sample(f: Uint8Array, n: number, wx: number, wy: number, out: number[]): void {
+  const u = Math.min(n - 1.001, Math.max(0, wx / TEXEL - 0.5)), v = Math.min(n - 1.001, Math.max(0, wy / TEXEL - 0.5));
+  const i0 = u | 0, j0 = v | 0, fx = u - i0, fy = v - j0;
+  const a = (j0 * n + i0) * 4, b = a + 4, c = a + n * 4, d = c + 4;
+  const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+  const ch = (k: number) => f[a + k]! * w00 + f[b + k]! * w10 + f[c + k]! * w01 + f[d + k]! * w11;
+  out[0] = (ch(0) / 255 - 0.5) * 2 * MAXD; out[1] = (ch(1) / 255) * SHORE_MAX; out[2] = (ch(2) / 255) * HULL_MAX;
+}
+
+const hash2 = (x: number, y: number): number => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+const vnoise = (x: number, y: number): number => {
+  const ix = Math.floor(x), iy = Math.floor(y); let fx = x - ix, fy = y - iy;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+};
+
+function bakeTile(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement {
+  const f = fieldOf(prep), n = prep.cells;
+  const c = document.createElement('canvas'); c.width = c.height = TILE_PX;
+  const g = c.getContext('2d')!;
+  const img = g.createImageData(TILE_PX, TILE_PX), px = img.data;
+  const out = [0, 0, 0], x0 = tx * TILE - SKIRT, y0 = ty * TILE - SKIRT;
+  for (let j = 0; j < TILE_PX; j++) for (let i = 0; i < TILE_PX; i++) {
+    const wx = x0 + i + 0.5, wy = y0 + j + 0.5;
+    sample(f, n, wx, wy, out);
+    const sd = out[0]!;
+    const o = (j * TILE_PX + i) * 4;
+    if (sd < -1) continue;
+    // Cel depth: distance from the nearest shore, or from a hull (which is a shore of its own).
+    const wob = Math.sin(wy * 0.05 + wx * 0.03) * 1.4 + (vnoise(wx * 0.06, wy * 0.06) - 0.5) * 4;
+    const d = Math.min(out[1]!, out[2]! * 1.15 + 14);
+    let band = 0; while (band < BAND_EDGES.length && d > BAND_EDGES[band]!) band++;
+    // Swell mottling in three cel tones (static here; the shader animates it).
+    const sw = vnoise(wx * 0.02 + 40, wy * 0.02) * 0.6 + vnoise(wx * 0.055, wy * 0.055 + 9) * 0.4;
+    const lk = sw > 0.64 ? 1.14 : sw > 0.52 ? 1.05 : 0.95;
+    const bc = BAND_RGB[band]!;
+    let col: readonly number[] = [Math.min(255, bc[0]! * lk), Math.min(255, bc[1]! * lk), Math.min(255, bc[2]! * lk)];
+    // A fine darker seam where one band meets the next, so the steps read as cel steps.
+    let seam = 0; for (const e of BAND_EDGES) { const k = Math.abs(d - e); if (k < 1.6) seam = Math.max(seam, 1 - k / 1.6); }
+    if (seam > 0) col = [col[0]! * (1 - 0.18 * seam), col[1]! * (1 - 0.14 * seam), col[2]! * (1 - 0.1 * seam)];
+    // Foam: one unbroken bright line on the water's edge, a second thinner one behind it with a few long gaps, both wobbling gently.
+    const fd = sd + wob;
+    const a1 = Math.min(1, Math.max(0, (6.5 - fd) / 1.4));
+    const gap = vnoise(wx * 0.017, wy * 0.017) > 0.3 ? 1 : 0.0;
+    const a2 = Math.min(1, Math.max(0, 1 - (Math.abs(fd - 18) - 1.4) / 1.2)) * gap;
+    if (a2 > 0) col = [col[0]! + (FOAM_LO_RGB[0] - col[0]!) * a2 * 0.85, col[1]! + (FOAM_LO_RGB[1] - col[1]!) * a2 * 0.85, col[2]! + (FOAM_LO_RGB[2] - col[2]!) * a2 * 0.85];
+    // The foam round a hull: a line close in and one further out.
+    const hd = out[2]!;
+    if (hd < 22) {
+      const h1 = Math.min(1, Math.max(0, (5 - hd) / 1.4)), h2 = Math.min(1, Math.max(0, 1 - (Math.abs(hd - 15) - 1.2) / 1.2)) * (vnoise(wx * 0.03, wy * 0.03) > 0.38 ? 1 : 0);
+      col = [col[0]! + (FOAM_LO_RGB[0] - col[0]!) * h2 * 0.8, col[1]! + (FOAM_LO_RGB[1] - col[1]!) * h2 * 0.8, col[2]! + (FOAM_LO_RGB[2] - col[2]!) * h2 * 0.8];
+      col = [col[0]! + (FOAM_RGB[0] - col[0]!) * h1, col[1]! + (FOAM_RGB[1] - col[1]!) * h1, col[2]! + (FOAM_RGB[2] - col[2]!) * h1];
+    }
+    col = [col[0]! + (FOAM_RGB[0] - col[0]!) * a1, col[1]! + (FOAM_RGB[1] - col[1]!) * a1, col[2]! + (FOAM_RGB[2] - col[2]!) * a1];
+    const al = Math.min(1, Math.max(0, (sd + 0.9) / 1.8));
+    px[o] = col[0]!; px[o + 1] = col[1]!; px[o + 2] = col[2]!; px[o + 3] = al * 255;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+let bakedThisFrame = 0;
+function tileFor(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement | null {
+  const key = `${prepId(prep)}:${tx},${ty}`;
+  const hit = tiles.get(key);
+  if (hit) { tiles.delete(key); tiles.set(key, hit); return hit; }
+  if (bakedThisFrame >= 2) return null;
+  bakedThisFrame++;
+  const c = bakeTile(prep, tx, ty);
+  tiles.set(key, c);
+  if (tiles.size > TILE_LIMIT) tiles.delete(tiles.keys().next().value as string);
+  return c;
+}
+
+/** Is this world point open water, a little way off the shore? */
+function wet(prep: WaterPrep, x: number, y: number, margin: number): boolean {
+  if (x < 0 || y < 0 || x >= prep.size || y >= prep.size) return false;
+  const f = fieldOf(prep), i = Math.min(prep.cells - 1, (x / TEXEL) | 0), j = Math.min(prep.cells - 1, (y / TEXEL) | 0);
+  const k = (j * prep.cells + i) * 4;
+  return (f[k]! / 255 - 0.5) * 2 * MAXD > margin && (f[k + 2]! / 255) * HULL_MAX > margin;
+}
+
 function drawPlain(g: CanvasRenderingContext2D, now: number, view: { x0: number; y0: number; x1: number; y1: number }, prep: WaterPrep, lights: readonly WaterLight[]): void {
   const t = clock(now) * 0.001;
-  for (const pts of prep.polys) {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-    if (x1 < view.x0 || x0 > view.x1 || y1 < view.y0 || y0 > view.y1) continue;
-    g.save();
-    g.beginPath();
-    pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
-    g.closePath();
-    g.fillStyle = C.far;
-    g.fill();
-    g.clip();
-    g.lineJoin = 'round';
-    // Cel steps by depth: the water lightens in two bands toward the shore.
-    g.strokeStyle = C.deep; g.lineWidth = 2 * 330; g.stroke();
-    g.strokeStyle = C.mid; g.lineWidth = 2 * 130; g.stroke();
-    g.strokeStyle = C.shallow; g.lineWidth = 2 * 55; g.stroke();
-    // Ripples: slow, sparse little arcs of the lighter tone.
-    const vx0 = Math.max(view.x0, x0), vx1 = Math.min(view.x1, x1), vy0 = Math.max(view.y0, y0), vy1 = Math.min(view.y1, y1);
-    g.strokeStyle = hexA(C.light, 0.42);
-    g.lineWidth = 3;
-    g.lineCap = 'round';
-    g.beginPath();
-    for (let y = Math.floor(vy0 / 64) * 64; y < vy1; y += 64) {
-      const ph = (y * 0.37 + t * 0.7) % TAU;
-      for (let x = Math.floor(vx0 / 96) * 96 - 96; x < vx1 + 96; x += 96) {
-        const k = Math.sin(x * 0.013 + y * 0.71);
-        if (k < 0.45) continue;
-        const xx = x + Math.sin(y * 0.3) * 30, yy = y + Math.sin(x * 0.02 + ph) * 3;
-        g.moveTo(xx, yy); g.quadraticCurveTo(xx + 10, yy - 3, xx + 20 + k * 8, yy + Math.sin(x * 0.02 + ph + 0.6) * 1.5);
-      }
+  bakedThisFrame = 0;
+  const tx0 = Math.max(0, Math.floor(view.x0 / TILE)), tx1 = Math.min(Math.ceil(prep.size / TILE) - 1, Math.floor(view.x1 / TILE));
+  const ty0 = Math.max(0, Math.floor(view.y0 / TILE)), ty1 = Math.min(Math.ceil(prep.size / TILE) - 1, Math.floor(view.y1 / TILE));
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const c = tileFor(prep, tx, ty);
+    if (c) { g.drawImage(c, tx * TILE - SKIRT, ty * TILE - SKIRT); continue; }
+    // Not baked yet: the deep tone, so the picture only ever sharpens.
+    g.save(); g.beginPath(); for (const pts of prep.polys) pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.clip();
+    g.fillStyle = BAND_COLORS[4]!; g.fillRect(tx * TILE, ty * TILE, TILE, TILE); g.restore();
+  }
+  // Wavelets: short arcs, a few to a screen, each rising, drifting and fading over about five seconds. Never near an edge.
+  const CELL = 210;
+  g.lineCap = 'round'; g.lineWidth = 3;
+  const cx0 = Math.floor(view.x0 / CELL) - 1, cx1 = Math.floor(view.x1 / CELL) + 1, cy0 = Math.floor(view.y0 / CELL) - 1, cy1 = Math.floor(view.y1 / CELL) + 1;
+  for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+    if (hash2(cx, cy) < 0.4) continue;
+    const period = 4.6 + hash2(cx + 9, cy) * 2, u = calm ? 0.5 : ((t / period + hash2(cx, cy + 5)) % 1);
+    const x = cx * CELL + 30 + hash2(cx + 3, cy + 1) * (CELL - 60) + (calm ? 0 : u * 14), y = cy * CELL + 30 + hash2(cx + 1, cy + 3) * (CELL - 60);
+    if (x < view.x0 - 60 || x > view.x1 + 60 || y < view.y0 - 30 || y > view.y1 + 30) continue;
+    if (!wet(prep, x, y, 40) || !wet(prep, x + 40, y, 40) || !wet(prep, x - 40, y, 40)) continue;
+    const a = Math.sin(u * Math.PI), len = 30 + hash2(cx, cy + 7) * 28;
+    g.strokeStyle = `rgba(150, 214, 208, ${(0.55 * a).toFixed(3)})`;
+    g.beginPath(); g.moveTo(x - len / 2, y + 2); g.quadraticCurveTo(x, y - 7, x + len / 2, y + 2); g.stroke();
+    g.strokeStyle = `rgba(150, 214, 208, ${(0.32 * a).toFixed(3)})`;
+    g.beginPath(); g.moveTo(x - len * 0.28 + 8, y + 12); g.quadraticCurveTo(x + 8, y + 6, x + len * 0.28 + 8, y + 12); g.stroke();
+  }
+  // Practical lights lay a shimmering streak straight down the water, in short slices that slide a little; only over open water.
+  for (const l of lights) {
+    if (l.x < view.x0 - 100 || l.x > view.x1 + 100 || l.y > view.y1 || l.y + l.r < view.y0) continue;
+    g.fillStyle = `rgba(${l.rgb[0] * 255 | 0}, ${l.rgb[1] * 255 | 0}, ${l.rgb[2] * 255 | 0}, ${(0.3 * l.k).toFixed(3)})`;
+    for (let y = l.y + 10; y < l.y + l.r; y += 14) {
+      const f = 1 - (y - l.y) / l.r;
+      if (((y / 14) | 0) % 3 === 2) continue;
+      const sway = Math.sin(y * 0.2 + t * 1.4) * 4 + Math.sin(y * 0.05 + t) * 6, w = 18 * f + 8;
+      if (!wet(prep, l.x + sway, y, 6)) continue;
+      g.fillRect(l.x + sway - w / 2, y, w, 4);
     }
-    g.stroke();
-    // Practical lights lay a shimmering streak straight down the water.
-    for (const l of lights) {
-      if (l.x < vx0 - 80 || l.x > vx1 + 80 || l.y > vy1 || l.y + l.r < vy0) continue;
-      g.fillStyle = `rgba(${l.rgb[0] * 255 | 0}, ${l.rgb[1] * 255 | 0}, ${l.rgb[2] * 255 | 0}, ${(0.28 * l.k).toFixed(3)})`;
-      for (let y = l.y + 8; y < l.y + l.r; y += 13) {
-        const f = 1 - (y - l.y) / l.r;
-        if (((y / 13) | 0) % 3 === 2) continue;
-        const sway = Math.sin(y * 0.2 + t * 1.6) * 5 + Math.sin(y * 0.05 + t) * 6;
-        g.fillRect(l.x + sway - 9 * f - 3, y, 18 * f + 6, 4);
-      }
-    }
-    // Foam: a bright line at the shore and a broken one behind it.
-    g.strokeStyle = hexA(C.foamLo, 0.8); g.lineWidth = 2 * 16;
-    g.setLineDash([26, 40]); g.lineDashOffset = -t * 4;
-    g.stroke();
-    g.setLineDash([]);
-    g.strokeStyle = C.shallow; g.lineWidth = 2 * 14; g.stroke();
-    g.strokeStyle = C.foam; g.lineWidth = 2 * 6; g.stroke();
-    g.restore();
   }
 }
 
@@ -411,7 +538,7 @@ export function drawWater(ctx: CanvasRenderingContext2D, now: number, view: { x0
   const prep = prepWater(map, hulls);
   const t0 = performance.now();
   let ok = false;
-  if (!glFailed) {
+  if (!glFailed && gpuWater) {
     try { ok = drawGL(ctx, now, view, prep, lights); } catch { glFailed = true; ok = false; }
   }
   if (!ok) drawPlain(ctx, now, view, prep, lights);
@@ -421,10 +548,12 @@ export function drawWater(ctx: CanvasRenderingContext2D, now: number, view: { x0
   waterStats.frames++;
   (globalThis as { __water?: unknown }).__water = waterStats;
   waterStats.scale = ok && gl ? gl.canvas.width / Math.max(1, view.x1 - view.x0) : 0;
+  // The governor only judges steady-state frames (never the shader compile and field upload of the first ones) and only steps the
+  // resolution down; the 2D water is for software renderers, a lost context or ?nofx, never for a GPU that is merely busy.
   const forced = typeof location !== 'undefined' && /[?&]fx\b/.test(location.search);
-  if (ok && !forced && slow(ms)) { if (tier < TIER_SCALE.length - 1) tier++; else glFailed = true; }
+  if (ok && waterStats.frames > 30 && !forced && slow(ms) && tier < TIER_SCALE.length - 1) tier++;
 }
 
 /** For tests and the frame-time probe: resets the module's GL state. */
-export function resetWater(): void { gl = null; glFailed = false; glMap = ''; tier = 0; preps.clear(); }
+export function resetWater(): void { tiles.clear(); gl = null; glFailed = false; glMap = ''; tier = 0; preps.clear(); }
 export { calm };

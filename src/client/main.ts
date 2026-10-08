@@ -7,6 +7,7 @@ import { toggleMute } from './chatmute.ts';
 import { makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
 import { musicDuck, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
+import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
 import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
@@ -15,7 +16,7 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
 import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
-import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied, setHudInsets } from './hud.ts';
+import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied, noteTopup, setHudInsets } from './hud.ts';
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
@@ -38,13 +39,16 @@ import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, nightAmount } from './render.ts';
+import { drawLightingDev } from './lightdev.ts';
 import { initPostfx, processFrame, pulse as fxPulse } from './postfx.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
 import { duckFor, emoteCue, soundsFor, type SoundCue } from './sfx.ts';
-import { setSfxSink } from './sfxbus.ts';
+import { emitSfxAt, setSfxSink } from './sfxbus.ts';
+import { startTopup } from './reloadanim.ts';
+import { topupCues, topupOf } from './topup.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput, settleOf } from './fire.ts';
 import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
@@ -56,6 +60,11 @@ import { aimTurrets, nextCoreHitAt } from './siege.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
+import { createPauseMenu, showToast } from './pausemenu.ts';
+import { escapeAction, takesInput } from './pausegate.ts';
+import { onSettings, shakeScale, touchAssistOn } from './settings.ts';
+import { frameTick, initQuality, qualityProbe } from './qualityrt.ts';
+import { MODE_INFO } from './modecards.ts';
 import { createCelebration } from './celebrate.ts';
 import { resetEmotes, noteEmote, setParty } from './emotefx.ts';
 import { chatter, toggleChatter } from './chatter.ts';
@@ -84,7 +93,7 @@ const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
-const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'badge', 'error', 'progress', 'equipped']);
+const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'radio', 'badge', 'error', 'progress', 'equipped']);
 
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
@@ -143,6 +152,9 @@ let ghost: Ghost | null = null;
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'playing' || st.phase === 'dead' ? st.s : null);
 const drawnSessionOf = (st: ClientState): Session | null => (st.phase === 'menu' ? null : st.s);
 
+/** The radio's messages go to the room we are in, if any. */
+function sendRadio(msg: ClientMsg) { const s = sessionOf(state); if (s) send(s.ws, msg); }
+
 function send(ws: WebSocket, msg: ClientMsg) {
   const data = JSON.stringify(msg);
   delaySend(() => { if (ws.readyState === WebSocket.OPEN) ws.send(data); });
@@ -167,6 +179,7 @@ function setState(next: ClientState) {
   }
   if (next.phase === 'menu') {
     overlays.reset();
+    pause.reset();
     rangeUi.hide();
     resetTargetArt();
     xpCard.reset();
@@ -296,6 +309,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
+    case 'radio': onRoomRadio(msg.station, now); return;
     case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; s.mapId = msg.map; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'emote': { noteEmote(msg.pid, msg.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, msg.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); return; }
@@ -326,10 +340,17 @@ function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   noteOwnShotSound(cues);
   audio.play(cues, s.lastSelf, viewRadius);
   for (const cue of cues) { const d = duckFor(cue, s.lastSelf, viewRadius); if (d) musicDuck(d.depth, d.holdMs); }
-  if (!reducedMotion()) for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
+  if (!reducedMotion()) for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius) * shakeScale());
 }
 
 const playClick = (s: Session) => playCues(s, [{ id: 'click', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
+
+/** A kill put `n` rounds back in your mag: a patter of rounds, the support hand's tap and a "+n" on the magazine (topup.ts). */
+function onTopup(s: Session, n: number, now: number) {
+  for (const c of topupCues(n)) emitSfxAt(c.id, s.lastSelf.x, s.lastSelf.y, true, { gain: c.gain, pitch: c.pitch, ...(c.delayMs ? { delayMs: c.delayMs } : {}) });
+  startTopup(s.myId, now);
+  noteTopup(n, now);
+}
 
 function onSnap(s: Session, snap: Snapshot, now: number) {
   const prev = newestSnap(s.snaps);
@@ -343,6 +364,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   queueHits(snap.events, s.myId, snap.tick * TICK_MS);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
   celebrate.onSnap(snap, now);
+  const topped = topupOf(prev, snap, s.myId);
+  if (topped > 0) onTopup(s, topped, now);
   chatter.onSnap(snap, s.myId, now);
   s.pendingFx.push(...scheduleEffects(snap, snap.tick * TICK_MS));
   notePropEvents(snap, now);
@@ -376,7 +399,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
 const sinceMove = (s: Session) => (s.walk.now ? 0 : performance.now() - s.walk.at);
 
 function hands(s: Session): Hands {
-  return { active: state.phase === 'playing' && !overlays.typing, firing, touchAim: touchAim(sticks), reload: held.has('reload'), sinceMove: sinceMove(s), aim: aimOffset(s) };
+  return { active: takesInput(state.phase, overlays.typing, pause.isOpen()), firing, touchAim: touchAim(sticks), reload: held.has('reload'), sinceMove: sinceMove(s), aim: aimOffset(s) };
 }
 
 /** The fallen player stays where the killing blow found them, facing the way they last faced, with the gun they held. */
@@ -441,7 +464,7 @@ function assistedTouch(s: Session, touch: { dx: number; dy: number }): { dx: num
 
 function aimOffset(s: Session): { dx: number; dy: number } {
   const touch = touchAim(sticks);
-  if (touch) return assistedTouch(s, touch);
+  if (touch) return touchAssistOn() ? assistedTouch(s, touch) : touch;
   if (!aimCamera) return { dx: 1, dy: 0 };
   const self = worldToScreen(aimCamera, s.lastSelf);
   return { dx: (mouse.x - self.x) / aimCamera.scale, dy: (mouse.y - self.y) / aimCamera.scale };
@@ -450,7 +473,7 @@ function aimOffset(s: Session): { dx: number; dy: number } {
 setInterval(() => {
   const s = sessionOf(state);
   if (!s) return;
-  const active = state.phase === 'playing' && !overlays.typing;
+  const active = takesInput(state.phase, overlays.typing, pause.isOpen());
   s.seq++;
   const actions = active ? new Set([...held, ...touchMoves(sticks), ...(abilityTapped ? ['ability' as const] : [])]) : new Set<Action>();
   abilityTapped = false;
@@ -562,9 +585,13 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
   for (const [id, trail] of s.trails) if (!trail.length || now - trail.at(-1)!.at >= TRAIL.lifeMs) s.trails.delete(id);
 }
 
+let lastRaf = 0;
 function frame(now: number) {
   requestAnimationFrame(frame);
   const start = performance.now();
+  // The gap between frames (not the draw cost) is what the player feels; the graphics preset's governor and the FPS readout use it.
+  if (lastRaf) frameTick(now - lastRaf, now, state.phase === 'playing' || state.phase === 'dead');
+  lastRaf = now;
   drawFrame(now);
   noteFrameCost(performance.now() - start);
 }
@@ -573,6 +600,7 @@ function drawFrame(realNow: number) {
   // A hit-stop holds what is drawn on one instant for a few ms; the snapshots, inputs and sounds keep the real clock.
   const now = stepClock(stopClock, realNow);
   musicUpdate(state, realNow, firing);
+  radioUpdate(state, realNow, sendRadio);
   const s = drawnSessionOf(state);
   const latest = s && newestSnap(s.snaps);
   // The slow-motion draws the world a little behind the clock (`rt`); the killcam and highlight reel are delight.ts's.
@@ -633,6 +661,8 @@ function drawFrame(realNow: number) {
   if (site && held && buildChipAt(mouse.x, mouse.y) !== null) ghost = ghostAt(site, s.buildKind, { x: (held.cx + 0.5) * ZOM.cell, y: (held.cy + 0.5) * ZOM.cell }, s.worldSize, s.buildTier);
   s.buildGhost = ghost;
   if (delight.drawKillcam(ctx, s, state.phase === 'dead', view, realNow)) {
+    // The killcam's world is lit like the live one: the shader pass must take THIS frame, or its canvas keeps showing the last live frame (the normal camera) while the 2D one has been cleared for it.
+    if (processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
     overlays.update(state, s, latest, now, muted);
     return;
   }
@@ -647,6 +677,7 @@ function drawFrame(realNow: number) {
   const fb = s.feedback;
   s.feedback = { ...fb, hitmarker: null };
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
+  drawLightingDev(ctx, view.dpr);
   s.feedback = fb;
   if (state.phase === 'playing') drawHitMarker(ctx, mouse, fb.hitmarker, realNow);
   if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
@@ -669,6 +700,20 @@ function onKeyDown(e: KeyboardEvent) {
     }
     return;
   }
+  // Escape closes the innermost thing first and opens the pause menu only when nothing else wants it (pausegate.ts).
+  if (e.code === 'Escape') {
+    e.preventDefault();
+    const action = escapeAction({ inMatch: true, typing: false, pauseOpen: pause.isOpen(), confirming: pause.confirming(), wheelOpen: wheel.open, rangeOpen: rangeUi.isOpen(), building: s.building });
+    if (action === 'cancel-leave') pause.cancelConfirm();
+    else if (action === 'close-pause') pause.close();
+    else if (action === 'close-wheel') wheel.close();
+    else if (action === 'close-range') rangeUi.close();
+    else if (action === 'exit-build') s.building = false;
+    else if (action === 'open-pause' && !e.repeat) pause.open();
+    return;
+  }
+  // While the menu is up nothing reaches the soldier: Tab cycles inside it, arrows and Space belong to the focused control.
+  if (pause.isOpen()) { pause.handleKey(e); return; }
   if (e.code === 'Tab') {
     e.preventDefault();
     fullBoard = true;
@@ -692,10 +737,6 @@ function onKeyDown(e: KeyboardEvent) {
     rangeUi.toggle();
     return;
   }
-  if (e.code === 'Escape' && rangeUi.isOpen()) {
-    rangeUi.close();
-    return;
-  }
   if (e.code === 'KeyB') {
     toggleBuild(s);
     return;
@@ -705,6 +746,8 @@ function onKeyDown(e: KeyboardEvent) {
     playClick(s);
     return;
   }
+  // A radio in reach: E changes its station (the held E still opens doors and revives, harmlessly).
+  if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && radioPress(state, performance.now(), sendRadio)) return;
   if (e.code === 'KeyM' && e.shiftKey) {
     const off = toggleMusicMuted();
     s.chat.push({ from: '', text: off ? 'Music off (Shift+M to turn on)' : 'Music on', team: null, at: performance.now() });
@@ -813,7 +856,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e);
   if (e.button !== 0) return;
   firing = true;
-  if (state.phase !== 'playing' || overlays.typing) return;
+  if (state.phase !== 'playing' || overlays.typing || pause.isOpen()) return;
   state.s.shots++;
   shooting.fireIfDue(state.s, performance.now());
 });
@@ -950,6 +993,26 @@ const wheel = createEmoteWheel(hudEl, (id) => {
   send(s.ws, { t: 'emote', id });
   playClick(s);
 });
+/** The pause and settings overlay (Esc, the cog, or Start on a pad): the match keeps running, your soldier takes no input. */
+const pause = createPauseMenu(hudEl, {
+  audio,
+  info: () => {
+    const s = sessionOf(state);
+    if (!s) return null;
+    const mode = newestSnap(s.snaps)?.match.mode;
+    const range = mode === 'RNG';
+    const code = s.rejoin.room;
+    return { range, dead: state.phase === 'dead', invite: code === squad && squad ? inviteLink(location.href, squad) : null, modeName: mode && mode in MODE_INFO ? MODE_INFO[mode as keyof typeof MODE_INFO].name : 'Match' };
+  },
+  leave,
+  blip: () => { const s = sessionOf(state); if (s) playClick(s); },
+  onToggle: (open) => {
+    // Let go of everything held so the soldier stands still, and close what shares the screen.
+    held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; abilityTapped = false;
+    wheel.close();
+    if (open) rangeUi.close();
+  },
+});
 /** A phone's emote button: taps the wheel open, and a plate sends. */
 const emoteButton = document.createElement('button');
 emoteButton.type = 'button';
@@ -959,6 +1022,8 @@ emoteButton.textContent = 'GG';
 emoteButton.style.font = '800 16px var(--display)';
 emoteButton.addEventListener('pointerdown', (e) => { e.preventDefault(); wheel.toggle(); });
 hudEl.append(emoteButton);
+/** A phone's way to tap a radio's prompt. */
+mountRadioButton(hudEl, () => radioPress(state, performance.now(), sendRadio));
 /** On the account's join anniversary your soldier wears a party hat (and `?party` shows it for a look). */
 async function checkAnniversary(account: string | null) {
   if (params.has('party')) { setParty(true); return; }
@@ -977,10 +1042,11 @@ if (params.has('dev')) {
     /** Forces a line from soldier `pid` (default: you): `say(undefined, { personality: 'poet', tag: 'justKilled' })`. */
     say: (pid?: number, opts?: Parameters<typeof chatter.say>[2]) => { const s = sessionOf(state); return s ? chatter.say(pid ?? s.myId, performance.now(), { own: (pid ?? s.myId) === s.myId, ...opts }) : null; },
   });
-  void import('./celebratedemo.ts').then((m) => Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { celebrate: (kind: string) => celebrate.demo(m.demoCelebration(kind)) }));
+  void import('./celebratedemo.ts').then((m) => Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { celebrate: (kind: string) => celebrate.demo(m.demoCelebration(kind)), topup: (n = 3) => { const s = sessionOf(state); if (s) onTopup(s, n, performance.now()); } }));
 }
-const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion()) kick = addKick(kick, gun, angle); } });
+const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion() && shakeScale() > 0) kick = addKick(kick, gun, angle, shakeScale()); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
+if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { pause: { open: () => pause.open(), close: () => pause.close(), isOpen: () => pause.isOpen(), probe: () => pause.probe(), quality: () => qualityProbe(), held: () => [...held], firing: () => firing } });
 renderMuted($('muted'), muted, toggleMuted);
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; void wardrobe.refresh(nameInput.value); syncAcct(); });
 /** The wardrobe: level, XP, what you own and wear. A change goes down the socket too, so the room sees it at once. */
@@ -1102,6 +1168,11 @@ let pendingMode: SceneId | null = null;
   else if (want) pendingMode = want;
 }
 resize();
+// The graphics preset needs the shader pass started (it names the GPU) and the canvas sized; the motion option mirrors onto the page for CSS.
+initQuality({ resize, toast: showToast });
+const syncMotion = () => { document.documentElement.dataset.motion = reducedMotion() ? 'reduced' : 'full'; };
+syncMotion();
+onSettings(syncMotion);
 setState(state);
 if (chosen) { flow.reachable(); flow.go('gear', { focus: false }); }
 requestAnimationFrame(frame);

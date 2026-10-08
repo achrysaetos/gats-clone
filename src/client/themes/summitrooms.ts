@@ -1,6 +1,7 @@
 import { blotch, seeded } from '../grain.ts';
 import { SUMMIT_DOORS } from '../../shared/maps/summitgeo.ts';
 import { C, TAU, ell, hexA, rr, shade, type G } from './summitkit.ts';
+import { spaHall, spaHotRoom, spaRoom, spaRunner } from './summitspa.ts';
 import { RUGS, bed, both, contact, flags, label, planks, rug, stain, tiles, type Variant } from './summitdraw.ts';
 
 /**
@@ -30,20 +31,7 @@ function hall(g: G, v: Variant) {
     for (let i = 0; i < 14; i++) { const px = 1930 - i * 50, py = 3020 + Math.sin(i * 0.9) * 20 + (i % 2 ? 9 : -9); ell(g, px, py, 7, 3.4, 0.1); g.fill(); }
     label(g, v, 'WELCOME TO THE SUMMIT', 1475, 3290, 20, 'rgba(232, 220, 190, 0.55)', { spacing: 5 });
   } else {
-    tiles(g, x, y, w, h, 100, '#3d4a54', '#38444e', 'rgba(14, 22, 28, 0.7)', 12, 0.06);
-    // Underfloor heating: warm bands under the slate.
-    g.fillStyle = 'rgba(255, 150, 90, 0.08)';
-    for (let i = 0; i < 8; i++) g.fillRect(x + 30, y + 60 + i * 100, w - 60, 20);
-    // A sun medallion in brass over the zone.
-    g.save(); g.translate(1475, 3025);
-    g.fillStyle = 'rgba(14, 22, 28, 0.35)'; ell(g, 0, 0, 250, 250); g.fill();
-    g.strokeStyle = hexA(C.brass, 0.75); g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 240, 0, TAU); g.stroke(); g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 200, 0, TAU); g.stroke();
-    g.fillStyle = hexA(C.brass, 0.6);
-    for (let k = 0; k < 16; k++) { const a = (k / 16) * TAU; g.beginPath(); g.moveTo(Math.cos(a - 0.1) * 120, Math.sin(a - 0.1) * 120); g.lineTo(Math.cos(a) * (k % 2 ? 190 : 230), Math.sin(a) * (k % 2 ? 190 : 230)); g.lineTo(Math.cos(a + 0.1) * 120, Math.sin(a + 0.1) * 120); g.closePath(); g.fill(); }
-    g.restore();
-    flags(g, 1050, 2870, 210, 310, '#4a4a4c', 22);
-    g.strokeStyle = C.ink; g.lineWidth = 2; g.strokeRect(1050, 2870, 210, 310);
-    label(g, v, 'RELAX', 1475, 2650, 22, 'rgba(168, 240, 224, 0.5)', { spacing: 8 });
+    spaHall(g);
   }
 }
 
@@ -103,8 +91,7 @@ function wing(g: G, v: Variant) {
     for (let yy = 2130; yy < 3880; yy += 36) { g.beginPath(); g.moveTo(cx + 50, yy); g.lineTo(cx + 62, yy + 12); g.lineTo(cx + 50, yy + 24); g.lineTo(cx + 38, yy + 12); g.closePath(); g.fill(); }
   } else {
     planks(g, 250, 2100, 800, 1800, { base: '#a89066', hi: '#bca47a', lo: '#947c52', board: 16, seed: 52, vertical: true });
-    g.fillStyle = '#6a5a3c'; g.fillRect(cx + 10, 2100, cw - 20, 1800);
-    g.strokeStyle = 'rgba(40, 30, 16, 0.55)'; g.lineWidth = 2; for (let i = 1; i < 6; i++) { g.beginPath(); g.moveTo(cx + 10 + i * ((cw - 20) / 6), 2100); g.lineTo(cx + 10 + i * ((cw - 20) / 6), 3900); g.stroke(); }
+    spaRunner(g, cx, cw, 2100, 3900);
   }
   // Guest rooms, west side.
   const rooms = [2150, 2500, 2850, 3200, 3550];
@@ -117,10 +104,7 @@ function wing(g: G, v: Variant) {
       g.fillStyle = C.logLo; g.fillRect(rx + 108, ry + 16, 34, 30); g.strokeStyle = C.ink; g.lineWidth = 2; g.strokeRect(rx + 108, ry + 16, 34, 30);
       g.fillStyle = hexA(C.window, 0.6); ell(g, rx + 125, ry + 31, 8, 8); g.fill();
     } else {
-      g.fillStyle = '#b8a47a'; g.fillRect(rx, ry, rw, rh);
-      g.strokeStyle = 'rgba(70, 56, 30, 0.6)'; g.lineWidth = 2;
-      for (let tx = rx; tx < rx + rw; tx += 62) for (let ty = ry; ty < ry + rh; ty += 124) { g.strokeRect(tx + 1, ty + 1, 60, 122); }
-      g.fillStyle = 'rgba(60, 90, 70, 0.4)'; for (let tx = rx; tx < rx + rw; tx += 62) for (let ty = ry; ty < ry + rh; ty += 124) { g.fillRect(tx + 2, ty + 2, 58, 6); }
+      spaRoom(g, rx, ry, rw, rh, i);
       bed(g, rx + 20, ry + 30, 110, 150, ['#6a8a78', '#7a6a8a', '#8a7a5a', '#5a7a8a', '#8a5a5a'][i]!, true);
     }
   });
@@ -140,7 +124,7 @@ function wing(g: G, v: Variant) {
   } else {
     tiles(g, ex, 2150, ew, 400, 50, '#a4b0b0', '#9aa8a8', 'rgba(40, 56, 60, 0.5)', 73, 0.04);
     tiles(g, ex, 3500, ew, 350, 50, '#d2d8d4', '#c8d0cc', 'rgba(50, 66, 70, 0.5)', 74, 0.04);
-    for (const ry of [2600, 3050]) { flags(g, ex, ry, ew, 400, '#5a5e60', ry + 3); g.fillStyle = 'rgba(255, 120, 70, 0.1)'; g.fillRect(ex, ry, ew, 400); ell(g, ex + 125, ry + 200, 70, 70); g.fillStyle = 'rgba(70, 150, 170, 0.5)'; g.fill(); g.strokeStyle = C.ink; g.lineWidth = 2; g.stroke(); }
+    for (const ry of [2600, 3050]) spaHotRoom(g, ex, ry, ew, ry + 3);
   }
 }
 

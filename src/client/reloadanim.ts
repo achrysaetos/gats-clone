@@ -3,6 +3,7 @@ import type { Firing } from './fire.ts';
 import { dropMag, type GunFx } from './gunfx.ts';
 import { drawHeldGun, heldHands, heldPoint, type GunView, type Hand, type Part } from './gunart.ts';
 import { TICK_MS } from './interp.ts';
+import { TOPUP_MS } from './topup.ts';
 import { INK } from './palette.ts';
 import { BEATS, shellCount, shellSeat } from './reloadbeats.ts';
 import { reloadFoley } from './reloadsfx.ts';
@@ -504,7 +505,27 @@ export function dropBeats(gun: GunId): readonly number[] {
 type Track = { t: number; k: number; key: string; at: number; seen: number };
 const tracks = new Map<number, Track>();
 const FADE_IN_MS = 70, FADE_OUT_MS = 150;
+/** Dev probe: soldier `id`'s arm-animation state (share of the reload and pose weight), or null when its arms are not reloading. */
+export const reloadTrackOf = (id: number): { t: number; k: number } | null => { const tr = tracks.get(id); return tr ? { t: tr.t, k: tr.k } : null; };
 let prunedAt = 0;
+
+/**
+ * The kill top-up's tap (see topup.ts): the support hand reaches the ammo and presses rounds in, over `TOPUP_MS`, on the stretch of the
+ * gun's own reload where that happens. Only guns that load rounds by hand have one (the bolt-action's clip, the shotgun's shells);
+ * a box-mag gun has no motion for it, so its top-up is the sound and the HUD alone.
+ */
+const TOPUP_SPAN: Partial<Record<WeaponId, readonly [number, number]>> = { sniper: [BEATS.sniper.seat - 0.02, 0.74], shotgun: [0.3, 0.42] };
+const topups = new Map<number, number>();
+export const startTopup = (id: number, now: number) => { topups.set(id, now); };
+
+function topupFrame(id: number, gun: GunId, now: number): ReloadFrame | null {
+  const at = topups.get(id);
+  if (at === undefined) return null;
+  const u = (now - at) / TOPUP_MS, span = TOPUP_SPAN[GUNS[gun].base];
+  if (u >= 1 || u < 0 || !span) { topups.delete(id); return null; }
+  // The hand is on its way in for the first quarter and off again for the last.
+  return { t: span[0] + (span[1] - span[0]) * u, k: Math.min(1, u / 0.25, (1 - u) / 0.25), drops: [] };
+}
 
 export type ReloadFrame = { t: number; k: number; drops: readonly number[] };
 
@@ -521,6 +542,7 @@ export function stepReload(id: number, gun: GunId, rl: readonly [number, number]
     prunedAt = now;
     for (const [i, o] of tracks) if (now - o.seen > 3000) tracks.delete(i);
   }
+  if (!(rl && rl[1] > 0) && !tr) { const top = topupFrame(id, gun, now); if (top) return top; }
   if (rl && rl[1] > 0) {
     const t = clamp01(rl[0] / rl[1]);
     if (!tr || tr.key !== key) {
@@ -551,12 +573,19 @@ export const clearReloads = () => { tracks.clear(); reloadFoley.clear(); };
 /**
  * Your own reload as the page predicts it, so your arms move the instant you press the key: `[elapsedMs, totalMs]` from the
  * predicted trigger (see `fire.ts`) at the page clock `now`, or null when it is not reloading.
+ * The trigger counts time in input ticks, which stall whenever the input timer does (a busy frame, a throttled tab): a reload
+ * read straight off them runs slow and is cut off, at say 80%, when the server's snapshot says it is done, with the last
+ * beats (the bolt going home, the rack) never shown or heard. So once a reload is seen its start is pinned to the page clock and
+ * it runs on real time, as the server's does; the tick count only ever pushes it forward.
  */
+let selfClock: { until: number; total: number; startAt: number } | null = null;
 export function selfReload(f: Firing, now: number): [number, number] | null {
   const t = f.trigger;
-  if (!t.alive || t.reloadUntil === null) return null;
+  if (!t.alive || t.reloadUntil === null) { selfClock = null; return null; }
   const clock = f.sent.seq * TICK_MS + Math.min(100, Math.max(0, now - f.sent.at));
-  return [Math.min(t.reloadMs, Math.max(0, t.reloadMs - (t.reloadUntil - clock))), t.reloadMs];
+  const ticks = Math.min(t.reloadMs, Math.max(0, t.reloadMs - (t.reloadUntil - clock)));
+  if (!selfClock || selfClock.total !== t.reloadMs || Math.abs(selfClock.until - t.reloadUntil) > 4 * TICK_MS || now < selfClock.startAt) selfClock = { until: t.reloadUntil, total: t.reloadMs, startAt: now - ticks };
+  return [Math.min(t.reloadMs, Math.max(ticks, now - selfClock.startAt)), t.reloadMs];
 }
 
 /**

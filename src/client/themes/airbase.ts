@@ -99,7 +99,7 @@ function airbaseUnder(ctx: CanvasRenderingContext2D, now: number, view: ThemeVie
   }
   // The tower's beacon: a slow white sweep, and the green/white alternating flash of the aerodrome light.
   const sweep = calm ? 0.8 : t * 0.0006;
-  if (inView(view, TOWER.x, TOWER.y, 1300)) setLight('air:beacon', { x: TOWER.x, y: TOWER.y - 230, radius: 1100, color: '#fff4d0', intensity: 0.5, cone: { angle: sweep, half: 0.16 }, size: 10, shadows: false });
+  if (inView(view, TOWER.x, TOWER.y, 1300)) setLight('air:beacon', { x: TOWER.x, y: TOWER.y - 230, radius: 1500, color: '#fff4d0', intensity: 1.1, cone: { angle: sweep, half: 0.12 }, beam: 1.2, size: 10, shadows: false });
   // Taxiway studs breathe in a slow chase toward the plaza, and the pad rings pulse green.
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';

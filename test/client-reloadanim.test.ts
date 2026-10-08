@@ -145,5 +145,5 @@ test('your own reload follows the predicted trigger: the arms start the moment y
   f = { ...f, trigger: { ...f.trigger, reloadUntil: 5 * TICK_MS + 1300 }, sent: { seq: 5, at: 1000 } };
   assert.deepEqual(selfReload(f, 1000), [0, 1300]);
   assert.deepEqual(selfReload(f, 1050), [50, 1300]);
-  assert.deepEqual(selfReload(f, 5000), [100, 1300], 'the clock since the last input is capped at 100 ms');
+  assert.deepEqual(selfReload(f, 5000), [1300, 1300], 'the reload runs on real time even when no input has gone out for seconds, and stops at its length');
 });

@@ -68,6 +68,12 @@ export function wastelandUnder(g: G, now: number, view: ThemeView, map: MapDef):
     const breathe = s.key === 'wl:crater' ? 0.8 + 0.2 * Math.sin(t * 0.0012) : s.key.startsWith('wl:') && s.key.endsWith('~') && s.color === '#ff3b30' ? 0.5 + 0.5 * Math.sin(t * 0.004) : 1;
     setLight(s.key, { x: s.x, y: s.y, radius: s.radius, color: s.color, intensity: s.intensity * breathe, ...(s.flicker !== undefined && !calm && { flicker: s.flicker }), ...(s.size !== undefined && { size: s.size }), shadows: s.shadows ?? s.radius > 300 });
   }
+  // God rays: the low orange sun comes in from the west through the dust, in long slow shafts across the town.
+  for (let i = 0; i < 4; i++) {
+    const x = -300, y = 900 + i * 1400, a = 0.28 + i * 0.07 + (calm ? 0 : Math.sin(t * 0.00012 + i * 2) * 0.04);
+    if (!inView(view, x + Math.cos(a) * 1500, y + Math.sin(a) * 1500, 1700)) continue;
+    setLight(`wl:ray${i}`, { x, y, radius: 3200, color: '#ff9a4a', intensity: 0.55, size: 80, cone: { angle: a, half: 0.1 }, beam: 0.9, shadows: false });
+  }
   for (const p of map.polys ?? []) {
     if (p.material !== 'barrel') continue;
     let cx = 0, cy = 0;

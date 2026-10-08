@@ -1,8 +1,11 @@
+import { motionReduced, settings } from './settings.ts';
+
 /**
  * Screen-wide kill juice: a warm flash, a brief chromatic split, a zoom punch and the low-health heartbeat. All of it is
  * dropped under `prefers-reduced-motion` (the heartbeat stays as a steady, faint rim), and none of it touches input.
  */
-export const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Reduced motion: the pause menu's Motion option (follow the system, always, never) over `prefers-reduced-motion`. */
+export const reducedMotion = (): boolean => motionReduced(settings().motion, typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 export const SCREEN = { flashMs: 150, chromaMs: 130, chromaPx: 2.5, punchMs: 240, punchZoom: 0.032, bigPunch: 0.018 } as const;
 

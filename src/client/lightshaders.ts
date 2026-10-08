@@ -102,13 +102,60 @@ void main(){
   gl_FragColor = vec4(col * (acc / 14.0 * fade * fade * k * beams), 1.0);
 }`;
 
+/**
+ * A visible shaft of light through the air: a cone from the source that widens with distance, brightest on its axis and
+ * fading toward its end, with dust and mist drifting through it. Drawn additively into a small buffer the composite
+ * adds on top of the lit world (under the soldiers), so a lighthouse or a floodlight reads as a beam, not just a pool.
+ */
+export const BEAM_FRAG = `${HIGHP}
+uniform vec4 L;      // x, y (buffer px, GL origin), reach px, level
+uniform vec3 col;
+uniform vec4 dirw;   // dir x, dir y, tan(half), source half-width px
+uniform float time, seed;
+void main(){
+  vec2 d = gl_FragCoord.xy - L.xy;
+  float along = dot(d, dirw.xy);
+  if (along <= 0.0 || along >= L.z) discard;
+  float perp = dot(d, vec2(-dirw.y, dirw.x));
+  float hw = along * dirw.z + dirw.w;
+  float across = abs(perp) / hw;
+  if (across >= 1.0) discard;
+  float side = 1.0 - across; side = side * side * (3.0 - 2.0 * side);
+  float core = 1.0 - across * across * 0.7;
+  float t = along / L.z;
+  float fall = (1.0 - t) * (1.0 - t) * smoothstep(0.0, 0.06, t);
+  // A wide beam spreads the same light thinner.
+  float thin = 1.0 / (1.0 + dirw.z * along / max(dirw.w * 6.0, 8.0));
+  float mote = 0.78 + 0.22 * sin(along * 0.11 - time * 0.0017 + seed) * sin(perp * 0.09 + along * 0.03 + time * 0.0009);
+  gl_FragColor = vec4(col * (L.w * side * core * fall * thin * mote), 1.0);
+}`;
+
 export const SCENE_FRAG = `${HIGHP}
 varying vec2 v;
-uniform sampler2D base, over, light, mask, shaft;
+uniform sampler2D base, over, light, mask, shaft, beam;
 uniform vec2 ltexel;      // one light-buffer texel in uv
 uniform vec3 amb;
 uniform float gain, ao, shafts;
 uniform float aspect, time;
+uniform vec4 vw;          // the view in world units: x0, y0, width, height
+uniform vec4 fogc;        // fog colour, density
+uniform vec4 fogp;        // fog scale, drift x, drift y, 0
+uniform vec4 wx;          // wet 0..1, rain 0..1, beams on 0/1, emissive wash
+float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p){ return vnoise(p) * 0.62 + vnoise(p * 2.07 + 17.3) * 0.38; }
+float rainStreak(vec2 uv){
+  vec2 p = vec2(uv.x * aspect * 64.0 + uv.y * 7.0, uv.y * 2.4);
+  float c = floor(p.x), r = hash21(vec2(c, 3.1));
+  float y = fract(p.y + time * 0.0012 * (0.8 + r * 0.7) + r * 13.0);
+  float len = 0.035 + 0.05 * r;
+  float s = smoothstep(0.0, 0.004, y) * (1.0 - smoothstep(len * 0.4, len, y));
+  s *= 1.0 - smoothstep(0.03, 0.14, abs(fract(p.x) - 0.5));
+  return s * step(0.5, hash21(vec2(c, 9.7)));
+}
 uniform int nshock;
 uniform vec4 sk[4];       // centre uv x, y, ring radius (screen heights), progress 0..1
 uniform vec4 sp[4];       // strength, 0, 0, 0
@@ -140,7 +187,7 @@ void main(){
   vec4 o = texture2D(over, uv);
   // Lights add up, so they are tone-mapped: overlapping lamps saturate toward 1 instead of burning the floor white.
   vec3 raw = lightAt(uv) * 2.0 + texture2D(shaft, uv).rgb * shafts;
-  vec3 L = (1.0 - exp(-1.25 * raw)) * 0.74 * gain;
+  vec3 L = (1.0 - exp(-1.25 * raw)) * 0.9 * gain;
   float occ = 0.0;
   vec4 m = texture2D(mask, uv);
   if (ao > 0.0 && m.r < 0.5) {
@@ -154,6 +201,39 @@ void main(){
   float a = 1.0 - ao * occ;
   // Under a strong light the cool ambient gives way to the light's own colour, so a lamp's pool reads amber, not grey.
   float strength = clamp(dot(L, vec3(0.3, 0.59, 0.11)) * 1.5, 0.0, 1.0);
-  vec3 lit = b * (amb * a * (1.0 - 0.8 * strength) + L) + L * 0.07;
-  gl_FragColor = vec4(lit * (1.0 - o.a) + o.rgb, 1.0);
+  vec3 lit = b * (amb * a * (1.0 - 0.8 * strength) + L) + L * wx.w;
+  vec2 wp = vec2(vw.x + uv.x * vw.z, vw.y + (1.0 - uv.y) * vw.w);
+  if (wx.x > 0.0 && m.r < 0.5) {
+    // Wet ground: puddles hold the lights' colour as a sheen, and the stone glints where a lamp's light lands.
+    float stone = 1.0 - smoothstep(0.02, 0.1, b.b - b.r);
+    float pn = fbm(wp / 230.0 + 3.7);
+    float pud = smoothstep(0.55, 0.64, pn) * stone * wx.x;
+    float glint = pow(vnoise(wp / 7.0 + time * 0.0003), 7.0) * stone * wx.x;
+    float lum = dot(L, vec3(0.3, 0.59, 0.11));
+    lit = mix(lit, lit * 0.72 + L * 1.15 * (0.5 + 0.5 * a) + amb * 0.1, pud * 0.85);
+    lit += L * glint * 2.4 * (0.25 + lum) + vec3(0.9, 0.95, 1.0) * glint * lum * 0.5;
+    if (wx.y > 0.0) {
+      // Raindrops ringing the puddles.
+      vec2 rp = wp / 26.0; vec2 cell = floor(rp);
+      float ph = fract(time * 0.0009 + hash21(cell) * 7.0);
+      float rd = (length(fract(rp) - 0.5) - ph * 0.5) * 18.0;
+      float ring = exp(-rd * rd) * (1.0 - ph) * step(0.6, hash21(cell + 4.0));
+      lit += (L + vec3(0.06)) * ring * pud * 0.9;
+    }
+  }
+  if (fogc.a > 0.0 && m.r < 0.5) {
+    // Low fog banks drifting over the ground, lit from within by whatever shines into them.
+    vec2 q = wp / fogp.x;
+    float n = 0.58 * fbm(q + fogp.yz * time * 0.001 / fogp.x) + 0.42 * fbm(q * 1.7 - fogp.yz * time * 0.0007 / fogp.x + 9.1);
+    float f = smoothstep(0.34, 0.78, n) * fogc.a;
+    vec3 fogCol = fogc.rgb * (amb * 0.75 + L * 1.7 + 0.04);
+    lit = mix(lit, fogCol, f * 0.55);
+  }
+  vec3 result = lit * (1.0 - o.a) + o.rgb;
+  if (wx.z > 0.5) result += texture2D(beam, uv).rgb * (1.0 - o.a);
+  if (wx.y > 0.0) {
+    float rs = rainStreak(uv) * wx.y;
+    result += vec3(0.62, 0.74, 0.95) * rs * (0.12 + 0.9 * dot(L, vec3(0.3, 0.59, 0.11))) * (1.0 - o.a);
+  }
+  gl_FragColor = vec4(result, 1.0);
 }`;

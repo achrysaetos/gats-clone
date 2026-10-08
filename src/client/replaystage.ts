@@ -71,7 +71,20 @@ export function advanceStage(stage: Stage, playhead: number, now: number): void 
   shadow.effects = shadow.effects.filter((e) => now - e.born < 800);
 }
 
+/**
+ * What the world renderer reads from the session besides the frame itself, pinned to the replayed instant: the server clock
+ * (airdrop, downed and royale animations are timed against it) and the point the roofs thin out around and the sound listens
+ * from. Left as the shadow session copied them they would be the live game's: the clock at the live instant and the spot you died.
+ */
+export function replayView(frame: Snapshot, now: number, myId: number, fallback: { x: number; y: number }): { clockOffset: number; self: { x: number; y: number } } {
+  const me = frame.players.find((p) => p.id === myId);
+  return { clockOffset: serverMs(frame) - now, self: me ? { x: me.x, y: me.y } : fallback };
+}
+
 /** Draws one replayed frame through the normal world renderer. */
 export function drawStage(ctx: CanvasRenderingContext2D, stage: Stage, snap: Snapshot, cam: Camera, dpr: number, now: number, killerId: number | null): void {
+  const v = replayView(snap, now, stage.shadow.myId, stage.shadow.lastSelf);
+  stage.shadow.snaps = { snaps: stage.shadow.snaps.snaps, serverClockOffset: v.clockOffset };
+  stage.shadow.lastSelf = v.self;
   drawWorld(ctx, { snap, s: stage.shadow, cam, dpr, now, selfAngle: null, killerId });
 }

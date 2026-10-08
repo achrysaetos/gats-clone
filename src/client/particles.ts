@@ -1,4 +1,5 @@
 import { PALETTE } from './palette.ts';
+import { knobs, scaled } from './quality.ts';
 
 /**
  * `chip` is a spinning ink-edged fleck of debris, `spark` a hot streak along its flight, `ember` a glowing mote that drifts up,
@@ -25,7 +26,8 @@ const PARTICLE_CAP = 500;
 const deadParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 0, born: -Infinity, life: 0, size: 0, grow: 0, color: '', shape: 'chip', rise: 0, spin: 0 });
 
 export function createPool(capacity = PARTICLE_CAP): ParticlePool {
-  return { slots: Array.from({ length: capacity }, deadParticle), next: 0 };
+  // The graphics preset sizes the pool a match starts with.
+  return { slots: Array.from({ length: Math.max(1, scaled(capacity, knobs().particles)) }, deadParticle), next: 0 };
 }
 
 /** Writes over the oldest slot, so a pool never grows: past its cap the oldest particle simply ends early. */

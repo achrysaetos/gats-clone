@@ -93,9 +93,11 @@ function museumUnder(ctx: CanvasRenderingContext2D, now: number, view: ThemeView
   const pulse = 0.72 + 0.28 * Math.sin(t * 0.0031);
   ctx.save();
   ctx.lineCap = 'round';
-  for (const b of BEAMS) {
+  for (const [bi, b] of BEAMS.entries()) {
     if (!inView(view, (b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, Math.hypot(b.x2 - b.x1, b.y2 - b.y1) / 2 + 20)) continue;
     const k = b.dead ? 0.18 : pulse;
+    // The lasers throw a red glow on the floor along their length: two emitters and the middle of the run.
+    if (!b.dead) for (const [li, f] of [0, 0.5, 1].entries()) setLight(`mus:laser:${bi}:${li}`, { x: b.x1 + (b.x2 - b.x1) * f, y: b.y1 + (b.y2 - b.y1) * f, radius: li === 1 ? 90 : 110, color: '#ff4638', intensity: (li === 1 ? 0.35 : 0.55) * pulse, size: 4, shadows: false });
     if (b.dead) ctx.setLineDash([26, 40, 14, 60]);
     ctx.strokeStyle = `rgba(255, 70, 60, ${(0.16 * k).toFixed(3)})`; ctx.lineWidth = 9;
     ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();

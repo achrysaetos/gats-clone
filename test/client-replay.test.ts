@@ -1,4 +1,5 @@
 /// <reference types="node" />
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { GameEvent, PlayerView, Snapshot } from '../src/shared/protocol.ts';
@@ -6,6 +7,7 @@ import { TICK_MS } from '../src/client/interp.ts';
 import { clipOf, createReplayBuffer, frameAt, recordFrame, serverMs, snapWeight } from '../src/client/replaybuf.ts';
 import { clusterScore, foldEvents, HIGHLIGHT, NO_HIGHLIGHT, observeHighlight, stampsAt } from '../src/client/highlight.ts';
 import { dilatedView, IDLE_WARP, intensityAt, requestSlowmo, SLOWMO, slowmoTrigger, speedAt, stepWarp, totalLag } from '../src/client/slowmo.ts';
+import { replayView } from '../src/client/replaystage.ts';
 import { advanceHead, clipLongEnough, easeToward, framing, KILLCAM, killcamOver, killcamSpeed, replayDuration } from '../src/client/killcam.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -194,4 +196,24 @@ test('the killcam frames you and your killer both, and the camera eases', () => 
   assert.ok(tall.radius <= 900 * KILLCAM.maxRadius, 'the view never claims more than the server sends');
   assert.ok(easeToward(0, 100, 16) > 0 && easeToward(0, 100, 16) < 100);
   assert.ok(easeToward(0, 100, 5000) > 30, 'a long frame is clamped, not skipped');
+});
+
+// --- a replay's layers follow the replayed frame, not the live game ---------------------------------------------------
+
+test('a replayed frame pins the server clock and the roofs/listener spot to that frame, not to the live game', () => {
+  const frame = snap(100, [], {}, { x: 777, y: 42 });
+  const at = replayView(frame, 5000, 1, { x: 1, y: 2 });
+  assert.equal(at.clockOffset + 5000, serverMs(frame), 'serverNow(now) is the frame\'s own time');
+  assert.deepEqual(at.self, { x: 777, y: 42 }, 'roofs thin out around where you were in the replay');
+  assert.deepEqual(replayView(snap(100, [], { players: [player(2)] }), 5000, 1, { x: 1, y: 2 }).self, { x: 1, y: 2 }, 'no body in the frame keeps the last known spot');
+});
+
+test('every early return that skips the live draw still hands its frame to the shader pass', () => {
+  // The lit world is composed in the shader canvas and the 2D canvas is cleared for it (lightfeed.lightWorld). A killcam frame
+  // that returned before processFrame left that canvas showing the last LIVE frame: the live camera's floor behind the replay.
+  const src = readFileSync(new URL('../src/client/main.ts', import.meta.url), 'utf8');
+  const from = src.indexOf('delight.drawKillcam(');
+  assert.ok(from > 0);
+  const branch = src.slice(from, src.indexOf('return;', from));
+  assert.match(branch, /processFrame\(/, 'the killcam branch runs the shader pass on its own frame');
 });

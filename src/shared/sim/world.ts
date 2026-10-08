@@ -233,6 +233,8 @@ export type RoyaleStats = { name: string; kills: number; knocks: number; revives
  * `redeployAt` holds each dead player still coming back; `killers` who took each player's life, so a wiped squad can watch them; `watching` whom each dead player's camera follows.
  */
 export type Royale = {
+  /** The server time the round began: the round's name, which the clients' hidden radios are placed by. */
+  startedAt: number;
   ring: Ring;
   squads: ColorId[];
   out: ColorId[];

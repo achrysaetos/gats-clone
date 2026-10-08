@@ -2,6 +2,7 @@ import { ZONE_RADIUS, type MapDef } from '../shared/maps.ts';
 import { ambientFor, type AmbientConfig, type AmbientGroup, type CritterKind } from './ambientreg.ts';
 import { cellOf, putCell, type SpriteId } from './ambientart.ts';
 import './ambientmaps.ts';
+import { knobs, scaled } from './quality.ts';
 
 /**
  * Ambient life (docs/maps/AMBIENT.md): birds on wall tops, rats, cats, bats, fish, tumbleweeds, leaves, litter, steam and a
@@ -15,6 +16,8 @@ import './ambientmaps.ts';
 
 const TAU = Math.PI * 2;
 const MAX_CRITS = 170;
+/** The graphics preset thins the critters: each kind's cap times the density knob (kept at one when it is any above zero). */
+const capOf = (cap: number): number => { const m = knobs().critters; return m <= 0 ? 0 : Math.max(1, scaled(cap, m)); };
 const MAX_PUFFS = 56;
 const MAX_RINGS = 14;
 const MAX_PLAYERS = 64;
@@ -116,7 +119,7 @@ function placementOf(map: MapDef, mapId: string, cfg: AmbientConfig): Group[] {
   for (const [gi, grp] of cfg.groups.entries()) {
     const info = K[grp.kind];
     const avoid = grp.avoid ?? [];
-    const count = Math.min(info.cap, grp.count ?? grp.at?.length ?? info.per);
+    const count = Math.min(capOf(info.cap), grp.count ?? grp.at?.length ?? info.per);
     // Birds get spare perches to resettle on after a scare.
     const want = info.cls === BIRD && !(grp.at && grp.at.length >= count * 1.5) ? Math.ceil(count * 1.8) : count;
     const spots: number[] = [];
@@ -294,30 +297,30 @@ export function createAmbient() {
       const info = K[g.kind], n = g.spots.length / 2;
       const s0 = hashOf(`${mapId}:${gi}:${g.kind}`);
       if (info.cls === BIRD) {
-        const birds = Math.min(n, K[g.kind].cap, g.cfg.count ?? n);
+        const birds = Math.min(n, capOf(K[g.kind].cap), g.cfg.count ?? n);
         for (let i = 0; i < birds; i++) { const c = spawn(g.kind, gi, g, g.spots[i * 2]!, g.spots[i * 2 + 1]!, s0 + i * 977); if (c) { c.pi = i; g.occ[i] = 1; c.next = 8000 + rnd(c) * 60000; c.at = Infinity; } }
       } else if (info.cls === GROUND) {
-        const want = Math.min(info.cap, g.cfg.count ?? n);
+        const want = Math.min(capOf(info.cap), g.cfg.count ?? n);
         for (let i = 0; i < Math.min(want, Math.max(n, 0)); i++) { const c = spawn(g.kind, gi, g, g.spots[i * 2]!, g.spots[i * 2 + 1]!, s0 + i * 977); if (c) { c.next = 1500 + rnd(c) * 6000; c.st = IDLE; } }
       } else if (info.cls === BAT) {
-        const want = Math.min(info.cap, g.cfg.count ?? info.per);
+        const want = Math.min(capOf(info.cap), g.cfg.count ?? info.per);
         for (let i = 0; i < want && n > 0; i++) { const k = i % n; const c = spawn('bat', gi, g, g.spots[k * 2]!, g.spots[k * 2 + 1]!, s0 + i * 977); if (c) { c.alpha = 0; c.shown = false; c.st = PERCH; } }
       } else if (info.cls === ORBIT) {
-        const want = Math.min(info.cap, g.cfg.count ?? n * info.per);
+        const want = Math.min(capOf(info.cap), g.cfg.count ?? n * info.per);
         for (let i = 0; i < want && n > 0; i++) { const k = i % n; const c = spawn(g.kind, gi, g, g.spots[k * 2]!, g.spots[k * 2 + 1]!, s0 + i * 977); if (c) { c.aux = (rnd(c) < 0.5 ? -1 : 1) * (1.1 + rnd(c) * 0.9); c.next = 2000 + rnd(c) * 4000; } }
       } else if (info.cls === FIREFLY) {
-        const want = Math.min(info.cap, g.cfg.count ?? info.per * Math.max(1, n));
+        const want = Math.min(capOf(info.cap), g.cfg.count ?? info.per * Math.max(1, n));
         for (let i = 0; i < want; i++) { const k = n ? i % n : 0; const c = spawn('firefly', gi, g, n ? g.spots[k * 2]! : mapSize / 2, n ? g.spots[k * 2 + 1]! : mapSize / 2, s0 + i * 977); if (c) c.roam = g.cfg.roam ?? 110; }
       } else if (info.cls === FISH) {
         const rn = g.rects.length / 4;
-        const want = rn ? Math.min(info.cap, g.cfg.count ?? info.per * rn) : 0;
+        const want = rn ? Math.min(capOf(info.cap), g.cfg.count ?? info.per * rn) : 0;
         for (let i = 0; i < want; i++) {
           const k = i % rn, rx = g.rects[k * 4]!, ry = g.rects[k * 4 + 1]!, rw = g.rects[k * 4 + 2]!, rh = g.rects[k * 4 + 3]!;
           const c = spawn('fish', gi, g, 0, 0, s0 + i * 977);
           if (c) { c.aux2 = k; c.x = rx + 16 + rnd(c) * Math.max(1, rw - 32); c.y = ry + 16 + rnd(c) * Math.max(1, rh - 32); c.tx = c.x; c.ty = c.y; c.next = rnd(c) * 3000; }
         }
       } else if (info.cls === DRIFT || info.cls === SNOW) {
-        const want = Math.min(info.cap, g.cfg.count ?? info.per * 3);
+        const want = Math.min(capOf(info.cap), g.cfg.count ?? info.per * 3);
         for (let i = 0; i < want; i++) { const c = spawn(g.kind, gi, g, 0, 0, s0 + i * 977); if (c) { c.init = false; c.live = true; } }
       } else if (info.cls === DEVIL) {
         const c = spawn('dustdevil', gi, g, 0, 0, s0); if (c) { c.next = 12000 + rnd(c) * 25000; c.st = 0; }

@@ -144,5 +144,9 @@ export function createReloadFoley(emit: FoleyEmit): ReloadFoley {
   return { step, clear: () => { tracks.clear(); heard.length = 0; } };
 }
 
+let tap: FoleyEmit | null = null;
+/** Dev probe: sees every reload sound the page voices (`?dev` logs them for `skirmishDev.reloadLog`). */
+export const tapReloadFoley = (fn: FoleyEmit | null) => { tap = fn; };
+
 /** The page's reload foley, voiced through the sound bus. */
-export const reloadFoley = createReloadFoley((id, x, y, self, o) => emitSfxAt(id, x, y, self, o));
+export const reloadFoley = createReloadFoley((id, x, y, self, o) => { tap?.(id, x, y, self, o); emitSfxAt(id, x, y, self, o); });
