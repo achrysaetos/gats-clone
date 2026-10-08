@@ -9,7 +9,23 @@
   "sprites/kit-1.18d0286991.json",
   "sprites/kit-2.ee2cf1c03a.json"
  ],
- "maps": {},
- "floors": {},
+ "maps": {
+  "c76eabae": {
+   "id": "warehouse",
+   "light": "maps/warehouse/light.13cce58c86.json"
+  },
+  "992c55d1": {
+   "id": "outpost",
+   "light": "maps/outpost/light.75e4bca11f.json"
+  },
+  "56f759f6": {
+   "id": "vault",
+   "light": "maps/vault/light.74e616818b.json"
+  }
+ },
+ "floors": {
+  "concrete": "floors/concrete.38ff5ee540.webp",
+  "asphalt": "floors/asphalt.c2a60a4994.webp"
+ },
  "water": "water.b8a9d5793a.webp"
 }
