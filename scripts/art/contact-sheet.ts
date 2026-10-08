@@ -203,7 +203,7 @@ async function guns() {
   const classes = ids.filter((id) => spec.guns[id]!.base === id);
   const apartRow = Math.max(...classes.map((id) => spec.sprites[`gun.${id}`]!.box.h)) * k + gap;
   const gameTop = apartTop + classes.length * apartRow + 30;
-  const c = canvas(width, Math.ceil(gameTop + 5 * 40 + 40));
+  const c = canvas(width, Math.ceil(gameTop + 5 * 64 + 40));
   const labels: [number, number, string][] = [[10, 18, 'every gun at x3 game scale, frames stacked (mag under, pump or bolt over); red tick: muzzle, green: the hand points. Reference guns top right.']];
   const mark = (px: number, py: number, rgb: [number, number, number], half: number) => {
     for (let d = -half; d <= half; d++) for (const [xx, yy] of [[px + d, py], [px, py + d]] as const) {
@@ -227,7 +227,7 @@ async function guns() {
     for (let f = 0; f < 3; f++) await draw(c, `gun.${id}`, 'base', 0, f, 20 + f * 600 - b.x * k, apartTop + i * apartRow - b.y * k, { zoom });
   }
   labels.push([10, gameTop - 10, 'every gun at game scale (2 px per unit), the size players see']);
-  for (const [i, id] of ids.entries()) await gunAt(c, id, 30 + (i % 9) * 195, gameTop + 20 + Math.floor(i / 9) * 40);
+  for (const [i, id] of ids.entries()) await gunAt(c, id, 30 + (i % 9) * 195, gameTop + 30 + Math.floor(i / 9) * 64);
   await save(c, labels, [
     { left: 850, top: 295, width: 345, height: 120, zoom: 1, src: 'docs/art/gold/loadout.webp' },
     { left: 990, top: 510, width: 140, height: 105, zoom: 1, src: 'docs/art/gold/loadout.webp' },
