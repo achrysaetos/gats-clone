@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, LEVELS, MEDALS, pickOptions, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LEVELS, MEDAL_RULES, MEDALS, pickOptions, WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
@@ -11,7 +11,7 @@ import { emptyWorld, equip, grantPerks, hpOf, offerPerks, press, run, shootOnce,
 const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
 const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
 
-test('four kills and ten crates in one life open the ability pick', () => {
+test('four quick kills and ten crates in one life open the attachment and the first evolve, the evolve offered first', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   for (let i = 0; i < 4; i++) {
@@ -31,16 +31,32 @@ test('four kills and ten crates in one life open the ability pick', () => {
   // The second kill from the pistol's first magazine is a Double Tap as well.
   const medals = ['firstBlood', 'doubleKill', 'doubleTap', 'tripleKill', 'onFire', 'quadKill'] as const;
   assert.equal(a.score, 4 * WORLD.killScore + medals.reduce((s, m) => s + MEDALS[m].score, 0) + 10 * WORLD.crateScore, 'four quick kills earn their medals too');
-  assert.ok(choosePick(w, a.id, 1, 'handCannon'));
-  assert.deepEqual(pendingOf(w, a), { level: 5, k: 'evolve' }, 'the score is past the last level, and its evolve comes before the unchosen perks');
-  assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
-  assert.ok(choosePick(w, a.id, 2, 'lightweight'));
-  offerPerks(a, 'thickSkin');
-  assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
-  assert.deepEqual(pendingOf(w, a), { level: 4, k: 'perk', tier: 3 }, 'the ability pick is open');
+  assert.equal(a.level, 2, 'past the first evolve, short of the tier-2 perk');
+  assert.deepEqual(pendingOf(w, a), { level: 2, k: 'evolve' }, 'the evolve comes before the unchosen attachment');
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  assert.deepEqual(pendingOf(w, a), { level: 1, k: 'perk', tier: 1 }, 'then the attachment');
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
+  assert.equal(pendingOf(w, a), null);
 });
 
-test('picks open in ladder order: evolve, perk, perk, ability, evolve', () => {
+test('a life of bare kills, with only the streak medals, opens its picks at kills 3, 5, 8, 10 and 12; medals bring them sooner', () => {
+  const w = emptyWorld();
+  w.firstBlood = true;
+  const a = spawnAt(w, 500, 500);
+  const reachedAt: number[] = [];
+  for (let kill = 1; kill <= 12; kill++) {
+    w.now += MEDAL_RULES.multiMs + 1;
+    const v = spawnAt(w, 700, 500);
+    // No gun on the blow, so no weapon feat; spaced past the multi-kill window, from mid range, at full health.
+    damagePlayer(w, v, 10_000, { attacker: a, team: null, label: 'test', piercing: true, via: 'bullet', fromX: a.x, fromY: a.y });
+    w.players.delete(v.id);
+    while (reachedAt.length < a.level) reachedAt.push(kill);
+  }
+  assert.deepEqual(reachedAt, [3, 5, 8, 10, 12]);
+  assert.ok(LEVELS[2]!.score > 3 * WORLD.killScore, 'the first evolve takes more than three bare kills');
+});
+
+test('picks open in ladder order: attachment, evolve, perk, ability, evolve', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const seen = [];
@@ -53,7 +69,7 @@ test('picks open in ladder order: evolve, perk, perk, ability, evolve', () => {
     assert.equal(pendingOf(w, a), null, 'one pick per level');
   }
   assert.deepEqual(seen, [
-    { level: 1, k: 'evolve' }, { level: 2, k: 'perk', tier: 1 }, { level: 3, k: 'perk', tier: 2, offer: a.tier2Offer }, { level: 4, k: 'perk', tier: 3 }, { level: 5, k: 'evolve' },
+    { level: 1, k: 'perk', tier: 1 }, { level: 2, k: 'evolve' }, { level: 3, k: 'perk', tier: 2, offer: a.tier2Offer }, { level: 4, k: 'perk', tier: 3 }, { level: 5, k: 'evolve' },
   ]);
   assert.equal(gunOf(w, a), 'hailstorm', 'pistol, then machine pistol, then its second branch');
 });
@@ -61,11 +77,11 @@ test('picks open in ladder order: evolve, perk, perk, ability, evolve', () => {
 test('no pick is offered or taken during the round-end ceasefire, since the restart wipes it', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  a.level = 1;
-  assert.deepEqual(pendingOf(w, a), { level: 1, k: 'evolve' }, 'open while the round plays');
+  a.level = 2;
+  assert.deepEqual(pendingOf(w, a), { level: 2, k: 'evolve' }, 'open while the round plays');
   w.match = { k: 'over', winner: { name: a.name, id: a.id, note: null }, restartAt: w.now + WORLD.roundRestartMs };
   assert.equal(pendingOf(w, a), null, 'the dock has nothing to show');
-  assert.equal(choosePick(w, a.id, 1, 'handCannon'), false, 'a pick sent from an older snapshot is refused');
+  assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'a pick sent from an older snapshot is refused');
   assert.equal(a.gun, 'pistol');
   assert.deepEqual(a.perks, {});
 });
@@ -74,19 +90,19 @@ test('a stale, duplicate or foreign pick changes nothing', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   a.level = 2;
-  assert.equal(choosePick(w, a.id, 2, 'lightweight'), false, 'the perk pick waits behind the open evolve pick');
-  assert.equal(choosePick(w, a.id, 1, 'shield'), false, 'a perk does not fill a gun pick');
-  assert.equal(choosePick(w, a.id, 1, 'lightweight'), false, 'an attachment does not fill a gun pick');
-  assert.equal(choosePick(w, a.id, 1, 'executioner'), false, 'no skipping to stage 2');
-  assert.equal(choosePick(w, a.id, 1, 'slugGun'), false, 'another class\'s branch');
-  assert.ok(choosePick(w, a.id, 1, 'machinePistol'));
-  assert.equal(choosePick(w, a.id, 1, 'handCannon'), false, 'a second evolve for the same level');
+  assert.equal(choosePick(w, a.id, 1, 'lightweight'), false, 'the attachment pick waits behind the open evolve pick');
+  assert.equal(choosePick(w, a.id, 2, 'shield'), false, 'a perk does not fill a gun pick');
+  assert.equal(choosePick(w, a.id, 2, 'lightweight'), false, 'an attachment does not fill a gun pick');
+  assert.equal(choosePick(w, a.id, 2, 'executioner'), false, 'no skipping to stage 2');
+  assert.equal(choosePick(w, a.id, 2, 'slugGun'), false, 'another class\'s branch');
+  assert.ok(choosePick(w, a.id, 2, 'machinePistol'));
+  assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'a second evolve for the same level');
   assert.equal(gunOf(w, a), 'machinePistol');
   offerPerks(a, 'shield');
-  assert.equal(choosePick(w, a.id, 2, 'shield'), false, 'a tier 2 perk does not fill tier 1');
-  assert.equal(choosePick(w, a.id, 2, 'handCannon'), false, 'a gun does not fill a perk pick');
-  assert.ok(choosePick(w, a.id, 2, 'lightweight'));
-  assert.equal(choosePick(w, a.id, 2, 'optics'), false, 'a repeated pick for the same level');
+  assert.equal(choosePick(w, a.id, 1, 'shield'), false, 'a tier 2 perk does not fill tier 1');
+  assert.equal(choosePick(w, a.id, 1, 'handCannon'), false, 'a gun does not fill a perk pick');
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
+  assert.equal(choosePick(w, a.id, 1, 'optics'), false, 'a repeated pick for the same level');
   assert.deepEqual(snapshotFor(w, a.id).self.perks, { 1: 'lightweight' });
   assert.equal(pendingOf(w, a), null);
   a.level = 5;
@@ -102,8 +118,8 @@ test('evolving swaps in the new gun with its own stats and keeps the loaded shar
   const target = spawnAt(w, 750, 500);
   a.level = 2;
   for (let i = 0; i < 6; i++) shootOnce(w, a, Math.PI, GUNS.pistol.fireMs);
-  assert.ok(choosePick(w, a.id, 1, 'handCannon'));
-  assert.ok(choosePick(w, a.id, 2, 'lightweight'));
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   const self = snapshotFor(w, a.id).self;
   assert.deepEqual([self.ammo, self.mag], [GUNS.handCannon.mag / 2, GUNS.handCannon.mag], 'half a pistol magazine becomes half a hand cannon magazine');
   shootOnce(w, a, 0);
@@ -113,12 +129,12 @@ test('evolving swaps in the new gun with its own stats and keeps the loaded shar
 test('evolving during a reload neither finishes nor cancels it', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
-  a.level = 1;
+  a.level = 2;
   shootOnce(w, a, 0, GUNS.pistol.fireMs);
   press(w, a, { reload: true });
   step(w, TICK_MS);
   press(w, a, {});
-  assert.ok(choosePick(w, a.id, 1, 'handCannon'));
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   const mid = snapshotFor(w, a.id).self;
   assert.deepEqual([mid.reloading, mid.ammo], [true, Math.round((GUNS.handCannon.mag * (GUNS.pistol.mag - 1)) / GUNS.pistol.mag)]);
   run(w, GUNS.pistol.reloadMs + 100);
@@ -130,8 +146,8 @@ test('a max-health perk keeps the share of health you had, not a free heal', () 
   const a = spawnAt(w, 500, 500);
   a.level = 3;
   offerPerks(a, 'thickSkin');
-  assert.ok(choosePick(w, a.id, 1, 'handCannon'));
-  assert.ok(choosePick(w, a.id, 2, 'lightweight'));
+  assert.ok(choosePick(w, a.id, 2, 'handCannon'));
+  assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   if (a.life.k === 'alive') a.life.hp = WORLD.baseHp / 2;
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));
   assert.equal(hpOf(a), (WORLD.baseHp + 40) / 2);
@@ -274,12 +290,12 @@ test('a pick is taken only for the open level: a stale or skipped-ahead pick is 
   p.score = LEVELS[2]!.score;
   p.level = 2;
   const option = pickOptions({ k: 'perk', tier: 1 }, p.gun)[0]!;
-  assert.equal(choosePick(w, p.id, 2, option), false, 'level 2 waits behind the open level-1 evolve');
+  assert.equal(choosePick(w, p.id, 1, option), false, 'the level-1 attachment waits behind the open level-2 evolve');
   assert.deepEqual(p.perks, {});
-  assert.equal(choosePick(w, p.id, 2, 'handCannon'), false, 'the right gun named against the wrong level');
+  assert.equal(choosePick(w, p.id, 1, 'handCannon'), false, 'the right gun named against the wrong level');
   assert.equal(p.gun, 'pistol');
-  assert.equal(choosePick(w, p.id, 1, 'handCannon'), true);
-  assert.equal(choosePick(w, p.id, 1, 'handCannon'), false, 'a repeated pick is stale');
+  assert.equal(choosePick(w, p.id, 2, 'handCannon'), true);
+  assert.equal(choosePick(w, p.id, 2, 'handCannon'), false, 'a repeated pick is stale');
   assert.equal(p.gun, 'handCannon');
 });
 

@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { MEDALS } from '../src/shared/defs.ts';
 import type { GameEvent, PlayerView, Snapshot } from '../src/shared/protocol.ts';
 import { TICK_MS } from '../src/client/interp.ts';
 import { clipOf, createReplayBuffer, frameAt, recordFrame, serverMs, snapWeight } from '../src/client/replaybuf.ts';
@@ -73,7 +74,7 @@ test('kills and medals within the window make one moment, scored by medal, kills
   assert.equal(clusterScore(c!), HIGHLIGHT.killScore);
   c = foldEvents(c, snap(100 + 60, [killBy(1, 3), medal(1, 'longShot')]));
   assert.equal(c!.kills, 2);
-  assert.equal(clusterScore(c!), 75 + 2 * HIGHLIGHT.killScore + HIGHLIGHT.chainScore);
+  assert.equal(clusterScore(c!), MEDALS.longShot.score + 2 * HIGHLIGHT.killScore + HIGHLIGHT.chainScore);
   const later = foldEvents(c, snap(100 + 60 + 150, [killBy(1, 4)]));
   assert.equal(later!.kills, 1, 'past the window it is a fresh moment');
 });
@@ -93,7 +94,7 @@ test('the best moment keeps its clip, a smaller one later does not replace it', 
   feed(100, [killBy(1, 2), medal(1, 'massacre')]);
   assert.equal(best(), null, 'waits for the tail to be recorded');
   for (let t = 101; t < 140; t++) feed(t);
-  assert.ok(best() && best()!.score >= 400, 'massacre moment kept');
+  assert.ok(best() && best()!.score >= MEDALS.massacre.score + HIGHLIGHT.killScore, 'massacre moment kept');
   assert.ok(best()!.clip.length > 30 && best()!.clip.length <= 200);
   const kept = best()!;
   for (let t = 140; t < 400; t++) feed(t, t === 300 ? [killBy(1, 2)] : []);

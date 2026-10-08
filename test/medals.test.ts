@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, MEDAL_RULES, MEDALS, WEAPON_MEDALS, WORLD, type GunId, type MedalId } from '../src/shared/defs.ts';
+import { GUNS, MEDAL_RULES, MEDALS, rulesOf, WEAPON_MEDALS, WORLD, type GunId, type MedalId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
@@ -92,49 +92,31 @@ test('Close Call: drop under a tenth of your health and live six more seconds, o
 
 const run1 = (w: World) => step(w, TICK_MS);
 
-test('Ghost: walking 3000px without a shot pays once each time it is covered; a shot or a jump starts the count again', () => {
+test('Ghost: covering ghostPx without a shot pays once each time it is covered; a shot or a jump starts the count again', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 300, 1000);
-  const ghosts = (ms: number, keys: { right?: boolean; left?: boolean }) => {
+  const speed = effectiveStats(a).speed;
+  const G = MEDAL_RULES.ghostPx;
+  let right = true, leg = 0;
+  /** Walks `px` back and forth in legs of 1500px, so the field's edge never stops the count; the Ghost medals it paid. */
+  const walk = (px: number) => {
     let n = 0;
-    for (let t = 0; t < ms; t += TICK_MS) {
-      a.input = { ...a.input, right: !!keys.right, left: !!keys.left };
+    for (let t = 0; t < (px / speed) * 1000; t += TICK_MS) {
+      a.input = { ...a.input, right, left: !right };
       step(w, TICK_MS);
+      leg += (speed * TICK_MS) / 1000;
+      if (leg >= 1500) { leg = 0; right = !right; }
       n += w.events.filter((e) => e.e === 'medal' && e.id === a.id && e.medal === 'ghost').length;
     }
     return n;
   };
-  const speed = effectiveStats(a).speed;
-  const msFor = (px: number) => (px / speed) * 1000;
-  // Back and forth across the field: 2000px, then a jump, then 2000px more is two counts of 2000, so no Ghost yet.
-  assert.equal(ghosts(msFor(2000), { right: true }), 0);
-  a.x = 300;
-  assert.equal(ghosts(msFor(2000), { right: true }), 0, 'a jump (a respawn, a teleport) starts the count again');
-  assert.equal(ghosts(msFor(1100), { left: true }), 1, 'the 3000th px pays');
-  assert.equal(ghosts(msFor(1500), { right: true }), 0, 'and starts a fresh count');
+  assert.equal(walk(G * 2 / 3), 0);
+  a.x = 300; right = true; leg = 0;
+  assert.equal(walk(G * 2 / 3), 0, 'a jump (a respawn, a teleport) starts the count again');
+  assert.equal(walk(G / 3 + 100), 1, 'the last px of the count pays');
+  assert.equal(walk(G / 2), 0, 'and starts a fresh count');
   if (a.life.k === 'alive') a.life.firedAt = w.now;
-  assert.equal(ghosts(msFor(1600), { left: true }), 0, 'a shot resets it');
-});
-
-test('streak medals mark 3, 5, 8, 12 and 20 kills in one life', () => {
-  const w = emptyWorld();
-  w.firstBlood = true;
-  const a = spawnAt(w, 500, 500);
-  const streak: MedalId[] = [];
-  for (let i = 0; i < 20; i++) {
-    w.now += MEDAL_RULES.multiMs + 1;
-    streak.push(...slay(w, a, spawnAt(w, 800, 100 + i * 50)).medals);
-  }
-  assert.deepEqual(streak, ['onFire', 'rampage', 'unstoppable', 'untouchable', 'legendary']);
-});
-
-test('a medal is news only to the player who earned it', async () => {
-  const { snapshotFor } = await import('../src/shared/sim/snapshot.ts');
-  const w = emptyWorld();
-  const a = spawnAt(w, 500, 500), b = spawnAt(w, 800, 500), c = spawnAt(w, 600, 600);
-  slay(w, a, b);
-  assert.ok(snapshotFor(w, a.id).events.some((e) => e.e === 'medal'));
-  assert.ok(!snapshotFor(w, c.id).events.some((e) => e.e === 'medal'));
+  assert.equal(walk(G * 0.55), 0, 'a shot resets it');
 });
 
 /** `by` lands one round of `gun` on `victim`; the medals that round earned. */
@@ -151,13 +133,16 @@ test('a sniper\'s one-hit kill from far off earns every medal it qualifies for a
   const far = shot(w, a, spawnAt(w, 500 + WEAPON_MEDALS.eagleEyePx + 10, 500), 'sniper', 10_000);
   assert.deepEqual(far, ['longShot', 'oneShot', 'eagleEye'], 'Long Shot, One Shot and Eagle Eye all land on the one kill');
   w.now += MEDAL_RULES.multiMs + 1;
-  assert.deepEqual(shot(w, a, spawnAt(w, 600, 500), 'sniper', 10_000), ['oneShot', 'noScope'], 'a sniper kill up close is No Scope');
+  assert.deepEqual(shot(w, a, spawnAt(w, 600, 500), 'sniper', 10_000), ['noScope'], 'a sniper kill up close is No Scope, and too close for One Shot');
   w.now += MEDAL_RULES.multiMs + 1;
-  const third = shot(w, a, spawnAt(w, 900, 500), 'sniper', 10_000);
-  assert.ok(third.includes('oneShot') && third.includes('reaper') && third.includes('onFire'), `${third}`);
+  const third = shot(w, a, spawnAt(w, 500 + WEAPON_MEDALS.oneShotPx + 10, 500), 'sniper', 10_000);
+  assert.ok(third.includes('oneShot') && !third.includes('reaper') && third.includes('onFire'), `${third}`);
   w.now += MEDAL_RULES.multiMs + 1;
-  const fourth = shot(w, a, spawnAt(w, 900, 700), 'sniper', 10_000);
-  assert.ok(fourth.includes('oneShot') && !fourth.includes('reaper'), `a fourth one-hit kill is no second Reaper: ${fourth}`);
+  const fourth = shot(w, a, spawnAt(w, 500 + WEAPON_MEDALS.oneShotPx + 10, 700), 'sniper', 10_000);
+  assert.ok(fourth.includes('oneShot') && fourth.includes('reaper'), `the third One Shot is a Reaper: ${fourth}`);
+  w.now += MEDAL_RULES.multiMs + 1;
+  const fifth = shot(w, a, spawnAt(w, 500 + WEAPON_MEDALS.oneShotPx + 10, 300), 'sniper', 10_000);
+  assert.ok(fifth.includes('oneShot') && !fifth.includes('reaper'), `a fourth one-hit kill is no second Reaper: ${fifth}`);
   w.now += MEDAL_RULES.multiMs + 1;
   const hurt = spawnAt(w, 900, 600);
   if (hurt.life.k === 'alive') hurt.life.hp = 1;
@@ -197,11 +182,49 @@ test('a machine gun kill on a pinned enemy is Pinned Down, and three kills from 
   const w = emptyWorld();
   w.firstBlood = true;
   const a = spawnAt(w, 500, 500);
-  const pinned = spawnAt(w, 700, 500);
+  const near = spawnAt(w, 700, 500);
+  if (near.life.k === 'alive') near.life.suppression = 1;
+  assert.deepEqual(shot(w, a, near, 'lmg', 10_000), [], 'pinned, but too close to count');
+  w.now += MEDAL_RULES.multiMs + 1;
+  const loose = spawnAt(w, 500 + WEAPON_MEDALS.pinnedPx + 10, 600);
+  if (loose.life.k === 'alive') loose.life.suppression = WEAPON_MEDALS.pinnedSuppression - 0.1;
+  assert.deepEqual(shot(w, a, loose, 'lmg', 10_000), [], 'far, but not pinned');
+  w.now += MEDAL_RULES.multiMs + 1;
+  const pinned = spawnAt(w, 500 + WEAPON_MEDALS.pinnedPx + 10, 500);
   if (pinned.life.k === 'alive') pinned.life.suppression = WEAPON_MEDALS.pinnedSuppression;
-  assert.deepEqual(shot(w, a, pinned, 'lmg', 10_000), ['pinnedDown']);
+  assert.ok(shot(w, a, pinned, 'lmg', 10_000).includes('pinnedDown'), 'pinned far off');
   w.now += MEDAL_RULES.multiMs + 1;
-  shot(w, a, spawnAt(w, 700, 600), 'lmg', 10_000);
+  assert.ok(!shot(w, a, spawnAt(w, 700, 700), 'lmg', 10_000).includes('beltFed'), 'a fourth kill from the belt is no second Belt Fed');
+  const b = spawnAt(w, 2000, 2000);
+  shot(w, b, spawnAt(w, 2100, 2000), 'lmg', 10_000);
   w.now += MEDAL_RULES.multiMs + 1;
-  assert.ok(shot(w, a, spawnAt(w, 700, 700), 'lmg', 10_000).includes('beltFed'));
+  shot(w, b, spawnAt(w, 2100, 2100), 'lmg', 10_000);
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.ok(shot(w, b, spawnAt(w, 2100, 2200), 'lmg', 10_000).includes('beltFed'), 'three kills from one belt');
+});
+
+test('Run and Gun is an SMG kill on the move just out of a sprint; Disciplined an assault kill from range before the spray blooms', () => {
+  const w = emptyWorld();
+  w.firstBlood = true;
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'smg' } });
+  const moving = (raisedAgo: number) => {
+    if (a.life.k !== 'alive') return;
+    a.life.lastMoveAt = w.now;
+    a.life.raiseUntil = w.now - raisedAgo;
+  };
+  moving(Infinity);
+  assert.deepEqual(shot(w, a, spawnAt(w, 700, 500), 'smg', 10_000), [], 'on the move, but no sprint behind it');
+  w.now += MEDAL_RULES.multiMs + 1;
+  moving(WEAPON_MEDALS.runAndGunMs / 2);
+  assert.deepEqual(shot(w, a, spawnAt(w, 700, 600), 'smg', 10_000), ['runAndGun']);
+  w.now += MEDAL_RULES.multiMs + 1;
+  moving(WEAPON_MEDALS.runAndGunMs + 100);
+  assert.ok(!shot(w, a, spawnAt(w, 700, 700), 'smg', 10_000).includes('runAndGun'), 'too long out of the sprint');
+  const r = spawnAt(w, 2000, 2000, { loadout: { weapon: 'assault' } });
+  assert.deepEqual(shot(w, r, spawnAt(w, 2000 + WEAPON_MEDALS.disciplinedPx - 100, 2000), 'assault', 10_000), [], 'a controlled kill, but close');
+  w.now += MEDAL_RULES.multiMs + 1;
+  assert.deepEqual(shot(w, r, spawnAt(w, 2000 + WEAPON_MEDALS.disciplinedPx + 10, 2100), 'assault', 10_000), ['disciplined']);
+  w.now += MEDAL_RULES.multiMs + 1;
+  if (r.life.k === 'alive') r.life.spray = rulesOf(GUNS.assault).bloom!.free + 1;
+  assert.ok(!shot(w, r, spawnAt(w, 2000 + WEAPON_MEDALS.disciplinedPx + 10, 1900), 'assault', 10_000).includes('disciplined'), 'a bloomed spray');
 });

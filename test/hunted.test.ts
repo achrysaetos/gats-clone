@@ -88,7 +88,7 @@ test('reaching a stage-2 gun announces the hunt to everyone, however far away', 
   const far = spawnAt(w, 2700, 2700);
   a.level = 4;
   offerPerks(a, 'shield');
-  for (const [level, option] of [[1, 'handCannon'], [2, 'lightweight'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
+  for (const [level, option] of [[2, 'handCannon'], [1, 'lightweight'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   const shipped = () => { step(w, TICK_MS); return snapshotFor(w, far.id).events.filter((e) => e.e === 'hunted'); };
   assert.deepEqual(shipped(), [], 'stage 1 is not hunted');
   a.level = 5;
@@ -115,7 +115,7 @@ test('a squadmate on a stage-2 gun in a zombies run is never hunted: no announce
   const mate = spawnAt(w, 1600, 1400);
   a.level = 4;
   offerPerks(a, 'shield');
-  for (const [level, option] of [[1, 'handCannon'], [2, 'lightweight'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
+  for (const [level, option] of [[2, 'handCannon'], [1, 'lightweight'], [3, 'shield'], [4, 'dash']] as const) assert.ok(choosePick(w, a.id, level, option));
   a.level = 5;
   assert.ok(choosePick(w, a.id, 5, 'gunslinger'));
   step(w, TICK_MS);

@@ -335,11 +335,12 @@ export type PendingPick = { level: number } & Pick;
 export type PickOption = PerkId | GunId;
 
 export const LEVELS = [
-  // A new gun is the best reward there is, so the first kill evolves your gun; the attachment follows at the second or third.
-  // Medals pay a large share of score, more the hotter a life runs, so the ladder steepens toward the top: set from 800 bot
-  // lives (`node scripts/level-scale.ts`, and test/balance.test.ts holds it).
-  { score: 0, pick: null }, { score: 100, pick: { k: 'evolve' } }, { score: 250, pick: { k: 'perk', tier: 1 } },
-  { score: 420, pick: { k: 'perk', tier: 2 } }, { score: 620, pick: { k: 'perk', tier: 3 } }, { score: 1000, pick: { k: 'evolve' } },
+  // A new gun is the best reward there is, so it is earned: the first evolve lands around the third or fourth kill of a life
+  // and the second around the ninth, with the attachment before the first and the two perks between them, so a pick comes
+  // every kill or two. Set on the score a life really has after each kill, medals included (scripts/level-scale.ts prints
+  // it, and test/balance.test.ts holds it).
+  { score: 0, pick: null }, { score: 300, pick: { k: 'perk', tier: 1 } }, { score: 550, pick: { k: 'evolve' } },
+  { score: 850, pick: { k: 'perk', tier: 2 } }, { score: 1100, pick: { k: 'perk', tier: 3 } }, { score: 1500, pick: { k: 'evolve' } },
 ] as const satisfies readonly { score: number; pick: Pick | null }[];
 
 type Attachment = (typeof PERK_TIERS)[1][number];
@@ -405,11 +406,13 @@ export const KILL_REWARD = { heal: 0.35, ammo: 0.5 } as const;
  * Kills in one life make a streak. Others see it beside your name from `showAt`; whoever ends a streak of `shutdownAt` or
  * more earns `shutdownScore`. Whoever killed you last is your nemesis, and killing them pays `revengeScore`.
  */
-export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 250, revengeScore: 125 } as const;
+export const STREAK = { showAt: 3, shutdownAt: 5, shutdownScore: 100, revengeScore: 50 } as const;
 
 /**
  * Medals are earned in the moment, Call of Duty style, and each pays its `score` on top of the kill. `tier` sets the
  * medal's metal on screen. The bounty, shutdown and revenge medals carry the bonuses those rules always paid.
+ * A medal is a bonus, not the bulk of the score: the everyday ones land on no more than about one kill in five of their
+ * kind and the rare ones on a few in a hundred, and in rooms of bots medals pay about a fifth of a life's score.
  */
 export const MEDAL_IDS = [
   'firstBlood', 'doubleKill', 'tripleKill', 'quadKill', 'massacre', 'longShot', 'pointBlank', 'clutch', 'closeCall',
@@ -425,56 +428,57 @@ export const MEDAL_IDS = [
 export type MedalId = (typeof MEDAL_IDS)[number];
 export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 export const MEDALS: Record<MedalId, { name: string; desc: string; score: number; tier: MedalTier }> = {
-  firstBlood: { name: 'First Blood', desc: 'The first kill of the round', score: 125, tier: 'silver' },
-  doubleKill: { name: 'Double Kill', desc: 'Two kills within 4 seconds', score: 60, tier: 'bronze' },
-  tripleKill: { name: 'Triple Kill', desc: 'Three kills, each within 4 seconds of the last', score: 125, tier: 'silver' },
-  quadKill: { name: 'Quad Kill', desc: 'Four kills, each within 4 seconds of the last', score: 250, tier: 'gold' },
-  massacre: { name: 'Massacre', desc: 'Five or more kills, each within 4 seconds of the last', score: 400, tier: 'platinum' },
-  longShot: { name: 'Long Shot', desc: 'A kill from 650 px or more away', score: 75, tier: 'bronze' },
-  pointBlank: { name: 'Point Blank', desc: 'A kill from 90 px or closer', score: 50, tier: 'bronze' },
-  clutch: { name: 'Clutch', desc: 'Kill whoever is hurting you, on 20% health or less', score: 125, tier: 'silver' },
-  closeCall: { name: 'Close Call', desc: 'Drop under 10% health and live another 6 seconds', score: 75, tier: 'bronze' },
+  firstBlood: { name: 'First Blood', desc: 'The first kill of the round', score: 50, tier: 'silver' },
+  doubleKill: { name: 'Double Kill', desc: 'Two kills within 3 seconds', score: 25, tier: 'bronze' },
+  tripleKill: { name: 'Triple Kill', desc: 'Three kills, each within 3 seconds of the last', score: 50, tier: 'silver' },
+  quadKill: { name: 'Quad Kill', desc: 'Four kills, each within 3 seconds of the last', score: 100, tier: 'gold' },
+  massacre: { name: 'Massacre', desc: 'Five or more kills, each within 3 seconds of the last', score: 200, tier: 'platinum' },
+  longShot: { name: 'Long Shot', desc: 'A kill from 650 px or more away', score: 30, tier: 'bronze' },
+  pointBlank: { name: 'Point Blank', desc: 'A kill from 90 px or closer', score: 25, tier: 'bronze' },
+  clutch: { name: 'Clutch', desc: 'Kill whoever is hurting you, on 20% health or less', score: 50, tier: 'silver' },
+  closeCall: { name: 'Close Call', desc: 'Drop under 10% health and live another 6 seconds', score: 30, tier: 'bronze' },
   revenge: { name: 'Revenge', desc: 'Kill the player who last killed you', score: STREAK.revengeScore, tier: 'silver' },
   shutdown: { name: 'Shutdown', desc: 'End a streak of 5 or more', score: STREAK.shutdownScore, tier: 'gold' },
-  bounty: { name: 'Bounty', desc: 'Kill a hunted player', score: 300, tier: 'gold' },
-  onFire: { name: 'On Fire', desc: '3 kills without dying', score: 60, tier: 'bronze' },
-  rampage: { name: 'Rampage', desc: '5 kills without dying', score: 125, tier: 'silver' },
-  unstoppable: { name: 'Unstoppable', desc: '8 kills without dying', score: 250, tier: 'gold' },
-  untouchable: { name: 'Untouchable', desc: '12 kills without dying', score: 400, tier: 'platinum' },
-  legendary: { name: 'Legendary', desc: '20 kills without dying', score: 600, tier: 'platinum' },
-  ghost: { name: 'Ghost', desc: 'Cover 3000 px in one life without firing a shot', score: 75, tier: 'bronze' },
-  doubleTap: { name: 'Double Tap', desc: 'Pistol: two kills from one magazine', score: 75, tier: 'bronze' },
-  deadeye: { name: 'Deadeye', desc: 'Pistol: a kill from 500 px or more', score: 100, tier: 'silver' },
-  runAndGun: { name: 'Run and Gun', desc: 'SMG: a kill on the move', score: 50, tier: 'bronze' },
-  twoBirds: { name: 'Two Birds', desc: 'Shotgun: one blast hits two enemies', score: 75, tier: 'bronze' },
-  longBarrel: { name: 'Long Barrel', desc: 'Shotgun: a kill from 340 px or more', score: 125, tier: 'silver' },
-  disciplined: { name: 'Disciplined', desc: 'Assault: a kill before your spray blooms', score: 50, tier: 'bronze' },
-  oneShot: { name: 'One Shot', desc: 'Sniper: a kill with one hit from full health', score: 100, tier: 'silver' },
-  noScope: { name: 'No Scope', desc: 'Sniper: a kill from 160 px or closer', score: 125, tier: 'silver' },
-  eagleEye: { name: 'Eagle Eye', desc: 'Sniper: a kill from 900 px or more', score: 150, tier: 'gold' },
-  reaper: { name: 'Reaper', desc: 'Sniper: three one-hit kills in one life', score: 300, tier: 'platinum' },
-  pinnedDown: { name: 'Pinned Down', desc: 'Machine gun: kill an enemy you have pinned with suppression', score: 75, tier: 'bronze' },
-  beltFed: { name: 'Belt Fed', desc: 'Machine gun: three kills from one belt', score: 150, tier: 'gold' },
-  kaboom: { name: 'Kaboom', desc: 'Kill with an explosive barrel you set off', score: 60, tier: 'bronze' },
-  chainReaction: { name: 'Chain Reaction', desc: 'One barrel chain kills two or more', score: 200, tier: 'gold' },
-  specialDelivery: { name: 'Special Delivery', desc: 'Crack open a supply drop', score: 100, tier: 'silver' },
-  liftoff: { name: 'Liftoff', desc: 'Kill with a propane tank you sent flying', score: 100, tier: 'silver' },
-  shockTherapy: { name: 'Shock Therapy', desc: 'Kill an enemy while a generator you shorted still has them shocked', score: 100, tier: 'silver' },
-  arsonist: { name: 'Arsonist', desc: 'Kill with a burning oil slick you spilled', score: 75, tier: 'bronze' },
-  picasso: { name: 'Picasso', desc: 'Splatter a paint can over an enemy', score: 50, tier: 'bronze' },
+  bounty: { name: 'Bounty', desc: 'Kill a hunted player', score: 150, tier: 'gold' },
+  onFire: { name: 'On Fire', desc: '3 kills without dying', score: 25, tier: 'bronze' },
+  rampage: { name: 'Rampage', desc: '5 kills without dying', score: 50, tier: 'silver' },
+  unstoppable: { name: 'Unstoppable', desc: '8 kills without dying', score: 100, tier: 'gold' },
+  untouchable: { name: 'Untouchable', desc: '12 kills without dying', score: 200, tier: 'platinum' },
+  legendary: { name: 'Legendary', desc: '20 kills without dying', score: 300, tier: 'platinum' },
+  ghost: { name: 'Ghost', desc: 'Cover 6000 px in one life without firing a shot', score: 25, tier: 'bronze' },
+  doubleTap: { name: 'Double Tap', desc: 'Pistol: two kills from one magazine', score: 30, tier: 'bronze' },
+  deadeye: { name: 'Deadeye', desc: 'Pistol: a kill from 500 px or more', score: 50, tier: 'silver' },
+  runAndGun: { name: 'Run and Gun', desc: 'SMG: a kill on the move, straight out of a sprint', score: 30, tier: 'bronze' },
+  twoBirds: { name: 'Two Birds', desc: 'Shotgun: one blast hits two enemies', score: 40, tier: 'bronze' },
+  longBarrel: { name: 'Long Barrel', desc: 'Shotgun: a kill from 400 px or more', score: 50, tier: 'silver' },
+  disciplined: { name: 'Disciplined', desc: 'Assault: a kill from 500 px or more before your spray blooms', score: 30, tier: 'bronze' },
+  oneShot: { name: 'One Shot', desc: 'Sniper: a kill with one hit from full health, from 550 px or more', score: 40, tier: 'silver' },
+  noScope: { name: 'No Scope', desc: 'Sniper: a kill from 160 px or closer', score: 60, tier: 'silver' },
+  eagleEye: { name: 'Eagle Eye', desc: 'Sniper: a kill from 900 px or more', score: 75, tier: 'gold' },
+  reaper: { name: 'Reaper', desc: 'Sniper: three one-hit kills in one life', score: 150, tier: 'platinum' },
+  pinnedDown: { name: 'Pinned Down', desc: 'Machine gun: kill an enemy you have pinned with suppression, from 450 px or more', score: 30, tier: 'bronze' },
+  beltFed: { name: 'Belt Fed', desc: 'Machine gun: three kills from one belt', score: 75, tier: 'gold' },
+  kaboom: { name: 'Kaboom', desc: 'Kill with an explosive barrel you set off', score: 30, tier: 'bronze' },
+  chainReaction: { name: 'Chain Reaction', desc: 'One barrel chain kills two or more', score: 100, tier: 'gold' },
+  specialDelivery: { name: 'Special Delivery', desc: 'Crack open a supply drop', score: 50, tier: 'silver' },
+  liftoff: { name: 'Liftoff', desc: 'Kill with a propane tank you sent flying', score: 50, tier: 'silver' },
+  shockTherapy: { name: 'Shock Therapy', desc: 'Kill an enemy while a generator you shorted still has them shocked', score: 50, tier: 'silver' },
+  arsonist: { name: 'Arsonist', desc: 'Kill with a burning oil slick you spilled', score: 40, tier: 'bronze' },
+  picasso: { name: 'Picasso', desc: 'Splatter a paint can over an enemy', score: 25, tier: 'bronze' },
 };
 /** The streak at which each streak medal is earned. */
 export const STREAK_MEDALS: readonly (readonly [number, MedalId])[] = [[3, 'onFire'], [5, 'rampage'], [8, 'unstoppable'], [12, 'untouchable'], [20, 'legendary']];
 /** The chain of kills each multi-kill medal names, from the second kill. */
 export const MULTI_MEDALS: readonly MedalId[] = ['doubleKill', 'tripleKill', 'quadKill', 'massacre'];
-export const MEDAL_RULES = { multiMs: 4000, longShotPx: 650, pointBlankPx: 90, clutchHp: 0.2, clutchMs: 5000, closeCallHp: 0.1, closeCallMs: 6000, closeCallReset: 0.5, ghostPx: 3000 } as const;
+export const MEDAL_RULES = { multiMs: 3000, longShotPx: 650, pointBlankPx: 90, clutchHp: 0.2, clutchMs: 5000, closeCallHp: 0.1, closeCallMs: 6000, closeCallReset: 0.5, ghostPx: 6000 } as const;
 /**
  * The weapon feats, judged on the gun that fired the killing round (or blast of pellets): kills from one magazine, the
- * range, a kill in one hit from full health, a spray that had not bloomed yet, a victim pinned by suppression.
+ * range, a kill in one hit from full health at range, a spray that had not bloomed yet at range, a far victim pinned by
+ * suppression, and a kill on the move within `runAndGunMs` of the gun coming up from a sprint.
  */
 export const WEAPON_MEDALS = {
-  doubleTapKills: 2, deadeyePx: 500, twoBirdsHits: 2, longBarrelPx: 340, oneShotsForReaper: 3, noScopePx: 160, eagleEyePx: 900,
-  pinnedSuppression: 0.6, beltFedKills: 3,
+  doubleTapKills: 2, deadeyePx: 500, twoBirdsHits: 2, longBarrelPx: 400, oneShotPx: 550, oneShotsForReaper: 3, noScopePx: 160, eagleEyePx: 900,
+  pinnedSuppression: 0.95, beltFedKills: 3, runAndGunMs: 1000, disciplinedPx: 500, pinnedPx: 450,
 } as const;
 
 /**
@@ -594,7 +598,7 @@ export const WORLD = {
   crateHp: 40,
   crateScore: 10,
   killScore: 100,
-  bountyScore: 300,
+  bountyScore: 150,
   assistScore: 50,
   /** Score multiplier while your level trails the other living players' average. */
   catchUpMul: 1.5,
@@ -746,7 +750,7 @@ export const BASTION_GUN: TurretDef = {
 };
 
 export const ZOM = {
-  /** Zombie kill score is scaled by this, matching the versus levels' scale-up for medals (see `LEVELS`). */
+  /** Zombie kill score is scaled by this, since a run pays no medals, so a run climbs the same `LEVELS` over its nights. */
   levelScoreMul: 1.6,
   /** One grid cell in px; a building fills one cell and the horde's flow field runs on the same grid. */
   cell: 50,

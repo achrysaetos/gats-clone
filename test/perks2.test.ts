@@ -77,8 +77,8 @@ test('every spawn draws a fresh offer; the pick opens with it and choosePick tak
   const p = spawnAt(w, 500, 500);
   assert.equal(p.tier2Offer.length, TIER2_OFFER);
   p.level = 3;
-  assert.ok(choosePick(w, p.id, 1, 'handCannon'));
-  assert.ok(choosePick(w, p.id, 2, 'lightweight'));
+  assert.ok(choosePick(w, p.id, 2, 'handCannon'));
+  assert.ok(choosePick(w, p.id, 1, 'lightweight'));
   const pending = pendingPick(p)!;
   assert.deepEqual([pending.k === 'perk' && pending.tier, pending.k === 'perk' && pending.offer], [2, p.tier2Offer]);
   assert.deepEqual(pickOptions(pending, p.gun), p.tier2Offer);
@@ -278,9 +278,9 @@ test('Fast Hands: reload 25% faster, and an evolution refills the magazine', () 
     const world = emptyWorld();
     const x = spawnAt(world, 500, 500);
     if (perk) x.perks = { 2: perk };
-    x.level = 1;
+    x.level = 2;
     if (x.life.k === 'alive') x.life.ammo = 2;
-    assert.ok(choosePick(world, x.id, 1, 'handCannon'));
+    assert.ok(choosePick(world, x.id, 2, 'handCannon'));
     return x.life.k === 'alive' ? x.life.ammo : -1;
   };
   assert.equal(evolved('fastHands'), GUNS.handCannon.mag);

@@ -46,29 +46,40 @@ test('every gun that promises a kill in one or two hits keeps that promise throu
   assert.equal(thick.life.k, 'dead', 'two Executioner rounds drop heavy armor and Thick skin');
 });
 
-/** The level each bot life ended at in a fixed-seed FFA room of bots, so a ladder or bot change that stalls progression shows up. */
-function botLifeLevels(seed: number, map: MapId, minutes: number): number[] {
+/** A fixed-seed FFA room of bots: the level each life ended at, and each kill's life score just after it over that life's kill count. */
+function botRoom(seed: number, map: MapId, minutes: number): { levels: number[]; perKill: number[] } {
   const w = createWorld('FFA', seed, map);
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < WORLD.minPlayers; i++) bots.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
-  const levels: number[] = [];
+  const levels: number[] = [], perKill: number[] = [];
   for (let t = 0; t < minutes * 60_000; t += TICK_MS) {
     thinkBots(w, bots, r);
     step(w, TICK_MS);
+    for (const e of w.events) {
+      const p = e.e === 'kill' && e.killerId !== null && e.killerId !== e.victimId ? w.players.get(e.killerId) : undefined;
+      if (p && p.life.k === 'alive' && p.lifeKills > 0) perKill.push(p.score / p.lifeKills);
+    }
     for (const rec of w.lifeRecords.splice(0)) levels.push(levelForScore(rec.score));
   }
-  return levels;
+  return { levels, perKill };
 }
 
-test('in a room of bots, a fair share of lives reach the first evolve, the ability tier and the hunted evolve', () => {
-  // One room gives ~250 lives, about five of them hunted, so a small sample flips on unrelated balance tweaks; ten rooms (~800 lives) hold within a point.
-  const levels = Array.from({ length: 10 }, (_, i) => botLifeLevels(i + 1, ROTATION.FFA[i % ROTATION.FFA.length]!, 2)).flat();
+test('in a room of bots, the score a kill really pays (medals and catch-up included) puts the first evolve at kill 3 to 4 and the second at kill 8 to 10', () => {
+  // One room gives ~250 lives; ten rooms (~800 lives, ~800 kills) hold the median score per kill within a few points.
+  const rooms = Array.from({ length: 10 }, (_, i) => botRoom(i + 1, ROTATION.FFA[i % ROTATION.FFA.length]!, 2));
+  const levels = rooms.flatMap((room) => room.levels);
+  const perKill = rooms.flatMap((room) => room.perKill).sort((a, b) => a - b);
+  const typical = perKill[Math.floor(perKill.length / 2)]!;
+  const [first, second] = LEVELS.flatMap((l) => (l.pick?.k === 'evolve' ? [l.score / typical] : []));
   const reach = (level: number) => levels.filter((l) => l >= level).length / levels.length;
-  const [firstEvolve, hunted] = LEVELS.flatMap((l, i) => (l.pick?.k === 'evolve' ? [reach(i)] : []));
+  const firstEvolve = reach(LEVELS.findIndex((l) => l.pick?.k === 'evolve'));
   const ability = reach(LEVELS.findIndex((l) => l.pick?.k === 'perk' && l.pick.tier === 3));
-  const shares = `first evolve ${(firstEvolve * 100).toFixed(1)}%, ability ${(ability * 100).toFixed(1)}%, hunted ${(hunted * 100).toFixed(1)}% of ${levels.length} lives`;
-  assert.ok(firstEvolve >= 0.26 && ability >= 0.07 && hunted >= 0.02, shares);
+  const shares = `a kill pays ${typical.toFixed(0)} (median of ${perKill.length}): first evolve at kill ${first!.toFixed(1)}, second at kill ${second!.toFixed(1)}; `
+    + `first evolve reached by ${(firstEvolve * 100).toFixed(1)}%, ability by ${(ability * 100).toFixed(1)}% of ${levels.length} lives`;
+  assert.ok(first! >= 3 && first! <= 4 && second! >= 8 && second! <= 10, shares);
+  assert.ok(firstEvolve >= 0.03 && ability > 0, `progression has not stalled: ${shares}`);
+  assert.ok(LEVELS[1]!.pick?.k === 'perk' && first! - LEVELS[1]!.score / typical >= 1, `the attachment comes a kill or more before the first evolve: ${shares}`);
 });
 
 test('no rifle out-damages the SMG at close range', () => {

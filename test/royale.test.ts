@@ -208,7 +208,7 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
   for (let i = 0; i < 40 && drop.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.notEqual(drop.respawnAt, null);
   assert.equal(shooter.level, 1);
-  assert.deepEqual(snapshotFor(w, shooter.id).self.pending, { level: 1, k: 'evolve' });
+  assert.deepEqual(snapshotFor(w, shooter.id).self.pending, { level: 1, k: 'perk', tier: 1 });
 
   shooter.level = 5;
   shooter.score = 600;

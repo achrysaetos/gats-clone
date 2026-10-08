@@ -199,18 +199,19 @@ function weaponMedals(w: World, killer: Player, victim: Player, how: KillHow, ow
       if (range >= WEAPON_MEDALS.deadeyePx) out.push('deadeye');
       break;
     case 'smg':
-      if (life.k === 'alive' && life.lastMoveAt === w.now) out.push('runAndGun');
+      // On the move, and only just out of a sprint: the gun came up at most `runAndGunMs` ago.
+      if (life.k === 'alive' && life.lastMoveAt === w.now && w.now >= life.raiseUntil && w.now - life.raiseUntil <= WEAPON_MEDALS.runAndGunMs) out.push('runAndGun');
       break;
     case 'shotgun':
       if (range >= WEAPON_MEDALS.longBarrelPx) out.push('longBarrel');
       break;
     case 'assault': {
       const bloom = rulesOf(GUNS[how.gun]).bloom;
-      if (bloom && life.k === 'alive' && life.spray <= bloom.free) out.push('disciplined');
+      if (bloom && life.k === 'alive' && life.spray <= bloom.free && range >= WEAPON_MEDALS.disciplinedPx) out.push('disciplined');
       break;
     }
     case 'sniper':
-      if (how.oneHit) {
+      if (how.oneHit && range >= WEAPON_MEDALS.oneShotPx) {
         out.push('oneShot');
         f.oneShots++;
         if (f.oneShots === WEAPON_MEDALS.oneShotsForReaper) out.push('reaper');
@@ -219,7 +220,7 @@ function weaponMedals(w: World, killer: Player, victim: Player, how: KillHow, ow
       if (range >= WEAPON_MEDALS.eagleEyePx) out.push('eagleEye');
       break;
     case 'lmg':
-      if (how.pinned >= WEAPON_MEDALS.pinnedSuppression) out.push('pinnedDown');
+      if (how.pinned >= WEAPON_MEDALS.pinnedSuppression && range >= WEAPON_MEDALS.pinnedPx) out.push('pinnedDown');
       if (f.magKills === WEAPON_MEDALS.beltFedKills) out.push('beltFed');
       break;
   }

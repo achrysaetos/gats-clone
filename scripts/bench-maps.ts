@@ -60,10 +60,12 @@ type Tally = {
   firstContact: number[]; betweenFights: number[]; thinkMs: number[]; stepMs: number[]; tickMs: number[]; dmg: number[]; death: number[]; range: number[];
   lifeMs: number[]; fightMs: number[]; combatTicks: number; coverTicks: number; shots: number; stillShots: number;
   deaths: number; lowDeaths: number; outnumberedDeaths: number; losingDeaths: number;
+  /** Deaths of a life that had evolved its gun once (stage 1) or twice (stage 2). */
+  stage1Deaths: number; stage2Deaths: number;
 };
 const emptyTally = (): Tally => ({
   firstContact: [], betweenFights: [], thinkMs: [], stepMs: [], tickMs: [], dmg: [], death: [], range: [],
-  lifeMs: [], fightMs: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0,
+  lifeMs: [], fightMs: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0, stage1Deaths: 0, stage2Deaths: 0,
 });
 const addTally = (into: Tally, t: Tally) => {
   for (const k of Object.keys(t) as (keyof Tally)[]) {
@@ -124,6 +126,9 @@ function recordAfterStep(w: World, watch: Watch, t: Tally, respawned: readonly n
     } else if (e.e === 'kill') {
       const v = w.players.get(e.victimId);
       if (v) t.death.push(Math.round(v.x), Math.round(v.y));
+      const stage = v ? GUNS[v.gun].stage : 0;
+      if (stage === 1) t.stage1Deaths++;
+      if (stage === 2) t.stage2Deaths++;
       const life = watch.lives.get(e.victimId);
       t.deaths++;
       t.lifeMs.push(w.now - (life?.bornAt ?? 0));
@@ -147,6 +152,7 @@ const lifeReport = (t: Tally) => [
   `in cover ${pct(t.coverTicks, t.combatTicks)}`,
   `still shots ${pct(t.stillShots, t.shots)}`,
   `deaths low ${pct(t.lowDeaths, t.deaths)} outnumbered ${pct(t.outnumberedDeaths, t.deaths)} both ${pct(t.losingDeaths, t.deaths)}`,
+  `lives evolved stage 1+ ${pct(t.stage1Deaths + t.stage2Deaths, t.deaths)} stage 2 ${pct(t.stage2Deaths, t.deaths)}`,
 ].join('  ');
 
 function holdRoundOpen(w: World, banked: { red: number; blue: number }) {
