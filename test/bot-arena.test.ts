@@ -30,6 +30,25 @@ test('an engineer wall blocks bot paths while it stands and frees them once it i
   assert.ok(findPath(freed.nav, { x: 800, y: 1500 }, { x: 1300, y: 1500 }), 'and a path runs through it');
 });
 
+test('a supply drop is a solid that comes and goes: it lands in the grid without rebuilding the map\'s layout, and leaves it once broken', () => {
+  const w = emptyWorld();
+  setWalls(w, [{ x: 1000, y: 0, w: 40, h: 1400 }]);
+  const before = arenaFor(w);
+  const at = { x: 2000, y: 2000 };
+  assert.ok(isOpen(before.nav, at));
+  // As `tickAirdrops` lands one: a new crates array and a walls version.
+  const drop = { id: 9001, x: at.x - 30, y: at.y - 30, size: 60, hp: 100, respawnAt: null as number | null, drop: true as const };
+  w.crates = [...w.crates, drop];
+  w.wallsVersion++;
+  const landed = arenaFor(w);
+  assert.ok(!isOpen(landed.nav, at), 'bots path round the landed crate');
+  assert.equal(landed.cover, before.cover, 'the map\'s layout is reused, not rebuilt for one crate');
+  // As `damageCrate` breaks it: no version moves.
+  drop.respawnAt = Infinity;
+  const broken = arenaFor(w);
+  assert.ok(isOpen(broken.nav, at), 'the broken crate is no longer in the way');
+});
+
 test('a new map rebuilds the arena\'s cover', () => {
   const w = emptyWorld();
   const first = arenaFor(w);

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
-import { findPath, navGrid, type Point } from '../src/server/bot/nav.ts';
+import { addField, findPath, navGrid, walkable, type Point } from '../src/server/bot/nav.ts';
 
 const R = 24;
 
@@ -74,4 +74,20 @@ test('a search capped short of a far goal returns the walkable start of the way 
   assert.ok(Math.hypot(end.x - to.x, end.y - to.y) < Math.hypot(from.x - to.x, from.y - to.y) - 200, `ends nearer the goal: ${JSON.stringify(end)}`);
   assert.ok(Math.hypot(end.x - to.x, end.y - to.y) > 100, 'but short of it');
   assert.equal(firstClash(from, part, [wall]), null, 'clear of the wall');
+});
+
+test('a remembered route is the one a fresh search gives for the exact goal, whatever was asked before (a field route depends on the goal point, not just its cell)', () => {
+  const walls = [
+    { x: 1595, y: 1595, w: 203, h: 129 }, { x: 311, y: 877, w: 183, h: 207 }, { x: 1050, y: 988, w: 114, h: 171 }, { x: 598, y: 310, w: 123, h: 96 },
+    { x: 1491, y: 1741, w: 21, h: 80 }, { x: 818, y: 1603, w: 189, h: 70 }, { x: 1321, y: 1511, w: 105, h: 162 }, { x: 731, y: 947, w: 125, h: 38 },
+    { x: 727, y: 1408, w: 73, h: 82 }, { x: 333, y: 1362, w: 144, h: 149 }, { x: 589, y: 278, w: 57, h: 111 }, { x: 960, y: 292, w: 205, h: 102 },
+  ];
+  const grid = () => { const g = navGrid(2000, walls, 18); addField(g, { x: 1000, y: 1000 }); return g; };
+  const from = { x: 62, y: 335 }, to = { x: 1033, y: 1184 };
+  const warm = grid();
+  findPath(warm, from, { x: 1029, y: 1184 }); // the same goal cell, a few px off
+  const route = findPath(warm, from, to);
+  assert.deepEqual(route, findPath(grid(), from, to), 'the same route as a grid that was never asked');
+  let at = from;
+  for (const p of route!) { assert.ok(walkable(warm, at, p), `leg ${JSON.stringify(at)} -> ${JSON.stringify(p)} walks`); at = p; }
 });

@@ -252,3 +252,23 @@ test('a bot whose target slips out of sight for a moment keeps fighting, and giv
   assert.equal(lost(TICK_MS), 'engage', 'one tick out of sight');
   assert.notEqual(lost(1000), 'engage', 'a second out of sight');
 });
+
+test('a searching bot that hears new gunfire on a quick think turns to it at its next plan, not only if the shot lands on the planning tick', () => {
+  const w = emptyWorld();
+  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  const persona = PERSONALITIES.cautious, arena = arenaFor(w);
+  const ctx = (tick: number, strategic: boolean): IntentCtx => ({ tick, persona, role: null, band: bandFor('assault', persona), arena, rand: seeded(3), strategic, lastPlan: 90 });
+  const look = (tick: number, events: Parameters<typeof snapshotFor>[2], aware: Awareness) => {
+    const snap = snapshotFor(w, bot.id, events);
+    snap.tick = tick;
+    return perceive(snap, arena, snap.players.find((p) => p.id === bot.id)!, aware);
+  };
+  const search: Intent = { k: 'search', at: { x: 1000, y: 2500 }, giveUpAt: 1e9, since: 0, holdUntil: 0 };
+  const shot = { e: 'shot' as const, x: 1800, y: 1000, angle: 0, silenced: false, owner: 999, gun: 'pistol' as const };
+  const quick = look(96, [shot], freshAwareness());
+  const reacted = nextIntent(search, quick.view, ctx(96, false));
+  assert.equal(reacted, search, 'a quick think only reacts: the plan waits');
+  const planned = nextIntent(reacted, look(108, [], quick.awareness).view, ctx(108, true));
+  assert.equal(planned.k, 'search');
+  assert.ok(planned.k === 'search' && Math.hypot(planned.at.x - shot.x, planned.at.y - shot.y) < 100, `searches where the shot came from: ${JSON.stringify(planned)}`);
+});

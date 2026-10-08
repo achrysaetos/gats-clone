@@ -35,10 +35,18 @@ export function takeReplan(a: BotArena, tick: number): boolean {
 
 type Layout = { walls: readonly Wall[]; crates: readonly Crate[]; nav: NavGrid; cover: CoverIndex };
 
-const ARENAS = new WeakMap<World, { arena: BotArena; layout: Layout; solids: readonly Rect[]; wallsVersion: number }>();
+const ARENAS = new WeakMap<World, { arena: BotArena; layout: Layout; solids: readonly Rect[]; wallsVersion: number; drops: string }>();
 
-const sameLayout = (l: Layout, walls: readonly Wall[], crates: readonly Crate[]) =>
-  l.crates === crates && l.walls.length === walls.length && l.walls.every((wall, i) => wall === walls[i]);
+const same = <T>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+const sameLayout = (l: Layout, walls: readonly Wall[], crates: readonly Crate[]) => same(l.crates, crates) && same(l.walls, walls);
+
+/**
+ * Supply drops (an airdrop's crate, a Last Squad drop) land and break during a round, so they are solids that come and go, like barrels,
+ * not part of the map's layout: a landing would otherwise rebuild the whole grid (and file a one-off layout under its own key), and a
+ * broken one would stay a wall in the grid until the map changes. `drops` names the ones standing, since breaking one moves no version.
+ */
+const dropsStanding = (w: World) => w.crates.filter((c) => c.drop && c.respawnAt === null);
+const dropsKey = (w: World) => dropsStanding(w).map((c) => c.id).join();
 
 const sameRects = (a: readonly Rect[], b: readonly Rect[]) =>
   a.length === b.length && a.every((r, i) => { const o = b[i]!; return r === o || (r.x === o.x && r.y === o.y && r.w === o.w && r.h === o.h && r.pts === o.pts); });
@@ -46,8 +54,9 @@ const sameRects = (a: readonly Rect[], b: readonly Rect[]) =>
 export function arenaFor(w: World): BotArena {
   const cached = ARENAS.get(w);
   const version = w.wallsVersion + w.doorsVersion;
-  if (cached && cached.arena.version === version) return cached.arena;
-  if (cached && cached.wallsVersion === w.wallsVersion) {
+  const drops = dropsKey(w);
+  if (cached && cached.arena.version === version && cached.drops === drops) return cached.arena;
+  if (cached && cached.wallsVersion === w.wallsVersion && cached.drops === drops) {
     // Only a door leaf moved: the same grid, cover and solids, with the leaves where they are now.
     const arena = { ...cached.arena, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), replans: { tick: -1, left: 0 } };
     ARENAS.set(w, { ...cached, arena });
@@ -55,15 +64,16 @@ export function arenaFor(w: World): BotArena {
   }
   const size = MAPS[w.map].size;
   const mapWalls = w.walls.filter((wall) => !wall.built && wall.door === undefined);
-  const layout = cached && sameLayout(cached.layout, mapWalls, w.crates) ? cached.layout : mapLayout(size, mapWalls, w.crates, w.map);
+  const mapCrates = w.crates.filter((c) => !c.drop);
+  const layout = cached && sameLayout(cached.layout, mapWalls, mapCrates) ? cached.layout : mapLayout(size, mapWalls, mapCrates, w.map);
   const barrels = [...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect), ...w.props.filter(propSolid).map(propRect)];
-  const solids: Rect[] = [...w.walls.filter((wall) => wall.built), ...barrels];
+  const solids: Rect[] = [...w.walls.filter((wall) => wall.built), ...barrels, ...dropsStanding(w).map(crateRect)];
   // A door swinging changes the version every tick it moves, but not the nav grid (doors are not in it): keep the one built for the same solids.
   const nav = cached && cached.layout === layout && sameRects(cached.solids, solids) ? cached.arena.nav : solids.length ? withSolids(layout.nav, solids, WORLD.playerRadius) : layout.nav;
   const arena: BotArena = {
     size, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), barrels, cover: layout.cover, replans: { tick: -1, left: 0 }, doors: mapDoors(w.map), nav,
   };
-  ARENAS.set(w, { arena, layout, solids, wallsVersion: w.wallsVersion });
+  ARENAS.set(w, { arena, layout, solids, wallsVersion: w.wallsVersion, drops });
   return arena;
 }
 
