@@ -792,7 +792,7 @@ function drawExtract(hud: Hud, ext: ExtView) {
   const { pw, row, pad } = EXT_CHECK;
   const hacking = ext.case.k === 'hacking' ? ext.case : null;
   const ph = pad * 2 + 18 + steps.length * row + (hacking ? 12 : 0) + 20;
-  const x = EDGE, y = EDGE;
+  const x = EDGE, y = EDGE + 4 * VITALS.row + SPACE.sm;
   panel(ctx, x, y, pw, ph);
   let ty = y + pad + 8;
   text(ctx, `${role === 'attack' ? 'ATTACK' : role === 'defend' ? 'DEFEND' : 'EXTRACTION'} · ROUND ${ext.round}`, x + pad, ty, TYPE.label, role === 'attack' ? EXT_LOOK.attack : EXT_LOOK.terminal, 'left', 800);
