@@ -194,7 +194,7 @@ export const FEEL = {
     damage: 60,
     /** How long the slow lasts: a beat you feel and others see, shorter than any staggering gun's next shot, so it opens a moment rather than a kill. */
     ms: 200,
-    /** Walking speed while staggered. */
+    /** Walking speed while staggered: half pace is a slow the eye catches, and the target still moves and can still dash. */
     speedMul: 0.5,
     /** From one stagger's start, no new one lands for this long, so a staggered player walks at full speed at least three quarters of the time whatever hits them. */
     immuneMs: 800,
