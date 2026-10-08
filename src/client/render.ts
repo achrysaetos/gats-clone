@@ -31,6 +31,7 @@ import { buildingSolid, standsUp, coreSolid, crateSolid, createGroundCache, curb
 import { drawDust, drawVignette } from './ambience.ts';
 import { moodOf, setMood } from './mood.ts';
 import { drawNightFx } from './nightfx.ts';
+import { setLightClock } from './lighting.ts';
 import { lightBackdrop, lightWorld } from './lightfeed.ts';
 import { drawFixtures } from './fixtures.ts';
 import { floorPlanOf } from './floor.ts';
@@ -147,6 +148,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (decor) drawFixtures(ctx, decor, view, fx);
   const airClock = snap.airdrop ? serverNow(s.snaps, now) : null;
   const theme = themeOf(mapOf(snap.match.map)?.theme), themeMap = mapOf(snap.match.map);
+  // The frame's light clock first: a theme's lamps are stamped with it, and on a slow frame (a software canvas) last frame's clock would let them lapse.
+  setLightClock(now);
   if (theme?.under && themeMap) theme.under(ctx, now, view, themeMap);
   // Ambient life (ambient.ts): critters on the floor and wall tops, drawn under every body; the flyers come after the roofs.
   drawAmbientGround(ctx, { snap, s, now, view, dark });
