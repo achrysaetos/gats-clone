@@ -38,7 +38,7 @@ function pitchOf(gun: GunId): number {
   return pitchOf(from) * (BRANCH_PITCH[stage - 1]?.[EVOLUTIONS[from].indexOf(gun)] ?? 1);
 }
 
-const retune = (layer: Layer, k: number, stage: number): Layer => {
+export const retune = (layer: Layer, k: number, stage: number): Layer => {
   const loud = { ...layer, gain: Math.min(1, layer.gain * (1 + 0.12 * stage)) };
   return loud.src === 'tone'
     ? { ...loud, pitchHz: [loud.pitchHz[0] * k, loud.pitchHz[1] * k] }
@@ -115,20 +115,39 @@ export const SOUNDS: Record<SoundId, Recipe> = {
 
 /** The recordings `npm run art:sounds` ships, named as in art/sounds.json. Several cues share one at different rates. */
 export const SAMPLE_IDS = [
-  'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'reload',
+  'pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg', 'silenced', 'launcher', 'reload', 'crack', 'sub',
   'hit', 'hurt', 'boom', 'slash', 'kill', 'bounty', 'levelup', 'evolve', 'perk', 'click',
   'bite', 'splat', 'wallHit', 'wallUp', 'wallDown', 'coreHit', 'horn', 'chime', 'revived', 'knock', 'ring', 'cannon', 'mortar',
 ] as const;
 export type SampleId = (typeof SAMPLE_IDS)[number];
-export type SampleLayer = { sample: SampleId; rate: number; gain: number };
+export type SampleLayer = { sample: SampleId; rate: number; gain: number; delayMs?: number };
 
-const layer = (sample: SampleId, rate = 1, gain = 1): SampleLayer => ({ sample, rate, gain });
+const layer = (sample: SampleId, rate = 1, gain = 1, delayMs?: number): SampleLayer => ({ sample, rate, gain, ...(delayMs !== undefined && { delayMs }) });
 
-/** A blast gun keeps its class's report and adds the launcher's thump, the way its synth recipe adds a low thump. */
+/** The crack every report opens on, brighter on light guns. */
+const CRACK: Record<WeaponId, SampleLayer> = {
+  pistol: layer('crack', 1.1, 0.5), smg: layer('crack', 1.25, 0.4), assault: layer('crack', 1, 0.5),
+  shotgun: layer('crack', 0.8, 0.6), sniper: layer('crack', 0.9, 0.65), lmg: layer('crack', 0.95, 0.5),
+};
+/** The low body under a report: a heavy gun shoves, a light one has none and flutters. */
+const SUB: Partial<Record<WeaponId, SampleLayer>> = {
+  assault: layer('sub', 1.5, 0.3), lmg: layer('sub', 1.3, 0.45), shotgun: layer('sub', 1, 0.9), sniper: layer('sub', 0.85, 0.8),
+};
+
+/**
+ * A report is a transient, the class recording as its body, and a low layer by weight, all pitched together by branch.
+ * The tail is not a recording: the page sends each report into a space (see `placeCue`). A blast gun adds the launcher's thump.
+ */
 function shotLayers(gun: GunId): SampleLayer[] {
   const g = GUNS[gun];
-  const shot = layer(g.base, pitchOf(gun));
-  return g.blast ? [shot, layer('launcher', 1, 0.8)] : [shot];
+  const k = pitchOf(gun);
+  const sub = SUB[g.base];
+  return [
+    { ...CRACK[g.base], rate: CRACK[g.base].rate * k },
+    layer(g.base, k),
+    ...(sub ? [{ ...sub, rate: sub.rate * k }] : []),
+    ...(g.blast ? [layer('launcher', 1, 0.8)] : []),
+  ];
 }
 
 function shotSamples(): Record<`shot:${GunId}`, readonly SampleLayer[]> {
@@ -183,21 +202,95 @@ export function voiceFor(id: SoundId, decoded: (sample: SampleId) => boolean, ra
   return { kind: 'sample', layers: layers.map((l) => ({ ...l, rate: l.rate * jitter })) };
 }
 
-const AUDIBLE_RADII = 1.2;
+export const MAX_VOICES = 32;
+/** Footsteps, brass and impacts give way first: they take a voice only while this many stay free for shots and hits. */
+const FILLER_HEADROOM = 8;
 
-/** How loud and where in the stereo field a cue lands for a listener, or null when it is out of earshot. */
-export function placeCue(cue: SoundCue, listener: { x: number; y: number }, viewRadius: number): { gain: number; pan: number } | null {
-  if (cue.self) return { gain: cue.gain, pan: 0 };
+/** How far off a cue carries, in view radii; how much of it rings into the space around it; and whether it gives way when voices run short. */
+export type Trait = { reach: number; tail: number; filler: boolean };
+
+const SHOT_TAIL: Record<WeaponId, number> = { pistol: 0.3, smg: 0.25, assault: 0.4, shotgun: 0.55, sniper: 0.7, lmg: 0.45 };
+const TRAIT = (reach: number, tail = 0, filler = false): Trait => ({ reach, tail, filler });
+
+export function traitsOf(id: SoundId): Trait {
+  if (id === 'shot:silenced') return TRAIT(0.8, 0.08);
+  if (id.startsWith('shot:')) return TRAIT(1.2, SHOT_TAIL[GUNS[id.slice(5) as GunId].base]);
+  if (id === 'boom') return TRAIT(1.2, 0.8);
+  if (id === 'turret:cannon' || id === 'turret:mortar') return TRAIT(1.2, 0.5);
+  if (id.startsWith('turret:')) return TRAIT(1.2, 0.25);
+  return TRAIT(1.2);
+}
+
+/** Whether a cue of `layers` voices may start with `active` already sounding. */
+export const admits = (id: SoundId, layers: number, active: number): boolean =>
+  active + layers <= MAX_VOICES - (traitsOf(id).filler ? FILLER_HEADROOM : 0);
+
+type Rect = { x: number; y: number; w: number; h: number };
+/** Under a roof the tail is short and close; in the open it rolls off the buildings. */
+export type Space = 'open' | 'roof';
+export type Hearing = { listener: { x: number; y: number }; viewRadius: number; roofs: readonly Rect[] };
+/** `cutoffHz` is the low pass distance puts on a cue, null when it arrives unfiltered; `wet` is how loud it rings into `space`. */
+export type Placed = { gain: number; pan: number; cutoffHz: number | null; space: Space; wet: number };
+
+const ROOF_MIN = 100;
+/** A roof is an overhead piece broad both ways: a gantry beam or a pipe run overhead leaves the sky open. */
+export const roofsOf = (overhead: readonly Rect[]): Rect[] => overhead.filter((p) => p.w >= ROOF_MIN && p.h >= ROOF_MIN);
+const under = (roofs: readonly Rect[], x: number, y: number) => roofs.some((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+
+/** Closer than this share of a cue's reach it arrives bright; from there to the edge its low pass falls from `FULL_HZ` to `FAR_HZ`. */
+const NEAR_SHARE = 0.2;
+const FULL_HZ = 18000;
+const FAR_HZ = 900;
+
+/** How loud, where in the stereo field and in what space a cue lands for a listener, or null when it is out of earshot. */
+export function placeCue(cue: SoundCue, hearing: Hearing): Placed | null {
+  const { listener, viewRadius, roofs } = hearing;
+  const { reach, tail } = traitsOf(cue.id);
+  const roofed = under(roofs, listener.x, listener.y) || (!cue.self && under(roofs, cue.x, cue.y));
+  const space: Space = roofed ? 'roof' : 'open';
+  if (cue.self) return { gain: cue.gain, pan: 0, cutoffHz: null, space, wet: tail * cue.gain };
   const dx = cue.x - listener.x;
-  const falloff = Math.max(0, 1 - Math.hypot(dx, cue.y - listener.y) / (viewRadius * AUDIBLE_RADII)) ** 2;
+  const share = Math.hypot(dx, cue.y - listener.y) / (viewRadius * reach);
+  const falloff = Math.max(0, 1 - share) ** 2;
   if (falloff <= 0) return null;
-  return { gain: falloff * cue.gain, pan: Math.max(-1, Math.min(1, dx / viewRadius)) * 0.8 };
+  const far = Math.max(0, (share - NEAR_SHARE) / (1 - NEAR_SHARE));
+  return {
+    gain: falloff * cue.gain,
+    pan: Math.max(-1, Math.min(1, dx / viewRadius)) * 0.8,
+    cutoffHz: far > 0 ? FULL_HZ * (FAR_HZ / FULL_HZ) ** far : null,
+    space,
+    // The dry sound falls off faster than its tail, so a far gun is mostly echo.
+    wet: tail * cue.gain * Math.sqrt(falloff),
+  };
+}
+
+/** Each space's tail: how long it takes to die away and the slaps off walls before it. */
+export const SPACES: Record<Space, { decayS: number; echoes: readonly { ms: number; gain: number }[] }> = {
+  open: { decayS: 1.6, echoes: [{ ms: 95, gain: 0.5 }, { ms: 230, gain: 0.32 }, { ms: 410, gain: 0.2 }] },
+  roof: { decayS: 0.35, echoes: [{ ms: 11, gain: 0.45 }, { ms: 23, gain: 0.3 }] },
+};
+
+/** A stereo impulse response for `space`: its slaps, then noise dying away to -60 dB over `decayS`. `random` is in [0, 1). */
+export function impulse(space: Space, sampleRate: number, random: () => number): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
+  const { decayS, echoes } = SPACES[space];
+  const n = Math.ceil(decayS * sampleRate);
+  const channels: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] = [new Float32Array(n), new Float32Array(n)];
+  channels.forEach((data, c) => {
+    for (let i = 0; i < n; i++) data[i] = (random() * 2 - 1) * 0.35 * 10 ** ((-3 * i) / n);
+    // The two ears hear each slap a hair apart, which widens the tail.
+    for (const e of echoes) {
+      const at = Math.floor(((e.ms + c * 3) / 1000) * sampleRate);
+      for (let i = 0; i < 48 && at + i < n; i++) data[at + i]! += (random() * 2 - 1) * e.gain * (1 - i / 48);
+    }
+  });
+  return channels;
 }
 
 /** Each 100 hp the core loses sounds once, so a crowd chewing on it reads as a steady alarm rather than a buzz. */
 const CORE_HIT_STEP = 100;
 
-export type SoundCue = { x: number; y: number; self: boolean; gain: number }
+/** `delayMs` starts a cue that long after it is played; `rate` pitches it, slower for heavier. */
+export type SoundCue = { x: number; y: number; self: boolean; gain: number; delayMs?: number; rate?: number }
   & ({ id: 'hurt'; damageFrac: number } | { id: Exclude<SoundId, 'hurt'> });
 
 export const shotCue = (gun: GunId, silenced: boolean, at: { x: number; y: number }, self: boolean): SoundCue =>

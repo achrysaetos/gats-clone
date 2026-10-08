@@ -31,7 +31,8 @@ import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
-import { soundsFor, type SoundCue } from './sfx.ts';
+import { roofsOf, soundsFor, type SoundCue } from './sfx.ts';
+import { mapLooks } from './world/pieces.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
 import { addStop, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
 import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
@@ -301,7 +302,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: M
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   noteOwnShotSound(cues);
-  audio.play(cues, s.lastSelf, viewRadius);
+  audio.play(cues, { listener: s.lastSelf, viewRadius, roofs: roofsOf(mapLooks(s.map).overhead) });
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
 

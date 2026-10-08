@@ -134,6 +134,8 @@
     "assault": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.5, "gainDb": -2 },
     "sniper": { "source": "fs-405win", "start": 0.065, "length": 0.9, "gainDb": 0 },
     "lmg": { "source": "fs-sniper-shot", "start": 0.03, "length": 0.4, "gainDb": -2 },
+    "crack": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.05, "gainDb": -2, "highpassHz": 2000, "note": "the transient every report opens on" },
+    "sub": { "source": "fs-20-gauge", "start": 0.045, "length": 0.5, "gainDb": -1, "lowpassHz": 200, "note": "the low body under heavy reports" },
     "silenced": { "source": "oga-silencers", "member": "Silencers - 1.wav", "start": 0.02, "length": 0.35, "gainDb": -6 },
     "launcher": { "source": "fs-grenade-launcher", "start": 0.015, "length": 0.4, "gainDb": -2 },
     "reload": { "source": "fs-9mm-load", "start": 0.55, "length": 0.4, "gainDb": -8 },

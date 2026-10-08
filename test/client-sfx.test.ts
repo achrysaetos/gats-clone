@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { EVOLUTIONS, GUN_IDS, GUNS } from '../src/shared/defs.ts';
-import { placeCue, RATE_JITTER, SAMPLE_IDS, SAMPLES, SOUNDS, soundsFor, voiceFor, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
+import { impulse, placeCue, RATE_JITTER, roofsOf, SAMPLE_IDS, SAMPLES, SOUNDS, soundsFor, voiceFor, type Hearing, type SampleId, type SoundCue, type SoundId } from '../src/client/sfx.ts';
 import type { BuildingView, GameEvent, PlayerView, RunView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const ME = 'Me';
@@ -170,7 +170,8 @@ const sampleOf = (id: SoundId, decoded: (s: SampleId) => boolean = ALL, random =
 
 test('a cue plays its synth recipe until every recording it needs has decoded', () => {
   assert.deepEqual(voiceFor('shot:pistol', () => false, MID), { kind: 'synth', recipe: SOUNDS['shot:pistol'] });
-  assert.deepEqual(sampleOf('shot:pistol', (s) => s === 'pistol').map((l) => l.sample), ['pistol']);
+  assert.equal(voiceFor('shot:pistol', (s) => s === 'pistol', MID).kind, 'synth', 'the body alone is not the layered report');
+  assert.deepEqual(sampleOf('shot:pistol', (s) => s === 'pistol' || s === 'crack').map((l) => l.sample), ['crack', 'pistol']);
   const blast = GUN_IDS.find((g) => GUNS[g].blast)!;
   assert.equal(voiceFor(`shot:${blast}`, (s) => s !== 'launcher', MID).kind, 'synth', 'half a layered sound is not played');
 });
@@ -182,17 +183,26 @@ test('every cue has a recording, and every shipped recording is used by some cue
 });
 
 test('each gun plays its class recording, evolved guns pitch it up or down by branch, and no two guns sound alike', () => {
-  const shot = (g: (typeof GUN_IDS)[number]) => sampleOf(`shot:${g}`)[0]!;
-  for (const g of GUN_IDS) assert.equal(shot(g).sample, GUNS[g].base);
-  for (const g of GUN_IDS.filter((id) => !GUNS[id].from)) assert.equal(shot(g).rate, 1, `${g} plays its recording as recorded`);
+  const body = (g: (typeof GUN_IDS)[number]) => sampleOf(`shot:${g}`).find((l) => l.sample === GUNS[g].base)!;
+  for (const g of GUN_IDS) assert.ok(body(g), `${g} plays its class recording`);
+  for (const g of GUN_IDS.filter((id) => !GUNS[id].from)) assert.equal(body(g).rate, 1, `${g} plays its recording as recorded`);
   for (const g of GUN_IDS) {
     const [low, high] = EVOLUTIONS[g];
-    if (low && high) assert.ok(shot(low).rate < shot(g).rate && shot(g).rate < shot(high).rate, `${g}'s branches sit either side of it`);
+    if (low && high) assert.ok(body(low).rate < body(g).rate && body(g).rate < body(high).rate, `${g}'s branches sit either side of it`);
   }
   const keys = GUN_IDS.map((g) => JSON.stringify(sampleOf(`shot:${g}`)));
   assert.equal(new Set(keys).size, GUN_IDS.length);
   for (const g of GUN_IDS.filter((id) => GUNS[id].blast)) assert.ok(sampleOf(`shot:${g}`).some((l) => l.sample === 'launcher'), `${g} adds the launcher thump`);
   assert.deepEqual(sampleOf('shot:silenced').map((l) => l.sample), ['silenced']);
+});
+
+test('a report opens on a crack over its body, and only heavy guns add the low layer, heaviest on the shotgun and sniper', () => {
+  const layers = (g: (typeof GUN_IDS)[number]) => sampleOf(`shot:${g}`);
+  for (const g of GUN_IDS) assert.equal(layers(g)[0]!.sample, 'crack', `${g} opens on the crack`);
+  const sub = (g: (typeof GUN_IDS)[number]) => layers(g).find((l) => l.sample === 'sub')?.gain ?? 0;
+  assert.equal(sub('pistol'), 0);
+  assert.equal(sub('smg'), 0, 'the SMG flutters with no low body');
+  for (const light of ['assault', 'lmg'] as const) for (const heavy of ['shotgun', 'sniper'] as const) assert.ok(sub(heavy) > sub(light), `${heavy} shoves harder than ${light}`);
 });
 
 test('each play nudges the pitch by at most the jitter, the same for every layer of a cue', () => {
@@ -207,16 +217,51 @@ test('each play nudges the pitch by at most the jitter, the same for every layer
   }
 });
 
+const open = (x = 0, y = 0, roofs: Hearing['roofs'] = []): Hearing => ({ listener: { x, y }, viewRadius: 900, roofs });
+
 test('a cue is louder near you, panned to its side, silent past earshot, and centred at full volume when it is yours', () => {
-  const me = { x: 0, y: 0 };
   const cue = (x: number, self = false): SoundCue => ({ id: 'boom', x, y: 0, self, gain: 1 });
-  const near = placeCue(cue(100), me, 900)!, far = placeCue(cue(600), me, 900)!;
+  const near = placeCue(cue(100), open())!, far = placeCue(cue(600), open())!;
   assert.ok(near.gain > far.gain);
   assert.ok(near.pan > 0 && far.pan > near.pan, 'to the right');
-  assert.ok(placeCue(cue(-300), me, 900)!.pan < 0, 'to the left');
-  assert.equal(placeCue(cue(2000), me, 900), null);
-  assert.deepEqual(placeCue({ ...cue(2000, true), gain: 0.7 }, me, 900), { gain: 0.7, pan: 0 });
-  assert.ok(placeCue(cue(1000), me, 1200) !== null, 'a wider view hears further');
+  assert.ok(placeCue(cue(-300), open())!.pan < 0, 'to the left');
+  assert.equal(placeCue(cue(2000), open()), null);
+  const mine = placeCue({ ...cue(2000, true), gain: 0.7 }, open())!;
+  assert.deepEqual([mine.gain, mine.pan], [0.7, 0]);
+  assert.ok(placeCue(cue(1000), { ...open(), viewRadius: 1200 }) !== null, 'a wider view hears further');
+});
+
+test('distance filters a gun: close shots arrive bright, farther ones lose their highs, and your own is never filtered', () => {
+  const at = (x: number, self = false) => placeCue({ id: 'shot:assault', x, y: 0, self, gain: 1 }, open())!;
+  assert.equal(at(80).cutoffHz, null);
+  const mid = at(500).cutoffHz!, far = at(950).cutoffHz!;
+  assert.ok(mid < 18000 && far < mid && far < 2000, `500 away cuts at ${mid.toFixed(0)} Hz, 950 away at ${far.toFixed(0)} Hz`);
+  assert.equal(at(950, true).cutoffHz, null);
+});
+
+test('a gun rings into the space around it: a far one is mostly tail, a heavy gun rings longer than a light one, a silencer barely rings', () => {
+  const at = (id: Exclude<SoundId, 'hurt'>, x: number) => placeCue({ id, x, y: 0, self: false, gain: 1 }, open())!;
+  const wetShare = (p: { gain: number; wet: number }) => p.wet / p.gain;
+  assert.ok(wetShare(at('shot:assault', 900)) > 2 * wetShare(at('shot:assault', 100)), 'distance leaves the tail and takes the dry sound');
+  assert.ok(at('shot:sniper', 300).wet > at('shot:smg', 300).wet);
+  assert.ok(at('shot:silenced', 300).wet < at('shot:pistol', 300).wet / 2);
+  assert.equal(at('click', 300).wet, 0, 'interface sounds stay dry');
+});
+
+test('the tail echoes in the open and stays short under a roof, whether the roof is over the shooter or over you', () => {
+  const roof = { x: 1000, y: 1000, w: 200, h: 200 };
+  const shot = (x: number, self = false): SoundCue => ({ id: 'shot:shotgun', x, y: 1100, self, gain: 1 });
+  assert.equal(placeCue(shot(700), open(600, 1100, [roof]))!.space, 'open');
+  assert.equal(placeCue(shot(1100), open(600, 1100, [roof]))!.space, 'roof', 'shooter indoors');
+  assert.equal(placeCue(shot(700), open(1100, 1100, [roof]))!.space, 'roof', 'listener indoors');
+  assert.equal(placeCue(shot(1100, true), open(1100, 1100, [roof]))!.space, 'roof', 'your own shot indoors');
+  const ir = (space: 'open' | 'roof') => impulse(space, 48000, Math.random)[0].length;
+  assert.ok(ir('roof') < ir('open') / 3, 'the roofed tail dies away in a fraction of the open one');
+});
+
+test('only overhead pieces broad both ways count as a roof: beams and pipes leave the sky open', () => {
+  const roof = { x: 0, y: 0, w: 200, h: 200 }, beam = { x: 0, y: 0, w: 600, h: 50 }, pipes = { x: 0, y: 0, w: 400, h: 25 };
+  assert.deepEqual(roofsOf([roof, beam, pipes]), [roof]);
 });
 
 test('the shipped sample manifest names one existing file for exactly the recordings the game asks for', () => {

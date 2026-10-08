@@ -7,12 +7,12 @@ Every sound is CC0 1.0 (public domain dedication). Credit is given as thanks, no
 
 | Sample | Author | Source | Licence |
 | --- | --- | --- | --- |
-| shotgun | michorvath | [20 gauge shotgun gunshot](https://freesound.org/people/michorvath/sounds/427595/) | CC0-1.0 |
+| shotgun, sub | michorvath | [20 gauge shotgun gunshot](https://freesound.org/people/michorvath/sounds/427595/) | CC0-1.0 |
 | sniper | Jon285 | [405Win.wav](https://freesound.org/people/Jon285/sounds/49513/) | CC0-1.0 |
 | reload | michorvath | [9mm pistol load and chamber](https://freesound.org/people/michorvath/sounds/427593/) | CC0-1.0 |
 | pistol | michorvath | [9mm pistol shot](https://freesound.org/people/michorvath/sounds/427592/) | CC0-1.0 |
 | smg | michorvath | [AR15 pistol shot](https://freesound.org/people/michorvath/sounds/427598/) | CC0-1.0 |
-| assault | michorvath | [AR15 rifle shot](https://freesound.org/people/michorvath/sounds/427596/) | CC0-1.0 |
+| assault, crack | michorvath | [AR15 rifle shot](https://freesound.org/people/michorvath/sounds/427596/) | CC0-1.0 |
 | boom | unfa | [Grenade Explosion SFX (medium-sized, meaty, realistic)](https://freesound.org/people/unfa/sounds/609587/) | CC0-1.0 |
 | launcher | LeMudCrab | [Grenade Launcher](https://freesound.org/people/LeMudCrab/sounds/163458/) | CC0-1.0 |
 | mortar | qubodup | [M-327 Mortar Shots.flac](https://freesound.org/people/qubodup/sounds/187542/) | CC0-1.0 |
