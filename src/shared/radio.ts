@@ -39,7 +39,7 @@ export function cycleStation(current: StationId | null, withDefault: boolean): S
 export const roundKeyOf = (snap: { match: { roundEndsAt: number | null }; royale?: { round: number } }): number | null => snap.match.roundEndsAt ?? snap.royale?.round ?? null;
 
 /** Fewest and most hidden radios in a round, and the least distance between two of them. */
-export const HIDDEN_RADIOS = { min: 2, max: 4, gap: 900 } as const;
+export const HIDDEN_RADIOS = { min: 6, max: 8, gap: 900, minGap: 600 } as const;
 
 const mulberry = (seed: number) => {
   let a = seed >>> 0;
@@ -63,10 +63,13 @@ export function hiddenRadios(mapId: string, roundKey: number): { x: number; y: n
   const order = pool.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [order[i], order[j]] = [order[j]!, order[i]!]; }
   const out: { x: number; y: number }[] = [];
-  for (const i of order) {
-    const [x, y] = pool[i]!;
-    if (out.every((o) => Math.hypot(o.x - x, o.y - y) >= HIDDEN_RADIOS.gap)) out.push({ x, y });
-    if (out.length >= want) break;
+  // Spread them out: first only spots `gap` apart, then, if the map's pool can't fit that many, ones `minGap` apart.
+  for (const gap of [HIDDEN_RADIOS.gap, HIDDEN_RADIOS.minGap]) {
+    for (const i of order) {
+      if (out.length >= want) break;
+      const [x, y] = pool[i]!;
+      if (out.every((o) => Math.hypot(o.x - x, o.y - y) >= gap)) out.push({ x, y });
+    }
   }
   return out;
 }

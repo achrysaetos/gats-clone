@@ -114,7 +114,20 @@ test('hidden radios are the same for every client of a round and move between ro
     const sets = new Set<string>();
     for (let round = 1; round <= 24; round++) sets.add(JSON.stringify(hiddenRadios(id, round * 90_000 + 17)));
     assert.ok(sets.size >= 20, `${id}: rounds differ (${sets.size} of 24 distinct)`);
-    for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) assert.ok(Math.hypot(a[i]!.x - a[j]!.x, a[i]!.y - a[j]!.y) >= HIDDEN_RADIOS.gap, `${id}: spread out`);
+    for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) assert.ok(Math.hypot(a[i]!.x - a[j]!.x, a[i]!.y - a[j]!.y) >= HIDDEN_RADIOS.minGap, `${id}: spread out`);
+  }
+});
+
+test('every versus map gets at least six hidden radios a round, spread across the map', () => {
+  for (const id of VERSUS_MAPS) {
+    for (let round = 1; round <= 40; round++) {
+      const set = hiddenRadios(id, round * 61_000 + 3);
+      assert.ok(set.length >= 6 && set.length <= HIDDEN_RADIOS.max, `${id} round ${round}: ${set.length} radios`);
+      for (let i = 0; i < set.length; i++) for (let j = i + 1; j < set.length; j++) assert.ok(Math.hypot(set[i]!.x - set[j]!.x, set[i]!.y - set[j]!.y) >= HIDDEN_RADIOS.minGap, `${id} round ${round}: spread out`);
+      // Not all in one half of the map.
+      const xs = set.map((p) => p.x), ys = set.map((p) => p.y);
+      assert.ok(Math.max(...xs) - Math.min(...xs) > 2000 || Math.max(...ys) - Math.min(...ys) > 2000, `${id} round ${round}: across the map`);
+    }
   }
   assert.notDeepEqual(hiddenRadios('plaza', 5), hiddenRadios('oldtown', 5));
 });
