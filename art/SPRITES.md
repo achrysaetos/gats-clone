@@ -35,6 +35,19 @@ One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the pain
 
 `SOLDIER` in `catalog.ts` holds the frame layout. The gun stays its own sprite: the aim, recoil and reload poses keep the hands on the grip (x 12.5) and fore-end (x 21.5) of a gun drawn at the origin. Recoil frame 1 matches a gun drawn at full kick (`RECOIL`), frame 2 at half.
 
+## The zombies
+
+`sprites/zombies.py` builds every kind on one rig and one anatomy in units of the kind's radius. `PLANS` holds each kind's proportions, pose targets and features (shirt cover and colour, scrap plates, wrist cuffs), merged over `BASE`; `EXTRAS` adds the parts only one kind has. Each kind is one standing pose, `zombie.<kind>` at 16 facings, base layer only, with the catalog boxes, dirs and scale unchanged.
+
+- From straight above a hunched body shows its back, so the back carries the detail. `Back` gives points and normals on a body ellipsoid (the chest, the brute's slab, the colossus's hump), and rips, ribs, plates and spikes are laid on it.
+- Materials follow the soldier: low roughness with clear coat on skin, ink on silhouette edges, crevice AO, and the same 1 px dark outline.
+- walker: hunched, both arms reaching ahead (one higher), a dark torn shirt with skin, raw flesh and ribs showing, a ragged sleeve, a hanging jaw and a torn scalp.
+- runner: thin, bare back with shoulder blades, flank ribs and a wound, thrown 48 degrees forward with the arms swept back past the hips.
+- plated: a heavier walker in bolted scrap armour: skull cap, pauldrons, two riveted back plates and bracers.
+- bloater: a gut swollen past the hips with weeping sores, eight glossy veined sacs over the back, short reaching arms.
+- brute: a slab of shoulder the head sinks into, gashes and a harness strap across it, long knuckle arms with iron cuffs.
+- colossus: the brute's slab grown huge, a hump with three steel plates driven into raw flesh, bone spikes up the ridge, a club arm.
+
 ## Iteration log
 
 - 2026-10-07. Eevee cannot start headless here (no libEGL), so Cycles CPU it is: about 0.4 to 1.5 s a frame at sprite sizes.
@@ -56,6 +69,10 @@ One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the pain
 - Zombies on the same rig. Brute and Colossus first came out about 1.4 times their collision circle; trimmed shoulder width and arm spread so they stay near 1.25 times.
 - Timing, 16 samples on 4 shared CPU cores (load 3 to 4 from other jobs). A one-facing test of all soldier segments took 60 to 90 s (about 1 s per layer render). The full bake rendered 1217 frames in 1586 s (26 min): torso 672 renders in 377 s, legs 288 in 182 s (each legs frame renders a second contact pass), shadow 16 in 13 s, zombies 96 frames in 283 s (the Colossus alone 129 s), and the unchanged props and effects the rest. Kept 16 samples: denoised frames showed no noise at game scale, and the whole bake stays under half an hour.
 - Atlas: 1217 frames on three 2048x2048 pages, 2.87 MB of WebP (830 KB, 1187 KB, 924 KB) plus 215 KB of JSON, against 1.63 MB and 72 KB before. Baking armour once per facing instead of per torso frame saved about 1 MB (estimated from per-frame WebP sizes of one facing).
+- 2026-10-08. Zombies lifted beside the plate soldier. The bake had been failing since `ZOMBIE_LOOK` lost `armor` and `shoulders`; those now live in the body plans.
+  - First pass: rips covered the whole shirt, so no cloth read; shrank them to a quarter of the back. Brute and colossus back details sat inside the shoulder slab and hump, so `Back` now also wraps those. Bulky orange cuffs became thin iron shackles. Hair patches read as black masks at game scale and went.
+  - Long fingers (about 0.48 radius) pushed reaching hands past the frame at the 22.5 degree facings next to east and west; shortened them to about 0.3 radius and pulled the walker's and colossus's hands in slightly instead of growing the boxes.
+  - Timing, 16 samples on 4 shared cores at load 9 to 14. All 96 zombie frames (16 facings) took 393 s and 424 s in two runs: walker 1.7 to 2.3 s a frame, runner 1.4, plated 2.7 to 4.5, bloater 3.6 to 5.1, brute 4.5 to 6.5, colossus 6.7 to 10.6. Old and new models baked back to back at 4 facings took 73.6 s (old), 79.5 s (new) and 112.0 s (old), so the extra geometry costs nothing that stands out from the load.
 
 ## Known gaps
 
