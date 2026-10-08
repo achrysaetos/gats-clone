@@ -78,7 +78,7 @@ function playOutLockstep(inputs: Partial<InputState>[], { clientSolids, ability,
       if (moved > 1e-9) corrections.push(moved);
     }
   });
-  return { server: { x: p.x, y: p.y, dash: p.life.k === 'alive' ? p.life.dash : null, shove: p.life.k === 'alive' ? p.life.shove : null }, pred, maxCorrection, corrections, downed: p.life.k === 'downed' };
+  return { server: { x: p.x, y: p.y, dash: p.life.k === 'alive' ? p.life.dash : null, shove: p.life.k === 'alive' ? p.life.shove : null, staggerMs: p.life.k === 'alive' ? Math.max(0, p.life.staggerUntil - w.now) : 0 }, pred, maxCorrection, corrections, downed: p.life.k === 'downed' };
 }
 
 const route: Partial<InputState>[] = [
@@ -105,10 +105,10 @@ test('a misprediction converges to the server position and the drawn player glid
   assert.ok(Math.hypot(drawn.x - server.x, drawn.y - server.y) < 0.01, `drawn ${drawn.x},${drawn.y} vs server ${server.x},${server.y}`);
 });
 
-const at = (x: number, y: number): Prediction => ({ ...NO_PREDICTION, afterNewest: { x, y, dash: null, shove: null }, beforeNewest: { x, y } });
+const at = (x: number, y: number): Prediction => ({ ...NO_PREDICTION, afterNewest: { x, y, dash: null, shove: null, staggerMs: 0 }, beforeNewest: { x, y } });
 
 test('a small correction leaves the drawn player in place, then decays toward the server', () => {
-  const pred = reconcile(at(100, 100), { x: 106, y: 100, dash: null, shove: null }, 0, [], 300, 3000);
+  const pred = reconcile(at(100, 100), { x: 106, y: 100, dash: null, shove: null, staggerMs: 0 }, 0, [], 300, 3000);
   assert.deepEqual(drawnPosition(pred, 0, TICK_MS), { x: 100, y: 100 });
   const later = drawnPosition(decayCorrection(pred, 60), 0, TICK_MS)!;
   assert.ok(later.x > 102 && later.x < 106, `partway after 60ms (x=${later.x})`);
@@ -116,7 +116,7 @@ test('a small correction leaves the drawn player in place, then decays toward th
 });
 
 test('a respawn-sized correction snaps', () => {
-  const pred = reconcile(at(100, 100), { x: 2000, y: 1500, dash: null, shove: null }, 0, [], 300, 3000);
+  const pred = reconcile(at(100, 100), { x: 2000, y: 1500, dash: null, shove: null, staggerMs: 0 }, 0, [], 300, 3000);
   assert.deepEqual(drawnPosition(pred, 0, TICK_MS), { x: 2000, y: 1500 });
 });
 
@@ -176,6 +176,16 @@ test('a shotgun blast that shoves the local player is predicted as the server mo
   assert.deepEqual(pred.afterNewest, server);
   const blind = playOutLockstep(route, { shooter, blindToShove: true });
   assert.ok(blind.corrections.length > corrections.length, `a client that ignored the shove would be corrected ${blind.corrections.length} times`);
+});
+
+test('a sniper round that staggers the walking local player is predicted as the server slows them', () => {
+  const route: Partial<InputState>[] = [...Array(50).fill({ up: true }), ...Array(12).fill({})];
+  const shooter = { at: { x: 400, y: 500 }, gun: 'sniper' as const, firesOn: [4, 50] };
+  const still = playOutLockstep(route);
+  const { server, pred, corrections } = playOutLockstep(route, { shooter });
+  assert.ok(server.y - still.server.y > 15, `the staggers slowed the server player (y ${server.y.toFixed(1)} against ${still.server.y.toFixed(1)} unhit)`);
+  assert.equal(corrections.length, shooter.firesOn.length, `one correction per hit and none while the stagger lasts (${corrections.map((c) => c.toFixed(1))})`);
+  assert.deepEqual(pred.afterNewest, server);
 });
 
 test('in a zombies run the squad\'s walls and the core stop the predicted player where the server stops them', () => {

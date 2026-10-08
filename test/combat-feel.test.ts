@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FEEL, GUNS, WORLD, type GunId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
+import { damagePlayer } from '../src/shared/sim/combat.ts';
+import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, press, run, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -67,4 +69,66 @@ test('a shove pushes along the round\'s flight, so a blast from the north drives
   run(w, 400);
   assert.ok(b.y - 560 > 30, `pushed south ${(b.y - 560).toFixed(1)}px`);
   assert.ok(Math.abs(b.x - 500) < 6, `barely sideways (${(b.x - 500).toFixed(1)}px)`);
+});
+
+/** A heavy round from the west landing on `b` now, as a sniper's would. */
+const heavyHit = (w: World, b: Player, damage = GUNS.sniper.damage) =>
+  damagePlayer(w, b, damage, { attacker: null, team: null, label: 'test', piercing: false, via: 'bullet', fromX: b.x - 300, fromY: b.y, hit: { x: b.x - R, y: b.y, dir: 0 }, round: { gun: 'sniper', travelled: 300, range: GUNS.sniper.range } });
+
+test('a sniper round slows its target\'s walk for a moment, and everyone sees the stagger', () => {
+  const w = emptyWorld();
+  const watcher = spawnAt(w, 300, 300);
+  const b = spawnAt(w, 500, 700, { kind: 'human' });
+  press(w, b, { down: true });
+  step(w, TICK_MS);
+  const y0 = b.y;
+  step(w, TICK_MS);
+  const stride = b.y - y0;
+  heavyHit(w, b);
+  assert.equal(snapshotFor(w, watcher.id).players.find((p) => p.id === b.id)?.staggered, true, 'others see the stagger');
+  const y1 = b.y;
+  step(w, TICK_MS);
+  assert.ok(Math.abs(b.y - y1 - stride * FEEL.stagger.speedMul) < 1e-6, `walked ${(b.y - y1).toFixed(2)}px against a stride of ${stride.toFixed(2)}`);
+  run(w, FEEL.stagger.ms);
+  const y2 = b.y;
+  step(w, TICK_MS);
+  assert.ok(Math.abs(b.y - y2 - stride) < 1e-6, 'back to full pace once it wears off');
+  assert.equal(snapshotFor(w, watcher.id).players.find((p) => p.id === b.id)?.staggered, undefined);
+});
+
+test('only a heavy hit staggers: a point-blank blast does, a far one and an SMG burst do not', () => {
+  const staggers = (gun: GunId, gap: number, shots = 1) => {
+    const { w, a, b } = duel(gun, gap);
+    let seen = false;
+    for (let i = 0; i < shots; i++) {
+      if (a.life.k === 'alive') a.life.nextFireAt = 0;
+      fire(w, a);
+      for (let t = 0; t < 100; t += TICK_MS) { seen ||= b.life.k === 'alive' && b.life.staggerUntil > w.now; step(w, TICK_MS); }
+    }
+    return seen;
+  };
+  assert.ok(staggers('shotgun', 60), 'a point-blank blast staggers');
+  assert.ok(!staggers('shotgun', 260), 'a blast near its range does not');
+  assert.ok(!staggers('smg', 100, 8), 'SMG rounds never do');
+  assert.ok(staggers('handCannon', 200), 'a hand cannon round does');
+});
+
+test('heavy hits every tick never stun-lock: each stagger is followed by a stretch at full pace', () => {
+  const w = emptyWorld();
+  const b = spawnAt(w, 500, 500, { kind: 'human' });
+  const staggered: boolean[] = [];
+  for (let t = 0; t < 4000; t += TICK_MS) {
+    if (b.life.k !== 'alive') break;
+    b.life.hp = 1e9;
+    heavyHit(w, b);
+    staggered.push(b.life.staggerUntil > w.now);
+    step(w, TICK_MS);
+  }
+  assert.equal(staggered.length, Math.ceil(4000 / TICK_MS), 'the target stood through it all');
+  const share = staggered.filter(Boolean).length / staggered.length;
+  assert.ok(share > 0.15 && share <= FEEL.stagger.ms / FEEL.stagger.immuneMs + 0.05, `staggered ${(share * 100).toFixed(0)}% of the time`);
+  const gaps: number[] = [];
+  staggered.forEach((on, i) => { if (!on && staggered[i - 1]) gaps.push(0); if (!on && gaps.length) gaps[gaps.length - 1]!++; });
+  gaps.pop();
+  assert.ok(gaps.length >= 3 && gaps.every((n) => n * TICK_MS >= FEEL.stagger.immuneMs - FEEL.stagger.ms - TICK_MS), `full-pace stretches between staggers: ${gaps.map((n) => Math.round(n * TICK_MS))}ms`);
 });

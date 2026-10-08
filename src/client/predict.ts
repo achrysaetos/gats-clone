@@ -36,7 +36,7 @@ export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crate
 export function selfMotion(snap: Snapshot): { at: Motion | null; speed: number } {
   const me = snap.players.find((p) => p.id === snap.self.id);
   const crawling = !!me?.downed;
-  return { at: me && (me.alive || crawling) ? { x: me.x, y: me.y, dash: snap.self.dash, shove: snap.self.shove ?? null } : null, speed: snap.self.speed * (crawling ? ZOM.crawlMul : 1) };
+  return { at: me && (me.alive || crawling) ? { x: me.x, y: me.y, dash: snap.self.dash, shove: snap.self.shove ?? null, staggerMs: snap.self.stagger ?? 0 } : null, speed: snap.self.speed * (crawling ? ZOM.crawlMul : 1) };
 }
 
 export function predictAbility(pred: Prediction, input: InputState, latest: Snapshot): PredictedAbility | null {

@@ -1,4 +1,4 @@
-import { WORLD } from '../defs.ts';
+import { FEEL, WORLD } from '../defs.ts';
 import type { Dash, InputState, Shove } from '../protocol.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -76,7 +76,8 @@ function resolveCircle(solids: readonly Rect[], nx: number, ny: number, r: numbe
 }
 
 type MoveKeys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
-export type Motion = { x: number; y: number; dash: Dash | null; shove: Shove | null };
+/** `staggerMs` is how long walking stays slowed by a stagger from the start of the next step. */
+export type Motion = { x: number; y: number; dash: Dash | null; shove: Shove | null; staggerMs: number };
 
 const keyAxes = (keys: MoveKeys) => ({ mx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0), my: (keys.down ? 1 : 0) - (keys.up ? 1 : 0) });
 
@@ -133,7 +134,9 @@ export function knifeLunge<T extends Point>(solids: readonly Rect[], from: Point
 }
 
 export function moveStep(solids: readonly Rect[], from: Motion, keys: MoveKeys, speed: number, dtMs: number, size: number): Motion {
-  const walked = stride(solids, from, keys, speed, dtMs, size);
+  const slowed = Math.min(dtMs, from.staggerMs);
+  const pace = speed * (1 - ((1 - FEEL.stagger.speedMul) * slowed) / dtMs);
+  const walked = { ...stride(solids, from, keys, pace, dtMs, size), staggerMs: from.staggerMs - slowed };
   const { shove } = from;
   if (!shove) return walked;
   const s = Math.min(dtMs, shove.leftMs) / 1000;

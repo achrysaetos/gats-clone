@@ -68,7 +68,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const life = p.life;
   if (life.k === 'downed') {
     p.angle = p.input.angle;
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null, shove: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null, shove: null, staggerMs: 0 }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     return;
@@ -82,7 +82,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p);
   if (moving || life.shove) {
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, shove: life.shove }, inp, moveSpeed(w, p), dtMs, MAPS[w.map].size);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, shove: life.shove, staggerMs: Math.max(0, life.staggerUntil - (w.now - dtMs)) }, inp, moveSpeed(w, p), dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     life.dash = m.dash;

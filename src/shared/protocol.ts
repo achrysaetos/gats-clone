@@ -58,6 +58,8 @@ export type PlayerView = {
   spawnShield?: true;
   /** 0..1 through a reload while one runs, so everyone sees the open window. */
   reload?: number;
+  /** Slowed by a heavy hit right now. */
+  staggered?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
@@ -109,6 +111,8 @@ export type SelfView = {
   dash: Dash | null;
   /** The shove still to play out from rounds that hit you, so prediction moves you with it. */
   shove?: Shove;
+  /** Ms left of a stagger slowing your walk, so prediction slows you with it. */
+  stagger?: number;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;

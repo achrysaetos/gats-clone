@@ -188,6 +188,17 @@ export const FEEL = {
     /** A shove plays out over this long, about four ticks, so others see a push rather than a jump and the target keeps walking through it. */
     ms: 120,
   },
+  /** A heavy hit slows its target's walk; it never touches a dash, which stays the way out. */
+  stagger: {
+    /** The raw damage one round, or one blast's pellets landing together, must carry: every sniper round, the hand cannon line and slugs pass it, and a shotgun blast does once half its pellets land, at close range. */
+    damage: 60,
+    /** How long the slow lasts: a beat you feel and others see, shorter than any staggering gun's next shot, so it opens a moment rather than a kill. */
+    ms: 200,
+    /** Walking speed while staggered. */
+    speedMul: 0.5,
+    /** From one stagger's start, no new one lands for this long, so a staggered player walks at full speed at least three quarters of the time whatever hits them. */
+    immuneMs: 800,
+  },
 } as const;
 
 export function byGun<T>(f: (id: GunId) => T): Record<GunId, T> {

@@ -101,7 +101,7 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
   const s = effectiveStats(p);
   return {
     k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
-    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, shove: null, pressUntil: -Infinity, hits: [],
+    lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, shove: null, staggerUntil: -Infinity, blow: null, pressUntil: -Infinity, hits: [],
   };
 }
 

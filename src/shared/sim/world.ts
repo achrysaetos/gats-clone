@@ -27,6 +27,9 @@ export type Life =
     shieldUntil: number;
     dash: Dash | null;
     shove: Shove | null;
+    staggerUntil: number;
+    /** The rounds one attacker landed this tick, summed raw, so a shotgun's pellets count as one blast toward a stagger. */
+    blow: { by: number; tick: number; damage: number } | null;
     pressUntil: number;
     /** Health each attacker took off this life and when, for assists and for who a self-inflicted death credits. */
     hits: { by: number; at: number; dealt: number }[];

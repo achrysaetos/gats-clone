@@ -59,7 +59,17 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (a && a.id !== victim.id) life.hits.push({ by: a.id, at: w.now, dealt });
   w.events.push({ e: 'dmg', attacker: a?.id ?? null, victim: victim.id, amount: round1(dealt), x: victim.x, y: victim.y, kind: 'player', ...(src.hit && { hit: src.hit }) });
   if (life.hp <= 0) { kill(w, victim, a, src.label); return; }
-  if (src.round && src.hit) shove(life, src.round, src.hit.dir, raw);
+  if (!src.round || !src.hit) return;
+  shove(life, src.round, src.hit.dir, raw);
+  stagger(w, life, a?.id ?? -1, raw);
+}
+
+/** Enough damage from one attacker in one tick slows the victim, unless a recent stagger still guards them. */
+function stagger(w: World, life: Extract<Player['life'], { k: 'alive' }>, by: number, damage: number) {
+  const blow = life.blow?.by === by && life.blow.tick === w.tick ? life.blow : (life.blow = { by, tick: w.tick, damage: 0 });
+  blow.damage += damage;
+  const { damage: heavy, ms, immuneMs } = FEEL.stagger;
+  if (blow.damage >= heavy && w.now >= life.staggerUntil - ms + immuneMs) life.staggerUntil = w.now + ms;
 }
 
 /** A landed round pushes its victim along its flight, harder the heavier the round and the closer its gun. */
