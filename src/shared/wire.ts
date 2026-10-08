@@ -1,5 +1,5 @@
 import type { Cos } from './cosmetics.ts';
-import { STICKY_KEYS, type PlayerView, type Snapshot, type SnapshotWire } from './protocol.ts';
+import { MINIMAP_EVERY, STICKY_KEYS, type PlayerView, type Snapshot, type SnapshotWire } from './protocol.ts';
 
 const DECIMALS: Readonly<Record<string, number>> = { angle: 2, push: 2, progress: 2, reloadFrac: 2, suppression: 2, settle: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
 
@@ -13,8 +13,13 @@ const stringify = (v: unknown) => JSON.stringify(v, round);
 
 export function makeSnapshotEncoder(): (snap: Snapshot) => string {
   const lastSent = new Map<string, string>();
+  let sinceMinimap = MINIMAP_EVERY;
   return (snap) => {
     const wire: SnapshotWire = { ...snap, minimap: snap.minimap.map((m) => ({ ...m, x: Math.round(m.x), y: Math.round(m.y) })) };
+    // A mark appearing or going rides at once; one only moving waits its turn.
+    const marks = String(snap.minimap.length);
+    if (++sinceMinimap < MINIMAP_EVERY && lastSent.get('minimap') === marks) delete wire.minimap;
+    else { sinceMinimap = 0; lastSent.set('minimap', marks); }
     // Cosmetics change rarely, so they ride apart from the players and are resent only when the set in view changes.
     if (snap.players.some((p) => p.cos)) {
       const cos: Record<number, Cos> = {};
@@ -40,8 +45,9 @@ export function fillSnapshot(wire: SnapshotWire, last: Snapshot | null): Snapsho
   const buildings = wire.buildings ?? last?.buildings, run = wire.run ?? last?.run, royale = wire.royale ?? last?.royale;
   const barrels = wire.barrels ?? last?.barrels, props = wire.props ?? last?.props, targets = wire.targets ?? last?.targets, doors = wire.doors ?? last?.doors;
   const airdrop = wire.airdrop !== undefined ? wire.airdrop : last?.airdrop;
+  const minimap = wire.minimap ?? last?.minimap ?? [];
   const { cos: sentCos, ...rest } = wire;
   const known: Record<number, Cos> = sentCos ?? Object.fromEntries((last?.players ?? []).filter((p) => p.cos).map((p) => [p.id, p.cos!]));
   const players = Object.keys(known).length ? wire.players.map((p) => (known[p.id] ? { ...p, cos: known[p.id] } : p)) : wire.players;
-  return { ...rest, players, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(barrels && { barrels }), ...(props && { props }), ...(targets && { targets }), ...(doors && { doors }), ...(airdrop !== undefined && { airdrop }) };
+  return { ...rest, minimap, players, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(barrels && { barrels }), ...(props && { props }), ...(targets && { targets }), ...(doors && { doors }), ...(airdrop !== undefined && { airdrop }) };
 }

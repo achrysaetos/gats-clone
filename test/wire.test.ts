@@ -59,3 +59,25 @@ test('a client that never received a sticky field cannot rebuild the snapshot', 
   const { crates: _, ...wire } = snapshotFor(w, p.id);
   assert.equal(fillSnapshot(wire, null), null);
 });
+
+test('the minimap rides every third snapshot, or at once when a mark appears or goes, and the client keeps the last', async () => {
+  const { MINIMAP_EVERY } = await import('../src/shared/protocol.ts');
+  const w = createWorld('TDM', 3, ROTATION.TDM[0]);
+  const p = spawnAt(w, 1500, 1500, { name: 'Mover', team: 'red' });
+  const mate = spawnAt(w, 1800, 1500, { name: 'Mate', team: 'red' });
+  const encode = makeSnapshotEncoder();
+  let last: Snapshot | null = null, sent = 0;
+  for (let tick = 0; tick < 60; tick++) {
+    press(w, mate, { right: true });
+    step(w, TICK_MS);
+    const snap = snapshotFor(w, p.id);
+    const wire = JSON.parse(encode(snap)) as SnapshotWire;
+    if (wire.minimap) sent++;
+    const filled: Snapshot = fillSnapshot(wire, last)!;
+    const fresh = fullForm(snap).minimap;
+    assert.equal(filled.minimap.length, fresh.length, `tick ${tick}`);
+    if (wire.minimap) assert.deepEqual(filled.minimap, fresh);
+    last = filled;
+  }
+  assert.ok(sent >= 60 / MINIMAP_EVERY && sent <= 60 / MINIMAP_EVERY + 2, `minimap sent ${sent}/60`);
+});

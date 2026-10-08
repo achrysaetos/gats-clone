@@ -306,7 +306,9 @@ export type Snapshot = {
 export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'airdrop', 'targets', 'doors'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 /** `cos` maps player id to what they wear, sent only when it changes; `fillSnapshot` folds it onto each `PlayerView.cos`. */
-export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>> & { cos?: Record<number, Cos> };
+/** `minimap` rides at most every `MINIMAP_EVERY`th snapshot (a 10 Hz map needs no 30 Hz feed); a snapshot without it keeps the last. */
+export type SnapshotWire = Omit<Snapshot, StickyKey | 'minimap'> & Partial<Pick<Snapshot, StickyKey | 'minimap'>> & { cos?: Record<number, Cos> };
+export const MINIMAP_EVERY = 3;
 
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */

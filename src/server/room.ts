@@ -18,6 +18,7 @@ import { NO_PROFILES, type Profiles } from './profiles.ts';
 import { applyRangeMsg, isPractice } from './range.ts';
 import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { thinkBots } from './bot/tick.ts';
+import { botsDue } from './botcadence.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
@@ -46,8 +47,12 @@ export type Room = {
   connect(ws: WebSocket): void;
   tick(): void;
   info(): RoomInfo;
+  /** Dev counters for netcode measurement: per-human input backlog, bytes and snapshots sent and skipped since the last call. */
+  netStats(): RoomNetStats;
   close(): void;
 };
+
+export type RoomNetStats = { id: string; mode: ModeId; humans: number; players: number; queues: number[]; bytes: number; snaps: number; skipped: number; ticked: number };
 
 /** A kill event names the gun by its label; its class credits the weapon mastery tracks. */
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g]));
@@ -64,6 +69,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   let wallsVersion = world.wallsVersion;
   /** The room's radio: the squad's in Zombies, the lone player's in the range. Null until someone tunes it (each map then plays its own track). */
   let radioStation: StationId | null = null;
+  const net = { bytes: 0, snaps: 0, skipped: 0, ticked: 0, botMs: 0, stepMs: 0, advanceMs: 0, sendMs: 0 };
 
   const send = (ws: WebSocket, msg: ServerMsg) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg)); };
   const joined = () => [...clients.values()].filter((c): c is Extract<Client, { k: 'joined' }> => c.k === 'joined');
@@ -380,8 +386,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const events: GameEvent[] = [];
     for (let i = 0; i < stepsPerTick; i++) {
       applyInputs();
-      thinkBots(world, bots, botRand);
+      const t0 = performance.now();
+      const due = botsDue(world, bots);
+      thinkBots(world, due, botRand);
+      for (const [botId, mem] of due) if (bots.has(botId)) bots.set(botId, mem);
+      const t1 = performance.now();
       step(world, TICK_MS);
+      net.botMs += t1 - t0; net.stepMs += performance.now() - t1;
       events.push(...world.events);
       if (!practice) creditProfiles(world.events);
       creditLives();
@@ -437,7 +448,10 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     tick() {
       // A room nobody is playing in stands still: its bots would otherwise burn the server's whole CPU share around the clock.
       if (joined().length === 0) return;
+      net.ticked++;
+      const a0 = performance.now();
       const events = advance();
+      net.advanceMs += performance.now() - a0;
       if (world.royale !== seatedRoyale) {
         seatedRoyale = world.royale;
         balanceBots();
@@ -448,6 +462,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         for (const c of joined()) send(c.ws, { t: 'walls', worldSize: MAPS[world.map].size, map: world.map, walls });
       }
       const now = Date.now();
+      const s0 = performance.now();
       for (const c of joined()) {
         const ws = c.ws;
         if (ws.readyState !== ws.OPEN) continue;
@@ -457,14 +472,28 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
           const since = backlogSince.get(ws) ?? now;
           backlogSince.set(ws, since);
           if (now - since >= limits.stallMs) ws.terminate();
+          net.skipped++;
           continue;
         }
         backlogSince.delete(ws);
-        ws.send(c.encode(snapshotFor(world, c.playerId, events, c.aspect)));
+        const data = c.encode(snapshotFor(world, c.playerId, events, c.aspect));
+        net.bytes += data.length;
+        net.snaps++;
+        ws.send(data);
       }
+      net.sendMs += performance.now() - s0;
     },
     info() {
       return { id, mode, players: world.players.size, humans: joined().length };
+    },
+    netStats() {
+      const sizeOf = (v: unknown) => (Array.isArray(v) ? v.length : v instanceof Map || v instanceof Set ? v.size : null);
+      const sizes: Record<string, number> = {};
+      for (const [k, v] of Object.entries(world)) { const n = sizeOf(v); if (n !== null) sizes[k] = n; }
+      for (const p of world.players.values()) for (const [k, v] of Object.entries(p)) { const n = sizeOf(v); if (n !== null) sizes[`p.${k}`] = (sizes[`p.${k}`] ?? 0) + n; }
+      const out = { id, mode, humans: joined().length, players: world.players.size, queues: joined().map((c) => c.inputs.waiting.length), buffered: joined().map((c) => c.ws.bufferedAmount), botMemKb: Math.round(JSON.stringify([...bots.values()]).length / 1024), sizes, ...net };
+      net.bytes = net.snaps = net.skipped = net.ticked = net.botMs = net.stepMs = net.advanceMs = net.sendMs = 0;
+      return out;
     },
     close() {
       for (const ws of clients.keys()) ws.close();

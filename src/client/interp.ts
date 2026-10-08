@@ -7,8 +7,24 @@ const TELEPORT_DIST = 250;
 const KEEP_MS = 1000;
 const CLOCK_CATCH_UP_RATE = 0.1;
 const CLOCK_FALL_BACK_RATE = 0.005;
+/**
+ * The server's clock can fall behind the wall clock for good: an overloaded server (a throttled CPU, a long pause) drops the
+ * ticks it could not run. Arrivals then come later and later against the estimate, and the slow fall-back above would leave
+ * the render clock seconds ahead of every snapshot (others frozen at the extrapolation cap, effects released early). When even
+ * the earliest arrival of the last `CLOCK_WINDOW_MS` came later than the estimate, it is the server's clock that moved, not
+ * jitter, so the estimate falls back to it by `CLOCK_SLOWDOWN_RATE` a tick's worth of real time (snapshots from a slowed
+ * server come further apart, so a per-snapshot rate would fall behind the slower it got).
+ */
+const CLOCK_WINDOW_MS = 500;
+const CLOCK_SLOWDOWN_RATE = 0.1;
+/** However the estimate falls, the offset drawn with follows it at no more than this many ms per ms: the drawn moment slows down, but never stops or runs backward. */
+const CLOCK_SLEW = 0.9;
 
-export type SnapBuffer = { snaps: readonly Snapshot[]; serverClockOffset: number | null };
+/** One snapshot's arrival: when it came and the server-clock offset it implied. */
+type ClockSample = { at: number; sample: number };
+/** A fall-back of the drawn offset in progress: it was `from` at `at` and falls at `CLOCK_SLEW` toward `serverClockOffset`. */
+type Slew = { from: number; at: number };
+export type SnapBuffer = { snaps: readonly Snapshot[]; serverClockOffset: number | null; clock?: readonly ClockSample[]; slew?: Slew | null };
 
 export const EMPTY_BUFFER: SnapBuffer = { snaps: [], serverClockOffset: null };
 
@@ -21,14 +37,28 @@ export function pushSnap(buf: SnapBuffer, snap: Snapshot, arrivedAt: number): Sn
   if (newest && snap.tick <= newest.tick) return buf;
   const sample = serverTime(snap) - arrivedAt;
   const prev = buf.serverClockOffset;
-  const serverClockOffset = prev === null
-    ? sample
-    : prev + (sample - prev) * (sample > prev ? CLOCK_CATCH_UP_RATE : CLOCK_FALL_BACK_RATE);
+  const lastAt = buf.clock?.at(-1)?.at ?? arrivedAt;
+  const clock = [...(buf.clock ?? []), { at: arrivedAt, sample }].filter((c) => c.at >= arrivedAt - CLOCK_WINDOW_MS);
+  const earliest = Math.max(...clock.map((c) => c.sample));
+  // A burst after a stall arrives all at once: the window must span real time before it can say the server's clock moved.
+  const spans = clock[0]!.at <= arrivedAt - CLOCK_WINDOW_MS / 2;
+  const serverClockOffset = prev === null ? sample
+    : sample > prev ? prev + (sample - prev) * CLOCK_CATCH_UP_RATE
+    : spans && earliest < prev ? prev + (earliest - prev) * Math.min(1, CLOCK_SLOWDOWN_RATE * Math.max(1, (arrivedAt - lastAt) / TICK_MS))
+    : prev + (sample - prev) * CLOCK_FALL_BACK_RATE;
+  const drawn = drawnOffset(buf, arrivedAt);
+  const slew = prev !== null && serverClockOffset < drawn ? { from: drawn, at: arrivedAt } : null;
   const snaps = [...buf.snaps, snap].filter((s) => serverTime(s) >= serverTime(snap) - KEEP_MS);
-  return { snaps, serverClockOffset };
+  return { snaps, serverClockOffset, clock, slew };
 }
 
-export const renderTime = (buf: SnapBuffer, now: number) => now + (buf.serverClockOffset ?? 0) - INTERP_DELAY_MS;
+/** The server-clock offset the page draws with at `now`: the estimate, or on the way down to it, slewing. */
+function drawnOffset(buf: SnapBuffer, now: number): number {
+  const est = buf.serverClockOffset ?? 0;
+  return buf.slew ? Math.max(est, buf.slew.from - Math.max(0, now - buf.slew.at) * CLOCK_SLEW) : est;
+}
+
+export const renderTime = (buf: SnapBuffer, now: number) => now + drawnOffset(buf, now) - INTERP_DELAY_MS;
 /** The server's clock right now, not delayed for interpolation, or null before the first snapshot. */
 export const serverNow = (buf: SnapBuffer, now: number): number | null => (buf.serverClockOffset === null ? null : now + buf.serverClockOffset);
 

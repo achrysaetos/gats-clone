@@ -4,7 +4,7 @@ import { worldToScreen, type Camera } from './camera.ts';
 import { kicks } from './effects.ts';
 import { NUMBER_MS, numberHeight } from './feedback.ts';
 import { drawnBuildChips, drawnPanels, drawnReticleGap, forceVitals } from './hud.ts';
-import { newestSnap } from './interp.ts';
+import { newestSnap, renderTime, TICK_MS as SNAP_TICK_MS } from './interp.ts';
 import { CALLOUT_MS } from './moments.ts';
 import { drawnTags, shadowBakes } from './render.ts';
 import type { SoundCue } from './sfx.ts';
@@ -22,6 +22,7 @@ type DrawnRound = { id: number; owner: number; own: boolean; gun: GunId | null; 
 type FeelCue = 'round' | 'flash' | 'kick' | 'sound' | 'reject' | 'late';
 
 const FRAME_COST_CAP = 4000;
+let maxCorrection = 0;
 const frameCosts: number[] = [];
 let drawnSelf = { x: 0, y: 0, at: 0, correction: 0 };
 let drawnOthers: { id: number; x: number; y: number; screen: { x: number; y: number } }[] = [];
@@ -55,6 +56,7 @@ export function noteFrameCost(ms: number) {
 export function noteFrame(s: Session, snap: Snapshot, cam: Camera, selfAngle: number | null, now: number) {
   if (!DEV) return;
   drawnSelf = { ...s.lastSelf, at: now, correction: Math.hypot(s.predict.smoothingCorrection.x, s.predict.smoothingCorrection.y) };
+  maxCorrection = Math.max(maxCorrection, drawnSelf.correction);
   drawnOthers = snap.players.filter((p) => p.id !== s.myId).map((p) => ({ id: p.id, x: p.x, y: p.y, screen: worldToScreen(cam, p) }));
   noteReloads(s, snap, now);
   noteFirstRounds(snap, s.myId, selfAngle);
@@ -130,5 +132,21 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { forceVitals, drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger, reloadLog: () => reloadLog.splice(0) } });
+  /** The netcode's clocks and queues right now, and the largest prediction correction drawn since the last call. */
+  const net = () => {
+    const s = page.session();
+    const snap = s && newestSnap(s.snaps);
+    const now = performance.now();
+    const out = s && {
+      seq: s.seq, ack: snap?.ackSeq ?? null, offset: s.snaps.serverClockOffset, buffered: s.snaps.snaps.length, tick: snap?.tick ?? null,
+      // How far the drawn moment trails the newest snapshot (positive) or runs past it (negative), in ms.
+      renderBehindNewest: snap && s.snaps.serverClockOffset !== null ? snap.tick * SNAP_TICK_MS - renderTime(s.snaps, now) : null,
+      pending: s.predict.pending.length, maxCorrection, pendingFx: s.pendingFx.length, pendingShots: s.pendingShots.length, effects: s.effects.length, rounds: s.rounds.length,
+      // Every collection the session holds, so a long run shows which one grows.
+      sizes: Object.fromEntries(Object.entries(s).flatMap(([k, v]) => { const n = Array.isArray(v) ? v.length : v instanceof Map || v instanceof Set ? v.size : v && typeof v === 'object' && 'list' in v && Array.isArray((v as { list: unknown[] }).list) ? (v as { list: unknown[] }).list.length : null; return n === null ? [] : [[k, n]]; })),
+    };
+    maxCorrection = 0;
+    return out;
+  };
+  Object.assign(window, { skirmishDev: { net, forceVitals, drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger, reloadLog: () => reloadLog.splice(0) } });
 }

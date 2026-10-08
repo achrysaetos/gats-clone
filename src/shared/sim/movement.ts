@@ -46,12 +46,25 @@ export function segmentEntersCircleAt(px: number, py: number, dx: number, dy: nu
   return t >= 0 && t <= 1 ? t : null;
 }
 
+/**
+ * Where (0..1) the segment (p, p + d) enters the rect, or null. The slab test runs for every wall against every round, sight
+ * line and step, so it allocates nothing: written over a tuple loop it built three arrays a call, and on a map of 500+ walls
+ * that garbage alone was a seventh of the server's time (and its GC pauses stalled whole ticks).
+ */
 export function segmentEntersRectAt(px: number, py: number, dx: number, dy: number, r: Rect): number | null {
   let t0 = 0, t1 = 1;
-  for (const [p, d, lo, hi] of [[px, dx, r.x, r.x + r.w], [py, dy, r.y, r.y + r.h]] as const) {
-    if (d === 0) { if (p < lo || p > hi) return null; continue; }
-    let a = (lo - p) / d, b = (hi - p) / d;
-    if (a > b) [a, b] = [b, a];
+  if (dx === 0) { if (px < r.x || px > r.x + r.w) return null; }
+  else {
+    let a = (r.x - px) / dx, b = (r.x + r.w - px) / dx;
+    if (a > b) { const s = a; a = b; b = s; }
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+    if (t0 > t1) return null;
+  }
+  if (dy === 0) { if (py < r.y || py > r.y + r.h) return null; }
+  else {
+    let a = (r.y - py) / dy, b = (r.y + r.h - py) / dy;
+    if (a > b) { const s = a; a = b; b = s; }
     t0 = Math.max(t0, a);
     t1 = Math.min(t1, b);
     if (t0 > t1) return null;

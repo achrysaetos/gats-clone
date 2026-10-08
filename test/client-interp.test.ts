@@ -142,3 +142,50 @@ test('zombies glide between snapshots like players, and a fresh one appears wher
   assert.ok(Math.abs(drawn![0]![2] - 30) < 1e-9, `walker drawn between ticks 7 and 8 (x=${drawn![0]![2]})`);
   assert.deepEqual(drawn![1], [51, 1, 900, 900, 10]);
 });
+
+/** How far the drawn moment runs past the newest snapshot, in ms: past the extrapolation cap, others stand frozen. */
+const aheadOfNewest = (buf: SnapBuffer, now: number) => renderTime(buf, now) - newestSnap(buf)!.tick * TICK_MS;
+
+test('a server whose clock fell to half speed is followed, the drawn moment slowing with it but never running backward', () => {
+  let buf = EMPTY_BUFFER;
+  let tick = 0, at = 0, lastRender = -Infinity;
+  for (; tick < 60; tick++, at += TICK_MS) buf = pushSnap(buf, walking(tick), at);
+  // An overloaded server runs one tick for every two the wall clock allows: each snapshot is one tick on but two late.
+  const start = at, ahead: number[] = [];
+  for (let frame = start; frame < start + 8000; frame += 16) {
+    while (at <= frame) { buf = pushSnap(buf, walking(tick++), at); at += 2 * TICK_MS; }
+    const t = renderTime(buf, frame);
+    assert.ok(t >= lastRender, `the drawn moment ran backward at ${frame.toFixed(0)}ms (${lastRender.toFixed(0)} -> ${t.toFixed(0)})`);
+    lastRender = t;
+    if ((frame - start) % 2000 < 16) ahead.push(Math.round(aheadOfNewest(buf, frame)));
+  }
+  // Half speed is as bad as an overload gets; the estimate trails it by its window, but no longer drifts seconds ahead.
+  assert.ok(ahead.slice(1).every((ms) => ms < 600), `drawn this far past the newest snapshot every 2s: ${ahead}`);
+});
+
+test('a server crawling at a fifth of real time is still followed, the drawn moment never running backward', () => {
+  let buf = EMPTY_BUFFER;
+  let tick = 0, at = 0, lastRender = -Infinity;
+  for (; tick < 60; tick++, at += TICK_MS) buf = pushSnap(buf, walking(tick), at);
+  const start = at, ahead: number[] = [];
+  for (let frame = start; frame < start + 10_000; frame += 16) {
+    while (at <= frame) { buf = pushSnap(buf, walking(tick++), at); at += 5 * TICK_MS; }
+    const t = renderTime(buf, frame);
+    assert.ok(t >= lastRender, `the drawn moment ran backward at ${frame.toFixed(0)}ms`);
+    lastRender = t;
+    if ((frame - start) % 2000 < 16) ahead.push(Math.round(aheadOfNewest(buf, frame)));
+  }
+  assert.ok(ahead.slice(2).every((ms) => ms < 900), `drawn this far past the newest snapshot every 2s: ${ahead}`);
+});
+
+test('a server that lost a second of ticks is drawn interpolated again within three seconds, not left a second ahead', () => {
+  let buf = EMPTY_BUFFER;
+  let tick = 0, at = 0;
+  for (; tick < 60; tick++, at += TICK_MS) buf = pushSnap(buf, walking(tick), at);
+  // A one second pause the server does not pay back: the ticks resume where they stopped, a second late for good.
+  at += 1000;
+  const resumed = at;
+  for (; at < resumed + 3000; tick++, at += TICK_MS) buf = pushSnap(buf, walking(tick), at);
+  const ahead = aheadOfNewest(buf, at);
+  assert.ok(ahead < 0, `drawn ${ahead.toFixed(0)}ms past the newest snapshot three seconds after the pause`);
+});

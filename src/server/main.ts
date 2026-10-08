@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { extname, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { monitorEventLoopDelay, PerformanceObserver } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
@@ -90,7 +91,7 @@ const SQUAD_CODE_CHARS = 'abcdefghijklmnopqrstuvwxyz234567';
 const squadCode = () => `z-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
 const rangeCode = () => `r-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
 
-type Rooms = { all: Map<string, Room>; openSquad(): string | null; openRange(): string | null };
+type Rooms = { all: Map<string, Room>; openSquad(): string | null; openRange(): string | null; load(): object };
 type IpOf = (req: IncomingMessage) => string;
 
 const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
@@ -104,7 +105,7 @@ const forwardedIp: IpOf = (req) => {
 async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, profiles: Profiles, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
-  if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size });
+  if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size, ...rooms.load() });
   if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM' && info.mode !== 'RNG'));
   if (req.method === 'POST' && path === '/api/squads') {
     if (!allowSquad(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many squads. Try again in a minute.' });
@@ -218,7 +219,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const http = createServer((req, res) => {
-    route(req, res, { all: rooms, openSquad, openRange }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad, openRange, load: () => load }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -248,11 +249,38 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const TICK_MS = 1000 / WORLD.tickHz;
   let nextTickAt = performance.now();
   let timer: NodeJS.Timeout;
+  // How the tick loop kept up over the last second, for /healthz: a server short of CPU (a throttled shared vCPU) shows here as
+  // fewer ticks than WORLD.tickHz, dropped ticks and a busy share near 1, which every client feels as lag and rubberbanding.
+  // SKIRMISH_NETSTATS=1 also logs it each second with each live room's input backlog and snapshot bytes (dev measurement).
+  const logNet = process.env.SKIRMISH_NETSTATS === '1';
+  const loopDelay = logNet ? monitorEventLoopDelay({ resolution: 5 }) : null;
+  loopDelay?.enable();
+  const gc = { ms: 0, max: 0, n: 0 };
+  const gcObserver = logNet ? new PerformanceObserver((list) => { for (const e of list.getEntries()) { gc.ms += e.duration; gc.max = Math.max(gc.max, e.duration); gc.n++; } }) : null;
+  gcObserver?.observe({ entryTypes: ['gc'] });
+  const tally = { ticks: 0, dropped: 0, workMs: 0, maxMs: 0, at: performance.now() };
+  let load: { tickHz: number; droppedTicks: number; busy: number; maxTickMs: number } = { tickHz: WORLD.tickHz, droppedTicks: 0, busy: 0, maxTickMs: 0 };
   const loop = () => {
-    const plan = planTicks(performance.now(), nextTickAt, TICK_MS);
+    const start = performance.now();
+    const plan = planTicks(start, nextTickAt, TICK_MS);
+    const owed = start >= nextTickAt ? Math.floor((start - nextTickAt) / TICK_MS) + 1 : 0;
+    tally.dropped += owed - plan.ticks;
     nextTickAt = plan.nextAt;
     for (let i = 0; i < plan.ticks; i++) for (const r of rooms.values()) r.tick();
     closeIdleSquads(Date.now());
+    const end = performance.now();
+    tally.ticks += plan.ticks; tally.workMs += end - start; tally.maxMs = Math.max(tally.maxMs, end - start);
+    if (end - tally.at >= 1000) {
+      const secs = (end - tally.at) / 1000;
+      load = { tickHz: +(tally.ticks / secs).toFixed(1), droppedTicks: tally.dropped, busy: +(tally.workMs / (end - tally.at)).toFixed(3), maxTickMs: +tally.maxMs.toFixed(1) };
+      if (logNet) {
+        const live = [...rooms.values()].map((r) => r.netStats()).filter((r) => r.humans > 0 || r.ticked > 0);
+        console.log('netstats ' + JSON.stringify({ t: Math.round(end), rooms: rooms.size, ...load, loopDelayP99: loopDelay ? +(loopDelay.percentile(99) / 1e6).toFixed(1) : null, loopDelayMax: loopDelay ? +(loopDelay.max / 1e6).toFixed(1) : null, gcMs: +gc.ms.toFixed(1), gcMax: +gc.max.toFixed(1), gcN: gc.n, heapMb: Math.round(process.memoryUsage().heapUsed / 1e6), live }));
+        loopDelay?.reset();
+        Object.assign(gc, { ms: 0, max: 0, n: 0 });
+      }
+      Object.assign(tally, { ticks: 0, dropped: 0, workMs: 0, maxMs: 0, at: end });
+    }
     timer = setTimeout(loop, nextTickAt - performance.now());
   };
   loop();
@@ -263,6 +291,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     rooms,
     async close() {
       clearTimeout(timer);
+      gcObserver?.disconnect();
+      loopDelay?.disable();
       for (const r of rooms.values()) r.close();
       wss.close();
       http.closeAllConnections();

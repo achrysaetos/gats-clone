@@ -26,6 +26,7 @@ import { notePropEvents } from './propfx.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
 import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
 import { frameStep, resyncNet, shouldPredict } from './resync.ts';
+import { nextInputDue } from './inputclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
@@ -473,7 +474,7 @@ function aimOffset(s: Session): { dx: number; dy: number } {
   return { dx: (mouse.x - self.x) / aimCamera.scale, dy: (mouse.y - self.y) / aimCamera.scale };
 }
 
-setInterval(() => {
+function sendInputTick() {
   const s = sessionOf(state);
   if (!s) return;
   const hidden = document.hidden;
@@ -496,7 +497,16 @@ setInterval(() => {
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
   s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest, doorsOf(s)), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
-}, INPUT_MS);
+}
+
+// One input per server tick on average (see inputclock.ts), not setInterval's 30.3 a second.
+let inputDueAt = performance.now();
+(function inputLoop() {
+  inputDueAt = nextInputDue(performance.now(), inputDueAt, INPUT_MS);
+  // Scheduled first, so a throw in one tick's input cannot stop the inputs for good.
+  setTimeout(inputLoop, Math.max(0, inputDueAt - performance.now()));
+  sendInputTick();
+})();
 
 function pick(slot: number) {
   const s = sessionOf(state);
