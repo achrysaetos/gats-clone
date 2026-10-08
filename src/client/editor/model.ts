@@ -179,19 +179,21 @@ export function resizeTo(from: MapFile, h: Handle, corner: Center, min: number):
  */
 export function rotatePiece(f: MapFile, i: number, grid: number, free: boolean): MapFile {
   const at = f.pieces[i]!;
-  const turns = KIT[at.p].turns;
-  if (turns === 1) return f;
-  const r = (((at.r + 1) % 4) % turns) as Placement['r'];
+  if (KIT[at.p].turns === 1) return f;
+  const r = nextTurn(at.p, at.r);
   const before = placed(at).foot, after = placed({ ...at, r }).foot;
   const cx = before.x + before.w / 2, cy = before.y + before.h / 2;
   return { ...f, pieces: setAt(f.pieces, i, { ...at, r, x: snap(cx - after.w / 2, grid, free), y: snap(cy - after.h / 2, grid, free) }) };
 }
 
-/** A new piece of `p` centred on `c`, its corner snapped. */
-export function placementAt(p: PieceId, c: Center, grid: number, free: boolean): Placement {
-  const { w, h } = KIT[p];
-  return { p, x: snap(c.x - w / 2, grid, free), y: snap(c.y - h / 2, grid, free), r: 0 };
+/** A new piece of `p` at `r` quarter turns centred on `c`, its corner snapped. */
+export function placementAt(p: PieceId, c: Center, grid: number, free: boolean, r: Placement['r'] = 0): Placement {
+  const { w, h } = placed({ p, x: 0, y: 0, r }).foot;
+  return { p, x: snap(c.x - w / 2, grid, free), y: snap(c.y - h / 2, grid, free), r };
 }
+
+/** The quarter turn after `r` among those the kit bakes for `p`. */
+export const nextTurn = (p: PieceId, r: Placement['r']): Placement['r'] => (((r + 1) % 4) % KIT[p].turns) as Placement['r'];
 
 export function addPiece(f: MapFile, at: Placement): { file: MapFile; target: Target } {
   return { file: { ...f, pieces: [...f.pieces, at] }, target: { k: 'piece', i: f.pieces.length } };

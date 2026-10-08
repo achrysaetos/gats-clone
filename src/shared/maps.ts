@@ -231,11 +231,10 @@ export const loadMap = (json: unknown): MapDef => expandMap(parseMapFile(json));
 export const MAP_IDS = ['warehouse', 'outpost', 'vault'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
-export const MAPS: Record<MapId, MapDef> = {
-  warehouse: loadMap(WAREHOUSE),
-  outpost: loadMap(OUTPOST),
-  vault: loadMap(VAULT),
-};
+/** Each map's file as stored, before it is checked and its twins are added. */
+export const MAP_FILES: Record<MapId, unknown> = { warehouse: WAREHOUSE, outpost: OUTPOST, vault: VAULT };
+
+export const MAPS = Object.fromEntries(MAP_IDS.map((id) => [id, loadMap(MAP_FILES[id])])) as Record<MapId, MapDef>;
 
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
   FFA: ['warehouse'],

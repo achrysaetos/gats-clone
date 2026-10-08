@@ -40,6 +40,15 @@ import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './s
 import { aimTurrets, easeTurrets, faceZombies, nextCoreHitAt } from './siege.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
 
+const opened = new URLSearchParams(location.search);
+// `?dev&editor=<map>` opens the map editor in place of the game. It is its own bundle, fetched only then, and the game never starts.
+if (opened.has('dev') && opened.has('editor')) {
+  const bundle = './editor.js';
+  const { startEditor } = (await import(bundle)) as typeof import('./editor/main.ts');
+  await startEditor(opened.get('editor') ?? '');
+  await new Promise(() => {});
+}
+
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
 const SESSION_EXPIRED = 'Session expired, log in again.';
