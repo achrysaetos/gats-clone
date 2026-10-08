@@ -1,4 +1,4 @@
-import { CRATE_TIERS, RING, ZOM } from '../../shared/defs.ts';
+import { CRATE_TIERS, RING, WORLD, ZOM } from '../../shared/defs.ts';
 import { ringAt, type Circle, type InputState, type PlayerView, type RingView, type RoyaleView, type Snapshot } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { TICK_MS } from './aim.ts';
@@ -14,7 +14,7 @@ const WALK_DETOUR = 1.4;
 const EDGE_PX = 120;
 const ANCHOR_EDGE_PX = 400;
 const ANCHOR_REACH = 0.6;
-const REVIVE_REACH_PX = 900;
+const REVIVE_REACH_PX = WORLD.viewRadius;
 const REVIVE_STOP_PX = ZOM.reviveRange - 20;
 const MATE_DEAD_ZONE = 30;
 const STRAY_PX = 450;

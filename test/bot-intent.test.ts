@@ -86,7 +86,7 @@ test('a fight holds for its commitment, then a cautious bot with cover in reach 
   const w = emptyWorld();
   setWalls(w, [{ x: 1100, y: 900, w: 40, h: 200 }]);
   const bot = spawnAt(w, 1000, 1150, { loadout: { weapon: 'assault' } });
-  spawnAt(w, 1650, 1000);
+  spawnAt(w, 1433, 1050);
   const persona = { ...PERSONALITIES.cautious, peekOdds: 1 };
   const engaged = startIntent({ k: 'engage', target: 0 }, { tick: 100, persona } as IntentCtx);
   assert.equal(decide(w, bot.id, engaged, { persona, tick: 101 }).k, 'engage', 'still committed');

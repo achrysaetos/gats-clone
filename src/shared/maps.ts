@@ -9,7 +9,7 @@ export type Center = { x: number; y: number };
 export type WallMaterial = Material;
 export type MapWall = Rect & { material: WallMaterial };
 
-export const ZONE_RADIUS = 180;
+export const ZONE_RADIUS = 120;
 
 /** Floor paint baked into the map's light layer: lane lines, hazard stripes, chevrons and painted bays. `r` turns a chevron. */
 export const MARK_KINDS = ['line', 'hazard', 'chevron', 'box'] as const;

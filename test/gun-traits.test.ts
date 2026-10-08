@@ -123,11 +123,11 @@ test('a blast hurts its owner for half, never a teammate, and a self-kill earns 
 test('a round or grenade from a player who left still spares their old team', () => {
   const w = emptyWorld('TDM');
   const shooter = spawnAt(w, 500, 500, { team: 'red' });
-  const mate = spawnAt(w, 900, 500, { team: 'red' });
-  const enemy = spawnAt(w, 1200, 500, { team: 'blue' });
+  const mate = spawnAt(w, 767, 500, { team: 'red' });
+  const enemy = spawnAt(w, 967, 500, { team: 'blue' });
   press(w, shooter, { angle: 0, shots: 1 });
   step(w, TICK_MS);
-  w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 900, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
+  w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 767, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
   removePlayer(w, shooter.id);
   run(w, 500);
   assert.equal(hpOf(mate), WORLD.baseHp, 'neither the round nor the blast hurt a teammate');

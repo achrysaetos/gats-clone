@@ -29,20 +29,21 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
   marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
 };
 
+/** Fight distances as fractions of the gun's own range. */
 const WEAPON_BAND: Record<WeaponId, Omit<Band, 'rushes'>> = {
-  pistol: { headOn: 180, ideal: 320, max: 420 },
-  smg: { headOn: 90, ideal: 250, max: 330 },
-  shotgun: { headOn: 0, ideal: 150, max: 260 },
-  assault: { headOn: 220, ideal: 380, max: 480 },
-  sniper: { headOn: 420, ideal: 650, max: 840 },
-  lmg: { headOn: 200, ideal: 340, max: 450 },
+  pistol: { headOn: 0.26, ideal: 0.46, max: 0.6 },
+  smg: { headOn: 0.17, ideal: 0.48, max: 0.63 },
+  shotgun: { headOn: 0, ideal: 0.36, max: 0.62 },
+  assault: { headOn: 0.28, ideal: 0.48, max: 0.6 },
+  sniper: { headOn: 0.41, ideal: 0.63, max: 0.82 },
+  lmg: { headOn: 0.24, ideal: 0.4, max: 0.53 },
 };
 
 type Band = { headOn: number; ideal: number; max: number; rushes: boolean };
 export const bandFor = (gun: GunId, p: Personality): Band => {
   const g = GUNS[gun];
   const b = WEAPON_BAND[g.base];
-  const k = p.rangeMul * (g.range / GUNS[g.base].range);
+  const k = p.rangeMul * g.range;
   return { headOn: b.headOn * k, ideal: b.ideal * k, max: b.max * k, rushes: g.pellets >= 5 };
 };
 
@@ -71,6 +72,8 @@ const MIN_COMMIT_MS: Record<IntentKind, number> = {
 const SEARCH_MS = 5000;
 const GUNFIRE_PULL_PX = 2500;
 const FLANK_MS = 8000;
+/** A bot taking a zone breaks off for a threat only this close; farther ones it leaves to its teammates. */
+const ZONE_HOLD_IGNORE_PX = 270;
 const STALEMATE_MS = 6000;
 const ARRIVED_PX = 60;
 const COVER_REACH_PX = 320;
@@ -183,7 +186,7 @@ const engageOnSight: Interrupt = (cur, v) => {
   const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank';
   const t = v.threats[0];
   if (!calm || !t) return null;
-  if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > 400) return null;
+  if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > ZONE_HOLD_IGNORE_PX) return null;
   return { k: 'engage', target: t.p.id };
 };
 

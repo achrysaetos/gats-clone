@@ -71,11 +71,11 @@ test('versus snapshots carry no zombie fields at all', () => {
 
 test('the wire omits unchanged walls and run, rebuilds them, and keeps a snapshot with 200 zombies in view under 6KB', () => {
   const w = zomWorld();
-  const p = spawnAt(w, 1380, 1500);
+  const p = spawnAt(w, 1420, 1500);
   for (let cx = 24; cx <= 35; cx++) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy: 24, hp: BUILDINGS.wall.hp });
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   for (let i = 0; i < ZOM.maxAlive; i++) {
-    const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 250 + (i % 7) * 40;
+    const a = (i / ZOM.maxAlive) * Math.PI * 2, r = 167 + (i % 7) * 27;
     w.zombies.push({ id: newId(w), kind: i % 9 === 0 ? 'brute' : 'walker', x: 1500 + Math.cos(a) * r * 1.6, y: 1500 + Math.sin(a) * r, hp: 1e6, attackAt: Infinity, vx: 0, vy: 0 });
   }
   const encode = makeSnapshotEncoder();
