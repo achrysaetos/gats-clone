@@ -20,7 +20,7 @@ import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from '
 import { thinkBots } from './bot/tick.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
-import { LIMITS, makeFaultLog, makeTokenBucket, type Limits } from './limits.ts';
+import { LIMITS, makeFaultLog, makeTokenBucket, type Limits, type WindowGate } from './limits.ts';
 import { uniqueName } from './names.ts';
 import { EMOTE_INTERVAL_MS, EMOTE_RANGE } from '../shared/emotes.ts';
 import { RADIO_INTERVAL_MS, RADIO_MODES, type StationId } from '../shared/radio.ts';
@@ -33,17 +33,21 @@ const RTT_SAMPLES = 5;
  * Measured when humans carried triple health, over 24 seeded TDM rounds with bot-driven humans: 1v0, 2v0, 0v2, 3v0 and 2v1 each land between a third and two thirds of wins; at 2.5 one split went 88% to the humans and at 2 another went 92%.
  */
 const BOTS_PER_HUMAN = 3;
+/** Told once, at join, to a guest whose new name got no profile because their address hit the new-profile limit. */
+export const UNRECORDED_NOTICE = "Your stats aren't being saved for new names right now — register to keep them.";
 
 type Client =
-  | { k: 'lobby'; ws: WebSocket }
-  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; lastChatAt: number; lastEmoteAt: number; lastRadioAt: number; aspect: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
+  | { k: 'lobby'; ws: WebSocket; ip: string }
+  /** `guest` is the name a guest's play is recorded under, fixed at join; null for an account, or a guest playing unrecorded. */
+  | { k: 'joined'; ws: WebSocket; playerId: number; account: string | null; guest: string | null; lastChatAt: number; lastEmoteAt: number; lastRadioAt: number; aspect: number; since: number; encode: (snap: Snapshot) => string; inputs: InputQueue };
 
 export type RoomInfo = { id: string; mode: ModeId; players: number; humans: number };
 
 export type Room = {
   id: string;
   world: World;
-  connect(ws: WebSocket): void;
+  /** `ip` is the client's address (as the socket cap derives it), for the new-profile limit. */
+  connect(ws: WebSocket, ip?: string): void;
   tick(): void;
   info(): RoomInfo;
   /** Dev counters for netcode measurement: per-human input backlog, bytes and snapshots sent and skipped since the last call. */
@@ -56,7 +60,7 @@ export type RoomNetStats = { id: string; mode: ModeId; humans: number; players: 
 /** A kill event names the gun by its label; its class credits the weapon mastery tracks. */
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((g) => [GUNS[g].name, g]));
 
-export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES): Room {
+export function createRoom(id: string, mode: ModeId, seed: number, accounts: Accounts, stepsPerTick = 1, limits: Limits = LIMITS, moderator: Moderator = makeModerator(), profiles: Profiles = NO_PROFILES, newProfiles: WindowGate | null = null): Room {
   // SKIRMISH_MAP=geo-test starts the versus rooms on the geometry test range (dev only; it is in no rotation).
   const devMap = process.env.SKIRMISH_MAP;
   const world = createWorld(mode, seed, (devMap && devMap in MAPS && (mode === 'FFA' || mode === 'TDM' || mode === 'DOM') ? devMap : rotationMap(mode, seed, 0)) as MapId);
@@ -148,10 +152,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   /**
    * Whose profile a human's play goes to: a signed-in player's account, whatever name they are seated under, or a guest's
    * own name, unless that name has since been registered by someone else, which a guest seated before the registration
-   * still holds; such a guest keeps no profile.
+   * still holds; such a guest keeps no profile. A guest is recorded only under the name they joined with (one renamed to
+   * make way for an account stops recording), and not at all when their join was refused a new profile.
    */
   function profileKey(c: Extract<Client, { k: 'joined' }>, name: string): string | null {
-    return c.account ?? (registered(name) ? null : name);
+    if (c.account) return c.account;
+    return c.guest !== null && c.guest.toLowerCase() === name.toLowerCase() && !registered(name) ? name : null;
   }
   /** Folds a change into a human's profile, and pays, announces and puts on any lifetime medal it earned. */
   function profile(playerId: number, delta: Parameters<Profiles['record']>[1]) {
@@ -283,13 +289,16 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       // Sitting out the rest of the night means leaving and rejoining cannot get a downed or bled-out player up early.
       if (world.run?.phase.k === 'night') p.life = { k: 'dead', respawnAt: Infinity };
       if (account && !practice) accounts.credit(account, { kills: 0, deaths: 0, score: 0, games: 1 });
-      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
+      // A guest name with no profile yet would make a permanent one: each address may make only so many (LIMITS.newProfile*).
+      const unrecorded = !account && !practice && !registered(name) && profiles.get(name) === null && newProfiles !== null && !newProfiles.take(client.ip, Date.now());
+      const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, guest: account || unrecorded ? null : name, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
       const key = profileKey(joinedClient, name);
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
       balanceBots();
       send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account });
       if (radioStation) send(client.ws, { t: 'radio', station: radioStation, by: null });
+      if (unrecorded) send(client.ws, { t: 'chat', from: '', text: UNRECORDED_NOTICE, team: null });
       profile(p.id, { games: 1 });
       if (key) {
         // Looking is free in practice; changing a profile, or reading its news (which clears it), is not.
@@ -408,9 +417,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   return {
     id,
     world,
-    connect(ws) {
+    connect(ws, ip = '') {
       if (closed) { ws.close(1001, 'room closed'); return; }
-      clients.set(ws, { k: 'lobby', ws });
+      clients.set(ws, { k: 'lobby', ws, ip });
       const allow = makeTokenBucket(limits.messagesPerSec, limits.messageBurst);
       const joinTimer = setTimeout(() => { if (clients.get(ws)?.k === 'lobby') ws.close(1008, 'join timeout'); }, limits.joinTimeoutMs);
       // A socket can die without a close frame (a dropped network, a proxy that lingers); unanswered pings are the only signal.

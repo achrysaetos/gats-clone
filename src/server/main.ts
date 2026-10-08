@@ -12,7 +12,7 @@ import { isSlot, parsePicks } from '../shared/cosmetics.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
 import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
-import { LIMITS, makeFaultLog, makeKeyedLimiter, type Limits } from './limits.ts';
+import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 import { warmLayouts } from './bot/arena.ts';
 import { ROTATION } from '../shared/maps.ts';
@@ -178,7 +178,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const moderator = await loadModerator(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const allowSquad = makeKeyedLimiter(limits.squadsPerMin / 60, limits.squadsPerMin);
-  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles);
+  // Shared by every room, so hopping rooms does not reset it; in memory only (a restart resets it, which is fine).
+  const newProfiles = makeWindowGate(limits.newProfileGapMs, limits.newProfilesPerDay, limits.newProfileWindowMs);
+  const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles, newProfiles);
   const rooms = new Map<string, Room>(ROOM_MODES.map(([id, mode], i) => [id, newRoom(id, mode, 1000 + i)]));
   /** When each squad room last had a human in it; one empty for `squadIdleMs` closes. */
   const squadSeenAt = new Map<string, number>();
@@ -245,7 +247,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (left > 0) socketsByIp.set(ip, left);
       else socketsByIp.delete(ip);
     });
-    wss.handleUpgrade(req, socket, head, (ws) => room.connect(ws));
+    wss.handleUpgrade(req, socket, head, (ws) => room.connect(ws, ip));
   });
 
   // setInterval drifts late every tick (28.8Hz measured), so game time ran slow and snapshot gaps wobbled.

@@ -26,6 +26,14 @@ export const LIMITS = {
   faultLogMs: 10_000,
   /** A room whose tick has thrown on every tick for this long is closed (its players are let go) and a fresh one takes its place. */
   faultyRoomMs: 5_000,
+  /**
+   * A guest joining under a name with no profile yet makes a permanent one (profiles.json). One address may make at most one
+   * per `newProfileGapMs` and `newProfilesPerDay` per rolling `newProfileWindowMs`; past that, the guest plays unrecorded.
+   * Registered accounts, and guests rejoining under a name that already has a profile, are not counted.
+   */
+  newProfileGapMs: 30_000,
+  newProfilesPerDay: 5,
+  newProfileWindowMs: 24 * 60 * 60 * 1000,
 };
 export type Limits = typeof LIMITS;
 
@@ -67,3 +75,40 @@ export function makeKeyedLimiter(perSec: number, burst: number) {
     return ok;
   };
 }
+
+/**
+ * Per-key (client address) gate on making something permanent: at most one per `gapMs`, and at most `perWindow` in any
+ * rolling `windowMs`. A refused call counts for nothing. State lives in memory only, so a restart forgets every window,
+ * which is fine: it only lets an address start afresh. A key whose stamps have all aged out of the window is dropped, so the
+ * map holds only addresses that made something within the last `windowMs`.
+ */
+export function makeWindowGate(gapMs: number, perWindow: number, windowMs: number) {
+  const stamps = new Map<string, number[]>();
+  let prunedAt = -Infinity;
+  const prune = (now: number) => {
+    for (const [k, ts] of stamps) {
+      const live = ts.filter((t) => now - t < windowMs);
+      if (live.length) stamps.set(k, live);
+      else stamps.delete(k);
+    }
+    prunedAt = now;
+  };
+  return {
+    take(key: string, now: number): boolean {
+      // A sweep at most once per gap keeps a burst of calls from each paying for every address on file.
+      if (now - prunedAt >= Math.min(gapMs, windowMs) || now < prunedAt) prune(now);
+      const ts = (stamps.get(key) ?? []).filter((t) => now - t < windowMs);
+      const last = ts[ts.length - 1];
+      if (ts.length >= perWindow || (last !== undefined && now - last < gapMs)) {
+        if (ts.length) stamps.set(key, ts); else stamps.delete(key);
+        return false;
+      }
+      ts.push(now);
+      stamps.set(key, ts);
+      return true;
+    },
+    /** How many addresses are on file, for tests. */
+    size: () => stamps.size,
+  };
+}
+export type WindowGate = ReturnType<typeof makeWindowGate>;
