@@ -11,7 +11,7 @@ import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCall
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, postSprint, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
+import { abilityCooldownMs, abilityOf, bloomRecoverMul, BOT_SPREAD_MUL, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, postSprint, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { crateRect, freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -115,7 +115,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
     const sinceMove = moving ? 0 : w.now - life.lastMoveAt;
-    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), life.spray, life.suppression, postSprint(life.settleLeft, stats.settleMs).settle, isDeployed(p.gun, sinceMove));
+    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), life.spray, life.suppression, postSprint(life.settleLeft, stats.settleMs).settle, isDeployed(p.gun, sinceMove)) * (p.kind === 'bot' ? BOT_SPREAD_MUL : 1);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

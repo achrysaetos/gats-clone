@@ -16,8 +16,11 @@ export type BotMemory = {
   beat?: Beat;
 };
 
-/** `seen` is how many enemies stood in its view box when it last thought, `zones` who held each zone, `sight` its view box's half extents. */
-export type Beat = { thought: number; planned: number; seen: number; zones: string; sight: { halfW: number; halfH: number } };
+/**
+ * `seen` is how many enemies stood in its view box when it last thought, `inSight` which of them it had a line on, `zones` who held each
+ * zone, `sight` its view box's half extents.
+ */
+export type Beat = { thought: number; planned: number; seen: number; zones: string; sight: { halfW: number; halfH: number }; inSight?: readonly number[] };
 
 /** Whether this think re-plans (see `nextIntent`), and when the bot last did. */
 export type ThinkTier = { strategic?: boolean; lastPlan?: number };

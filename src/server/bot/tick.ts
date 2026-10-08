@@ -5,9 +5,10 @@ import { flashAmount } from '../../shared/sim/abilities.ts';
 import { build, upgrade } from '../../shared/sim/run.ts';
 import { snapshotFor } from '../../shared/sim/snapshot.ts';
 import { abilityOf, choosePick } from '../../shared/sim/stats.ts';
-import { IDLE_INPUT, isEnemy, type Player, type World } from '../../shared/sim/world.ts';
+import { segmentBlocked, segmentEntersRectAt } from '../../shared/sim/movement.ts';
+import { crateRect, IDLE_INPUT, isEnemy, type Player, type World } from '../../shared/sim/world.ts';
 import { botThink, randomLoadout, type BotDecision, type BotMemory } from '../bots.ts';
-import { arenaFor } from './arena.ts';
+import { arenaFor, type BotArena } from './arena.ts';
 import { BLIND_AT, freshAwareness } from './awareness.ts';
 import { freshMotor, motorTick, motorWake } from './motor.ts';
 import { SLOW_GUN_MS } from './evade.ts';
@@ -77,6 +78,38 @@ function enemiesInView(w: World, me: Player, sight: { halfW: number; halfH: numb
   return n;
 }
 
+/** Whether nothing that stops the eye (a wall, a standing crate) lies between a bot and an enemy, as `perceive` judges it from a snapshot. */
+function inSightLine(w: World, arena: BotArena, me: Player, p: Player): boolean {
+  const dx = p.x - me.x, dy = p.y - me.y;
+  if (segmentBlocked(arena.sightWalls, me.x, me.y, dx, dy)) return false;
+  const x0 = Math.min(me.x, p.x), x1 = Math.max(me.x, p.x), y0 = Math.min(me.y, p.y), y1 = Math.max(me.y, p.y);
+  for (const c of w.crates) {
+    if (c.respawnAt !== null || c.x > x1 || c.y > y1 || c.x + c.size < x0 || c.y + c.size < y0) continue;
+    if (segmentEntersRectAt(me.x, me.y, dx, dy, crateRect(c)) !== null) return false;
+  }
+  return true;
+}
+
+const sightable = (w: World, me: Player, p: Player, sight: { halfW: number; halfH: number }) =>
+  p.life.k === 'alive' && w.now >= p.life.shieldUntil && isEnemy(me, p) && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH;
+
+/** The enemies a bot has a line on in its view box, by id: what it last thought on (see `Beat.inSight`). */
+function enemiesInSight(w: World, arena: BotArena, me: Player, sight: { halfW: number; halfH: number }): number[] {
+  const out: number[] = [];
+  for (const p of w.players.values()) if (sightable(w, me, p, sight) && inSightLine(w, arena, me, p)) out.push(p.id);
+  return out;
+}
+
+/**
+ * An enemy in its view box it had no line on when it last thought has one now: he stepped out from behind a wall, came round its cover,
+ * or it came round his. That is a sighting, and wakes it at once, the same tick a person would see him, rather than at its next think.
+ * Only those it could not see are traced, so a bot in a fight with the enemy it already sees pays nothing for it.
+ */
+function newSighting(w: World, arena: BotArena, me: Player, sight: { halfW: number; halfH: number }, seen: readonly number[]): boolean {
+  for (const p of w.players.values()) if (!seen.includes(p.id) && sightable(w, me, p, sight) && inSightLine(w, arena, me, p)) return true;
+  return false;
+}
+
 export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => number, { picks = true, respawn: revive = true, watched = false, onDecision }: BotTickOptions = {}): { respawned: number[]; picked: number } {
   const arena = arenaFor(w);
   const respawned: number[] = [];
@@ -126,7 +159,8 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       const d = botThink(snap, arena, mem, rand, tiered ? { strategic, lastPlan: mem.beat?.planned } : {});
       if (tiered && p) {
         const sight = viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT);
-        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), zones, sight } };
+        const blinded = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
+        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), inSight: blinded ? [] : enemiesInSight(w, arena, p, sight), zones, sight } };
       }
       finish(d, snap);
     };
@@ -151,7 +185,7 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       const now = motorWake(mem.motor, p, w.tick, arena, doorOpen, slow === 1);
       const inView = slow === 1 ? enemiesInView(w, p, beat.sight) : beat.seen;
       if (now === 'strategic' || zones !== beat.zones || (mem.intent?.k === 'blinded' && !blind)) wake = 'strategic';
-      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen)) || news(p, mem)) wake ??= 'tactical';
+      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen || (!blind && newSighting(w, arena, p, beat.sight, beat.inSight ?? [])))) || news(p, mem)) wake ??= 'tactical';
       // One leaving its view (or falling) lowers the count, so the next to come into it is news too, not only one past the count it last thought on.
       if (inView < beat.seen) beat = { ...beat, seen: inView };
     }

@@ -63,7 +63,7 @@ test('a grenade bot throws only at mid range', () => {
 
 test('a grenade bot does not throw before its reaction delay has passed', () => {
   const first = inputs({ ability: 'grenade', enemyAt: { x: 1300, y: 1000 } }).findIndex((i) => i.ability);
-  assert.ok(first * TICK_MS >= 250 - TICK_MS, `first throw after ${(first * TICK_MS).toFixed(0)}ms`);
+  assert.ok(first * TICK_MS >= 0.8 * 220 - TICK_MS / 2, `first throw after ${(first * TICK_MS).toFixed(0)}ms`);
 });
 
 test('a hurt dash bot dashes away from the enemy, and a healthy one does not dash', () => {

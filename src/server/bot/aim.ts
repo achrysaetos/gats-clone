@@ -17,6 +17,8 @@ const DEG = Math.PI / 180;
 export const HANDS = {
   flick: { omega: 30, zeta: 0.72, maxSpin: 800 * DEG, maxAccel: 10_000 * DEG },
   calm: { omega: 9, zeta: 0.9, maxSpin: 240 * DEG, maxAccel: 2_500 * DEG },
+  /** Caught off-angle by an enemy it has just seen (one come round its cover, or at its back): a quick turn of the head, not yet an aimed flick. */
+  startle: { omega: 16, zeta: 0.8, maxSpin: 500 * DEG, maxAccel: 5_000 * DEG },
 } as const satisfies Record<string, Hand>;
 
 const BOT_AIM = {
@@ -30,6 +32,11 @@ const BOT_AIM = {
   /** A bot leads by the round's real flight to where the target will be, times a judgment drawn per engagement in `mean ± spread`. */
   leadJudgment: { mean: 0.95, spread: 0.15 },
   fireSlackRad: 2.5 * DEG,
+  /**
+   * Scales every bot's aim error (its drifting error and the landing error when it takes a target in), keeping each persona's and
+   * sharpness row's share of it: a small edge so bots hold their own against people. Tune with `BOT_SPREAD_MUL` (sim/stats.ts).
+   */
+  errMul: 0.82,
 } as const;
 
 const SUBSTEP_MS = 5;
@@ -96,9 +103,10 @@ function leadJudgment(id: number, tick: number): number {
 /** A flashed eye is slow and shaky: at full flash a bot takes `reactionMs` longer to take a target in, and its aim error is `1 + aimMul` times as wide. They fade out as the flash does. */
 export const FLASHED = { reactionMs: 700, aimMul: 3 } as const;
 
-export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, flash = 0): Engagement {
+/** `reactMul` is the bot's own temper's share of the reaction time (`Personality.reactMul`). */
+export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, flash = 0, reactMul = 1): Engagement {
   if (!prev) {
-    const [fastest, slowest] = BOT_AIM.noticeMs.map((ms) => ms * sharpness.reactionMul);
+    const [fastest, slowest] = BOT_AIM.noticeMs.map((ms) => ms * sharpness.reactionMul * reactMul);
     const noticeAtTick = tick + Math.round((fastest + rand() * (slowest - fastest) + FLASHED.reactionMs * flash) / TICK_MS);
     return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick, leadMul: leadJudgment(enemy.id, tick), at: tick };
   }
@@ -115,7 +123,7 @@ export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: n
   const rx = e.x - me.x, ry = e.y - me.y;
   const crossing = Math.abs(rx * e.vy - ry * e.vx) / Math.max(1, rx * rx + ry * ry);
   const unsettled = 1 + BOT_AIM.unsettledMul * Math.exp(-(Math.max(0, tick - e.noticeAtTick) * TICK_MS) / BOT_AIM.settleMs);
-  return (BOT_AIM.baseSigma + BOT_AIM.sigmaPerRadPerSec * crossing) * unsettled * sharpness.aimMul * (1 + FLASHED.aimMul * flash);
+  return (BOT_AIM.baseSigma + BOT_AIM.sigmaPerRadPerSec * crossing) * unsettled * sharpness.aimMul * BOT_AIM.errMul * (1 + FLASHED.aimMul * flash);
 }
 
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);

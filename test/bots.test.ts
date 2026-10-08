@@ -54,7 +54,8 @@ test('a bot waits a human-like reaction time after first seeing an enemy before 
     const firstFire = watch({ seed, ticks: 30, targetAt: { x: 1400, y: 1000 } }).find((l) => l.fire);
     assert.ok(firstFire, `seed ${seed}: fires eventually`);
     const ms = firstFire.tick * TICK_MS;
-    assert.ok(ms >= 250 - TICK_MS && ms <= 400 + TICK_MS, `seed ${seed}: first shot after ${ms.toFixed(0)}ms`);
+    // 220-350 ms, by temper: a hothead's quickest is 0.8 of that (`Personality.reactMul`).
+    assert.ok(ms >= 0.8 * 220 - TICK_MS / 2 && ms <= 400 + TICK_MS, `seed ${seed}: first shot after ${ms.toFixed(0)}ms`);
   }
 });
 
@@ -150,6 +151,8 @@ test('a bot\'s movement keys hold for a while instead of flickering tick to tick
 test('a bot stepping out from cover onto the target it hid from fires at once, while one meeting it again in the open reacts afresh', () => {
   const firstShot = (k: 'peekAndHide' | 'engage') => {
     const w = emptyWorld();
+    // Its spot is behind a wall from him; its peek, a step south, is not.
+    setWalls(w, [{ x: 1040, y: 850, w: 30, h: 120 }]);
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     const enemy = spawnAt(w, 1400, 1000);
     for (let i = 0; i < 90; i++) step(w, TICK_MS);
@@ -168,7 +171,7 @@ test('a bot stepping out from cover onto the target it hid from fires at once, w
 test('out on a peek at long range a marksman plants its feet, while a cautious bot sways at the edge of its cover', () => {
   const peekInputs = (persona: PersonalityId) => {
     const w = emptyWorld();
-    setWalls(w, [{ x: 940, y: 860, w: 40, h: 100 }]);
+    setWalls(w, [{ x: 1030, y: 860, w: 40, h: 100 }]);
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     const enemy = spawnAt(w, 1650, 1000);
     const r = seeded(5);

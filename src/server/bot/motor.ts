@@ -2,7 +2,7 @@ import { GUNS, rulesOf, WORLD, type AbilityId, type GunId } from '../../shared/d
 import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
-import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { doorCentre, takeReplan, type BotArena } from './arena.ts';
 import { swingArcAt } from '../../shared/sim/doors.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
@@ -199,6 +199,8 @@ function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly R
 type Steer = { to: Point | null; face: Point | null; reload: boolean; crates: boolean; heading?: number | null };
 
 const LOOK_HOLD_INSIDE_PX = 150;
+/** An enemy in sight this far off where its gun points catches it off-angle (see `HANDS.startle`). */
+const STARTLE_RAD = (40 * Math.PI) / 180;
 const LOOK_AHEAD_PX = 400;
 
 function lookAt(at: Point | null, me: Point, mine: Point, minPx = LOOK_HOLD_INSIDE_PX): { want: number; spin: number; d: number } | null {
@@ -305,7 +307,7 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     }
     case 'reloadInCover': {
       const safe = v.threats.length === 0 || dist(me, intent.spot) < WAYPOINT_PX * 2;
-      return { steer: { to: intent.spot, face: intent.threat, reload: safe || v.self.ammo === 0, crates: false }, stance: m.stance };
+      return { steer: { to: intent.spot, face: v.threats[0]?.p ?? intent.threat, reload: safe || v.self.ammo === 0, crates: false }, stance: m.stance };
     }
     case 'retreatAndHeal': {
       const to = intent.spot ?? awayFrom(me, intent.threat, c.arena, RETREAT_STEP);
@@ -592,8 +594,11 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;
   const before = m.aim ?? freshAim(me.angle);
   const mine = m.aim ? { x: (me.x - m.last.x) * WORLD.tickHz, y: (me.y - m.last.y) * WORLD.tickHz } : { x: 0, y: 0 };
-  const faceAt = s.face ?? v.lastSeen ?? v.lead;
-  let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
+  // An enemy in sight is what it looks at, whatever it was about (a reload, a walk, the spot the last one was), and one well off its
+  // facing it turns to quickly (`HANDS.startle`); it takes him in, and aims and fires, only once its reaction time has passed.
+  const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? s.face ?? v.lastSeen ?? v.lead;
+  const startled = t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD;
+  let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? HANDS.startle : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
   const barrels = seenBarrels(snap.barrels);
   const props = seenProps(snap.props);
   let track: Hold['track'] = null;
@@ -601,7 +606,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   if (t) {
     const tracked = held(t.p.id) ? m.engaged : null;
     const sharp = sharpnessAgainst(t.p);
-    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, v.flash);
+    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, v.flash, c.persona.reactMul);
     const shot = barrelToShoot(me, barrels, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range)
       ?? propToShoot(me, props, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range);
     const blocked = !shot && (shotWouldBurnMe(barrels, me, t.p) || shotWouldHurtMe(props, me, t.p));

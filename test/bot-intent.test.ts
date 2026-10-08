@@ -24,6 +24,8 @@ function decide(w: World, id: number, cur: Plan | Intent, opts: { persona?: Pers
 }
 
 const pillarWest = { x: 700, y: 900, w: 40, h: 200 };
+/** Cover east of a bot at (1000, 1000) from an enemy at (1500, 1000): its spot is hidden from him, and a step south of it is out in his sight. */
+const coverEast = { x: 1040, y: 900, w: 30, h: 130 };
 
 test('an enemy walking into view turns a patrol into a fight at once, commitment or not', () => {
   const w = emptyWorld();
@@ -94,6 +96,7 @@ test('a fight holds for its commitment, then a cautious bot with cover in reach 
 
 test('a peek takes turns hiding and looking out without leaving the intent', () => {
   const w = emptyWorld();
+  setWalls(w, [coverEast]);
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   spawnAt(w, 1500, 1000);
   const peek = startIntent({ k: 'peekAndHide', target: 0, spot: { x: 1000, y: 1000 }, peek: { x: 1000, y: 1060 }, phase: 'hide', phaseUntil: 10 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
@@ -125,7 +128,9 @@ test('a flank that reaches its side point goes to search where the target was la
 
 test('a peek duel that drags on is broken by a flank when the personality goes round', () => {
   const w = emptyWorld();
-  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  setWalls(w, [coverEast]);
+  // Out at its peek, where the two trade shots.
+  const bot = spawnAt(w, 1000, 1060, { loadout: { weapon: 'assault' } });
   const enemy = spawnAt(w, 1500, 1000);
   const peek = startIntent({ k: 'peekAndHide', target: enemy.id, spot: { x: 1000, y: 1000 }, peek: { x: 1000, y: 1060 }, phase: 'hide', phaseUntil: 1e9 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);
   const at = (tick: number, flankOdds: number) => decide(w, bot.id, peek, { persona: { ...PERSONALITIES.cautious, flankOdds }, tick }).k;
@@ -192,6 +197,7 @@ test('a hurt bot keeps fighting a lone enemy who is worse off, but leaves when o
 
 test('a peek that nobody answers stays out, and one that draws fire tucks back in', () => {
   const w = emptyWorld();
+  setWalls(w, [{ x: 1040, y: 850, w: 30, h: 120 }]);
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
   const enemy = spawnAt(w, 1500, 1000);
   const out = startIntent({ k: 'peekAndHide', target: enemy.id, spot: { x: 1000, y: 940 }, peek: { x: 1000, y: 1000 }, phase: 'peek', phaseUntil: 10 }, { tick: 0, persona: PERSONALITIES.cautious } as IntentCtx);

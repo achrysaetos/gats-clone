@@ -5,7 +5,7 @@ import { doorLanes, openSpot, type BotArena } from './arena.ts';
 import { BLIND_AT, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { coverNear, pickCover } from './cover.ts';
-import { between, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
+import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
 export type PersonalityId = (typeof PERSONALITY_IDS)[number];
@@ -25,12 +25,14 @@ export type Personality = {
   /** How readily it gets out of a long gun's line of fire (see `dangerTo` in evade.ts), and how long its dodge legs run. */
   evasion: number;
   dodgeMs: readonly [number, number];
+  /** Scales how long it takes to take in an enemy that comes into its sight (`noticeMs` in aim.ts): a hothead is quickest on the draw. */
+  reactMul: number;
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
-  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8, evasion: 0.8, dodgeMs: [500, 1300] },
-  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2, evasion: 1, dodgeMs: [700, 2000] },
-  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3, evasion: 0.65, dodgeMs: [600, 1500] },
+  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8, evasion: 0.8, dodgeMs: [500, 1300], reactMul: 0.8 },
+  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2, evasion: 1, dodgeMs: [700, 2000], reactMul: 0.95 },
+  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3, evasion: 0.65, dodgeMs: [600, 1500], reactMul: 0.85 },
 };
 
 /**
@@ -140,9 +142,10 @@ function hideFrom(v: Perception, c: IntentCtx, threat: Point): Point | null {
 /** A fight near a door is held from beside it: no cover in the door's lane, at either side of it. */
 const DOOR_WATCH_PX = 500;
 
-function peekPlan(v: Perception, c: IntentCtx, t: Threat): Plan | null {
+/** `from` is every enemy the cover must hide it from (`t`, the one it peeks at, first); by default only `t`. */
+function peekPlan(v: Perception, c: IntentCtx, t: Threat, from: readonly Point[] = [pos(t)]): Plan | null {
   const taken = [...v.allies, ...doorLanes(c.arena, pos(t), DOOR_WATCH_PX)];
-  const pick = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [pos(t)], { reach: COVER_REACH_PX, range: c.band.ideal, peek: true, taken, takenPx: MATE_COVER_PX });
+  const pick = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, from, { reach: COVER_REACH_PX, range: c.band.ideal, peek: true, taken, takenPx: MATE_COVER_PX });
   if (!pick?.peek) return null;
   const travel = dist(v.me, pick.spot) / v.self.speed * 1000;
   return { k: 'peekAndHide', target: t.p.id, spot: pick.spot, peek: pick.peek, phase: 'hide', phaseUntil: c.tick + ticks(travel + between(c.persona.hideMs, c.rand)) };
@@ -255,11 +258,40 @@ const reloadWhenDry: Interrupt = (cur, v, c) => {
   return spot ? { k: 'reloadInCover', spot, threat } : null;
 };
 
+/** The cover spot an intent holds or makes for, if it has one. */
+const coverSpot = (cur: Intent): Point | null =>
+  cur.k === 'peekAndHide' || cur.k === 'reloadInCover' ? cur.spot : cur.k === 'retreatAndHeal' ? cur.spot : null;
+
+/**
+ * Cover that no longer covers: an enemy it can see has a clear line into the spot it hides at (he came round the wall, or a second one
+ * holds the other side). A person does not sit on in the open there: it takes cover that hides it from everyone it can see now (or at
+ * least from the one in its face), a rusher in reach pushes him instead, and with nowhere to go it fights him from where it stands,
+ * strafing (`engage`) rather than standing still on its old spot. A peek that he sees is a peek, not blown cover: only the hiding spot counts.
+ */
+const coverBlown: Interrupt = (cur, v, c) => {
+  const spot = coverSpot(cur);
+  if (!spot) return null;
+  const open = v.threats.filter((t) => clearShot(v.solids, spot, t.p));
+  const t = open[0];
+  if (!t) return null;
+  const all = v.threats.map(pos);
+  if (cur.k === 'reloadInCover' || cur.k === 'retreatAndHeal') {
+    const hide = hideFrom(v, c, pos(t));
+    if (hide && dist(hide, spot) > ARRIVED_PX) return { ...cur, spot: hide, threat: pos(t) };
+    // Nowhere to hide from him: a gun with rounds left fights; a dry one, or one fleeing, keeps backing off from him.
+    return cur.k === 'reloadInCover' && v.self.ammo > 0 ? { k: 'engage', target: t.p.id } : { k: 'retreatAndHeal', spot: null, threat: pos(t) };
+  }
+  if (c.band.rushes && t.d < c.band.max) return { k: 'engage', target: t.p.id };
+  const next = peekPlan(v, c, t, all) ?? (all.length > 1 ? peekPlan(v, c, t) : null);
+  return next && next.k === 'peekAndHide' && dist(next.spot, spot) > ARRIVED_PX ? next : { k: 'engage', target: t.p.id };
+};
+
 const engageOnSight: Interrupt = (cur, v) => {
   const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank';
   const t = v.threats[0];
   if (!calm || !t) return null;
-  if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > 400) return null;
+  // Holding a zone, it lets a far enemy walk by; not one shooting at it.
+  if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > 400 && !v.underFire && v.shotAt?.owner !== t.p.id) return null;
   return { k: 'engage', target: t.p.id };
 };
 
@@ -279,7 +311,7 @@ const goBlind: Interrupt = (cur, v, c) => {
   return { k: 'blinded', mode: spray ? 'spray' : 'fallBack', at: known };
 };
 
-const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
+const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {

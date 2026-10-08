@@ -54,6 +54,12 @@ type Stats = {
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
 };
 
+/**
+ * A bot's rounds leave its gun this much tighter than a person's would (spread, bloom and all), as its hands are already worse than a mouse:
+ * a small edge so bots hold their own against people. Humans are unchanged; bot against bot both have it. Tune with `BOT_AIM.errMul` (aim.ts).
+ */
+export const BOT_SPREAD_MUL = 0.85;
+
 /** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. */
 export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0, deployed = false): number {
   const rules = rulesOf(GUNS[gun]);

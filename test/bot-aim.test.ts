@@ -126,7 +126,8 @@ test('a bot fires only once its gun has come round onto the enemy, so a flick be
     ahead += firstShot({ x: 1400, y: 1000 }, seed);
     behind += firstShot({ x: 600, y: 1000 }, seed);
   }
-  assert.ok(behind / 10 >= ahead / 10 + 150, `first shot ${(ahead / 10).toFixed(0)}ms ahead vs ${(behind / 10).toFixed(0)}ms behind`);
+  // Caught from behind it turns quickly (`HANDS.startle`) while it takes him in, but no 180-degree snap: the turn still costs it.
+  assert.ok(behind / 10 >= ahead / 10 + 100, `first shot ${(ahead / 10).toFixed(0)}ms ahead vs ${(behind / 10).toFixed(0)}ms behind`);
 });
 
 test('a bot leads a moving target to where the round and the target meet, by the round\'s real flight', () => {
