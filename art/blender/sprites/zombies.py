@@ -13,18 +13,20 @@ from . import rig as Rg
 INK = (0.06, 0.05, 0.05)
 
 # hip and shoulder height, half shoulder width, arm and leg segment lengths, hunch (degrees), head radius and how
-# far forward it sits, torso half-sizes (x, y, z), limb thickness, and hand and foot targets (radius units).
+# far forward it sits, torso half-sizes (x, y, z), limb thickness, hand and foot targets (radius units), steel plates
+# on the back and shoulder pads.
 BASE = dict(hip=0.5, sh=1.05, sw=0.7, ua=0.5, fa=0.55, lean=18, head=0.34, neck=0.1, torso=(0.42, 0.74, 0.36), limb=0.18,
-            hands=((1.25, -0.5, 0.95), (1.15, 0.6, 0.92)), feet=((-0.3, -0.38), (0.25, 0.38)), big_arm=1.0)
+            hands=((1.25, -0.5, 0.95), (1.15, 0.6, 0.92)), feet=((-0.3, -0.38), (0.25, 0.38)), big_arm=1.0,
+            armor=0, shoulders=False)
 PLANS = {
     'walker': {},
-    'plated': {},
+    'plated': dict(armor=4),
     'runner': dict(lean=35, sw=0.5, torso=(0.36, 0.52, 0.34), limb=0.14, hands=((-0.35, -0.75, 0.6), (0.75, 0.6, 0.85)), feet=((-0.65, -0.3), (0.6, 0.3))),
     'bloater': dict(lean=4, sw=0.55, ua=0.36, fa=0.38, head=0.3, torso=(0.5, 0.7, 0.42), hands=((0.55, -0.85, 0.75), (0.6, 0.85, 0.72))),
     'brute': dict(hip=0.42, sh=0.92, sw=0.6, ua=0.62, fa=0.72, lean=42, head=0.27, neck=-0.02, torso=(0.45, 0.52, 0.4), limb=0.22,
-                  hands=((1.2, -0.66, 0.12), (1.25, 0.64, 0.15)), feet=((-0.35, -0.48), (0.2, 0.5))),
+                  hands=((1.2, -0.66, 0.12), (1.25, 0.64, 0.15)), feet=((-0.35, -0.48), (0.2, 0.5)), shoulders=True),
     'colossus': dict(hip=0.4, sh=0.9, sw=0.6, ua=0.55, fa=0.6, lean=38, head=0.19, neck=-0.12, torso=(0.48, 0.56, 0.42), limb=0.19,
-                     hands=((1.0, -0.8, 0.1), (0.85, 0.6, 0.35)), feet=((-0.4, -0.45), (0.15, 0.45)), big_arm=1.75),
+                     hands=((1.0, -0.8, 0.1), (0.85, 0.6, 0.35)), feet=((-0.4, -0.45), (0.15, 0.45)), big_arm=1.75, armor=3, shoulders=True),
 }
 
 
@@ -108,11 +110,11 @@ def build(b):
         for i in range(6):
             t = i / 5
             sk.cyl('solid', bone, (-0.15 - 0.45 * t, (t - 0.5) * 0.25, sh + 0.22 - 0.15 * t), 0.08, 0.38, radius2=0.0, rot=(0, -0.7 - 0.3 * t, 0), segs=8)
-    if z['shoulders'] and kind not in ('brute', 'colossus'):
+    if p['shoulders'] and kind not in ('brute', 'colossus'):
         for y in (-1, 1):
             sk.sphere('solid', arm, (-0.02, sw * y, sh - 0.04), 0.4, scale=(1.1, 1.0, 0.8))
-    for i in range(z['armor']):
-        t = (i + 0.5) / max(1, z['armor'])
+    for i in range(p['armor']):
+        t = (i + 0.5) / max(1, p['armor'])
         y = (t - 0.5) * 2 * ty * 1.05
         side = abs(y) > ty * 0.6
         sk.box('solid', steel, (-0.1 if not side else 0.0, y, mid + tz + (0.06 if side else 0.02)), (0.5, 0.34, 0.1), rot=(0.3 * (1 if y > 0 else -1) * side, 0, 0), bevel=0.04)
