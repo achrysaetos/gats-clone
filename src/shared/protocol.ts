@@ -124,6 +124,8 @@ export type GameEvent =
   | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind; hit?: Hit }
   /** A round stopped against a wall at (`x`, `y`), flying toward `dir`. */
   | { e: 'impact'; x: number; y: number; dir: number }
+  /** An enemy round passed close by `victim` without hitting: (`x`, `y`) is where it passed nearest, flying toward `dir`. */
+  | { e: 'whizz'; victim: number; x: number; y: number; dir: number }
   | { e: 'boom'; x: number; y: number; r: number }
   /** A breakable piece broke, its debris flying from (`x`, `y`), the centre of its solid `w` by `h`. */
   | { e: 'broke'; piece: PieceId; x: number; y: number; w: number; h: number }
