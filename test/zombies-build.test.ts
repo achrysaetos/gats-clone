@@ -13,7 +13,7 @@ import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 const AT = { x: 1380, y: 1525 }, CELL = { cx: 26, cy: 30 };
 
 function dayWorld() {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   const p = spawnAt(w, AT.x, AT.y);
   return { w, p };
 }
@@ -99,7 +99,7 @@ test('build and demolish messages carry whole grid cells only', () => {
 });
 
 test('a wall ring over the squad spawn strips sends a squad spawn to clear ground near the core, never into a wall', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   for (let cy = 27; cy <= 32; cy++) for (let cx = 27; cx <= 32; cx++) {
     if (cx === 27 || cx === 32 || cy === 27 || cy === 32) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });
   }
@@ -107,12 +107,12 @@ test('a wall ring over the squad spawn strips sends a squad spawn to clear groun
   for (let i = 0; i < 20; i++) {
     const at = spawnPoint(w, 'red');
     assert.ok(!solidRects(w).some((r) => circleHitsRect(at.x, at.y, WORLD.playerRadius, r)), `spawned inside a solid at ${at.x},${at.y}`);
-    assert.ok(Math.hypot(at.x - MAPS.outpost.size / 2, at.y - MAPS.outpost.size / 2) < 300, `spawned far from the core at ${at.x},${at.y}`);
+    assert.ok(Math.hypot(at.x - MAPS.yard.size / 2, at.y - MAPS.yard.size / 2) < 300, `spawned far from the core at ${at.x},${at.y}`);
   }
 });
 
 test('a squad respawns inside a closed wall ring, not on the far side of it', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   const lo = 27, hi = 32;
   for (let c = lo; c <= hi; c++) for (const [cx, cy] of [[c, lo], [c, hi], [lo, c], [hi, c]] as const) {
     if (!w.buildings.some((b) => b.cx === cx && b.cy === cy)) w.buildings.push({ id: newId(w), kind: 'wall', cx, cy, hp: BUILDINGS.wall.hp });

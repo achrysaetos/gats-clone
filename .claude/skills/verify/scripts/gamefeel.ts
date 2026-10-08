@@ -239,7 +239,7 @@ while (Date.now() < end && !done()) {
   const enemies = snap.players.filter((p) => p.id !== st.id && p.alive);
   const near = (a: { x: number; y: number }) => Math.hypot(a.x - self.x, a.y - self.y);
   const seen = enemies.filter((p) => Math.abs(p.x - self.x) < sight.w && Math.abs(p.y - self.y) < sight.h && visible(self.x, self.y, p.x, p.y)).sort((a, b) => near(a) - near(b));
-  const crates = snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })).filter((c) => visible(self.x, self.y, c.x, c.y)).sort((a, b) => near(a) - near(b));
+  const crates = snap.crates.map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 })).filter((c) => visible(self.x, self.y, c.x, c.y)).sort((a, b) => near(a) - near(b));
   const aimAt = seen[0] ?? (crates[0] && near(crates[0]) < 500 ? crates[0] : undefined);
   const goal = seen[0] ?? enemies.sort((a, b) => near(a) - near(b))[0] ?? { x: st.worldSize / 2, y: st.worldSize / 2 };
   if (Math.random() < 0.05) strafe = -strafe;

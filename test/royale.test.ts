@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { COLOR_IDS, CRATE_TIERS, RING, ROYALE, WORLD, ZOM } from '../src/shared/defs.ts';
 import { circleHitsRect, type Rect } from '../src/shared/sim/movement.ts';
+import { KIT, placed } from '../src/shared/kit.ts';
 import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { createWorld, type Player, type World } from '../src/shared/sim/world.ts';
+import { crateRect, createWorld, type Player, type World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
 import { createRoom } from '../src/server/room.ts';
-import { emptyWorld, fakeSocket, hpOf, PISTOL, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
+import { crateOf, emptyWorld, fakeSocket, hpOf, PISTOL, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
 /** Reads the life afresh, past what an earlier assertion narrowed it to. */
 const lifeOf = (p: Player) => p.life;
@@ -57,7 +58,8 @@ test('a player with a squadmate standing is knocked, not killed, and the knock p
 });
 
 const LAST_LIVES = RING.findIndex((row) => row.lives === 'last');
-const WHOLE_MAP = { x: 3000, y: 3000, r: 4300 };
+const MID = MAPS[ROTATION.BR[0]!].size / 2;
+const WHOLE_MAP = { x: MID, y: MID, r: MID * 2 };
 
 test('once lives are last a squad is out when nobody in it stands: its knocked players die with it and it places below the squads still in', () => {
   const w = emptyWorld('BR');
@@ -249,7 +251,7 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
   assert.ok(!w.crates.some((c) => c.tier === 'drop'));
   run(w, 5100);
   const drop = w.crates.find((c) => c.tier === 'drop')!;
-  assert.ok(drop && Math.abs(drop.x + drop.size / 2 - 1300) < 1, 'lands where it was shown');
+  assert.ok(drop && Math.abs(drop.x + drop.w / 2 - 1300) < 1, 'lands where it was shown');
   for (let i = 0; i < 40 && drop.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.notEqual(drop.respawnAt, null);
   assert.equal(shooter.level, 1);
@@ -301,14 +303,16 @@ test('rich caches sit round each map\'s centre and pay a level step', () => {
     const centre = MAPS[map].size / 2;
     const caches = w.crates.filter((c) => c.tier === 'cache');
     assert.equal(caches.length, ROYALE.caches, map);
-    for (const c of caches) assert.ok(Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.cacheR + 150, `${map} cache near the centre`);
-    const own = new Set(MAPS[map].crates.map((c) => `${c.x},${c.y}`));
-    assert.ok(w.crates.filter((c) => own.has(`${c.x + c.size / 2},${c.y + c.size / 2}`)).every((c) => c.tier === 'loot'), `${map} map crates are plain loot`);
+    const lane = MAPS[map].train?.lane.h ?? 0;
+    for (const c of caches) assert.ok(Math.hypot(c.x + c.w / 2 - centre, c.y + c.h / 2 - centre) < ROYALE.cacheR + 150 + lane, `${map} cache near the centre, or beside a train lane through it`);
+    const own = new Set(MAPS[map].breakables.map((at) => `${placed(at).foot.x},${placed(at).foot.y}`));
+    const mine = w.crates.filter((c) => own.has(`${c.x},${c.y}`));
+    assert.ok(mine.every((c) => c.tier === (KIT[c.piece].breaks!.cover ? undefined : 'loot')), `${map} map crates are plain loot, and its cover holds none`);
   }
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   spawnAt(w, 4000, 4000, { team: 'red' });
-  w.crates = [{ id: 999_999, x: 1150, y: 970, size: CRATE_TIERS.cache.size, hp: CRATE_TIERS.cache.hp, respawnAt: null, tier: 'cache' }];
+  w.crates = [{ ...crateOf(999_999, 1150, 970, CRATE_TIERS.cache.piece), hp: CRATE_TIERS.cache.hp, tier: 'cache' }];
   w.wallsVersion++;
   for (let i = 0; i < 30 && w.crates[0]!.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.score, 100);
@@ -319,14 +323,14 @@ test('each match scatters crates on open ground, and those near the centre pay m
   for (const map of ROTATION.BR) {
     const w = fullMatch(map);
     const centre = MAPS[map].size / 2;
-    const own = new Set(MAPS[map].crates.map((c) => `${c.x},${c.y}`));
-    const scattered = w.crates.filter((c) => c.tier !== 'cache' && !own.has(`${c.x + c.size / 2},${c.y + c.size / 2}`));
+    const own = new Set(MAPS[map].breakables.map((at) => `${placed(at).foot.x},${placed(at).foot.y}`));
+    const scattered = w.crates.filter((c) => c.tier !== 'cache' && !own.has(`${c.x},${c.y}`));
     assert.equal(scattered.length, ROYALE.scatter, map);
     for (const c of scattered) {
-      const room = (b: Rect) => circleHitsRect(c.x + c.size / 2, c.y + c.size / 2, c.size / 2 + 2 * WORLD.playerRadius, b);
+      const room = (b: Rect) => circleHitsRect(c.x + c.w / 2, c.y + c.h / 2, c.w / 2 + 2 * WORLD.playerRadius, b);
       assert.ok(!w.walls.some(room), `${map} crate at ${c.x},${c.y} leaves room to walk past`);
-      assert.ok(!w.crates.some((o) => o !== c && room({ x: o.x, y: o.y, w: o.size, h: o.size })), `${map} crates stand apart`);
-      const near = Math.hypot(c.x + c.size / 2 - centre, c.y + c.size / 2 - centre) < ROYALE.richR;
+      assert.ok(!w.crates.some((o) => o !== c && room(crateRect(o))), `${map} crates stand apart`);
+      const near = Math.hypot(c.x + c.w / 2 - centre, c.y + c.h / 2 - centre) < ROYALE.richR;
       assert.equal(c.tier, near ? 'rich' : 'loot', `${map} crate ${near ? 'inside' : 'outside'} the rich ring`);
     }
     assert.ok(scattered.some((c) => c.tier === 'rich'), map);
@@ -337,9 +341,10 @@ test('each match scatters crates on open ground, and those near the centre pay m
 test('each new circle brings a wave of crates inside it, clear of the players', () => {
   const w = fullMatch();
   const before = new Set(w.crates.map((c) => c.id));
-  const next = { x: 3000, y: 3000, r: RING[1]!.radius };
+  const next = { x: MID, y: MID, r: RING[1]!.radius };
+  const size = MAPS[w.map].size;
   for (let x = next.x - next.r; x <= next.x + next.r; x += 200) for (let y = next.y - next.r; y <= next.y + next.r; y += 200) {
-    if (Math.hypot(x - next.x, y - next.y) < next.r) spawnAt(w, x, y, { team: 'red' });
+    if (Math.hypot(x - next.x, y - next.y) < next.r && x > 0 && y > 0 && x < size && y < size) spawnAt(w, x, y, { team: 'red' });
   }
   w.royale!.ring = { k: 'shrinking', phase: 0, from: next, to: next, startAt: w.now, closeAt: w.now + 50 };
   run(w, 100);
@@ -349,9 +354,9 @@ test('each new circle brings a wave of crates inside it, clear of the players', 
   const wave = w.crates.filter((c) => !before.has(c.id));
   assert.equal(wave.length, ROYALE.wave);
   for (const c of wave) {
-    const at = { x: c.x + c.size / 2, y: c.y + c.size / 2 };
+    const at = { x: c.x + c.w / 2, y: c.y + c.h / 2 };
     assert.ok(Math.hypot(at.x - drawn.x, at.y - drawn.y) <= drawn.r, 'inside the circle it was drawn for');
-    assert.ok([...w.players.values()].every((p) => Math.hypot(p.x - at.x, p.y - at.y) > c.size / 2 + WORLD.playerRadius), 'on nobody');
+    assert.ok([...w.players.values()].every((p) => Math.hypot(p.x - at.x, p.y - at.y) > c.w / 2 + WORLD.playerRadius), 'on nobody');
   }
 });
 
@@ -359,7 +364,7 @@ test('crates pay 25 and stay broken for the match', () => {
   const w = emptyWorld('BR');
   const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
   spawnAt(w, 4000, 4000, { team: 'red' });
-  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null, tier: 'loot' }];
+  w.crates = [{ ...crateOf(999_999, 1150, 978), hp: CRATE_TIERS.loot.hp, tier: 'loot' }];
   w.wallsVersion++;
   for (let i = 0; i < 6; i++) shootOnce(w, shooter, 0, 250);
   assert.equal(shooter.score, 25);

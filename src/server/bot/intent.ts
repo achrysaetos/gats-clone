@@ -3,7 +3,7 @@ import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
 import type { Perception, Threat } from './awareness.ts';
-import { coverNear, pickCover } from './cover.ts';
+import { coverBroke, coverNear, pickCover } from './cover.ts';
 import { between, dist, type Point } from './nav.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
@@ -29,20 +29,21 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
   marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
 };
 
+/** Fight distances as fractions of the gun's own range. */
 const WEAPON_BAND: Record<WeaponId, Omit<Band, 'rushes'>> = {
-  pistol: { headOn: 180, ideal: 320, max: 420 },
-  smg: { headOn: 90, ideal: 250, max: 330 },
-  shotgun: { headOn: 0, ideal: 150, max: 260 },
-  assault: { headOn: 220, ideal: 380, max: 480 },
-  sniper: { headOn: 420, ideal: 650, max: 840 },
-  lmg: { headOn: 200, ideal: 340, max: 450 },
+  pistol: { headOn: 0.26, ideal: 0.46, max: 0.6 },
+  smg: { headOn: 0.17, ideal: 0.48, max: 0.63 },
+  shotgun: { headOn: 0, ideal: 0.36, max: 0.62 },
+  assault: { headOn: 0.28, ideal: 0.48, max: 0.6 },
+  sniper: { headOn: 0.41, ideal: 0.63, max: 0.82 },
+  lmg: { headOn: 0.24, ideal: 0.4, max: 0.53 },
 };
 
 type Band = { headOn: number; ideal: number; max: number; rushes: boolean };
 export const bandFor = (gun: GunId, p: Personality): Band => {
   const g = GUNS[gun];
   const b = WEAPON_BAND[g.base];
-  const k = p.rangeMul * (g.range / GUNS[g.base].range);
+  const k = p.rangeMul * g.range;
   return { headOn: b.headOn * k, ideal: b.ideal * k, max: b.max * k, rushes: g.pellets >= 5 };
 };
 
@@ -71,6 +72,8 @@ const MIN_COMMIT_MS: Record<IntentKind, number> = {
 const SEARCH_MS = 5000;
 const GUNFIRE_PULL_PX = 2500;
 const FLANK_MS = 8000;
+/** A bot taking a zone breaks off for a threat only this close; farther ones it leaves to its teammates. */
+const ZONE_HOLD_IGNORE_PX = 270;
 const STALEMATE_MS = 6000;
 const ARRIVED_PX = 60;
 const COVER_REACH_PX = 320;
@@ -151,6 +154,16 @@ const losing = (v: Perception, p: Personality) => {
 
 type Interrupt = (cur: Intent, v: Perception, c: IntentCtx) => Plan | null;
 
+/** Cover can break while a bot hides behind it: a peek turns into a straight fight, and a retreat or a reload finds new cover. */
+const leaveBrokenCover: Interrupt = (cur, v, c) => {
+  if ((cur.k !== 'peekAndHide' && cur.k !== 'reloadInCover' && cur.k !== 'retreatAndHeal') || !cur.spot || !coverBroke(c.arena.cover, cur.spot)) return null;
+  if (cur.k === 'peekAndHide') return { k: 'engage', target: cur.target };
+  const threat = v.threats[0] ? pos(v.threats[0]) : cur.threat;
+  const spot = hideFrom(v, c, threat);
+  if (cur.k === 'retreatAndHeal') return { k: 'retreatAndHeal', spot, threat };
+  return spot ? { k: 'reloadInCover', spot, threat } : v.threats[0] ? { k: 'engage', target: v.threats[0].p.id } : searchPlan(v, c, threat);
+};
+
 const fleeLosingFight: Interrupt = (cur, v, c) => {
   const near = v.threats[0];
   if (cur.k === 'retreatAndHeal' || !losing(v, c.persona) || (near && near.d < FLEE_FROM_PX)) return null;
@@ -183,7 +196,7 @@ const engageOnSight: Interrupt = (cur, v) => {
   const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank';
   const t = v.threats[0];
   if (!calm || !t) return null;
-  if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > 400) return null;
+  if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > ZONE_HOLD_IGNORE_PX) return null;
   return { k: 'engage', target: t.p.id };
 };
 
@@ -194,7 +207,18 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   return searchPlan(v, c, v.lead);
 };
 
-const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, engageOnSight, investigateGunfire];
+/** Pinned by near misses in the open, a bot gets behind cover from where they come, unless the shooter is too close to hide from; one peeking ducks back early. */
+const duckWhenPinned: Interrupt = (cur, v, c) => {
+  const from = v.pinnedFrom;
+  const covering = cur.k === 'retreatAndHeal' || cur.k === 'reloadInCover' || cur.k === 'peekAndHide' || cur.k === 'takePosition';
+  if (!from || covering || c.band.rushes || dist(v.me, from) < CORNERED_PX) return null;
+  const t = v.threats[0];
+  if (t) return peekPlan(v, c, t);
+  const spot = hideFrom(v, c, from);
+  return spot && dist(spot, v.me) > ARRIVED_PX ? { k: 'takePosition', spot, facing: from } : null;
+};
+
+const INTERRUPTS: readonly Interrupt[] = [leaveBrokenCover, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, duckWhenPinned, engageOnSight, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -238,6 +262,7 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
 };
 
 function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
+  if (cur.k === 'peekAndHide' && cur.phase === 'peek' && v.pinnedFrom) return { ...cur, phase: 'hide', phaseUntil: v.tick + ticks(between(c.persona.hideMs, c.rand)) };
   if (cur.k !== 'peekAndHide' || v.tick < cur.phaseUntil) return cur;
   const unansweredPeek = cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target);
   if (unansweredPeek) return cur;

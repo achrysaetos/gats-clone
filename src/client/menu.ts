@@ -1,4 +1,5 @@
 import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS } from '../shared/defs.ts';
+import { TIERS, type QualityMode, type Tier } from './quality.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
 import type { MutedNames } from './chatmute.ts';
@@ -64,6 +65,21 @@ export function renderControls(root: HTMLElement) {
   root.replaceChildren(...CONTROLS.flatMap(([key, what]) => [el('dt', {}, el('kbd', {}, key)), el('dd', {}, what)]));
 }
 
+const QUALITY_NAMES: Record<QualityMode, string> = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' };
+
+/** The graphics setting: a mode per button, and under them the tier in force, which Auto moves on its own. */
+export function renderQuality(root: HTMLElement, mode: QualityMode, tier: Tier, noGpu: boolean, pick: (mode: QualityMode) => void) {
+  const buttons = (['auto', ...TIERS] as const).map((m) => {
+    const b = el('button', { type: 'button', className: 'quality-mode' }, QUALITY_NAMES[m]);
+    b.setAttribute('aria-pressed', String(m === mode));
+    b.dataset.mode = m;
+    b.onclick = () => pick(m);
+    return b;
+  });
+  const now = (mode === 'auto' ? `Drawing at ${QUALITY_NAMES[tier]} now. Auto steps down when frames run long.` : `Stays at ${QUALITY_NAMES[tier]}.`) + (noGpu ? ' This browser draws without the GPU.' : '');
+  root.replaceChildren(el('h2', {}, 'Graphics'), el('div', { className: 'quality-modes' }, ...buttons), el('p', { className: 'quality-now muted', id: 'quality-now' }, now));
+}
+
 export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name: string) => void) {
   root.hidden = muted.size === 0;
   root.replaceChildren(el('h2', {}, 'Muted in chat'), el('ul', { className: 'muted-list' }, ...[...muted].map((name) => {
@@ -73,7 +89,7 @@ export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name:
   })));
 }
 
-const MODE_NAMES: Record<ServerInfo['mode'], string> = { FFA: 'Free-for-all', TDM: 'Team deathmatch', DOM: 'Domination', BR: 'Last Squad', ZOM: 'Zombies' };
+const MODE_NAMES: Record<ServerInfo['mode'], string> = { FFA: 'Free-for-all', TDM: 'Team deathmatch', DOM: 'Domination', BR: 'Last Squad', ZOM: 'Zombies', EXT: 'Extraction' };
 
 export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string) => void) {
   if (servers === null) {

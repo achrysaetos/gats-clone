@@ -18,7 +18,7 @@ import { press, run, spawnAt } from './helpers.ts';
 const AT = { x: 1380, y: 1525 };
 
 function squadWorld() {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   const p = spawnAt(w, AT.x, AT.y);
   return { w, p };
 }

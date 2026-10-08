@@ -29,7 +29,7 @@ function fire(w: World, def: TurretDef, by: { owner: number; label: string; turr
     const a = aim + (def.pellets === 1 ? (rand(w) - 0.5) * def.spread * 2 : pelletOffset(i, def.pellets, def.spread));
     w.bullets.push({
       id: newId(w), owner: by.owner, team: MODES.ZOM.assignTeam(w), x: x + Math.cos(aim) * def.muzzle, y: y + Math.sin(aim) * def.muzzle,
-      vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, left: reach, damage: def.damage, piercing: false,
+      vx: Math.cos(a) * def.bulletSpeed, vy: Math.sin(a) * def.bulletSpeed, range: reach, left: reach, damage: def.damage, piercing: false,
       label: by.label, gun: null, turret: by.turret, lobbed: def.lobbed !== null, penetrate: 0, passed: [], blast: def.lobbed,
     });
   }

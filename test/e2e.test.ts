@@ -24,6 +24,9 @@ before(async () => {
   publicDir = join(siteDir, 'public');
   await mkdir(publicDir);
   await writeFile(join(publicDir, 'index.html'), '<!doctype html><title>skirmish-e2e</title>');
+  await mkdir(join(publicDir, 'assets'));
+  await writeFile(join(publicDir, 'assets', 'tile.0123abcd.webp'), 'RIFF');
+  await writeFile(join(publicDir, 'assets', 'manifest.json'), '{}');
   await writeFile(join(siteDir, 'secret.txt'), 'outside public');
   server = await startServer({ port: 0, dataDir, publicDir, stepsPerTick: STEPS_PER_TICK });
   base = `http://localhost:${server.port}`;
@@ -80,6 +83,10 @@ test('serves public/ statically without escaping it', async () => {
   assert.match(await index.text(), /skirmish-e2e/);
   assert.equal((await fetch(base + '/..%2fsecret.txt')).status, 404, 'encoded traversal stays inside public/');
   assert.equal((await fetch(base + '/nope.js')).status, 404);
+  const hashed = await fetch(base + '/assets/tile.0123abcd.webp');
+  assert.equal(hashed.headers.get('content-type'), 'image/webp');
+  assert.match(hashed.headers.get('cache-control') ?? '', /immutable/, 'hash-named art is cached for good');
+  assert.equal((await fetch(base + '/assets/manifest.json')).headers.get('cache-control'), 'no-cache', 'the manifest naming them is revalidated');
 });
 
 test('unknown room rejects the websocket upgrade', async () => {
@@ -112,7 +119,7 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
   }
 
   const servers = (await (await fetch(base + '/api/servers')).json()) as { id: string; mode: string; players: number; humans: number }[];
-  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0]]);
+  assert.deepEqual(servers.map((s) => [s.id, s.mode, s.humans]), [['ffa', 'FFA', 1], ['tdm', 'TDM', 1], ['dom', 'DOM', 1], ['br', 'BR', 0], ['ext', 'EXT', 0]]);
   for (const s of servers) assert.equal(s.players, WORLD.minPlayers, 'bots fill the room to minPlayers');
 
   const ffa = conns.ffa;
@@ -138,11 +145,11 @@ test('end to end: accounts, three modes, movement, bot kills, chat, persisted st
 
   const tdm = conns.tdm;
   send(tdm, { t: 'chat', text: '  hello team  ' });
+  send(tdm, { t: 'chat', text: 'spam' });
   const chat = await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'chat' }> => m.t === 'chat', 5000, 'chat echo');
   assert.equal(chat.from, 'Tester');
   assert.equal(chat.text, 'hello team');
   assert.ok(chat.team === 'red' || chat.team === 'blue', 'team echoed in TDM');
-  send(tdm, { t: 'chat', text: 'spam' });
   await tdm.waitFor((m): m is Extract<ServerMsg, { t: 'error' }> => m.t === 'error' && m.message === 'Slow down', 5000, 'Slow down');
   assert.ok(!tdm.msgs.some((m) => m.t === 'chat' && m.text === 'spam'), 'rate-limited chat not broadcast');
 

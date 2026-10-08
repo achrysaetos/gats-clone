@@ -1,4 +1,7 @@
-import type { BuildingKind, TurretKind, ZombieKind } from '../shared/defs.ts';
+import type { BuildingKind, GunId, TurretKind, ZombieKind } from '../shared/defs.ts';
+import type { Material, PieceId } from '../shared/kit.ts';
+import type { MapId } from '../shared/maps.ts';
+import type { Stride } from './gait.ts';
 import type { DamageKind, GameEvent, Loadout, Team, WallView } from '../shared/protocol.ts';
 import type { KillEvent, Loss } from './derive.ts';
 import type { Feedback } from './feedback.ts';
@@ -10,21 +13,31 @@ import type { Firing } from './fire.ts';
 import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
 import type { LocalRound, ShotEvent } from './rounds.ts';
+import type { SoundCue } from './sfx.ts';
 import type { TurretAim } from './siege.ts';
 import type { TrailPoint } from './trails.ts';
 import type { CrackPool } from './decals.ts';
+import type { Remains } from './remains.ts';
 
 export type Effect =
-  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; victim: number | null; born: number }
-  | { kind: 'death'; x: number; y: number; victim: number; born: number }
+  /** (`x`, `y`) is where the round struck, and `dir` the way it flew, when the server knows. */
+  /** `material` is what the round struck when it hit cover, found once the effect starts. */
+  | { kind: 'impact'; surface: 'wall' | DamageKind; x: number; y: number; dir: number | null; victim: number | null; by: number | null; material?: Material; born: number }
+  | { kind: 'death'; x: number; y: number; victim: number; by: number | null; born: number }
   | { kind: 'boom'; x: number; y: number; r: number; born: number }
-  | { kind: 'flash'; x: number; y: number; angle: number; owner: number; born: number }
-  | { kind: 'slash'; x: number; y: number; angle: number; born: number }
+  | { kind: 'flash'; x: number; y: number; angle: number; owner: number; gun: GunId; born: number }
+  /** A breakable piece gone to pieces: its solid's rect, flinging its debris from the centre. */
+  | { kind: 'broke'; piece: PieceId; x: number; y: number; w: number; h: number; born: number }
+  | { kind: 'slash'; x: number; y: number; angle: number; owner: number; born: number }
   | { kind: 'splat'; x: number; y: number; zombie: ZombieKind; born: number }
   /** A turret's round from its muzzle at (`x`, `y`), flying `reach` px before it stops. */
-  | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number };
+  | { kind: 'tracer'; turret: TurretKind; x: number; y: number; angle: number; reach: number; born: number }
+  /** A spent magazine dropped from a reload at (`x`, `y`), out of a gun aimed `angle`. */
+  | { kind: 'magdrop'; x: number; y: number; angle: number; gun: GunId; born: number }
+  /** An enemy round passed close by `victim` at (`x`, `y`), flying `dir`. */
+  | { kind: 'whizz'; x: number; y: number; dir: number; victim: number; born: number };
 
-export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, slash: 200, splat: 420, tracer: 240 };
+export const EFFECT_LIFE_MS: Record<Effect['kind'], number> = { impact: 240, death: 650, boom: 650, flash: 70, broke: 900, slash: 200, splat: 420, tracer: 240, magdrop: 100, whizz: 420 };
 
 type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' }> & { at: number };
 export type ChatLine = { from: string; text: string; team: Team; at: number };
@@ -38,6 +51,7 @@ export type Session = {
   ws: WebSocket;
   rejoin: Rejoin;
   myId: number;
+  map: MapId;
   worldSize: number;
   walls: WallView[];
   snaps: SnapBuffer;
@@ -53,6 +67,8 @@ export type Session = {
   pendingFx: PendingEffect[];
   /** Other players' shots, waiting for the render clock to reach their tick. */
   pendingShots: { at: number; shot: ShotEvent }[];
+  /** Sounds of what others did, waiting for the render clock to reach their tick. */
+  pendingSounds: { at: number; cue: SoundCue }[];
   /** The server time of each shooter's last shot event, for `recentShooters`. */
   lastShotAt: Map<number, number>;
   feedback: Feedback;
@@ -68,11 +84,30 @@ export type Session = {
   /** Zombies: the time the core last lost health, each zombie's last heading, whether build mode is on and what it puts up. */
   coreHitAt: number;
   zombieFaces: Map<number, { x: number; y: number; a: number }>;
+  /** Each soldier's last drawn spot, the way its legs face and how far through the run cycle they are. */
+  strides: Map<number, Stride>;
+  /** What each soldier did lately, for their frames: their last shot, a throw or knife swing, when a dash began. And the bodies that stay. */
+  anim: Anim;
+  /** Each soldier's stride when its footsteps were last checked, so each heel strike sounds once. */
+  heardSteps: Map<number, Stride>;
   building: boolean;
   buildKind: BuildingKind;
   /** Each turret's aim by cell (`cx,cy`). */
   turretAims: Map<string, TurretAim>;
 };
+
+export type Anim = {
+  shotAt: Map<number, number>;
+  moves: Map<number, { kind: 'throw' | 'knife'; at: number }>;
+  dashAt: Map<number, number>;
+  /** Thrown things already seen, so a new one names who threw it. */
+  thrown: Set<number>;
+  /** Soldiers whose magazine is out, so the next one to come out drops once. */
+  magOut: Set<number>;
+  remains: Remains[];
+};
+
+export const newAnim = (): Anim => ({ shotAt: new Map(), moves: new Map(), dashAt: new Map(), thrown: new Set(), magOut: new Set(), remains: [] });
 
 type MenuStatus =
   | { kind: 'idle' }

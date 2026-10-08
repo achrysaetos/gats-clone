@@ -2,7 +2,8 @@ import {
   ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, LEVELS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
   type AbilityId, type ArmorId, type ColorId, type CrateTier, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
 } from './defs.ts';
-import { MAP_IDS, MAPS, type WallMaterial } from './maps.ts';
+import { MAP_IDS, MAPS, type MapId, type WallMaterial } from './maps.ts';
+import type { PieceId } from './kit.ts';
 
 export type Loadout = { weapon: WeaponId; armor: ArmorId; color: ColorId };
 export type Team = ColorId | null;
@@ -55,19 +56,26 @@ export type PlayerView = {
   hunted: boolean;
   /** Fresh from a spawn and not yet firing: takes no damage. */
   spawnShield?: true;
+  /** 0..1 through a reload while one runs, so everyone sees the open window. */
+  reload?: number;
+  /** Slowed by a heavy hit right now. */
+  staggered?: true;
   /** While down: `revive` is 0..1 through a squadmate's revive and `bleedOutAt` the server time they bleed out. In Last Squad the view's `hp` is the knocked health enemies shoot through. */
   downed?: { revive: number; bleedOutAt: number };
 };
 
 /** `gun` is null for shrapnel. */
 export type BulletView = { id: number; x: number; y: number; vx: number; vy: number; owner: number; gun: GunId | null };
-export type CrateView = { id: number; x: number; y: number; hp: number; size: number; tier?: CrateTier };
+/** A breakable piece standing: `x`, `y`, `w`, `h` is its solid and `piece`, `r` how it is drawn. */
+export type CrateView = { id: number; piece: PieceId; r: 0 | 1 | 2 | 3; x: number; y: number; w: number; h: number; hp: number; tier?: CrateTier };
 export type WallView = { x: number; y: number; w: number; h: number } & ({ built: false; material: WallMaterial } | { built: true });
-export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud';
+export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fire';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number };
 
 export type Dash = { dirX: number; dirY: number; leftMs: number };
+/** A push from landed rounds playing out: `vx`, `vy` px a second for `leftMs` more, on top of walking and through the same collision. */
+export type Shove = { vx: number; vy: number; leftMs: number };
 
 /** `kind` indexes ZOMBIE_KINDS, `x` and `y` are whole px, and `hp` is tenths of full health, 1..10; a tuple keeps 200 zombies under 5KB. */
 export type ZombieView = [id: number, kind: number, x: number, y: number, hp: number];
@@ -101,6 +109,17 @@ export type SelfView = {
   ability: AbilityId | null; abilityReadyIn: number;
   alive: boolean;
   dash: Dash | null;
+  /** The shove still to play out from rounds that hit you, so prediction moves you with it. */
+  shove?: Shove;
+  /** Ms left of a stagger slowing your walk, so prediction slows you with it. */
+  stagger?: number;
+  /**
+   * How far into a spray you are, how shaken by hits (`flinch`) and by enemy rounds passing close (`suppression`), each 0..1: with your
+   * movement, what `spreadFor` needs to draw your real spread.
+   */
+  spray?: number;
+  flinch?: number;
+  suppression?: number;
   respawnIn: number;
   kills: number; deaths: number;
   viewRadius: number;
@@ -108,15 +127,23 @@ export type SelfView = {
 
 /** `victim` is the id of the player, crate, zombie or squad wall hit; all come from the world's one id sequence. */
 export type DamageKind = 'player' | 'crate' | 'zombie' | 'building';
+/** Where a round struck and the way it flew, in radians. */
+export type Hit = { x: number; y: number; dir: number };
 
 export type GameEvent =
   /** `assisters` are the other players paid an assist for this kill. */
   /** `knock` when the victim went down with a squadmate still standing: the knock pays the kill. */
   | { e: 'kill'; killer: string; victim: string; killerId: number | null; victimId: number; weapon: string; bounty: boolean; assisters: number[]; knock?: true }
   | { e: 'hunted'; id: number; name: string }
-  | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind }
-  | { e: 'impact'; x: number; y: number }
+  /** `hit` is where a round struck its victim and the way it flew, on bullet hits only, so sparks and blood land where it hit. */
+  | { e: 'dmg'; attacker: number | null; victim: number; amount: number; x: number; y: number; kind: DamageKind; hit?: Hit }
+  /** A round stopped against a wall at (`x`, `y`), flying toward `dir`. */
+  | { e: 'impact'; x: number; y: number; dir: number }
+  /** An enemy round passed close by `victim` without hitting: (`x`, `y`) is where it passed nearest, flying toward `dir`. */
+  | { e: 'whizz'; victim: number; x: number; y: number; dir: number }
   | { e: 'boom'; x: number; y: number; r: number }
+  /** A breakable piece broke, its debris flying from (`x`, `y`), the centre of its solid `w` by `h`. */
+  | { e: 'broke'; piece: PieceId; x: number; y: number; w: number; h: number }
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
   /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
@@ -154,6 +181,24 @@ export type RoyaleResult = { place: number; of: number; kills: number; knocks: n
 export type RoyaleView = {
   ring: RingView; redeploys: boolean; squads: SquadView[]; redeployAt: number | null;
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
+};
+
+export type ExtTeam = 'red' | 'blue';
+/**
+ * Extraction, as every player sees it. `case` is where the data case is: still in the terminal while `progress` (0..1) runs, at the terminal
+ * once hacked, with carrier `by`, or dropped and going home at `returnAt`. `roundEndsAt` is the live round's server deadline; `between` holds
+ * the round just won during the ceasefire before round `round + 1`.
+ */
+export type ExtView = {
+  round: number; attackers: ExtTeam; wins: Record<ExtTeam, number>;
+  terminal: Circle; pad: { x: number; y: number; w: number; h: number };
+  case:
+    | { k: 'hacking'; progress: number; contested: boolean }
+    | { k: 'ready'; x: number; y: number }
+    | { k: 'carried'; by: number; x: number; y: number }
+    | { k: 'dropped'; x: number; y: number; returnAt: number };
+  roundEndsAt: number | null;
+  between: { winner: ExtTeam; why: 'extracted' | 'time'; nextAt: number } | null;
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
@@ -195,17 +240,20 @@ export type Snapshot = {
   run?: RunView;
   /** Last Squad only. */
   royale?: RoyaleView;
+  /** Extraction only. */
+  ext?: ExtView;
 };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'ext'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 export type SnapshotWire = Omit<Snapshot, StickyKey> & Partial<Pick<Snapshot, StickyKey>>;
 
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
-  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; walls: WallView[]; account: string | null }
-  | { t: 'walls'; worldSize: number; walls: WallView[] }
+  /** `map` names the layout, so the client draws its pieces and knows its railings; `walls` are what stands now, the squad's own included. */
+  | { t: 'welcome'; id: number; mode: ModeId; map: MapId; worldSize: number; walls: WallView[]; account: string | null }
+  | { t: 'walls'; map: MapId; worldSize: number; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }
   | { t: 'error'; message: string };

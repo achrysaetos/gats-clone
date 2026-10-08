@@ -9,10 +9,11 @@ export type PendingEffect = { at: number; fx: EffectSpec };
 
 function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | null {
   switch (ev.e) {
-    case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, victim: null };
-    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.x, y: ev.y, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null };
+    case 'impact': return { kind: 'impact', surface: 'wall', x: ev.x, y: ev.y, dir: ev.dir, victim: null, by: null };
+    case 'dmg': return { kind: 'impact', surface: ev.kind, x: ev.hit?.x ?? ev.x, y: ev.hit?.y ?? ev.y, dir: ev.hit?.dir ?? null, victim: ev.kind === 'player' || ev.kind === 'zombie' ? ev.victim : null, by: ev.attacker };
     case 'boom': return { kind: 'boom', x: ev.x, y: ev.y, r: ev.r };
-    case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle };
+    case 'broke': return { kind: 'broke', piece: ev.piece, x: ev.x - ev.w / 2, y: ev.y - ev.h / 2, w: ev.w, h: ev.h };
+    case 'slash': return { kind: 'slash', x: ev.x, y: ev.y, angle: ev.angle, owner: ev.owner };
     case 'zkill': return { kind: 'splat', x: ev.x, y: ev.y, zombie: ev.kind };
     case 'turret': {
       const def = BUILDINGS[ev.kind].turret;
@@ -32,9 +33,10 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'hunted':
     case 'life':
     case 'wiped': return null;
+    case 'whizz': return { kind: 'whizz', x: ev.x, y: ev.y, dir: ev.dir, victim: ev.victim };
     case 'kill': {
       const blow = snap.events.filter((d) => d.e === 'dmg' && d.kind === 'player' && d.victim === ev.victimId).at(-1);
-      return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId } : null;
+      return blow?.e === 'dmg' ? { kind: 'death', x: blow.x, y: blow.y, victim: ev.victimId, by: ev.killerId } : null;
     }
   }
 }

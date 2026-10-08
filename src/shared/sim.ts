@@ -1,13 +1,14 @@
-import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { ABILITY_COOLDOWN_MS, GUNS, WORLD, ZOM, ZOMBIES, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
-import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets } from './sim/combat.ts';
+import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, tickTrain } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
-import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, spreadFor } from './sim/stats.ts';
+import { circleHitsRect, clamp, moveStep, walks, type Rect } from './sim/movement.ts';
+import { abilityOf, effectiveStats, freshLife, isHunted, isSteady, resetProgress, shakenOf, spreadFor } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { carrying, ceasefire, moveSpeed } from './sim/extract.ts';
+import { crateHpMax, IDLE_INPUT, moveTo, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
@@ -67,7 +68,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const life = p.life;
   if (life.k === 'downed') {
     p.angle = p.input.angle;
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: null, shove: null, staggerMs: 0 }, p.input, effectiveStats(p).speed * ZOM.crawlMul, dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     return;
@@ -80,25 +81,26 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const moving = walks(inp) || life.dash !== null;
   if (moving) life.lastMoveAt = w.now;
   const stats = effectiveStats(p);
-  if (moving) {
-    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash }, inp, stats.speed, dtMs, MAPS[w.map].size);
+  if (moving || life.shove) {
+    const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, shove: life.shove, staggerMs: Math.max(0, life.staggerUntil - (w.now - dtMs)) }, inp, moveSpeed(w, p), dtMs, MAPS[w.map].size);
     p.x = m.x;
     p.y = m.y;
     life.dash = m.dash;
+    life.shove = m.shove;
   }
 
-  const armed = w.match.k === 'playing';
+  const armed = w.match.k === 'playing' && !ceasefire(w);
   if (pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs)) {
     life.shieldUntil = -Infinity;
     const muzzle = WORLD.playerRadius + 4;
-    const spread = spreadFor(p.gun, p.perks, isSteady(moving ? 0 : w.now - life.lastMoveAt), life.spray);
+    const spread = spreadFor(p.gun, p.perks, isSteady(moving ? 0 : w.now - life.lastMoveAt), life.spray, shakenOf(life, w.now));
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;
       const b: Bullet = {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
-        left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
+        range: stats.range, left: stats.range, damage: gun.damage, piercing: stats.piercing, label: gun.name,
         gun: p.gun, turret: null, lobbed: false, penetrate: gun.penetrate ?? 0, passed: [], blast: gun.blast ?? null,
       };
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
@@ -111,7 +113,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   }
 
   const ability = abilityOf(p);
-  if (armed && inp.ability && ability && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
+  if (armed && inp.ability && ability && !carrying(w, p) && w.now >= p.abilityReadyAt && ABILITIES[ability](w, p)) {
     p.abilityReadyAt = w.now + ABILITY_COOLDOWN_MS[ability];
     if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
   }
@@ -126,6 +128,10 @@ function pingHunted(w: World, p: Player) {
   else if (!p.huntedPing || w.now - p.huntedPing.at >= HUNTED_PING_MS) p.huntedPing = { x: p.x, y: p.y, at: w.now };
 }
 
+/** A broken piece stands again only once its footprint is empty, so it never closes round a body. */
+const nobodyIn = (w: World, r: Rect): boolean =>
+  ![...w.players.values()].some((p) => p.life.k !== 'dead' && circleHitsRect(p.x, p.y, WORLD.playerRadius, r)) && !w.zombies.some((z) => circleHitsRect(z.x, z.y, ZOMBIES[z.kind].radius, r));
+
 export function step(w: World, dtMs: number): void {
   w.events = w.queuedEvents;
   w.queuedEvents = [];
@@ -136,8 +142,9 @@ export function step(w: World, dtMs: number): void {
   for (const p of w.players.values()) pingHunted(w, p);
   tickBullets(w, dt);
   tickThrown(w, dt);
+  tickTrain(w);
   for (const c of w.crates) {
-    if (c.respawnAt !== null && w.now >= c.respawnAt) { c.respawnAt = null; c.hp = WORLD.crateHp; }
+    if (c.respawnAt !== null && w.now >= c.respawnAt && nobodyIn(w, c)) { c.respawnAt = null; c.hp = crateHpMax(c); }
   }
   const wallCount = w.walls.length;
   w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);

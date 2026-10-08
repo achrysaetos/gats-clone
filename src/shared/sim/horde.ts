@@ -20,13 +20,13 @@ function cellsUnder(r: Rect, grid: number, mark: (c: number) => void) {
 }
 
 /**
- * Each cell's cost to reach the core, by Dijkstra out from the core's cells. Cover is impassable; a squad wall costs `ZOM.wallCostCells` steps
+ * Each cell's cost to reach the core, by Dijkstra out from the core's cells. Cover and railings are impassable; a squad wall costs `ZOM.wallCostCells` steps
  * to walk into, so the horde takes any open way round and chews through a wall only when the core is walled in.
  * A diagonal step needs both cells it cuts past to be open, so a zombie never clips a corner.
  */
 function buildFlow(w: World, core: Rect, grid: number): Uint16Array {
   const blocked = new Uint8Array(grid * grid);
-  for (const r of coverRects(w)) cellsUnder(r, grid, (c) => { blocked[c] = 1; });
+  for (const r of [...coverRects(w), ...w.fences]) cellsUnder(r, grid, (c) => { blocked[c] = 1; });
   const walled = new Uint8Array(grid * grid);
   for (const b of w.buildings) walled[b.cy * grid + b.cx] = 1;
   const cost = new Uint16Array(grid * grid).fill(UNREACHABLE);

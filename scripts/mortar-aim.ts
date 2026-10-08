@@ -8,13 +8,13 @@ import { step } from '../src/shared/sim.ts';
 import { createWorld, newId } from '../src/shared/sim/world.ts';
 
 const TICK_MS = 1000 / 30;
-const core = MAPS.outpost.siege!.core;
+const core = MAPS.yard.siege!.core;
 const mortar = BUILDINGS.mortar.turret;
 
 for (const kind of ['walker', 'plated', 'runner', 'brute'] as const satisfies readonly ZombieKind[]) {
   let shells = 0, hits = 0, share = 0;
   for (let i = 0; i < 16; i++) {
-    const w = createWorld('ZOM', i + 1, 'outpost');
+    const w = createWorld('ZOM', i + 1, 'yard');
     w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
     w.run!.core.hp = 1e9;
     w.run!.survivors = 0;

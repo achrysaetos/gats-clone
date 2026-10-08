@@ -33,7 +33,7 @@ const world = room.world;
 
 function arenaCenter(): { x: number; y: number } {
   const box = (x: number, y: number): Rect => ({ x: x - STRAFE_HALF - 80, y: y - RANGE - 80, w: 2 * (STRAFE_HALF + 80), h: RANGE + 160 });
-  const solids: Rect[] = [...world.walls, ...world.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))];
+  const solids: Rect[] = [...world.walls, ...world.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }))];
   for (let y = 600; y < MAPS[world.map].size - 300; y += 50) {
     for (let x = 400; x < MAPS[world.map].size - 400; x += 50) {
       const b = box(x, y);

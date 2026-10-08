@@ -1,6 +1,6 @@
 import { STICKY_KEYS, type Snapshot, type SnapshotWire } from './protocol.ts';
 
-const DECIMALS: Readonly<Record<string, number>> = { angle: 2, progress: 2, reloadFrac: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
+const DECIMALS: Readonly<Record<string, number>> = { angle: 2, dir: 2, progress: 2, reloadFrac: 2, reload: 2, flinch: 2, suppression: 2, spray: 2, vx: 0, vy: 0, dirX: 3, dirY: 3, abilityReadyIn: 0, respawnIn: 0, restartIn: 0, mapChangeIn: 0 };
 
 const round = (key: string, v: unknown) => {
   if (typeof v !== 'number' || Number.isInteger(v)) return v;
@@ -29,6 +29,6 @@ export function fillSnapshot(wire: SnapshotWire, last: Snapshot | null): Snapsho
   const zones = wire.zones ?? last?.zones;
   const match = wire.match ?? last?.match;
   if (!crates || !leaderboard || !zones || !match) return null;
-  const buildings = wire.buildings ?? last?.buildings, run = wire.run ?? last?.run, royale = wire.royale ?? last?.royale;
-  return { ...wire, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }) };
+  const buildings = wire.buildings ?? last?.buildings, run = wire.run ?? last?.run, royale = wire.royale ?? last?.royale, ext = wire.ext ?? last?.ext;
+  return { ...wire, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(ext && { ext }) };
 }

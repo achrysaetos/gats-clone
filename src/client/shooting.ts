@@ -1,14 +1,17 @@
 import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
-import { isSteady, rangeFor, silencedFor, spreadFor } from '../shared/sim/stats.ts';
+import { isSteady, rangeFor, silencedFor, spreadFor, type Shaken } from '../shared/sim/stats.ts';
 import { noteLateShot, noteRejectedShot } from './devprobe.ts';
 import { startEffect } from './effects.ts';
 import { dueAt, nextSprayShot, serverGun, settle, type PredictedShot, type TriggerInput } from './fire.ts';
 import { newestSnap, renderTime, sampleAt, TICK_MS } from './interp.ts';
 import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
-import { shotCue, type SoundCue } from './sfx.ts';
+import { shotCues, type SoundCue } from './sfx.ts';
 import { muzzleTip } from './sprites.ts';
 import type { Session } from './state.ts';
+
+/** How shaken the server says you are, so your predicted cone and the reticle widen with the sim's. */
+export const shakenOf = (self: Snapshot['self']): Shaken => ({ flinch: self.flinch ?? 0, suppression: self.suppression ?? 0 });
 
 type Point = { x: number; y: number };
 type Offset = { dx: number; dy: number };
@@ -20,6 +23,7 @@ const unperkedShot = (ev: ShotEvent): Shot => ({ owner: ev.owner, gun: ev.gun, r
 type Page = {
   hands: (s: Session) => Hands;
   playCues: (s: Session, cues: readonly SoundCue[], viewRadius: number) => void;
+  recoil: (gun: GunId, angle: number) => void;
 };
 
 export function createShooting(page: Page) {
@@ -31,15 +35,17 @@ export function createShooting(page: Page) {
     const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, s.walls, shot.owner), now, nextLocalRoundId);
     nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
-    startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner }, now);
+    startEffect(s, { kind: 'flash', ...muzzle, angle, owner: shot.owner, gun: shot.gun }, now);
     return rounds.map((r) => r.id);
   }
 
   function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
     const { aim, sinceMove } = page.hands(s);
-    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(sinceMove), nextSprayShot(s.firing)) };
-    page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
-    return showShot(s, shot, s.lastSelf, Math.atan2(aim.dy, aim.dx), sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
+    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(sinceMove), nextSprayShot(s.firing), shakenOf(snap.self)) };
+    page.playCues(s, shotCues(gun, silenced, s.lastSelf, true), snap.self.viewRadius || WORLD.viewRadius);
+    const angle = Math.atan2(aim.dy, aim.dx);
+    page.recoil(gun, angle);
+    return showShot(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
   }
 
   function triggerInput(s: Session): TriggerInput {

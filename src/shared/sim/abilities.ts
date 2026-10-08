@@ -1,6 +1,6 @@
 import { WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
 import { MAPS } from '../maps.ts';
-import { damagePlayer, explode } from './combat.ts';
+import { burst, damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
 import { circleHitsRect, clamp, dist2, knifeLunge, segmentEntersRectAt, startDash } from './movement.ts';
 import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
@@ -87,7 +87,7 @@ export function tickThrown(w: World, dt: number) {
             const a = (i / 16) * Math.PI * 2;
             w.bullets.push({
               id: newId(w), owner: t.owner, team: t.team, x: t.x, y: t.y, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100,
-              left: 320, damage: 18, piercing: false, label: 'Frag', gun: null, turret: null, lobbed: false, penetrate: 0, passed: [], blast: null,
+              range: 320, left: 320, damage: 18, piercing: false, label: 'Frag', gun: null, turret: null, lobbed: false, penetrate: 0, passed: [], blast: null,
             });
           }
         } else {
@@ -113,6 +113,22 @@ export function tickThrown(w: World, dt: number) {
           }
         }
         for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < GAS_RADIUS ** 2) damageZombie(w, z, 14 * dt, owner);
+        keep.push(t);
+        break;
+      }
+      case 'fuse': {
+        if (w.now >= t.explodeAt) burst(w, t);
+        else keep.push(t);
+        break;
+      }
+      case 'fire': {
+        if (w.now >= t.expiresAt) break;
+        for (const p of w.players.values()) {
+          if (p.life.k === 'alive' && dist2(p.x, p.y, t.x, t.y) < (t.r + WORLD.playerRadius * 0.5) ** 2) {
+            damagePlayer(w, p, t.dps * dt, { ...by, label: 'Fire', piercing: true, via: 'fire', fromX: t.x, fromY: t.y });
+          }
+        }
+        for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < (t.r + ZOMBIES[z.kind].radius * 0.5) ** 2) damageZombie(w, z, t.dps * dt, owner);
         keep.push(t);
         break;
       }

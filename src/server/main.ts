@@ -1,40 +1,49 @@
 import { randomBytes, randomInt } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { extname, resolve, sep } from 'node:path';
+import { extname, relative, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
+import { parseMapFile, serializeMapFile } from '../shared/maps.ts';
 import { cleanName } from '../shared/protocol.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 
-export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
+export type ServerOptions = {
+  port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean;
+  /** Dev only: the folder the map editor reads and saves map files in. Without it the editor's routes are not there. */
+  devMapsDir?: string;
+};
 export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; close(): Promise<void> };
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
 const MAX_BODY = 4096;
-const ROOM_MODES: [string, ModeId][] = [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM'], ['br', 'BR']];
+const MAX_MAP_BODY = 4 * 1024 * 1024;
+const MAP_ID = /^[a-z][a-z0-9-]{0,31}$/;
+const ROOM_MODES: [string, ModeId][] = [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM'], ['br', 'BR'], ['ext', 'EXT']];
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.map': 'application/json', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon', '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg',
 };
+/** Files under /assets/ are named by their content's hash, so a browser may keep them for good. */
+const IMMUTABLE = /^\/assets\/.*\.[0-9a-f]{8,}\.[a-z0-9]+$/;
 
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, max = MAX_BODY): Promise<unknown> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) return null;
+    if (size > max) return null;
     chunks.push(chunk as Buffer);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return null; }
@@ -69,13 +78,15 @@ async function serveStatic(publicDir: string, pathname: string, req: IncomingMes
   if (!file.startsWith(publicDir + sep)) { res.writeHead(404).end(); return; }
   try {
     const { etag, data, gz } = await loadStatic(file);
-    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag };
+    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': IMMUTABLE.test(pathname) ? 'public, max-age=31536000, immutable' : 'no-cache', etag };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return; }
     const useGzip = gz !== null && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
     if (useGzip) headers['content-encoding'] = 'gzip';
     if (gz !== null) headers.vary = 'accept-encoding';
+    const body = useGzip ? gz : data;
+    headers['content-length'] = String(body.length);
     res.writeHead(200, headers);
-    res.end(useGzip ? gz : data);
+    res.end(body);
   } catch {
     res.writeHead(404).end('Not found');
   }
@@ -97,7 +108,22 @@ const forwardedIp: IpOf = (req) => {
   return last || socketIp(req);
 };
 
-async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
+/** The map editor's load and save: a map file read from, or checked and written to, the dev maps folder. */
+async function devMap(req: IncomingMessage, res: ServerResponse, dir: string, id: string) {
+  if (!MAP_ID.test(id)) return json(res, 400, { error: 'Bad map id' });
+  const file = resolve(dir, `${id}.json`);
+  if (req.method === 'GET') {
+    try { return json(res, 200, JSON.parse(await readFile(file, 'utf8'))); } catch { return json(res, 404, { error: 'No such map' }); }
+  }
+  if (req.method !== 'PUT') return json(res, 405, { error: 'Method not allowed' });
+  const body = await readBody(req, MAX_MAP_BODY);
+  let text: string;
+  try { text = serializeMapFile(parseMapFile(body)); } catch (err) { return json(res, 400, { error: (err as Error).message }); }
+  await writeFile(file, text);
+  return json(res, 200, { saved: relative(process.cwd(), file), bytes: text.length });
+}
+
+async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf, devMapsDir: string | undefined) {
   const url = new URL(req.url ?? '/', 'http://x');
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size });
@@ -125,6 +151,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
     const session = await accounts.login(creds.name, creds.password);
     return session ? json(res, 200, session) : json(res, 401, { error: 'Wrong name or password' });
   }
+  if (devMapsDir && path.startsWith('/api/dev/maps/')) return devMap(req, res, devMapsDir, path.slice('/api/dev/maps/'.length));
   if (path.startsWith('/api/')) return json(res, 404, { error: 'Not found' });
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed' });
   return serveStatic(publicDir, path, req, res);
@@ -132,6 +159,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const limits: Limits = { ...LIMITS, ...opts.limits };
+  if (opts.devMapsDir && !relative(resolve(opts.dataDir), resolve(opts.devMapsDir)).startsWith('..')) throw new Error('the map editor never saves into the data folder');
   const ipOf = opts.trustProxy ? forwardedIp : socketIp;
   const allowAuth = makeKeyedLimiter(limits.authPerMin / 60, limits.authPerMin);
   const socketsByIp = new Map<string, number>();
@@ -164,7 +192,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const http = createServer((req, res) => {
-    route(req, res, { all: rooms, openSquad }, accounts, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad }, accounts, publicDir, allowAuth, allowSquad, ipOf, opts.devMapsDir).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -224,8 +252,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const port = Number(process.env.PORT ?? 8080);
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
-  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1' });
+  // `SKIRMISH_DEV_MAPS=1` lets the map editor (`?dev&editor=<map>`) save straight into src/shared/maps/.
+  const devMapsDir = process.env.SKIRMISH_DEV_MAPS === '1' ? resolve(import.meta.dirname, '../shared/maps') : undefined;
+  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1', devMapsDir });
   console.log(`Skirmish listening on http://localhost:${server.port}`);
+  if (devMapsDir) console.log(`map editor saves into ${devMapsDir}`);
   const shutdown = async (signal: string) => {
     console.log(`${signal}: saving and shutting down`);
     await server.close();

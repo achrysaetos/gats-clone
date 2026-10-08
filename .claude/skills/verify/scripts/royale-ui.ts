@@ -84,11 +84,11 @@ await shot('br-start');
 const toward = async (to: { x: number; y: number }) => {
   const p = me(), m = frames.map;
   if (!p?.alive || !m) { await steer([]); return; }
-  const crates = (frames.snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }));
+  const crates = (frames.snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }));
   await steer(pathStep(withSolids(navGridFor(m.worldSize, m.walls), crates, WORLD.playerRadius), p, to));
 };
 const tiers = () => new Set((frames.snap?.crates ?? []).map((c) => c.tier));
-const onScreen = (c: { x: number; y: number; size: number }) => { const p = me(); return !!p && Math.abs(c.x + c.size / 2 - p.x) < 500 && Math.abs(c.y + c.size / 2 - p.y) < 300; };
+const onScreen = (c: { x: number; y: number; w: number; h: number }) => { const p = me(); return !!p && Math.abs(c.x + c.w / 2 - p.x) < 500 && Math.abs(c.y + c.h / 2 - p.y) < 300; };
 const sawCache = await until(async () => { if (centre) await toward(centre); return (frames.snap?.crates ?? []).some((c) => c.tier === 'cache' && onScreen(c)); }, 40_000);
 expect('running in, the caches at the centre come into view among rich crates', sawCache && tiers().has('rich'), [...tiers()].join(','));
 await steer([]);

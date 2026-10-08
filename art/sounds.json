@@ -1,0 +1,248 @@
+{
+  "sources": {
+    "fs-9mm-pistol": {
+      "title": "9mm pistol shot", "author": "michorvath",
+      "url": "https://cdn.freesound.org/previews/427/427592_3094998-hq.mp3",
+      "page": "https://freesound.org/people/michorvath/sounds/427592/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ar15-pistol": {
+      "title": "AR15 pistol shot", "author": "michorvath",
+      "url": "https://cdn.freesound.org/previews/427/427598_3094998-hq.mp3",
+      "page": "https://freesound.org/people/michorvath/sounds/427598/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ar15-rifle": {
+      "title": "AR15 rifle shot", "author": "michorvath",
+      "url": "https://cdn.freesound.org/previews/427/427596_3094998-hq.mp3",
+      "page": "https://freesound.org/people/michorvath/sounds/427596/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-405win": {
+      "title": "405Win.wav", "author": "Jon285",
+      "url": "https://cdn.freesound.org/previews/49/49513_282197-hq.mp3",
+      "page": "https://freesound.org/people/Jon285/sounds/49513/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-sniper-shot": {
+      "title": "Sniper Shot", "author": "LeMudCrab",
+      "url": "https://cdn.freesound.org/previews/163/163460_2263027-hq.mp3",
+      "page": "https://freesound.org/people/LeMudCrab/sounds/163460/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-grenade-launcher": {
+      "title": "Grenade Launcher", "author": "LeMudCrab",
+      "url": "https://cdn.freesound.org/previews/163/163458_2263027-hq.mp3",
+      "page": "https://freesound.org/people/LeMudCrab/sounds/163458/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-visceral-impacts": {
+      "title": "VisceralBulletImpacts.wav", "author": "u1769092",
+      "url": "https://cdn.freesound.org/previews/423/423301_8202639-hq.mp3",
+      "page": "https://freesound.org/people/u1769092/sounds/423301/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-grenade-explosion": {
+      "title": "Grenade Explosion SFX (medium-sized, meaty, realistic)", "author": "unfa",
+      "url": "https://cdn.freesound.org/previews/609/609587_1038806-hq.mp3",
+      "page": "https://freesound.org/people/unfa/sounds/609587/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-zombie-bites": {
+      "title": "Zombie Flesh Bites", "author": "MrPokephile",
+      "url": "https://cdn.freesound.org/previews/155/155973_2449149-hq.mp3",
+      "page": "https://freesound.org/people/MrPokephile/sounds/155973/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-20-gauge": {
+      "title": "20 gauge shotgun gunshot", "author": "michorvath",
+      "url": "https://cdn.freesound.org/previews/427/427595_3094998-hq.mp3",
+      "page": "https://freesound.org/people/michorvath/sounds/427595/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-mortar": {
+      "title": "M-327 Mortar Shots.flac", "author": "qubodup",
+      "url": "https://cdn.freesound.org/previews/187/187542_71257-hq.mp3",
+      "page": "https://freesound.org/people/qubodup/sounds/187542/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ship-horn": {
+      "title": "ship horn.wav", "author": "monotraum",
+      "url": "https://cdn.freesound.org/previews/208/208714_1756543-hq.mp3",
+      "page": "https://freesound.org/people/monotraum/sounds/208714/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "oga-silencers": {
+      "title": "Silencers - By EmoPreben", "author": "EmoPreben",
+      "url": "https://opengameart.org/sites/default/files/silencers_-_wav.zip",
+      "page": "https://opengameart.org/content/silencers-by-emopreben",
+      "licence": "CC0-1.0", "licenceSeen": "OpenGameArt page License(s) block: CC0"
+    },
+    "oga-bangs": {
+      "title": "25 CC0 bang / firework SFX", "author": "rubberduck",
+      "url": "https://opengameart.org/sites/default/files/25-CC0-bang-sfx.zip",
+      "page": "https://opengameart.org/content/25-cc0-bang-firework-sfx",
+      "licence": "CC0-1.0", "licenceSeen": "OpenGameArt page License(s) block: CC0"
+    },
+    "oga-100-sfx": {
+      "title": "100 CC0 SFX", "author": "rubberduck",
+      "url": "https://opengameart.org/sites/default/files/100-CC0-SFX_0.zip",
+      "page": "https://opengameart.org/content/100-cc0-sfx",
+      "licence": "CC0-1.0", "licenceSeen": "OpenGameArt page License(s) block: CC0"
+    },
+    "kenney-impact": {
+      "title": "Impact Sounds", "author": "Kenney",
+      "url": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+      "page": "https://kenney.nl/assets/impact-sounds",
+      "licence": "CC0-1.0", "licenceSeen": "kenney.nl asset page: License Creative Commons CC0; License.txt in the zip: License: (Creative Commons Zero, CC0) http://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "kenney-interface": {
+      "title": "Interface Sounds", "author": "Kenney",
+      "url": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+      "page": "https://kenney.nl/assets/interface-sounds",
+      "licence": "CC0-1.0", "licenceSeen": "kenney.nl asset page: License Creative Commons CC0; License.txt in the zip: License: (Creative Commons Zero, CC0)"
+    },
+    "kenney-rpg": {
+      "title": "RPG Audio", "author": "Kenney",
+      "url": "https://kenney.nl/media/pages/assets/rpg-audio/8e99002d76-1677590336/kenney_rpg-audio.zip",
+      "page": "https://kenney.nl/assets/rpg-audio",
+      "licence": "CC0-1.0", "licenceSeen": "kenney.nl asset page: License Creative Commons CC0; License.txt in the zip: License (Creative Commons Zero, CC0)"
+    },
+    "kenney-scifi": {
+      "title": "Sci-fi Sounds", "author": "Kenney",
+      "url": "https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip",
+      "page": "https://kenney.nl/assets/sci-fi-sounds",
+      "licence": "CC0-1.0", "licenceSeen": "kenney.nl asset page: License Creative Commons CC0; License.txt in the zip: License: (Creative Commons Zero, CC0)"
+    },
+    "kenney-jingles": {
+      "title": "Music Jingles", "author": "Kenney",
+      "url": "https://kenney.nl/media/pages/assets/music-jingles/f37e530b9e-1677590399/kenney_music-jingles.zip",
+      "page": "https://kenney.nl/assets/music-jingles",
+      "licence": "CC0-1.0", "licenceSeen": "kenney.nl asset page: License Creative Commons CC0"
+    },
+    "fs-1911-reload": {
+      "title": "1911 Reload", "author": "nioczkus",
+      "url": "https://cdn.freesound.org/previews/396/396331_932959-hq.mp3",
+      "page": "https://freesound.org/people/nioczkus/sounds/396331/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ak-reload": {
+      "title": "AK-47 Assault Rifle being unloaded and reloaded", "author": "serøutōnin--deprivəd",
+      "url": "https://cdn.freesound.org/previews/674/674742_7157894-hq.mp3",
+      "page": "https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/674742/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-shotgun-rack": {
+      "title": "SXP_SHOTGUN_RACK_01", "author": "dasBUTCHER84",
+      "url": "https://cdn.freesound.org/previews/449/449614_9348290-hq.mp3",
+      "page": "https://freesound.org/people/dasBUTCHER84/sounds/449614/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-shell-load": {
+      "title": "shell load.ogg", "author": "CeebFrack",
+      "url": "https://cdn.freesound.org/previews/108/108793_1553758-hq.mp3",
+      "page": "https://freesound.org/people/CeebFrack/sounds/108793/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-mg-reload": {
+      "title": "Machine gun reload", "author": "SamsterBirdies",
+      "url": "https://cdn.freesound.org/previews/363/363168_5487341-hq.mp3",
+      "page": "https://freesound.org/people/SamsterBirdies/sounds/363168/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-brass-drop": {
+      "title": "Brass bullet shell casing drop onto concrete, multiple takes", "author": "GrayJoy",
+      "url": "https://cdn.freesound.org/previews/210/210102_3278936-hq.mp3",
+      "page": "https://freesound.org/people/GrayJoy/sounds/210102/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-shell-drop": {
+      "title": "12 guage shotgun shell drop", "author": "MrGungus",
+      "url": "https://cdn.freesound.org/previews/773/773860_15468302-hq.mp3",
+      "page": "https://freesound.org/people/MrGungus/sounds/773860/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-rifle-drop": {
+      "title": "Rifle dropped on floor 3x", "author": "serøutōnin--deprivəd",
+      "url": "https://cdn.freesound.org/previews/675/675009_7157894-hq.mp3",
+      "page": "https://freesound.org/people/ser%C3%B8ut%C5%8Dnin--depriv%C9%99d/sounds/675009/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-bullet-ping": {
+      "title": "HeavyBulletPing.mp3", "author": "wilhellboy",
+      "url": "https://cdn.freesound.org/previews/351/351371_4603244-hq.mp3",
+      "page": "https://freesound.org/people/wilhellboy/sounds/351371/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-ricochet": {
+      "title": "Ricochet 2.wav", "author": "morganpurkis",
+      "url": "https://cdn.freesound.org/previews/392/392975_5937039-hq.mp3",
+      "page": "https://freesound.org/people/morganpurkis/sounds/392975/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "fs-flyby": {
+      "title": "Fly-by whiz SFX (subsonic)", "author": "modusmogulus",
+      "url": "https://cdn.freesound.org/previews/789/789222_15956618-hq.mp3",
+      "page": "https://freesound.org/people/modusmogulus/sounds/789222/",
+      "licence": "CC0-1.0", "licenceSeen": "Freesound sound page licence: Creative Commons 0, linking creativecommons.org/publicdomain/zero/1.0/"
+    }
+  },
+  "sounds": {
+    "pistol": { "source": "fs-9mm-pistol", "start": 0.115, "length": 0.5, "gainDb": -2 },
+    "shotgun": { "source": "fs-20-gauge", "start": 0.045, "length": 0.6, "gainDb": 0 },
+    "smg": { "source": "fs-ar15-pistol", "start": 0.025, "length": 0.35, "gainDb": -3 },
+    "assault": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.5, "gainDb": -2 },
+    "sniper": { "source": "fs-405win", "start": 0.065, "length": 0.9, "gainDb": 0 },
+    "lmg": { "source": "fs-sniper-shot", "start": 0.03, "length": 0.4, "gainDb": -2 },
+    "crack": { "source": "fs-ar15-rifle", "start": 0.07, "length": 0.05, "gainDb": -4, "highpassHz": 2000, "note": "the transient every report opens on" },
+    "sub": { "source": "fs-20-gauge", "start": 0.045, "length": 0.5, "gainDb": -1, "lowpassHz": 200, "note": "the low body under heavy reports" },
+    "silenced": { "source": "oga-silencers", "member": "Silencers - 1.wav", "start": 0.02, "length": 0.35, "gainDb": -6 },
+    "launcher": { "source": "fs-grenade-launcher", "start": 0.015, "length": 0.4, "gainDb": -2 },
+    "hit": { "source": "fs-visceral-impacts", "start": 0.185, "length": 0.1, "gainDb": -6 },
+    "splat": { "source": "fs-visceral-impacts", "start": 1.2, "length": 0.15, "gainDb": -4 },
+    "bite": { "source": "fs-zombie-bites", "start": 9.305, "length": 0.35, "gainDb": -3 },
+    "hurt": { "source": "kenney-impact", "member": "Audio/impactPunch_heavy_000.ogg", "start": 0.015, "length": 0.4, "gainDb": -3 },
+    "boom": { "source": "fs-grenade-explosion", "start": 0, "length": 1.2, "gainDb": 0 },
+    "mortar": { "source": "fs-mortar", "start": 0, "length": 0.8, "gainDb": -2 },
+    "cannon": { "source": "oga-bangs", "member": "cannon_01.ogg", "start": 0.08, "length": 0.7, "gainDb": -2 },
+    "slash": { "source": "kenney-rpg", "member": "Audio/knifeSlice.ogg", "start": 0.06, "length": 0.4, "gainDb": -5 },
+    "kill": { "source": "kenney-interface", "member": "Audio/confirmation_001.ogg", "start": 0, "length": 0.29, "gainDb": -9 },
+    "bounty": { "source": "kenney-rpg", "member": "Audio/handleCoins.ogg", "start": 0.14, "length": 0.55, "gainDb": -8 },
+    "levelup": { "source": "kenney-interface", "member": "Audio/confirmation_002.ogg", "start": 0, "length": 0.54, "gainDb": -9 },
+    "evolve": { "source": "kenney-jingles", "member": "Audio/Hit jingles/jingles_HIT05.ogg", "start": 0.005, "length": 0.61, "gainDb": -7 },
+    "perk": { "source": "kenney-interface", "member": "Audio/confirmation_003.ogg", "start": 0, "length": 0.32, "gainDb": -10 },
+    "click": { "source": "kenney-interface", "member": "Audio/click_001.ogg", "start": 0, "length": 0.08, "gainDb": -12 },
+    "revived": { "source": "kenney-interface", "member": "Audio/maximize_006.ogg", "start": 0, "length": 0.38, "gainDb": -9 },
+    "wallHit": { "source": "kenney-impact", "member": "Audio/impactWood_heavy_000.ogg", "start": 0, "length": 0.25, "gainDb": -5 },
+    "wallUp": { "source": "kenney-impact", "member": "Audio/impactPlank_medium_000.ogg", "start": 0, "length": 0.25, "gainDb": -6 },
+    "wallDown": { "source": "kenney-impact", "member": "Audio/impactWood_heavy_002.ogg", "start": 0, "length": 0.3, "gainDb": -3 },
+    "coreHit": { "source": "kenney-impact", "member": "Audio/impactBell_heavy_000.ogg", "start": 0, "length": 0.6, "gainDb": -8 },
+    "knock": { "source": "kenney-impact", "member": "Audio/impactPlate_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -5 },
+    "chime": { "source": "oga-100-sfx", "member": "bell_01.ogg", "start": 0.01, "length": 1.0, "gainDb": -9 },
+    "horn": { "source": "fs-ship-horn", "start": 6.15, "length": 1.4, "gainDb": -6 },
+    "ring": { "source": "kenney-scifi", "member": "Audio/spaceEngineLow_000.ogg", "start": 0.5, "length": 1.5, "gainDb": -8 },
+    "magOut": { "source": "fs-ak-reload", "start": 0.13, "length": 0.25, "gainDb": -6, "note": "magazine released and pulled" },
+    "magIn": { "source": "fs-ak-reload", "start": 0.83, "length": 0.25, "gainDb": -5, "note": "magazine inserted and seated" },
+    "bolt": { "source": "fs-ak-reload", "start": 1.08, "length": 0.24, "gainDb": -4, "note": "charging handle; also the sniper bolt after each shot" },
+    "slide": { "source": "fs-1911-reload", "start": 0.3, "length": 0.2, "gainDb": -7 },
+    "shellIn": { "source": "fs-shell-load", "start": 0.05, "length": 0.29, "gainDb": -6 },
+    "pump": { "source": "fs-shotgun-rack", "start": 0.03, "length": 0.45, "gainDb": -3 },
+    "boxOpen": { "source": "fs-mg-reload", "start": 0.05, "length": 0.22, "gainDb": -6 },
+    "boxClose": { "source": "fs-mg-reload", "start": 1.52, "length": 0.3, "gainDb": -5 },
+    "casing": { "source": "fs-brass-drop", "start": 2.31, "length": 0.5, "gainDb": -10, "note": "three bounces of one casing on concrete" },
+    "shellDrop": { "source": "fs-shell-drop", "start": 0.0, "length": 0.5, "gainDb": -9 },
+    "ricochet": { "source": "fs-ricochet", "start": 0.0, "length": 0.45, "gainDb": -5, "note": "the whine off metal" },
+    "chip": { "source": "kenney-impact", "member": "Audio/impactMining_002.ogg", "start": 0, "length": 0.25, "gainDb": -6, "note": "concrete chips" },
+    "splinter": { "source": "kenney-impact", "member": "Audio/impactWood_light_000.ogg", "start": 0, "length": 0.22, "gainDb": -6 },
+    "dirt": { "source": "kenney-impact", "member": "Audio/impactSoft_medium_000.ogg", "start": 0, "length": 0.12, "gainDb": -6, "note": "planters" },
+    "sandbag": { "source": "kenney-impact", "member": "Audio/impactSoft_heavy_002.ogg", "start": 0, "length": 0.25, "gainDb": -5 },
+    "flesh": { "source": "fs-visceral-impacts", "start": 1.58, "length": 0.15, "gainDb": -5 },
+    "tink": { "source": "fs-bullet-ping", "start": 0.03, "length": 0.36, "gainDb": -7, "note": "armour; pitched down and layered with a plate for heavier tiers" },
+    "plate": { "source": "kenney-impact", "member": "Audio/impactPlate_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -6 },
+    "whizz": { "source": "fs-flyby", "start": 0.05, "length": 0.35, "gainDb": -3, "note": "a whip swung past the microphone" },
+    "clatter": { "source": "fs-rifle-drop", "start": 0.03, "length": 0.55, "gainDb": -5 },
+    "thump": { "source": "kenney-impact", "member": "Audio/impactSoft_heavy_000.ogg", "start": 0, "length": 0.3, "gainDb": -3, "note": "the kill confirm opens on it" },
+    "stepL": { "source": "kenney-impact", "member": "Audio/footstep_concrete_000.ogg", "start": 0, "length": 0.1, "gainDb": -6 },
+    "stepR": { "source": "kenney-impact", "member": "Audio/footstep_concrete_001.ogg", "start": 0, "length": 0.1, "gainDb": -6 }
+  }
+}

@@ -14,9 +14,11 @@ export type Awareness = {
   heard: readonly Lead[];
   mates: readonly { id: number; x: number; y: number }[];
   hitTick: number;
+  /** Where the latest round to whizz past came from, as far back along its flight as a fight's distance. */
+  whizzFrom: (Point & { tick: number }) | null;
 };
 
-export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity });
+export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity, whizzFrom: null });
 
 export type Threat = { p: PlayerView; d: number };
 
@@ -31,6 +33,10 @@ export type Perception = {
   lastSeen: Contact | null;
   lead: Lead | null;
   underFire: boolean;
+  /** A round hit this bot this tick. */
+  hitNow: boolean;
+  /** Enough near misses to pin this bot, and where they are coming from: a threat in sight, else back along the rounds' flight. */
+  pinnedFrom: Point | null;
   zones: readonly ZoneView[];
   solids: readonly Rect[];
   allies: readonly Point[];
@@ -41,8 +47,12 @@ const HEARD_MS = 4000;
 const UNDER_FIRE_MS = 500;
 const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
+/** Suppression at which a bot counts itself pinned and wants cover, as a person would after a few rounds crack past. */
+export const PINNED = 0.6;
+/** How far back along a whizzing round's flight a bot guesses its shooter stands. */
+const WHIZZ_BACKTRACK_PX = 400;
 
-const crateRect = (c: { x: number; y: number; size: number }): Rect => ({ x: c.x, y: c.y, w: c.size, h: c.size });
+const crateRect = (c: Rect): Rect => ({ x: c.x, y: c.y, w: c.w, h: c.h });
 
 const danger = (p: PlayerView) => (p.hunted ? SHARPNESS.length : p.kind === 'human' ? p.level : 0);
 
@@ -82,7 +92,9 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   };
   const heardNow: Lead[] = [];
   let hitTick = prev.hitTick;
+  let whizzFrom = prev.whizzFrom;
   for (const e of snap.events) {
+    if (e.e === 'whizz' && e.victim === me.id) whizzFrom = { x: e.x - Math.cos(e.dir) * WHIZZ_BACKTRACK_PX, y: e.y - Math.sin(e.dir) * WHIZZ_BACKTRACK_PX, tick };
     if (e.e === 'shot' && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= SILENCED_HEARING_PX)) heardNow.push({ x: e.x, y: e.y, tick, hunted: false });
     else if (e.e === 'dmg' && e.kind === 'player' && e.victim === me.id) hitTick = tick;
     else if (e.e === 'kill') {
@@ -99,11 +111,13 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const lead = nearest(leads.filter((l) => l.hunted)) ?? nearest(leads);
 
   const lastSeen = live.filter((c) => !seen.has(c.id)).reduce<Contact | null>((best, c) => (best && best.seenTick >= c.seenTick ? best : c), null);
+  const pinned = (snap.self.suppression ?? 0) >= PINNED;
   return {
-    awareness: { contacts: live, heard, mates, hitTick },
+    awareness: { contacts: live, heard, mates, hitTick, whizzFrom },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
-      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS, zones: snap.zones, solids, allies: mates,
+      threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS || pinned, hitNow: hitTick === tick, zones: snap.zones, solids, allies: mates,
+      pinnedFrom: pinned ? (threats[0] ? { x: threats[0].p.x, y: threats[0].p.y } : whizzFrom) : null,
     },
   };
 }

@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/client/main.ts --bundle --format=esm --outfile=public/game.js --sourcemap",
+    "build": "esbuild src/client/main.ts --bundle --format=esm --outfile=public/game.js --sourcemap --minify && esbuild src/client/editor/main.ts --bundle --format=esm --outfile=public/editor.js --sourcemap --minify",
     "start": "npm run build && node src/server/main.ts",
     "test": "node --test 'test/**/*.test.ts'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "art:sounds": "node scripts/art/sounds.ts",
+    "art": "node scripts/art/build.ts"
   },
   "dependencies": {
     "ws": "^8.22.0"
@@ -15,6 +17,8 @@
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2",
+    "pixi.js": "^8.22.0",
+    "sharp": "^0.35.5",
     "typescript": "^7.0.2"
   }
 }

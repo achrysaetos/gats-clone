@@ -1,0 +1,38 @@
+{
+ "atlases": [
+  "sprites/atlas-0.84dce7fceb.json",
+  "sprites/atlas-1.3b26099636.json",
+  "sprites/atlas-2.bc3c3bf801.json",
+  "sprites/atlas-3.cc5a1d6ce3.json",
+  "sprites/atlas-4.1e3fc16a4d.json",
+  "sprites/atlas-5.4c1da6e245.json"
+ ],
+ "kit": [
+  "sprites/kit-0.52e0b216d1.json",
+  "sprites/kit-1.00fc6ce60a.json",
+  "sprites/kit-2.b500704d09.json"
+ ],
+ "maps": {
+  "46478fd9": {
+   "id": "yard",
+   "light": "maps/yard/light.06f4b0e03d.json"
+  },
+  "4882df6a": {
+   "id": "warehouse",
+   "light": "maps/warehouse/light.1e0a63c269.json"
+  },
+  "7ca11ae6": {
+   "id": "railyard",
+   "light": "maps/railyard/light.34269a860c.json"
+  },
+  "0b8265f8": {
+   "id": "vault",
+   "light": "maps/vault/light.debb940a99.json"
+  }
+ },
+ "floors": {
+  "concrete": "floors/concrete.16debbaa7b.webp",
+  "asphalt": "floors/asphalt.c2a60a4994.webp"
+ },
+ "water": "water.b8a9d5793a.webp"
+}

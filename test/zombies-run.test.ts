@@ -9,12 +9,12 @@ import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { run, spawnAt, TICK_MS } from './helpers.ts';
 import { step } from '../src/shared/sim.ts';
 
-const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
+const zomWorld = (): World => createWorld('ZOM', 1, 'yard');
 const phaseOf = (w: World) => w.run!.phase.k;
 
 const SPAWN_EDGE_SLACK_PX = 40;
 const onSide = (side: Side, x: number, y: number) => {
-  const r = MAPS.outpost.siege!.horde[side];
+  const r = MAPS.yard.siege!.horde[side];
   return x >= r.x - SPAWN_EDGE_SLACK_PX && x <= r.x + r.w + SPAWN_EDGE_SLACK_PX && y >= r.y - SPAWN_EDGE_SLACK_PX && y <= r.y + r.h + SPAWN_EDGE_SLACK_PX;
 };
 

@@ -6,7 +6,7 @@ import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { choosePick } from '../src/shared/sim/stats.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { emptyWorld, equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import { CRATE_BREAKS, crateOf, emptyWorld, equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 const pendingOf = (w: World, p: Player) => snapshotFor(w, p.id).self.pending;
 const gunOf = (w: World, p: Player) => snapshotFor(w, p.id).players.find((v) => v.id === p.id)?.gun;
@@ -25,10 +25,10 @@ test('four kills and ten crates in one life open the ability pick', () => {
   run(w, GUNS.pistol.reloadMs + 100);
   press(w, a, {});
   for (let i = 0; i < 10; i++) {
-    w.crates.push({ id: 900 + i, x: 600, y: 478, size: 44, hp: 1, respawnAt: null });
+    w.crates.push({ ...crateOf(900 + i, 600, 478), hp: 1 });
     shootOnce(w, a, 0);
   }
-  assert.equal(a.score, 4 * WORLD.killScore + 10 * WORLD.crateScore);
+  assert.equal(a.score, 4 * WORLD.killScore + 10 * CRATE_BREAKS.score);
   assert.ok(choosePick(w, a.id, 1, 'lightweight'));
   assert.ok(choosePick(w, a.id, 2, 'handCannon'));
   assert.ok(choosePick(w, a.id, 3, 'thickSkin'));

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
+import { STICKY_KEYS, type Snapshot, type SnapshotWire } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { ROTATION } from '../src/shared/maps.ts';
@@ -38,8 +38,22 @@ test('omitting unchanged crates, leaderboard, zones and match reconstructs the s
   }
 });
 
+test('every sticky field left off an unchanged snapshot is filled back from the last one', () => {
+  const w = createWorld('EXT', 3, ROTATION.EXT[0]);
+  const p = spawnAt(w, 1500, 1500, { team: 'red' });
+  const snap = { ...snapshotFor(w, p.id), buildings: [], run: { night: 1 }, royale: { redeploys: true } } as unknown as Snapshot;
+  const encode = makeSnapshotEncoder();
+  const first = fillSnapshot(JSON.parse(encode(snap)) as SnapshotWire, null);
+  const again = JSON.parse(encode(snap)) as SnapshotWire;
+  const filled = fillSnapshot(again, first);
+  for (const key of STICKY_KEYS) {
+    assert.equal(again[key], undefined, `${key} is left off the second time`);
+    assert.deepEqual(filled?.[key], fullForm(snap)[key], `${key} is filled back`);
+  }
+});
+
 test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and integers exact', () => {
-  const w = createWorld('FFA', 3, 'plaza');
+  const w = createWorld('FFA', 3, 'warehouse');
   const p = spawnAt(w, 1500.123456, 1500.987654);
   p.angle = 1.23456789;
   const snap = snapshotFor(w, p.id);
@@ -54,7 +68,7 @@ test('the wire keeps positions to 0.1 units and angles to 0.01 radians, and inte
 });
 
 test('a client that never received a sticky field cannot rebuild the snapshot', () => {
-  const w = createWorld('FFA', 3, 'plaza');
+  const w = createWorld('FFA', 3, 'warehouse');
   const p = spawnAt(w, 1500, 1500);
   const { crates: _, ...wire } = snapshotFor(w, p.id);
   assert.equal(fillSnapshot(wire, null), null);

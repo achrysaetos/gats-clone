@@ -10,7 +10,7 @@ export const hostKey = (r: Rect) => `${r.x},${r.y}`;
 
 export const crackFade = (c: Crack, now: number) => Math.max(0, Math.min(1, (CRACKS.lifeMs - (now - c.born)) / CRACKS.fadeMs));
 
-export const hostOf = (solids: readonly Rect[], x: number, y: number): Rect | null =>
+export const hostOf = <T extends Rect>(solids: readonly T[], x: number, y: number): T | null =>
   solids.find((r) => x >= r.x - 2 && x <= r.x + r.w + 2 && y >= r.y - 2 && y <= r.y + r.h + 2) ?? null;
 
 export function inward(r: Rect, x: number, y: number): number {
@@ -38,24 +38,4 @@ export function addCrack(pool: CrackPool, host: Rect, x: number, y: number, now:
   walk(x, y, into, 4, CRACKS.reach / 4, true);
   pool.slots[pool.next] = { born: now, host: hostKey(host), lines };
   pool.next = (pool.next + 1) % pool.slots.length;
-}
-
-const FADE_BANDS = 3;
-
-export function drawCracks(ctx: CanvasRenderingContext2D, pool: CrackPool, now: number, standing: ReadonlySet<string>) {
-  ctx.lineWidth = 0.8;
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = 'rgb(34, 36, 42)';
-  for (let band = 1; band <= FADE_BANDS; band++) {
-    ctx.globalAlpha = (0.7 * band) / FADE_BANDS;
-    ctx.beginPath();
-    let any = false;
-    for (const c of pool.slots) {
-      if (!c || !standing.has(c.host) || Math.ceil(crackFade(c, now) * FADE_BANDS) !== band) continue;
-      any = true;
-      for (let i = 0; i < c.lines.length; i += 4) { ctx.moveTo(c.lines[i]!, c.lines[i + 1]!); ctx.lineTo(c.lines[i + 2]!, c.lines[i + 3]!); }
-    }
-    if (any) ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
 }

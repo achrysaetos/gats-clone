@@ -121,7 +121,7 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
     day: run.phase === 'day',
     builder: me?.alive ? builder : null,
     core: coreRectAt(run.core),
-    cover: [...walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))],
+    cover: [...walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }))],
     bodies,
     buildings: snap.buildings ?? [],
     scrap: run.scrap,

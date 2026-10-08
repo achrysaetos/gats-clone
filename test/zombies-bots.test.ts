@@ -14,7 +14,7 @@ const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) 
 const CORE = { x: 1500, y: 1500 };
 
 function nightWorld(): World {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.run!.core.hp = 1e9;
   return w;
@@ -123,7 +123,7 @@ test('a squad bot keeps firing into a crowd whose nearest zombie keeps changing'
 });
 
 test('by day a squad bot walks round the core to put up the next turret of its plan, the first a sentry north of the core', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   spawnAt(w, CORE.x, CORE.y + ZOM.coreHalf + 40);
   const rand = seeded(5);
   const mems = new Map([...w.players.keys()].map((id) => [id, newBotMemory(rand)]));
@@ -136,7 +136,7 @@ test('by day a squad bot walks round the core to put up the next turret of its p
 });
 
 test('squad bots leave the bank to a human in the squad', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   spawnAt(w, CORE.x, CORE.y + ZOM.coreHalf + 40);
   const human = spawnAt(w, CORE.x - 200, CORE.y, { kind: 'human' });
   const rand = seeded(5);
@@ -172,14 +172,14 @@ function besideIdleHuman(w: World, ms: number, each: () => void = () => {}) {
 
 test('beside a human, squad bots leave the human enough for any building, and tend by day only with what is above it', () => {
   const reserve = Math.max(...Object.values(BUILDINGS).map((b) => b.cost));
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   w.run!.core.hp = 3000;
   w.run!.scrap = reserve - 20;
   w.buildings.push({ id: newId(w), kind: 'wall', cx: 27, cy: 33, hp: 500 });
   w.buildingsVersion++;
   besideIdleHuman(w, 10_000);
   assert.deepEqual([w.run!.scrap, w.run!.core.hp, w.buildings[0]!.hp], [reserve - 20, 3000, 500], 'nothing spent under the reserve');
-  const rich = createWorld('ZOM', 1, 'outpost');
+  const rich = createWorld('ZOM', 1, 'yard');
   rich.run!.core.hp = 3000;
   rich.run!.scrap = reserve + 60;
   besideIdleHuman(rich, 15_000);
@@ -208,7 +208,7 @@ test('beside a human, squad bots mend the core once it is in danger at night, an
 });
 
 test('the squad bots\' plan stands as far from the core on every side', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const w = createWorld('ZOM', 1, 'yard');
   for (let i = 0; i < 4; i++) spawnAt(w, CORE.x - 150 + i * 100, CORE.y + ZOM.coreHalf + 40);
   w.run!.scrap = 1e6;
   w.run!.phase = { k: 'day', endsAt: Infinity };

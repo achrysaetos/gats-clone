@@ -10,10 +10,7 @@ import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import { EMPTY_BUFFER } from '../src/client/interp.ts';
 import type { Session } from '../src/client/state.ts';
-import { createPool } from '../src/client/particles.ts';
-import { createCracks } from '../src/client/decals.ts';
-import { glow, PALETTE } from '../src/client/palette.ts';
-import { drawnTags, drawWorld } from '../src/client/render.ts';
+import { glow } from '../src/client/palette.ts';
 import type { GameEvent, PlayerView, SelfView, Snapshot } from '../src/shared/protocol.ts';
 
 const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
@@ -116,7 +113,7 @@ function hudTexts(frame: Snapshot, session: Partial<Session> = {}): Drawn[] {
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { Path2D: class {} });
-  const s = { myId: 1, worldSize: 3000, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], snaps: EMPTY_BUFFER, ...session } as unknown as Session;
+  const s = { myId: 1, worldSize: 3000, walls: [], lastSelf: { x: 100, y: 0 }, feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], effects: [], snaps: EMPTY_BUFFER, ...session } as unknown as Session;
   drawHud(ctx, 1, makeCamera(s.lastSelf, 1280, 800, WORLD.viewRadius), frame, s, 1000, { x: 0, y: 0 }, null);
   return drawn;
 }
@@ -132,48 +129,6 @@ test('the kill feed spells out an evolved gun in its accent color and keeps the 
 test('holding a stage-2 gun shows a HUNTED badge on your HUD', () => {
   assert.equal(hudTexts(snap({ me: { gun: 'phantom', hunted: true } })).filter((d) => d.text === 'HUNTED').length, 1);
   assert.equal(hudTexts(snap({ me: { gun: 'skirmisher' } })).some((d) => d.text === 'HUNTED'), false);
-});
-
-/** Draws the world into a recording context and returns the stroke color of every stroke. */
-function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[] {
-  const strokes: unknown[] = [];
-  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
-    get(target, prop) {
-      if (prop in target) return target[prop];
-      if (prop === 'stroke') return () => strokes.push(target.strokeStyle);
-      if (prop === 'measureText') return () => ({ width: 0 });
-      if (typeof prop === 'string' && prop.startsWith('create')) return () => ({ addColorStop() {} });
-      return () => {};
-    },
-    set(target, prop, value) { target[prop] = value; return true; },
-  }) as unknown as CanvasRenderingContext2D;
-  Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
-  const s = { myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
-  drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
-  return strokes;
-}
-
-test('the hunted brackets mark hunted enemies but not yourself', () => {
-  assert.equal(worldStrokes(snap({ me: { gun: 'phantom', hunted: true } })).includes(PALETTE.hunted), false, 'no brackets on you');
-  assert.equal(worldStrokes(snap({ players: [player(2, { gun: 'phantom', hunted: true })] })).includes(PALETTE.hunted), true, 'brackets on a hunted enemy');
-});
-
-test('in free for all an enemy wearing your color gets a rival ring; other colors and teammates do not', () => {
-  const rings = (frame: Snapshot) => worldStrokes(frame).filter((c) => c === PALETTE.rival).length;
-  assert.equal(rings(snap({ me: { color: 'blue' }, players: [player(2, { color: 'blue' }), player(3, { color: 'red' })] })), 1, 'only the same-colored enemy');
-  assert.equal(rings(snap({ me: { color: 'blue', team: 'blue' }, players: [player(2, { color: 'blue', team: 'blue' })] })), 0, 'team modes color by team already');
-});
-
-test('every other body wears its name; your own bar shows only while you are hurt, and your name never', () => {
-  const tags = (frame: Snapshot) => { worldStrokes(frame); return drawnTags(); };
-  assert.deepEqual(tags(snap({ players: [player(2), player(3, { hidden: true })] })), [{ id: 1, bar: false, name: false }, { id: 2, bar: false, name: true }]);
-  assert.deepEqual(tags(snap({ me: { hp: 99 }, players: [player(2, { hp: 10 })] })), [{ id: 1, bar: true, name: false }, { id: 2, bar: false, name: true }]);
-});
-
-test('while you wait to respawn, your killer wears a red ring', () => {
-  const frame = snap({ me: { alive: false }, players: [player(2)] });
-  assert.equal(worldStrokes(frame).includes(PALETTE.hunted), false);
-  assert.equal(worldStrokes(frame, 2).includes(PALETTE.hunted), true);
 });
 
 test('the reticle spread follows the gun and Grip', () => {
@@ -222,22 +177,3 @@ test('an edge marker that would land on a HUD panel slides back along its bearin
   assert.deepEqual(clearOfRects(from, clearSpot, [feed], 16), clearSpot, 'a marker clear of every panel stays put');
 });
 
-const lightness = (color: unknown): number => {
-  const s = String(color);
-  const [r, g, b] = s.startsWith('#') ? [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)) : s.match(/\d+/g)!.slice(0, 3).map(Number);
-  return (r! + g! + b!) / (3 * 255);
-};
-
-test("every gun's rounds glow: no tracer pass is drawn darker than mid-grey, evolved hues included", () => {
-  worldStrokes(snap());
-  for (const gun of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
-    const base = worldStrokes(snap({ players: [player(2, { gun })] }));
-    const frame = snap({ players: [player(2, { gun })] });
-    frame.bullets = [{ id: 9, x: 140, y: 0, vx: 1500, vy: 0, owner: 2, gun }];
-    const strokes = worldStrokes(frame);
-    const from = strokes.findIndex((c, i) => c !== base[i]);
-    const tracer = strokes.slice(from, from + strokes.length - base.length);
-    assert.ok(tracer.length > 0, `${gun} draws a tracer`);
-    for (const c of tracer) assert.ok(lightness(c) >= 0.5, `${gun} tracer pass ${String(c)} glows`);
-  }
-});

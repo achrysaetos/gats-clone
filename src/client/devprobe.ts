@@ -1,5 +1,6 @@
 import { WORLD, type GunId } from '../shared/defs.ts';
 import type { Snapshot } from '../shared/protocol.ts';
+import type { AudioStats } from './audio.ts';
 import { worldToScreen, type Camera } from './camera.ts';
 import { kicks } from './effects.ts';
 import { NUMBER_MS, numberHeight } from './feedback.ts';
@@ -7,7 +8,7 @@ import { drawnBuildChips, drawnPanels, drawnReticleGap } from './hud.ts';
 import { newestSnap, serverNow } from './interp.ts';
 import { CALLOUT_MS } from './moments.ts';
 import { spectateLines, trackerLabel } from './royale.ts';
-import { drawnTags, shadowBakes } from './render.ts';
+import { drawnTags, finishWorld, worldProbe } from './render.ts';
 import type { SoundCue } from './sfx.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { muzzleTip } from './sprites.ts';
@@ -30,6 +31,13 @@ const feltFlashes = new Set<number>();
 const feltKicks = new Set<number>();
 
 const feel = (cue: FeelCue) => { if (DEV) fireFeel.push({ cue, at: performance.now() }); };
+const juice: { cue: 'kick' | 'hit' | 'kill' | 'remoteSound' | 'remoteFlash'; at: number; px?: number; owner?: number }[] = [];
+const noteJuice = (j: (typeof juice)[number]) => { if (DEV && juice.length < 4000) juice.push(j); };
+export const noteKick = (px: number) => noteJuice({ cue: 'kick', at: performance.now(), px });
+export const noteStop = (kind: 'hit' | 'kill') => noteJuice({ cue: kind, at: performance.now() });
+/** Stamped with the frame's own time, so a sound and a flash released by the same frame match however long the frame takes. */
+export const noteRemoteSound = (cues: readonly SoundCue[], frameAt: number) => { for (const c of cues) if (c.id.startsWith('shot:')) noteJuice({ cue: 'remoteSound', at: frameAt }); };
+export const noteRemoteFlash = (owner: number, frameAt: number) => noteJuice({ cue: 'remoteFlash', at: frameAt, owner });
 export const noteOwnShotSound = (cues: readonly SoundCue[]) => { if (cues.some((c) => c.self && c.id.startsWith('shot:'))) feel('sound'); };
 export const noteLateShot = () => feel('late');
 export const noteRejectedShot = () => feel('reject');
@@ -78,6 +86,8 @@ type Page = {
   session: () => Session | null;
   camera: () => Camera | null;
   ghost: () => Ghost | null;
+  audio: () => AudioStats;
+  quality: () => unknown;
 };
 
 export function installDevProbe(page: Page) {
@@ -108,7 +118,8 @@ export function installDevProbe(page: Page) {
     return Array.from({ length: n }, () => {
       const start = performance.now();
       page.drawFrame(now);
-      // Reading a pixel makes the canvas finish rasterizing, so the cost covers the pixels, not just issuing commands.
+      // Reading a pixel of each canvas makes it finish rasterizing, so the cost covers the pixels, not just issuing commands.
+      finishWorld();
       page.ctx.getImageData(0, 0, 1, 1);
       return performance.now() - start;
     });
@@ -121,5 +132,5 @@ export function installDevProbe(page: Page) {
     const cam = page.camera();
     return cam && worldToScreen(cam, { x, y });
   };
-  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger } });
+  Object.assign(window, { skirmishDev: { drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), juice: () => juice.splice(0), benchFrames, zombies, royale, panels: drawnPanels, tags: drawnTags, world: worldProbe, toScreen, trigger, audio: page.audio, quality: page.quality } });
 }

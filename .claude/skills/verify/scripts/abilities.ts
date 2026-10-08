@@ -57,7 +57,7 @@ const mouse = (type: string, x: number, y: number) => cdp('Input.dispatchMouseEv
 const tap = async (code: string, k: string, vk: number) => { await key(page, 'keyDown', code, k, vk); await key(page, 'keyUp', code, k, vk); };
 const me = () => frames.last?.players.find((p) => p.id === frames.welcome?.id);
 const selfView = () => frames.last?.self;
-const solids = (): Rect[] => [...(frames.welcome?.walls ?? []), ...(frames.last?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))];
+const solids = (): Rect[] => [...(frames.welcome?.walls ?? []), ...(frames.last?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h }))];
 const blocked = (x: number, y: number, dx: number, dy: number) =>
   solids().some((b) => segmentEntersRectAt(x, y, dx, dy, { x: b.x - R, y: b.y - R, w: b.w + 2 * R, h: b.h + 2 * R }) !== null);
 const clearLane = (x: number, y: number, angle: number, len: number) => {
@@ -96,7 +96,7 @@ async function shootNearest() {
   if (!self || !snap) return;
   const targets = [
     ...snap.players.filter((p) => p.id !== self.id && p.alive && (self.team === null || p.team !== self.team)).map((p) => ({ x: p.x, y: p.y })),
-    ...snap.crates.map((c) => ({ x: c.x + c.size / 2, y: c.y + c.size / 2 })),
+    ...snap.crates.map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 })),
   ].filter((t) => !(frames.welcome?.walls ?? []).some((w) => segmentEntersRectAt(self.x, self.y, t.x - self.x, t.y - self.y, w) !== null));
   const t = targets.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
   const mid = (frames.welcome?.worldSize ?? 0) / 2;

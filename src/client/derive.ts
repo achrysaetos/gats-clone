@@ -1,4 +1,4 @@
-import { GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type ModeId, type PerkId, type Tier } from '../shared/defs.ts';
+import { EXT, GUNS, LEVELS, PERK_INFO, WORLD, type GunId, type ModeId, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import { rankRows, type GameEvent, type LeaderRow, type MatchView, type PlayerView, type Snapshot, type Team } from '../shared/protocol.ts';
 import type { ClientState } from './state.ts';
@@ -81,6 +81,11 @@ export function objectiveFor(mode: ModeId, team: Team, leftMs: number | null): {
       return { banner: 'Zombies: build walls and turrets by day, hold the Bastion by night', line: 'ZOM · defend the Bastion' };
     case 'BR':
       return { banner: `Last Squad: you are ${side.toUpperCase()}, be the last squad standing`, line: `BR · ${Side} squad · last squad standing` };
+    case 'EXT':
+      return {
+        banner: `Extraction: you are ${side.toUpperCase()}, hack the terminal and fly the case out, or stop them; first to ${EXT.roundsToWin} rounds`,
+        line: `EXT · ${Side} team · first to ${EXT.roundsToWin} rounds · sides swap each round`,
+      };
   }
 }
 

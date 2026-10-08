@@ -27,7 +27,7 @@ const SMOOTH_MS = 60;
 /** What stops the local player, as the server's solidRects: cover, and in a zombies run the squad's walls and the core. */
 export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crates' | 'buildings' | 'run'> | null): Rect[] => [
   ...walls,
-  ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
+  ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })),
   ...(snap?.buildings ?? []).map((b) => cellRect(b.cx, b.cy)),
   ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
 ];
@@ -36,7 +36,7 @@ export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crate
 export function selfMotion(snap: Snapshot): { at: Motion | null; speed: number } {
   const me = snap.players.find((p) => p.id === snap.self.id);
   const crawling = !!me?.downed;
-  return { at: me && (me.alive || crawling) ? { x: me.x, y: me.y, dash: snap.self.dash } : null, speed: snap.self.speed * (crawling ? ZOM.crawlMul : 1) };
+  return { at: me && (me.alive || crawling) ? { x: me.x, y: me.y, dash: snap.self.dash, shove: snap.self.shove ?? null, staggerMs: snap.self.stagger ?? 0 } : null, speed: snap.self.speed * (crawling ? ZOM.crawlMul : 1) };
 }
 
 export function predictAbility(pred: Prediction, input: InputState, latest: Snapshot): PredictedAbility | null {

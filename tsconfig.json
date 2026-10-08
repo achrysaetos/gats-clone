@@ -10,7 +10,8 @@
     "erasableSyntaxOnly": true,
     "lib": ["ES2022", "DOM"],
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "resolveJsonModule": true
   },
   "include": ["src", "test", "scripts", ".claude/skills/verify/scripts"]
 }

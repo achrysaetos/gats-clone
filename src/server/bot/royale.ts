@@ -1,4 +1,4 @@
-import { CRATE_TIERS, RING, ZOM } from '../../shared/defs.ts';
+import { CRATE_TIERS, RING, WORLD, ZOM } from '../../shared/defs.ts';
 import { ringAt, type Circle, type InputState, type PlayerView, type RingView, type RoyaleView, type Snapshot } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { TICK_MS } from './aim.ts';
@@ -14,7 +14,7 @@ const WALK_DETOUR = 1.4;
 const EDGE_PX = 120;
 const ANCHOR_EDGE_PX = 400;
 const ANCHOR_REACH = 0.6;
-const REVIVE_REACH_PX = 900;
+const REVIVE_REACH_PX = WORLD.viewRadius;
 const REVIVE_STOP_PX = ZOM.reviveRange - 20;
 const MATE_DEAD_ZONE = 30;
 const STRAY_PX = 450;
@@ -63,7 +63,7 @@ type Pack =
 type PackCtx = { snap: Snapshot; royale: RoyaleView; me: PlayerView; view: Perception; arena: BotArena; circle: Circle; now: number };
 
 function bestLoot({ snap, royale, me, circle }: PackCtx): Point | null {
-  const crates = snap.crates.map((c) => ({ at: { x: c.x + c.size / 2, y: c.y + c.size / 2 }, score: c.tier === 'drop' ? DROP_WORTH : CRATE_TIERS[c.tier ?? 'loot'].score }));
+  const crates = snap.crates.flatMap((c) => (c.tier ? [{ at: { x: c.x + c.w / 2, y: c.y + c.h / 2 }, score: c.tier === 'drop' ? DROP_WORTH : CRATE_TIERS[c.tier].score }] : []));
   const drops = royale.drops.filter((d) => d.landsAt > 0).map((d) => ({ at: d, score: DROP_WORTH }));
   let best: Point | null = null, bestWorth = 0;
   for (const c of [...crates, ...drops]) {

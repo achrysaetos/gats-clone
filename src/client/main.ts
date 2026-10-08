@@ -1,7 +1,8 @@
 import { pickOptions, WORLD, type BuildingKind } from '../shared/defs.ts';
 import { cleanName, type ClientMsg, type Loadout, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
+import type { MapId } from '../shared/maps.ts';
 import { fillSnapshot } from '../shared/wire.ts';
-import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
+import { fetchServers, loadLoadout, loadMuted, loadName, loadQualityMode, openSquad, saveLoadout, saveMuted, saveName, saveQualityMode, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
 import { easeView, makeCamera, screenToWorld, viewAspect, worldToScreen, type Camera } from './camera.ts';
 import { createAudio } from './audio.ts';
@@ -15,26 +16,39 @@ import { actionForKey, assembleInput, perkSlotForKey, type Action } from './inpu
 import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
-import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
+import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderQuality, renderServers, renderSquad, renderSquadChip } from './menu.ts';
+import { createQuality, parseKnobs, parseMode, type QualityMode } from './quality.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
 import { decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
-import { startEffect } from './effects.ts';
+import { lastSeen, startEffect } from './effects.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
-import { bodyColor, drawBackdrop, drawWorld } from './render.ts';
+import { bodyColor, drawBackdrop, drawWorld, initWorld, resizeWorld } from './render.ts';
+import { NoWebGL2, type World } from './world/stage.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
-import { createShooting, type Hands } from './shooting.ts';
-import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
-import { soundsFor, type SoundCue } from './sfx.ts';
+import { createShooting, shakenOf, type Hands } from './shooting.ts';
+import { installDevProbe, noteFrame, noteFrameCost, noteKick, noteOwnShotSound, noteRemoteFlash, noteRemoteSound, noteStop } from './devprobe.ts';
+import { roofsOf, soundsFor, stepCues, type SoundCue } from './sfx.ts';
+import { mapLooks } from './world/pieces.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput } from './fire.ts';
-import { addTrauma, decay, offset, traumaFor } from './shake.ts';
+import { addStop, killZoom, NO_HITSTOP, stopFor, stopLag } from './hitstop.ts';
+import { addKick, addTrauma, decay, NO_KICK, offset, settleKick, traumaFor } from './shake.ts';
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
-import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
-import { aimTurrets, nextCoreHitAt } from './siege.ts';
+import { EFFECT_LIFE_MS, newAnim, type ClientState, type Rejoin, type Session } from './state.ts';
+import { aimTurrets, easeTurrets, faceZombies, nextCoreHitAt } from './siege.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, squadFromSearch, withSquad, type Ghost } from './zombies.ts';
+
+const opened = new URLSearchParams(location.search);
+// `?dev&editor=<map>` opens the map editor in place of the game. It is its own bundle, fetched only then, and the game never starts.
+if (opened.has('dev') && opened.has('editor')) {
+  const bundle = './editor.js';
+  const { startEditor } = (await import(bundle)) as typeof import('./editor/main.ts');
+  await startEditor(opened.get('editor') ?? '');
+  await new Promise(() => {});
+}
 
 const INPUT_MS = 1000 / WORLD.tickHz;
 const SERVER_POLL_MS = 5000;
@@ -42,12 +56,16 @@ const SESSION_EXPIRED = 'Session expired, log in again.';
 const BAD_INVITE = 'That invite link is broken. Ask your squad for a new one, or start your own.';
 const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one.`;
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
+const NO_WEBGL2 = 'Skirmish needs WebGL 2, which this browser could not start. Turn on hardware acceleration, or try a current Chrome, Edge, Firefox or Safari.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
+/** Bloom is on unless the address says `?bloom=0`, for measuring its cost and for slow GPUs. */
+const bloomWanted = () => new URLSearchParams(location.search).get('bloom') !== '0';
 const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'error']);
 
 const canvas = $<HTMLCanvasElement>('game');
 const ctx = canvas.getContext('2d')!;
+const worldCanvas = $<HTMLCanvasElement>('world');
 const menuEl = $('menu');
 const hudEl = $('hud');
 const statusEl = $('menu-status');
@@ -57,6 +75,9 @@ const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
 const squadEl = $('squad');
 const squadChip = $('squad-chip');
+const artEl = $('art-load');
+const artBar = $('art-bar');
+const artLabel = $('art-label');
 
 let state: ClientState = { phase: 'menu', status: { kind: 'idle' } };
 let loadout: Loadout = loadLoadout();
@@ -79,12 +100,23 @@ let mouseAiming = false;
 let sticks: Sticks = NO_STICKS;
 const audio = createAudio();
 let trauma = 0;
+let kick = NO_KICK;
+let hitstop = NO_HITSTOP;
+let killAt = -Infinity;
 let lastFrameAt = 0;
 let shownView: number = WORLD.viewRadius;
+/** The world starts in the background; Play waits for it, and for the art when pressed before the art lands. */
+let painter: { kind: 'starting' } | { kind: 'ready'; world: World } | { kind: 'failed'; message: string } = { kind: 'starting' };
+let waitingRoom: string | null = null;
+let artShown = '';
 
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
+/** `?quality=<auto|low|medium|high|ultra>` overrides the saved setting for this page only. */
+const quality = createQuality(parseMode(params.get('quality')) ?? loadQualityMode(), bloomWanted(), params.has('dev') ? parseKnobs(params.get('knobs')) : {});
+let lastRafAt = 0;
+let qualityShown = '';
 let ghost: Ghost | null = null;
 
 /** The session whose socket is live. While reconnecting the old session is only drawn, never sent to. */
@@ -124,10 +156,33 @@ function setState(next: ClientState) {
   }
 }
 
+const artPercent = (w: World) => Math.floor(w.art.progress() * 100);
+
 function refreshPlayButton() {
   const connecting = state.phase === 'menu' && state.status.kind === 'connecting';
-  playBtn.disabled = connecting || selectedRoom === null;
-  playBtn.textContent = connecting ? 'Connecting…' : 'Play';
+  const waiting = waitingRoom !== null && painter.kind === 'ready';
+  playBtn.disabled = connecting || waiting || selectedRoom === null || painter.kind !== 'ready';
+  playBtn.textContent = connecting ? 'Connecting…' : waiting && painter.kind === 'ready' ? `Loading art… ${artPercent(painter.world)}%` : 'Play';
+}
+
+/** The menu's art line: progress while the atlases load, or why the game cannot start. */
+function refreshArt() {
+  const shown = painter.kind === 'failed' ? painter.message : painter.kind === 'ready' && !painter.world.art.loaded() ? `Loading art ${artPercent(painter.world)}%` : '';
+  if (shown === artShown) return;
+  artShown = shown;
+  artEl.hidden = shown === '';
+  artEl.classList.toggle('error', painter.kind === 'failed');
+  artLabel.textContent = shown;
+  if (painter.kind === 'ready') artBar.style.width = `${artPercent(painter.world)}%`;
+  refreshPlayButton();
+}
+
+/** Plays at once when the art is in, and otherwise once it lands, showing its progress on the button meanwhile. */
+function requestPlay(room: string) {
+  if (painter.kind !== 'ready') return;
+  if (painter.world.art.loaded()) return play(room);
+  waitingRoom = room;
+  refreshPlayButton();
 }
 
 function setLoadout(next: Loadout) {
@@ -230,25 +285,25 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       const snap = fillSnapshot(msg, newestSnap(s.snaps));
       return snap ? onSnap(s, snap, now) : undefined;
     }
-    case 'walls': s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'walls': s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; s.anim.remains = []; return;
     case 'chat': s.chat.push({ from: msg.from, text: msg.text, team: msg.team, at: now }); return;
     case 'error': s.chat.push({ from: '', text: msg.message, team: null, at: now }); return;
-    case 'welcome': s.myId = msg.id; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
+    case 'welcome': s.myId = msg.id; s.map = msg.map; s.walls = msg.walls; s.worldSize = msg.worldSize; return;
   }
 }
 
-function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldSize: number; walls: WallView[] }): Session {
+function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; map: MapId; worldSize: number; walls: WallView[] }): Session {
   return {
-    ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
+    ws, rejoin, myId: welcome.id, map: welcome.map, worldSize: welcome.worldSize, walls: welcome.walls, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
-    coreHitAt: -Infinity, zombieFaces: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
+    effects: [], rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], pendingSounds: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
+    coreHitAt: -Infinity, zombieFaces: new Map(), strides: new Map(), anim: newAnim(), heardSteps: new Map(), building: false, buildKind: 'wall', turretAims: new Map(),
   };
 }
 
 function playCues(s: Session, cues: readonly SoundCue[], viewRadius: number) {
   noteOwnShotSound(cues);
-  audio.play(cues, s.lastSelf, viewRadius);
+  audio.play(cues, { listener: s.lastSelf, viewRadius, roofs: roofsOf(mapLooks(s.map).overhead) });
   for (const cue of cues) trauma = addTrauma(trauma, traumaFor(cue, s.lastSelf, viewRadius));
 }
 
@@ -259,7 +314,10 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.snaps = pushSnap(s.snaps, snap, now);
   const motion = selfMotion(snap);
   s.predict = reconcile(s.predict, motion.at, snap.ackSeq, solidsOf(s.walls, snap), motion.speed, s.worldSize);
-  playCues(s, soundsFor(prev, snap), snap.self.viewRadius || WORLD.viewRadius);
+  const cues = soundsFor(prev, snap, s.walls);
+  playCues(s, cues.filter((c) => c.self), snap.self.viewRadius || WORLD.viewRadius);
+  // Other players' sounds wait for the render clock, so a shot is heard as its muzzle flash is drawn.
+  s.pendingSounds.push(...cues.filter((c) => !c.self).map((cue) => ({ at: snap.tick * TICK_MS, cue })));
   s.effects = s.effects.filter((fx) => now - fx.born < EFFECT_LIFE_MS[fx.kind]);
   s.moments = addMoments(s.moments, prev, snap, now);
   s.feedback = addFeedback(s.feedback, snap.events, snap.players, s.myId, selfOf(snap)?.maxHp ?? WORLD.baseHp, now);
@@ -289,7 +347,7 @@ function hands(s: Session): Hands {
 
 function deathTint(s: Session, spec: EffectSpec): string | undefined {
   if (spec.kind !== 'death') return undefined;
-  const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
+  const victim = lastSeen(s, spec.victim);
   return victim && bodyColor(victim);
 }
 
@@ -315,7 +373,8 @@ setInterval(() => {
   const sent = sendInput(s.firing, s.seq, input, now);
   s.firing = sent.firing;
   if (sent.rejected) shooting.takeBack(s, sent.rejected);
-  const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
+  // The server judges a shot against the world as drawn, and hitstop draws it a beat behind.
+  const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, now) - stopLag(hitstop, now));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   const latest = newestSnap(s.snaps);
   const ability = latest ? predictAbility(s.predict, input, latest) : null;
@@ -371,6 +430,7 @@ function resize() {
   view = { w: window.innerWidth, h: window.innerHeight, dpr };
   canvas.width = Math.round(view.w * dpr);
   canvas.height = Math.round(view.h * dpr);
+  resizeWorld(view.w, view.h, dpr);
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
     const s = sessionOf(state);
@@ -390,6 +450,9 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  if (lastRafAt) quality.frame(now - lastRafAt, now);
+  lastRafAt = now;
+  if (state.phase === 'menu') { refreshArt(); showQuality(); }
   const start = performance.now();
   drawFrame(now);
   noteFrameCost(performance.now() - start);
@@ -398,22 +461,42 @@ function frame(now: number) {
 function drawFrame(now: number) {
   const s = drawnSessionOf(state);
   const latest = s && newestSnap(s.snaps);
-  const interpolated = s && sampleAt(s.snaps.snaps, renderTime(s.snaps, now));
-  if (!s || !interpolated || !latest) {
-    drawBackdrop(ctx, view.w, view.h, view.dpr, now);
+  if (!s || !latest || !sampleAt(s.snaps.snaps, renderTime(s.snaps, now))) {
+    drawBackdrop(ctx, view.w, view.h, now);
     return;
   }
   if (s === sessionOf(state)) shooting.fireIfDue(s, performance.now());
-  const released = releaseDue(s.pendingFx, renderTime(s.snaps, now));
+  const released = releaseDue(s.pendingFx, renderTime(s.snaps, now) - stopLag(hitstop, now));
   s.pendingFx = released.rest;
-  for (const { fx } of released.due) startEffect(s, fx, now, deathTint(s, fx));
+  for (const { fx } of released.due) {
+    const stop = stopFor(fx, s.myId);
+    if (stop && addStop(hitstop, now, stop) !== hitstop) {
+      hitstop = addStop(hitstop, now, stop);
+      if (stop === 'kill') killAt = now;
+      noteStop(stop);
+    }
+  }
+  const lag = stopLag(hitstop, now);
+  const fxNow = now - lag;
+  const drawnAt = renderTime(s.snaps, now) - lag;
+  const interpolated = sampleAt(s.snaps.snaps, drawnAt)!;
+  for (const { fx } of released.due) startEffect(s, fx, fxNow, deathTint(s, fx));
   s.predict = decayCorrection(s.predict, now - lastFrameAt);
   const drawn = drawnPosition(s.predict, now, INPUT_MS);
   const players = drawn ? interpolated.players.map((p) => (p.id === s.myId ? { ...p, ...drawn, dashing: !!s.predict.afterNewest?.dash } : p)) : interpolated.players;
-  const shots = releaseDue(s.pendingShots, renderTime(s.snaps, now));
+  const heard = releaseDue(s.pendingSounds, drawnAt);
+  s.pendingSounds = heard.rest;
+  if (heard.due.length) {
+    playCues(s, heard.due.map((p) => p.cue), latest.self.viewRadius || WORLD.viewRadius);
+    noteRemoteSound(heard.due.map((p) => p.cue), now);
+  }
+  const shots = releaseDue(s.pendingShots, drawnAt);
   s.pendingShots = shots.rest;
-  for (const { shot } of shots.due) shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
-  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, renderTime(s.snaps, now)));
+  for (const { shot } of shots.due) {
+    shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
+    noteRemoteFlash(shot.owner, now);
+  }
+  s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, drawnAt));
   const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
@@ -421,18 +504,22 @@ function drawFrame(now: number) {
   shownView = easeView(shownView, snap.self.viewRadius || WORLD.viewRadius, now - lastFrameAt);
   aimCamera = makeCamera(s.lastSelf, view.w, view.h, shownView);
   trauma = decay(trauma, now - lastFrameAt);
+  kick = settleKick(kick, now - lastFrameAt);
   lastFrameAt = now;
   const shake = offset(trauma, now);
-  const shakenCamera = { ...aimCamera, x: aimCamera.x + shake.x / aimCamera.scale, y: aimCamera.y + shake.y / aimCamera.scale };
+  const shakenCamera = { ...aimCamera, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale, scale: aimCamera.scale * killZoom(killAt, now) };
   updateTrails(s, snap, now);
+  faceZombies(s.zombieFaces, snap.zombies ?? [], snap.run?.core ?? s.lastSelf);
+  easeTurrets(s.turretAims, fxNow);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   noteFrame(s, snap, aimCamera, selfAngle, now);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing)) : null;
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now: fxNow, selfAngle, killerId, ghost });
+  playCues(s, stepCues(s.heardSteps, s.strides, snap.players, s.myId), latest.self.viewRadius || WORLD.viewRadius);
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(sinceMove(s)), nextSprayShot(s.firing), shakenOf(snap.self)) : null;
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
@@ -536,6 +623,8 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('resize', resize);
+// A hidden tab gets no frames; the first interval after it comes back is the time away, not frame time.
+document.addEventListener('visibilitychange', () => { lastRafAt = 0; });
 
 async function pollServers() {
   if (state.phase !== 'menu') return;
@@ -588,7 +677,24 @@ async function startSquad() {
   setSquad(opened.room);
   selectedRoom = opened.room;
   showServers();
-  play(opened.room);
+  requestPlay(opened.room);
+}
+
+/** Auto starts at Low when the browser draws without a GPU. */
+const autoStart = () => (painter.kind === 'ready' && painter.world.software ? 'low' : 'high');
+
+function pickQuality(mode: QualityMode) {
+  quality.set(mode, performance.now(), autoStart());
+  saveQualityMode(mode);
+  showQuality();
+}
+
+function showQuality() {
+  const noGpu = painter.kind === 'ready' && painter.world.software;
+  const key = `${quality.mode()}|${quality.tier()}|${noGpu}`;
+  if (key === qualityShown) return;
+  qualityShown = key;
+  renderQuality($('quality'), quality.mode(), quality.tier(), noGpu, pickQuality);
 }
 
 function toggleMuted(name: string) {
@@ -598,8 +704,8 @@ function toggleMuted(name: string) {
 }
 
 const overlays = createOverlays(pick, respawn, toggleMuted);
-const shooting = createShooting({ hands, playCues });
-installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
+const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { kick = addKick(kick, gun, angle); noteKick(Math.hypot(kick.x, kick.y)); } });
+installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost, audio: audio.stats, quality: () => ({ mode: quality.mode(), tier: quality.tier(), knobs: quality.knobs(), changes: quality.changes(), software: painter.kind === 'ready' && painter.world.software }) });
 renderMuted($('muted'), muted, toggleMuted);
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout),
@@ -610,7 +716,7 @@ nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
+  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) requestPlay(selectedRoom);
 });
 window.addEventListener('pagehide', leave);
 window.addEventListener('online', () => {
@@ -629,3 +735,19 @@ if (invited === 'bad') {
 resize();
 setState(state);
 requestAnimationFrame(frame);
+initWorld(worldCanvas, quality.knobs).then((world) => {
+  painter = { kind: 'ready', world };
+  if (world.software && quality.mode() === 'auto') quality.set('auto', performance.now(), 'low');
+  resize();
+  refreshArt();
+  void world.art.ready.then(() => {
+    const room = waitingRoom;
+    waitingRoom = null;
+    refreshArt();
+    if (room !== null && state.phase === 'menu' && state.status.kind !== 'connecting') play(room);
+  });
+}, (err: unknown) => {
+  painter = { kind: 'failed', message: NO_WEBGL2 };
+  refreshArt();
+  if (!(err instanceof NoWebGL2)) console.warn(err);
+});

@@ -1,9 +1,11 @@
 import type { Rect } from '../../shared/sim/movement.ts';
 import { clearShot, isOpen, type NavGrid, type Point } from './nav.ts';
 
-type CoverPoint = { x: number; y: number; shieldedBearings: number };
+/** `hug` is the index, in the list the index was built from, of the solid the point stands beside. */
+type CoverPoint = { x: number; y: number; shieldedBearings: number; hug: number };
 
-export type CoverIndex = { bucket: number; n: number; cells: CoverPoint[][] };
+/** `stands` says whether the solid at an index still stands, so points beside broken cover drop out without a rebuild. */
+export type CoverIndex = { bucket: number; n: number; cells: CoverPoint[][]; stands: (hug: number) => boolean };
 
 const BEARINGS = 16;
 const STANDOFF = 6;
@@ -18,11 +20,11 @@ export const bearingIndex = (from: Point, to: Point) => {
   return ((Math.round((a / (2 * Math.PI)) * BEARINGS) % BEARINGS) + BEARINGS) % BEARINGS;
 };
 
-export function coverIndex(nav: NavGrid, cover: readonly Rect[], radius: number): CoverIndex {
+export function coverIndex(nav: NavGrid, cover: readonly Rect[], radius: number, stands: (hug: number) => boolean = () => true): CoverIndex {
   const n = Math.ceil(nav.size / BUCKET_PX);
   const cells: CoverPoint[][] = Array.from({ length: n * n }, () => []);
   const off = radius + STANDOFF;
-  for (const r of cover) {
+  for (const [hug, r] of cover.entries()) {
     const sides: [Point, Point][] = [
       [{ x: r.x, y: r.y - off }, { x: r.x + r.w, y: r.y - off }],
       [{ x: r.x, y: r.y + r.h + off }, { x: r.x + r.w, y: r.y + r.h + off }],
@@ -43,12 +45,15 @@ export function coverIndex(nav: NavGrid, cover: readonly Rect[], radius: number)
         }
         if (shieldedBearings === 0) continue;
         const bx = Math.min(n - 1, Math.floor(p.x / BUCKET_PX)), by = Math.min(n - 1, Math.floor(p.y / BUCKET_PX));
-        cells[by * n + bx]!.push({ ...p, shieldedBearings });
+        cells[by * n + bx]!.push({ ...p, shieldedBearings, hug });
       }
     }
   }
-  return { bucket: BUCKET_PX, n, cells };
+  return { bucket: BUCKET_PX, n, cells, stands };
 }
+
+/** Whether `spot` is a cover point whose solid has since broken; any other point never counts as broken cover. */
+export const coverBroke = (index: CoverIndex, spot: Point): boolean => 'hug' in spot && !index.stands((spot as CoverPoint).hug);
 
 export function coverNear(index: CoverIndex, at: Point, within: number): CoverPoint[] {
   const out: CoverPoint[] = [];
@@ -56,7 +61,7 @@ export function coverNear(index: CoverIndex, at: Point, within: number): CoverPo
   const y0 = Math.max(0, Math.floor((at.y - within) / index.bucket)), y1 = Math.min(index.n - 1, Math.floor((at.y + within) / index.bucket));
   for (let by = y0; by <= y1; by++) {
     for (let bx = x0; bx <= x1; bx++) {
-      for (const c of index.cells[by * index.n + bx]!) if (Math.hypot(c.x - at.x, c.y - at.y) <= within) out.push(c);
+      for (const c of index.cells[by * index.n + bx]!) if (Math.hypot(c.x - at.x, c.y - at.y) <= within && index.stands(c.hug)) out.push(c);
     }
   }
   return out;
