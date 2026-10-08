@@ -1,9 +1,13 @@
 /// <reference types="node" />
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { WORLD } from '../../../../src/shared/defs.ts';
+import { placed } from '../../../../src/shared/kit.ts';
+import { MAPS, type MapId } from '../../../../src/shared/maps.ts';
 import type { Snapshot } from '../../../../src/shared/protocol.ts';
+import { trainAt } from '../../../../src/shared/sim/train.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { hold, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
+import { hold, key, navGridFor, openPage, pathStep, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const [RUN, OUT, ...asked] = process.argv.slice(2);
 if (!RUN || !OUT) { console.error('usage: node screens.ts <run-dir> <out-dir> [view ...]'); process.exit(2); }
@@ -169,6 +173,30 @@ for (const view of VIEWS) {
         console.log(`boom r=${boom.r} at ${Math.round(boom.x - me()!.x)},${Math.round(boom.y - me()!.y)} from the player`);
         for (const k of ['a', 'b', 'c', 'd']) { await sleep(110); await shot(`zom-boom-${n}${k}`); }
       }
+      break;
+    }
+    case 'train': {
+      await enter(serverOf('ffa'));
+      const id = full?.match.map as MapId | undefined;
+      const train = id && MAPS[id]?.train;
+      if (!train) throw new Error(`the ffa room is on ${id}, which has no train`);
+      const def = MAPS[id];
+      const grid = navGridFor(def.size, [...def.walls, ...def.fences, ...def.breakables.flatMap((at) => placed(at).solids)]);
+      const now = () => (full?.tick ?? 0) * (1000 / WORLD.tickHz);
+      const spot = { x: train.lane.x + train.lane.w * 0.42, y: train.lane.y - 170 };
+      const wait = async (want: 'warn' | 'pass', ms: number) => {
+        const end = Date.now() + ms;
+        while (Date.now() < end) {
+          const self = me();
+          const at = trainAt(train, now());
+          if (self?.alive && at.k === want && Math.hypot(self.x - spot.x, self.y - spot.y) < 160 && (at.k !== 'pass' || Math.abs(at.body.x + at.body.w / 2 - self.x) < VIEW.w / 3)) return true;
+          if (!self?.alive) { await js(`document.getElementById('respawn')?.disabled || document.getElementById('respawn')?.click()`); await sleep(200); continue; }
+          await hold(page, Math.hypot(self.x - spot.x, self.y - spot.y) > 40 ? pathStep(grid, self, spot) : [], 120);
+        }
+        return false;
+      };
+      if (await wait('warn', 120_000)) await shot('train-warn');
+      if (await wait('pass', 120_000)) { await sleep(150); await shot('train-pass'); }
       break;
     }
     default: console.error(`unknown view ${view}`);
