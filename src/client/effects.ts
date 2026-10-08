@@ -83,7 +83,8 @@ export function startEffect(s: Session, spec: EffectSpec, now: number, tint?: st
     }
     case 'death': {
       burst(s.particles, 'puff', spec.x, spec.y, angle, now, Math.random, tint);
-      const victim = newestSnap(s.snaps)?.players.find((p) => p.id === spec.victim);
+      // The death plays at render time, a few ticks after the newest snapshot has already dropped the victim.
+      const victim = s.snaps.snaps.flatMap((snap) => snap.players.filter((p) => p.id === spec.victim)).at(-1);
       if (!victim) return;
       const blow = s.effects.filter((fx) => fx.kind === 'impact' && fx.victim === spec.victim && fx.dir !== null && now - fx.born < 400).at(-1);
       const blast = s.effects.some((fx) => fx.kind === 'boom' && now - fx.born < 300 && Math.hypot(fx.x - spec.x, fx.y - spec.y) < fx.r + 30);

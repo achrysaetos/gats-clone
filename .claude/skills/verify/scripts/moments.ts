@@ -5,13 +5,13 @@
 // knockback and suppression, with the measured value beside each shot in moments.log.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GameEvent, PlayerView, Snapshot } from '../../../../src/shared/protocol.ts';
+import type { GameEvent, PlayerView, Snapshot, WallView } from '../../../../src/shared/protocol.ts';
 import { fillSnapshot } from '../../../../src/shared/wire.ts';
-import { dirKey, key, openPage, serversListed, sleep, type Dir } from './lib/browser.ts';
+import { hold, key, navGridFor, openPage, pathStep, serversListed, sleep, type Dir } from './lib/browser.ts';
 
 const RUN = process.argv[2];
 if (!RUN) { console.error('usage: node moments.ts <run-dir> [seconds] [weapon-index]'); process.exit(2); }
-const SECONDS = Number(process.argv[3] ?? 90);
+const SECONDS = Number(process.argv[3] ?? 240);
 const WEAPON = Number(process.argv[4] ?? 2);
 const VIEW = { w: 1600, h: 900 };
 const BASE = existsSync(join(RUN, 'url'))
@@ -32,6 +32,9 @@ const history: { at: number; players: Map<number, PlayerView>; self: Snapshot['s
 const hits: { at: number; ev: Extract<GameEvent, { e: 'dmg' }> }[] = [];
 const kills: { at: number; ev: Extract<GameEvent, { e: 'kill' }> }[] = [];
 let whizzes = 0;
+type Arena = { worldSize: number; walls: WallView[] };
+let arena = null as Arena | null;
+const ground = () => arena;
 const page = await openPage({
   profile: 'skirmish-moments-',
   viewport: { width: VIEW.w, height: VIEW.h },
@@ -39,6 +42,7 @@ const page = await openPage({
     if (method !== 'Network.webSocketFrameReceived') return;
     const msg = JSON.parse(params.response.payloadData);
     if (msg.t === 'welcome') myId = msg.id;
+    if (msg.t === 'welcome' || msg.t === 'walls') arena = { worldSize: msg.worldSize, walls: msg.walls };
     if (msg.t !== 'snap') return;
     full = fillSnapshot(msg, full) ?? full;
     if (!full) return;
@@ -46,8 +50,8 @@ const page = await openPage({
     history.push({ at, players: new Map(full.players.map((p) => [p.id, p])), self: full.self });
     if (history.length > 400) history.shift();
     for (const ev of full.events) {
-      if (ev.e === 'dmg' && ev.attacker === myId && ev.kind === 'player' && ev.victim !== myId) hits.push({ at, ev });
-      if (ev.e === 'kill' && ev.killerId === myId && ev.victimId !== myId) kills.push({ at, ev });
+      if (ev.e === 'dmg' && ev.kind === 'player' && ev.victim !== myId && ev.hit) hits.push({ at, ev });
+      if (ev.e === 'kill' && ev.victimId !== myId) kills.push({ at, ev });
       if (ev.e === 'whizz' && ev.victim === myId) whizzes++;
     }
   },
@@ -81,9 +85,19 @@ const knock: number[] = [];
 let suppression = 0;
 let seenHits = 0, seenKills = 0;
 const KEYS: Dir[] = ['right', 'down', 'left', 'up'];
+const RANGE = 300;
+/** Whether the straight line between two points misses every wall, so a shot at the far one can land. */
+const clear = (a: { x: number; y: number }, b: { x: number; y: number }) => !(ground()?.walls ?? []).some((w) => {
+  for (let t = 0; t <= 1; t += 0.05) {
+    const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+    if (x > w.x && x < w.x + w.w && y > w.y && y < w.y + w.h) return true;
+  }
+  return false;
+});
 let step = 0;
 const end = Date.now() + SECONDS * 1000;
-while (Date.now() < end) {
+const WANTED = ['hit-reaction', 'death-body', 'reload', 'close-blast', 'suppressed'];
+while (Date.now() < end && !WANTED.every((n) => shots.has(n))) {
   const self = me();
   if (!self?.alive) {
     await js(`document.getElementById('respawn').disabled || document.getElementById('respawn').click()`);
@@ -92,31 +106,33 @@ while (Date.now() < end) {
   }
   suppression = Math.max(suppression, (full!.self as { suppression?: number }).suppression ?? 0);
   if (suppression > 0.5) await once('suppressed', self);
-  const foe = full!.players.filter((p) => p.id !== myId && p.alive).sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
+  const foes = full!.players.filter((p) => p.id !== myId && p.alive).sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y));
+  const foe = foes.find((p) => Math.hypot(p.x - self.x, p.y - self.y) < RANGE && clear(self, p)) ?? foes[0];
   const near = foe ? Math.hypot(foe.x - self.x, foe.y - self.y) : Infinity;
   const aim = foe && await js(`skirmishDev.toScreen(${foe.x}, ${foe.y})`);
   const [mx, my] = aim ? [aim.x as number, aim.y as number] : [VIEW.w / 2 + 300, VIEW.h / 2];
   await mouse('mouseMoved', mx, my);
-  if (near < 420) {
+  if (foe && near < RANGE && clear(self, foe)) {
     await mouse('mousePressed', mx, my);
     if (near < 130) { await sleep(25); await once('close-blast', self); }
     await sleep(60);
     await mouse('mouseReleased', mx, my);
   } else {
-    await dirKey(page, 'keyDown', foe ? (Math.abs(foe.x - self.x) > Math.abs(foe.y - self.y) ? (foe.x > self.x ? 'right' : 'left') : (foe.y > self.y ? 'down' : 'up')) : KEYS[step++ % 4]!);
-    await sleep(300);
-    for (const d of KEYS) await dirKey(page, 'keyUp', d);
+    const g = ground();
+    const dirs = foe && g ? pathStep(navGridFor(g.worldSize, g.walls), self, foe) : [KEYS[step++ % 4]!];
+    await hold(page, dirs.length ? dirs : [KEYS[step++ % 4]!], 300);
   }
   for (; seenHits < hits.length; seenHits++) {
     const h = hits[seenHits]!;
-    await once('hit-reaction', h.ev.hit ?? h.ev);
+    if (Math.hypot(h.ev.x - self.x, h.ev.y - self.y) < 500) await once('hit-reaction', h.ev.hit ?? h.ev);
     const before = [...history].reverse().find((s) => s.at < h.at)?.players.get(h.ev.victim);
     const after = history.find((s) => s.at > h.at + 90)?.players.get(h.ev.victim);
     if (before && after && h.ev.hit) knock.push(Math.cos(h.ev.hit.dir) * (after.x - before.x) + Math.sin(h.ev.hit.dir) * (after.y - before.y));
   }
   for (; seenKills < kills.length; seenKills++) {
     const k = kills[seenKills]!;
-    const at = [...history].reverse().find((s) => s.at <= k.at)?.players.get(k.ev.victimId) ?? foe;
+    const at = [...history].reverse().find((s) => s.at <= k.at && s.players.get(k.ev.victimId)?.alive)?.players.get(k.ev.victimId);
+    if (shots.has('death-body') || !at || Math.hypot(at.x - self.x, at.y - self.y) > 500) continue;
     await sleep(Math.max(0, 260 - (Date.now() - k.at)));
     await once('death-falling', at);
     await sleep(2500);
@@ -134,8 +150,8 @@ close();
 
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? NaN;
 log(`moments FFA weapon tile ${WEAPON} ${SECONDS}s at ${new Date().toISOString()}`);
-check(shots.has('hit-reaction'), `a hit reaction was caught: ${hits.length} hits by me`);
-check(shots.has('death-body'), `a death and its body were caught: ${kills.length} kills by me`);
+check(shots.has('hit-reaction'), `a hit reaction was caught: ${hits.length} hits seen, ${hits.filter((h) => h.ev.attacker === myId).length} by me`);
+check(shots.has('death-body'), `a death and its body were caught: ${kills.length} kills seen, ${kills.filter((k) => k.ev.killerId === myId).length} by me`);
 check(shots.has('reload'), 'a reload was caught');
 log(`${shots.has('close-blast') ? 'ok  ' : 'note'} close blast ${shots.has('close-blast') ? 'caught' : 'not reached (no foe within 130)'}`);
 log(`note knockback along the round, victim moved ${knock.length ? `median ${median(knock).toFixed(1)}, max ${Math.max(...knock).toFixed(1)}` : 'n/a'} units in the 90 ms after ${knock.length} hits`);

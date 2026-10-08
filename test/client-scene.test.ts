@@ -7,6 +7,7 @@ import type { PlayerView, Snapshot, ThrownKind, WallView } from '../src/shared/p
 import { BLAST_RADIUS } from '../src/shared/sim/abilities.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { addCrack, createCracks } from '../src/client/decals.ts';
+import { startEffect } from '../src/client/effects.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
 import { createPool } from '../src/client/particles.ts';
 import { newAnim, type Session } from '../src/client/state.ts';
@@ -186,4 +187,12 @@ test('a worn crate shows its piece at the damage stage its health has fallen to'
   const key = (hp: number) => describe(snap({ crates: [crate(hp)] })).crates[0]!.key;
   const full = KIT.crate.breaks!.hp;
   assert.deepEqual([key(full), key(full * 0.5), key(full * 0.1)], ['kit.crate.0.0', 'kit.crate.0.1', 'kit.crate.0.2']);
+});
+
+test('a player killed after the newest snapshot dropped them still leaves a body, wearing their gun and armour', () => {
+  const before = snap({ players: [player(2, { gun: 'shotgun', armorTier: 'heavy' })] }), after = snap();
+  const s = session({ snaps: { snaps: [before, after], serverClockOffset: 0 } } as Partial<Session>);
+  startEffect(s, { kind: 'death', x: 200, y: 0, victim: 2, by: 1 }, 1000, '#ff0000');
+  assert.deepEqual(s.anim.remains.map((r) => [r.id, r.gun, r.armor]), [[2, 'shotgun', 'heavy']]);
+  assert.equal(describe(after, { s }).remains.length, 1, 'the body is drawn');
 });
