@@ -91,13 +91,21 @@ function drawFront(g: CanvasRenderingContext2D, pts: readonly Pt[], h: number, l
   }
 }
 
+/** Taller tops are a step brighter than the floor and than low cover: a pale wash over the path just traced. */
+function liftTop(g: CanvasRenderingContext2D, h: number) {
+  if (h <= 14) return;
+  g.fillStyle = `rgba(255, 246, 228, ${(0.09 + 0.17 * Math.min(1, (h - 14) / 44)).toFixed(3)})`;
+  g.fill();
+}
+
 /** The top face: flat paint, a light band on edges that face the light, a dark band on the far ones, an ink outline. */
-function drawTop(g: CanvasRenderingContext2D, pts: readonly Pt[], l: PolyLook, alpha = 1) {
+function drawTop(g: CanvasRenderingContext2D, pts: readonly Pt[], l: PolyLook, alpha = 1, h = 0) {
   g.save();
   g.globalAlpha *= alpha;
   trace(g, pts);
   g.fillStyle = l.top;
   g.fill();
+  liftTop(g, h);
   g.clip();
   g.lineWidth = 8;
   g.lineCap = 'butt';
@@ -166,10 +174,15 @@ export function drawPolys(g: CanvasRenderingContext2D, info: GeoInfo): void {
   const ordered = [...groups.values()].sort((a, b) => Math.max(...a.map((s) => s.y1)) - Math.max(...b.map((s) => s.y1)));
   for (const group of ordered) {
     if (theme?.drawSetPiece?.(g, group.map((s) => s.poly), info)) continue;
-    const mine = group.filter((s) => !theme?.drawPoly?.(g, s.poly, info));
+    const mine = group.filter((s) => {
+      if (!theme?.drawPoly?.(g, s.poly, info)) return true;
+      // A theme's own top gets the same lift, so it stands off the floor like every other raised top.
+      if (s.poly.material !== 'glass') { trace(g, s.pts); liftTop(g, s.poly.height ?? 14); }
+      return false;
+    });
     mine.sort((a, b) => (a.poly.height ?? 14) - (b.poly.height ?? 14));
     for (const s of mine) drawFront(g, s.pts, s.poly.height ?? 14, lookOf(s.poly.material));
-    for (const s of mine) drawTop(g, s.pts, lookOf(s.poly.material));
+    for (const s of mine) drawTop(g, s.pts, lookOf(s.poly.material), 1, s.poly.height ?? 14);
   }
 }
 

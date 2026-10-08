@@ -61,7 +61,15 @@ function disc(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, fi
   inkPath(ctx, outline);
 }
 
+const LIGHT_DIR = { x: 0.62, y: 0.78 } as const;
 function contact(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number) {
+  // A short hard cast shadow along the key light, like the walls', under the contact ellipse.
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(10, 12, 18, 0.3)';
+  ctx.lineWidth = Math.max(3, ry * 2);
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + LIGHT_DIR.x * rx * 2.4, y + LIGHT_DIR.y * rx * 2.4); ctx.stroke();
+  ctx.restore();
   ctx.fillStyle = CONTACT;
   ctx.beginPath();
   ctx.ellipse(x, y, rx, ry, 0, 0, TAU);

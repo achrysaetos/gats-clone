@@ -167,7 +167,7 @@ function barrelBody(ctx: CanvasRenderingContext2D, cx: number, cy: number, hp: n
 /** The cast shadow, falling down and to the right with every other shadow, and the tight contact shadow at the foot. */
 function barrelShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   const { r, face } = BARREL_LOOK;
-  const len = 24 * 1.7;
+  const len = 24 * 2.6;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.strokeStyle = SHADOW;

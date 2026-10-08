@@ -7,7 +7,7 @@ import { PALETTE } from './palette.ts';
 import { paintThemedSolids } from './themes/registry.ts';
 
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
-const SHADOW_PER_HEIGHT = 2.7;
+const SHADOW_PER_HEIGHT = 3.3;
 export const LIP = 4;
 
 export type SolidKind = 'hangar' | 'cinder' | 'sbags' | 'gse' | 'bunk' | 'pallet' | 'jersey' | 'stall' | 'shopfront' | 'stack' | 'cart' | 'shrine' | 'gallery' | 'marble' | 'vitrine' | 'plinth' | 'counter' | 'sandstone' | 'concrete' | 'curb' | 'planter' | 'slate' | 'brick' | 'pad' | 'core' | 'crate' | 'supply' | 'wood' | 'sandbag' | 'steel' | 'hull' | 'tower' | 'bulkhead' | 'rack' | 'water' | 'hedge' | 'pond' | 'parkstone' | 'trunk' | 'bench' | 'play' | 'terminus' | 'ironwork' | 'boxcar' | 'sleepers' | 'kiosk' | 'coalheap' | 'timber' | 'hearth' | 'bartop' | 'drift' | 'machine' | 'embwall' | 'embglass' | 'embfurn' | 'embrack' | 'embhedge' | 'rubble' | 'scrap';
@@ -169,7 +169,7 @@ const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
 /** Crisp, graphic drop shadows rather than soft photographic ones. */
 const BLUR_PX = 1.2;
-const SHADOW_ALPHA = 0.42;
+const SHADOW_ALPHA = 0.52;
 const FLOOR_SEED = 7;
 const AO_COLOR = 'rgba(16, 18, 24, ';
 
@@ -201,7 +201,7 @@ function fillAO(g: CanvasRenderingContext2D, solids: readonly Solid[], reach = 1
   if (!solids.length) return;
   g.save();
   // The floor sinks into every wall's foot: a wide soft halo, a tighter shade, and a dark contact line hugging the base.
-  for (const [grow, blur, alpha] of [[8 * reach, 4, 0.16], [3 * reach, 1.4, 0.3]] as const) {
+  for (const [grow, blur, alpha] of [[26 * reach, 12, 0.16], [10 * reach, 5, 0.2], [3 * reach, 1.4, 0.32]] as const) {
     g.filter = `blur(${blur * LAYER_SCALE}px)`;
     g.fillStyle = `${AO_COLOR}${alpha})`;
     g.beginPath();
@@ -286,6 +286,9 @@ export function createGroundCache() {
       fg.fillStyle = PALETTE.outside;
       fg.fillRect(-LAYER_PAD, -LAYER_PAD, size + LAYER_PAD * 2, size + LAYER_PAD * 2);
       paintFloor(fg, size, FLOOR_SEED, plan);
+      // Walkable ground sits a step lower in value than every top face, whoever painted it.
+      fg.fillStyle = 'rgba(12, 14, 20, 0.12)';
+      fg.fillRect(-LAYER_PAD, -LAYER_PAD, size + LAYER_PAD * 2, size + LAYER_PAD * 2);
       fillAO(fg, placed);
       floor = f;
       const [h, hg] = layerCanvas(size);
@@ -1225,7 +1228,7 @@ function finishSprite(g: CanvasRenderingContext2D, s: Solid, scale: number): voi
   const { x, y, w, h } = s;
   // Taller tops are brighter, so full walls and buildings stand out from crates and sandbags and every top from the floor.
   const lift = Math.max(0, Math.min(1, (m.height - 14) / 44));
-  if (lift > 0) { g.fillStyle = `rgba(255, 246, 228, ${(0.05 + 0.1 * lift).toFixed(3)})`; g.fillRect(x, y, w, h); }
+  if (lift > 0) { g.fillStyle = `rgba(255, 246, 228, ${(0.09 + 0.17 * lift).toFixed(3)})`; g.fillRect(x, y, w, h); }
   if (face > 0) {
     g.fillStyle = 'rgba(8, 10, 16, 0.2)';
     g.fillRect(x, y + h + face * 0.55, w, face * 0.45);
@@ -1233,9 +1236,12 @@ function finishSprite(g: CanvasRenderingContext2D, s: Solid, scale: number): voi
     g.fillRect(x + 2, y + h + 2, w - 4, 1.5);
   }
   // The rim: a hard pale line along the north and west edges (toward the light) and a thin dark seam south and east.
-  g.fillStyle = 'rgba(255, 255, 255, 0.36)';
+  g.fillStyle = 'rgba(255, 255, 255, 0.5)';
   g.fillRect(x + 1, y + 1, w - 2, 2);
   g.fillRect(x + 1, y + 3, 2, h - 4);
+  g.fillStyle = 'rgba(255, 255, 255, 0.2)';
+  g.fillRect(x + 3, y + 3, w - 6, 2);
+  g.fillRect(x + 3, y + 5, 2, h - 8);
   g.fillStyle = 'rgba(8, 10, 16, 0.34)';
   g.fillRect(x + 3, y + h - 2, w - 4, 2);
   g.fillRect(x + w - 2, y + 3, 2, h - 5);
