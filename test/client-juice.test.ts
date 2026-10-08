@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HITSTOP, lag, newClock, requestStop, stepClock } from '../src/client/hitstop.ts';
 import { addHit, alphaOf, isBig, NUM, NUM_LIFE_MS, sweepNums, type Num } from '../src/client/dmgnums.ts';
-import { BIT_CAP, BURST_MS, emitBit, heightAt, liveBits, onDeath, queueHits, releaseQueued, resetFx, nums, travel } from '../src/client/killfx.ts';
+import { BIT_CAP, BURST_MS, clearHits, emitBit, heightAt, liveBits, onDeath, queueHits, releaseQueued, resetFx, nums, travel } from '../src/client/killfx.ts';
 import { beatHz, flashAt, heartbeat, zoomAt, SCREEN } from '../src/client/screenfx.ts';
 
 test('hit-stop holds the drawn clock for its length, then catches up to real time', () => {
@@ -76,6 +76,36 @@ test('your hits are held until the render clock reaches their tick, and a big su
   releaseQueued(1000, 5000);
   assert.equal(nums.length, 2);
   assert.equal(nums.find((n) => n.victim === 2)!.total, 68);
+});
+
+test('hits queued in one room never surface in the next: their tick times belong to the old room, and clearHits drops them', () => {
+  resetFx();
+  const ev = { e: 'dmg' as const, attacker: 1, victim: 2, amount: 20, x: 5, y: 5, kind: 'player' as const };
+  // Late in a long match: 600 s of server time. The page leaves before the render clock reaches it.
+  queueHits([ev], 1, 600_000);
+  releaseQueued(599_900, 1000);
+  assert.equal(nums.length, 0);
+  // Left alone, the next room's clock (which starts near zero) reaches 600 s ten minutes in, and a number pops over nobody.
+  releaseQueued(600_000, 2000);
+  assert.equal(nums.length, 1, "without a reset the old room's hit lands in the new one");
+  resetFx();
+  queueHits([ev], 1, 600_000);
+  clearHits();
+  releaseQueued(600_000, 3000);
+  assert.equal(nums.length, 0, 'after clearHits nothing from the old room is left to land');
+});
+
+test('a hidden tab does not save up hits for one burst on return once clearHits runs', () => {
+  resetFx();
+  const ev = (victim: number) => ({ e: 'dmg' as const, attacker: 1, victim, amount: 30, x: 5, y: 5, kind: 'player' as const });
+  for (let t = 0; t < 60; t++) queueHits([ev(t), ev(t)], 1, 10_000 + t * 33);
+  releaseQueued(20_000, 5000);
+  assert.ok(nums.length >= NUM.cap, `${nums.length} numbers at once on return without a reset`);
+  resetFx();
+  for (let t = 0; t < 60; t++) queueHits([ev(t), ev(t)], 1, 10_000 + t * 33);
+  clearHits();
+  releaseQueued(20_000, 5000);
+  assert.equal(nums.length, 0);
 });
 
 test('ballistic helpers: a toss lands, bounces once lower, then rests', () => {

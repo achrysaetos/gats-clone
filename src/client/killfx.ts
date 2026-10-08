@@ -323,6 +323,12 @@ const queue: Queued[] = [];
 export const nums: Num[] = [];
 export const QUEUE_CAP = 96;
 
+/**
+ * Drops your queued hits and the numbers on screen. Their times are one room's server ticks: kept across a room change they wait for the
+ * new room's clock to reach the old one's and then land as phantom numbers, and kept through a hidden tab they all land in one burst on return.
+ */
+export const clearHits = (): void => { queue.length = 0; nums.length = 0; };
+
 /** Reads your damage out of a snapshot's events: each hit becomes a number, and a victim's hits summing to a big blow in one tick a hit-stop. */
 export function queueHits(events: readonly GameEvent[], myId: number, serverMs: number): void {
   const sums = new Map<number, { total: number; x: number; y: number }>();

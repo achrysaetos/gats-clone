@@ -53,7 +53,7 @@ import { startTopup } from './reloadanim.ts';
 import { topupCues, topupOf } from './topup.ts';
 import { committed, nextSprayShot, NO_FIRING, sendInput, settleOf } from './fire.ts';
 import { raiseWatch } from './raise.ts';
-import { drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
+import { clearHits, drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
 import { drawHeartbeat, drawScreenPulse, reducedMotion, setPulseHook, zoomAt } from './screenfx.ts';
 import { addKick, addTrauma, decay, offset, settleKick, traumaFor, type Kick } from './shake.ts';
@@ -191,6 +191,7 @@ function setState(next: ClientState) {
     delight.reset();
     celebrate.reset();
     resetEmotes();
+    clearHits();
     chatter.reset();
     wheel.close();
     setParty(false);
@@ -852,7 +853,7 @@ document.addEventListener('visibilitychange', () => {
   lastRaf = 0; lastFrameAt = 0;
   if (document.hidden) return;
   const s = sessionOf(state);
-  if (s) Object.assign(s, resyncNet(s));
+  if (s) { Object.assign(s, resyncNet(s)); clearHits(); }
 });
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
