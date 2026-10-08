@@ -54,11 +54,12 @@ type Stats = {
 };
 
 /** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. */
-export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0): number {
+export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0, deployed = false): number {
   const rules = rulesOf(GUNS[gun]);
   if (still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05) return 0;
   const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
-  let spread = (still ? GUNS[gun].spread : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot, bloomBuild) * settleSpreadMul(settle);
+  const planted = still && deployed && rules.deploy ? rules.deploy.spreadMul : 1;
+  let spread = (still ? GUNS[gun].spread * planted : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot, bloomBuild) * settleSpreadMul(settle);
   for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
   return spread * suppressionMul(suppression);
 }
@@ -78,6 +79,20 @@ function bloomMul({ bloom }: GunRules, sprayShot: number, build = 1): number {
 
 /** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */
 export const isSteady = (gun: GunId, sinceMoveMs: number): boolean => sinceMoveMs > 0 && sinceMoveMs >= rulesOf(GUNS[gun]).steadyMs;
+
+/** Whether a gun with a `deploy` is planted, `sinceMoveMs` after the last step (0 while walking). */
+export const isDeployed = (gun: GunId, sinceMoveMs: number): boolean => {
+  const { deploy } = rulesOf(GUNS[gun]);
+  return deploy !== null && sinceMoveMs > 0 && sinceMoveMs >= deploy.ms;
+};
+
+/** How much of its damage a round of `gun` keeps after flying `flownPx` (`GunRules.falloff`): 1 out to the fade's start, then down to its floor. */
+export function falloffMul(gun: GunId, flownPx: number): number {
+  const { falloff } = rulesOf(GUNS[gun]);
+  if (!falloff || flownPx <= falloff.startPx) return 1;
+  const k = Math.min(1, (flownPx - falloff.startPx) / Math.max(1, falloff.endPx - falloff.startPx));
+  return 1 - (1 - falloff.minMul) * k;
+}
 
 export const reloadMsFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((ms, perk) => ms * (PERK_MODS[perk].reloadMul ?? 1), GUNS[gun].reloadMs);
@@ -122,7 +137,7 @@ export function effectiveStats(p: Player): Stats {
     viewRadius: WORLD.viewRadius * rulesOf(weapon).viewMul,
     piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
-  let sprintMul = SPRINT.speedMul;
+  let sprintMul = 1 + (SPRINT.speedMul - 1) * rulesOf(weapon).sprintMul;
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
     s.mag = Math.floor(s.mag * (m.magMul ?? 1));

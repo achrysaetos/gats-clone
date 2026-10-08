@@ -1,4 +1,4 @@
-import { COLORS, GUNS, ROYALE, SPRINT, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
+import { COLORS, GUNS, raiseMsOf, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView, ZoneView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
@@ -467,7 +467,7 @@ function gaitOf(p: PlayerView, now: number): Gait {
 }
 
 /**
- * Each body's sprint pose, 0..1: the gun swings down into the carry quickly, and comes back up over the whole `SPRINT.raiseMs` (the time the
+ * Each body's sprint pose, 0..1: the gun swings down into the carry quickly, and comes back up over the whole of its gun's `raiseMsOf` (the time the
  * sim keeps it from firing), eased so the pull-out reads: slow off the chest, then snapping up to the shoulder.
  */
 const sprints = new Map<number, { amount: number; t: number }>();
@@ -477,7 +477,7 @@ function sprintOf(p: PlayerView, now: number): number {
   const prev = sprints.get(p.id);
   const dt = prev ? Math.min(100, Math.max(0, now - prev.t)) : 0;
   const target = p.sprint ? 1 : 0;
-  const rate = target > (prev?.amount ?? target) ? SPRINT_EASE_MS : SPRINT.raiseMs;
+  const rate = target > (prev?.amount ?? target) ? SPRINT_EASE_MS : raiseMsOf(GUNS[p.gun]);
   const amount = reducedMotion() ? target : prev ? prev.amount + Math.sign(target - prev.amount) * Math.min(Math.abs(target - prev.amount), dt / rate) : target;
   sprints.set(p.id, { amount, t: now });
   // On the way up, 1 - amount is the raise's progress; ease it in-out so the gun lingers low, then comes up to the shoulder.

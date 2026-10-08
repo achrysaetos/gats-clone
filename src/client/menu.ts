@@ -1,5 +1,6 @@
 import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, type WeaponId } from '../shared/defs.ts';
 import type { Loadout } from '../shared/protocol.ts';
+import { CLASS_ROLES } from '../shared/roles.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
 import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
@@ -46,7 +47,7 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
   const weaponButtons = WEAPON_IDS.map((id) => {
     const w = GUNS[id];
     const art = el('canvas', { className: 'gun-art' });
-    const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${w.desc}` },
+    const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${CLASS_ROLES[id]}` },
       art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id));
     b.onclick = () => set({ ...get(), weapon: id });
     if (opts.peek) {

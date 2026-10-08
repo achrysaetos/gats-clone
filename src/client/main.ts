@@ -10,7 +10,7 @@ import { musicDuck, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } f
 import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
-import { isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
+import { isDeployed, isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
 import { assistAngle, type AssistTarget } from './aimassist.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
@@ -676,7 +676,7 @@ function drawFrame(realNow: number) {
   // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
   const glWorld = processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr);
   if (glWorld) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression, settleOf(s.firing)) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression, settleOf(s.firing), isDeployed(me.gun, sinceMove(s))) : null;
   drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow, !glWorld);
   if (me?.alive) drawHeartbeat(ctx, view.w, view.h, view.dpr, now, me.hp / me.maxHp);
   // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.

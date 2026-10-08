@@ -2,7 +2,7 @@ import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type Bui
 import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
-import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
+import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { crawlThink, royaleThink } from './bot/royale.ts';
 import { DEAD_ZONE, siegeThink } from './bot/siege.ts';
@@ -29,8 +29,16 @@ const CLASS_PERK_WEIGHT: Partial<Record<WeaponId, Partial<Record<PerkId, number>
   lmg: { quickReload: 2, steadyHands: 2.5 }, assault: { steadyHands: 2.5 }, smg: { steadyHands: 2 }, shotgun: { brace: 1.6, bloodlust: 2 }, sniper: { recon: 1, steadyHands: 0 },
 };
 
-function choosePickOption(options: readonly PickOption[], gun: GunId, rand: () => number): PickOption {
-  const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : 1);
+/** Which evolution a bot leans to by its temper: a daredevil takes the rushers, a marksman the long guns, a careful one the guns that hold a mid-range lane. */
+export function gunWeight(option: GunId, persona: PersonalityId): number {
+  const [, ideal, , rush] = GUN_BAND[option];
+  if (persona === 'aggressive') return rush ? 2 : 1;
+  if (persona === 'marksman') return ideal >= 450 ? 2 : 1;
+  return ideal >= 300 && !rush ? 1.5 : 1;
+}
+
+function choosePickOption(options: readonly PickOption[], gun: GunId, persona: PersonalityId, rand: () => number): PickOption {
+  const weight = (o: PickOption) => (isPerkId(o) ? CLASS_PERK_WEIGHT[GUNS[gun].base]?.[o] ?? PERK_WEIGHT[o] ?? 1 : gunWeight(o, persona));
   let roll = rand() * options.reduce((sum, o) => sum + weight(o), 0);
   return options.find((o) => (roll -= weight(o)) < 0) ?? pick(options, rand);
 }
@@ -56,7 +64,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
     return { input: { ...IDLE_BOT_INPUT, shots: mem.motor.shots }, pick: null, mem: forgotten };
   }
   const pending = snap.self.pending;
-  const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, rand) } : null;
+  const choice = pending ? { level: pending.level, option: choosePickOption(pickOptions(pending, me.gun), me.gun, mem.persona, rand) } : null;
   if (snap.run) return { ...siegeThink(snap, snap.run, me, arena, mem, rand), pick: choice };
   if (snap.royale) return { ...royaleThink(snap, snap.royale, me, arena, mem, rand), pick: choice };
 

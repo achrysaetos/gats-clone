@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { CONTROLS, assembleInput, actionForKey } from '../src/client/input.ts';
 import { stepTrigger, NO_FIRING, settle, settleOf, type ServerGun } from '../src/client/fire.ts';
 import { NO_STICKS, dragStick, pressStick, touchMoves } from '../src/client/touch.ts';
-import { GUNS, LOAD_SPEED_FLOOR, SPRINT, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LOAD_SPEED_FLOOR, raiseMsOf, rulesOf, SPRINT, WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats, settleSpreadMul, spreadFor } from '../src/shared/sim/stats.ts';
@@ -36,7 +36,8 @@ test('sprinting moves 1.35 times faster than walking, and only while moving', ()
 test('sprint multiplies the loadout speed after the 58% floor, and Lightweight stacks with it', () => {
   const heavy = { weapon: 'lmg', armor: 'heavy' } as const;
   const base = WORLD.baseSpeed * LOAD_SPEED_FLOOR;
-  assert.ok(Math.abs(travelled(true, 1000, { loadout: heavy }) - base * SPRINT.speedMul) < 4, 'the heaviest loadout still sprints 35% above its floor speed');
+  const lmgSprint = 1 + (SPRINT.speedMul - 1) * rulesOf(GUNS.lmg).sprintMul;
+  assert.ok(Math.abs(travelled(true, 1000, { loadout: heavy }) - base * lmgSprint) < 4, 'the heaviest loadout still sprints above its floor speed (an LMG a little less than most)');
   const light = travelled(true, 1000, {}, ['lightweight']);
   assert.ok(Math.abs(light - WORLD.baseSpeed * 1.25 * SPRINT.speedMul) < 4, `Lightweight sprint ${light.toFixed(1)}`);
 });
@@ -53,15 +54,15 @@ test('a sprinting player cannot fire; a click ends the sprint and the shot waits
   const clickAt = w.now;
   press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
   let firstShotMs: number | null = null;
-  for (let i = 0; i < Math.ceil(SPRINT.raiseMs / TICK_MS) + 10; i++) {
+  for (let i = 0; i < Math.ceil(raiseMsOf(GUNS.assault) / TICK_MS) + 10; i++) {
     run(w, TICK_MS);
     fired += shots();
     if (fired > 0 && firstShotMs === null) firstShotMs = w.now - clickAt;
   }
   assert.equal(snapshotFor(w, a.id).self.sprint, false, 'the click ended the sprint even with the key still held');
   assert.ok(firstShotMs !== null, 'the held trigger fires once the gun is up');
-  assert.ok(firstShotMs! >= SPRINT.raiseMs - TICK_MS, `no shot before the gun is raised (${firstShotMs}ms)`);
-  assert.ok(firstShotMs! <= SPRINT.raiseMs + 2 * TICK_MS + 1, `a held trigger fires right as it comes up (${firstShotMs}ms)`);
+  assert.ok(firstShotMs! >= raiseMsOf(GUNS.assault) - TICK_MS, `no shot before the gun is raised (${firstShotMs}ms)`);
+  assert.ok(firstShotMs! <= raiseMsOf(GUNS.assault) + 2 * TICK_MS + 1, `a held trigger fires right as it comes up (${firstShotMs}ms)`);
 });
 
 test('sprinting never fires, however long the trigger is held without a click ending it', () => {
@@ -142,13 +143,13 @@ test('the client trigger mirrors the sprint: no shot while sprinting, the raise 
   assert.equal(t.sprint, false);
   assert.equal(t.settleLeft, SPRINT.settleMs);
   let firedAfter: number | null = null;
-  for (let i = 0; i < Math.ceil(SPRINT.raiseMs / TICK_MS) + 10 && firedAfter === null; i++) {
+  for (let i = 0; i < Math.ceil(raiseMsOf(GUNS.assault) / TICK_MS) + 10 && firedAfter === null; i++) {
     now += TICK_MS;
     step = stepTrigger(t, { ...moving, right: false, fire: true, shots: 1, sprint: true }, now);
     t = step.t;
     if (step.fired) firedAfter = i + 1;
   }
-  assert.ok(firedAfter !== null && firedAfter * TICK_MS >= SPRINT.raiseMs - TICK_MS, `fired after ${firedAfter} ticks`);
+  assert.ok(firedAfter !== null && firedAfter * TICK_MS >= raiseMsOf(GUNS.assault) - TICK_MS, `fired after ${firedAfter} ticks`);
   assert.ok(settleOf({ ...NO_FIRING, trigger: t }) < 1, 'the settle is draining');
 });
 
@@ -206,19 +207,19 @@ test('a bot sprints to travel and walks the moment an enemy is in sight, so it c
   assert.ok(fires > 0, 'it fought');
 });
 
-test('a single click while the gun is coming up after a sprint is not kept: no shot until it is up and you click again', () => {
+test('a single click while a slow gun is coming up after a sprint is not kept: no shot until it is up and you click again (a quick draw keeps a click made just before)', () => {
   const w = emptyWorld();
-  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'pistol' } });
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'shotgun' } });
   spawnAt(w, 1500, 900);
   press(w, a, { right: true, sprint: true });
   run(w, 400);
   const shots = () => w.events.filter((e) => e.e === 'shot' && e.owner === a.id).length;
   let fired = 0;
-  // The click ends the sprint; release it at once (a pistol does not fire on a held trigger).
+  // The click ends the sprint; release it at once (a shotgun does not fire on a held trigger).
   press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
   run(w, TICK_MS); fired += shots();
   press(w, a, { right: true, sprint: false, fire: false, shots: a.input.shots });
-  for (let i = 0; i < Math.ceil((SPRINT.raiseMs + 300) / TICK_MS); i++) { run(w, TICK_MS); fired += shots(); }
+  for (let i = 0; i < Math.ceil((raiseMsOf(GUNS.shotgun) + 300) / TICK_MS); i++) { run(w, TICK_MS); fired += shots(); }
   assert.equal(fired, 0, 'the click made while the gun was down never fires');
   press(w, a, { right: true, fire: true, shots: a.input.shots + 1 });
   for (let i = 0; i < 4; i++) { run(w, TICK_MS); fired += shots(); }

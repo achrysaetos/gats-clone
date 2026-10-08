@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
+import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, rulesOf, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -34,8 +34,8 @@ function spray(gun: GunId, still: boolean, count: number): number[] {
 
 const widest = (angles: readonly number[]) => Math.max(...angles.map(Math.abs));
 
-test('pistol and SMG are a little less accurate on the move, a shotgun just as accurate; assault worse, LMG much worse, a walking sniper misses past 300px', () => {
-  const expected: Record<string, number> = { pistol: 1.15, smg: 1.15, shotgun: 1, assault: 1.3, lmg: 2 };
+test('pistol, SMG and shotgun lose nothing on the move; assault drifts a lot, LMG much more, a walking sniper misses past 300px', () => {
+  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.7, lmg: 2 };
   for (const weapon of WEAPON_IDS.filter((w) => w !== 'sniper')) {
     const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true);
     assert.ok(Math.abs(ratio - expected[weapon]!) < 1e-9, `${weapon} moves at ${ratio}x spread`);
@@ -46,14 +46,16 @@ test('pistol and SMG are a little less accurate on the move, a shotgun just as a
   }
 });
 
-test('a sniper settles a third of a second after its last step, an LMG a fifth, and every other class at once', () => {
+test('a sniper settles almost half a second after its last step, an assault rifle a tenth, an LMG a fifth, and the rest at once', () => {
   assert.equal(isSteady('sniper', 0), false, 'walking');
-  assert.equal(isSteady('sniper', 300), false, 'just stopped');
-  assert.equal(isSteady('sniper', 350), true);
+  assert.equal(isSteady('sniper', 400), false, 'just stopped');
+  assert.equal(isSteady('sniper', 450), true);
+  assert.equal(isSteady('assault', 100), false);
+  assert.equal(isSteady('assault', 120), true);
   assert.equal(isSteady('lmg', 150), false);
   assert.equal(isSteady('lmg', 200), true);
-  assert.equal(isSteady('assault', 1), true);
-  assert.equal(isSteady('assault', 0), false);
+  assert.equal(isSteady('pistol', 1), true);
+  assert.equal(isSteady('pistol', 0), false);
   const { w, p } = shooter('sniper');
   for (let i = 0; i < 5; i++) tick(w, p, { right: true });
   const flick = tick(w, p, { fire: true, shots: p.input.shots + 1 });
@@ -67,7 +69,7 @@ test('a sniper\'s rounds stay inside its still cone standing and stray far past 
   assert.ok(widest(spray('pistol', false, 20)) <= spreadFor('pistol', {}, false), 'a pistol walking stays in its slightly wider walking cone');
 });
 
-test('an assault rifle held down blooms after its first shots, up to double, and taps stay tight', () => {
+test('an assault rifle held down blooms after its first shots, up to two and a half times, and taps stay tight', () => {
   const { w, p } = shooter('assault');
   const held: number[][] = [];
   while (held.length < 25) {
@@ -75,7 +77,7 @@ test('an assault rifle held down blooms after its first shots, up to double, and
     if (out.length) held.push(out);
   }
   const spray = p.life.k === 'alive' ? p.life.spray : 0;
-  assert.equal(spreadFor('assault', {}, true, spray), 2 * GUNS.assault.spread, 'a long spray reaches the cap');
+  assert.equal(spreadFor('assault', {}, true, spray), rulesOf(GUNS.assault).bloom!.maxMul * GUNS.assault.spread, 'a long spray reaches the cap');
   assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
   assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
@@ -100,16 +102,16 @@ test('guns handle the same in Zombies as between players: a held trigger blooms 
     return widest(rounds.slice(10).flat());
   });
   assert.ok(spreads[1]! > GUNS.assault.spread, 'a long spray at the horde strays past the still cone');
-  assert.ok(spreads[1]! <= 2 * GUNS.assault.spread + 1e-9);
+  assert.ok(spreads[1]! <= rulesOf(GUNS.assault).bloom!.maxMul * GUNS.assault.spread + 1e-9);
 });
 
-test('assault bloom is gone a quarter second after letting go, and a reload clears it', () => {
+test('assault bloom is gone a third of a second after letting go, and a reload clears it', () => {
   const { w, p } = shooter('assault');
   for (let i = 0; i < 40; i++) tick(w, p, { fire: true, shots: 1 });
   const sprayOf = () => (p.life.k === 'alive' ? p.life.spray : -1);
   assert.ok(sprayOf() > 5, `spray ${sprayOf()} under held fire`);
   for (let i = 0; i < 13; i++) tick(w, p, {});
-  assert.equal(sprayOf(), 0, 'cooled within 13 ticks: a 150ms settle, then 250ms');
+  assert.equal(sprayOf(), 0, 'cooled within 13 ticks: a 150ms settle, then 190ms');
   for (let i = 0; i < 20; i++) tick(w, p, { fire: true, shots: 1 });
   tick(w, p, { fire: true, shots: 1, reload: true });
   assert.equal(sprayOf(), 0, 'reloading clears it even with the trigger held');
@@ -219,7 +221,8 @@ test('Quick reload finishes a reload 35% sooner, and the reload bar runs at its 
   assert.ok(Math.abs(quick.frac - 0.5) < 0.05, `reload bar at ${quick.frac} halfway through`);
 });
 
-test('Bipod is gone: no menu offers it, and standing still tightens a pistol and an SMG a little', () => {
+test('Bipod is gone as a perk: no menu offers it, and standing still tightens an assault rifle and an LMG but not a pistol or an SMG', () => {
   assert.ok(!PICK_OPTIONS.includes('bipod' as PickOption));
-  for (const weapon of ['pistol', 'smg'] as const) assert.ok(spreadFor(weapon, {}, true) < spreadFor(weapon, {}, false));
+  for (const weapon of ['assault', 'lmg'] as const) assert.ok(spreadFor(weapon, {}, true) < spreadFor(weapon, {}, false));
+  for (const weapon of ['pistol', 'smg'] as const) assert.equal(spreadFor(weapon, {}, true), spreadFor(weapon, {}, false));
 });

@@ -1,4 +1,5 @@
 import type { PerkId } from '../shared/defs.ts';
+import type { TraitId } from '../shared/roles.ts';
 
 export const PERK_ICONS: Record<PerkId, string> = {
   optics: 'M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 2v7M12 15v7M2 12h7M15 12h7',
@@ -36,6 +37,31 @@ export const PERK_ICONS: Record<PerkId, string> = {
   dash: 'M2 8h6M1 12h9M2 16h6M12 5l7 7-7 7M16 5l7 7-7 7',
   flashbang: 'M8 8h8v14H8zM9.5 5h5v3h-5zM12 1v2M5 3l2 2M19 3l-2 2M3 9h2M19 9h2',
   smokeGrenade: 'M6 20h12a4 4 0 0 0 0-8 5 5 0 0 0-9.5-1.5A4 4 0 0 0 6 20zM9 8a3 3 0 0 1 6 0M12 2v3',
+};
+
+/** What an evolution changes (see `TRAITS` in shared/roles.ts), drawn on the evolve pick. */
+export const TRAIT_ICONS: Record<TraitId, string> = {
+  quickdraw: 'M4 20L20 4M14 4h6v6M3 12h5M3 16h3',
+  strafe: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4',
+  plant: 'M12 3v12M6 15h12M4 21h16',
+  burst: 'M3 12h3M10 12h3M17 12h3',
+  auto: 'M3 7h18M3 12h18M3 17h18',
+  heavy: 'M5 12a7 7 0 1 0 14 0a7 7 0 1 0 -14 0M12 8v8M8 12h8',
+  shove: 'M3 12h12M11 7l5 5-5 5M20 5v14',
+  pierce: 'M2 12h17M14 7l5 5-5 5M9 4v16',
+  blast: 'M12 2v5M12 17v5M2 12h5M17 12h5M5 5l3.5 3.5M15.5 15.5L19 19M19 5l-3.5 3.5M8.5 15.5L5 19',
+  quiet: 'M3 10v4h4l5 4V6L7 10zM16 9l5 6M21 9l-5 6',
+  close: 'M3 12h6M21 12h-6M6 9l3 3-3 3M18 9l-3 3 3 3',
+  reach: 'M2 12h3M8 12h3M14 12h6M17 8l4 4-4 4',
+  scope: 'M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 2v7M12 15v7M2 12h7M15 12h7',
+  spray: 'M12 21L4 5M12 21V4M12 21L20 5',
+  deep: 'M8 2h8v6l2 14h-8L8 8zM9.5 7h5M10 11.5h6M10.5 16h6',
+  rev: 'M3 17a9 9 0 1 1 18 0M12 17l5-6M7 17h.01M17 17h.01M12 8v1.5',
+  pin: 'M12 17v5M8 4h8l-1 6 3 3H6l3-3z',
+  breach: 'M6 21V3h12v18M3 21h18M14 12h1',
+  fast: 'M2 8h6M1 12h9M2 16h6M12 5l7 7-7 7M16 5l7 7-7 7',
+  slow: 'M7 8h10l3 13H4zM9.5 8a2.5 2.5 0 1 1 5 0',
+  deploy: 'M12 3v8M12 11L6 21M12 11l6 10M12 11v10',
 };
 
 export const UI_ICONS = {

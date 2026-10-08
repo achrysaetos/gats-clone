@@ -1,6 +1,6 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type GunId } from '../../src/shared/defs.ts';
+import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type ArmorId, type GunId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
-import { effectiveStats, spreadFor } from '../../src/shared/sim/stats.ts';
+import { effectiveStats, falloffMul, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
 
@@ -20,21 +20,51 @@ const HOLD_MS = 2000;
 const TICK_MS = 1000 / WORLD.tickHz;
 
 /** The spray index of every shot over the first two seconds of a held trigger, reloads, spin-up and bloom included, through the sim's own trigger. */
-const heldShots = new Map(GUN_IDS.map((id) => {
+const heldTrigger = (id: GunId, holdMs: number) => {
   const g = GUNS[id];
   const s = { ammo: g.mag, reloadUntil: null as number | null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0 };
-  const sprays: number[] = [];
-  for (let now = 0; now < HOLD_MS; now += TICK_MS) {
-    if (pullTrigger(s, { def: g, mag: g.mag, reloadMs: g.reloadMs, armed: true }, { fire: true, reload: false, pressed: true }, now, TICK_MS)) sprays.push(s.spray);
+  const shots: { at: number; spray: number }[] = [];
+  for (let now = 0; now < holdMs; now += TICK_MS) {
+    if (pullTrigger(s, { def: g, mag: g.mag, reloadMs: g.reloadMs, armed: true }, { fire: true, reload: false, pressed: true }, now, TICK_MS)) shots.push({ at: now, spray: s.spray });
   }
-  return [id, sprays] as const;
-}));
+  return shots;
+};
+const heldShots = new Map(GUN_IDS.map((id) => [id, heldTrigger(id, HOLD_MS).map((s) => s.spray)] as const));
+
+/** Shots over the 8 seconds after the first, with reloads, for time to kill. */
+export const TTK_HOLD_MS = 8000;
+const heldLong = new Map(GUN_IDS.map((id) => [id, heldTrigger(id, TTK_HOLD_MS)] as const));
+
+/** Expected hit share of one pellet at range `d`: the body's cone over the spread. */
+const hitShare = (id: GunId, d: number, still: boolean, spray: number) => {
+  const spread = spreadFor(id, {}, still, spray, 0, 0, still);
+  return spread <= 0 ? 1 : Math.min(1, Math.atan(WORLD.playerRadius / d) / spread);
+};
+
+/** The damage one round does to a body at `d` after the damage fade, before armor (a blast round counts its blast on a direct hit). */
+const roundDamage = (id: GunId, d: number) => GUNS[id].damage * falloffMul(id, d) + (GUNS[id].blast?.damage ?? 0);
 
 export function dpsAt(id: GunId, d: number, still: boolean): number {
   const g = GUNS[id];
   if (d > g.range) return 0;
-  const hits = heldShots.get(id)!.reduce((sum, spray) => sum + Math.min(1, Math.atan(WORLD.playerRadius / d) / spreadFor(id, {}, still, spray)), 0);
-  return (g.pellets * hits * (g.damage + (g.blast?.damage ?? 0)) * 1000) / HOLD_MS;
+  const hits = heldShots.get(id)!.reduce((sum, spray) => sum + hitShare(id, d, still, spray), 0);
+  return (g.pellets * hits * roundDamage(id, d) * 1000) / HOLD_MS;
+}
+
+/**
+ * Milliseconds from a gun's first round to a kill on a full-health bot in `armor` at range `d`, by expected damage per round
+ * (pellets landing, bloom, damage fade, reloads); null when it cannot kill within `TTK_HOLD_MS` or `d` is past its range.
+ */
+export function ttkMs(id: GunId, d: number, armor: ArmorId, still: boolean): number | null {
+  const g = GUNS[id];
+  if (d > g.range) return null;
+  let dealt = 0;
+  const first = heldLong.get(id)![0]?.at ?? 0;
+  for (const shot of heldLong.get(id)!) {
+    dealt += g.pellets * hitShare(id, d, still, shot.spray) * roundDamage(id, d) * (1 - ARMORS[armor].blockFrac);
+    if (dealt >= WORLD.baseHp - 1e-9) return shot.at - first;
+  }
+  return null;
 }
 
 export function scoreGun(id: GunId): GunScore {

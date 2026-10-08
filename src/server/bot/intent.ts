@@ -1,4 +1,4 @@
-import { GUNS, type GunId, type WeaponId } from '../../shared/defs.ts';
+import type { GunId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { doorLanes, openSpot, type BotArena } from './arena.ts';
@@ -30,24 +30,30 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
   marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3 },
 };
 
-const WEAPON_BAND: Record<WeaponId, Omit<Band, 'rushes' | 'hold'>> = {
-  pistol: { headOn: 180, ideal: 320, max: 420 },
-  smg: { headOn: 90, ideal: 250, max: 330 },
-  shotgun: { headOn: 0, ideal: 150, max: 260 },
-  assault: { headOn: 220, ideal: 380, max: 480 },
-  sniper: { headOn: 420, ideal: 650, max: 840 },
-  lmg: { headOn: 200, ideal: 340, max: 450 },
+/**
+ * How far from an enemy a gun wants to fight, by what the gun is for (src/shared/roles.ts): `max` is the farthest it will let a fight sit before it
+ * closes in, `ideal` where it settles (and where a rusher stops closing), `headOn` the nearest it is comfortable being found. Rushers close to
+ * `ideal` and never back off; every other gun backs off from half its `ideal`. Guns whose rounds fade (`falloff`) fight inside the fade; a plant-to-aim
+ * gun fights from the far side of it.
+ */
+type Reach = readonly [headOn: number, ideal: number, max: number, rushes?: 'rush'];
+export const GUN_BAND: Record<GunId, Reach> = {
+  pistol: [150, 320, 430], handCannon: [200, 380, 520], machinePistol: [60, 200, 330, 'rush'], executioner: [260, 520, 720], gunslinger: [90, 230, 380, 'rush'], akimbo: [40, 150, 280, 'rush'], hailstorm: [200, 380, 520],
+  smg: [60, 180, 280, 'rush'], skirmisher: [40, 160, 260, 'rush'], heavySmg: [90, 220, 360], phantom: [50, 160, 260, 'rush'], hornet: [30, 110, 200, 'rush'], ripper: [140, 300, 460], bulldog: [100, 240, 380],
+  shotgun: [0, 130, 220, 'rush'], slugGun: [220, 420, 620], doubleBarrel: [0, 110, 200, 'rush'], railSlug: [300, 560, 780], boomSlug: [200, 380, 560], sawedOff: [0, 70, 140, 'rush'], streetSweeper: [0, 130, 230, 'rush'],
+  assault: [220, 380, 480], battleRifle: [260, 460, 680], carbine: [160, 330, 500], marksman: [320, 580, 760], grenadier: [200, 360, 520], specter: [160, 330, 500], scout: [300, 560, 780],
+  sniper: [420, 650, 840], longshot: [450, 700, 910], semiAuto: [350, 560, 760], piercer: [500, 760, 1020], artillery: [420, 700, 980], repeater: [260, 480, 700], ghost: [330, 560, 780],
+  lmg: [200, 380, 520], heavyLmg: [240, 430, 600], lightMg: [150, 300, 420], minigun: [180, 360, 520], juggernaut: [240, 430, 620], ranger: [140, 300, 440], twinMg: [140, 280, 400],
 };
 
 /** `hold` is the closest a gun that is not a rusher lets an enemy come before its bot backs off to fight from the band again. */
 type Band = { headOn: number; ideal: number; max: number; hold: number; rushes: boolean };
 const HOLD_OF_IDEAL = 0.5;
 export const bandFor = (gun: GunId, p: Personality): Band => {
-  const g = GUNS[gun];
-  const b = WEAPON_BAND[g.base];
-  const k = p.rangeMul * (g.range / GUNS[g.base].range);
-  const rushes = g.pellets >= 5;
-  return { headOn: b.headOn * k, ideal: b.ideal * k, max: b.max * k, hold: rushes ? 0 : Math.max(b.headOn, b.ideal * HOLD_OF_IDEAL) * k, rushes };
+  const [headOn, ideal, max, rush] = GUN_BAND[gun];
+  const rushes = rush === 'rush';
+  const k = p.rangeMul;
+  return { headOn: headOn * k, ideal: ideal * k, max: max * k, hold: rushes ? 0 : Math.max(headOn, ideal * HOLD_OF_IDEAL) * k, rushes };
 };
 
 /** A number in [0, 1) that is the same for one bot every time, so a squad fans out the same way each time without spending the random stream. */

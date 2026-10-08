@@ -4,11 +4,12 @@ import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
 import { clock, deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, roundTimeLeft, seconds } from './derive.ts';
 import { serverNow } from './interp.ts';
-import { PERK_ICONS, iconSvg } from './icons.ts';
+import { PERK_ICONS, TRAIT_ICONS, iconSvg } from './icons.ts';
 import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
 import { drawGunCard } from './gunart.ts';
+import { GUN_ROLES, TRAITS } from '../shared/roles.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 import { resultTitle } from './royale.ts';
 import type { Recap } from './records.ts';
@@ -65,15 +66,28 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     return { className: 'perk', name, desc, parts: [icon, label, line] };
   };
 
+  /** An evolution says how it plays: one line of role, and an icon for each thing it changes (hover reads them out). */
   const gunTile = (gun: GunId) => {
     const { name, desc } = GUNS[gun];
+    const { role, traits } = GUN_ROLES[gun];
     const art = document.createElement('canvas');
     drawGunCard(art, gun, 108, 34, GUN_IDS.filter((id) => GUNS[id].from === GUNS[gun].from));
     const label = document.createElement('b');
     label.textContent = name;
     const detail = document.createElement('small');
-    detail.textContent = desc;
-    return { className: 'perk evolve', name, desc, parts: [art, label, detail] };
+    detail.textContent = role;
+    const chips = document.createElement('span');
+    chips.className = 'traits';
+    chips.append(...traits.map((trait) => {
+      const chip = document.createElement('span');
+      chip.className = 'trait';
+      chip.title = `${TRAITS[trait].label}: ${TRAITS[trait].hint}`;
+      const text = document.createElement('i');
+      text.textContent = TRAITS[trait].label;
+      chip.append(iconSvg(TRAIT_ICONS[trait], 'trait-icon'), text);
+      return chip;
+    }));
+    return { className: 'perk evolve', name, desc: `${desc}. ${traits.map((t) => TRAITS[t].hint).join('; ')}.`, parts: [art, label, detail, chips] };
   };
 
   const renderPick = (pending: PendingPick | null, gun: GunId) => {

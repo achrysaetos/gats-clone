@@ -433,6 +433,10 @@ a.wordmark { text-decoration: none; }
 .perk.evolve canvas { width: 108px; height: 34px; }
 .perk.evolve b { font-size: 15px; }
 .perk.evolve small { font-size: 11px; line-height: 1.25; color: var(--muted); text-align: center; }
+.perk.evolve .traits { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 2px; }
+.perk.evolve .trait { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 2px; border-radius: 9px; background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+.perk.evolve .trait i { font: 600 9px/1 var(--display); font-style: normal; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
+.perk.evolve .trait-icon { width: 12px; height: 12px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
 .chat {
   position: absolute;

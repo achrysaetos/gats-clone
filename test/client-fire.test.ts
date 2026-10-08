@@ -113,10 +113,10 @@ test('held auto fire keeps the gun\'s rate on average, not the tick\'s', () => {
 });
 
 test('a held shot is due when the gun is ready, between inputs, and a fresh press on a ready gun is due at once', () => {
-  let f = armedWith('smg');
+  let f = armedWith('assault');
   assert.equal(dueAt(f, held(1)), f.sent.at, 'the press fires the moment it lands');
-  f = play(f, [held(1), held(1), held(1)]).firing;
-  assert.equal(dueAt(f, held(1)), TICK_MS + GUNS.smg.fireMs, 'due 75ms after the first shot, part way between inputs 3 and 4');
+  f = play(f, [held(1), held(1), held(1), held(1)]).firing;
+  assert.equal(dueAt(f, held(1)), TICK_MS + GUNS.assault.fireMs, 'due 110ms after the first shot, part way between inputs 4 and 5');
 });
 
 test('a server shot event confirms the oldest drawn shot instead of drawing another', () => {
@@ -189,7 +189,7 @@ test('a respawn hands back a ready gun, and an evolved gun fires by its own rule
 });
 
 test('releasing the trigger after a shot keeps it held for the input the server may still fire it on, but never into a new shot', () => {
-  let f = play(armedWith('smg'), taps('P')).firing;
+  let f = play(armedWith('assault'), taps('P')).firing;
   assert.deepEqual(f.unconfirmed.map((p) => p.seq), [1]);
   const released = held(1, false);
   assert.equal(committed(f, released).fire, true, 'input 2 is held while shot 1 is owed');

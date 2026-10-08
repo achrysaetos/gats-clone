@@ -12,7 +12,7 @@ import { damageProp, propMedals, propsInBlast } from './props.ts';
 import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
 import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
-import { addScore, effectiveStats, hasPerk, isHunted, PERK_RULES } from './stats.ts';
+import { addScore, effectiveStats, falloffMul, hasPerk, isHunted, PERK_RULES } from './stats.ts';
 import { barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
@@ -351,6 +351,8 @@ function stopBullet(w: World, b: Bullet, x: number, y: number, owner: Player | n
   return false;
 }
 
+/** How far around a door-breaker's strike a swing door is blown open. */
+const BREACH_PX = 30;
 const SUPPRESS_REACH = WORLD.playerRadius + SUPPRESSION.px;
 
 /** A gun round whose path this step comes within `SUPPRESS_REACH` of an enemy suppresses them, once per round. */
@@ -376,8 +378,14 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   if (b.gun !== null) b.flown = from + travel;
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
+  /** What a hit at (x, y) this step keeps of the round's damage once it has flown that far (`GunRules.falloff`). */
+  const fell = (x: number, y: number) => (b.gun ? falloffMul(b.gun, from + Math.hypot(x - b.x, y - b.y)) : 1);
   const candidates: BulletHit[] = [
-    ...view.walls.filter((wall) => !wall.nb).map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => { w.events.push({ e: 'impact', x, y }); } })),
+    ...view.walls.filter((wall) => !wall.nb).map((wall) => ({ t: segmentEntersRectAt(b.x, b.y, dx, dy, wall), victim: null, apply: (x: number, y: number) => {
+      w.events.push({ e: 'impact', x, y });
+      // A door-breaker's round blows the swing door it strikes open (see `GunRules.breach`).
+      if (wall.door && b.gun && rulesOf(GUNS[b.gun]).breach) blastDoors(w, x, y, BREACH_PX);
+    } })),
     ...w.crates.filter((c) => c.respawnAt === null).map((c) => ({
       t: segmentEntersRectAt(b.x, b.y, dx, dy, crateRect(c)), victim: null, apply: () => damageCrate(w, c, b.damage, owner),
     })),
@@ -394,7 +402,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
         return at ? [{
           t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
           victim: p,
-          apply: () => damagePlayer(w, p, b.damage, { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley, dirX: b.vx, dirY: b.vy }),
+          apply: (x: number, y: number) => damagePlayer(w, p, b.damage * fell(x, y), { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley, dirX: b.vx, dirY: b.vy }),
         }] : [];
       }),
     ...targetHits(w, b, dx, dy, owner, view.at),
@@ -403,8 +411,9 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
         t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
-        apply: () => {
-          damageZombie(w, z, b.piercing ? b.damage : Math.max(1, b.damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit');
+        apply: (x: number, y: number) => {
+          const damage = b.damage * fell(x, y);
+          damageZombie(w, z, b.piercing ? damage : Math.max(1, damage - ZOMBIES[z.kind].plate), owner, b.turret ?? 'hit');
           shoveZombie(z, b.vx, b.vy, b.gun ? bulletShove(b.gun, b.damage) : b.damage * KNOCK.perDamage.assault, false);
         },
       })),

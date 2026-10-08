@@ -1,10 +1,10 @@
-import { GUNS, KNOCK, type GunId, type ZombieKind } from '../defs.ts';
+import { GUNS, KNOCK, rulesOf, type GunId, type ZombieKind } from '../defs.ts';
 import { addKnock } from './movement.ts';
 import { hasPerk, PERK_RULES } from './stats.ts';
 import type { Player, Zombie } from './world.ts';
 
 /** px/s a round of `damage` shoves its victim, before armor or weight; a gun's class sets how hard each point shoves. */
-export const bulletShove = (gun: GunId, damage: number): number => damage * KNOCK.perDamage[GUNS[gun].base];
+export const bulletShove = (gun: GunId, damage: number): number => damage * KNOCK.perDamage[GUNS[gun].base] * rulesOf(GUNS[gun]).shoveMul;
 
 /** px/s a blast of `damage` shoves, before armor or weight. */
 export const blastShove = (damage: number): number => damage * KNOCK.blastPerDamage;

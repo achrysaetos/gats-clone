@@ -1,4 +1,4 @@
-import { GUNS, SPRINT, WORLD, type GunId } from '../shared/defs.ts';
+import { GUNS, raiseMsOf, SPRINT, WORLD, type GunId } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 import { bloomRecoverMul, reloadMsFor, sprintWanted } from '../shared/sim/stats.ts';
 import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
@@ -27,7 +27,7 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   const sprinting = sprintWanted(input) && !pressed;
   if (sprinting !== g.sprint) {
     g.sprint = sprinting;
-    if (!sprinting) { g.settleLeft = g.settleMs; g.raiseUntil = now + SPRINT.raiseMs; }
+    if (!sprinting) { g.settleLeft = g.settleMs; g.raiseUntil = now + raiseMsOf(GUNS[g.gun]); }
   } else if (!sprinting) g.settleLeft = Math.max(0, g.settleLeft - TICK_MS);
   const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, reloadMs: g.reloadMs, armed: g.armed && !sprinting, holdUntil: g.raiseUntil, bloomRecover: g.bloomRecover }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
   return { t: g, fired };
@@ -110,7 +110,7 @@ function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigge
   t.sprint = sv.sprint ?? false;
   t.settleMs = settleMs;
   t.settleLeft = left * settleMs;
-  t.raiseUntil = !t.sprint && left > 0 ? now + Math.max(0, SPRINT.raiseMs - (1 - left) * settleMs) : -Infinity;
+  t.raiseUntil = !t.sprint && left > 0 ? now + Math.max(0, raiseMsOf(GUNS[sv.gun]) - (1 - left) * settleMs) : -Infinity;
   t.bloomRecover = sv.bloomRecover ?? 1;
   if (base.gun !== sv.gun) { t.burstLeft = 0; t.spray = 0; t.spin = 0; }
   if (sv.reloading !== (t.reloadUntil !== null)) t.reloadUntil = sv.reloading ? now + (1 - sv.reloadFrac) * sv.reloadMs : null;

@@ -1,4 +1,4 @@
-import { GUNS, rulesOf, WORLD, type AbilityId } from '../../shared/defs.ts';
+import { GUNS, rulesOf, WORLD, type AbilityId, type GunId } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { KNIFE_LUNGE, KNIFE_REACH, segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
@@ -31,6 +31,8 @@ export type Motor = {
   engagedSeen: number;
   aim: AimState | null;
   shots: number;
+  /** Burst-tapping (see `tapRhythm`): when the current tap began and until when the trigger is let go. */
+  tap?: { since: number | null; pauseUntil: number };
 };
 
 export const freshMotor = (): Motor => ({
@@ -167,6 +169,19 @@ function plants(v: Perception, c: IntentCtx, d: number, fromCover: boolean): boo
   const gun = GUNS[v.me.gun];
   const { plant } = rulesOf(gun);
   return plant === 'always' || (plant === 'atRange' && d >= gun.range / 2);
+}
+
+/**
+ * Burst-tapping: an assault-class gun's bloom starts after its first few rounds, so its bot lets go after that many and takes the gun back to
+ * rest before it fires again, instead of holding a spray that drifts off the target (from `TAP_FROM_PX` out; closer, the cone swallows any bloom). A rusher or a machine gun hoses.
+ */
+export const TAP_FROM_PX = 280;
+export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; pauseMs: number } | null {
+  const def = GUNS[gun];
+  const { bloom } = rulesOf(def);
+  if (!bloom || bloom.free > 4 || rushes) return null;
+  const perRound = def.burst ? ((def.burst.count - 1) * def.burst.gapMs + def.fireMs) / def.burst.count : def.fireMs;
+  return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + 0.6 * bloom.recoverMs };
 }
 
 function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
@@ -460,7 +475,14 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     look = { want: Math.atan2(me.y - v.incomingFlash.y, me.x - v.incomingFlash.x), spin: 0, hand: HANDS.flick, d: 300, err: 0 };
     wantsFire = false;
   }
-  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire, turnAway && wanted !== null ? null : wanted, m.shots);
+  const rhythm = tapRhythm(me.gun, c.band.rushes);
+  // Up close the cone is wider than any bloom, so it only taps once the fight is far enough for the spread to matter.
+  const resting = rhythm !== null && t !== undefined && t.d >= TAP_FROM_PX && v.tick < (m.tap?.pauseUntil ?? -Infinity);
+  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !resting, turnAway && wanted !== null ? null : wanted, m.shots);
+  const tap = rhythm === null ? undefined
+    : !fire ? { since: null, pauseUntil: m.tap?.pauseUntil ?? -Infinity }
+      : (v.tick - (m.tap?.since ?? v.tick)) * TICK_MS >= rhythm.windowMs ? { since: null, pauseUntil: v.tick + Math.round(rhythm.pauseMs / TICK_MS) }
+        : { since: m.tap?.since ?? v.tick, pauseUntil: m.tap?.pauseUntil ?? -Infinity };
   const angle = aim.angle, aimDist = Math.max(1, look.d);
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && (s.reload || (!t && snap.self.ammo < snap.self.mag / 2));
   // A bot sprints only to travel: with no enemy in sight (or its fight just ended) or when running to cover to heal. Anything else, it walks, so it can fire.
@@ -472,7 +494,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     motor: {
       route: way.route, dir: drive.dir, dirSince: drive.dirSince, pace: drive.pace, stance, last: { x: me.x, y: me.y },
       stuckTicks: pressing && gained < 1 && !way.replanned ? m.stuckTicks + 1 : 0,
-      progress: !pressing || crawling || dist(me, m.progress) > CRAWL.px ? { x: me.x, y: me.y, tick: v.tick } : m.progress, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots,
+      progress: !pressing || crawling || dist(me, m.progress) > CRAWL.px ? { x: me.x, y: me.y, tick: v.tick } : m.progress, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),
     },
   };
 }
