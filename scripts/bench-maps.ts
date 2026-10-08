@@ -54,16 +54,18 @@ function tick({ w, bots, r }: Sim): { respawned: number[]; thinkMs: number; step
 
 type Pulse = { hpFrac: number; seenBy: number; allies: number };
 type Life = { bornAt: number; lastFightAt: number | null; pulses: Pulse[] };
-type Fight = { start: number; last: number; a: number; b: number };
+type Fight = { start: number; last: number; a: number; b: number; first: number };
 type Watch = { lives: Map<number, Life>; fights: Map<string, Fight> };
 type Tally = {
   firstContact: number[]; betweenFights: number[]; thinkMs: number[]; stepMs: number[]; tickMs: number[]; dmg: number[]; death: number[]; range: number[];
   lifeMs: number[]; fightMs: number[]; combatTicks: number; coverTicks: number; shots: number; stillShots: number;
   deaths: number; lowDeaths: number; outnumberedDeaths: number; losingDeaths: number;
+  /** Kills that ended a fight between the two, and how many of them went to whoever hit first. */
+  decided: number; firstWon: number;
 };
 const emptyTally = (): Tally => ({
   firstContact: [], betweenFights: [], thinkMs: [], stepMs: [], tickMs: [], dmg: [], death: [], range: [],
-  lifeMs: [], fightMs: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0,
+  lifeMs: [], fightMs: [], combatTicks: 0, coverTicks: 0, shots: 0, stillShots: 0, deaths: 0, lowDeaths: 0, outnumberedDeaths: 0, losingDeaths: 0, decided: 0, firstWon: 0,
 });
 const addTally = (into: Tally, t: Tally) => {
   for (const k of Object.keys(t) as (keyof Tally)[]) {
@@ -120,7 +122,7 @@ function recordAfterStep(w: World, watch: Watch, t: Tally, respawned: readonly n
       const [a, b] = e.attacker < e.victim ? [e.attacker, e.victim] : [e.victim, e.attacker];
       const key = `${a}:${b}`;
       const f = watch.fights.get(key);
-      if (f) f.last = w.now; else watch.fights.set(key, { start: w.now, last: w.now, a, b });
+      if (f) f.last = w.now; else watch.fights.set(key, { start: w.now, last: w.now, a, b, first: e.attacker });
     } else if (e.e === 'kill') {
       const v = w.players.get(e.victimId);
       if (v) t.death.push(Math.round(v.x), Math.round(v.y));
@@ -134,6 +136,9 @@ function recordAfterStep(w: World, watch: Watch, t: Tally, respawned: readonly n
         if (outnumbered) t.outnumberedDeaths++;
         if (low && outnumbered) t.losingDeaths++;
       }
+      const k = e.killerId;
+      const decided = k !== null && watch.fights.get(k < e.victimId ? `${k}:${e.victimId}` : `${e.victimId}:${k}`);
+      if (decided) { t.decided++; if (decided.first === k) t.firstWon++; }
       for (const [key, f] of watch.fights) if (f.a === e.victimId || f.b === e.victimId) closeFight(key, w.now);
     }
   }
@@ -147,6 +152,7 @@ const lifeReport = (t: Tally) => [
   `in cover ${pct(t.coverTicks, t.combatTicks)}`,
   `still shots ${pct(t.stillShots, t.shots)}`,
   `deaths low ${pct(t.lowDeaths, t.deaths)} outnumbered ${pct(t.outnumberedDeaths, t.deaths)} both ${pct(t.losingDeaths, t.deaths)}`,
+  `first hitter won ${pct(t.firstWon, t.decided)} of ${t.decided}`,
 ].join('  ');
 
 function holdRoundOpen(w: World, banked: { red: number; blue: number }) {
