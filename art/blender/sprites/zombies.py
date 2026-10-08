@@ -20,6 +20,8 @@ from . import common as C
 from . import rig as Rg
 
 INK = (0.06, 0.05, 0.05)
+# How far, in radius units, a model's eyes may sit from the spot the painter puts their night glow.
+EYE_SLACK = 0.04
 
 # Radius units. hip and sh: hip and shoulder height; sw: half shoulder width; ua, fa: arm segments; lean: hunch in
 # degrees; head: head radius, neck: head height over the shoulder, reach: how far ahead of the neck the head sits;
@@ -168,6 +170,23 @@ def eyes(p):
     """Both eyes' centres in rest pose, right then left."""
     hr = p['head']
     return [head_centre(p) + Vector((hr * 0.9, y * hr, hr * 0.08)) for y in (-0.38, 0.38)]
+
+
+def check_eyes(kind, p, z, shear):
+    """The night eyes the painter draws (ZOMBIE_LOOK eyes: ahead, apart, and lift north from the shear) must sit on
+    the model's eyes, so a pose or head change that moves them fails the bake instead of leaving glows off the face."""
+    rig = Rg.Rig(bones(p), LIMBS)
+    pos, rot = rig.solve(pose(p))['head']
+    rest = rig.bones['head'].head
+    z_ref = p['sh'] * math.cos(math.radians(p['lean']))
+    want = z['eyes']
+    for e, side in zip(eyes(p), (-1, 1)):
+        w = pos + rot @ (e - rest)
+        got = (w.x, w.y * side, shear * (w.z - z_ref))
+        miss = math.dist(got, (want['ahead'], want['apart'], want['lift']))
+        if miss > EYE_SLACK:
+            raise RuntimeError(f'zombie:{kind}: an eye sits at ahead {got[0]:.2f}, apart {got[1]:.2f}, lift {got[2]:.2f} (radius '
+                               f'units), {miss:.2f} from ZOMBIE_LOOK.{kind}.eyes (limit {EYE_SLACK})')
 
 
 def head(rig, p, m, rnd):
@@ -353,6 +372,7 @@ def build(b):
     z = b.spec['zombies'][kind]
     r = z['radius']
     p = plan(kind)
+    check_eyes(kind, p, z, b.spec['camera']['shear'])
     m = materials(kind, z, p)
     rig = Rg.Rig(bones(p), LIMBS)
     back, mid = torso(rig, p, m, b.rnd)

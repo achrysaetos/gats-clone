@@ -48,6 +48,8 @@ One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the pain
 - brute: a slab of shoulder the head sinks into, gashes and a harness strap across it, long knuckle arms with iron cuffs.
 - colossus: the brute's slab grown huge, a hump with three steel plates driven into raw flesh, bone spikes up the ridge, a club arm.
 
+`ZOMBIE_LOOK.eyes` in `palette.ts` is where the painter draws the night eye glows: `ahead` along the facing, `apart` to each side, and `lift` north for the shear, all in radius units. `check_eyes` solves the pose and fails the bake if either model eye sits more than 0.04 radius from that spot, so a head or pose change cannot leave the glows off the face.
+
 ## Iteration log
 
 - 2026-10-07. Eevee cannot start headless here (no libEGL), so Cycles CPU it is: about 0.4 to 1.5 s a frame at sprite sizes.
@@ -73,6 +75,7 @@ One rig, actions in `sprites/soldier.py` (`ACTIONS`), baked in segments the pain
   - First pass: rips covered the whole shirt, so no cloth read; shrank them to a quarter of the back. Brute and colossus back details sat inside the shoulder slab and hump, so `Back` now also wraps those. Bulky orange cuffs became thin iron shackles. Hair patches read as black masks at game scale and went.
   - Long fingers (about 0.48 radius) pushed reaching hands past the frame at the 22.5 degree facings next to east and west; shortened them to about 0.3 radius and pulled the walker's and colossus's hands in slightly instead of growing the boxes.
   - Timing, 16 samples on 4 shared cores at load 9 to 14. All 96 zombie frames (16 facings) took 393 s and 424 s in two runs: walker 1.7 to 2.3 s a frame, runner 1.4, plated 2.7 to 4.5, bloater 3.6 to 5.1, brute 4.5 to 6.5, colossus 6.7 to 10.6. Old and new models baked back to back at 4 facings took 73.6 s (old), 79.5 s (new) and 112.0 s (old), so the extra geometry costs nothing that stands out from the load.
+  - Eyes now sit 0.42 to 0.96 radius ahead and 0.07 to 0.12 apart depending on kind; the painter's fixed 0.55 at plus or minus 0.42 rad (0.50 ahead, 0.22 apart) missed every kind by 0.16 to 0.49 radius, so the spot moved into `ZOMBIE_LOOK.eyes`.
 
 ## Known gaps
 
