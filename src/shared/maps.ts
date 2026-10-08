@@ -3,6 +3,7 @@ import { KIT, PIECE_IDS, placed, type Light, type Material, type PieceId, type P
 import type { Rect } from './sim/movement.ts';
 import { timetableProblem, type TrainDef } from './sim/train.ts';
 import OUTPOST from './maps/outpost.json' with { type: 'json' };
+import VAULT from './maps/vault.json' with { type: 'json' };
 import WAREHOUSE from './maps/warehouse.json' with { type: 'json' };
 
 export type Center = { x: number; y: number };
@@ -35,7 +36,15 @@ export type MapFile = {
   zones: Center[];
   siege?: { core: Center; horde: Record<Side, Rect> };
   train?: TrainDef;
+  /** Extraction: without `pad`, the pad is the map's one helipad. */
+  extract?: { terminal: Center; pad?: Rect; attack: Rect[]; defend: Rect[] };
 };
+
+/**
+ * Extraction: attackers hack the terminal by standing within `EXT.terminalR` of its point, carry the case it gives up to the pad,
+ * and respawn in `attack`; defenders respawn in `defend`. Sides swap every round, so each team spawns in both.
+ */
+export type ExtractDef = { terminal: Center; pad: Rect; attack: readonly Rect[]; defend: readonly Rect[] };
 
 export type MapDef = {
   name: string;
@@ -59,6 +68,7 @@ export type MapDef = {
   siege?: { core: Center; horde: Readonly<Record<Side, Rect>> };
   /** A train that runs down its lane on a timetable and kills whatever it meets. */
   train?: TrainDef;
+  extract?: ExtractDef;
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -91,6 +101,13 @@ export function parseMapFile(v: unknown): MapFile {
     speed: num(name, v.train.speed, 'train.speed'),
     length: num(name, v.train.length, 'train.length'),
   } : fail(name, 'train is malformed');
+  const extract = v.extract === undefined ? undefined : isObj(v.extract) ? {
+    terminal: center(name, v.extract.terminal, 'extract.terminal'),
+    ...(v.extract.pad !== undefined && { pad: rect(name, v.extract.pad, 'extract.pad') }),
+    attack: list(name, v.extract.attack, 'extract.attack').map((r, i) => rect(name, r, `extract.attack ${i}`)),
+    defend: list(name, v.extract.defend, 'extract.defend').map((r, i) => rect(name, r, `extract.defend ${i}`)),
+  } : fail(name, 'extract is malformed');
+  if (extract && (!extract.attack.length || !extract.defend.length)) fail(name, 'extract needs attack and defend spawns');
   const late = train && timetableProblem(train);
   if (late) fail(name, `train: ${late}`);
   return {
@@ -114,6 +131,7 @@ export function parseMapFile(v: unknown): MapFile {
     zones: list(name, v.zones ?? [], 'zones').map((z, i) => center(name, z, `zone ${i}`)),
     ...(siege && { siege }),
     ...(train && { train }),
+    ...(extract && { extract }),
   };
 }
 
@@ -166,17 +184,25 @@ export function expandMap(file: MapFile): MapDef {
     },
     ...(file.siege && { siege: file.siege }),
     ...(file.train && { train: file.train }),
+    ...(file.extract && { extract: extractOf(file.name, file.extract, pieces) }),
   };
+}
+
+function extractOf(name: string, ext: NonNullable<MapFile['extract']>, pieces: readonly Placement[]): ExtractDef {
+  const pads = pieces.filter((at) => at.p === 'helipad');
+  const pad = ext.pad ?? (pads.length === 1 ? footprint(pads[0]!) : fail(name, `extract has no pad and ${pads.length} helipads to take it from`));
+  return { terminal: ext.terminal, pad, attack: ext.attack, defend: ext.defend };
 }
 
 export const loadMap = (json: unknown): MapDef => expandMap(parseMapFile(json));
 
-export const MAP_IDS = ['warehouse', 'outpost'] as const;
+export const MAP_IDS = ['warehouse', 'outpost', 'vault'] as const;
 export type MapId = (typeof MAP_IDS)[number];
 
 export const MAPS: Record<MapId, MapDef> = {
   warehouse: loadMap(WAREHOUSE),
   outpost: loadMap(OUTPOST),
+  vault: loadMap(VAULT),
 };
 
 export const ROTATION: Record<ModeId, readonly MapId[]> = {
@@ -185,10 +211,11 @@ export const ROTATION: Record<ModeId, readonly MapId[]> = {
   DOM: ['warehouse'],
   ZOM: ['outpost'],
   BR: ['warehouse'],
+  EXT: ['vault'],
 };
 
 /** How long a map lasts; every mode changes map when a round restarts. A round that nobody wins outright ends when this runs out. */
-export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity };
+export const MAP_MS: Record<ModeId, number> = { FFA: 10 * 60_000, TDM: 12 * 60_000, DOM: 15 * 60_000, ZOM: Infinity, BR: Infinity, EXT: Infinity };
 export const MAP_NOTICE_MS = 15_000;
 
 export function nextMap(mode: ModeId, current: MapId): MapId {

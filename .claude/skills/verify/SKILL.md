@@ -97,6 +97,14 @@ node .claude/skills/verify/scripts/zombies-ui.ts "$RUN" [step ...]
 
 One muted headless Chrome plays a zombies squad through real input. Steps: `menu badlink squad build turrets night` by default, plus `ready` (after `night`), and `downed`, `report`, `horde` and `victory`, which need scratch copies (fragile humans and a weak core, a mixed first night, a one-night run). It starts a squad from the menu, follows its invite link, builds and takes down a wall and puts up a sentry with real keys and clicks, reads the ghost and callouts from `skirmishDev.zombies()`, and plays night 1 to dawn, watching the turrets fire and reloading one with E. It checks the warning and dawn forecasts against the night table and that night 1's zombies come only from the forecast side. Its log is `$RUN/evidence/zombies-ui.log`. The recipes and scratch values are in [the zombies feature file](features/zombies.md). `SQUAD=1 frametime.ts` measures frame cost in a squad.
 
+### Extraction
+
+```bash
+node .claude/skills/verify/scripts/extract-ui.ts "$RUN" [minutes]
+```
+
+One muted headless Chrome joins the ext room through the menu and plays its side with real input. It walks the nav grid to the terminal, the case, the carrier or the pad, and shoots the nearest enemy in view. It checks that the objective banner names the mode, that the player starts in its side's spawn, and that after a round the sides swap and the player respawns on its new side. Screenshots: `ext-hack` (the hack at 25% or more), `ext-carry` (the case carried), `ext-win` (a round won by extraction), and `ext-round-N-time` for a round the clock ended. It runs on the stock server, though a round can take its full 150s, so allow the default 9 minutes. Its log is `$RUN/evidence/extract-ui.log`.
+
 ### Two players
 
 ```bash

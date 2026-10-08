@@ -11,6 +11,7 @@ import { abilityOf, effectiveStats, isHunted, pendingPick } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
+import { carrying, extractView, moveSpeed } from './extract.ts';
 import { isEnemy, sameTeam, type Player, type Royale, type Run, type Thrown, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
@@ -21,7 +22,7 @@ export function wallViews(w: World): WallView[] {
 }
 
 function isHidden(w: World, p: Player): boolean {
-  return p.life.k === 'alive' && !isHunted(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
+  return p.life.k === 'alive' && !isHunted(w, p) && !carrying(w, p) && effectiveStats(p).ghillie && w.now - p.life.lastMoveAt >= GHILLIE_STILL_MS && w.now >= p.revealedUntil;
 }
 
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
@@ -50,7 +51,7 @@ function selfView(w: World, p: Player): SelfView {
     id: p.id,
     ammo: life.k === 'alive' ? life.ammo : 0,
     mag: stats.mag,
-    speed: stats.speed,
+    speed: moveSpeed(w, p),
     reloading: life.k === 'alive' && life.reloadUntil !== null,
     reloadFrac: life.k === 'alive' && life.reloadUntil !== null
       ? Math.min(1, Math.max(0, 1 - (life.reloadUntil - w.now) / stats.reloadMs))
@@ -139,6 +140,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
+    ...(w.extract && { ext: extractView(w, w.extract) }),
   };
 }
 

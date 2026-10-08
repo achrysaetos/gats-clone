@@ -1,7 +1,8 @@
 import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
-import type { PlayerView, Snapshot } from '../shared/protocol.ts';
+import type { ExtView, PlayerView, Snapshot } from '../shared/protocol.ts';
+import { extGoal, extStatus, extSteps, firstTo, padCenter, roleOf, roundLabel, sideTag, type ExtRole } from './extract.ts';
 import { worldToScreen, type Camera, type Point } from './camera.ts';
 import { clearOfRects, clock, edgePoint, boardRows, feedMentions, levelProgress, mapNotice, mostKillsText, objectiveFor, roundTimeLeft, type Rect } from './derive.ts';
 import { ASSIST_MS, HITMARKER_MS, HURT_ARC_MS, HURT_MS } from './feedback.ts';
@@ -81,6 +82,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   if (me?.alive) drawVitals(hud, compact);
   if (snap.run) drawSiege(hud, snap.run, siegeTop, compact);
   if (snap.royale) drawRoyale(hud, snap.royale, siegeTop);
+  if (snap.ext) drawExtract(hud, snap.ext);
   drawHuntedArrows(hud);
   drawScorePopups(hud);
   drawCallouts(hud);
@@ -112,7 +114,7 @@ function drawHurtVignette({ ctx, w, h, s, now }: Hud) {
 const EDGE_INSET = 34;
 const ARROW_CLEARANCE = 16;
 
-function edgeArrow(ctx: CanvasRenderingContext2D, at: Point, angle: number, scale: number, alpha: number) {
+function edgeArrow(ctx: CanvasRenderingContext2D, at: Point, angle: number, scale: number, alpha: number, color: string = PALETTE.hunted) {
   ctx.save();
   ctx.translate(at.x, at.y);
   ctx.rotate(angle);
@@ -124,7 +126,7 @@ function edgeArrow(ctx: CanvasRenderingContext2D, at: Point, angle: number, scal
   ctx.lineTo(-2, 0);
   ctx.lineTo(-6, 9);
   ctx.closePath();
-  ctx.fillStyle = PALETTE.hunted;
+  ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
 }
@@ -452,7 +454,7 @@ const BOARD = { w: 168, compactW: 140, row: 21, pad: 10 } as const;
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const { ctx, w, h, snap, s, me } = hud;
   const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null);
-  const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
+  const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR' || snap.match.mode === 'EXT';
   const pw = compact ? BOARD.compactW : BOARD.w;
   const x = w - pw - EDGE, top = EDGE;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
@@ -462,7 +464,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   panel(ctx, x, top, pw, ph);
   let y = top + BOARD.pad + BOARD.row / 2;
   if (full) {
-    const line = snap.run || snap.royale ? 'Squad kills' : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
+    const line = snap.run || snap.royale ? 'Squad kills' : snap.ext ? `${firstTo} rounds` : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
     text(ctx, line[0]!.toUpperCase() + line.slice(1), x + BOARD.pad + 2, y - 2, TYPE.micro, PANEL_MUTED, 'left', 600);
     y += head;
   }
@@ -597,6 +599,7 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.fillStyle = hud.now - s.coreHitAt < CORE_ALERT_MS && Math.floor(hud.now / 200) % 2 ? PALETTE.hunted : '#4fd1e8';
     ctx.fillRect(x + c.x * k - half, y + c.y * k - half, half * 2, half * 2);
   }
+  if (snap.ext) drawExtractMap(hud, snap.ext, x, y, k);
   const clockNow = snap.royale ? serverNow(s.snaps, hud.now) : null;
   if (snap.royale && clockNow !== null) {
     drawRingMap(ctx, snap.royale, clockNow, hud.now, x, y, k, size);
@@ -632,6 +635,22 @@ function drawPill(hud: Hud, compact: boolean): number {
     }
     const center = snap.match.mode === 'DOM' ? `to ${WORLD.domWinScore}` : left === null ? `to ${WORLD.tdmWinScore}` : clock(left);
     text(ctx, center, x + side + mid / 2, cy + 1, TYPE.body, PANEL_INK, 'center', 600);
+    return y + ph;
+  }
+  if (snap.ext) {
+    const ext = snap.ext;
+    const x = w / 2 - side - mid / 2 - 6;
+    fadePanel(hud, 'score', x, y, side * 2 + mid + 12, ph);
+    panel(ctx, x, y, side * 2 + mid + 12, ph);
+    for (const [team, bx] of [['red', x], ['blue', x + side + mid + 12]] as const) {
+      text(ctx, String(ext.wins[team]), bx + side / 2 - 7, cy + 1, big, FEED_TEAM[team], 'center', 800);
+      text(ctx, sideTag(ext, team), bx + side / 2 + 10, cy + 1, TYPE.micro, team === ext.attackers ? EXT_LOOK.attack : EXT_LOOK.terminal, 'center', 800);
+      if (me?.team === team) {
+        ctx.fillStyle = FEED_TEAM[team];
+        ctx.fillRect(bx + side / 2 - 12, y + ph - 4, 24, 2);
+      }
+    }
+    text(ctx, roundLabel(ext, serverNow(s.snaps, now) ?? 0), x + side + 6 + mid / 2, cy + 1, TYPE.body, PANEL_INK, 'center', 650);
     return y + ph;
   }
   if (snap.royale) {
@@ -755,6 +774,153 @@ function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: numb
   const lines = spectateLines(snap, royale, clockNow);
   outlined(ctx, lines.title, w / 2, h - 96, 18, '#ffffff', 800);
   outlined(ctx, lines.sub, w / 2, h - 72, TYPE.body + 1, PANEL_MUTED, 650);
+}
+
+const EXT_LOOK = { terminal: '#4fd1e8', pad: '#5ee08f', case: PALETTE.gold, contested: '#ff5a4f', attack: '#ffb04a' } as const;
+const EXT_CHECK = { pw: 248, row: 21, pad: 10 } as const;
+/** World units to the metres the pad's distance is shown in: a soldier is about a metre across. */
+const PX_PER_M = 48;
+
+function drawExtract(hud: Hud, ext: ExtView) {
+  const { ctx, w, h, s, me, now, cam, selfAt, snap } = hud;
+  const clockNow = serverNow(s.snaps, now) ?? 0;
+  const role = roleOf(ext, me?.team ?? null);
+  drawExtractWorld(hud, ext, role, clockNow);
+  const steps = extSteps(ext);
+  const name = (id: number) => snap.leaderboard.find((r) => r.id === id)?.name ?? 'someone';
+  const status = extStatus(ext, role, s.myId, clockNow, name);
+  const { pw, row, pad } = EXT_CHECK;
+  const hacking = ext.case.k === 'hacking' ? ext.case : null;
+  const ph = pad * 2 + 18 + steps.length * row + (hacking ? 12 : 0) + 20;
+  const x = EDGE, y = EDGE + 4 * VITALS.row + SPACE.sm;
+  panel(ctx, x, y, pw, ph);
+  let ty = y + pad + 8;
+  text(ctx, `${role === 'attack' ? 'ATTACK' : role === 'defend' ? 'DEFEND' : 'EXTRACTION'} · ROUND ${ext.round}`, x + pad, ty, TYPE.label, role === 'attack' ? EXT_LOOK.attack : EXT_LOOK.terminal, 'left', 800);
+  ty += 18 + row / 2;
+  for (const step of steps) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = step.done ? PALETTE.hpGood : PANEL_MUTED;
+    ctx.beginPath();
+    if (step.done) { ctx.moveTo(x + pad + 1, ty); ctx.lineTo(x + pad + 5, ty + 4); ctx.lineTo(x + pad + 12, ty - 4); } else ctx.arc(x + pad + 6, ty, 5, 0, TAU);
+    ctx.stroke();
+    text(ctx, step.label, x + pad + 22, ty, TYPE.body, step.done ? PANEL_MUTED : PANEL_INK, 'left', step.done ? 500 : 650);
+    ty += row;
+  }
+  if (hacking) {
+    bar(ctx, x + pad, ty - 6, pw - pad * 2, 6, hacking.progress, hacking.contested ? EXT_LOOK.contested : EXT_LOOK.terminal, 'rgba(255, 255, 255, 0.18)');
+    ty += 12;
+  }
+  const alarm = (ext.case.k === 'carried' || ext.case.k === 'dropped') && !ext.between;
+  text(ctx, status, x + pad, ty, TYPE.label, alarm ? PALETTE.gold : PANEL_INK, 'left', 700);
+  if (ext.between) {
+    const won = ext.between.winner;
+    const title = ext.between.why === 'extracted' ? `${won.toUpperCase()} EXTRACTED` : `${won.toUpperCase()} HELD`;
+    outlined(ctx, title, w / 2, h * 0.3, 30, FEED_TEAM[won], 850);
+    outlined(ctx, `Round ${ext.round + 1} · sides swap`, w / 2, h * 0.3 + 28, TYPE.title, '#ffffff', 650);
+  }
+  const goal = extGoal(ext, role, s.myId);
+  if (!goal) return;
+  const at = edgePoint(selfAt, worldToScreen(cam, goal), w, h, EDGE_INSET);
+  if (!at) return;
+  const color = goal.label === 'EXTRACT' ? EXT_LOOK.pad : goal.label === 'HACK' || goal.label === 'DEFEND' ? EXT_LOOK.terminal : EXT_LOOK.case;
+  const tip = clearOfRects(selfAt, at, panels, ARROW_CLEARANCE);
+  edgeArrow(ctx, tip, at.angle, 1.1, 0.95, color);
+  ctx.globalAlpha = 1;
+  outlined(ctx, goal.label, tip.x - Math.cos(at.angle) * 26, tip.y - Math.sin(at.angle) * 26, TYPE.micro + 1, color, 800);
+}
+
+/** Objective marks over the world: the terminal's circle and hack, the pad, and the case wherever it is. */
+function drawExtractWorld({ ctx, cam, now, s }: Hud, ext: ExtView, role: ExtRole | null, clockNow: number) {
+  const t = worldToScreen(cam, ext.terminal), tr = ext.terminal.r * cam.scale;
+  const c = ext.case;
+  const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = c.k === 'hacking' && c.contested ? EXT_LOOK.contested : EXT_LOOK.terminal;
+  ctx.globalAlpha = 0.7;
+  ctx.beginPath();
+  ctx.arc(t.x, t.y, tr, 0, TAU);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  if (c.k === 'hacking' && c.progress > 0) {
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, tr, -Math.PI / 2, -Math.PI / 2 + c.progress * TAU);
+    ctx.stroke();
+  }
+  if (c.k === 'hacking') outlined(ctx, c.contested ? 'CONTESTED' : `TERMINAL ${Math.floor(c.progress * 100)}%`, t.x, t.y - tr - 14, TYPE.label, c.contested ? EXT_LOOK.contested : EXT_LOOK.terminal, 800);
+
+  const p = worldToScreen(cam, { x: ext.pad.x, y: ext.pad.y });
+  const pw = ext.pad.w * cam.scale, ph = ext.pad.h * cam.scale;
+  const carrying = c.k === 'carried' && c.by === s.myId;
+  ctx.strokeStyle = EXT_LOOK.pad;
+  ctx.lineWidth = carrying ? 3 + pulse * 2 : 2.5;
+  ctx.globalAlpha = 0.85;
+  const arm = Math.min(pw, ph) * 0.22;
+  ctx.beginPath();
+  for (const [cx, cy, dx, dy] of [[p.x, p.y, 1, 1], [p.x + pw, p.y, -1, 1], [p.x, p.y + ph, 1, -1], [p.x + pw, p.y + ph, -1, -1]] as const) {
+    ctx.moveTo(cx + dx * arm, cy);
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(cx, cy + dy * arm);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  const me = s.lastSelf, centre = padCenter(ext);
+  const metres = Math.round(Math.hypot(centre.x - me.x, centre.y - me.y) / PX_PER_M);
+  if (role === 'attack') outlined(ctx, `EXTRACTION ${metres}m`, p.x + pw / 2, p.y - 14, TYPE.label, EXT_LOOK.pad, 800);
+
+  if (c.k === 'hacking') return;
+  const at = worldToScreen(cam, c);
+  const lift = c.k === 'carried' ? 40 : 4 * pulse;
+  drawCase(ctx, at.x, at.y - lift, 1);
+  if (c.k === 'carried') {
+    ctx.strokeStyle = EXT_LOOK.case;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.5 + 0.4 * pulse;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, WORLD.playerRadius * cam.scale + 8, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (c.k === 'dropped') {
+    outlined(ctx, `${Math.max(0, Math.ceil((c.returnAt - clockNow) / 1000))}s`, at.x, at.y + 22, TYPE.label, EXT_LOOK.case, 800);
+  }
+}
+
+function drawCase(ctx: CanvasRenderingContext2D, x: number, y: number, scale: number) {
+  const bw = 20 * scale, bh = 14 * scale;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(28, 30, 36, 0.85)';
+  ctx.fillStyle = EXT_LOOK.case;
+  ctx.beginPath();
+  ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(x - bw / 5, y - bh / 2 - 5 * scale, (bw * 2) / 5, 5 * scale, 2);
+  ctx.stroke();
+}
+
+function drawExtractMap({ ctx }: Hud, ext: ExtView, x: number, y: number, k: number) {
+  ctx.strokeStyle = EXT_LOOK.pad;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x + ext.pad.x * k, y + ext.pad.y * k, ext.pad.w * k, ext.pad.h * k);
+  ctx.fillStyle = EXT_LOOK.terminal;
+  ctx.beginPath();
+  ctx.arc(x + ext.terminal.x * k, y + ext.terminal.y * k, Math.max(3, ext.terminal.r * k), 0, TAU);
+  ctx.fill();
+  const c = ext.case;
+  if (c.k === 'hacking') return;
+  const r = 4.5;
+  ctx.fillStyle = EXT_LOOK.case;
+  ctx.beginPath();
+  ctx.moveTo(x + c.x * k, y + c.y * k - r);
+  ctx.lineTo(x + c.x * k + r, y + c.y * k);
+  ctx.lineTo(x + c.x * k, y + c.y * k + r);
+  ctx.lineTo(x + c.x * k - r, y + c.y * k);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function hintBar(ctx: CanvasRenderingContext2D, s: Session, hints: readonly { key: string; what: string; pick?: BuildingKind }[], cx: number, row: number, label: string | null) {

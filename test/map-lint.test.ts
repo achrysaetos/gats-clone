@@ -98,3 +98,43 @@ test('a wall a pixel inside a player\'s reach of a spawn lets a player stand in 
 test('a side with no spawn region is reported', () => {
   assert.deepEqual(lintMap(build({ spawns: { ...CLEAN.spawns, ffa: [] } })), ['no ffa spawn region']);
 });
+
+// A 2000 px extraction map: attackers bottom-left, defenders top-right behind a wall band, the terminal top-left and the pad bottom-right.
+const ATTACK = { x: 50, y: 1850, w: 100, h: 100 }, DEFEND = { x: 1850, y: 50, w: 100, h: 100 };
+const VAULT: MapFile = {
+  name: 'Vault test',
+  size: 2000,
+  symmetry: 'none',
+  light: 'day',
+  pieces: [...[0, 200, 400, 600, 800, 1000, 1200].map((x) => ({ p: 'wall.long' as const, x, y: 1000, r: 0 as const })), { p: 'helipad', x: 1500, y: 1500, r: 0 }],
+  marks: [],
+  spawns: { red: [ATTACK], blue: [DEFEND], ffa: [ATTACK, DEFEND] },
+  zones: [],
+  extract: { terminal: { x: 500, y: 500 }, attack: [ATTACK], defend: [DEFEND] },
+};
+const vault = (over: Partial<MapFile> = {}) => lintMap(expandMap({ ...VAULT, ...over }));
+
+test('an extraction map takes its pad from its helipad and passes without zones or a half-turn twin', () => {
+  assert.deepEqual(expandMap(VAULT).extract?.pad, { x: 1500, y: 1500, w: 300, h: 300 });
+  assert.deepEqual(vault(), []);
+});
+
+test('an extraction terminal over a wall, a pad holding a crate, or a pad walled off is reported', () => {
+  assert.deepEqual(vault({ pieces: [...VAULT.pieces, { p: 'wall', x: 450, y: 600, r: 0 }] }), ["the terminal's circle at (500, 500) overlaps the solid at (450, 600)"]);
+  assert.deepEqual(vault({ pieces: [...VAULT.pieces, { p: 'crate', x: 1720, y: 1720, r: 0 }] }), ['the pad at (1500, 1500) holds the solid at (1720, 1720)']);
+  const fence: MapFile['pieces'] = [
+    { p: 'wall.long', x: 1400, y: 1400, r: 0 }, { p: 'wall.long', x: 1600, y: 1400, r: 0 }, { p: 'wall.long', x: 1800, y: 1400, r: 0 },
+    { p: 'wall.long', x: 1400, y: 1425, r: 1 }, { p: 'wall.long', x: 1400, y: 1625, r: 1 }, { p: 'wall', x: 1400, y: 1825, r: 1 }, { p: 'wall.short', x: 1400, y: 1925, r: 1 }, { p: 'wall.post', x: 1400, y: 1975, r: 0 },
+  ];
+  const walled = vault({ pieces: [...VAULT.pieces, ...fence] });
+  assert.ok(walled.includes('the pad at (1500, 1500) cannot be walked to from any spawn'), walled.join('\n'));
+});
+
+test('attack and defend spawns that see each other are reported', () => {
+  const lines = vault({ pieces: VAULT.pieces.filter((at) => at.p !== 'wall.long') });
+  assert.ok(lines.some((l) => /^the attack spawn at \(\d+, \d+\) can see the defend spawn/.test(l)), lines.join('\n'));
+});
+
+test('an extraction map without a pad or a helipad fails to load', () => {
+  assert.throws(() => expandMap({ ...VAULT, pieces: VAULT.pieces.filter((at) => at.p !== 'helipad') }), /no pad and 0 helipads/);
+});

@@ -17,7 +17,7 @@ export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; cl
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
 const MAX_BODY = 4096;
-const ROOM_MODES: [string, ModeId][] = [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM'], ['br', 'BR']];
+const ROOM_MODES: [string, ModeId][] = [['ffa', 'FFA'], ['tdm', 'TDM'], ['dom', 'DOM'], ['br', 'BR'], ['ext', 'EXT']];
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.map': 'application/json', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',

@@ -235,6 +235,7 @@ kbd {
 .mode-dom { background: #3f475c; color: #b5c6ff; }
 .mode-zom { background: #43503d; color: #c3e392; }
 .mode-br { background: #523f5c; color: #dcbcf2; }
+.mode-ext { background: #3d4f52; color: #9fe6f0; }
 
 .squad { display: grid; gap: var(--s2); margin-top: var(--s2); }
 .invite { display: grid; grid-template-columns: 1fr auto auto; gap: var(--s2); }
