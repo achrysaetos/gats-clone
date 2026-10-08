@@ -1,4 +1,4 @@
-import { Assets, Texture, type Spritesheet } from 'pixi.js';
+import { Assets, Spritesheet, Texture, type SpritesheetData } from 'pixi.js';
 import { WORLD } from '../../shared/defs.ts';
 import { INK } from '../palette.ts';
 import { GUN_PARTS } from '../sprites.ts';
@@ -18,23 +18,53 @@ export const ASSET_ROOT = 'assets/';
 const EMPTY: Manifest = { atlases: [], maps: {}, water: null };
 
 export type Art = {
+  /** Empty until the manifest arrives. */
   manifest: Manifest;
-  /** The baked frame, or a plain stand-in when the atlas lacks it. */
+  /** The baked frame, or a plain stand-in until the atlas holding it arrives, or when it lacks it. */
   frame: (name: string, layer: Layer, dir?: number, frame?: number) => Texture;
   has: (name: string, layer: Layer) => boolean;
   water: Texture | null;
+  /** Bytes of the atlases and water received over their total, 0 to 1. */
+  progress(): number;
+  /** Settles once every atlas and the water have loaded or failed; failures leave stand-ins. */
+  ready: Promise<void>;
+  loaded(): boolean;
 };
 
-export async function loadArt(): Promise<Art> {
-  const manifest = await fetch(`${ASSET_ROOT}manifest.json`).then((r) => (r.ok ? (r.json() as Promise<Manifest>) : EMPTY)).catch(() => EMPTY);
-  const sheets = await Promise.all(manifest.atlases.map((a) => Assets.load<Spritesheet>(ASSET_ROOT + a).catch(() => null)));
+/** Fetches `url` whole, counting bytes as they arrive, so a progress bar moves within a big file. */
+async function fetchCounted(url: string, onBytes: (n: number, total: number) => void): Promise<Blob | null> {
+  const res = await fetch(url).catch(() => null);
+  if (!res?.ok || !res.body) return null;
+  const total = Number(res.headers.get('content-length')) || 0;
+  onBytes(0, total);
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read().catch(() => ({ done: true, value: undefined }));
+    if (done || !value) break;
+    chunks.push(value);
+    onBytes(value.length, 0);
+  }
+  return new Blob(chunks, { type: res.headers.get('content-type') ?? '' });
+}
+
+async function textureFrom(blob: Blob | null): Promise<Texture | null> {
+  if (!blob) return null;
+  const url = URL.createObjectURL(blob);
+  try { return await Assets.load<Texture>({ src: url, loadParser: 'loadTextures' }); } catch { return null; } finally { URL.revokeObjectURL(url); }
+}
+
+/** Starts loading the art and returns at once; frames read as stand-ins until their atlas lands. */
+export function loadArt(): Art {
   const frames = new Map<string, Texture>();
-  for (const sheet of sheets) for (const [key, tex] of Object.entries(sheet?.textures ?? {})) frames.set(key, tex);
-  const water = manifest.water ? await Assets.load<Texture>(ASSET_ROOT + manifest.water).catch(() => null) : null;
-  if (water) water.source.addressMode = 'repeat';
   const standIns = new Map<string, Texture>();
-  return {
-    manifest, water,
+  let received = 0, total = 0, files = 0, started = 0, done = false;
+  const count = (n: number, size: number) => { received += n; total += size; if (size) started++; };
+  const art: Art = {
+    manifest: EMPTY, water: null,
+    progress: () => (done ? 1 : files === 0 || started < files || total === 0 ? 0 : Math.min(1, received / total)),
+    loaded: () => done,
+    ready: Promise.resolve(),
     has: (name, layer) => frames.has(frameKey(name, layer)),
     frame(name, layer, dir = 0, f = 0) {
       const key = frameKey(name, layer, dir, f);
@@ -45,6 +75,28 @@ export async function loadArt(): Promise<Art> {
       return tex;
     },
   };
+  const json = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  async function sheet(path: string) {
+    const data = (await json(ASSET_ROOT + path)) as SpritesheetData | null;
+    if (!data?.meta.image) return;
+    const image = path.slice(0, path.lastIndexOf('/') + 1) + data.meta.image;
+    const tex = await textureFrom(await fetchCounted(ASSET_ROOT + image, count));
+    if (!tex) return;
+    const parsed = await new Spritesheet(tex, data).parse();
+    for (const [key, t] of Object.entries(parsed)) frames.set(key, t);
+  }
+  async function water(path: string) {
+    const tex = await textureFrom(await fetchCounted(ASSET_ROOT + path, count));
+    if (tex) tex.source.addressMode = 'repeat';
+    art.water = tex;
+  }
+  art.ready = (async () => {
+    art.manifest = ((await json(`${ASSET_ROOT}manifest.json`)) as Manifest | null) ?? EMPTY;
+    files = art.manifest.atlases.length + (art.manifest.water ? 1 : 0);
+    await Promise.all([...art.manifest.atlases.map(sheet), ...(art.manifest.water ? [water(art.manifest.water)] : [])]);
+    done = true;
+  })();
+  return art;
 }
 
 const R = WORLD.playerRadius;

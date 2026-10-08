@@ -113,6 +113,14 @@ node .claude/skills/verify/scripts/frametime.ts "$RUN" [seconds] [width] [height
 
 One headless Chrome joins FFA at 1920x1080 through `?dev`, picks the SMG, and holds fire while it strafes toward the nearest player. After a 5s warmup it logs to `frametime.log` how busy the view was (players and bullets per snapshot), `frame cost` (each real frame's draw calls, from `skirmishDev.takeFrameCosts()`) and the `requestAnimationFrame` interval, then how many ground tiles are on the GPU and whether the sprite atlas loaded. The GPU canvas defers rasterizing, so `frame cost` alone misses pixel work. `SOFTWARE=1` turns the GPU canvas off and adds `rastered frame cost`: the current frame redrawn back to back by `skirmishDev.benchFrames(n)`, each waiting for its pixels. Compare both modes before and after any art change, three runs per side, since bot positions vary. `DPR=2` emulates a 2x display and `BLOOM=0` joins with `?bloom=0`; the log's first line names both, so a 2x run with bloom on and off reads as the cost of bloom.
 
+### Loading
+
+```bash
+node .claude/skills/verify/scripts/loading.ts "$RUN"
+```
+
+One muted headless Chrome with its cache off loads the menu through `?dev` and logs to `loading.log` how many bytes arrived before the menu was interactive (four modes listed), the biggest of them, each `Loading art N%` the menu showed, when the atlases finished, and how many sound files came before any gesture. Then it presses Play with a real mouse press and logs the bytes by the first game frame and the sound files fetched in the 6s after the gesture. It follows Pixi's image worker too, so worker fetches count. `THROTTLE_KBPS=<n>` caps the download speed so the progress moves slowly. `PLAY_EARLY=1` presses Play as soon as the menu lists the modes and logs what the button read while it waited for the art. `FAIL_TILES=1` fails every map tile request, plays 20s and fails when any tile was asked for more than 6 times. `NO_WEBGL=1` starts Chrome without WebGL and checks that the menu says why and keeps Play off with a room picked. Screenshots: `loading-menu-progress.png` (mid-load), `loading-in-game.png`, `loading-no-webgl2.png`.
+
 ## Evidence
 
 The driver writes `$RUN/evidence/drive.log`, one `ok` or `FAIL` line per check with measured values (for example `x 736 -> 914`, `ammo 12 -> 11`), and a final `RESULT PASS` or `RESULT FAIL`. It saves a PNG per step to `$RUN/evidence/`. It exits non-zero on any failed check, page exception or `console.error`.

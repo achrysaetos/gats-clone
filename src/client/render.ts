@@ -15,8 +15,9 @@ export { bodyColor } from './world/scene.ts';
  */
 let world: World | null = null;
 
-export async function initWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<void> {
+export async function initWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<World> {
   world = await createWorld(canvas, quality);
+  return world;
 }
 
 export const resizeWorld = (w: number, h: number, dpr: number) => world?.resize(w, h, dpr);
@@ -70,7 +71,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
   const view = { x0: x - w / zoom / 2, y0: y - h / zoom / 2, x1: x + w / zoom / 2, y1: y + h / zoom / 2 };
   const scene: Scene = {
     view, size, layout: mapLayoutKey(backdropWalls), dark: 0, zones: [], mines: [], thrown: [], dangers: [], gas: [], trails: [],
-    crates: BACKDROP_MAP.crates.map((c, i) => ({ id: i, x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, tier: undefined, wear: 0 })),
+    crates: !world?.art.loaded() ? [] : BACKDROP_MAP.crates.map((c, i) => ({ id: i, x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, tier: undefined, wear: 0 })),
     engineerWalls: [], siege: [], core: null, tracers: [], zombies: [], downed: [], bodies: [], tags: [], cracks: [], ring: null, loot: [], drops: [],
     ghost: null, killer: null, numbers: [], effects: [], particles: noParticles,
   };

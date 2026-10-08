@@ -24,6 +24,7 @@ import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, initWorld, resizeWorld } from './render.ts';
+import { NoWebGL2, type World } from './world/stage.ts';
 import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
@@ -43,6 +44,7 @@ const SESSION_EXPIRED = 'Session expired, log in again.';
 const BAD_INVITE = 'That invite link is broken. Ask your squad for a new one, or start your own.';
 const squadClosed = (code: string) => `Squad ${code} has closed. Start a new one.`;
 const LOST_CONNECTION = 'Lost connection. Press Play to try again.';
+const NO_WEBGL2 = 'Skirmish needs WebGL 2, which this browser could not start. Turn on hardware acceleration, or try a current Chrome, Edge, Firefox or Safari.';
 const DIAL_TIMEOUT_MS = 4000;
 const VIEW_RESEND_MS = 200;
 /** Bloom is on unless the address says `?bloom=0`, for measuring its cost and for slow GPUs. */
@@ -61,6 +63,9 @@ const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
 const squadEl = $('squad');
 const squadChip = $('squad-chip');
+const artEl = $('art-load');
+const artBar = $('art-bar');
+const artLabel = $('art-label');
 
 let state: ClientState = { phase: 'menu', status: { kind: 'idle' } };
 let loadout: Loadout = loadLoadout();
@@ -87,6 +92,10 @@ let kick = NO_KICK;
 let hitstop = NO_HITSTOP;
 let lastFrameAt = 0;
 let shownView: number = WORLD.viewRadius;
+/** The world starts in the background; Play waits for it, and for the art when pressed before the art lands. */
+let painter: { kind: 'starting' } | { kind: 'ready'; world: World } | { kind: 'failed'; message: string } = { kind: 'starting' };
+let waitingRoom: string | null = null;
+let artShown = '';
 
 const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
@@ -130,10 +139,33 @@ function setState(next: ClientState) {
   }
 }
 
+const artPercent = (w: World) => Math.floor(w.art.progress() * 100);
+
 function refreshPlayButton() {
   const connecting = state.phase === 'menu' && state.status.kind === 'connecting';
-  playBtn.disabled = connecting || selectedRoom === null;
-  playBtn.textContent = connecting ? 'Connecting…' : 'Play';
+  const waiting = waitingRoom !== null && painter.kind === 'ready';
+  playBtn.disabled = connecting || waiting || selectedRoom === null || painter.kind !== 'ready';
+  playBtn.textContent = connecting ? 'Connecting…' : waiting && painter.kind === 'ready' ? `Loading art… ${artPercent(painter.world)}%` : 'Play';
+}
+
+/** The menu's art line: progress while the atlases load, or why the game cannot start. */
+function refreshArt() {
+  const shown = painter.kind === 'failed' ? painter.message : painter.kind === 'ready' && !painter.world.art.loaded() ? `Loading art ${artPercent(painter.world)}%` : '';
+  if (shown === artShown) return;
+  artShown = shown;
+  artEl.hidden = shown === '';
+  artEl.classList.toggle('error', painter.kind === 'failed');
+  artLabel.textContent = shown;
+  if (painter.kind === 'ready') artBar.style.width = `${artPercent(painter.world)}%`;
+  refreshPlayButton();
+}
+
+/** Plays at once when the art is in, and otherwise once it lands, showing its progress on the button meanwhile. */
+function requestPlay(room: string) {
+  if (painter.kind !== 'ready') return;
+  if (painter.world.art.loaded()) return play(room);
+  waitingRoom = room;
+  refreshPlayButton();
 }
 
 function setLoadout(next: Loadout) {
@@ -401,6 +433,7 @@ function updateTrails(s: Session, snap: Snapshot, now: number) {
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  if (state.phase === 'menu') refreshArt();
   const start = performance.now();
   drawFrame(now);
   noteFrameCost(performance.now() - start);
@@ -621,7 +654,7 @@ async function startSquad() {
   setSquad(opened.room);
   selectedRoom = opened.room;
   showServers();
-  play(opened.room);
+  requestPlay(opened.room);
 }
 
 function toggleMuted(name: string) {
@@ -643,7 +676,7 @@ nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
+  if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) requestPlay(selectedRoom);
 });
 window.addEventListener('pagehide', leave);
 window.addEventListener('online', () => {
@@ -659,10 +692,21 @@ if (invited === 'bad') {
   squad = selectedRoom = invited;
   revealSquad = true;
 }
-await initWorld(worldCanvas, { bloom: bloomWanted() }).catch((err: unknown) => {
-  state = { phase: 'menu', status: { kind: 'error', message: 'Skirmish needs WebGL, which this browser could not start.' } };
-  console.error(err);
-});
 resize();
 setState(state);
 requestAnimationFrame(frame);
+initWorld(worldCanvas, { bloom: bloomWanted() }).then((world) => {
+  painter = { kind: 'ready', world };
+  resize();
+  refreshArt();
+  void world.art.ready.then(() => {
+    const room = waitingRoom;
+    waitingRoom = null;
+    refreshArt();
+    if (room !== null && state.phase === 'menu' && state.status.kind !== 'connecting') play(room);
+  });
+}, (err: unknown) => {
+  painter = { kind: 'failed', message: NO_WEBGL2 };
+  refreshArt();
+  if (!(err instanceof NoWebGL2)) console.warn(err);
+});

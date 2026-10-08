@@ -11,7 +11,8 @@ import type { Rect } from '../../../../../src/shared/sim/movement.ts';
 import { findPath, navGrid, type NavGrid, type Point } from '../../../../../src/server/bot/nav.ts';
 import { killOnExit } from '../../../../../scripts/kill-on-exit.ts';
 
-export type Cdp = (method: string, params?: object) => Promise<any>;
+/** `sessionId` sends to an attached target, such as a worker seen through `Target.setAutoAttach` with `flatten`. */
+export type Cdp = (method: string, params?: object, sessionId?: string) => Promise<any>;
 export type Page = { cdp: Cdp; js: (expr: string) => Promise<any>; exceptions: string[]; close: () => void };
 export type PageProblem = 'page exception' | 'console.error';
 
@@ -23,7 +24,7 @@ export async function openPage(opts: {
   debugPort?: number;
   args?: readonly string[];
   viewport?: { width: number; height: number; dpr?: number };
-  onEvent?: (method: string, params: any) => void;
+  onEvent?: (method: string, params: any, sessionId?: string) => void;
   onProblem?: (kind: PageProblem, detail: string) => void;
   onClose?: () => void;
 }): Promise<Page> {
@@ -57,9 +58,9 @@ export async function openPage(opts: {
     } else if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
       opts.onProblem?.('console.error', JSON.stringify(m.params.args.map((a: { value?: unknown }) => a.value)));
     }
-    opts.onEvent?.(m.method, m.params);
+    opts.onEvent?.(m.method, m.params, m.sessionId);
   });
-  const cdp: Cdp = (method, params = {}) => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
+  const cdp: Cdp = (method, params = {}, sessionId) => new Promise((r) => { const id = nextId++; pending.set(id, r); ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })); });
   const js = async (expr: string) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
   await cdp('Runtime.enable'); await cdp('Page.enable'); await cdp('Network.enable');
   if (opts.viewport) await cdp('Emulation.setDeviceMetricsOverride', { width: opts.viewport.width, height: opts.viewport.height, deviceScaleFactor: opts.viewport.dpr ?? 1, mobile: false });

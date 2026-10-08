@@ -50,8 +50,8 @@ function plainGround(walls: readonly WallView[], size: number): Graphics {
 }
 
 export function createGround(art: Art, layer: Container, waterLayer: Container) {
-  const water = new TilingSprite({ texture: art.water ?? undefined, width: 1, height: 1 });
-  if (!art.water) water.tint = 0x2c5f7c;
+  const water = new TilingSprite({ texture: undefined, width: 1, height: 1 });
+  water.tint = 0x2c5f7c;
   waterLayer.addChild(water);
   let layout = '';
   let plain: Graphics | null = null;
@@ -112,6 +112,7 @@ export function createGround(art: Art, layer: Container, waterLayer: Container) 
     /** Shows `layout`'s ground for `view`, and places the water under the whole screen in step with the world. */
     draw(next: string, walls: readonly WallView[], size: number, view: View, screen: { w: number; h: number; x: number; y: number; scale: number }, now: number) {
       setLayout(next, walls, size);
+      if (art.water && water.texture !== art.water) { water.texture = art.water; water.tint = 0xffffff; }
       stream(view, performance.now());
       water.width = screen.w;
       water.height = screen.h;

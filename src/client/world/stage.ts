@@ -66,19 +66,39 @@ const DECALS = { cap: 90, lifeMs: 40_000, fadeMs: 6000 } as const;
 /** How strongly each decal marks the ground; the baked soot is opaque at its heart, which reads as a hole rather than a burn. */
 const DECAL_STRENGTH: Record<string, number> = { 'decal.scorch': 0.55, 'decal.blood': 0.85, 'decal.ichor': 0.85 };
 
+/** Thrown when the browser cannot give the world a WebGL2 context; the menu says so and keeps Play off. */
+export class NoWebGL2 extends Error {}
+
+/**
+ * A WebGL2 context, on the GPU when the browser offers one. `software` is true when only a software rasterizer was offered:
+ * the game still runs, at the lowest quality.
+ */
+function webgl2(canvas: HTMLCanvasElement): { gl: WebGL2RenderingContext; software: boolean } {
+  const attrs: WebGLContextAttributes = { alpha: false, premultipliedAlpha: true, antialias: false, stencil: true, powerPreference: 'high-performance' };
+  const gpu = canvas.getContext('webgl2', { ...attrs, failIfMajorPerformanceCaveat: true });
+  if (gpu) return { gl: gpu, software: false };
+  const any = canvas.getContext('webgl2', attrs);
+  if (any) return { gl: any, software: true };
+  throw new NoWebGL2('no WebGL2 context');
+}
+
 export type World = {
   draw(scene: Scene, cam: Camera, now: number, walls: readonly WallView[]): void;
   resize(w: number, h: number, dpr: number): void;
   quality: Quality;
-  probe(): { tiles: number; failedTiles: number; atlas: boolean; drawn: number };
+  probe(): { tiles: number; failedTiles: number; atlas: boolean; drawn: number; software: boolean };
+  art: Pick<Art, 'progress' | 'ready' | 'loaded'>;
+  software: boolean;
   /** Waits for the GPU to finish the last frame, so a benchmark times the pixels and not just the commands. */
   finish(): void;
 };
 
 export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): Promise<World> {
+  const { gl, software } = webgl2(canvas);
   const renderer = new WebGLRenderer();
-  await renderer.init({ canvas, width: canvas.clientWidth || 1, height: canvas.clientHeight || 1, resolution: 1, antialias: false, background: '#1d3a4c', powerPreference: 'high-performance' });
-  const art = await loadArt();
+  await renderer.init({ canvas, context: gl, width: canvas.clientWidth || 1, height: canvas.clientHeight || 1, resolution: 1, antialias: false, background: '#1d3a4c', powerPreference: 'high-performance' });
+  if (renderer.context.webGLVersion !== 2) throw new NoWebGL2(`WebGL${renderer.context.webGLVersion}`);
+  const art = loadArt();
   const tex = createTextures();
   let view = { w: 1, h: 1, dpr: 1 };
 
@@ -553,7 +573,8 @@ export async function createWorld(canvas: HTMLCanvasElement, quality: Quality): 
       renderer.resolution = dpr;
       renderer.resize(w, h, dpr);
     },
-    probe: () => ({ tiles: ground.loadedTiles(), failedTiles: ground.failedTiles(), atlas: art.manifest.atlases.length > 0, drawn }),
+    art, software,
+    probe: () => ({ tiles: ground.loadedTiles(), failedTiles: ground.failedTiles(), atlas: art.loaded() && art.manifest.atlases.length > 0, drawn, software }),
     finish() { renderer.gl.readPixels(0, 0, 1, 1, renderer.gl.RGBA, renderer.gl.UNSIGNED_BYTE, new Uint8Array(4)); },
     draw(scene, cam, now, walls) {
       world.scale.set(cam.scale);
