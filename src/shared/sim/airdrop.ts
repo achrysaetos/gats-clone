@@ -81,7 +81,8 @@ function startFlight(w: World) {
   w.events.push({ e: 'airdrop', k: 'inbound', x: spot.x, y: spot.y });
 }
 
-const standsOn = (w: World, r: Rect) => [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(r, { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius));
+/** A body (alive or knocked) overlaps `r`: a solid may not appear there yet. */
+export const standsOn = (w: World, r: Rect) => [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(r, { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius));
 
 /** Runs the round's supply planes: the notice, the plane, the crate's landing, and its end if nobody breaks it. */
 export function tickAirdrops(w: World) {
@@ -107,6 +108,7 @@ export function tickAirdrops(w: World) {
   if (!crate || crate.respawnAt !== null) { air.flight = null; return; }
   if (w.now >= f.expiresAt) {
     crate.respawnAt = Infinity;
+    w.wallsVersion++;
     w.events.push({ e: 'boom', x: f.x, y: f.y, r: AIRDROP.size });
     air.flight = null;
   }

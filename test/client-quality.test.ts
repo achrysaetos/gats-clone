@@ -116,3 +116,28 @@ test('advanced overrides are snapped to the steps on offer', () => {
   assert.deepEqual(sanitizeAdv({ post: false, lighting: 'no', waterGL: true, critters: 0.3, dprCap: 1.7, junk: 1 }), { post: false, waterGL: true, critters: 0.25, dprCap: 1.5 });
   assert.deepEqual(sanitizeAdv(undefined), {});
 });
+
+test('the ceiling Auto lowered to after slow frames is lifted by Reset to defaults and by picking Auto again, not by picking a preset', async () => {
+  const mem = new Map<string, string>();
+  const g = globalThis as Record<string, unknown>;
+  const saved = { localStorage: g.localStorage, matchMedia: g.matchMedia, devicePixelRatio: g.devicePixelRatio };
+  Object.assign(globalThis, { localStorage: { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => { mem.set(k, String(v)); } }, matchMedia: () => ({ matches: false }), devicePixelRatio: 1 });
+  try {
+    const CAP = 'skirmish.quality.auto';
+    const lowered = () => { const v = mem.get(CAP); return v === 'low' || v === 'medium' || v === 'high' || v === 'ultra' ? v : null; };
+    mem.set(CAP, 'medium');
+    const { initQuality } = await import('../src/client/qualityrt.ts');
+    const { resetSettings, setSetting } = await import('../src/client/settings.ts');
+    initQuality({ resize() {}, toast() {} });
+    assert.equal(lowered(), 'medium', 'a remembered step-down holds across visits');
+    resetSettings();
+    assert.equal(lowered(), null, 'Reset to defaults forgets it');
+    mem.set(CAP, 'medium');
+    setSetting('quality', 'high');
+    assert.equal(lowered(), 'medium', 'picking a fixed preset leaves Auto\'s memory alone');
+    setSetting('quality', 'auto');
+    assert.equal(lowered(), null, 'picking Auto again starts it from the top');
+  } finally {
+    Object.assign(globalThis, saved);
+  }
+});

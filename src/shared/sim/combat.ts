@@ -287,6 +287,7 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate' });
   if (c.hp > 0) return;
   c.respawnAt = w.royale || c.drop ? Infinity : w.now + CRATE_RESPAWN_MS;
+  w.wallsVersion++;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (!attacker) return;
   addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);

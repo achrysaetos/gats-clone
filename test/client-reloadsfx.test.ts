@@ -285,10 +285,14 @@ test('offline render: every class\'s full reload is audible, under the limiter a
   const shot = await renderCues(waa!, [{ id: 'shot:pistol', x: 0, y: 0, self: true, gain: 1 }], 1.2);
   const shotPeak = peakOf(shot);
   for (const gun of ['pistol', 'akimbo', 'smg', 'assault', 'lmg', 'shotgun', 'sniper', 'handCannon', 'bulldog', 'longshot', 'ghost'] as GunId[]) {
+    // Reloads were doubled in level at the player's ask (pistols peak near -5.4 dBFS, quick akimbo -4.2), so the bound is no longer
+    // -6 dBFS flat: they keep 3 dB of headroom under the limiter, and sit at least 5 dB under the gun's own shot in the same renderer.
+    const ownShot = peakOf(await renderCues(waa!, [{ id: `shot:${gun}`, x: 0, y: 0, self: true, gain: 1 }], 1.2));
     for (const ms of [GUNS[gun].reloadMs, Math.round(GUNS[gun].reloadMs * 0.65)]) {
       const r = await renderReload(waa!, gun, ms);
       const peak = peakOf(r);
-      assert.ok(peak < 0.5, `${gun} ${ms}ms peaks at ${DB(peak).toFixed(1)} dBFS, well under the limiter ceiling`);
+      assert.ok(peak < 10 ** (-3 / 20), `${gun} ${ms}ms peaks at ${DB(peak).toFixed(1)} dBFS, with 3 dB of headroom under the limiter ceiling`);
+      assert.ok(DB(ownShot) - DB(peak) >= 5, `${gun} reload (${DB(peak).toFixed(1)} dBFS) sits at least 5 dB under its own shot (${DB(ownShot).toFixed(1)} dBFS)`);
       assert.ok(peak < shotPeak * 0.5, `${gun} reload (${DB(peak).toFixed(1)} dBFS) sits at least 6 dB under a gunshot (${DB(shotPeak).toFixed(1)} dBFS)`);
       assert.ok(peak > 0.02 && rmsOf(r) > 0.001, `${gun} is audible (${DB(peak).toFixed(1)} dBFS)`);
       const timeline = reloadCues(gun, ms), first = timeline[0]!.delayMs, last = Math.max(...timeline.map((c) => c.delayMs));

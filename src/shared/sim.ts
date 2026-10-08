@@ -1,7 +1,7 @@
 import { AIRDROP, GUNS, raiseMsOf, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
-import { tickAirdrops } from './sim/airdrop.ts';
+import { standsOn, tickAirdrops } from './sim/airdrop.ts';
 import { tickDoors } from './sim/doors.ts';
 import { tickBarrels } from './sim/barrels.ts';
 import { empMul, tickProps } from './sim/props.ts';
@@ -13,7 +13,7 @@ import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, postSprint, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { crateRect, freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
@@ -46,7 +46,8 @@ function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: numbe
 export function removePlayer(w: World, id: number): void {
   const p = w.players.get(id);
   if (!p) return;
-  if (p.life.k === 'alive') w.lifeRecords.push({ id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+  // A knocked player's life has not ended in a death yet: leaving ends it, and it is paid like a standing one's.
+  if (p.life.k !== 'dead') w.lifeRecords.push({ id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
   w.players.delete(id);
 }
 
@@ -178,7 +179,8 @@ export function step(w: World, dtMs: number): void {
   tickAirdrops(w);
   watchCloseCalls(w);
   for (const c of w.crates) {
-    if (c.respawnAt !== null && w.now >= c.respawnAt) { c.respawnAt = null; c.hp = WORLD.crateHp; }
+    // Like a barrel or a prop, a crate waits for its spot to clear: standing up around a body would trap it inside.
+    if (c.respawnAt !== null && w.now >= c.respawnAt && !standsOn(w, crateRect(c))) { c.respawnAt = null; c.hp = WORLD.crateHp; w.wallsVersion++; }
   }
   const wallCount = w.walls.length;
   w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);

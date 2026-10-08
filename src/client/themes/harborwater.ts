@@ -336,16 +336,36 @@ function initGL(prep: WaterPrep): GlState | null {
     g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
     const names = ['uView', 'uMask', 'uSize', 'uT', 'uPx', 'uN', 'uL', 'uLc'];
     const u = Object.fromEntries(names.map((n) => [n, g.getUniformLocation(prog, n)]));
-    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glFailed = true; gl = null; });
+    // Only the context in use failing sends the water to the plain canvas: one let go on a map change (see `freeGL`) reports its loss too.
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); if (freed.has(canvas)) return; glFailed = true; gl = null; });
     return { canvas, gl: g, prog, u, tex, cells: prep.cells, scale: 0 };
   } catch {
     return null;
   }
 }
 
+/** Canvases whose context was let go on purpose. */
+const freed = new WeakSet<HTMLCanvasElement>();
+
+/**
+ * Lets a map's water context go before the next map makes its own. A browser keeps only a handful of live WebGL contexts per page
+ * and evicts the oldest past that (which could be the post pass's), so a dropped one is lost now rather than whenever it is collected.
+ */
+function freeGL(st: GlState) {
+  freed.add(st.canvas);
+  try {
+    st.gl.deleteTexture(st.tex);
+    st.gl.deleteProgram(st.prog);
+    st.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  } catch { /* already gone */ }
+  st.canvas.width = st.canvas.height = 0;
+}
+
 function drawGL(ctx: CanvasRenderingContext2D, now: number, view: { x0: number; y0: number; x1: number; y1: number }, prep: WaterPrep, lights: readonly WaterLight[]): boolean {
   if (glFailed) return false;
   if (!gl || glMap !== prep.size + ':' + prep.polys.length) {
+    if (gl) freeGL(gl);
+    gl = null;
     gl = initGL(prep);
     glMap = prep.size + ':' + prep.polys.length;
     if (!gl) { glFailed = true; return false; }

@@ -12,7 +12,7 @@ import { isSlot, parsePicks } from '../shared/cosmetics.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
 import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
-import { LIMITS, makeKeyedLimiter, type Limits } from './limits.ts';
+import { LIMITS, makeFaultLog, makeKeyedLimiter, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
 import { warmLayouts } from './bot/arena.ts';
 import { ROTATION } from '../shared/maps.ts';
@@ -105,7 +105,8 @@ const forwardedIp: IpOf = (req) => {
 };
 
 async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, profiles: Profiles, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
-  const url = new URL(req.url ?? '/', 'http://x');
+  let url: URL;
+  try { url = new URL(req.url ?? '/', 'http://x'); } catch { return json(res, 400, { error: 'Bad request target' }); }
   const path = url.pathname;
   if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true, rooms: rooms.all.size, ...rooms.load() });
   if (req.method === 'GET' && path === '/api/servers') return json(res, 200, [...rooms.all.values()].map((r) => r.info()).filter((info) => info.mode !== 'ZOM' && info.mode !== 'RNG'));
@@ -263,14 +264,40 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   gcObserver?.observe({ entryTypes: ['gc'] });
   const tally = { ticks: 0, dropped: 0, workMs: 0, maxMs: 0, at: performance.now() };
   let load: { tickHz: number; droppedTicks: number; busy: number; maxTickMs: number } = { tickHz: WORLD.tickHz, droppedTicks: 0, busy: 0, maxTickMs: 0 };
+  const fault = makeFaultLog(limits.faultLogMs);
+  /** When each room's current run of throwing ticks began; a room with a good tick is not in it. */
+  const failingSince = new Map<Room, number>();
+  /** One room's tick, kept from taking the loop (and so every other room) down with it: a throw is logged, and a room that throws on every tick for `faultyRoomMs` is let go and replaced. */
+  const tickRoom = (id: string, r: Room) => {
+    try {
+      r.tick();
+      failingSince.delete(r);
+    } catch (err) {
+      fault(`room ${id} tick`, err);
+      const now = Date.now();
+      const since = failingSince.get(r) ?? now;
+      failingSince.set(r, since);
+      if (now - since >= limits.faultyRoomMs) retire(id, r);
+    }
+  };
+  const retire = (id: string, r: Room) => {
+    failingSince.delete(r);
+    console.error(`room ${id}: its tick has failed for ${limits.faultyRoomMs} ms, closing it`);
+    try { r.close(); } catch (err) { fault(`room ${id} close`, err); }
+    if (squadSeenAt.has(id) || rangeSeenAt.has(id)) {
+      rooms.delete(id);
+      squadSeenAt.delete(id);
+      rangeSeenAt.delete(id);
+    } else rooms.set(id, newRoom(id, ROOM_MODES.find(([rid]) => rid === id)?.[1] ?? 'FFA', randomInt(2 ** 31)));
+  };
   const loop = () => {
     const start = performance.now();
     const plan = planTicks(start, nextTickAt, TICK_MS);
     const owed = start >= nextTickAt ? Math.floor((start - nextTickAt) / TICK_MS) + 1 : 0;
     tally.dropped += owed - plan.ticks;
     nextTickAt = plan.nextAt;
-    for (let i = 0; i < plan.ticks; i++) for (const r of rooms.values()) r.tick();
-    closeIdleSquads(Date.now());
+    for (let i = 0; i < plan.ticks; i++) for (const [id, r] of [...rooms]) tickRoom(id, r);
+    try { closeIdleSquads(Date.now()); } catch (err) { fault('closing idle rooms', err); }
     const end = performance.now();
     tally.ticks += plan.ticks; tally.workMs += end - start; tally.maxMs = Math.max(tally.maxMs, end - start);
     if (end - tally.at >= 1000) {

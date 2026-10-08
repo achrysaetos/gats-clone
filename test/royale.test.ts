@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { RING, WORLD, ZOM } from '../src/shared/defs.ts';
 import { goDown } from '../src/shared/sim/downed.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import { removePlayer, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
@@ -274,4 +274,15 @@ test('a joiner takes a bot\'s seat while redeploys are open, solo humans spread 
   assert.equal(w.players.size, 18);
   assert.equal(new Set([ann.p.team, bob.p.team, cat.p.team]).size, 3);
   for (const team of new Set([...w.players.values()].map((p) => p.team))) assert.equal(squadOf(team).length, 3, `${team} has three`);
+});
+
+test('a knocked player who leaves has the life paid, as a standing one does', () => {
+  const w = emptyWorld('BR');
+  const p = spawnAt(w, 1000, 1000, { team: 'blue' });
+  spawnAt(w, 3000, 3000, { team: 'blue' });
+  p.score = 250;
+  goDown(w, p, 50);
+  w.lifeRecords.length = 0;
+  removePlayer(w, p.id);
+  assert.deepEqual(w.lifeRecords.filter((r) => r.id === p.id).map((r) => [r.score, r.died]), [[250, false]]);
 });

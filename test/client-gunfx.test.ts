@@ -84,3 +84,14 @@ test('shotgun and sniper eject their casing after the bolt works, the others at 
   assert.ok(fx.casings[0]!.born > 100);
   assert.equal(fx.casings[1]!.born, 100);
 });
+
+test('a new map also clears the casings and floor marks, which would otherwise lie at the old map\'s spots', () => {
+  const fx = createGunFx(caps);
+  noteMap(fx, 'a');
+  muzzleFlash(fx, { x: 300, y: 300 }, 0, 'pistol', 0, () => 0.5);
+  hitFlesh(fx, 320, 300, 0, false, () => 0.5);
+  assert.ok(liveCasings(fx, 100) > 0 && liveMarks(fx, 100) > 0);
+  noteMap(fx, 'b');
+  assert.equal(liveCasings(fx, 100), 0, 'no casings from the last map');
+  assert.equal(liveMarks(fx, 100), 0, 'no stains from the last map');
+});

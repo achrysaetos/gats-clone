@@ -296,3 +296,19 @@ test('the new medals exist, with score and a tier', () => {
     assert.ok(MEDALS[id].score > 0 && MEDALS[id].name && MEDALS[id].desc);
   }
 });
+
+test('a supply drop expiring unbroken moves wallsVersion, so caches of the solids drop it', () => {
+  const w = createWorld('FFA', 11, 'plaza');
+  spawnAt(w, 3000, 3000);
+  w.airdrops.due = [w.now + 100];
+  run(w, 300);
+  const f = w.airdrops.flight!;
+  w.now = f.landAt + 1;
+  step(w, TICK_MS);
+  assert.ok(f.crateId !== null);
+  const landed = w.wallsVersion;
+  w.now = f.expiresAt + 1;
+  step(w, TICK_MS);
+  assert.equal(w.airdrops.flight, null);
+  assert.ok(w.wallsVersion > landed, 'the drop is gone from the solids');
+});

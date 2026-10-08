@@ -389,3 +389,24 @@ test('snapshots report the armor tier picked and how far through a reload the pl
   const frac = snapshotFor(w, p.id).self.reloadFrac;
   assert.ok(frac > 0.4 && frac < 0.6, `halfway through the reload reads about 0.5, got ${frac}`);
 });
+
+test('a broken crate stands again only once no body is on its spot, and every break and return moves wallsVersion', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500);
+  w.crates.push({ id: 999, x: 600, y: 478, size: 44, hp: WORLD.crateHp, respawnAt: null });
+  const crate = w.crates[0]!;
+  const before = w.wallsVersion;
+  explode(w, 622, 500, 60, 5000, { attacker: a, team: a.team, label: 'Test' });
+  assert.ok(crate.respawnAt !== null, 'broken');
+  assert.ok(w.wallsVersion > before, 'a crate breaking is a solid gone');
+  const broken = w.wallsVersion;
+  const squatter = spawnAt(w, 622, 500);
+  w.now = crate.respawnAt! + 1;
+  step(w, TICK_MS);
+  assert.ok(crate.respawnAt !== null, 'a body on the spot holds the crate back');
+  assert.equal(w.wallsVersion, broken);
+  squatter.x = 900;
+  step(w, TICK_MS);
+  assert.equal(crate.respawnAt, null, 'it stands once the spot is clear');
+  assert.ok(w.wallsVersion > broken, 'a crate standing again is a solid back');
+});

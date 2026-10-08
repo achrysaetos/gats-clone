@@ -81,11 +81,13 @@ export const liveCasings = (fx: GunFx, now: number) => fx.casings.filter((c) => 
 export const liveMarks = (fx: GunFx, now: number) => fx.marks.filter((m) => now - m.born < m.life).length;
 export const liveHoles = (fx: GunFx, now: number) => fx.holes.filter((h) => now - h.born < HOLE.lifeMs).length;
 
-/** Forgets every hole when the map changes. */
+/** Forgets every hole, casing and floor mark when the map changes: each sits at a spot on the old map. */
 export function noteMap(fx: GunFx, map: string) {
   if (fx.map === map) return;
   fx.map = map;
   for (const h of fx.holes) h.born = -Infinity;
+  for (const c of fx.casings) c.born = -Infinity;
+  for (const m of fx.marks) m.born = -Infinity;
 }
 
 // --- Muzzle flashes ---------------------------------------------------------------------------------------------

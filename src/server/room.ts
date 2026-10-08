@@ -20,7 +20,7 @@ import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from '
 import { thinkBots } from './bot/tick.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
-import { LIMITS, makeTokenBucket, type Limits } from './limits.ts';
+import { LIMITS, makeFaultLog, makeTokenBucket, type Limits } from './limits.ts';
 import { uniqueName } from './names.ts';
 import { EMOTE_INTERVAL_MS, EMOTE_RANGE } from '../shared/emotes.ts';
 import { RADIO_INTERVAL_MS, RADIO_MODES, type StationId } from '../shared/radio.ts';
@@ -66,6 +66,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   /** When each socket's unsent backlog first went over the cap, for sockets still over it. */
   const backlogSince = new Map<WebSocket, number>();
   let wallsVersion = world.wallsVersion;
+  const fault = makeFaultLog(limits.faultLogMs);
   /** The room's radio: the squad's in Zombies, the lone player's in the range. Null until someone tunes it (each map then plays its own track). */
   let radioStation: StationId | null = null;
   const net = { bytes: 0, snaps: 0, skipped: 0, ticked: 0, botMs: 0, stepMs: 0, advanceMs: 0, sendMs: 0 };
@@ -439,7 +440,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         const msg = isBinary ? null : parseClientMsg(data.toString());
         if (!msg) { send(ws, { t: 'error', message: 'Bad message' }); return; }
         const client = clients.get(ws);
-        if (client) handle(client, msg, rewindCapFor(rtts.length > 0 ? Math.max(...rtts) : null));
+        // Thrown here, inside the socket's event, a fault in one message would be an uncaught exception: the whole process, every room, gone.
+        try {
+          if (client) handle(client, msg, rewindCapFor(rtts.length > 0 ? Math.max(...rtts) : null));
+        } catch (err) {
+          fault(`room ${id} handling '${msg.t}'`, err);
+        }
       });
       ws.on('close', () => { clearTimeout(joinTimer); clearInterval(heartbeat); clearInterval(rttTimer); disconnect(ws); });
       // ws emits 'error' for protocol violations like oversized frames; unhandled, it kills the process.

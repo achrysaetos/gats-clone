@@ -31,6 +31,13 @@ function storedCap(): PresetId | null {
   return v === 'low' || v === 'medium' || v === 'high' || v === 'ultra' ? v : null;
 }
 
+function liftCap() {
+  if (cap === null && storedCap() === null) return;
+  cap = null;
+  browserStore.set(CAP_KEY, '');
+  recompute();
+}
+
 function recompute(extra = '') {
   const picked = autoPick(env);
   const order: PresetId[] = ['low', 'medium', 'high', 'ultra'];
@@ -60,7 +67,13 @@ export function initQuality(opts: { resize(): void; toast(message: string): void
   env = { renderer: fxRenderer(), glOk: fxCapable() || fxRenderer() !== undefined, deviceMemory: nav.deviceMemory, dpr: devicePixelRatio || 1, touch: matchMedia('(pointer: coarse)').matches, saveData: !!nav.connection?.saveData, probeMs: null };
   cap = storedCap();
   recompute();
-  onSettings((_s, changed) => { if (changed === 'quality' || changed === 'adv' || changed === null) { degrader.reset(); applyQuality(); } });
+  onSettings((s, changed) => {
+    if (changed !== 'quality' && changed !== 'adv' && changed !== null) return;
+    // Reset to defaults, or choosing Auto again, is asking Auto to start over: the ceiling slow frames set (here and remembered) goes.
+    if (changed === null || (changed === 'quality' && s.quality === 'auto')) liftCap();
+    degrader.reset();
+    applyQuality();
+  });
   applyQuality();
 }
 

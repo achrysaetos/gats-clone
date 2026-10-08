@@ -43,7 +43,7 @@ const sameLayout = (l: Layout, walls: readonly Wall[], crates: readonly Crate[])
 /**
  * Supply drops (an airdrop's crate, a Last Squad drop) land and break during a round, so they are solids that come and go, like barrels,
  * not part of the map's layout: a landing would otherwise rebuild the whole grid (and file a one-off layout under its own key), and a
- * broken one would stay a wall in the grid until the map changes. `drops` names the ones standing, since breaking one moves no version.
+ * broken one would stay a wall in the grid until the map changes. `drops` names the ones standing (a landing, a break or an expiry also moves `wallsVersion`).
  */
 const dropsStanding = (w: World) => w.crates.filter((c) => c.drop && c.respawnAt === null);
 const dropsKey = (w: World) => dropsStanding(w).map((c) => c.id).join();

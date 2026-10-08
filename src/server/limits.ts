@@ -22,8 +22,26 @@ export const LIMITS = {
   rangeRooms: 40,
   rangeIdleMs: 30_000,
   sessionMs: 30 * 24 * 60 * 60 * 1000,
+  /** A room's faults (a throwing tick, a message handler that throws) are logged at most once per this many ms, with a count of the ones held back. */
+  faultLogMs: 10_000,
+  /** A room whose tick has thrown on every tick for this long is closed (its players are let go) and a fresh one takes its place. */
+  faultyRoomMs: 5_000,
 };
 export type Limits = typeof LIMITS;
+
+/**
+ * Logs a fault the first time it happens under `key`, then at most once per `everyMs` with how many were held back meanwhile:
+ * a fault that repeats every tick or every message would otherwise flood the log (and the disk) with the same trace.
+ */
+export function makeFaultLog(everyMs: number, log: (...args: unknown[]) => void = (...args) => console.error(...args)) {
+  const seen = new Map<string, { at: number; held: number }>();
+  return (key: string, err: unknown, now = Date.now()): void => {
+    const s = seen.get(key);
+    if (s && now - s.at < everyMs) { s.held++; return; }
+    log(`fault in ${key}${s?.held ? ` (${s.held} more since the last report)` : ''}:`, err);
+    seen.set(key, { at: now, held: 0 });
+  };
+}
 
 type Bucket = { tokens: number; at: number };
 
