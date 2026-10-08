@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
 import { expandMap, MAP_IDS, MAPS, ZONE_RADIUS, type MapDef, type MapFile } from '../src/shared/maps.ts';
-import { lintMap } from '../scripts/map-lint.ts';
+import { lintMap as lintProblems } from '../src/shared/maplint.ts';
+
+const lintMap = (def: MapDef) => lintProblems(def).map((p) => p.text);
 
 for (const id of MAP_IDS) {
   test(`${MAPS[id].name} passes the map lint`, () => {
@@ -42,6 +44,12 @@ test('a walled-off pocket is reported with its size, on each side of the turn', 
     '30 spots (18750 px²) around (1338, 263) cannot be walked to from any spawn',
     '30 spots (18750 px²) around (538, 1638) cannot be walked to from any spawn',
   ]);
+});
+
+test('each problem carries the place it is about, so the editor can mark it', () => {
+  const problems = lintProblems(build({ pieces: [...CLEAN.pieces, { p: 'crate.metal', x: 1960, y: 300, r: 0 }], spawns: { ...CLEAN.spawns, ffa: [] } }));
+  assert.deepEqual(problems.filter((p) => p.text.startsWith('crate.metal at')).map((p) => p.at), [{ x: 1985, y: 325 }, { x: 15, y: 1675 }]);
+  assert.deepEqual(problems.find((p) => p.text === 'no ffa spawn region')?.at, null);
 });
 
 test('a spawn against the map edge lets a player stand past it', () => {

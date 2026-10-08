@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { MODE_IDS, WORLD, ZOM } from '../src/shared/defs.ts';
 import { MAP_IDS, MAPS, ROTATION } from '../src/shared/maps.ts';
 import { rectsOverlap, type Rect } from '../src/shared/sim/movement.ts';
-import { CELL, cellsIn, flood, standable } from '../scripts/map-lint.ts';
+import { CELL, cellsIn, flood, standable } from '../src/shared/maplint.ts';
 
 const R = WORLD.playerRadius;
 
