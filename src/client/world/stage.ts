@@ -219,7 +219,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
     };
     for (const s of [parts.ring, parts.flash, parts.hunted, parts.guard, parts.shield, parts.killer, ...parts.chevrons]) s.anchor.set(0.5);
     parts.flash.blendMode = 'add';
-    root.addChild(parts.ring, parts.killer, parts.legs, parts.legsTeam, parts.gun, parts.mag, parts.action, parts.base, parts.team, parts.armor, parts.flash, parts.hunted, parts.guard, parts.shield, ...parts.chevrons);
+    root.addChild(parts.ring, parts.killer, parts.legs, parts.legsTeam, parts.mag, parts.gun, parts.action, parts.base, parts.team, parts.armor, parts.flash, parts.hunted, parts.guard, parts.shield, ...parts.chevrons);
     (root as Container & { parts: Omit<BodyView, 'root'> }).parts = parts;
     return root;
   }
@@ -299,7 +299,7 @@ export async function createWorld(canvas: HTMLCanvasElement, knobs: () => Knobs)
   function drawRemains(scene: Scene) {
     for (const r of scene.remains) {
       mark(remainsPool.next(), tex.disc, r.gun.x + 3, r.gun.y + 4, R * 1.3, 0x141820, 0.25 * r.alpha);
-      for (const frame of [GUN_FRAMES.body, GUN_FRAMES.mag, GUN_FRAMES.action]) {
+      for (const frame of [GUN_FRAMES.mag, GUN_FRAMES.body, GUN_FRAMES.action]) {
         const g = remainsPool.next();
         place(g, `gun.${r.gun.gun}`, 'base', 0, frame, r.gun.x, r.gun.y, r.gun.angle);
         g.alpha = r.alpha;

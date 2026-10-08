@@ -9,7 +9,9 @@ import sharp, { type OverlayOptions } from 'sharp';
 
 type Box = { x: number; y: number; w: number; h: number };
 type Entry = { box: Box; dirs: number; frames: number; layers: string[]; still?: string[]; scale?: number };
-type Spec = { pxPerUnit: number; playerRadius: number; teamColors: Record<string, string>; sprites: Record<string, Entry> };
+type Part = { x: number; y: number; w: number; h: number; role: string };
+type Gun = { base: string; stage: number; hands: number; parts: Part[] };
+type Spec = { pxPerUnit: number; playerRadius: number; teamColors: Record<string, string>; sprites: Record<string, Entry>; guns: Record<string, Gun> };
 type Img = { w: number; h: number; d: Float32Array };
 
 const [specPath, firstBake, outDir, only, variantArg] = process.argv.slice(2);
@@ -118,7 +120,13 @@ async function soldierAt(c: Img, x: number, y: number, angle: number, team: stri
   await draw(c, 'soldier', 'team', d, f, x, y, { tint, zoom, rot });
   if (armor) await draw(c, 'soldier', armor, d, f, x, y, { zoom, rot });
   const back = spec.playerRadius * 0.22 * (pose.kick ?? 0) * S * zoom;
-  await draw(c, `gun.${gun}`, 'base', 0, 0, x - Math.cos(angle) * back, y - Math.sin(angle) * back, { rot: angle, zoom });
+  await gunAt(c, gun, x - Math.cos(angle) * back, y - Math.sin(angle) * back, { rot: angle, zoom });
+}
+
+/** Gun frames in the painter's stacking order: the magazine under the gun, whose receiver covers its top, then the pump or bolt over it. */
+const GUN_STACK = [1, 0, 2];
+async function gunAt(c: Img, gun: string, x: number, y: number, o: DrawOpts = {}) {
+  for (const f of GUN_STACK) await draw(c, `gun.${gun}`, 'base', 0, f, x, y, o);
 }
 
 /** Lays sprites left to right at a zoom, wrapping rows, each placed by its box so frames never overlap. */
@@ -156,11 +164,11 @@ async function characters() {
   for (const [i, name, f, team] of [[0, 'soldier.downed', 0, 'yellow'], [1, 'soldier.die', 5, 'red'], [2, 'soldier.die', 11, 'blue'], [3, 'soldier.die', 17, 'green']] as const) {
     for (const layer of ['base', 'team']) await draw(c, name, layer, 0, f, 150 + i * 260, 1345, { zoom: 2, rot: -0.5 + i * 0.6, tint: layer === 'team' ? hex(spec.teamColors[team]!) : undefined });
   }
-  labels.push([10, 1475, 'dropped guns at x2, by class']);
-  const drops = Object.keys(spec.sprites).filter((n) => n.startsWith('drop.'));
-  for (let i = 0; i < drops.length; i++) {
-    await draw(c, drops[i]!, 'base', 0, 0, 80 + i * 230, 1530, { zoom: 2, rot: -0.15 + i * 0.06 });
-    labels.push([40 + i * 230, 1585, drops[i]!.slice(5)]);
+  labels.push([10, 1475, 'dropped guns at x2, by class: the held gun.<class> frames turned to where they fell']);
+  const classes = Object.keys(spec.guns).filter((id) => spec.guns[id]!.base === id);
+  for (let i = 0; i < classes.length; i++) {
+    await gunAt(c, classes[i]!, 60 + i * 235, 1530, { zoom: 2, rot: -0.15 + i * 0.06 });
+    labels.push([40 + i * 235, 1585, classes[i]!]);
   }
   labels.push([10, 1690, 'zombies at game scale x1 (walker, brute, runner, plated, bloater, colossus), 4 of 16 facings']);
   const place = flow(c, 1, 1710);
@@ -175,19 +183,55 @@ async function characters() {
   ], 'sheet-characters.png');
 }
 
+/** Where the soldier's hands hold every gun (GRIP in art/blender/sprites/soldier.py), x along the barrel and y south. */
+const HANDS = [[12.5, 6], [21.5, -1.5]] as const;
+
+/** Every gun stacked at x3 with its muzzle (red) and the hand points (green), the classes' frames apart, then every gun at game scale. */
 async function guns() {
-  const names = Object.keys(spec.sprites).filter((n) => n.startsWith('gun.'));
-  const c = canvas(1500, 60 + Math.ceil(names.length / 6) * 70);
-  const labels: [number, number, string][] = [[10, 18, 'guns at 2x game scale; the red tick is the muzzle the game uses']];
-  for (let i = 0; i < names.length; i++) {
-    const x = 30 + (i % 6) * 245, y = 70 + Math.floor(i / 6) * 70;
-    await draw(c, names[i]!, 'base', 0, 0, x, y, { zoom: 2 });
-    const parts = (JSON.parse(readFileSync(specPath!, 'utf8')) as { guns: Record<string, { parts: { x: number; w: number }[] }> }).guns[names[i]!.slice(4)]!.parts;
-    const mx = Math.round(x + Math.max(...parts.map((p) => p.x + p.w)) * spec.playerRadius * S * 2);
-    for (let yy = y - 22; yy < y - 14; yy++) { const j = (yy * c.w + mx) * 4; c.d[j] = 1; c.d[j + 1] = 0; c.d[j + 2] = 0; }
-    labels.push([x - 20, y + 30, names[i]!.slice(4)]);
+  const ids = Object.keys(spec.guns);
+  const zoom = 3, k = S * zoom, width = 1800, gap = 26;
+  const spots: [string, number, number][] = [];
+  let x = 20, y = 170, rowH = 0;
+  for (const id of ids) {
+    const b = spec.sprites[`gun.${id}`]!.box;
+    if (x + b.w * k > width - 20) { x = 20; y += rowH + gap; rowH = 0; }
+    spots.push([id, x - b.x * k, y - b.y * k]);
+    x += b.w * k + 14;
+    rowH = Math.max(rowH, b.h * k);
   }
-  await save(c, labels, [], 'sheet-guns.png');
+  const apartTop = y + rowH + 50;
+  const classes = ids.filter((id) => spec.guns[id]!.base === id);
+  const apartRow = Math.max(...classes.map((id) => spec.sprites[`gun.${id}`]!.box.h)) * k + gap;
+  const gameTop = apartTop + classes.length * apartRow + 30;
+  const c = canvas(width, Math.ceil(gameTop + 5 * 64 + 40));
+  const labels: [number, number, string][] = [[10, 18, 'every gun at x3 game scale, frames stacked (mag under, pump or bolt over); red tick: muzzle, green: the hand points. Reference guns top right.']];
+  const mark = (px: number, py: number, rgb: [number, number, number], half: number) => {
+    for (let d = -half; d <= half; d++) for (const [xx, yy] of [[px + d, py], [px, py + d]] as const) {
+      const xi = Math.round(xx), yi = Math.round(yy);
+      if (xi < 0 || yi < 0 || xi >= c.w || yi >= c.h) continue;
+      const j = (yi * c.w + xi) * 4;
+      c.d[j] = rgb[0]; c.d[j + 1] = rgb[1]; c.d[j + 2] = rgb[2];
+    }
+  };
+  for (const [id, ox, oy] of spots) {
+    const g = spec.guns[id]!, b = spec.sprites[`gun.${id}`]!.box;
+    await gunAt(c, id, ox, oy, { zoom });
+    const muzzle = Math.max(...g.parts.map((p) => p.x + p.w)) * spec.playerRadius;
+    for (let d = 0; d < 8; d++) mark(ox + muzzle * k, oy + b.y * k - 2 - d, [1, 0, 0], 0);
+    if (g.hands !== 2) for (const [hx, hy] of HANDS) mark(ox + hx * k, oy + hy * k, [0, 0.9, 0.2], 3);
+    labels.push([ox + b.x * k, oy + (b.y + b.h) * k + 14, `${id}${g.stage ? ` (stage ${g.stage})` : ''}`]);
+  }
+  labels.push([10, apartTop - 16, 'class guns at x3, frames apart: 0 the gun, 1 the magazine or ammo box, 2 the pump or bolt']);
+  for (const [i, id] of classes.entries()) {
+    const b = spec.sprites[`gun.${id}`]!.box;
+    for (let f = 0; f < 3; f++) await draw(c, `gun.${id}`, 'base', 0, f, 20 + f * 600 - b.x * k, apartTop + i * apartRow - b.y * k, { zoom });
+  }
+  labels.push([10, gameTop - 10, 'every gun at game scale (2 px per unit), the size players see']);
+  for (const [i, id] of ids.entries()) await gunAt(c, id, 30 + (i % 9) * 195, gameTop + 30 + Math.floor(i / 9) * 64);
+  await save(c, labels, [
+    { left: 850, top: 295, width: 345, height: 120, zoom: 1, src: 'docs/art/gold/loadout.webp' },
+    { left: 990, top: 510, width: 140, height: 105, zoom: 1, src: 'docs/art/gold/loadout.webp' },
+  ], 'sheet-guns.png');
 }
 
 async function props() {
