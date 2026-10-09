@@ -35,7 +35,13 @@ test('look-ahead reach scales with the view and the gun: a scope leans further t
   const assault = lookReach(R, 'assault');
   assert.ok(assault >= 0.1 * R && assault <= 0.3 * halfH, `assault reach ${assault} sits in 10% of the width .. 30% of the height`);
   assert.ok(lookReach(R, 'sniper') > assault && lookReach(R, 'smg') < assault && lookReach(R, 'shotgun') < assault);
-  assert.ok(lookReach(R * 1.35, 'sniper') > lookReach(R, 'sniper'), 'a wider view leans further');
+  assert.ok(R * 1.35 + lookReach(R * 1.35, 'sniper') > R + lookReach(R, 'sniper'), 'a wider view sees further down the aim');
+  assert.ok(lookReach(R * 1.35, 'smg') > lookReach(R, 'smg'), 'and a class share leans further with it');
+  for (const id of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
+    const reach = lookReach(R, id);
+    assert.ok(reach <= LOOK_AHEAD.maxShare * R + 1e-9, `${id} never leans past ${LOOK_AHEAD.maxShare} of the view`);
+    assert.ok(R + reach >= Math.min(GUNS[id].range, R * (1 + LOOK_AHEAD.maxShare)) - 1e-9, `${id}'s full lean shows its range down the aim`);
+  }
   for (const id of Object.keys(GUNS) as (keyof typeof GUNS)[]) assert.ok(lookReach(R, id) > 0, id);
 });
 

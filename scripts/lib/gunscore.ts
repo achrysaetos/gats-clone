@@ -3,6 +3,7 @@ import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, falloffMul, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
 import { createWorld } from '../../src/shared/sim/world.ts';
+import { lookReach } from '../../src/shared/lookahead.ts';
 
 export const DPS_RANGES = [150, 400, 700, 1000] as const;
 
@@ -98,13 +99,15 @@ export function dominatedPairs(stage: 0 | 1 | 2): Pair[] {
   return ids.flatMap((a) => ids.filter((b) => a !== b && dominates(scores.get(a)!, scores.get(b)!)).map((b) => [a, b] as const));
 }
 
+/** Guns whose range passes what their owner sees down the aim: the view radius plus the full aim look-ahead (lookahead.ts), with no perks. */
 export function rangeBeyondView(): { id: GunId; range: number; view: number }[] {
   const w = createWorld('FFA', 1, 'plaza');
   return GUN_IDS.flatMap((id) => {
     const p = addPlayer(w, id, { weapon: GUNS[id].base, armor: 'none', color: 'red' });
     p.gun = id;
     const s = effectiveStats(p);
-    return s.range > s.viewRadius ? [{ id, range: s.range, view: s.viewRadius }] : [];
+    const view = s.viewRadius + lookReach(s.viewRadius, id);
+    return s.range > view + 1e-6 ? [{ id, range: s.range, view }] : [];
   });
 }
 

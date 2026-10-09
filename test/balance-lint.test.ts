@@ -15,7 +15,7 @@ test('no gun beats another of its stage on every axis, beyond the known pairs, a
   assert.deepEqual(known.filter((k) => !found.includes(k)), [], 'fixed: remove from KNOWN_DOMINATED');
 });
 
-test('no gun outranges its owner\'s horizontal view, beyond the known guns, and every known gun still does', () => {
+test('no gun outranges what its owner sees down the aim (view plus look-ahead), beyond the known guns, and every known gun still does', () => {
   const found = rangeBeyondView().map((o) => o.id);
   assert.deepEqual(found.filter((id) => !KNOWN_BEYOND_VIEW.includes(id)), [], 'newly beyond view');
   assert.deepEqual(KNOWN_BEYOND_VIEW.filter((id) => !found.includes(id)), [], 'fixed: remove from KNOWN_BEYOND_VIEW');

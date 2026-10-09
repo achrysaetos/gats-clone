@@ -195,12 +195,12 @@ test('Bloodlust: heal 15% of the damage you deal', () => {
   assert.equal(hpOf(p), effectiveStats(p).maxHp, 'never past full health');
 });
 
-test('Recon: +15% view radius, and you see enemies reload', () => {
+test('Recon: +8% view radius, and you see enemies reload', () => {
   const w = emptyWorld();
   const spotter = holding(w, 'recon', 500, 500);
   const plain = spawnAt(w, 600, 900);
   const foe = spawnAt(w, 700, 500);
-  assert.ok(Math.abs(effectiveStats(spotter).viewRadius - WORLD.viewRadius * 1.15) < 1e-9);
+  assert.ok(Math.abs(effectiveStats(spotter).viewRadius - WORLD.viewRadius * 1.08) < 1e-9);
   if (foe.life.k === 'alive') { foe.life.ammo = 1; }
   press(w, foe, { reload: true });
   step(w, TICK_MS);

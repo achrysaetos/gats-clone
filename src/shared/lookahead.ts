@@ -11,6 +11,11 @@ import { GUNS, type GunId, type WeaponId } from './defs.ts';
 export const LOOK_AHEAD = {
   /** The reach as a share of the view radius (the view's half width), by gun class: a scope wants to see far, a close gun the room around it. */
   share: { pistol: 0.13, smg: 0.11, shotgun: 0.1, assault: 0.14, sniper: 0.19, lmg: 0.14 } satisfies Record<WeaponId, number>,
+  /**
+   * A gun that reaches past the view's edge leans further, far enough that its full lean shows its whole range down the aim (so nobody
+   * shoots what they cannot see), but never past this share of the view radius.
+   */
+  maxShare: 0.35,
   /** How sharply the lean grows with the cursor's distance from the middle: past 1 a cursor near the middle barely moves the view. */
   ease: 1.2,
   /** The cursor reaches the full lean at this share of the screen's shorter half. */
@@ -22,8 +27,9 @@ export const LOOK_AHEAD = {
   snapPx: 600,
 } as const;
 
-/** The full lean in world px for a gun and the view radius it sees by. */
-export const lookReach = (viewRadius: number, gun: GunId): number => viewRadius * LOOK_AHEAD.share[GUNS[gun].base];
+/** The full lean in world px for a gun and the view radius it sees by: its class's share, or enough to show its range, up to `maxShare`. */
+export const lookReach = (viewRadius: number, gun: GunId): number =>
+  Math.max(0, Math.min(viewRadius * LOOK_AHEAD.maxShare, Math.max(viewRadius * LOOK_AHEAD.share[GUNS[gun].base], GUNS[gun].range - viewRadius)));
 
 /** Extra world px past each edge of the view: left, right, up (smaller y), down. */
 export type LookSides = { l: number; r: number; u: number; d: number };

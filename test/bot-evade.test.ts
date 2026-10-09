@@ -107,7 +107,8 @@ test('a bot in a planted sniper\'s sights strafes across his line, back and fort
     // Over a few seeds: one where an aggressive bot spends a while closing in on him (diagonally, so partly along his line) is no failure.
     let across = 0, along = 0;
     for (const seed of [4, 5, 6]) {
-      const ts = faceOff({ weapon: 'assault', foe: 'sniper', persona, range: 450, seed, ticks: 240 }).slice(30);
+      // 390 px: inside the 16:9 view's half height (439 px), so strafing across his line never takes him off the top of the bot's view.
+      const ts = faceOff({ weapon: 'assault', foe: 'sniper', persona, range: 390, seed, ticks: 240 }).slice(30);
       const steps = split(ts);
       across += steps.reduce((s, x) => s + Math.abs(x.across), 0);
       along += steps.reduce((s, x) => s + Math.abs(x.along), 0);

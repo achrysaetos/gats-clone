@@ -60,11 +60,12 @@ test('the camera shows the view radius across and only the height the screen sha
     const corner = screenToWorld(cam, { x: w, y: h });
     return { screen: [Math.round(corner.x), Math.round(corner.y)], world: [Math.round(cam.viewHalfW), Math.round(cam.viewHalfH)] };
   };
-  assert.deepEqual(shown(1280, 800), { screen: [R, 563], world: [R, 563] }, '16:10 fills the screen with no bars at the original zoom');
-  assert.deepEqual(shown(1920, 1080), { screen: [R, 506], world: [R, 506] }, '16:9 fills the screen with no bars');
-  assert.deepEqual(shown(852, 393), { screen: [R, 415], world: [R, 415] }, 'an iPhone 15 Pro in landscape (2.17:1) fits the allowed shape exactly, no crop');
-  assert.deepEqual(shown(3440, 1080), { screen: [R, 283], world: [R, 375] }, 'a super-ultrawide fills the screen and crops the height instead of barring the sides');
-  assert.deepEqual(shown(800, 1280), { screen: [563, R], world: [R, R] }, 'portrait fills the screen and crops the width instead of barring top and bottom');
+  const r = Math.round;
+  assert.deepEqual(shown(1280, 800), { screen: [R, r(R / 1.6)], world: [R, r(R / 1.6)] }, '16:10 fills the screen with no bars');
+  assert.deepEqual(shown(1920, 1080), { screen: [R, r((R * 9) / 16)], world: [R, r((R * 9) / 16)] }, '16:9 fills the screen with no bars');
+  assert.deepEqual(shown(852, 393), { screen: [R, r((R * 393) / 852)], world: [R, r((R * 393) / 852)] }, 'an iPhone 15 Pro in landscape (2.17:1) fits the allowed shape exactly, no crop');
+  assert.deepEqual(shown(3440, 1080), { screen: [R, r((R * 1080) / 3440)], world: [R, r(R / 2.4)] }, 'a super-ultrawide fills the screen and crops the height instead of barring the sides');
+  assert.deepEqual(shown(800, 1280), { screen: [r((R * 800) / 1280), R], world: [R, R] }, 'portrait fills the screen and crops the width instead of barring top and bottom');
   for (const [w, h] of [[852, 393], [393, 852], [667, 375], [1024, 768], [2560, 1080], [3440, 1080], [600, 600]] as const) {
     const cam = makeCamera({ x: 0, y: 0 }, w, h, R);
     const tl = screenToWorld(cam, { x: 0, y: 0 }), br = screenToWorld(cam, { x: w, y: h });

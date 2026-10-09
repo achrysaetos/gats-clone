@@ -148,14 +148,14 @@ test('a minigun spins up: its first shots come slowly and the held rate climbs t
   assert.ok(gaps(light.w, light.p, 10)[0]! * TICK_MS < GUNS.lightMg.fireMs + TICK_MS, 'a light MG does not spin up');
 });
 
-test('a sniper sees 35% further, its Optics stack on top, and the server sends what that view holds', () => {
+test('a sniper sees 28% further, and the server sends what that view holds', () => {
   const w = emptyWorld();
   const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
   const pistol = spawnAt(w, 1000, 1400);
-  const target = spawnAt(w, 2100, 1200);
-  assert.equal(snapshotFor(w, sniper.id).self.viewRadius, WORLD.viewRadius * 1.35);
+  const target = spawnAt(w, 1950, 1200);
+  assert.ok(Math.abs(snapshotFor(w, sniper.id).self.viewRadius - WORLD.viewRadius * 1.28) < 1e-9);
   assert.equal(snapshotFor(w, pistol.id).self.viewRadius, WORLD.viewRadius);
-  assert.ok(snapshotFor(w, sniper.id).players.some((q) => q.id === target.id), 'the sniper sees 1100px out');
+  assert.ok(snapshotFor(w, sniper.id).players.some((q) => q.id === target.id), 'the sniper sees 950px out');
   assert.ok(!snapshotFor(w, pistol.id).players.some((q) => q.id === target.id), 'the pistol does not');
 });
 

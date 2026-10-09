@@ -13,6 +13,7 @@ import {
   parseClientMsg, type BulletView, type GameEvent, type InputState, type Loadout, type PlayerView, type ServerMsg,
   type Snapshot, type ThrownView, type WallView, type ZoneView,
 } from '../src/shared/protocol.ts';
+import { viewMulFor } from '../src/shared/sim/stats.ts';
 
 const PORT = Number(process.argv[2] ?? 8787);
 const ROOT = join(import.meta.dirname, '..', 'public');
@@ -234,7 +235,7 @@ function serve(ws: WebSocket, mode: ModeId) {
       self: {
         id: myId, ammo: me.ammo, mag: weapon.mag, speed: WORLD.baseSpeed * weapon.moveMul, reloading: me.reloadUntil > 0, reloadFrac: 0, perks: { ...perks }, pending,
         ability, abilityReadyIn: Math.max(0, me.abilityAt - now), alive: me.alive, dash: null, respawnIn: me.alive ? 0 : Math.max(0, me.respawnAt - now),
-        kills: me.kills, deaths: me.deaths, viewRadius: perks[1] === 'optics' ? 1100 : WORLD.viewRadius, suppression: 0, streak: me.kills, nemesis: null,
+        kills: me.kills, deaths: me.deaths, viewRadius: WORLD.viewRadius * viewMulFor(gun, perks), suppression: 0, streak: me.kills, nemesis: null,
       },
       players,
       bullets: bullets.map(({ life, ...b }) => b),

@@ -3,6 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GUNS, type WeaponId } from '../../../../src/shared/defs.ts';
+import { viewMulFor } from '../../../../src/shared/sim/stats.ts';
 import { joinFromMenu, key, openPage, respawnIfDead, sleep, type Page } from './lib/browser.ts';
 
 const RUN = process.argv[2];
@@ -138,7 +139,8 @@ const zoomOf = async (weapon: WeaponId): Promise<{ page: Browser; pxPerUnit: num
 };
 const looks = [await zoomOf('pistol'), await zoomOf('sniper')];
 const zoom = looks[0]!.pxPerUnit / looks[1]!.pxPerUnit;
-check(Math.abs(zoom - 1.35) < 0.01, `a sniper's camera takes in 1.35x the pistol's view (${zoom.toFixed(3)}x)`);
+const want = viewMulFor('sniper', {});
+check(Math.abs(zoom - want) < 0.01, `a sniper's camera takes in ${want.toFixed(2)}x the pistol's view (${zoom.toFixed(3)}x)`);
 
 const exceptions = [...rifle.exceptions, ...mini.exceptions, ...looks.flatMap((l) => l.page.exceptions)];
 for (const e of exceptions) log(`page exception: ${e}`);

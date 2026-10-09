@@ -31,7 +31,7 @@ function mechanics(id: GunId): Set<string> {
   if (r.movingSpreadMul <= 1 && r.movingSpreadAdd === 0) m.add('movesFree');
   if (r.movingSpreadMul >= 1.5 || r.movingSpreadAdd > 0.04) m.add('movesLoose');
   if (r.steadyMs > 0) m.add('plants');
-  if (r.viewMul > 1.05) m.add('scope');
+  if (r.viewMul > 1.03) m.add('scope');
   if (r.shoveMul >= 2) m.add('shove');
   if (r.breach) m.add('breach');
   if (r.suppress >= 0.1 && r.suppress < 0.3) m.add('pins');
@@ -41,7 +41,7 @@ function mechanics(id: GunId): Set<string> {
   if (g.moveMul <= 0.82) m.add('slow');
   if (r.sprintMul < 0.5) m.add('noSprint');
   if (g.mag >= 45) m.add('deepMag');
-  if (r.viewMul >= 1.6) m.add('farScope');
+  if (r.viewMul >= 1.35) m.add('farScope');
   if (g.bulletSpeed <= 1500 && g.range >= 900) m.add('slowRound');
   if (g.damage >= 30 && g.pellets === 1) m.add('heavyRound');
   if (g.mag <= 2) m.add('twoShells');

@@ -50,7 +50,7 @@ export type GunDef = {
  * How a class handles beyond its numbers. `movingSpreadMul` scales spread while walking. Under `bloom` each shot of a spray
  * after the first `free` widens spread by `perShot` of itself, up to `maxMul`, and letting go of the trigger takes it back to
  * nothing within `recoverMs`. Under `spinUp` holding the trigger takes the shot interval from `startMul` times `fireMs` down to
- * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` stretches how far you see.
+ * `fireMs` over `upMs`, and letting go spins it back over `downMs`. `viewMul` is the gun's scope: one view bonus (`viewMul - 1`), combined with the others with diminishing returns (`VIEW`).
  */
 /**
  * Moving spread is `spread * movingSpreadMul + movingSpreadAdd`; the added part keeps a tight sniper cone from staying a sure hit on the run.
@@ -104,7 +104,7 @@ export const GUN_RULES: Record<WeaponId, GunRules> = {
   shotgun: { ...STEADY, minSpread: 0.016, suppress: 0.02, raiseMs: 1900, settle: { mul: 1.8, ms: 700 }, falloff: { startPx: 170, endPx: 400, minMul: 0.3 }, shoveMul: 1.5, breach: true, bloom: { free: 5, perShot: 0.05, maxMul: 1.3, settleMs: 300, recoverMs: 400, still: 0.5 } },
   // Anchor: laser-straight standing and tapping, drifting if sprayed or run with, slow to bring up.
   assault: { ...STEADY, movingSpreadMul: 1.7, steadyMs: 120, minSpread: 0.011, suppress: 0.08, raiseMs: 1950, bloom: { free: 3, perShot: 0.14, maxMul: 2.6, settleMs: 150, recoverMs: 190, still: 0.5 } },
-  sniper: { ...STEADY, movingSpreadAdd: 0.1, steadyMs: 450, plant: 'always', viewMul: 1.35, pinpoint: true, minSpread: 0.009, suppress: 0.3, muzzleBoost: 0.4, raiseMs: 2200, settle: { mul: 4, ms: 1500 }, bloom: { free: 1, perShot: 20, maxMul: 11, settleMs: 400, recoverMs: 3000, still: 0.5 } },
+  sniper: { ...STEADY, movingSpreadAdd: 0.1, steadyMs: 450, plant: 'always', viewMul: 1.28, pinpoint: true, minSpread: 0.009, suppress: 0.3, muzzleBoost: 0.4, raiseMs: 2200, settle: { mul: 4, ms: 1500 }, bloom: { free: 1, perShot: 20, maxMul: 11, settleMs: 400, recoverMs: 3000, still: 0.5 } },
   // Suppression: revs up, plants down for a tight lane, pins whoever it fires near, and is slow to run with or raise.
   lmg: { ...STEADY, movingSpreadMul: 2, steadyMs: 200, minSpread: 0.03, plant: 'atRange', suppress: 0.16, raiseMs: 2300, settle: { mul: 4, ms: 1600 }, sprintMul: 0.85, bloom: { free: 8, perShot: 0.05, maxMul: 1.8, settleMs: 200, recoverMs: 400, still: 0.5 }, spinUp: { startMul: 1.5, upMs: 350, downMs: 600 } },
 };
@@ -122,7 +122,7 @@ export const GUNS: Record<GunId, GunDef> = {
     rules: { movingSpreadMul: 0.8, raiseMs: 480, falloff: { startPx: 250, endPx: 450, minMul: 0.5 } },
     look: { length: 1.1, width: 1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   executioner: { name: 'Executioner', desc: 'Plant your feet: one round punches through two bodies', base: 'pistol', stage: 2, from: 'handCannon', damage: 93, fireMs: 520, pellets: 1, spread: 0.018, range: 950, bulletSpeed: 1250, mag: 5, reloadMs: 1500, moveMul: 0.92, auto: false, penetrate: 1, breakpoint: 2,
-    rules: { movingSpreadAdd: 0.05, steadyMs: 180, shoveMul: 2.5, viewMul: 1.1, raiseMs: 1700 },
+    rules: { movingSpreadAdd: 0.05, steadyMs: 180, shoveMul: 2.5, viewMul: 1.05, raiseMs: 1700 },
     look: { length: 1.45, width: 1.35, barrels: 1, accent: '#e5484d', bullet: { r: 3.2, color: '#b3261e' } } },
   gunslinger: { name: 'Gunslinger', desc: 'Fast-draw revolver: strong inside 350, light on its feet', base: 'pistol', stage: 2, from: 'handCannon', damage: 66, fireMs: 300, pellets: 1, spread: 0.04, range: 600, bulletSpeed: 960, mag: 6, reloadMs: 1100, moveMul: 1.1, auto: false, breakpoint: 2,
     rules: { movingSpreadMul: 0.8, raiseMs: 320, shoveMul: 1.4, falloff: { startPx: 320, endPx: 560, minMul: 0.55 } },
@@ -162,7 +162,7 @@ export const GUNS: Record<GunId, GunDef> = {
     rules: { falloff: { startPx: 150, endPx: 380, minMul: 0.3 }, shoveMul: 1.8 },
     look: { length: 0.95, width: 1.1, barrels: 2, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
   railSlug: { name: 'Rail Slug', desc: 'Hypersonic slug through two bodies, down any lane', base: 'shotgun', stage: 2, from: 'slugGun', damage: 75, fireMs: 540, pellets: 1, spread: 0.01, range: 950, bulletSpeed: 2400, mag: 5, reloadMs: 1900, moveMul: 0.88, auto: false, penetrate: 2, breakpoint: 2,
-    rules: { falloff: null, movingSpreadAdd: 0.03, steadyMs: 200, viewMul: 1.1 },
+    rules: { falloff: null, movingSpreadAdd: 0.03, steadyMs: 200, viewMul: 1.05 },
     look: { length: 1.5, width: 0.85, barrels: 1, accent: '#e5484d', bullet: { r: 2.6, color: '#ff3b30' } } },
   boomSlug: { name: 'Boom Slug', desc: 'Explodes on impact: flush cover, blow doors, splash two', base: 'shotgun', stage: 2, from: 'slugGun', damage: 55, fireMs: 540, pellets: 1, spread: 0.02, range: 700, bulletSpeed: 900, mag: 5, reloadMs: 1900, moveMul: 0.9, auto: false, blast: { radius: 90, damage: 45 }, breakpoint: 2,
     rules: { falloff: null, movingSpreadAdd: 0.02 },
@@ -176,37 +176,37 @@ export const GUNS: Record<GunId, GunDef> = {
 
   assault: { name: 'Assault', desc: 'Anchor: stand and tap threes for lasers; spray and it drifts', base: 'assault', stage: 0, from: null, damage: 17, fireMs: 110, pellets: 1, spread: 0.035, range: 800, bulletSpeed: 1050, mag: 30, reloadMs: 1500, moveMul: 0.91, auto: true, look: BASE_LOOK },
   battleRifle: { name: 'Battle Rifle', desc: 'Heavy three-round bursts at range; one clean burst drops the unarmored', base: 'assault', stage: 1, from: 'assault', damage: 34, fireMs: 680, pellets: 1, spread: 0.03, range: 900, bulletSpeed: 1100, mag: 24, reloadMs: 1700, moveMul: 0.88, auto: true, burst: { count: 3, gapMs: 70 },
-    rules: { movingSpreadMul: 1.8, viewMul: 1.1, raiseMs: 2100 },
+    rules: { movingSpreadMul: 1.8, viewMul: 1.05, raiseMs: 2100 },
     look: { length: 1.15, width: 1.1, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
   carbine: { name: 'Carbine', desc: 'Double-tap on the move: stays accurate while you strafe', base: 'assault', stage: 1, from: 'assault', damage: 21, fireMs: 280, pellets: 1, spread: 0.045, range: 760, bulletSpeed: 1050, mag: 30, reloadMs: 1200, moveMul: 1, auto: true, burst: { count: 2, gapMs: 55 },
     rules: { movingSpreadMul: 1, steadyMs: 0, raiseMs: 900 },
     look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   marksman: { name: 'Marksman', desc: 'Semi-auto three-taps: accurate shots from 500 to 900', base: 'assault', stage: 2, from: 'battleRifle', damage: 42, fireMs: 270, pellets: 1, spread: 0.02, range: 900, bulletSpeed: 1400, mag: 14, reloadMs: 1700, moveMul: 0.89, auto: false,
-    rules: { bloom: { free: 5, perShot: 0.08, maxMul: 1.6, settleMs: 300, recoverMs: 400, still: 0.5 }, movingSpreadMul: 1.4, steadyMs: 100, viewMul: 1.15 },
+    rules: { bloom: { free: 5, perShot: 0.08, maxMul: 1.6, settleMs: 300, recoverMs: 400, still: 0.5 }, movingSpreadMul: 1.4, steadyMs: 100, viewMul: 1.07 },
     look: { length: 1.4, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#b3261e' } } },
   grenadier: { name: 'Grenadier', desc: 'Bursts of exploding rounds: punish anyone behind a corner', base: 'assault', stage: 2, from: 'battleRifle', damage: 24, fireMs: 450, pellets: 1, spread: 0.05, range: 720, bulletSpeed: 900, mag: 18, reloadMs: 1800, moveMul: 0.86, auto: true, burst: { count: 3, gapMs: 70 }, blast: { radius: 55, damage: 14 },
     look: { length: 1.2, width: 1.35, barrels: 1, accent: '#f76b15', bullet: { r: 2.8, color: '#e0661a' } } },
   specter: { name: 'Specter', desc: 'Suppressed double-tap: silent on the minimap', base: 'assault', stage: 2, from: 'carbine', damage: 24, fireMs: 280, pellets: 1, spread: 0.045, range: 740, bulletSpeed: 1050, mag: 30, reloadMs: 1200, moveMul: 1.02, auto: true, burst: { count: 2, gapMs: 55 }, silenced: true,
     look: { length: 1.2, width: 0.9, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.5, color: '#5a2d85' } } },
   scout: { name: 'Scout', desc: 'Scoped carbine: sees farther, double-taps from 950', base: 'assault', stage: 2, from: 'carbine', damage: 24, fireMs: 300, pellets: 1, spread: 0.03, range: 950, bulletSpeed: 1160, mag: 25, reloadMs: 1300, moveMul: 1, auto: true, burst: { count: 2, gapMs: 55 },
-    rules: { viewMul: 1.3, steadyMs: 100, movingSpreadMul: 1.2 },
+    rules: { viewMul: 1.12, steadyMs: 100, movingSpreadMul: 1.2 },
     look: { length: 1.2, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.7, color: '#1f5560' } } },
 
   sniper: { name: 'Bolt-action', desc: 'Long-range pick: one shot drops the unarmored, two any armor; plant your feet', base: 'sniper', stage: 0, from: null, damage: 105, fireMs: 1750, pellets: 1, spread: 0.01, range: 1200, bulletSpeed: 1760, mag: 5, reloadMs: 2200, moveMul: 0.87, auto: false, breakpoint: 2, look: BASE_LOOK },
   longshot: { name: 'Longshot', desc: 'Heavier, farther: one shot drops light armor, with a bigger scope', base: 'sniper', stage: 1, from: 'sniper', damage: 115, fireMs: 1920, pellets: 1, spread: 0.008, range: 1300, bulletSpeed: 2560, mag: 5, reloadMs: 2100, moveMul: 0.844, auto: false, breakpoint: 2,
-    rules: { viewMul: 1.5, raiseMs: 2400, shoveMul: 2.5, sprintMul: 0.4 },
+    rules: { viewMul: 1.33, raiseMs: 2400, shoveMul: 2.5, sprintMul: 0.4 },
     look: { length: 1.2, width: 1.05, barrels: 1, accent: '#c8553d', bullet: { r: 2.2, color: '#7a2e1f' } } },
   semiAuto: { name: 'Semi-auto Rifle', desc: 'Two hits drop any armor, with quick follow-ups', base: 'sniper', stage: 1, from: 'sniper', damage: 68, fireMs: 390, pellets: 1, spread: 0.015, range: 1150, bulletSpeed: 2000, mag: 10, reloadMs: 1900, moveMul: 0.896, auto: false, breakpoint: 2,
     rules: { steadyMs: 250, raiseMs: 1100, bloom: { free: 2, perShot: 3, maxMul: 7, settleMs: 400, recoverMs: 1600, still: 0.5 } },
     look: { length: 1, width: 1.1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.8, color: '#1f5560' } } },
   piercer: { name: 'Piercer', desc: 'Rounds pass through three bodies and one-shot medium armor: punish a lane', base: 'sniper', stage: 2, from: 'longshot', damage: 125, fireMs: 1920, pellets: 1, spread: 0.006, range: 1400, bulletSpeed: 2880, mag: 5, reloadMs: 2200, moveMul: 0.818, auto: false, penetrate: 3, breakpoint: 2,
-    rules: { viewMul: 1.6, raiseMs: 2400 },
+    rules: { viewMul: 1.36, raiseMs: 2400 },
     look: { length: 1.45, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#ff3b30' } } },
   artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast: flush cover, blow doors', base: 'sniper', stage: 2, from: 'longshot', damage: 35, fireMs: 1700, pellets: 1, spread: 0.01, range: 1300, bulletSpeed: 1440, mag: 4, reloadMs: 2300, moveMul: 0.818, auto: false, blast: { radius: 130, damage: 80 }, breakpoint: 2,
     rules: { raiseMs: 2400 },
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#f76b15', bullet: { r: 4, color: '#e0661a' } } },
   repeater: { name: 'Repeater', desc: 'Fastest follow-ups: shoot while you jog', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 250, pellets: 1, spread: 0.018, range: 1100, bulletSpeed: 2080, mag: 14, reloadMs: 1800, moveMul: 0.935, auto: false,
-    rules: { steadyMs: 100, movingSpreadAdd: 0.03, raiseMs: 1100, viewMul: 1.25, bloom: { free: 2, perShot: 2, maxMul: 5, settleMs: 300, recoverMs: 1400, still: 0.5 } },
+    rules: { steadyMs: 100, movingSpreadAdd: 0.03, raiseMs: 1100, viewMul: 1.2, bloom: { free: 2, perShot: 2, maxMul: 5, settleMs: 300, recoverMs: 1400, still: 0.5 } },
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
   ghost: { name: 'Ghost', desc: 'Suppressed marksman rifle: plants in a heartbeat', base: 'sniper', stage: 2, from: 'semiAuto', damage: 68, fireMs: 390, pellets: 1, spread: 0.012, range: 1150, bulletSpeed: 2080, mag: 10, reloadMs: 1900, moveMul: 0.935, auto: false, silenced: true, breakpoint: 2,
     rules: { steadyMs: 150, raiseMs: 1500 },
@@ -301,7 +301,7 @@ export type PerkId = (typeof PERK_TIERS)[Tier][number];
 export type AbilityId = (typeof PERK_TIERS)[3][number];
 
 export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
-  optics: { name: 'Optics', desc: 'See further' },
+  optics: { name: 'Optics', desc: '+12% view radius (view bonuses stack with diminishing returns)' },
   thermal: { name: 'Thermal', desc: 'Reveal hidden enemies' },
   ghillie: { name: 'Ghillie suit', desc: 'Nearly invisible while still' },
   piercing: { name: 'AP rounds', desc: 'Bullets ignore armor' },
@@ -320,7 +320,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   secondWind: { name: 'Second wind', desc: 'Once a life, dropping under 25% health gives 2s of +30% speed and half damage taken' },
   adrenaline: { name: 'Adrenaline', desc: 'A kill grants +20% move speed for 3s' },
   bloodlust: { name: 'Bloodlust', desc: 'Heal 15% of the damage you deal to players' },
-  recon: { name: 'Recon', desc: '+15% view radius, and enemies in view show a mark while they reload' },
+  recon: { name: 'Recon', desc: '+8% view radius (view bonuses stack with diminishing returns), and enemies in view show a mark while they reload' },
   ninja: { name: 'Ninja', desc: 'Firing shows you on the minimap for 1s, not 2s, and your sprint makes no noise' },
   overclock: { name: 'Overclock', desc: 'Ability cooldown 30% shorter' },
   demolitions: { name: 'Demolitions', desc: 'Your blasts hit 30% harder and 30% wider; you take 30% less blast damage' },
@@ -601,6 +601,16 @@ export const PROP_FX = {
   paint: { radius: 90, picassoPx: 80 },
 } as const;
 
+/**
+ * How view bonuses (a gun's scope, `GunRules.viewMul`, and the Optics and Recon perks) combine: each bonus `b` closes `b / cap` of the
+ * gap still left to the class's `cap`, so the view radius is `WORLD.viewRadius * (1 + cap * (1 - Π(1 - b / cap)))` (`viewMulFor` in
+ * sim/stats.ts). The first bonus gives all of its value, each further one less, and nothing ever passes `1 + cap`: a sniper with every
+ * bonus sees under 1.45 times the base view, any other class under 1.18 times. Every bonus is kept below its class's cap.
+ */
+export const VIEW = {
+  cap: { pistol: 0.18, smg: 0.18, shotgun: 0.18, assault: 0.18, sniper: 0.45, lmg: 0.18 } satisfies Record<WeaponId, number>,
+} as const;
+
 export const MODE_IDS = ['FFA', 'TDM', 'DOM', 'ZOM', 'BR', 'RNG'] as const;
 export type ModeId = (typeof MODE_IDS)[number];
 
@@ -611,7 +621,8 @@ export const WORLD = {
   regenDelayMs: 4000,
   regenPerSec: 5,
   tickHz: 30,
-  viewRadius: 900,
+  /** Half the width of the world a player sees with no view bonus (see `VIEW` for the bonuses). */
+  viewRadius: 780,
   crateHp: 40,
   crateScore: 10,
   killScore: 100,

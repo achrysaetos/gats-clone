@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
@@ -12,7 +12,7 @@ type PerkMods = {
 };
 
 const PERK_MODS: Record<PerkId, PerkMods> = {
-  optics: { viewMul: 1.3 },
+  optics: { viewMul: 1.12 },
   thermal: { thermal: true },
   ghillie: { ghillie: true },
   piercing: { piercing: true },
@@ -29,7 +29,7 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   marathon: { sprintMul: 1.15, settleMul: 0.5 },
   steadyHands: { bloomBuildMul: 0.6, bloomRecoverMul: 1.6, settleMul: 0.75 },
   secondWind: {}, adrenaline: {}, bloodlust: {}, ninja: {}, demolitions: {}, tracker: {}, brace: {},
-  recon: { viewMul: 1.15 },
+  recon: { viewMul: 1.08 },
   overclock: { cooldownMul: 0.7 },
   fastHands: { reloadMul: 0.75 },
   grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {}, flashbang: {}, smokeGrenade: {},
@@ -129,6 +129,22 @@ export const MAX_RANGE_MUL = Math.max(...Object.values(PERK_MODS).map((m) => m.r
 export const rangeFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number =>
   Object.values(perks).reduce((range, perk) => range * (PERK_MODS[perk].rangeMul ?? 1), GUNS[gun].range);
 
+/** Every view bonus `gun` and `perks` give, as fractions (0.12 is +12%): the gun's scope first, then each perk's. */
+export const viewBonuses = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number[] =>
+  [rulesOf(GUNS[gun]).viewMul - 1, ...Object.values(perks).map((perk) => (PERK_MODS[perk].viewMul ?? 1) - 1)].filter((b) => b > 0);
+
+/**
+ * How far `bonuses` stretch the view of a `cap` class, with diminishing returns (see `VIEW`): each closes its share of the gap left to
+ * `1 + cap`, so the order makes no difference, one bonus alone gives its whole value, and the total never reaches `1 + cap`.
+ */
+export function stackView(bonuses: readonly number[], cap: number): number {
+  const left = bonuses.reduce((gap, b) => gap * (1 - Math.min(Math.max(b, 0), cap) / cap), 1);
+  return 1 + cap * (1 - left);
+}
+
+/** The view radius multiplier `gun` and `perks` give: everything that stretches the view, combined with diminishing returns up to the class cap. */
+export const viewMulFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): number => stackView(viewBonuses(gun, perks), VIEW.cap[GUNS[gun].base]);
+
 export const silencedFor = (gun: GunId, perks: Partial<Record<Tier, PerkId>>): boolean =>
   (GUNS[gun].silenced ?? false) || Object.values(perks).some((perk) => PERK_MODS[perk].silenced ?? false);
 
@@ -160,7 +176,7 @@ export function effectiveStats(p: Player): Stats {
     reloadMs: reloadMsFor(p.gun, p.perks),
     regenPerSec: WORLD.regenPerSec,
     regenDelayMs: WORLD.regenDelayMs,
-    viewRadius: WORLD.viewRadius * rulesOf(weapon).viewMul,
+    viewRadius: WORLD.viewRadius * viewMulFor(p.gun, p.perks),
     piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
   let sprintMul = 1 + (SPRINT.speedMul - 1) * rulesOf(weapon).sprintMul;
@@ -173,7 +189,6 @@ export function effectiveStats(p: Player): Stats {
     s.maxHp += m.maxHpAdd ?? 0;
     s.regenPerSec *= m.regenMul ?? 1;
     s.regenDelayMs *= m.regenDelayMul ?? 1;
-    s.viewRadius *= m.viewMul ?? 1;
     s.piercing ||= m.piercing ?? false;
     s.shield ||= m.shield ?? false;
     s.thermal ||= m.thermal ?? false;
