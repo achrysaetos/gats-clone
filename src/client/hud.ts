@@ -939,13 +939,12 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.fillRect(x + wall.x * k, y + wall.y * k, Math.max(1.5, wall.w * k), Math.max(1.5, wall.h * k));
   }
   for (const z of snap.zones) {
-    ctx.beginPath();
     const zr = Math.max(4, z.r * k), zx = x + z.x * k, zy = y + z.y * k;
+    ctx.beginPath();
     ctx.arc(zx, zy, zr, 0, TAU);
     ctx.fillStyle = z.owner ? TEAM_COLORS[z.owner] : PALETTE.neutral;
     ctx.globalAlpha = base * 0.45;
     ctx.fill();
-    ctx.globalAlpha = base;
     // The capture as a wedge in the taker's colour, and a flashing two-colour ring while both teams stand on it.
     if (z.capturing && z.progress > 0.01) {
       ctx.beginPath();
@@ -964,6 +963,7 @@ function drawMinimap(hud: Hud, size: number) {
       ctx.arc(zx, zy, zr + 1.5, 0, TAU);
       ctx.stroke();
     }
+    ctx.globalAlpha = base;
   }
   for (const m of snap.minimap) {
     if (m.pingAge !== null) continue;
@@ -2066,7 +2066,6 @@ function drawTimerToken(hud: Hud, y: number, ms: number, live: boolean, fade = t
   return y + ph;
 }
 
-/** TDM and DOM: each team's score at its end of a tug-of-war bar that fills toward the win line, with the clock tag under it and, in DOM, a pin for each zone. */
 /**
  * One DOM point on the objective strip: an enamel pin in its owner's colour that the taker's colour fills like a clock as the
  * capture runs, a thin flag beside it at the height the world flag flies, pips for the soldiers taking it (faster with more),
@@ -2195,6 +2194,7 @@ function drawZoneArrows({ ctx, w, h, snap, now, cam, selfAt, me }: Hud) {
   });
 }
 
+/** TDM and DOM: each team's score at its end of a tug-of-war bar that fills toward the win line, with the clock tag under it and, in DOM, a pin for each zone. */
 function drawTeamBanner(hud: Hud, y: number, compact: boolean, left: number | null): number {
   const { ctx, w, snap, me, now } = hud;
   const dom = snap.match.mode === 'DOM';
