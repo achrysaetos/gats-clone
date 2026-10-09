@@ -75,3 +75,91 @@ test('a swing leaf all but shut is pushed round away from whoever pushes it, not
   assert.equal(d.open, 255);
   assert.ok(p.y > 560, `got through (${p.y.toFixed(0)})`);
 });
+
+/** geo-test's room-3 held wide open into the hall's corridor: its leaf then stands from the hinge (3600, 525) up to y 375, across the corridor's south half. */
+function leafAcrossCorridor() {
+  const w = geoWorld();
+  const s = w.doors.find((d) => d.id === 'room-3')!;
+  s.sign = -1; s.target = 255; s.closeAt = Infinity;
+  run(w, 1500);
+  assert.equal(s.open, 255, 'the leaf stands wide open');
+  const leaf = () => w.walls.filter((l) => l.door === 'room-3');
+  return { w, s, leaf };
+}
+
+test('a bot whose way runs along a wall through an open swing leaf goes round the leaf, not into it', () => {
+  const { w, s, leaf } = leafAcrossCorridor();
+  const r = () => rand(w);
+  const goal = { x: 3850, y: 465 };
+  const bot = spawnAt(w, 3350, 465, { kind: 'bot', name: 'walker' });
+  assert.ok(leaf().some((l) => l.x < 3610 && l.x + l.w > 3590 && l.y < 465 && l.y + l.h > 465), 'the leaf stands across the line from the bot to its goal');
+  const bots = new Map<number, BotMemory>([[bot.id, { ...newBotMemory(r), intent: { k: 'search', at: goal, giveUpAt: Infinity, since: 0, holdUntil: Infinity } }]]);
+  let rubbing = 0, worst = 0, arrived = -1;
+  for (let t = 0; t < 5000 / TICK_MS && arrived < 0; t++) {
+    thinkBots(w, bots, r, { respawn: false });
+    step(w, TICK_MS);
+    rubbing = leaf().some((l) => circleHitsRect(bot.x, bot.y, R + 2, l)) ? rubbing + 1 : 0;
+    worst = Math.max(worst, rubbing);
+    if (Math.hypot(bot.x - goal.x, bot.y - goal.y) < 30) arrived = t;
+  }
+  assert.ok(arrived >= 0, `got past the leaf to its goal (at ${bot.x.toFixed(0)},${bot.y.toFixed(0)})`);
+  assert.ok(worst <= 3, `brushed the leaf at most in passing (${worst} ticks in a row against it)`);
+  assert.equal(s.open, 255, 'and never held the leaf up');
+});
+
+test('a bot never shuffles against a swing leaf standing open across a corridor, whichever way it crosses it', () => {
+  // A bot sent back and forth along the corridor past the leaf, between spots all round it, is never pressed against the leaf for long.
+  const { w, leaf } = leafAcrossCorridor();
+  const r = () => rand(w);
+  // Spots out of the leaf's sweep (a bot is never sent into one, see `clearOfSwings`), on both sides of it, the straight way between each two through the leaf.
+  const spots = [{ x: 3400, y: 470 }, { x: 3800, y: 470 }, { x: 3420, y: 420 }, { x: 3780, y: 440 }, { x: 3500, y: 300 }, { x: 3410, y: 480 }, { x: 3790, y: 410 }, { x: 3700, y: 300 }];
+  const bots = new Map<number, BotMemory>();
+  const legs = new Map<number, number>();
+  const p = spawnAt(w, spots[0]!.x, spots[0]!.y, { kind: 'bot', name: 'walker' });
+  bots.set(p.id, newBotMemory(r));
+  legs.set(p.id, 1);
+  let visits = 0;
+  const against = new Map<number, number>();
+  let worst = 0;
+  for (let t = 0; t < 12_000 / TICK_MS; t++) {
+    for (const [id, mem] of bots) {
+      const p = w.players.get(id)!, at = spots[legs.get(id)! % spots.length]!;
+      if (Math.hypot(p.x - at.x, p.y - at.y) < 30) { legs.set(id, legs.get(id)! + 1); visits++; }
+      const to = spots[legs.get(id)! % spots.length]!;
+      if (mem.intent?.k !== 'search' || mem.intent.at !== to) bots.set(id, { ...mem, intent: { k: 'search', at: to, giveUpAt: Infinity, since: 0, holdUntil: Infinity } });
+    }
+    thinkBots(w, bots, r, { respawn: false });
+    step(w, TICK_MS);
+    for (const id of bots.keys()) {
+      const p = w.players.get(id)!;
+      const n = leaf().some((l) => circleHitsRect(p.x, p.y, R + 2, l)) && (p.input.up || p.input.down || p.input.left || p.input.right) ? (against.get(id) ?? 0) + 1 : 0;
+      against.set(id, n);
+      worst = Math.max(worst, n);
+    }
+  }
+  assert.ok(worst < 20, `pressed against the leaf for ${worst} ticks in a row`);
+  assert.ok(visits >= spots.length, `went round the spots (${visits} reached)`);
+});
+
+test('two bots crossing at a shut swing door get through both ways: the one the leaf swings toward backs out of its way', () => {
+  // Mates, so neither stops to fight the other.
+  const w = createWorld('TDM', 1, 'geo-test');
+  w.crates = []; w.barrels = []; w.props = []; w.airdrops = { due: [], flight: null };
+  const r = () => rand(w);
+  const search = (at: { x: number; y: number }) => ({ k: 'search' as const, at, giveUpAt: Infinity, since: 0, holdUntil: Infinity });
+  // One comes up out of room-3 into the corridor, the other goes down from the corridor into the room, both by the door.
+  const up = spawnAt(w, 3580, 700, { kind: 'bot', name: 'up', team: 'red' }), down = spawnAt(w, 3580, 380, { kind: 'bot', name: 'down', team: 'red' });
+  const upTo = { x: 3300, y: 330 }, downTo = { x: 3420, y: 850 };
+  const bots = new Map<number, BotMemory>([[up.id, { ...newBotMemory(r), intent: search(upTo) }], [down.id, { ...newBotMemory(r), intent: search(downTo) }]]);
+  const d = w.doors.find((s) => s.id === 'room-3')!;
+  let stalled = 0, worst = 0;
+  const done = () => Math.hypot(up.x - upTo.x, up.y - upTo.y) < 40 && Math.hypot(down.x - downTo.x, down.y - downTo.y) < 40;
+  for (let t = 0; t < 8000 / TICK_MS && !done(); t++) {
+    thinkBots(w, bots, r, { respawn: false });
+    step(w, TICK_MS);
+    stalled = d.open > 0 && d.open < 255 && d.target === 255 ? stalled + 1 : 0;
+    worst = Math.max(worst, stalled);
+  }
+  assert.ok(done(), `both got through (up at ${up.x.toFixed(0)},${up.y.toFixed(0)}, down at ${down.x.toFixed(0)},${down.y.toFixed(0)})`);
+  assert.ok(worst < 40, `the leaf was held part open on someone for ${worst} ticks`);
+});

@@ -1,10 +1,11 @@
 import { GUNS, rulesOf, WORLD, type AbilityId, type GunId } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
-import { KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
+import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
-import { doorCentre, takeReplan, type BotArena } from './arena.ts';
-import { swingArcAt } from '../../shared/sim/doors.ts';
+import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
+import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
+import type { MapDoor } from '../../shared/geom.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
 import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
 import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
@@ -14,7 +15,11 @@ import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from
 import { boltCue, DODGE_AT, dangerTo, dodgeLeg, dodgeStyle, nextDodge, weave, type Dodge, type DodgeStyle } from './evade.ts';
 
 export type Motor = {
-  route: { goal: Point; points: readonly Point[]; version: number; partial: boolean } | null;
+  /**
+   * `around`: the standing door leaves (see `BotArena.leaves`) it was routed round, by key; `blocked`, those of them there was no
+   * way round (one swung across the only corridor out), which it walks up to and waits at until they swing shut.
+   */
+  route: { goal: Point; points: readonly Point[]; version: number; partial: boolean; around: readonly string[]; blocked?: readonly string[] } | null;
   dir: number | null;
   dirSince: number;
   pace: { lastDir: number | null; lastTurnBackTick: number };
@@ -262,7 +267,7 @@ function legHeading(me: Point, at: Point, step: 1 | -1, leg: Leg): number {
 
 function legPoint(me: Point, heading: number, arena: BotArena, mates: readonly Point[] = []): Point | null {
   const p = { x: me.x + Math.cos(heading) * STRAFE_PX, y: me.y + Math.sin(heading) * STRAFE_PX };
-  return isOpen(arena.nav, p) && walkable(arena.nav, me, p) && !mates.some((m) => dist(m, p) < MATE_CLEAR_PX && dist(m, p) < dist(m, me)) ? p : null;
+  return isOpen(arena.nav, p) && walkable(arena.nav, me, p) && clearOfLeaves(arena, me, p) && !mates.some((m) => dist(m, p) < MATE_CLEAR_PX && dist(m, p) < dist(m, me)) ? p : null;
 }
 
 /** Which way the mates crowding a bot would have it step: the sum of their pushes, each strongest when touching, or null when none is near. */
@@ -369,7 +374,7 @@ function spaced(intent: Intent, me: Point & { id: number }, at: Point | null, to
   const base = at ?? me;
   const k = Math.hypot(push.x, push.y);
   const bent = { x: base.x + push.x * MATE_SHOVE_PX, y: base.y + push.y * MATE_SHOVE_PX };
-  return k > 0 && isOpen(arena.nav, bent) && walkable(arena.nav, me, bent) ? bent : at;
+  return k > 0 && isOpen(arena.nav, bent) && walkable(arena.nav, me, bent) && clearOfLeaves(arena, me, bent) ? bent : at;
 }
 
 /** How far past a swing leaf's reach a spot it moves out of its sweep lands. */
@@ -381,20 +386,73 @@ const SWING_CLEAR_PX = 16;
  * leaf. The spot moves just out of the sweep, straight back from the door or else away from the hinge, onto open ground.
  */
 function clearOfSwings(to: Point, doors: Snapshot['doors'], arena: BotArena): Point {
-  const r = WORLD.playerRadius;
   for (const [i, open, sign] of doors ?? []) {
     const d = arena.doors[i];
-    const h = d && open > 0 ? swingArcAt(d, sign, to, r) : null;
-    if (!d || !h) continue;
-    const reach = h.len + r + SWING_CLEAR_PX;
-    const ux = d.axis === 'h' ? 1 : 0, uy = 1 - ux, nx = uy * sign, ny = ux * sign;
-    const along = (to.x - h.x) * ux + (to.y - h.y) * uy, back = (to.x - h.x) * nx + (to.y - h.y) * ny;
-    const k = Math.hypot(to.x - h.x, to.y - h.y) || 1, push = Math.sqrt(Math.max(0, reach * reach - along * along)) - back;
-    const out = [{ x: to.x + nx * push, y: to.y + ny * push }, { x: h.x + ((to.x - h.x) / k) * reach, y: h.y + ((to.y - h.y) / k) * reach }]
-      .find((p) => p.x > r && p.y > r && p.x < arena.size - r && p.y < arena.size - r && isOpen(arena.nav, p));
+    const h = d && open > 0 ? swingArcAt(d, sign, to, WORLD.playerRadius) : null;
+    const out = d && h ? outOfSweep(to, d, sign, h, arena) : null;
     if (out) return out;
   }
   return to;
+}
+
+/** The spot just out of the sweep of hinge `h` of swing door `d` (swinging toward `sign`) nearest `to`: straight back from the door, or else away from the hinge, on open ground. */
+function outOfSweep(to: Point, d: MapDoor, sign: 1 | -1, h: { x: number; y: number; len: number }, arena: BotArena): Point | null {
+  const r = WORLD.playerRadius;
+  const reach = h.len + r + SWING_CLEAR_PX;
+  const ux = d.axis === 'h' ? 1 : 0, uy = 1 - ux, nx = uy * sign, ny = ux * sign;
+  const along = (to.x - h.x) * ux + (to.y - h.y) * uy, back = (to.x - h.x) * nx + (to.y - h.y) * ny;
+  const k = Math.hypot(to.x - h.x, to.y - h.y) || 1, push = Math.sqrt(Math.max(0, reach * reach - along * along)) - back;
+  return [{ x: to.x + nx * push, y: to.y + ny * push }, { x: h.x + ((to.x - h.x) / k) * reach, y: h.y + ((to.y - h.y) / k) * reach }]
+    .find((p) => p.x > r && p.y > r && p.x < arena.size - r && p.y < arena.size - r && isOpen(arena.nav, p)) ?? null;
+}
+
+/**
+ * Where a bot stands in the way of a swing leaf on the move: the leaf stops on it (leaves never crush), and a bot that means to go
+ * past it, or whoever pushed it, is left pressing into the leaf. A leaf swinging open stops on anyone in the arc it has still to
+ * sweep; one swinging shut, on a bot between it and its doorway that walks into it (one going on through the doorway, out of
+ * its way, is not stopped). Such a bot backs out of the sweep instead and lets the leaf swing: open, it then walks round it (see
+ * `plan`); shut, it pushes it open away from itself. Null when no leaf has it in its way. Behind a leaf is not in its way.
+ */
+function inSweep(me: Point, at: Point, arena: BotArena): Point | null {
+  const r = WORLD.playerRadius;
+  for (const l of arena.swings) {
+    const d = arena.doors[l.door];
+    if (!d) continue;
+    const a = (Math.min(255, l.open) / 255) * SWING_MAX;
+    for (const h of swingHinges(d)) {
+      const vx = me.x - h.x, vy = me.y - h.y, k = Math.hypot(vx, vy);
+      if (k >= h.len + r) continue;
+      // The leaf's shut direction from this hinge (into the doorway), and the way it swings.
+      const sx = d.axis === 'h' ? (h.x === d.x ? 1 : -1) : 0, sy = d.axis === 'v' ? (h.y === d.y ? 1 : -1) : 0;
+      const nx = d.axis === 'v' ? l.sign : 0, ny = d.axis === 'h' ? l.sign : 0;
+      const phi = Math.atan2(vx * nx + vy * ny, vx * sx + vy * sy);
+      // A leaf cannot pass a body, so a body on the far side of it from where it is going is behind it whole.
+      if (l.opening ? phi <= a || phi > SWING_MAX + 0.6 : phi >= a || phi < 0 || !intoLeaf(me, at, d, l)) continue;
+      // Just out of reach of the leaf: straight back or away from the hinge if it can walk there, else round the arc to where it can.
+      const reach = h.len + r + SWING_CLEAR_PX;
+      const near = [outOfSweep(me, d, l.sign, h, arena), ...Array.from({ length: 16 }, (_, i) => {
+        const t = (i / 15) * (SWING_MAX + 0.6);
+        return { x: h.x + (sx * Math.cos(t) + nx * Math.sin(t)) * reach, y: h.y + (sy * Math.cos(t) + ny * Math.sin(t)) * reach };
+      })].filter((p): p is Point => p !== null && p.x > r && p.y > r && p.x < arena.size - r && p.y < arena.size - r && isOpen(arena.nav, p) && walkable(arena.nav, me, p));
+      const out = near.reduce<Point | null>((best, p) => (!best || dist(p, me) < dist(best, me) ? p : best), null);
+      if (out) return out;
+    }
+  }
+  return null;
+}
+
+const INTO_LEAF_PX = 40;
+
+/** Whether the bot's next few strides toward `at` run into the leaves of swing door `d` where they stand now. */
+function intoLeaf(me: Point, at: Point, d: MapDoor, l: { open: number; sign: 1 | -1 }): boolean {
+  const k = Math.min(1, INTO_LEAF_PX / Math.max(1, dist(me, at)));
+  const to = { x: me.x + (at.x - me.x) * k, y: me.y + (at.y - me.y) * k };
+  const leaves = doorLeaves(d, l.open, l.sign);
+  for (let i = 0; i <= 4; i++) {
+    const x = me.x + ((to.x - me.x) * i) / 4, y = me.y + ((to.y - me.y) * i) / 4;
+    if (leaves.some((rect) => circleHitsRect(x, y, WORLD.playerRadius + 2, rect))) return true;
+  }
+  return false;
 }
 
 const DOOR_QUEUE_PX = 150;
@@ -425,10 +483,60 @@ function doorTurn(me: Point, at: Point | null, mates: readonly Point[], arena: B
   return false;
 }
 
-function plan(arena: BotArena, me: Point, to: Point, budget = MAX_EXPANSIONS): NonNullable<Motor['route']> {
-  const found = findPath(arena.nav, me, to, budget);
-  const last = found?.[found.length - 1];
-  return { goal: to, points: found ?? [to], version: arena.version, partial: last !== undefined && dist(last, to) > WAYPOINT_PX };
+/** How far down a route a fresh plan looks for standing door leaves to go round, and how far ahead a bot walking one keeps looking. */
+const LEAF_PLAN_PX = 700;
+const LEAF_AHEAD_PX = 260;
+const LEAF_PLANS = 3;
+
+/** The standing door leaves (not those in `skip`) on the first `px` of the walk from `me` along `points`. */
+function leafAhead(arena: BotArena, me: Point, points: readonly Point[], skip: readonly string[], px: number): StandingLeaf[] {
+  const out: StandingLeaf[] = [];
+  if (arena.leaves.length === 0) return out;
+  let from = me, left = px;
+  for (const p of points) {
+    const d = dist(from, p);
+    const to = d > left ? { x: from.x + ((p.x - from.x) * left) / d, y: from.y + ((p.y - from.y) * left) / d } : p;
+    leavesCrossed(arena, from, to, skip, out);
+    left -= d;
+    if (left <= 0) break;
+    from = p;
+  }
+  return out;
+}
+
+const LEAF_WAIT_PX = 30;
+
+/** Whether one of the `blocked` leaves still stands within `LEAF_WAIT_PX` of the bot on its way to `at`. */
+function waitsAtLeaf(arena: BotArena, me: Point, at: Point, blocked: readonly string[]): boolean {
+  const d = dist(me, at);
+  if (d < 1 || !arena.leaves.some((l) => blocked.includes(l.key))) return false;
+  const k = Math.min(1, LEAF_WAIT_PX / d);
+  return leavesCrossed(arena, me, { x: me.x + (at.x - me.x) * k, y: me.y + (at.y - me.y) * k }).some((l) => blocked.includes(l.key));
+}
+
+/**
+ * A route to `to` on the nav grid, and round any door leaf standing open across the near part of it: the grid has no doors in
+ * it (they open), so a leaf swung out across a corridor is planned round as a solid that comes and goes, on a grid with it in
+ * (`navAround`), rather than walked into. With no leaf in the way, as almost always, it costs one look down the route.
+ */
+function plan(arena: BotArena, me: Point, to: Point, budget = MAX_EXPANSIONS, around: readonly string[] = []): NonNullable<Motor['route']> {
+  let keys = around.filter((k) => arena.leaves.some((l) => l.key === k));
+  const routeOf = (found: Point[] | null, blocked?: readonly string[]): NonNullable<Motor['route']> => {
+    const last = found?.[found.length - 1];
+    return { goal: to, points: found ?? [to], version: arena.version, partial: last !== undefined && dist(last, to) > WAYPOINT_PX, around: keys, ...(blocked && { blocked }) };
+  };
+  for (let i = 0; ; i++) {
+    const found = findPath(navAround(arena, keys), me, to, budget);
+    if (!found && keys.length) {
+      // No way round them: the way through, waiting at the leaf for it to swing shut (see `nextWaypoint`).
+      const through = findPath(arena.nav, me, to, budget);
+      if (through) return routeOf(through, keys);
+    }
+    const route = routeOf(found);
+    const hit = i < LEAF_PLANS - 1 && found ? leafAhead(arena, me, found, keys, LEAF_PLAN_PX) : [];
+    if (hit.length === 0) return route;
+    keys = [...keys, ...hit.map((l) => l.key)];
+  }
 }
 
 /**
@@ -439,11 +547,13 @@ function plan(arena: BotArena, me: Point, to: Point, budget = MAX_EXPANSIONS): N
 function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: number, crawling = false, plans: boolean | null = true): { at: Point; route: Motor['route']; replanned: boolean } {
   const old = m.route;
   if (crawling && plans !== null) {
-    const route = plan(arena, me, to, Infinity);
+    const route = plan(arena, me, to, Infinity, old?.around);
     const points = route.partial ? route.points : [...route.points.slice(0, -1), to];
     return { at: points[0]!, route: { ...route, points }, replanned: true };
   }
   const wallsMoved = plans !== null && old !== null && old.version !== arena.version && !walkable(arena.nav, me, old.points[0] ?? to);
+  // A door leaf has swung out across the way it is walking: a new route round it, even between thinks (it would rub along the leaf till then).
+  const leafy = old !== null && arena.leaves.length > 0 && leafAhead(arena, me, old.points, old.around, LEAF_AHEAD_PX).length > 0;
   const partEnded = old !== null && old.partial && dist(me, old.points[old.points.length - 1]!) < WAYPOINT_PX * 2;
   const shift = old === null ? Infinity : dist(old.goal, to);
   const bendable = () => old !== null && walkable(arena.nav, old.points.length > 1 ? old.points[old.points.length - 2]! : me, to);
@@ -452,16 +562,18 @@ function nextWaypoint(m: Motor, me: Point, to: Point, arena: BotArena, tick: num
   const stuck = m.stuckTicks > STUCK_TICKS;
   // Knocked off its route (a strafe, a shove, a door leaf) with the rest of it still good: a short way back onto it, not a new route.
   const back = old?.points[0];
-  const rejoin = plans !== null && back && wallsMoved && !moved && !partEnded && !stuck ? findPath(arena.nav, me, back, REJOIN_EXPANSIONS) : null;
+  const rejoin = plans !== null && back && wallsMoved && !moved && !partEnded && !stuck && !leafy ? findPath(navAround(arena, old.around), me, back, REJOIN_EXPANSIONS) : null;
   const rejoined = rejoin?.length && back && dist(rejoin[rejoin.length - 1]!, back) <= WAYPOINT_PX ? rejoin : null;
   // The rest waits for a strategic think, unless the old route cannot take it to the goal at all.
-  const wanted = !old || stuck || moved || (plans === true && !rejoined && (wallsMoved || partEnded));
-  const fresh = wanted && (!old || (plans !== null && takeReplan(arena, tick)));
-  const route = fresh || !old ? plan(arena, me, to)
+  const wanted = !old || stuck || moved || leafy || (plans === true && !rejoined && (wallsMoved || partEnded));
+  const fresh = wanted && (!old || ((plans !== null || leafy) && takeReplan(arena, tick)));
+  const route = fresh || !old ? plan(arena, me, to, MAX_EXPANSIONS, old && !moved ? old.around : [])
     : rejoined ? { ...old, points: [...rejoined.slice(0, -1), ...old.points], version: arena.version } : { ...old, version: arena.version };
   const tail = route.partial ? route.points : [...route.points.slice(0, -1), to];
-  let points = dist(me, to) < NEAR_GOAL_PX && walkable(arena.nav, me, to) ? [to] : tail;
+  let points = dist(me, to) < NEAR_GOAL_PX && walkable(arena.nav, me, to) && clearOfLeaves(arena, me, to) ? [to] : tail;
   while (points.length > 1 && dist(me, points[0]!) < WAYPOINT_PX) points = points.slice(1);
+  // A leaf it found no way round stands just ahead: it waits there, off the leaf, until the door swings shut (it then walks on through).
+  if (route.blocked && waitsAtLeaf(arena, me, points[0]!, route.blocked)) return { at: me, route: { ...route, points }, replanned: fresh };
   return { at: points[0]!, route: { ...route, points }, replanned: fresh };
 }
 
@@ -580,7 +692,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const off = clearOfSwings(s.to ?? me, snap.doors, c.arena);
   const to = s.to ? off : off !== me ? off : null;
   const routed = to ? nextWaypoint(m, me, to, c.arena, v.tick, crawling, c.strategic !== false) : { at: null, route: m.route, replanned: false };
-  const bent = spaced(intent, me, routed.at, to, v.allies, c.arena);
+  // In the way of a leaf on the move: out of its way first, then on (see `inSweep`).
+  const stepOut = routed.at && c.arena.swings.length ? inSweep(me, routed.at, c.arena) : null;
+  const bent = stepOut ?? spaced(intent, me, routed.at, to, v.allies, c.arena);
   // On its way somewhere with a long gun shooting at it from afar: it zig-zags there rather than walking his lane.
   const weaving = dodge && dangerAt && bent && WEAVES.has(intent.k) && !(intent.k === 'engage' && fighting);
   const way = { ...routed, at: weaving ? weave(me, bent, dodge, c.arena, v.solids) : bent };
@@ -753,7 +867,7 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   let at: Point | null = null, route = m.route;
   if (h.heading !== null) {
     const p = { x: me.x + Math.cos(h.heading) * LEG_PX, y: me.y + Math.sin(h.heading) * LEG_PX };
-    at = isOpen(arena.nav, p) && walkable(arena.nav, me, p) ? p : null;
+    at = isOpen(arena.nav, p) && walkable(arena.nav, me, p) && clearOfLeaves(arena, me, p) ? p : null;
   } else if (h.at) at = h.at;
   else if (h.to) ({ at, route } = nextWaypoint(m, me, h.to, arena, tick, false, null));
   const drive = h.keys ? { keys: h.keys, dir: m.dir, dirSince: m.dirSince, pace: m.pace } : keysToward(m, me, at, tick);

@@ -2,6 +2,7 @@ import { WORLD } from '../../shared/defs.ts';
 import type { MapDoor } from '../../shared/geom.ts';
 import { landmarks, MAPS, type MapId } from '../../shared/maps.ts';
 import { doorAuto, doorLeaves, isSwing, mapDoors } from '../../shared/sim/doors.ts';
+import { circleHitsRect } from '../../shared/sim/movement.ts';
 import type { WallView } from '../../shared/protocol.ts';
 import { segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { barrelRect, crateRect, createWorld, propRect, propSolid, type Crate, type Wall, type World } from '../../shared/sim/world.ts';
@@ -22,7 +23,83 @@ export type BotArena = {
   replans: { tick: number; left: number };
   /** The map's doors, for bots that hold an angle on one or wait their turn at one. */
   doors: readonly MapDoor[];
+  /** Swing leaves standing open (or swinging open), where they stand once open: solids that come and go, not in `nav` (see `swingLeaves`). */
+  leaves: readonly StandingLeaf[];
+  /** Swing doors whose leaves are on the move (or held part way on a body), where they are and which way they are going (see `inSweep` in motor.ts). */
+  swings: readonly SwingingLeaf[];
 };
+
+export type SwingingLeaf = { door: number; open: number; sign: 1 | -1; opening: boolean };
+
+/** A swing door's leaves where they stand wide open, `key` naming the door and the side they stand on, `box` round them all. */
+export type StandingLeaf = { key: string; rects: readonly Rect[]; box: Rect };
+
+/**
+ * The swing leaves that stand out from their wall now: every swing door open or swinging open, with its leaves where they will
+ * stand (a leaf on its way there, or held up on a body in its sweep, gets there soon; a bot routed round its half-way spot would
+ * only walk into it later). A door swinging shut is not one: it ends in its doorway, which a bot pushes open again. Nor is a
+ * slider, whose panels open into its wall. Doors are not in the nav grid (they open), so a bot routes round these on a grid of
+ * its own (`navAround`) only when its route runs into one (see `leafAhead` in motor.ts).
+ */
+function swingLeaves(w: World): Pick<BotArena, 'leaves' | 'swings'> {
+  const defs = mapDoors(w.map);
+  if (!defs.length) return { leaves: [], swings: [] };
+  const out: StandingLeaf[] = [], swings: SwingingLeaf[] = [];
+  for (const s of w.doors) {
+    const d = defs[s.idx]!;
+    if (!isSwing(d) || d.locked) continue;
+    if (s.open !== s.target) swings.push({ door: s.idx, open: s.open, sign: s.sign, opening: s.target === 255 });
+    if (s.open === 0 || s.target !== 255) continue;
+    const rects = doorLeaves(d, 255, s.sign);
+    const x0 = Math.min(...rects.map((r) => r.x)), y0 = Math.min(...rects.map((r) => r.y));
+    const x1 = Math.max(...rects.map((r) => r.x + r.w)), y1 = Math.max(...rects.map((r) => r.y + r.h));
+    out.push({ key: `${s.idx}${s.sign > 0 ? '+' : '-'}`, rects, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } });
+  }
+  return { leaves: out, swings };
+}
+
+/** How far clear of a standing leaf a route on `navAround` keeps, past a body's radius (a cell is 25 px; a smoothed leg cuts corners). */
+const LEAF_PAD_PX = 6;
+const LEAF_NAVS_KEPT = 12;
+/** Grids with standing leaves stamped in, by base grid and the leaves' keys: the same few doors open and shut all round, and a squad shares one. */
+const LEAF_NAVS = new WeakMap<NavGrid, Map<string, NavGrid>>();
+
+/** The nav grid with the standing leaves named by `keys` in it as solids (those still standing); the plain grid when none are. */
+export function navAround(a: BotArena, keys: readonly string[]): NavGrid {
+  const leaves = keys.length ? a.leaves.filter((l) => keys.includes(l.key)) : [];
+  if (!leaves.length) return a.nav;
+  const key = leaves.map((l) => l.key).sort().join();
+  let kept = LEAF_NAVS.get(a.nav);
+  if (!kept) LEAF_NAVS.set(a.nav, (kept = new Map()));
+  let nav = kept.get(key);
+  if (nav) kept.delete(key);
+  else nav = withSolids(a.nav, leaves.flatMap((l) => l.rects), WORLD.playerRadius + LEAF_PAD_PX);
+  kept.set(key, nav);
+  if (kept.size > LEAF_NAVS_KEPT) kept.delete(kept.keys().next().value!);
+  return nav;
+}
+
+const LEAF_STEP_PX = 8;
+/** A body touching a leaf this close counts as running into it (what the bot's stuck checks would see as rubbing). */
+const LEAF_TOUCH_PX = 2;
+
+/** The standing leaves (other than those in `skip`) a body walking straight from `a` to `b` would run into, added to `out`. */
+export function leavesCrossed(arena: BotArena, a: Point, b: Point, skip: readonly string[] = [], out: StandingLeaf[] = []): StandingLeaf[] {
+  const r = WORLD.playerRadius + LEAF_TOUCH_PX;
+  const len = Math.hypot(b.x - a.x, b.y - a.y), steps = Math.max(1, Math.ceil(len / LEAF_STEP_PX));
+  for (const l of arena.leaves) {
+    const { box } = l;
+    if (out.includes(l) || skip.includes(l.key) || Math.max(a.x, b.x) < box.x - r || Math.min(a.x, b.x) > box.x + box.w + r || Math.max(a.y, b.y) < box.y - r || Math.min(a.y, b.y) > box.y + box.h + r) continue;
+    for (let i = 0; i <= steps; i++) {
+      const x = a.x + ((b.x - a.x) * i) / steps, y = a.y + ((b.y - a.y) * i) / steps;
+      if (l.rects.some((rect) => circleHitsRect(x, y, r, rect))) { out.push(l); break; }
+    }
+  }
+  return out;
+}
+
+/** Whether a body walks straight from `a` to `b` clear of every standing leaf (see `leavesCrossed`). */
+export const clearOfLeaves = (arena: BotArena, a: Point, b: Point): boolean => arena.leaves.length === 0 || leavesCrossed(arena, a, b).length === 0;
 
 const REPLANS_PER_TICK = 3;
 
@@ -58,7 +135,7 @@ export function arenaFor(w: World): BotArena {
   if (cached && cached.arena.version === version && cached.drops === drops) return cached.arena;
   if (cached && cached.wallsVersion === w.wallsVersion && cached.drops === drops) {
     // Only a door leaf moved: the same grid, cover and solids, with the leaves where they are now.
-    const arena = { ...cached.arena, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), replans: { tick: -1, left: 0 } };
+    const arena = { ...cached.arena, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), replans: { tick: -1, left: 0 }, ...swingLeaves(w) };
     ARENAS.set(w, { ...cached, arena });
     return arena;
   }
@@ -71,7 +148,7 @@ export function arenaFor(w: World): BotArena {
   // A door swinging changes the version every tick it moves, but not the nav grid (doors are not in it): keep the one built for the same solids.
   const nav = cached && cached.layout === layout && sameRects(cached.solids, solids) ? cached.arena.nav : solids.length ? withSolids(layout.nav, solids, WORLD.playerRadius) : layout.nav;
   const arena: BotArena = {
-    size, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), barrels, cover: layout.cover, replans: { tick: -1, left: 0 }, doors: mapDoors(w.map), nav,
+    size, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), barrels, cover: layout.cover, replans: { tick: -1, left: 0 }, doors: mapDoors(w.map), nav, ...swingLeaves(w),
   };
   ARENAS.set(w, { arena, layout, solids, wallsVersion: w.wallsVersion, drops });
   return arena;
