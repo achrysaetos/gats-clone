@@ -1,7 +1,8 @@
-import { GUNS, rulesOf, WORLD, type AbilityId, type GunId } from '../../shared/defs.ts';
+import { GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type Tier } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
+import { BOT_BLOOM_DECAY_MUL, BOT_SPREAD_MUL, bloomRecoverMul, spreadFor } from '../../shared/sim/stats.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
@@ -38,8 +39,11 @@ export type Motor = {
   engagedSeen: number;
   aim: AimState | null;
   shots: number;
-  /** Burst-tapping (see `tapRhythm`): when the current tap began and until when the trigger is let go. */
-  tap?: { since: number | null; pauseUntil: number };
+  /**
+   * Burst-tapping (see `tapRhythm`): when the current tap began and until when the trigger is let go; and its read of its own bloom
+   * (see `ownBloom`): the spray it reckons its gun is at, from the rounds it has seen leave its magazine, and the tick the last one left.
+   */
+  tap?: { since: number | null; pauseUntil: number; spray?: number; ammo?: number; firedTick?: number };
   /** Getting off a long gun's line of fire (see evade.ts): the current leg, or null when nothing worth dodging has it in its sights. */
   dodge?: Dodge | null;
   /** What the last think decided, which `motorTick` carries out every tick until the next think. */
@@ -79,7 +83,9 @@ export type Hold = {
   reload: boolean;
   sprint: boolean;
   mag: number;
-  rhythm: { windowMs: number; pauseMs: number } | null;
+  rhythm: Rhythm | null;
+  /** Fire now whatever its bloom (see `holdsFire`): it is being shot, or the enemy is about to break its line of sight. */
+  urgent?: boolean;
   wakeAt: number;
   /** A planted gun thinks again the tick after its round leaves (not on every pull of a trigger still cycling), to move off its spot (see `nextDodge`, `thinkBots`). */
   wakeOnFire: boolean;
@@ -243,7 +249,82 @@ export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; paus
   const { bloom } = rulesOf(def);
   if (!bloom || bloom.free > 4 || rushes) return null;
   const perRound = def.burst ? ((def.burst.count - 1) * def.burst.gapMs + def.fireMs) / def.burst.count : def.fireMs;
-  return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + 0.6 * bloom.recoverMs };
+  return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + (0.5 * bloom.recoverMs) / BOT_BLOOM_DECAY_MUL };
+}
+
+/**
+ * A tapping gun's rhythm with what its bot weighs before each shot (see `holdsFire`): `patienceMs`, the longest it waits on its bloom after a
+ * round has left (the gun's pause, scaled by temper: a hothead's `commitMul` is short, a marksman's long, never over `PATIENCE_CAP_MS`), and its
+ * perks and suppression for reading its own cone, and `recover` for reading its bloom come back down (Steady Hands and `BOT_BLOOM_DECAY_MUL`).
+ */
+export type Rhythm = { windowMs: number; pauseMs: number; patienceMs: number; recover: number; perks: Partial<Record<Tier, PerkId>>; suppression: number };
+export const PATIENCE_CAP_MS = 1600;
+export function fireRhythm(gun: GunId, rushes: boolean, commitMul: number, perks: Partial<Record<Tier, PerkId>> = {}, suppression = 0): Rhythm | null {
+  const tap = tapRhythm(gun, rushes);
+  if (!tap) return null;
+  return { ...tap, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks, true), perks, suppression };
+}
+
+/**
+ * What a bot reads before a shot: its bloom (`spray`, see `ownBloom`), whether it stands still, how far the enemy is and how fast he crosses
+ * its line (px/s), how long since its last round left, whether it must fire now (`urgent`) and whether it is resting between taps (`pausing`).
+ */
+export type ShotRead = { spray: number; still: boolean; d: number; lateral: number; sinceShotMs: number; urgent: boolean; pausing: boolean };
+
+/** A shot this sure of landing, against what the gun at rest would give it, is good enough: waiting longer gains little. */
+export const GOOD_SHOT = 0.9;
+/** How much of a crossing enemy's travel in a round's flight its lead gets wrong (so a moving target is a wider cone however settled the gun). */
+const LEAD_SLOP = 0.3;
+
+/** The odds a round lands, roughly: the body's half-width against the cone's half-width at that range plus the lead it may get wrong. */
+function hitChance(gun: GunId, r: Rhythm, sprayShot: number, s: ShotRead): number {
+  const def = GUNS[gun];
+  const cone = spreadFor(gun, r.perks, s.still, sprayShot, r.suppression) * BOT_SPREAD_MUL;
+  const slop = (s.lateral * s.d / def.bulletSpeed) * LEAD_SLOP;
+  const body = WORLD.playerRadius;
+  return body / Math.max(body, s.d * Math.tan(cone) + slop);
+}
+
+/**
+ * Whether a tapping bot holds its next round for its bloom to come down. It fires once the cone at the enemy's range fits him about as well
+ * as it would at rest (`GOOD_SHOT` of the rested odds; between taps, for the whole of the next tap), once it has waited `patienceMs` since its
+ * last round, and at once up close (inside `TAP_FROM_PX`, where the cone swallows any bloom) or when `urgent`.
+ */
+export function holdsFire(gun: GunId, r: Rhythm, s: ShotRead): boolean {
+  if (s.urgent || s.d < TAP_FROM_PX || s.sinceShotMs >= r.patienceMs) return false;
+  const rounds = s.pausing ? Math.max(1, rulesOf(GUNS[gun]).bloom?.free ?? 1) : 1;
+  return hitChance(gun, r, s.spray + rounds, s) < GOOD_SHOT * hitChance(gun, r, rounds, s);
+}
+
+/**
+ * Its own bloom as the bot reckons it, the way a person watches the reticle: a round gone from the magazine kicks it a shot, a reload
+ * settles it, and with nothing fired for the gun's `settleMs` it comes back down at the sim's rate (`Rhythm.recover`).
+ */
+function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number): { spray: number; firedTick: number } {
+  const { bloom } = rulesOf(GUNS[gun]);
+  let spray = tap?.spray ?? 0, firedTick = tap?.firedTick ?? -Infinity;
+  if (!r || !bloom) return { spray: 0, firedTick };
+  const was = tap?.ammo ?? ammo;
+  const max = bloom.free + (bloom.maxMul - 1) / bloom.perShot;
+  if (ammo < was) { spray = Math.min(max, spray + (was - ammo)); firedTick = tick - 1; }
+  else if (ammo > was) spray = 0;
+  else if ((tick - firedTick) * TICK_MS > bloom.settleMs) spray = Math.max(0, spray - (max * TICK_MS * r.recover) / bloom.recoverMs);
+  return { spray, firedTick };
+}
+
+/** How fast `e` crosses the line from `me` to him, px/s. */
+const crossing = (me: Point, e: Engagement | null): number => {
+  if (!e) return 0;
+  const dx = e.x - me.x, dy = e.y - me.y, k = Math.hypot(dx, dy) || 1;
+  return Math.abs((e.vx * dy - e.vy * dx) / k);
+};
+
+/** How far ahead it looks for the enemy it is fighting walking out of its sight (behind a wall or into smoke): a shot it must take now. */
+const BREAK_LOOK_MS = 350;
+function breaksSight(me: Point, e: Engagement | null, solids: readonly Rect[], smokes: Perception['smokes']): boolean {
+  if (!e || (e.vx === 0 && e.vy === 0)) return false;
+  const k = BREAK_LOOK_MS / 1000, fx = e.x + e.vx * k, fy = e.y + e.vy * k;
+  return segmentBlocked(solids, me.x, me.y, fx - me.x, fy - me.y) || sightBlocked(smokes, me.x, me.y, fx, fy);
 }
 
 function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
@@ -648,16 +729,20 @@ function trackLook(e: Engagement, me: Point, mine: Point, gun: GunId, sharp: Sha
   return { want: Math.atan2(ry, rx) + err, spin: bearingSpin(rx, ry, e.vx - mine.x, e.vy - mine.y), hand: handFor(sharp), d: dist(e, me), err };
 }
 
-/** Burst-tapping's state after this tick (see `tapRhythm`). */
-function nextTap(rhythm: Hold['rhythm'], fire: boolean, tap: Motor['tap'], tick: number): Motor['tap'] {
+/** Burst-tapping's state after this tick (see `tapRhythm`), with its read of its bloom (`ownBloom`) and the magazine it read it from. */
+function nextTap(rhythm: Hold['rhythm'], fire: boolean, tap: Motor['tap'], tick: number, own: { spray: number; firedTick: number }, ammo: number): Motor['tap'] {
   if (rhythm === null) return undefined;
-  if (!fire) return { since: null, pauseUntil: tap?.pauseUntil ?? -Infinity };
-  if ((tick - (tap?.since ?? tick)) * TICK_MS >= rhythm.windowMs) return { since: null, pauseUntil: tick + Math.round(rhythm.pauseMs / TICK_MS) };
-  return { since: tap?.since ?? tick, pauseUntil: tap?.pauseUntil ?? -Infinity };
+  const read = { spray: own.spray, firedTick: own.firedTick, ammo };
+  if (!fire) return { since: null, pauseUntil: tap?.pauseUntil ?? -Infinity, ...read };
+  if ((tick - (tap?.since ?? tick)) * TICK_MS >= rhythm.windowMs) return { since: null, pauseUntil: tick + Math.round(rhythm.pauseMs / TICK_MS), ...read };
+  return { since: tap?.since ?? tick, pauseUntil: tap?.pauseUntil ?? -Infinity, ...read };
 }
 
-/** Up close the cone is wider than any bloom, so it only taps once the fight is far enough for the spread to matter. */
-const resting = (rhythm: Hold['rhythm'], d: number | null, tap: Motor['tap'], tick: number) => rhythm !== null && d !== null && d >= TAP_FROM_PX && tick < (tap?.pauseUntil ?? -Infinity);
+/** Whether it holds its fire this tick for its bloom (see `holdsFire`); `d` null is no enemy tracked, which it never waits on. */
+function resting(rhythm: Hold['rhythm'], gun: GunId, own: { spray: number; firedTick: number }, read: { d: number | null; still: boolean; lateral: number; urgent: boolean }, tap: Motor['tap'], tick: number): boolean {
+  if (rhythm === null || read.d === null) return false;
+  return holdsFire(gun, rhythm, { ...read, d: read.d, spray: own.spray, sinceShotMs: (tick - own.firedTick) * TICK_MS, pausing: tick < (tap?.pauseUntil ?? -Infinity) });
+}
 
 /** The per-tick bookkeeping of where it is pressing and whether it gets anywhere (see `headway`, `CRAWL`). */
 function walked(m: Motor, me: Point, at: Point | null, drive: Drive, route: Motor['route'], tick: number, replanned: boolean, crawling: boolean): Pick<Motor, 'stuckTicks' | 'progress' | 'last' | 'dir' | 'dirSince' | 'pace' | 'route'> {
@@ -780,10 +865,14 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   // A planted gun moving off its spot between shots lets go of the trigger: its next round waits until it has stopped again.
   const stillToFire = style.k === 'plant' && !!dodge && !dodge.stop;
   if (stillToFire && anyKey(keys)) wantsFire = false;
-  const rhythm = tapRhythm(me.gun, c.band.rushes);
+  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul, snap.self.perks, snap.self.suppression);
+  // Being shot, or the enemy about to walk out of its sight: the round goes now, bloom or not.
+  const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids, v.smokes));
+  const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick);
   const ability0 = turnAway && wanted !== null ? null : wanted;
-  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !resting(rhythm, t?.d ?? null, m.tap, v.tick), ability0, m.shots);
-  const tap = nextTap(rhythm, fire, m.tap, v.tick);
+  const rests = resting(rhythm, me.gun, own, { d: t?.d ?? null, still: !anyKey(keys), lateral: crossing(me, engaged), urgent }, m.tap, v.tick);
+  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, ability0, m.shots);
+  const tap = nextTap(rhythm, fire, m.tap, v.tick, own, snap.self.ammo);
   const angle = aim.angle, aimDist = Math.max(1, look.d);
   const reloadWish = s.reload || (!t && snap.self.ammo < snap.self.mag / 2);
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && reloadWish;
@@ -804,7 +893,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   ].filter((x) => x > v.tick);
   const hold: Hold = {
     tick: v.tick, to, at: heading === null && way.at !== routed.at ? way.at : null, heading, keys: keys !== drive.keys ? keys : null,
-    gaze, track, turn, ability: ability0, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm,
+    gaze, track, turn, ability: ability0, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm, urgent,
     wakeAt: Math.min(Infinity, ...timers), wakeOnFire: style.k === 'plant' && fighting !== undefined, arrived: to !== null && dist(me, to) < ARRIVED_PX * 2,
     nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors),
   };
@@ -893,8 +982,10 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
     if (h.turn.holdFire) wantsFire = false;
   }
   if (h.stillToFire && anyKey(keys)) wantsFire = false;
-  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !resting(h.rhythm, d, m.tap, tick), b.abilityReady ? h.ability : null, m.shots);
-  const tap = nextTap(h.rhythm, fire, m.tap, tick);
+  const own = ownBloom(h.rhythm, me.gun, m.tap, b.ammo, tick);
+  const rests = resting(h.rhythm, me.gun, own, { d, still: !anyKey(keys), lateral: crossing(me, engaged), urgent: !!h.urgent }, m.tap, tick);
+  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, b.abilityReady ? h.ability : null, m.shots);
+  const tap = nextTap(h.rhythm, fire, m.tap, tick, own, b.ammo);
   const reload = !fire && b.ammo < h.mag && !b.reloading && h.reload;
   const sprint = anyKey(keys) && !fire && !wantsFire && h.sprint;
   return {

@@ -59,6 +59,11 @@ type Stats = {
  * a small edge so bots hold their own against people. Humans are unchanged; bot against bot both have it. Tune with `BOT_AIM.errMul` (aim.ts).
  */
 export const BOT_SPREAD_MUL = 0.85;
+/**
+ * A bot's bloom comes back down this much faster than a person's (on top of Steady Hands), as it reads its gun off a clock rather than a
+ * reticle it can watch shrink: a bolt's kick settles in ~1.5 s, not ~2.4 s. Humans are unchanged; bot against bot both have it.
+ */
+export const BOT_BLOOM_DECAY_MUL = 1.8;
 
 /**
  * Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. Nothing fires tighter than
@@ -93,8 +98,9 @@ export const settleSpreadMul = (settle: number, mul: number = SPRINT.settleMul):
 export const postSprint = (left: number, settleMs: number): { raiseLeft: number; settle: number } =>
   ({ raiseLeft: Math.max(0, left - settleMs), settle: settleMs > 0 ? Math.max(0, Math.min(1, left / settleMs)) : 0 });
 
-/** How fast spray bloom recovers, as a multiplier (Steady Hands). */
-export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number => Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomRecoverMul ?? 1), 1);
+/** How fast spray bloom recovers, as a multiplier (Steady Hands, and `BOT_BLOOM_DECAY_MUL` for a bot). */
+export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>, bot = false): number =>
+  Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomRecoverMul ?? 1), bot ? BOT_BLOOM_DECAY_MUL : 1);
 
 /** How much `suppression` (0..1) widens spread. */
 export const suppressionMul = (suppression: number): number => 1 + suppression * SUPPRESSION.spread;

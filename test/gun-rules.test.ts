@@ -10,9 +10,9 @@ import { emptyWorld, equip, grantPerks, offerPerks, press, run, spawnAt, TICK_MS
 
 const TIER_1 = { k: 'perk', tier: 1 } as const;
 
-function shooter(gun: GunId, mode: 'FFA' | 'ZOM' = 'FFA'): { w: World; p: Player } {
+function shooter(gun: GunId, mode: 'FFA' | 'ZOM' = 'FFA', kind: 'bot' | 'human' = 'bot'): { w: World; p: Player } {
   const w = emptyWorld(mode);
-  const p = spawnAt(w, 2000, 2000, { loadout: { weapon: GUNS[gun].base } });
+  const p = spawnAt(w, 2000, 2000, { loadout: { weapon: GUNS[gun].base }, kind });
   equip(p, gun);
   return { w, p };
 }
@@ -267,7 +267,8 @@ test('every gun blooms; standing it blooms less than on the move, and a set-down
 
 test('a sniper\'s follow-up is wild and a re-settled shot precise: each round blooms the cone even planted, and it takes seconds to close again', () => {
   for (const gun of ['sniper', 'semiAuto', 'repeater'] as const) {
-    const { w, p } = shooter(gun);
+    // A person's gun: a bot's bloom settles faster (`BOT_BLOOM_DECAY_MUL`).
+    const { w, p } = shooter(gun, 'FFA', 'human');
     run(w, 600);
     const sprayNow = () => (p.life.k === 'alive' ? p.life.spray : 0);
     const at = (ms: number) => { for (let i = 0; i < Math.round(ms / TICK_MS); i++) tick(w, p, {}); return spreadFor(gun, {}, true, sprayNow() + 1); };

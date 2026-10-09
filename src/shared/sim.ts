@@ -108,7 +108,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   const armed = w.match.k === 'playing';
   const wasReloading = life.reloadUntil !== null;
-  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, holdUntil: life.raiseUntil, bloomRecover: bloomRecoverMul(p.perks) }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
+  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, holdUntil: life.raiseUntil, bloomRecover: bloomRecoverMul(p.perks, p.kind === 'bot') }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
   // A fresh magazine starts the count of kills from one mag again.
   if (!wasReloading && life.reloadUntil !== null) p.feats.magKills = 0;
   if (fired) {
