@@ -431,9 +431,10 @@ function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
   const t = performance.now();
   // While the gun is down (sprinting, or coming up after) the reticle is lowered: splayed wide, grey, faint and dotless. It snaps in,
-  // with a flash, the moment the gun can fire, onto the post-sprint spread (wide at first, settling over the gun's settle).
+  // with a flash, the moment the gun can fire, onto the post-sprint spread (wide at first, settling over the gun's settle). While a
+  // bolt is worked it greys at its own (bloomed) gap and flashes bright once the round is chambered.
   const spreadGap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
-  const rl = reticleLook(raiseWatch.phase, spreadGap, RETICLE.maxGap, raiseWatch.sinceReady(t), raiseWatch.sinceDenied(t));
+  const rl = reticleLook(raiseWatch.phase, spreadGap, RETICLE.maxGap, raiseWatch.sinceReady(t), raiseWatch.sinceDenied(t), raiseWatch.from);
   const gap = rl.gap;
   reticleDrawnGap = gap;
   at = { x: at.x + rl.shake, y: at.y };

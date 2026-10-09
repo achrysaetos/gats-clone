@@ -19,6 +19,16 @@ export const BEATS = {
   akimbo: { release: 0.22, out: 0.27, pop: 0.32, pouch: 0.36, fresh: 0.4, near: 0.56, seat: 0.62, slap: 0.72 },
 } as const;
 
+/**
+ * Working the bolt between shots, as shares of the gun's fire interval: the support hand leaves the fore-end for the handle (`grab`), `lift`s it,
+ * draws it `back`, runs it forward (arriving at `fwd`) and `lock`s it down, and is back on the fore-end by `home`; the rest of the interval is the
+ * eye finding the scope again. The cycle's sound (foley.ts `actionCycle`) and the arms (reloadanim.ts `boltScene`) both run on these, and the
+ * reticle stays greyed until the round is chambered (raise.ts), so the whole cycle reads as one commitment at whatever the gun's rate.
+ */
+export const BOLT = { grab: 0.18, lift: 0.3, back: 0.45, fwd: 0.56, lock: 0.66, home: 0.84 } as const;
+/** A gun whose action is worked by hand between shots: the bolt-actions (a sniper slower than a round a second), not the semi-autos. */
+export const worksBolt = (gun: GunId): boolean => GUNS[gun].base === 'sniper' && GUNS[gun].fireMs >= 1000;
+
 /** The shells a tube reload loads: one per round of the gun's magazine, up to a count that stays readable. */
 export const SHELLS_MAX = 6;
 export const shellCount = (mag: number): number => Math.max(1, Math.min(SHELLS_MAX, mag));

@@ -89,5 +89,5 @@ test('each class gun\'s kit card bars measure it against the best class, so ever
   for (let i = 0; i < 4; i++) assert.equal(Math.max(...bars.map((card) => card[i]!.value)), 1);
   const power = (id: (typeof WEAPON_IDS)[number]) => gunBars(id).find((b) => b.label === 'PWR')!.value;
   assert.equal(power('shotgun'), 1, 'a full shotgun blast hits hardest');
-  assert.ok(power('sniper') > 0.95 && power('smg') < 0.15, 'the bolt-action all but matches it; an SMG round is a fraction');
+  assert.ok(power('sniper') > 0.7 && WEAPON_IDS.every((id) => id === 'shotgun' || power(id) <= power('sniper')) && power('smg') < 0.15, 'the bolt-action is next, its round the heaviest single one; an SMG round is a fraction');
 });

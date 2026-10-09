@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { clickFindsGunDown, NO_FIRING, raiseLeftOf, settle, settleOf, stepTrigger, type ServerGun } from '../src/client/fire.ts';
+import { boltLeftOf, clickFindsGunDown, NO_FIRING, raiseLeftOf, settle, settleOf, stepTrigger, type ServerGun } from '../src/client/fire.ts';
 import { CARRY, carryAt, createRaiseWatch, gunPhaseOf, RETICLE_RAISE, reticleLook, stepCarry } from '../src/client/raise.ts';
 import { GUNS, PRESS_BUFFER_MS, raiseMsOf, settleRulesOf, WORLD } from '../src/shared/defs.ts';
 
@@ -163,4 +163,33 @@ test('a lowered reticle never draws tighter than the spread itself', () => {
   const wide = reticleLook('raising', 85, 90, -Infinity, Infinity);
   assert.equal(wide.gap, 85, 'a spread wider than the lowered share keeps its own gap');
   assert.equal(reticleLook('raising', 10, 90, -Infinity, Infinity).gap, 90 * RETICLE_RAISE.lowShare);
+});
+
+test('a bolt-action\'s reticle greys while the bolt is worked after each shot and brightens the moment the next round is chambered', () => {
+  const sv: ServerGun = { ...SERVER, gun: 'sniper', mag: GUNS.sniper.mag, reloadMs: GUNS.sniper.reloadMs, ammo: GUNS.sniper.mag };
+  let f = settle(NO_FIRING, sv, 0, 0, []).firing;
+  let seq = 0;
+  const send = (input: Parameters<typeof stepTrigger>[1]) => { seq++; const r = stepTrigger(f.trigger, input, seq * TICK_MS); f = { ...f, trigger: r.t, sent: { seq, at: seq * TICK_MS } }; return r.fired; };
+  const still = { up: false, down: false, left: false, right: false, reload: false };
+  for (let i = 0; i < 20; i++) send({ ...still, fire: false, shots: 0 });
+  assert.equal(gunPhaseOf(f, seq * TICK_MS), 'ready');
+  assert.equal(send({ ...still, fire: true, shots: 1 }), true, 'fires');
+  const watch = createRaiseWatch();
+  watch.step(f, seq * TICK_MS);
+  assert.equal(watch.phase, 'cycling');
+  assert.ok(Math.abs(boltLeftOf(f, seq * TICK_MS) - GUNS.sniper.fireMs) <= TICK_MS, 'the bolt is worked for the whole fire interval');
+  assert.equal(watch.click(f, seq * TICK_MS), true, 'a click this early is a "not yet"');
+  const look = reticleLook('cycling', 12, 90, -Infinity, Infinity);
+  assert.deepEqual([look.grey, look.dot, look.gap], [true, 0, 12], 'grey and dotless, at its own (bloomed) gap rather than splayed');
+  let up = -1;
+  while (up < 0) { send({ ...still, fire: false, shots: 1 }); watch.step(f, seq * TICK_MS); if ((watch.phase as string) === 'ready') up = seq * TICK_MS; }
+  assert.ok(Math.abs(up - TICK_MS * 21 - GUNS.sniper.fireMs) <= 2 * TICK_MS, `chambered after ${up - TICK_MS * 21}ms`);
+  assert.equal(watch.from, 'bolt');
+  const snap = reticleLook('ready', 12, 90, 10, Infinity, watch.from);
+  assert.ok(snap.flash > 0 && !snap.grey && snap.gap === 12, 'a chambered round flashes bright with no splay to snap in from');
+  // A semi-auto works nothing by hand: its reticle never greys between shots.
+  const semi = settle(NO_FIRING, { ...sv, gun: 'semiAuto' }, 0, 0, []).firing;
+  const shot = stepTrigger(semi.trigger, { ...still, fire: true, shots: 1 }, TICK_MS);
+  assert.equal(shot.fired, true);
+  assert.equal(boltLeftOf({ ...semi, trigger: shot.t, sent: { seq: 1, at: TICK_MS } }, TICK_MS), 0);
 });

@@ -2,9 +2,11 @@
  * Bringing the gun up after a sprint, as the player sees it. The sim keeps the gun from firing for its `raiseMsOf` after a
  * sprint ends; this module shows that wait on the soldier (the gun swings from the carry across the chest up to the aim,
  * snapping on with a small overshoot) and on the reticle (spread wide, greyed and dotless while the gun is down, then
- * snapping in with a click the moment it can fire). Clicking while it is down gives a soft "not yet" tick.
+ * snapping in with a click the moment it can fire). Clicking while it is down gives a soft "not yet" tick. A bolt-action's reticle also greys
+ * while the bolt is worked after each shot (`cycling`), at its true (bloomed) gap, and snaps bright the moment the next round is chambered.
  */
-import { clickFindsGunDown, raiseLeftOf, type Firing } from './fire.ts';
+import { PRESS_BUFFER_MS } from '../shared/defs.ts';
+import { boltLeftOf, clickFindsGunDown, raiseLeftOf, type Firing } from './fire.ts';
 
 /* --------------------------------------------------------------- the body ------------------------------------------------------------ */
 
@@ -62,10 +64,11 @@ export function stepCarry(id: number, sprinting: boolean, raiseMs: number, now: 
 
 /* ------------------------------------------------------------- the reticle ----------------------------------------------------------- */
 
-export type GunPhase = 'sprint' | 'raising' | 'ready';
+export type GunPhase = 'sprint' | 'raising' | 'cycling' | 'ready';
 
-/** Your gun's state as of the newest input sent: sprinting (down), coming up (no shot yet), or up. */
-export const gunPhaseOf = (f: Firing): GunPhase => (f.trigger.sprint ? 'sprint' : raiseLeftOf(f) > 0 ? 'raising' : 'ready');
+/** Your gun's state as of the newest input sent: sprinting (down), coming up (no shot yet), working the bolt (at the page clock `now`, if given), or up. */
+export const gunPhaseOf = (f: Firing, now?: number): GunPhase =>
+  (f.trigger.sprint ? 'sprint' : raiseLeftOf(f) > 0 ? 'raising' : now !== undefined && boltLeftOf(f, now) > 0 ? 'cycling' : 'ready');
 
 /** The lowered reticle's gap is this share of the widest; it snaps in over `snapMs` with a little overshoot; a "not yet" click shakes it. */
 export const RETICLE_RAISE = { lowShare: 0.8, lowAlpha: 0.55, snapMs: 160, flashMs: 220, shakeMs: 240, shakePx: 4 } as const;
@@ -89,12 +92,15 @@ const easeOutBack = (u: number) => { const c = 1.9; return 1 + (c + 1) * (u - 1)
 /**
  * How the reticle is drawn for the gun's `phase`, `gap` being the spread's own gap and `maxGap` the widest it ever opens.
  * While the gun is down it sits lowered: splayed wide, grey, faint and dotless. `sinceReady` ms after the gun came up it snaps
- * in to `gap`, overshooting a hair, with a flash; `sinceDenied` ms after a click it was down for, it shakes.
+ * in to `gap`, overshooting a hair, with a flash; `sinceDenied` ms after a click it was down for, it shakes. While a bolt is worked
+ * (`cycling`) it is grey, faint and dotless but sits at its own gap, so the bloom of the shot just fired shows; once chambered (`from` the
+ * bolt) it only flashes and pops its dot, with no splay to snap in from.
  */
-export function reticleLook(phase: GunPhase, gap: number, maxGap: number, sinceReady: number, sinceDenied: number): ReticleLook {
+export function reticleLook(phase: GunPhase, gap: number, maxGap: number, sinceReady: number, sinceDenied: number, from: 'raise' | 'bolt' = 'raise'): ReticleLook {
   const shakeK = sinceDenied >= 0 && sinceDenied < RETICLE_RAISE.shakeMs ? sinceDenied / RETICLE_RAISE.shakeMs : 1;
   const shake = shakeK < 1 ? Math.sin(shakeK * Math.PI * 5) * RETICLE_RAISE.shakePx * (1 - shakeK) : 0;
-  const low = Math.max(gap, maxGap * RETICLE_RAISE.lowShare);
+  if (phase === 'cycling') return { gap, alpha: RETICLE_RAISE.lowAlpha, grey: true, dot: 0, flash: 0, shake };
+  const low = from === 'bolt' ? gap : Math.max(gap, maxGap * RETICLE_RAISE.lowShare);
   if (phase !== 'ready') return { gap: low, alpha: RETICLE_RAISE.lowAlpha, grey: true, dot: 0, flash: 0, shake };
   if (sinceReady < 0 || sinceReady >= RETICLE_RAISE.flashMs) return { gap, alpha: 1, grey: false, dot: 1, flash: 0, shake };
   const u = Math.min(1, sinceReady / RETICLE_RAISE.snapMs);
@@ -110,23 +116,26 @@ export function createRaiseWatch() {
   let phase: GunPhase = 'ready';
   let readyAt = -Infinity;
   let deniedAt = -Infinity;
+  let from: 'raise' | 'bolt' = 'raise';
   return {
-    /** Steps to this frame's phase; true the frame the gun comes up from a raise (play the click). */
+    /** Steps to this frame's phase; true the frame the gun comes up from a raise (play the click; a bolt's lock is its own sound). */
     step(f: Firing | null, now: number): boolean {
-      const next = f && f.trigger.alive ? gunPhaseOf(f) : 'ready';
+      const next = f && f.trigger.alive ? gunPhaseOf(f, now) : 'ready';
       const up = phase === 'raising' && next === 'ready';
-      if (up) readyAt = now;
+      if (next === 'ready' && (phase === 'raising' || phase === 'cycling')) { readyAt = now; from = phase === 'cycling' ? 'bolt' : 'raise'; }
       if (next !== 'ready') readyAt = -Infinity;
       phase = next;
       return up;
     },
-    /** A click was made: true (and noted, for the shake) when it found the gun down, so it fires nothing. */
+    /** A click was made: true (and noted, for the shake) when it found the gun down, or the bolt too far from home to keep it, so it fires nothing. */
     click(f: Firing | null, now: number): boolean {
-      const down = !!f && clickFindsGunDown(f);
+      const down = !!f && (clickFindsGunDown(f) || (f.trigger.armed && boltLeftOf(f, now) > PRESS_BUFFER_MS));
       if (down) deniedAt = now;
       return down;
     },
     get phase() { return phase; },
+    /** What the gun last came up from: a sprint's raise or a bolt's cycle (see `reticleLook`). */
+    get from() { return from; },
     sinceReady: (now: number) => now - readyAt,
     sinceDenied: (now: number) => now - deniedAt,
   };

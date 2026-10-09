@@ -40,7 +40,7 @@ export const CLASS_ROLES: Record<WeaponId, string> = {
   smg: 'Rusher: deadly up close, outruns everything',
   shotgun: 'Door-breaker: devastating inside 200 px',
   assault: 'Anchor: stand, tap, hold the middle',
-  sniper: 'Long-range pick: one shot, plant your feet',
+  sniper: 'Long-range pick: plant, fire, work the bolt, let the cone settle',
   lmg: 'Suppressor: rev up, set down, pin a lane',
 };
 
@@ -78,10 +78,10 @@ export const GUN_ROLES: Record<GunId, Role> = {
   specter: { role: 'Silent double-tap: off the minimap', traits: ['quiet', 'burst', 'strafe'] },
   scout: { role: 'Recon rifle: wide view, long double-taps', traits: ['scope', 'reach', 'burst'] },
 
-  sniper: { role: 'Long-range pick: one shot, plant your feet', traits: ['heavy', 'plant', 'scope'] },
-  longshot: { role: 'Cannon: rocks them back, too heavy to sprint', traits: ['heavy', 'shove', 'slow'] },
+  sniper: { role: 'Long-range pick: one shot drops the unarmored', traits: ['heavy', 'plant', 'scope'] },
+  longshot: { role: 'Cannon: one shot drops light armor, rocks them back', traits: ['heavy', 'shove', 'slow'] },
   semiAuto: { role: 'Two-hit sniper with quick follow-ups', traits: ['plant', 'reach', 'quickdraw'] },
-  piercer: { role: 'Lane punisher: through three bodies', traits: ['pierce', 'scope', 'slow'] },
+  piercer: { role: 'Lane punisher: through three, one-shots medium armor', traits: ['pierce', 'scope', 'slow'] },
   artillery: { role: 'Shells with a wide blast: flush cover', traits: ['blast', 'breach', 'slow'] },
   repeater: { role: 'Jog-and-shoot marksman: fastest follow-ups', traits: ['strafe', 'reach', 'quickdraw'] },
   ghost: { role: 'Silent marksman: plants in a heartbeat', traits: ['quiet', 'plant', 'reach'] },

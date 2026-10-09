@@ -8,8 +8,8 @@ import { makeSnapshotEncoder } from '../src/shared/wire.ts';
 import type { PlayerView } from '../src/shared/protocol.ts';
 import { heldHands } from '../src/client/gunart.ts';
 import { reloadAt } from '../src/client/interp.ts';
-import { BEATS, shellCount, shellSeat, soundTimeline } from '../src/client/reloadbeats.ts';
-import { clearReloads, dropBeats, reloadScene, selfReload, stepReload } from '../src/client/reloadanim.ts';
+import { BEATS, BOLT, shellCount, shellSeat, soundTimeline, worksBolt } from '../src/client/reloadbeats.ts';
+import { boltScene, clearReloads, dropBeats, reloadScene, selfReload, stepBolt, stepReload } from '../src/client/reloadanim.ts';
 import { SOUNDS } from '../src/client/sfx.ts';
 import { NO_FIRING, settle } from '../src/client/fire.ts';
 import { emptyWorld, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -164,4 +164,27 @@ test('your own reload first seen after a long frame starts at most a frame\'s wo
   selfReload(NO_FIRING, 0);
   assert.deepEqual(selfReload(f, 1500), [100, 1300]);
   assert.deepEqual(selfReload(f, 1516), [116, 1300], 'and runs on from there frame by frame');
+});
+
+test('a bolt-action soldier works the bolt after every shot, over exactly its fire interval, in time with the bolt sounds', () => {
+  const bolts = GUN_IDS.filter(worksBolt);
+  assert.deepEqual(bolts.sort(), ['artillery', 'longshot', 'piercer', 'sniper'], 'the bolt-actions, not the semi-autos');
+  for (const gun of bolts) {
+    const [t0, s0] = heldHands(gun, 20, 0.3);
+    const rest = boltScene(gun, 20, 0.3, 0).hands, end = boltScene(gun, 20, 0.3, 1).hands;
+    assert.deepEqual([rest, end], [[t0, s0], [t0, s0]], `${gun} starts and ends in the held pose`);
+    const back = boltScene(gun, 20, 0.3, BOLT.back).hands[1];
+    assert.ok(Math.hypot(back.x - s0.x, back.y - s0.y) > 3, `${gun}'s support hand is on the bolt at the draw`);
+    assert.deepEqual(boltScene(gun, 20, 0.3, BOLT.home + 0.01).hands[1].x.toFixed(6), boltScene(gun, 20, 0.3, 0.99).hands[1].x.toFixed(6), `${gun} is back on the fore-end before the next round`);
+  }
+  // The soldier's clock: a shot at 1000 starts it, it runs the gun's fire interval and is done.
+  const fire = GUNS.sniper.fireMs;
+  assert.equal(stepBolt(901, 'sniper', 1000, 1000), 0);
+  assert.ok(Math.abs(stepBolt(901, 'sniper', undefined, 1000 + fire / 2)! - 0.5) < 1e-9);
+  assert.equal(stepBolt(901, 'sniper', undefined, 1000 + fire), null, 'chambered');
+  assert.equal(stepBolt(902, 'semiAuto', 1000, 1100), null, 'a semi-auto works nothing by hand');
+  // Its sounds land on the arms' beats: the bolt lifts at BOLT.lift and locks at BOLT.lock, wherever the fire interval is.
+  const lock = BOLT.lock * fire, lift = BOLT.lift * fire;
+  const delays = SOUNDS['shot:sniper'].filter((l) => l.selfOnly).map((l) => l.delayMs ?? 0);
+  assert.ok(delays.some((d) => Math.abs(d - lift) < 40) && delays.some((d) => Math.abs(d - lock) < 40), 'bolt up and bolt lock on their beats');
 });

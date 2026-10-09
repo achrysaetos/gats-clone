@@ -132,7 +132,8 @@ test('SMG rushes: no accuracy lost on the move, a gun that comes up fast, and ro
 
 test('assault anchors: tight when it stands and taps, loose when it runs or sprays, and slow to bring up', () => {
   assert.ok(spreadFor('assault', {}, false) >= 1.6 * spreadFor('assault', {}, true), 'running costs most of its accuracy');
-  assert.ok(spreadFor('assault', {}, true, 20) > 2 * spreadFor('assault', {}, true, 3), 'a long spray widens');
+  assert.ok(spreadFor('assault', {}, false, 20) > 2 * spreadFor('assault', {}, false, 3), 'a long spray widens');
+  assert.ok(spreadFor('assault', {}, true, 20) > 1.5 * spreadFor('assault', {}, true, 3), 'standing too, if less');
   assert.ok(spreadFor('assault', {}, true) < spreadFor('smg', {}, true) / 2, 'standing, it is far tighter than an SMG');
   assert.equal(isSteady('assault', 50), false);
   assert.equal(isSteady('assault', 150), true);
@@ -172,11 +173,12 @@ test('pistol is the quick sidearm: handles fast, no worse on the move; the Hand 
   assert.ok(GUNS.handCannon.fireMs > 2 * GUNS.pistol.fireMs);
 });
 
-test('sniper stays the long pick: one shot, planted before it is accurate, slow to bring up; the Ghost plants faster than the Longshot', () => {
+test('sniper stays the long pick: one shot on the unarmored, planted before it is accurate, slow to bring up; the Ghost plants faster than the Longshot', () => {
   assert.ok(GUNS.sniper.damage >= WORLD.baseHp && raiseMsOf(GUNS.sniper) >= 2000);
+  assert.ok(ttkMs('sniper', 900, 'none', true)! === 0, 'one shot on the unarmored at 900 px');
   assert.ok(rulesOf(GUNS.ghost).steadyMs < rulesOf(GUNS.longshot).steadyMs);
   assert.ok(rulesOf(GUNS.repeater).steadyMs < rulesOf(GUNS.semiAuto).steadyMs);
-  assert.ok(ttkMs('sniper', 900, 'heavy', true)! === 0, 'one shot through heavy armor at 900 px');
+  assert.ok(ttkMs('sniper', 900, 'heavy', true)! > 0, 'but not through armor: that takes a Longshot, a Piercer or a second round');
 });
 
 test('LMG suppresses: rev-up, a bipod that plants the gun, the heaviest pinning, and heavy feet; the Minigun cannot sprint', () => {

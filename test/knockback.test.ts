@@ -25,13 +25,13 @@ function hitWith(gun: GunId, armor: 'none' | 'heavy' = 'none') {
   return { w, a, b, peak };
 }
 
-test('a round shoves its victim along the shot, by gun class: a pistol a little, a sniper to the cap', () => {
+test('a round shoves its victim along the shot, by gun class: a pistol a little, a sniper hardest of any single round', () => {
   const pistol = hitWith('pistol'), sniper = hitWith('sniper'), smg = hitWith('smg');
   assert.ok(pistol.b.x > 580, 'pushed away from the shooter');
   assert.ok(Math.abs(pistol.b.y - 500) < 4, 'along the shot');
   assert.ok(Math.abs(pistol.peak - bulletShove('pistol', GUNS.pistol.damage)) < 1, `pistol ${pistol.peak}`);
   assert.ok(smg.peak < pistol.peak && pistol.peak < sniper.peak);
-  assert.ok(sniper.peak <= KNOCK.cap + 1e-9 && sniper.peak > KNOCK.cap * 0.9, `a sniper round is at the cap (${sniper.peak})`);
+  assert.ok(Math.abs(sniper.peak - Math.min(KNOCK.cap, bulletShove('sniper', GUNS.sniper.damage))) < 1 && sniper.peak > KNOCK.cap * 0.75, `a sniper round shoves hard (${sniper.peak})`);
 });
 
 test('a point-blank shotgun stacks its pellets up to the cap and no further', () => {

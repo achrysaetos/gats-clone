@@ -2,6 +2,7 @@ import { GUNS, PRESS_BUFFER_MS, raiseMsOf, settleRulesOf, WORLD, type GunId } fr
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 import { bloomRecoverMul, postSprint, reloadMsFor, sprintWanted } from '../shared/sim/stats.ts';
 import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
+import { worksBolt } from './reloadbeats.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CONFIRM_SLACK_TICKS = 4;
@@ -43,6 +44,17 @@ export const settleOf = (f: Firing): number => postSprint(f.trigger.settleLeft, 
 
 /** How long (ms) the gun is still coming up after a sprint, as of the newest input sent: no shot until it is 0. */
 export const raiseLeftOf = (f: Firing): number => (f.trigger.sprint ? 0 : postSprint(f.trigger.settleLeft, f.trigger.settleMs).raiseLeft);
+
+/**
+ * How long (ms) a bolt-action's bolt is still being worked after its last shot, as of the page clock `now`: 0 for every other gun, while
+ * it reloads (the reload ring shows that), or once the next round is chambered.
+ */
+export function boltLeftOf(f: Firing, now: number): number {
+  const t = f.trigger;
+  if (!t.alive || t.reloadUntil !== null || t.sprint || !worksBolt(t.gun)) return 0;
+  const clock = f.sent.seq * TICK_MS + Math.min(100, Math.max(0, now - f.sent.at));
+  return Math.max(0, t.nextFireAt - clock);
+}
 
 /** Whether a click now would find the gun down: sprinting (the click ends it and starts the raise) or still too far from up to be kept. */
 export const clickFindsGunDown = (f: Firing): boolean =>

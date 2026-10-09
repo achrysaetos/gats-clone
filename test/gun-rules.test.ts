@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ATTACHMENTS, GUN_IDS, GUNS, PICK_OPTIONS, pickOptions, rulesOf, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
+import { ARMOR_IDS, ARMORS, ATTACHMENTS, GUN_IDS, GUNS, minSpreadOf, PICK_OPTIONS, pickOptions, rulesOf, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -62,9 +62,17 @@ test('a sniper settles almost half a second after its last step, an assault rifl
   assert.ok(flick.length === 1 && Math.abs(flick[0]!) <= spreadFor('sniper', {}, false), 'a shot the tick after stopping flies with the walking cone');
 });
 
-test('a sniper\'s rounds stay inside its still cone standing and stray far past it walking', () => {
+test('a sniper\'s patient rounds stay inside its still cone standing and stray far past it walking', () => {
   const cone = GUNS.sniper.spread;
-  assert.ok(widest(spray('sniper', true, 20)) <= cone, 'standing still');
+  const { w, p } = shooter('sniper');
+  run(w, 400);
+  const patient: number[] = [];
+  while (patient.length < 5) {
+    patient.push(...tick(w, p, { fire: true, shots: p.input.shots + 1 }));
+    // Each round waits out the bloom of the last before it goes.
+    for (let i = 0; i < Math.ceil(2600 / TICK_MS); i++) tick(w, p, {});
+  }
+  assert.ok(widest(patient) <= minSpreadOf(GUNS.sniper) && widest(patient) > 0, 'standing still, re-settled: within its small floor, never exactly on the line');
   assert.ok(widest(spray('sniper', false, 20)) > 2 * cone, 'walking');
   assert.ok(widest(spray('pistol', false, 20)) <= spreadFor('pistol', {}, false), 'a pistol walking stays in its slightly wider walking cone');
 });
@@ -77,8 +85,10 @@ test('an assault rifle held down blooms after its first shots, up to two and a h
     if (out.length) held.push(out);
   }
   const spray = p.life.k === 'alive' ? p.life.spray : 0;
-  assert.equal(spreadFor('assault', {}, true, spray), rulesOf(GUNS.assault).bloom!.maxMul * GUNS.assault.spread, 'a long spray reaches the cap');
-  assert.equal(spreadFor('assault', {}, true, 1000), rulesOf(GUNS.assault).bloom!.maxMul * GUNS.assault.spread, 'and holds there, however long the spray');
+  const bloom = rulesOf(GUNS.assault).bloom!, standingCap = GUNS.assault.spread * (1 + (bloom.maxMul - 1) * bloom.still);
+  assert.ok(Math.abs(spreadFor('assault', {}, true, spray) - standingCap) < 1e-12, 'a long spray standing reaches its (smaller) standing cap');
+  assert.ok(Math.abs(spreadFor('assault', {}, true, 1000) - standingCap) < 1e-12, 'and holds there, however long the spray');
+  assert.ok(Math.abs(spreadFor('assault', {}, false, 1000) - bloom.maxMul * spreadFor('assault', {}, false)) < 1e-12, 'on the move it blooms the full way');
   assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
   assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
@@ -226,4 +236,62 @@ test('Bipod is gone as a perk: no menu offers it, and standing still tightens an
   assert.ok(!PICK_OPTIONS.includes('bipod' as PickOption));
   for (const weapon of ['assault', 'lmg'] as const) assert.ok(spreadFor(weapon, {}, true) < spreadFor(weapon, {}, false));
   for (const weapon of ['pistol', 'smg'] as const) assert.equal(spreadFor(weapon, {}, true), spreadFor(weapon, {}, false));
+});
+
+test('no gun is ever a laser: each has a spread floor, smallest on light guns and largest on machine guns, a bipod and a planted sniper small', () => {
+  const deg = (rad: number) => (rad * 180) / Math.PI;
+  const floor = (gun: GunId, deployed = false) => minSpreadOf(GUNS[gun], deployed);
+  for (const [a, b] of [['pistol', 'smg'], ['smg', 'assault'], ['assault', 'shotgun'], ['shotgun', 'lmg']] as const) assert.ok(floor(a) < floor(b), `${a} holds tighter than ${b}`);
+  assert.ok(floor('handCannon') > floor('machinePistol'), 'a heavier evolution of a class has a wider floor');
+  for (const gun of ['sniper', 'longshot', 'piercer', 'artillery', 'semiAuto', 'repeater', 'ghost'] as const) assert.ok(deg(floor(gun)) >= 0.35 && deg(floor(gun)) <= 0.65, `${gun} floor ${deg(floor(gun)).toFixed(2)} deg`);
+  assert.ok(deg(floor('lmg')) >= 1.5 && deg(floor('heavyLmg')) >= 1.5, 'an LMG standing never holds tighter than ~1.5 degrees');
+  assert.ok(deg(floor('heavyLmg', true)) >= 0.6 && deg(floor('heavyLmg', true)) <= 0.8, 'a set-down bipod gets its own small floor');
+  // However planted, steady, unsuppressed and perked (a grip narrows spread), nothing fires under its floor.
+  for (const gun of GUN_IDS) {
+    for (const deployed of [false, true]) {
+      const s = spreadFor(gun, { 1: 'grip' }, true, 0, 0, 0, deployed);
+      assert.ok(s >= floor(gun, deployed && rulesOf(GUNS[gun]).deploy !== null) - 1e-12, `${gun}${deployed ? ' deployed' : ''} ${s} under its floor`);
+    }
+  }
+});
+
+test('every gun blooms; standing it blooms less than on the move, and a set-down bipod least', () => {
+  for (const gun of GUN_IDS) {
+    const r = rulesOf(GUNS[gun]);
+    assert.ok(r.bloom, `${gun} blooms`);
+    const grow = (still: boolean, deployed = false) => spreadFor(gun, {}, still, 60, 0, 0, deployed) - spreadFor(gun, {}, still, 0, 0, 0, deployed);
+    assert.ok(grow(true) > 0 && grow(true) < grow(false), `${gun}: standing ${grow(true)} vs moving ${grow(false)}`);
+    if (r.deploy) assert.ok(grow(true, true) < grow(true), `${gun}: a bipod blooms least`);
+  }
+});
+
+test('a sniper\'s follow-up is wild and a re-settled shot precise: each round blooms the cone even planted, and it takes seconds to close again', () => {
+  for (const gun of ['sniper', 'semiAuto', 'repeater'] as const) {
+    const { w, p } = shooter(gun);
+    run(w, 600);
+    const sprayNow = () => (p.life.k === 'alive' ? p.life.spray : 0);
+    const at = (ms: number) => { for (let i = 0; i < Math.round(ms / TICK_MS); i++) tick(w, p, {}); return spreadFor(gun, {}, true, sprayNow() + 1); };
+    // As many rounds as fly clean, each as soon as the gun allows; the next is the one the bloom catches.
+    let quick = 0;
+    for (let i = 0; i < rulesOf(GUNS[gun]).bloom!.free; i++) { tick(w, p, { fire: true, shots: p.input.shots + 1 }); quick = at(GUNS[gun].fireMs - TICK_MS); }
+    assert.ok(quick > 1.5 * minSpreadOf(GUNS[gun]), `${gun}: the fastest follow-up (${quick.toFixed(4)}) is well past the floor`);
+    const patient = at(2600);
+    assert.equal(patient, minSpreadOf(GUNS[gun]), `${gun}: a patient shot is back on the floor`);
+  }
+  // A bolt-action's bloom outlasts its bolt cycle; a semi-auto's kick is smaller and settles sooner.
+  const b = rulesOf(GUNS.sniper).bloom!, s = rulesOf(GUNS.semiAuto).bloom!;
+  assert.ok(b.perShot > s.perShot && b.settleMs + b.recoverMs > s.settleMs + s.recoverMs);
+});
+
+test('sniper one-shots by armor: the bolt-action drops only the unarmored, Longshot light, Piercer medium, nothing heavy without Demolitions on Artillery', () => {
+  const HP = WORLD.baseHp;
+  const direct = (gun: GunId, demo = false) => GUNS[gun].damage + (GUNS[gun].blast ? GUNS[gun].blast!.damage * (demo ? 1.3 : 1) : 0);
+  const oneShot = (gun: GunId, armor: keyof typeof ARMORS, demo = false) => direct(gun, demo) * (1 - ARMORS[armor].blockFrac) >= HP;
+  const matrix: Record<string, readonly boolean[]> = {
+    sniper: [true, false, false, false], longshot: [true, true, false, false], piercer: [true, true, true, false], artillery: [true, true, false, false],
+    semiAuto: [false, false, false, false], repeater: [false, false, false, false], ghost: [false, false, false, false],
+  };
+  for (const [gun, row] of Object.entries(matrix)) assert.deepEqual(ARMOR_IDS.map((a) => oneShot(gun as GunId, a)), row, gun);
+  assert.equal(oneShot('artillery', 'heavy', true), true, 'Artillery with Demolitions is the one heavy-armor one-shot');
+  for (const gun of ['sniper', 'longshot', 'piercer'] as const) assert.equal(direct(gun) * (1 - ARMORS.heavy.blockFrac) * 2 >= HP, true, `${gun} drops heavy armor in two`);
 });

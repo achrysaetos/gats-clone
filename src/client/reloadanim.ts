@@ -5,7 +5,7 @@ import { drawHeldGun, heldHands, heldPoint, type GunView, type Hand, type Part }
 import { TICK_MS } from './interp.ts';
 import { TOPUP_MS } from './topup.ts';
 import { INK } from './palette.ts';
-import { BEATS, shellCount, shellSeat } from './reloadbeats.ts';
+import { BEATS, BOLT, shellCount, shellSeat, worksBolt } from './reloadbeats.ts';
 import { reloadFoley } from './reloadsfx.ts';
 
 /**
@@ -413,6 +413,49 @@ function sniperScene(rig: Rig, t: number, k: number): ReloadScene {
   };
 }
 
+// --- Working the bolt between shots -----------------------------------------------------------------------------
+
+/**
+ * A bolt-action working its bolt after a shot, `u` (0..1) through its fire interval (see `BOLT`): the support hand leaves the fore-end for
+ * the handle, lifts it, draws it back, runs it home and locks it down, the gun canting a hair toward the hand, and is back on the fore-end
+ * before the next round can go. The same knob and keyframes as the reload's bolt work, so the two read as one motion.
+ */
+export function boltScene(gun: GunId, R: number, aim: number, u: number): ReloadScene {
+  const rig = rigOf(gun, R, aim), { pt, sx, s, trigger, support } = rig, B = BOLT;
+  u = clamp01(u);
+  const K0: Pt = [62, 7], K1: Pt = [62, -2], K2: Pt = [45, -2];
+  const tiltAt = (uk: number) => s * 0.1 * num([[0, 0], [B.grab, 1], [B.lock, 1], [B.home, 0, 'io'], [1, 0]], uk);
+  const knob = track<Pt>([[0, K0], [B.lift - 0.05, K0], [B.lift, K1, 'out'], [B.back, K2, 'out'], [B.fwd, K1, 'in'], [B.lock, K0, 'snap'], [1, K0]], u, (a, b, x) => [lerp(a[0], b[0], x), lerp(a[1], b[1], x)]);
+  const knobAt = (a: Pt, uk: number) => rotAbout(pt(a[0], a[1]), trigger, tiltAt(uk));
+  const h = hand([
+    [0, support], [B.grab, knobAt(K0, B.grab), 'io'], [B.lift - 0.05, knobAt(K0, B.lift - 0.05)], [B.lift, knobAt(K1, B.lift), 'out'], [B.back, knobAt(K2, B.back), 'out'],
+    [B.fwd, knobAt(K1, B.fwd), 'in'], [B.lock, knobAt(K0, B.lock), 'snap'], [B.home, support, 'io'], [1, support],
+  ], u);
+  const dip = 0.5 * pulse(u, B.back, 0.03) + 0.7 * pulse(u, B.lock, 0.03);
+  const working = u > B.grab * 0.5 && u < B.home;
+  return {
+    hands: [trigger, h], dip,
+    draw: (ctx, golden, skin) => paintGun(ctx, rig, tiltAt(u), golden, skin, {
+      hide: working ? ['bolt'] : [],
+      inGun: (g) => { if (working) paintKnob(g, pt(62, -2), pt(knob[0], knob[1]), 3.2 * sx); },
+    }),
+  };
+}
+
+const boltShots = new Map<number, number>();
+/**
+ * Soldier `id`'s bolt work this frame: `shotAt` is when its newest muzzle flash was born, if one is still up (a fresh shot); returns how far
+ * (0..1) through working the bolt it is, or null when it is not working one (another gun, or the round is already chambered).
+ */
+export function stepBolt(id: number, gun: GunId, shotAt: number | undefined, now: number): number | null {
+  if (shotAt !== undefined) boltShots.set(id, Math.max(boltShots.get(id) ?? -Infinity, shotAt));
+  const at = boltShots.get(id);
+  if (at === undefined) return null;
+  const u = (now - at) / GUNS[gun].fireMs;
+  if (!worksBolt(gun) || u >= 1) { boltShots.delete(id); return null; }
+  return u < 0 ? 0 : u;
+}
+
 // --- Akimbo: one pistol at a time, the other held out ------------------------------------------------------------
 
 const AK = BEATS.akimbo;
@@ -568,7 +611,7 @@ export function stepReload(id: number, gun: GunId, rl: readonly [number, number]
 }
 
 /** Forgets every soldier's reload (a new round, a reconnect). */
-export const clearReloads = () => { tracks.clear(); reloadFoley.clear(); };
+export const clearReloads = () => { tracks.clear(); boltShots.clear(); reloadFoley.clear(); };
 
 /**
  * Your own reload as the page predicts it, so your arms move the instant you press the key: `[elapsedMs, totalMs]` from the

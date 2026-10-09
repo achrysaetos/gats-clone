@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
@@ -60,15 +60,24 @@ type Stats = {
  */
 export const BOT_SPREAD_MUL = 0.85;
 
-/** Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. */
+/**
+ * Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. Nothing fires tighter than
+ * the gun's floor (`minSpreadOf`), however planted or perked; a pinpoint gun planted, steady and unsuppressed sits right on it. Bloom adds on
+ * top of that: all of its growth on the move, `bloom.still` of it standing, `deploy.bloom` with a bipod down; a pinpoint gun's grows from
+ * its own still spread (not from zero), so a sniper's follow-up opens the cone wide even planted.
+ */
 export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0, deployed = false): number {
-  const rules = rulesOf(GUNS[gun]);
-  if (still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05) return 0;
+  const def = GUNS[gun], rules = rulesOf(def);
+  const pin = still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05;
   const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
-  const planted = still && deployed && rules.deploy ? rules.deploy.spreadMul : 1;
-  let spread = (still ? GUNS[gun].spread * planted : GUNS[gun].spread * rules.movingSpreadMul + rules.movingSpreadAdd) * bloomMul(rules, sprayShot, bloomBuild) * settleSpreadMul(settle, settleRulesOf(GUNS[gun]).mul);
-  for (const perk of Object.values(perks)) spread *= (PERK_MODS[perk].spreadMul ?? 1) * (GUNS[gun].pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
-  return spread * suppressionMul(suppression);
+  const bipod = still && deployed && rules.deploy ? rules.deploy : null;
+  const base = pin ? 0 : still ? def.spread * (bipod?.spreadMul ?? 1) : def.spread * rules.movingSpreadMul + rules.movingSpreadAdd;
+  const share = !still ? 1 : bipod ? bipod.bloom : rules.bloom?.still ?? 1;
+  // A pinpoint gun's bloom is a kick of its own still spread whatever its stance, so a sniper on the move is not thrown a mile wide on top of its walking cone.
+  const grown = (rules.pinpoint ? def.spread : base) * (bloomMul(rules, sprayShot, bloomBuild) - 1) * share;
+  let mul = settleSpreadMul(settle, settleRulesOf(def).mul);
+  for (const perk of Object.values(perks)) mul *= (PERK_MODS[perk].spreadMul ?? 1) * (def.pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
+  return (Math.max(minSpreadOf(def, bipod !== null), base * mul) + grown * mul) * suppressionMul(suppression);
 }
 
 /**

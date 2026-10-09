@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { CONTROLS, assembleInput, actionForKey } from '../src/client/input.ts';
 import { stepTrigger, NO_FIRING, settle, settleOf, type ServerGun } from '../src/client/fire.ts';
 import { NO_STICKS, dragStick, pressStick, touchMoves } from '../src/client/touch.ts';
-import { GUNS, LOAD_SPEED_FLOOR, raiseMsOf, rulesOf, settleRulesOf, SPRINT, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LOAD_SPEED_FLOOR, minSpreadOf, raiseMsOf, rulesOf, settleRulesOf, SPRINT, WORLD } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats, settleSpreadMul, spreadFor } from '../src/shared/sim/stats.ts';
@@ -153,8 +153,8 @@ for (const gun of ['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as co
 }
 
 test('the settle also breaks a planted sniper\'s pinpoint, and suppression still stacks on top', () => {
-  assert.equal(spreadFor('sniper', {}, true), 0);
-  assert.ok(spreadFor('sniper', {}, true, 0, 0, 1) > 0, 'a just-sprinted sniper rifle is not pinpoint');
+  assert.equal(spreadFor('sniper', {}, true), minSpreadOf(GUNS.sniper));
+  assert.ok(spreadFor('sniper', {}, true, 0, 0, 1) > GUNS.sniper.spread, 'a just-sprinted sniper rifle is not pinpoint');
   const base = spreadFor('assault', {}, true, 0, 0, 0.6);
   assert.ok(spreadFor('assault', {}, true, 0, 1, 0.6) > base, 'suppression stacks on the settle');
 });

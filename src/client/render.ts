@@ -52,7 +52,7 @@ import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as n
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
-import { dropCarried, reloadScene, selfReload, stepReload, type ReloadFrame } from './reloadanim.ts';
+import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
 import { reloadFoley } from './reloadsfx.ts';
 import { drawFlashSmokeBody, drawFlashSmokeFx, isFlashSmoke } from './flashsmoke.ts';
 import { applyPose, bodyPose, drawGunGlints, drawMotionAbove, drawMotionBelow, drawShieldShimmer, noteStride, observeMotion } from './motionfx.ts';
@@ -220,9 +220,11 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     // The reload's foley rides the same clock and beats: yours centred and a touch louder, everyone else's in the world.
     reloadFoley.step({ id: p.id, gun: p.gun, x: p.x, y: p.y, self, hidden: p.hidden }, rl, now, { mapId: s.mapId, listener: s.lastSelf, viewRadius: snap.self.viewRadius });
     if (reload?.drops.length) dropMags(gunFxOf(s), p, angle, reload, now, self);
+    // A bolt-action's soldier works the bolt after every shot, over exactly the gun's fire interval (see `boltScene`).
+    const bolt = stepBolt(p.id, p.gun, kick, now);
     drawPlayer(ctx, { ...p, angle, x: p.x + jolt.x, y: p.y + jolt.y }, colorOf(p), {
       self, rival: !self && p.team === null && p.color === mine?.color,
-      flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k, reload,
+      flash: flash === undefined ? 0 : 1 - (now - flash) / HIT_FLASH_MS, kick: kick === undefined ? 0 : 1 - (now - kick) / KICK_MS, now, pxPerUnit: k, reload, bolt: reload ? null : bolt,
       sprint: self && s.firing?.trigger.alive ? s.firing.trigger.sprint : p.sprint === true,
     });
     if (p.golden) drawGoldShine(ctx, p.x, p.y, muzzleTip(p.x, p.y, angle, p.gun, R), p.id, now);
@@ -323,8 +325,8 @@ type RoundLook = { r: number; heft: number; tail: string; body: string; core: st
 const ROUND = { minR: 3.1, maxR: 7, slugLen: 3.8, trailAlpha: 0.4, trailSlugs: 2.6, heavyTrailSlugs: 6 } as const;
 const ROUND_COLORS = { tail: '#ff8a2a', body: '#ffc247', core: '#fff6c8', nightTail: '#ffa84d' } as const;
 
-/** 0..1 how heavy one round is, from its own damage: a 25 pistol round ~0.2, a 70 slug ~0.55, a 135 bolt-action round 1. */
-export const roundHeft = (gun: GunId | null): number => (gun ? Math.min(1, (GUNS[gun].damage / 135) ** 0.75) : 0.15);
+/** 0..1 how heavy one round is, from its own damage: a 25 pistol round ~0.35, a 70 slug ~0.75, a bolt-action round (or anything heavier) 1. */
+export const roundHeft = (gun: GunId | null): number => (gun ? Math.min(1, (GUNS[gun].damage / GUNS.sniper.damage) ** 0.75) : 0.15);
 
 function roundLook(gun: GunId | null, night: boolean): RoundLook {
   const heft = roundHeft(gun);
@@ -372,7 +374,8 @@ function drawRounds(ctx: CanvasRenderingContext2D, bullets: readonly BulletView[
 }
 
 /** `sprint`: whether the body is sprinting (yours as your own trigger predicts it, so the gun drops and comes up in step with your reticle). */
-type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number; reload: ReloadFrame | null; sprint: boolean };
+/** `bolt`: how far (0..1) through working its bolt after a shot a bolt-action soldier is (see `stepBolt`), null when it is not. */
+type PlayerLook = { self: boolean; rival: boolean; flash: number; kick: number; now: number; pxPerUnit: number; reload: ReloadFrame | null; bolt: number | null; sprint: boolean };
 const TIER_COLORS = { 1: '#c9ced8', 2: PALETTE.gold } as const;
 /** How far a gun jumps back in the hands when fired; a heavy gun (see `heftOf`) jumps up to `RECOIL_HEAVY` times as far. */
 const RECOIL = 4.5;
@@ -497,7 +500,7 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: PlayerView, color: string,
   ctx.save();
   applyPose(ctx, pose);
   // A reload moves the support hand, tilts the gun and dips the shoulders a hair at each snap (see reloadanim.ts).
-  const scene = look.reload ? reloadScene(p.gun, R, p.angle, look.reload.t, look.reload.k) : null;
+  const scene = look.reload ? reloadScene(p.gun, R, p.angle, look.reload.t, look.reload.k) : look.bolt !== null ? boltScene(p.gun, R, p.angle, look.bolt) : null;
   const jump = RECOIL * (1 + (RECOIL_HEAVY - 1) * heftOf(p.gun)) * Math.max(0, look.kick) + (scene && !reducedMotion() ? scene.dip : 0);
   const hands = (scene?.hands ?? heldHands(p.gun, R, p.angle)).map((h) => ({ x: h.x - jump, y: h.y })) as [{ x: number; y: number }, { x: number; y: number }];
   const cos = cosLook(p.cos);

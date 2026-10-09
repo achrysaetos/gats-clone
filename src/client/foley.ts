@@ -1,4 +1,5 @@
 import type { WeaponId } from '../shared/defs.ts';
+import { BOLT } from './reloadbeats.ts';
 import type { Layer } from './sfx.ts';
 
 /**
@@ -216,8 +217,9 @@ export function actionCycle(base: WeaponId, fireMs: number, mag: number): Layer[
   const only = (layers: Layer[]): Layer[] => layers.map((l) => ({ ...l, selfOnly: true as const }));
   const part = (id: FoleyId, t: number) => at(FOLEY[id], t, 1, g);
   if (base === 'sniper' && fireMs >= 1000) {
-    return only([...part('foley:boltup', 0.3 * fireMs), ...part('foley:boltdraw', 0.32 * fireMs), ...part('foley:boltrear', 0.45 * fireMs),
-      ...part('foley:boltfwd', 0.56 * fireMs - 100), ...part('foley:boltlock', 0.66 * fireMs)]);
+    // On the arms' beats (`BOLT`); the forward slide's sound starts ahead of the bolt arriving home.
+    return only([...part('foley:boltup', BOLT.lift * fireMs), ...part('foley:boltdraw', (BOLT.lift + 0.02) * fireMs), ...part('foley:boltrear', BOLT.back * fireMs),
+      ...part('foley:boltfwd', BOLT.fwd * fireMs - 100), ...part('foley:boltlock', BOLT.lock * fireMs)]);
   }
   if (base === 'shotgun' && fireMs >= 480 && mag > 2) {
     const back = 0.32 * fireMs;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GUNS, rulesOf, WORLD } from '../src/shared/defs.ts';
+import { GUNS, minSpreadOf, rulesOf, WORLD } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { flightSec, flownAfter, MUZZLE } from '../src/shared/sim/ballistics.ts';
 import { spreadFor } from '../src/shared/sim/stats.ts';
@@ -33,9 +33,10 @@ test('the server moves a round by the same curve, tick by tick', () => {
   assert.ok(Math.abs(b.x - start - expected) < 1, `${b.x - start} vs ${expected}`);
 });
 
-test('a planted sniper has no spread at all, while walking it still sprays', () => {
+test('a planted sniper is pinpoint down to its small floor, while walking it still sprays', () => {
   for (const gun of ['sniper', 'longshot', 'semiAuto', 'piercer', 'repeater'] as const) {
-    assert.equal(spreadFor(gun, {}, true), 0, `${gun} planted`);
+    assert.equal(spreadFor(gun, {}, true), minSpreadOf(GUNS[gun]), `${gun} planted`);
+    assert.ok(minSpreadOf(GUNS[gun]) > 0 && minSpreadOf(GUNS[gun]) < 0.0105, `${gun}'s floor is a hair over half a degree at most`);
     assert.ok(spreadFor(gun, {}, false) > 0, `${gun} walking`);
   }
   assert.ok(spreadFor('assault', {}, true) > 0, 'other classes keep their still spread');

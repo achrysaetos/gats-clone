@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_IDS, ARMORS, GUNS, rulesOf, SUPPRESSION, type GunId } from '../src/shared/defs.ts';
+import { ARMOR_IDS, ARMORS, GUNS, minSpreadOf, rulesOf, SUPPRESSION, type GunId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats, spreadFor, suppressionMul } from '../src/shared/sim/stats.ts';
@@ -61,8 +61,8 @@ test('a machine gun pins a target down, while a pistol or a sniper only makes th
 });
 
 test('suppression breaks a planted sniper\'s pinpoint', () => {
-  assert.equal(spreadFor('sniper', {}, true, 0, 0), 0);
-  assert.ok(spreadFor('sniper', {}, true, 0, 0.5) > 0, 'a suppressed sniper wavers');
+  assert.equal(spreadFor('sniper', {}, true, 0, 0), minSpreadOf(GUNS.sniper), 'pinpoint, down to its floor');
+  assert.ok(spreadFor('sniper', {}, true, 0, 0.5) > GUNS.sniper.spread, 'a suppressed sniper wavers');
   assert.ok(spreadFor('assault', {}, true, 0, 1) > spreadFor('assault', {}, true, 0, 0));
 });
 

@@ -150,7 +150,7 @@ test('dodging is deterministic for a seed', () => {
 test('a sniper bot plants for its shot and moves off the spot while the bolt cycles', () => {
   // A hit drops the foe whatever his health (the bolt's breakpoint), so a run lasts until the first hit: over several seeds there are misses.
   let all = 0;
-  for (const seed of [2, 4, 9]) all += sniperRun(seed);
+  for (const seed of [2, 4, 6, 9]) all += sniperRun(seed);
   assert.ok(all >= 6, `${all} shots`);
 });
 
